@@ -6,6 +6,7 @@ import {
   hasQueuedProviderSteps,
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
+import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -28,11 +29,13 @@ const DEFAULT_MAX_STEPS_PER_RUN = 10;
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
- * No new step starts this long after the tick began. Ticks fire every 5 minutes and a
- * killed tick leaves its query running on the database, so a tick must end well inside
- * its interval; this leaves a slow last step about two minutes to finish.
+ * Started steps should finish this long after the tick began: a step starts only when its
+ * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 5 minutes and a
+ * killed tick leaves its query running on the database, so a tick must end inside its
+ * interval and maxDuration. Until 2026-10-07 no step started after 150 s, which left
+ * ticks idle for 10 to 150 s and lane passes spread over three ticks.
  */
-const STEP_START_BUDGET_MS = 150_000;
+const STEP_FINISH_BUDGET_MS = 270_000;
 
 async function isAuthorized(request: NextRequest): Promise<boolean> {
   if (matchesConfiguredCronSecret(request.headers.get("authorization"))) return true;
@@ -136,6 +139,14 @@ async function handleGET(request: NextRequest) {
     limit: stateLaneLimit,
     triggeredBy: "api.admin.agents.tick",
   });
+  // Institutions that must not wait on their state's lane get their own run.
+  let priorityInstitutions: Awaited<ReturnType<typeof schedulePriorityInstitutionRuns>> | { error: string };
+  try {
+    priorityInstitutions = await schedulePriorityInstitutionRuns();
+  } catch (error) {
+    console.error("Priority institution scheduling failed:", error);
+    priorityInstitutions = { error: error instanceof Error ? error.message : String(error) };
+  }
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -144,9 +155,9 @@ async function handleGET(request: NextRequest) {
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
     providerRunLimit,
-    deadlineAt: tickStartedAt + STEP_START_BUDGET_MS,
+    deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
   });
-  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
+  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, priorityInstitutions, ...result });
 }
 
 async function handlePOST(request: NextRequest) {

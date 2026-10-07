@@ -4,14 +4,20 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
+import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
+import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
+import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
-import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
+import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
+import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
   currentMonth,
   mailingAddress,
@@ -49,6 +55,9 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
@@ -337,6 +346,32 @@ async function executeAgenticStep(
       dryRun: run.runKind === "dry_run",
       db: tx,
     });
+  }
+
+  // Hamilton's studies (study-*) share one dispatcher in hamilton/studies.
+  if (isStudyStep(step.stepKey)) {
+    const result = await runStudyStep(step.stepKey, {
+      db: tx,
+      runId: run.id,
+      dryRun: run.runKind === "dry_run",
+      force: params.force === true || params.force === "true",
+    });
+    return {
+      status: "completed",
+      summary: summarizeStudyStep(result),
+      detail: {
+        schema_ready: result.schemaReady,
+        study_key: result.studyKey,
+        as_of: result.asOf,
+        stored: result.stored,
+        already_current: result.alreadyCurrent,
+        study_id: result.studyId,
+        n: result.n,
+        placements: result.placements,
+        headline: result.headline,
+        dry_run: result.dryRun,
+      },
+    };
   }
 
   switch (step.stepKey) {
@@ -631,6 +666,8 @@ async function executeAgenticStep(
           learning_log: extraction.learning,
           lessons_loaded: extraction.lessonsLoaded,
           lesson_refiles: extraction.lessonRefiles,
+          takedown_lessons_loaded: extraction.takedownLessonsLoaded,
+          takedown_holds: extraction.takedownHolds,
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
@@ -799,6 +836,18 @@ async function executeAgenticStep(
       // same rows in opposite orders; the lock ends with this step's transaction.
       await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
       const institutionId = numericRunParam(params, ["institution_id"]);
+      // A takedown is never final: fees an earlier sweep took down come back once a range
+      // widens or the taxonomy gains their category.
+      const outlierRestores = await restoreOutliersNowInRange(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -806,6 +855,27 @@ async function executeAgenticStep(
         institutionId,
       });
       const offTaxonomyRollbacks = await rollBackOffTaxonomyFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A transfer or deposit limit read as a price ("Zelle® transfer limit | $1,000").
+      const limitRollbacks = await rollBackLimitsPublishedAsFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A business schedule's fee beside the bank's consumer fee in the same category.
+      const businessSchedule = await retireBusinessScheduleFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A fee read from an article (a blog post quoting a national average), not a schedule.
+      const articlePage = await retireArticlePageFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -867,6 +937,15 @@ async function executeAgenticStep(
         institutionId,
         stateCode,
       });
+      // A live fee the current copy does not restate at its price is read against the
+      // current copy's text; one it no longer states comes down only on a second look.
+      const currentCopy = await secondLookFeesNotOnCurrentCopy(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
@@ -878,7 +957,22 @@ async function executeAgenticStep(
             stateCode,
           })
         : null;
+      // Live names stored before Knox tidied its reads ("Stop Payment | Item", "A dormant fee
+      // of") take their tidy name, a batch of banks per step; the old name stays in
+      // pipeline_feedback and a rename never makes a fee fail the source check.
+      const nameRetidy = await retidyLiveFeeNames(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
+      // Fees an older re-check restored with no check at all get the restore bar on a second look.
+      const restoreRecheck = await recheckUncheckedRestores(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
       const published = await runHamiltonPublish({
         runId: run.id,
@@ -925,13 +1019,21 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              outlierRestores.length > 0 ||
+              offTaxonomyRestores.length > 0 ||
+              limitRollbacks.length > 0 ||
+              businessSchedule.rolledBack.length > 0 ||
+              businessSchedule.restored > 0 ||
+              articlePage.rolledBack.length > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               newerCopyRetired > 0 ||
               newerCopyRestored > 0 ||
+              currentCopy.takenDown.length > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
+              restoreRecheck.rolledBack.length > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
           });
@@ -940,8 +1042,27 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
           : "";
       const offTaxonomyNote =
-        offTaxonomyRollbacks.length > 0
+        (offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
+          : "") +
+        (outlierRestores.length + offTaxonomyRestores.length > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${(outlierRestores.length + offTaxonomyRestores.length).toLocaleString()} earlier range or taxonomy takedown(s) that pass today.`
+          : "");
+      const limitNote =
+        limitRollbacks.length > 0
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${limitRollbacks.length.toLocaleString()} live fee(s) whose figure is a transaction limit, not a price.`
+          : "";
+      const businessNote =
+        businessSchedule.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${businessSchedule.rolledBack.length.toLocaleString()} business-schedule fee(s) beside the bank's consumer fee.`
+          : "";
+      const restoreRecheckNote =
+        restoreRecheck.failing.length > 0 || restoreRecheck.passing > 0
+          ? ` Second look on ${restoreRecheck.unchecked.toLocaleString()} unchecked restore(s): ${restoreRecheck.passing.toLocaleString()} clear the restore bar, ${restoreRecheck.failing.length.toLocaleString()} fail it, ${restoreRecheck.rolledBack.length.toLocaleString()} ${published.dryRun ? "would be archived" : "archived"}.`
+          : "";
+      const articleNote =
+        articlePage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${articlePage.rolledBack.length.toLocaleString()} fee(s) read from an article page, not a fee schedule.`
           : "";
       const categoryGuardNote =
         categoryGuardRollbacks > 0
@@ -970,13 +1091,17 @@ async function executeAgenticStep(
         refreshCopy.refreshed > 0
           ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
           : "";
+      const currentCopyNote =
+        currentCopy.failing > 0 || currentCopy.takenDown.length > 0
+          ? ` Current-copy check: ${currentCopy.failing.toLocaleString()} live fee(s) not restated at their price on the current copy of their page (${currentCopy.flagged.toLocaleString()} newly flagged for a second look), ${currentCopy.takenDown.length.toLocaleString()} archived.`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -984,6 +1109,8 @@ async function executeAgenticStep(
           skipped_verified_fees: published.skippedFees,
           superseded_fees: published.supersededFees,
           outlier_rollbacks: outlierRollbacks.length,
+          outlier_restores: outlierRestores.length,
+          off_taxonomy_restores: offTaxonomyRestores.length,
           outlier_rollback_samples: outlierRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
             institution_id: rollback.institutionId,
@@ -999,6 +1126,38 @@ async function executeAgenticStep(
             canonical_fee_key: rollback.canonicalFeeKey,
             fee_name: rollback.feeName,
             amount: rollback.amount,
+          })),
+          business_schedule: {
+            business_fees: businessSchedule.businessFees,
+            with_consumer_fee: businessSchedule.withConsumerFee,
+            flagged: businessSchedule.flagged,
+            waiting: businessSchedule.waiting,
+            rolled_back: businessSchedule.rolledBack.length,
+            restored: businessSchedule.restored,
+          },
+          restore_recheck: {
+            unchecked: restoreRecheck.unchecked,
+            without_text: restoreRecheck.withoutText,
+            passing: restoreRecheck.passing,
+            failing: restoreRecheck.failing.length,
+            flagged: restoreRecheck.flagged,
+            waiting: restoreRecheck.waiting,
+            rolled_back: restoreRecheck.rolledBack.length,
+          },
+          article_page: {
+            article_fees: articlePage.articleFees,
+            flagged: articlePage.flagged,
+            waiting: articlePage.waiting,
+            rolled_back: articlePage.rolledBack.length,
+          },
+          limit_rollbacks: limitRollbacks.length,
+          limit_rollback_samples: limitRollbacks.slice(0, 10).map((rollback) => ({
+            fee_published_id: rollback.feePublishedId,
+            institution_id: rollback.institutionId,
+            canonical_fee_key: rollback.canonicalFeeKey,
+            fee_name: rollback.feeName,
+            amount: rollback.amount,
+            reason: rollback.reason,
           })),
           category_guard_rollbacks: categoryGuardRollbacks,
           category_guard_failing: categoryGuard.failingFees,
@@ -1025,10 +1184,27 @@ async function executeAgenticStep(
           imported_twin_linked: importedTwins.linked,
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
+          name_retidy: {
+            institutions_checked: nameRetidy.institutionsChecked,
+            messy_names: nameRetidy.messyFees,
+            renamed: nameRetidy.renames.length,
+            skipped: nameRetidy.skipped,
+          },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
           refresh_copy_skipped: refreshCopy.skipped,
           refresh_copy_samples: refreshCopy.samples.slice(0, 10),
+          current_copy: {
+            documents_checked: currentCopy.documentsChecked,
+            unrecognized: currentCopy.unrecognized,
+            stated: currentCopy.stated,
+            failing: currentCopy.failing,
+            flagged: currentCopy.flagged,
+            waiting: currentCopy.waiting,
+            cleared: currentCopy.cleared,
+            taken_down: currentCopy.takenDown.length,
+            confirm_live: currentCopy.confirmLive,
+          },
           newer_copy_live: newerCopy.live,
           newer_copy_documents: newerCopy.documentsChecked,
           newer_copy_unrecognized: newerCopy.unrecognized,
@@ -1064,6 +1240,7 @@ async function executeAgenticStep(
                 category_rejects: feedbackSync.categoryRejects,
                 answer_key_fees: feedbackSync.answerKeyFees,
                 written: feedbackSync.written,
+                relabeled: feedbackSync.relabeled,
               }
             : false,
           source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
@@ -1310,6 +1487,14 @@ async function executeAgenticStep(
           agent_health: result.agentHealth ?? null,
         },
       };
+    }
+    case "content-market-spread": {
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+    }
+    case "content-fee-depth": {
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({
@@ -1975,6 +2160,19 @@ export async function hasQueuedProviderSteps(): Promise<boolean> {
   return Boolean(row);
 }
 
+/** Queued step keys of a run in the order they run. */
+async function peekQueuedStepKeys(runId: number, limit: number): Promise<string[]> {
+  const rows = await sql`
+    SELECT step_key
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     ORDER BY sequence ASC, id ASC
+     LIMIT ${limit}::int
+  `;
+  return rows.map((row) => String(row.step_key));
+}
+
 async function peekNextQueuedStepKey(runId: number): Promise<string | null> {
   const [row] = await sql`
     SELECT step_key
@@ -2003,12 +2201,67 @@ async function providerStepGate(
   return { allowed: true };
 }
 
+/**
+ * About the longest each step runs (p99 over 3 days on prod, 2026-10-07, rounded up). A
+ * step starts only when it can finish by the caller's deadline, so a short step can use
+ * the end of a tick that a long one could not.
+ */
+const STEP_EXPECTED_MS: Record<string, number> = {
+  "discover-paid": 200_000,
+  "registry-cfpb": 180_000,
+  "read-paid": 165_000,
+  read: 110_000,
+  discover: 110_000,
+  "report-render": 110_000,
+  rescue: 110_000,
+  "extract-paid": 80_000,
+  "verify-paid": 80_000,
+  fetch: 60_000,
+  extract: 40_000,
+  publish: 30_000,
+  classify: 25_000,
+};
+/** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
+const DEFAULT_STEP_EXPECTED_MS = 120_000;
+/** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
+const QUICK_STEP_EXPECTED_MS = 30_000;
+const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+
+function isQuickStep(stepKey: string): boolean {
+  return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
+}
+
+/**
+ * Expected time to reach real work: the run's leading quick steps plus the first step
+ * that is not quick. A later run in a tick starts only when this fits, because a run
+ * that ran its quick first steps counts as under way and goes ahead of failed-lane
+ * retries in the next tick's order.
+ */
+export function expectedMsToFirstWork(stepKeys: string[]): number {
+  let total = 0;
+  for (const key of stepKeys) {
+    total += expectedStepMs(key);
+    if (!isQuickStep(key)) break;
+  }
+  return total;
+}
+
+export function expectedStepMs(stepKey: string | null): number {
+  if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
+  if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
+  if (QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix))) return QUICK_STEP_EXPECTED_MS;
+  return DEFAULT_STEP_EXPECTED_MS;
+}
+
 export async function executeAgentRun(
   runId: number,
   options: {
     maxSteps?: number;
     allowProviderSteps?: boolean;
+    /** Epoch ms by which a started step should finish; see STEP_EXPECTED_MS. */
     deadlineAt?: number;
+    /** False for later runs in a tick: then even the first step waits for the deadline. */
+    alwaysRunFirstStep?: boolean;
     /** Leave a paid step queued for a later tick instead of running or skipping it. */
     deferProviderSteps?: boolean;
   } = {},
@@ -2065,13 +2318,28 @@ export async function executeAgentRun(
   let executedSteps = 0;
   let lastResult: AgentRunExecutionResult | null = null;
 
+  if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
+    const keys = await peekQueuedStepKeys(runId, maxSteps);
+    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+      return {
+        runId,
+        status: existing.status,
+        terminal: false,
+        executedSteps: 0,
+        message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+      };
+    }
+  }
+
   for (let index = 0; index < maxSteps; index += 1) {
-    // Past the caller's deadline no further step starts; the run stays queued for the
-    // next tick. The first step always runs so a late tick still makes progress.
-    if (index > 0 && options.deadlineAt != null && Date.now() >= options.deadlineAt) break;
+    // A step that could not finish by the caller's deadline waits for the next tick; the
+    // run stays queued. The tick's first step always runs so a late tick still progresses.
+    const nextStepKey = await peekNextQueuedStepKey(runId);
+    const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
+    if (!firstOfTick && options.deadlineAt != null
+      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) break;
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
-    const nextStepKey = await peekNextQueuedStepKey(runId);
     if (nextStepKey && isProviderStep(nextStepKey)) {
       if (options.deferProviderSteps) {
         return {
@@ -2179,7 +2447,7 @@ export async function executeQueuedAgentRuns({
    * their next paid step queued. Null means every run may.
    */
   providerRunLimit?: number | null;
-  /** Epoch ms after which no new step or run starts (the first run still gets its first step). */
+  /** Epoch ms by which started steps should finish (the first run still gets its first step). */
   deadlineAt?: number;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
@@ -2188,6 +2456,8 @@ export async function executeQueuedAgentRuns({
   const rows = await sql`
     SELECT r.id
       FROM agent_runs r
+      LEFT JOIN agent_state_lanes lane
+        ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
      WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.status = 'queued'
        AND (
@@ -2206,9 +2476,42 @@ export async function executeQueuedAgentRuns({
               )
          )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page, while
-     -- the pipeline backlog keeps ~20 lane runs queued (about 50 minutes of work).
-     ORDER BY (r.run_kind = 'report') DESC, r.started_at ASC, r.id ASC
+     -- Report runs go first: someone pressed Generate and is watching the page. Then a
+     -- run already under way finishes before a new one starts, then a direct run for one
+     -- institution, then a retry of a failed
+     -- state lane, then a lane with a hand-found schedule to fetch, then any run waiting
+     -- over an hour, then state lanes by Atlas's priority score (open work, report
+     -- requests, near-ready markets), then launch order.
+     ORDER BY (r.run_kind = 'report') DESC,
+              EXISTS (
+                SELECT 1 FROM agent_run_steps done
+                 WHERE done.agent_run_id = r.id AND done.status <> 'queued'
+              ) DESC,
+              -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
+              -- a hand-found schedule or a large bank missing its overdraft fee.
+              COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC,
+              -- A state whose last finished lane run failed retries ahead of routine passes.
+              (r.run_kind = 'workflow_lane' AND (
+                SELECT prior.status FROM agent_runs prior
+                 WHERE prior.run_kind = 'workflow_lane'
+                   AND upper(btrim(prior.state_code)) = upper(btrim(r.state_code))
+                   AND prior.id < r.id
+                   AND prior.status IN ('completed', 'failed')
+                 ORDER BY prior.id DESC LIMIT 1
+              ) = 'failed') DESC,
+              -- A state holding a fee schedule found by hand (Magellan's operator list) that
+              -- has not been fetched yet goes next, so those links don't wait behind routine
+              -- passes. The lane's own fetch, read and extract steps then pick it up.
+              (r.run_kind = 'workflow_lane' AND EXISTS (
+                SELECT 1 FROM institution_additional_sources hand
+                  JOIN institution_sources inst ON inst.id = hand.institution_id
+                 WHERE hand.found_by_strategy = 'discover.operator_schedule'
+                   AND hand.status = 'found'
+                   AND upper(btrim(inst.state_code)) = upper(btrim(r.state_code))
+              )) DESC,
+              (r.started_at < NOW() - INTERVAL '1 hour') DESC,
+              COALESCE(lane.priority_score, 0) DESC,
+              r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
   // Runs advance one after another. Running state lanes side by side held several
@@ -2218,9 +2521,9 @@ export async function executeQueuedAgentRuns({
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
   for (const row of rows) {
-    // The first run always gets a step; later runs start only before the deadline, so
-    // a larger run limit fills the tick's time budget without running past it.
-    if (results.length > 0 && deadlineAt != null && Date.now() >= deadlineAt) break;
+    // The first run always gets a step; a later run starts a step only when that step can
+    // finish by the deadline, so a larger run limit fills the tick without running past it.
+    if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -2239,6 +2542,7 @@ export async function executeQueuedAgentRuns({
         maxSteps: maxStepsPerRun,
         allowProviderSteps,
         deadlineAt,
+        alwaysRunFirstStep: results.length === 0,
         deferProviderSteps: allowProviderSteps && !providerSlot,
       }),
     );

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON, RULES_RECHECK_STRATEGY } from "./rules-recheck";
+import { trainCategoryModel } from "@/lib/agents/darwin/category-model";
+
+import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON, RULES_RECHECK_RESTORED_FLAG, RULES_RECHECK_STRATEGY } from "./rules-recheck";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -62,6 +64,8 @@ describe("Hamilton rules re-check", () => {
         live(1, "stop_payment", "Stop Payment", "30.00"),
         live(2, "bill_pay", "Copy of Draft (Check)", "3.00"),
         live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00"),
+        live(4, "stop_payment", "Stop Payment", "25.00"),
+        live(6, "overdraft", "Copy of Draft (Check)", "3.00"),
       ],
       texts,
     );
@@ -74,8 +78,15 @@ describe("Hamilton rules re-check", () => {
     });
 
     expect(result.documentsChecked).toBe(1);
-    expect(result.liveFeesChecked).toBe(3);
-    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([2, 3]);
+    expect(result.liveFeesChecked).toBe(5);
+    // Down only when the second look fails too: $25 is not on the Stop Payment row, and the
+    // category guard rejects "Copy of Draft (Check)" as an overdraft fee.
+    expect(result.rollbacks.map((rollback) => [rollback.feePublishedId, rollback.secondLook])).toEqual([
+      [4, "source_trace:amount_not_the_fee"],
+      [6, "category_guard:name_unsupported"],
+    ]);
+    // Still traced, and no guard covers them: live until the next Knox version settles them.
+    expect(result.disputed.map((fee) => fee.feePublishedId)).toEqual([3, 2]);
     const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
     expect(query).toContain("fr.source = 'knox'");
     expect(query).toContain("knox_paid_extraction");
@@ -92,7 +103,7 @@ describe("Hamilton rules re-check", () => {
   it("keeps a fee Knox's learning reader re-filed when today's rules read it under the rejected category", async () => {
     // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
     const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
-    const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
+    const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "4.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), refiled, unrelated], texts);
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
@@ -100,6 +111,51 @@ describe("Hamilton rules re-check", () => {
     expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([3]);
     const [query] = db.unsafe.mock.calls[0] as [string];
     expect(query).toContain("knox_lesson:%");
+  });
+
+  it("never takes a fee down for a text other than the one it was read from", async () => {
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "bill_pay", "Copy of Draft (Check)", "3.00", "older")], texts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", dryRun: true });
+
+    expect(result.rollbacks).toEqual([]);
+    expect(result.textGone).toBe(1);
+  });
+
+  it("restores a fee whose own text is gone only when the newest text clears the restore bar", async () => {
+    const newest = "Stop Payment | $30.00\nReturned Item | $25.00\nLetter of Protest | $10.00";
+    const newestTexts = [
+      { id: 1, source_document_id: 9, text_hash: "zzz-old-read", normalized_text: "Returned Item | $20.00" },
+      { id: 2, source_document_id: 9, text_hash: "abc", normalized_text: newest },
+    ];
+    const categoryModel = trainCategoryModel([
+      { name: "Returned item", categoryKey: "nsf", count: 40 },
+      { name: "Stop payment", categoryKey: "stop_payment", count: 50 },
+      { name: "Gift card", categoryKey: "gift_card_purchase", count: 40 },
+      { name: "Protest letter", categoryKey: "legal_process", count: 40 },
+    ]);
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Payment", "30.00"),
+        live(2, "nsf", "Returned Item", "25.00", "older", true),
+        // Stated in the newest text, but filed under a category the model rejects (NY answer key).
+        live(3, "gift_card_purchase", "Letter of Protest", "10.00", "older", true),
+        // A $0 row never comes back this way.
+        live(4, "atm_non_network", "ATM services are UNLIMITED &", "0.00", "older", true),
+      ],
+      newestTexts,
+    );
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: true, categoryModel });
+
+    expect(result.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "newer_text"]]);
+  });
+
+  it("never restores a fee whose own text is gone without Darwin's category model", async () => {
+    const newest = [{ id: 2, source_document_id: 9, text_hash: "abc", normalized_text: "Stop Payment | $30.00\nReturned Item | $25.00" }];
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "nsf", "Returned Item", "25.00", "older", true)], newest);
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 308, batchId: "b", dryRun: true, categoryModel: null });
+    expect(result.restores).toEqual([]);
   });
 
   it("keeps one live copy of a fee the document states once and asks Knox for the fees it misses", async () => {
@@ -168,9 +224,43 @@ describe("Hamilton rules re-check", () => {
     const writes = JSON.stringify(db.mock.calls);
     expect(writes).toContain("SET rolled_back_at = NULL");
     expect(writes).toContain("SET review_status = 'verified'");
-    const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts"));
+    const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts") && !String(call[0]).includes("unnest"));
+    // The restored fee's bank is marked due for the source check again.
+    expect(db.mock.calls.some((call) => String(call[0]).includes("INSERT INTO pipeline_attempts") && call.includes("hamilton.rules_recheck"))).toBe(true);
     // safe_deposit_box $30 is read under another name: still missing, so Knox re-reads the text.
     expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 0, restored: 1, missing_fees: 1 });
+  });
+
+  it("restores a disputed takedown only when it meets the restore bar, and logs why", async () => {
+    const barText = "Stop Payment | $30.00\nReload Travel Money Card | $5.00 | Per Card\nCourier Pickup Service | $12.00";
+    const barTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: barText }];
+    const categoryModel = trainCategoryModel([
+      { name: "Reload money card", categoryKey: "prepaid_card_reload", count: 30 },
+      { name: "Card reload", categoryKey: "prepaid_card_reload", count: 30 },
+      { name: "Courier service", categoryKey: "courier", count: 30 },
+      { name: "Stop payment", categoryKey: "stop_payment", count: 50 },
+    ]);
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Payment", "30.00"),
+        // Today's rules do not read it, but it traces, its row is its own and the model agrees.
+        live(2, "prepaid_card_reload", "Reload Travel Money Card", "5.00", "abc", true),
+        // The model files a courier pickup elsewhere: it stays down.
+        live(3, "prepaid_card_reload", "Courier Pickup Service", "12.00", "abc", true),
+      ],
+      barTexts,
+    );
+    db.mockImplementation(((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(barTexts);
+      if (query.includes("RETURNING fp.fee_published_id")) return Promise.resolve([{ fee_published_id: 2, lineage_ref: 1002 }]);
+      return Promise.resolve([]);
+    }) as never);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: false, categoryModel });
+
+    expect(result.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "restore_bar"]]);
+    expect(JSON.stringify(db.mock.calls)).toContain(`${RULES_RECHECK_RESTORED_FLAG}:restore_bar`);
   });
 
   it("re-checks documents whose live fees were all taken down", async () => {
@@ -184,7 +274,7 @@ describe("Hamilton rules re-check", () => {
   });
 
   it("only reads in a dry run", async () => {
-    const db = createDbMock([live(3, "overdraft", "per Overdraft 3\"X10\"X 21\"", "30.00")], texts);
+    const db = createDbMock([live(4, "stop_payment", "Stop Payment", "25.00")], texts);
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
 

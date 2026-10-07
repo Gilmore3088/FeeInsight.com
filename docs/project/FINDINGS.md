@@ -13,6 +13,80 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
+**What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
+queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
+33 of 36; 66 of the 69 non-ok attempts were `wrong_document` on reopened pages whose link names
+the fee page but whose own text has no fees. None were timeouts, bot blocks or empty renders.
+Of the 66: their routes found a linked scanned PDF on 9 (6 already read as the bank's own
+documents, 3 never read: bogotasavingsbank, 1streetcu, educacu), and most of the rest were landing
+pages whose schedule sits behind a link with no ".pdf" ending (Magellan's crawl shows
+visionsfcu.org/documents/general/service-charge-fee-schedule-effective-june-2026 and
+cu-rockies.org/documents/fee-schedule), plus "available on request" and error pages that are
+correctly not fee pages. Two were real fee tables (emb.bank's 30 rows like "Cashier's check | 5.00").
+**Cause:** the fallback only followed links ending in ".pdf" or labelled print/download, never
+OCR'd a linked scan, and the fee-page check only counted amounts written with "$".
+**Fix:** this PR: follow links that name the fee schedule, OCR a linked scan, skip links the bank
+already has as documents, count bare amounts in fee table cells (15 rejected texts, all fee
+schedule URLs, would now pass), and reopen each such page once per fallback version (144 pages).
+**Lesson:** before calling a reader's non-ok outcomes failures, split them by what the page is: a
+`wrong_document` on a page with no fees is a correct answer, and the fix is to follow where the
+page points, not to count it differently.
+
+## 2026-10-07: Call report rows for closed institutions store no revenue, and the two charters define revenue differently
+**What happened:** building the fee dependence study, 4,248 of 7,747 FDIC rows for 2010-12-31 had
+`total_revenue` (read-only query on `institution_financial_records`, 05:20 UTC). The rest belong to
+institutions no longer in `institution_sources`, which the loaders store with `institution_id` NULL
+and only a few columns. Separately, banks' `total_revenue` is net interest income plus noninterest
+income (FDIC NIMQ + NONIIQ), while credit unions' is gross interest income plus noninterest income
+(NCUA 115 + 117), and the credit union fee line (131) is all fee income, not only deposit service
+charges.
+**Cause:** the `unmatched` insert in `fdic-financials.ts` and `ncua-financials.ts` keeps only assets,
+deposits, loans, net income and service charges; `raw_json` still holds every field. The definitions
+follow what each regulator files.
+**Fix:** Hamilton's fee dependence study (this PR) reads each filing's raw fields, so closed and
+merged institutions count and the series has no survivor bias; it reports banks and credit unions
+side by side and never pools them.
+**Lesson:** a study over history must read the raw filing fields, not only the matched-row columns,
+and must not compare a bank ratio with a credit union ratio as if they were the same measure.
+
+## 2026-10-07: Admin Today read job health from the retired workers' markers
+**What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
+including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
+run Aug 12" and "Hamilton monthly pulse is overdue", while prod showed Atlas lanes completing at
+03:26 UTC Oct 7, agent steps finishing every few minutes, the registry sync at 03:17 and a monthly
+pulse completed Oct 6 06:07.
+**Cause:** `getJobFreshness` read `workers_last_run`, which only the retired Modal workers wrote; its
+newest row is Aug 13. The report freshness gate read the same table for its Atlas health check.
+**Fix:** job health and the report gate now read `agent_runs`, `agent_run_steps` and `report_jobs`
+(this PR). The tick is only overdue while steps are queued.
+**Lesson:** when a runtime is retired, grep for every table it wrote and move each reader to the new
+ledger in the same change.
+
+## 2026-10-07: postgres.js sends numbers untyped, so a CASE of them is text
+
+Darwin's release review read no lessons on prod: all 32 reviews after PR 351 recorded `lessons: 0` though the
+store held 27 lessons for those categories. The query compared `row_number()` with
+`CASE ... THEN ${n} ELSE ${m} END`. postgres.js sends JS numbers with no type, Postgres resolves a CASE of
+untyped values to text, and `bigint <= text` fails. The loader caught the error and returned no lessons.
+Fix: cast numbers used in CASE or COALESCE (`${n}::int`). A loader that falls back on error should log why,
+and its first prod run should be checked for a non-zero count, not just the presence of the field.
+
+## 2026-10-07: A fee's own schedule line is not enough context to judge it
+**What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
+check of 20 random source-check takedowns (24 hours to 02:50 UTC, `wrong_amount`/`threshold`)
+read from Knox's one-line excerpt called 13 real prices. Read against the full page by the Accuracy
+thread, only 4 were real prices wrongly taken down ("Wire Transfer Outgoing $20.00"; PR 341), 5
+were right to come down because the price belonged to a neighbouring row or column ("Deposit
+return item $10" was the early-close price; the $5/Mo was the Bill Pay column), 1 is a rate refused
+by design and 3 have garbled names.
+**Cause:** a single extracted line drops the rows around it, which is where a misplaced price shows.
+**Fix:** Darwin's release review now reads the schedule rows around a held fee's line
+(`scheduleContext`, 3 rows each side). Its lessons leave out the source check's amount judgements
+until PR 341's fixes are proven.
+**Lesson:** judge a price against the rows around it in the stored page, never a one-line excerpt;
+and check a hand-check's own evidence before reporting a rate from it.
+
 ## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
 **What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
 ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
@@ -26,8 +100,12 @@ wrong takedown showed up.
 at least 12 hours on, that fails it again takes it down. Of 1,345 source-check takedowns later
 restored, 1,311 came back within 12 hours (453 within one), so the 12-hour wait would have kept
 about 97% of them live instead of flickering off and on. Wired into the source check and the category guard, and the
-category guard now restores earlier takedowns that today's guard passes. The rules re-check,
-outlier range and off-taxonomy checks are next.
+category guard now restores earlier takedowns that today's guard passes (PR 324). The rules
+re-check (4,580 takedowns, 184 later restored) gets its second look in PR 320: an independent
+check (the source trace or the category guard) must fail too. The outlier range (768 takedowns) and off-taxonomy (94)
+checks never had a restore, because their verdict only changes when a range or the taxonomy
+changes; they now restore a takedown that passes today (0 qualify as of 02:40 UTC Oct 7). A second
+look would add nothing there: the same amount fails the same range 12 hours later.
 **Lesson:** every new takedown path goes through `secondLook` and has a restore path.
 
 ## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
@@ -68,6 +146,51 @@ selected once more when nothing on their own document is verified as the same fe
 01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
+## 2026-10-07: Ticks sat idle up to half the time because no step started after 150 s
+**What happened:** at 04:00 UTC Oct 7, 43 lane runs were queued and about 6 finished an hour.
+The tick audit rows (`api_route_audit_events`, 02:55 to 04:05) show ticks lasting 150 to 294
+seconds out of each 300. Steps ran about 170 seconds per tick. A full lane pass is about 4
+minutes of steps but took 10 to 15 minutes, because it spread over three ticks.
+**Cause:** the tick started no new step 150 seconds after it began, however short the step.
+A 6-second publish step waited for the next tick just like a 190-second paid search.
+**Fix:** a step starts only when its expected runtime (p99 over 3 days, `STEP_EXPECTED_MS`
+in run-store) fits before 270 seconds. Short steps use the end of a tick, and long ones
+still start early enough to finish inside the 300-second limit. Runs stay serial, so the
+database load per moment is unchanged. A state whose last finished lane run failed now
+retries ahead of routine passes.
+**Follow-up (04:30):** 22 of the 27 schedules found by hand (`discover.operator_schedule`, among
+them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
+their state's lane run fetches them and those runs waited in line. Next in the order after
+retries now comes a lane whose state holds a hand-found schedule with status `found`.
+**Follow-up (05:40):** after the change, runs per hour stayed at 6 (04:00 to 05:00). Two
+causes. A later run in a tick ran only its quick first steps (enhance, state-expert), then
+counted as under way and went ahead of the failed-lane retries (TX, CA, MI, NY, WI did this
+from 04:39). A later run now starts only when its quick steps and its first real step fit
+before the deadline. And a full pass is about 8 to 10 minutes of steps, mostly the paid
+search and paid read (140 to 290 seconds each), so serial runs top out near 6 an hour. The
+daily rule also put 36 of 55 states on daily full passes for any bank due a paid find (HI
+had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs weekly
+(21 daily states on the Oct 7 numbers).
+**Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
+tick latency in `api_route_audit_events` before guessing where the time goes.
+
+## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
+**What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
+MN was queued at 00:40 and started at 02:21. NE, queued at 00:40, had not started at 02:35.
+In the 3 hours before, lane steps used about 113 minutes. Full passes took about 10 minutes
+each, so the executor finished about six an hour.
+**Cause:** the scheduler launched up to 3 lanes every 5-minute tick (36 an hour). It only
+skipped a state whose own run was still active, so the queue filled to nearly every lane.
+The executor took queued runs oldest first. The lane priority order (PR 262, PR 308) only
+chose which lanes got launched, and then every lane waited its turn in the queue.
+**Fix:** the scheduler launches only while fewer than `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane
+runs are queued or running. Each free slot goes to the highest-priority due lane. The
+executor finishes a run it has started before starting a new one. After that it takes runs
+waiting over an hour, then lanes by priority score. Lanes still cannot all run hourly: 55
+lanes at about 10 minutes per full pass is more than an hour of serial work.
+**Lesson:** a queue that refills faster than it drains turns any priority into launch order.
+Cap what is queued to about one tick's worth of work, and order at the point of execution.
 
 ## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
 **What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
@@ -389,6 +512,42 @@ Funnel fixes PR (this branch).
 **Fix:** freshness search in `magellan/discovery.ts` (this PR): one re-search per stale bank in spare capacity, an hourly slot at a time (48 ms per slot); the link changes only when a different page passes the fee-page check.
 **Lesson:** a link that still loads is not a current schedule. Check age, not just reachability.
 
+## 2026-10-06: Ask Hamilton failed on the preview and saved an empty answer
+**What happened:** At 03:01 UTC James asked a question on the PR 89 preview. The route audit
+(`api_route_audit_events`) shows `/api/research/hamilton` answered 503 in 160 ms, and
+`ai_api_usage_events` shows no provider call. The page showed a red error and an empty
+"Hamilton's view" card, and it said "Analysis saved to workspace".
+**Cause:** Vercel preview deployments have no `ANTHROPIC_API_KEY`, so the route stops before any model
+call. The page's `onFinish` ran on the failed reply and saved an empty analysis, and its error text
+didn't say why.
+**Fix:** PR 89 ignores failed or empty replies (no answer shown, nothing saved) and says plainly when
+the AI isn't switched on for a preview. The Ask screen was rebuilt as a memo. A preview still can't
+answer questions; feeinsight.com can.
+**Lesson:** Test paid-model screens on production, or add a preview-scoped key in Vercel if James
+wants previews to answer. Never save or show a reply the stream marked as an error.
+
+## 2026-10-06: A paid user could be offered checkout a second time
+**What happened:** the full funnel audit (finding 9) traced a path where someone who had just paid
+opened a Pro page before Stripe's webhook marked them active. The Pro gate sent them to
+/subscribe, which offered checkout again with no word on why they were there (finding 12). No
+double charge is known; the path was found by reading the code.
+**Cause:** only /account/welcome asked Stripe directly whether a user had paid. Every other page
+trusted the webhook-written status, and /subscribe never explained the redirect.
+**Fix:** PR 201 (merged): `activateIfPaid` in `src/lib/subscription-activation.ts` runs on
+/subscribe before plans are shown, so a paid user goes straight back to the page they opened. PR 89
+dropped its own copy of the check in favour of this one, and its /pro redirects now pass a reason
+that /subscribe shows in one line ("activating" for a Stripe customer, otherwise "pro_required").
+**Lesson:** any page that can sell must first check whether the person has already paid.
+
+## 2026-10-05: A supply price was published as a Night Deposit fee
+**What happened:** Hamilton's briefing for Texas National Bank of Jacksonville led with "Night
+Deposit $3.00 against a $5.00 median". The $3.00 row in `published_fee_catalog` is "Zipper Bags",
+the price of deposit bags the bank sells, filed under `night_deposit`.
+**Cause:** not yet traced; most likely the category rule lets product and supply prices that sit
+near a fee name into that category.
+**Fix:** none yet; reported to Improving Hamilton for whoever owns Knox and Darwin.
+**Lesson:** a headline fee should be checked against its row's fee name before it leads a page.
+
 ## 2026-10-06: Magellan stopped at a homepage that blocks bots, and searched misspelled websites
 **What happened:** the Magellan audit (MG-7, MG-8) found about 120 bank homepages a day answer
 our crawler with 403 or a bot page, so `discover.homepage_links` finds nothing; and 43 active banks
@@ -494,6 +653,7 @@ the URL as rejected and marks the bank due a search (`failure_reason = 'magellan
 is left alone because a bot block can pass. PR 165's discovery condition stays for old crawler links.
 **Lesson:** every stage that learns a link is gone must hand the bank back to discovery; a retry
 loop on a dead address is a silent failure.
+
 ## 2026-10-06: Slow bank sites were cut off at the same point on every discovery search
 **What happened:** the Magellan audit (read-only, 6 Oct) counted 513 active banks with a website and no
 fee link whose last free search ended `retry_after` because the `discover` step ran out of time partway
@@ -672,6 +832,9 @@ read from stored rows, and finished quarters were not due again for a year.
 the registry scheduler re-pulls succeeded quarters recorded under an older parser version
 (`REGISTRY_PARSER_VERSIONS`), as ordinary visible runs, newest first.
 **Lesson:** when a parser learns a new field, bump its version so history fills in through runs.
+**Follow-up (04:10 UTC Oct 6, read-only check):** `overdraft_revenue` and `nsf_revenue` are still
+empty on every fdic and ncua row from 2025 Q1 to 2026 Q2, so no screen can show overdraft or NSF
+income yet. Hamilton's My fees says so under its filing exhibits rather than leaving a blank.
 
 ## 2026-10-06: Supabase Preview fails on any PR that adds a migration
 **What happened:** PR 170's "Supabase Preview" check failed with status MIGRATIONS_FAILED, and the
@@ -1189,6 +1352,7 @@ records the guard version with each decision and re-selects a category rejection
 version rises (now v9, which also adds a minimum-balance rule). Other decided rows stay closed, so
 `duplicate_in_batch` rows are never re-verified.
 **Lesson:** a "bump to re-check" version constant needs a test that the re-check really happens.
+
 ## 2026-10-06: Rosetta rejected fee pages whose fees load by script
 **What happened:** the Rosetta audit compared stored text with 91 Texas fee schedules read
 independently. Two of them (atfcu.org/fees, firstcommand.com/.../fees/) were real schedules that
@@ -1745,6 +1909,16 @@ taken down.
 **Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
 stay broken without anyone seeing them.
 
+## 2026-10-07: The newer-copy check could judge a copy Knox never read
+**What happened:** Knox reads a stored text once, so a newer copy whose text is byte-identical to
+one it already read (same `text_hash`, for example Wailuku FCU documents 2917 and 16048) has no fee
+rows of its own. The newer-copy check judged fees by the newer copy's text only, so it never retired
+anything on identical text, but nothing stopped it from judging a copy Knox had not read, or retiring
+a fee Knox did read from the newer text under another category or as a held row.
+**Fix:** the check skips pairs whose texts are identical, waits until Knox has rows for the newer
+text (from any copy with the same `text_hash`), and never retires a fee whose name or amount Knox
+read from that text. These guards only retire less (version 1 retired one fee in total), so the
+strategy version is unchanged. Retires stay logged with a reason and restorable.
 ## 2026-10-07: the free companion finder never reached most hidden banks
 **What happened:** the companion finder (`second-document.ts`) only takes banks in the step's own
 state. On 6-7 Oct it checked 507 banks in 30 smaller states and found pages at 353 (1,307 pages, $0),
@@ -1789,11 +1963,14 @@ newer-copy check and identical-copy move then handle the fees, as for any supers
 **Switched on (follow-up PR):** five shadow fetch steps on prod (01:50 to 02:20 UTC, 7 Oct) logged the
 same 109 pairs each time, every one a true respelling (www, :443, http, trailing slash, #fragment),
 including Knox's examples (barcons.org 3307 to 16035, bankofprotection 1106 to 15935). No current copy
-was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 667 live fees sit
-on the older copies. Superseding changes no fee: Hamilton's refresh moves a live fee only when the
+was a thin copy; 98 were read and 11 were wrong-document pages in both spellings. 277 live fees sit
+on the older copies (the PR said 667; a recount by distinct live fee gave 277). Superseding changes no fee: Hamilton's refresh moves a live fee only when the
 current copy reads the same line, and its newer-copy check still pairs exact addresses, so no fee is
 taken down by this. The ranking now puts thin copies last. Knox counted 155 pages and 462 documents
 because it included failed and already-superseded copies; only current copies need linking.
+**Proven on prod:** run 1936's fetch step (02:51 UTC, 7 Oct) logged "Superseded 110 current cop(ies)";
+docs 3307, 1106 and 2917 now point at 16035, 15935 and 16048. Of the 277 live fees on the older copies,
+none was taken down after the switch (checked 03:10 UTC).
 **Lesson:** "same page" has to mean the same normalized address everywhere, not the same string.
 
 ## 2026-10-07: the paid schedule search sent SQL with a comparison cut short
@@ -1806,6 +1983,42 @@ comparison without its right-hand side. The fixed query was run read-only on pro
 12 rows.
 **Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
 merging.
+
+## 2026-10-07: transfer limits were live as prices
+**What happened:** Knox read limit lines as fees and nothing downstream caught them, because the
+categories involved (Zelle, mobile deposit, bill pay, cash advance) have no amount range and fall
+back to the $2,500 default. Live examples: "Zelle® transfer limit" $1,000, "Mobile Deposit Checks
+are limited to" $1,000, "Cash Advance: Customer" read from "$2,500 Limit". Prod dry run (read-only,
+7 Oct ~01:50 UTC): 22 live fees.
+**Fix:** Hamilton's limit guard (`hamilton/limit-guard.ts`) rolls them back each publish step,
+archived with a `limit_as_fee:` reason, and refuses new ones at publish. Knox is fixing the read.
+**Lesson:** a category without an amount range accepts any figure; a limit and a price only differ
+in the words next to the figure.
+
+## 2026-10-07: three gaps in Hamilton's own bookkeeping
+**What happened:** (1) The feedback sync named a check after each takedown reason, so PR 311's
+refresh closes ("refreshed by #69017") wrote 632 learning rows, each with its own check name and a
+`wrong` signal, though a refresh means Knox and Darwin were right; 6 more came from "older document
+than #N". (2) The newer-copy check and the rules re-check restore older rows without a new highest
+fee id, so the source check, which re-checks a bank only when that id changes, left restored fees
+unchecked. (3) The rules re-check judged a fee against the document's latest text when its own text
+was gone, so it could take a fee down for what another text says: 438 of 2,158 re-check takedowns
+made 6-30 hours after publishing (Oct 5-7). The rest were newer Knox versions reading the same text
+differently (the burst on Oct 5, 16:00-23:00 UTC, followed a Knox release); only 20 were the
+hint-category case PR 316 fixes.
+**Fix:** reasons that point at a row get one check name (`hamilton.refresh_copy`,
+`hamilton.duplicate_collapse`) with the id in evidence, refreshes count as `right`, and the sync
+relabels the old rows (kept, old name in evidence). Restores leave a marker the source check's due
+query honors. The re-check only takes a fee down for its own text, and brings back the up to 552
+takedowns (195 banks) it judged against another text, each re-judged by the source check.
+Then a second look before any re-check takedown (coordinator, 7 Oct): a fee Knox's newer rules no
+longer read from its own text comes down only if its name and price no longer trace there or the
+category guard rejects it. Sample of 60 past re-check takedowns (read-only, text near each fee):
+40 would have stayed live. Some of those 40 are wrong fees the category guard does not cover (a
+safe deposit size row filed as a cash advance, "Printed Account History" as an ACH return), so
+they wait for the next Knox version instead of coming down.
+**Lesson:** an identifier never belongs in a name something groups by, and a "due" test keyed on
+the highest id misses anything that comes back with an old id.
 
 ## 2026-10-07: Rosetta's free readers looked worse than they were, and reopened pages were never read
 **What happened:** a red-team check found free OCR succeeding on 30 of 146 documents, the
@@ -1867,6 +2080,52 @@ restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42
 balance (62%) are still the weakest reads.
 **Lesson:** a learning signal has to say whose mistake it records.
 
+## 2026-10-07: a price charged per $100 of the item was published as a flat fee
+**What happened:** a spot check of 10 fees source check v5 restored found two at one credit union
+("Cashier Check - All Others (per $100.00) $1.00", same for money orders) live as a flat $1. A
+query of live flat fees found one more: a check-cashing row "(NOT ON US- PER $100)" that took the
+$30 of a 3x5 safe deposit box printed beside it.
+**Cause:** Knox's rules strip dollar figures from a name, leaving "(per )", and keep the price.
+`checkFeeAgainstSource` read "(per $100.00)" as a note on the name (v5), so nothing objected.
+**Fix:** the shared check refuses a price whose own label says "per $N" (`priced_per_amount`);
+source check v6 re-checks every institution, so the live ones get the second look and then come
+down, archived. Knox, Darwin and Hamilton all read through the same check, so new reads stop too.
+**Lesson:** a figure in a fee's label is either a band, a limit or a basis; the reader has to
+decide which before it calls the price flat.
+
+## 2026-10-07: the source check took down real prices in five layouts
+**What happened:** Darwin hand-checked 20 recent `source_check_untraceable` takedowns: 13 looked
+like real prices. Re-running today's reader over all 424 such takedowns from the last 24 hours
+found two causes. First, v5 had re-checked only 1,523 of 3,296 institutions, so many fees its fixes
+already read were still down. Second, five layouts it still could not read: "$.50" (no leading
+zero), a price with a unit and a qualifier under its name ("$5.00 per month for each acct.,
+following ..."), "Fee $35.00" under a name, "failure to maintain $1,000 daily balance | $3.00"
+(the balance read as a band), and a name wrapped onto the next line ("Replacement Key (1 key |
+$25.00" / "lost)") whose open parenthesis made the price look like a note.
+A second pass over two samples of the fees still down found more: a column heading repeated
+on every row ("Name" / "Fees & Charges" / "$2.00", one credit union's whole schedule), an
+"Area | Per | Fee" table one cell per line, "Fee @$20 per hour", a free allowance in a note
+("(first 6 free)" / "$1.00"), "$200+", "<$100" and a plural "(s)" read as a note.
+**Fix:** the shared reader reads all of these (source check v6); 99 of the 384 takedowns with stored
+text now trace. Spot checks: 19 of 20 restored fees real (the miss: "$5.00 or 2% cash advance"
+shown as its $5 minimum), 34 of 36 from the second pass real. Of Darwin's 13, 4 now trace; 5 are
+right to stay down on the full page (Darwin judged from Knox's excerpt: the price belonged to the
+next row or column); 1 is a rate per $50 (refused by design); 3 have garbled names. Of a fresh
+random 20 still down, 15 are rightly down; the 5 misses are two-column layouts and names glued to
+a neighbouring fee, which the reader does not untangle yet. v6 re-checks banks with source-check takedowns first, so the restore
+runs through the normal check, logged, with `hamilton.restore` rows in `pipeline_feedback`. The
+12-hour second look (PR 324) has gated every source-check takedown since 02:32 UTC.
+**Lesson:** after a reader version bump, count how far the re-check has got before judging what
+it restores; and sample takedowns, not just live fees, each time the reader changes.
+**Follow-up (v7):** a two-column page flattened row by row interleaves two fee lists
+("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" / "($15.00 Minimum) | IRS or Court-ordered
+Garnishments ... $100.00"), so a right-column fee's name and price sit on rows of other fees. The
+reader now also reads each column top to bottom when most two-cell rows carry words in both cells
+(a table's "Name | $2.00 per page" price cell is never split off), and joins a name that runs onto
+the next row ("PROCESSING OF LEVIES IR"). Over the same 424 takedowns, 6 more trace (105): 5 real,
+1 a non-customer price. Still not read: two columns interleaved inside one cell ("Overnight Rush
+Check or Zelle | ..." / "$14.95/ ea.") and names glued to the previous fee's "Free for age 60+".
+
 ## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
 **What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
 transfer limit $1,000", "Mobile Deposit Checks are limited to $1,000", "No Bounce Courtesy Pay
@@ -1880,6 +2139,38 @@ categories and fees for going past a limit. The paid reader rejects the same row
 free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
 **Lesson:** a price beside a name is the fee only when the name names a charge. Words like
 "limit", "limited to" and "maximum load" mean the figure is a ceiling.
+
+## 2026-10-07: Magellan's outcome ledger judged one 24th of each state, and never taught from companion pages
+**What happened:** the ledger (`magellan.link_yield`) is what lets Magellan learn which links work. Each
+discover step judged only banks whose id mod 24 matched the UTC hour, inside the step's state. A state
+lane runs about once a day, often at the same hour, so it judged the same 24th of the state every time.
+On prod, 781 banks had ever been judged, and only 19 of the 714 companion links Knox had read. The free
+platform finders also learned paths only from each bank's main link, so a schedule found by the paid
+search, the companion finder or a person (`institution_additional_sources`) never taught them anything.
+The freshness search had the same slot inside its state filter.
+**Fix:** a state's step judges and checks its whole state (`stepSlot`); steps without a state keep the
+hourly slot. The platform learner now counts judged `consumer_supplement` companions like main links
+(live +2, thin -1, wrong or dead -2); an unjudged companion counts for nothing until it is read.
+**Lesson:** a rotation meant to spread load has to be checked against how often its caller runs. Hand
+fixes only help the next bank when they flow into what the finders learn from.
+
+## 2026-10-07: business fee schedules stayed banks' consumer links, and their prices went live as consumer fees
+**What happened:** Hamilton's audit found Launch CU ($15 NSF) and Community CU of Florida ($30) showing
+prices from their business fee schedules. Both main links are business-only PDFs the old crawler chose
+(no Magellan attempt on either). Magellan's business search, which looks for the consumer schedule, only
+ran in spare discovery capacity, so in states with many banks lacking a link it never ran: 41 of 187
+business-link banks had been searched, 2 replaced. The paid schedule search took business links only
+for $10B+ banks and report requesters. The outcome ledger judged a business link by its live fees, so a
+business schedule with many fees counted as a good link and taught the finders its path.
+On prod (read-only, 7 Oct), 1,028 live fees at 91 banks are read from business-only documents; 61 of
+those fees have a live consumer fee in the same category at the same bank.
+**Fix (Magellan):** three discovery slots per step are kept for business-only links; the paid schedule
+search takes any business-link bank once the free search missed (36 banks today); the ledger judges a
+business-only main link as wrong (`business_schedule`, -2 for its path), so the finders learn not to pick
+such pages. The live business-schedule fees are Hamilton's to archive through its second look (never
+deleted); the dry-run counts above went to the Hamilton publish thread.
+**Lesson:** a link that produces many fees is not a good link if they are the wrong customer's fees.
+
 
 ## 2026-10-07: Fee names ran on into their price
 **What happened:** the audit red team counted 3,599 of 48,297 live Knox fees with a messy name: 1,819
@@ -1904,3 +2195,218 @@ skipped. Category guard v15 rejects the two live rows, so Hamilton's rules re-ch
 Dry run on 794 unverified promotions: 7 go back on hold.
 **Lesson:** sample real prod output right after a rules change ships, and give every automatic
 promotion a way back.
+
+
+## 2026-10-07: Hamilton read a fee missing from the index as "no fee"
+**What happened:** a live Pro answer for Space Coast Federal Credit Union (saved 02:31 UTC Oct 7) to
+"Who in our state changed their NSF fee this year?" said "Your schedule shows no NSF fee" and weighed
+"a no-NSF position". The index has no NSF row for Space Coast at all, which only means the fee is not
+in the index. The memo also opened with what the data could not say. Its local comparison used
+business fee schedules for Launch Credit Union and Community Credit Union of Florida.
+**Fix:** engine 1.9.1 heads a missing fee "Your NSF / returned item fee is not in the index yet". The
+memo writer is told that `own: null` is never a fee of $0, and is asked again when it calls a missing
+fee "no-fee" or opens its summary with a limit. A recorded fee change now counts only when both prices
+were read from the same page.
+**Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
+consumer/business split for the fee readers, not something Hamilton can fix.
+
+## 2026-10-07: Darwin's dispute threshold was too loose to bring takedowns back
+**What happened:** 4,467 live fees were taken down by the rules re-check before the second look
+existed; 3,783 still have their own text and 3,156 have no live copy of the same category and price.
+Restoring those that pass the second look and that Darwin's category model does not dispute
+(probability above 0.05) was hand-checked on a random 20 (read-only, text near each fee): 16 right.
+Misses were a fax service filed as account research, an in-network ATM filed as non-network, a
+price from the next column, and a refundable key deposit. Each tighter filter was checked on a
+fresh random 20: 17, 15, 16, 16 right. Misses included two-column rows ("Legal Processing ... | Stop
+payments ... $35"), $0 in-house services, "Minimum balance of $25", "UPS Fee + $1", "Copy of Money
+Order check" as a money order, and a safe deposit size row joined to "Credit card cash advance".
+**Fix:** the restore bar (`hamilton/restore-guard.ts`): the model's top category must be the
+fee's own at probability 0.8 or more (first pipe cell too, no other cell disputed), the price must
+sit on the fee's own row, and $0, minimum-balance, refundable, limit, markup, cut-off and copy-of
+rows stay down. A fresh random 20 that passed it: 19 right (bar 18); the miss, a reproduction of
+cashier's checks filed as a cashier's check, led to the copy-of rule. About half of the ~1,400 rows
+the database-side part of the bar keeps passed the full bar in two samples (24 of 50), so roughly
+700 should come back; that is an estimate, and the first run's `restored_by_reason` gives the count.
+**Lesson:** a dispute threshold tuned to flag fees is not a bar for restoring them; restoring
+needs positive agreement, measured on fresh samples rather than the sample a filter was tuned on.
+
+## 2026-10-07: Limit wordings v28 missed
+**What happened:** v29's first prod run (02:55 UTC, 50 pages, 241 rows) still raised six limits as
+fees: four "the limit will increase to $500/$1,500" rows filed as overdraft and "Daily ATM Limits
+($/#)" at $505. v28's `namesALimit` only knew a limit followed by "is/are/to/of", and a trailing
+note only when it began "per/daily/each/for". A sixth row, "Money Market Minimum Balance Fee if"
+at $2,500, is a balance threshold read as a fee and is not fixed here.
+**Fix:** Knox v30 adds "will increase to" / "will be increased (raised) to" after a limit and a
+"($/#)" note to `namesALimit`.
+**Lesson:** prove a rules change on its first prod run, not only on the answer keys: prod pages carry
+wordings the keyed schedules lack.
+**Follow-up (v31):** v30's first prod run (03:21 UTC, 362 rows) had none of these wordings but read
+an ATM rebate cap ("The maximum rebate per 12-month cycle" $180/$240) as a fee; v31 reads a maximum
+rebate, refund or reimbursement as a limit.
+
+## 2026-10-07: Knox's lessons ignored restores
+**What happened:** Hamilton publish found that Knox's lessons read every `wrong_category` takedown as
+wrong without checking whether Hamilton later restored the fee. The 1,603 `restored_after_takedown`
+rows (and the restore bar's, PR 320) were not read at all. Knox never learned from the kinds that are
+restored most (not_on_schedule, wrong_amount, threshold, unreproduced), because the lesson reader
+only reads category verdicts. A first draft that dropped every restored takedown would have removed
+26 correct lessons. Those fees were taken down as domestic wires and restored as international wires,
+so the restore confirmed the takedown.
+**Fix:** lessons v3 (`lessons.ts`, `label-queue.ts`) count a restored fee as verified under the
+category it came back with, and drop a takedown only when the fee was restored under that same
+category. On prod this adds 30 lessons and drops none.
+**Lesson:** a restore can change a fee's category, so check it against the category of the
+verdict it overturns, not just the fee id.
+
+## 2026-10-07: Paid schedule search re-paid for banks whose answer never opens
+**What happened:** the paid schedule search treated a timeout as "not searched", so every paid step
+searched Morgan Stanley Private Bank and Northern Trust again. The model named the schedule each time,
+but the bank's site timed out when we opened it. That made 35 and 34 paid calls in 9 hours. In October
+71 timeouts on 3 banks cost $3.87, a fifth of the step's $15.86, and took 2 of the 10 priority slots
+in every step.
+**Fix:** `MAX_TRANSIENT_TRIES` (3): a bank whose month holds 3 tries that timed out or were refused is
+searched again next month. Budget stops don't count.
+**Lesson:** a retry rule for transient failures needs a count, or a site that always fails is retried
+forever.
+
+## 2026-10-07: Error pages saved as fee links never went back to discovery
+**What happened:** three banks' fee links are the site's own error page: Northern Trust
+(`/united-states/page-not-found`), Service 1st FCU (`/404/`) and Bank of Hays (`.../wcErrors/404.html`).
+Magellan sends a link back to discovery only on a 404, a 410 or a redirect home. Northern Trust's page
+timed out on every fetch, so it kept the link, and the paid schedule search re-searched it.
+**Fix:** `isErrorPageLink` (`link-coverage.ts`): the fetch step treats such a link as gone however the
+fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
+the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
+**Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
+
+## 2026-10-07: free OCR read scanned pages sideways and upside down
+**What happened:** the audit tracker scored Rosetta's OCR at 7 of 45 OK over 12 hours. 43 of the
+45 ran before PR 331 and 31 of those were text PDFs the old ladder sent to OCR (PR 331 stopped
+that). The real scans that failed mostly came back with plenty of characters at confidence 25 to 45
+(Certificate disclosures at edufcu.org and cmecreditunion.org). OCR took each page's largest image
+as stored, but scanners often store a page bottom row first or sideways and let the PDF's placement
+matrix or the page's /Rotate turn it back. Tesseract was reading mirrored or sideways text. A test
+set of 8 scans in those layouts read 3 of 8 before and 8 of 8 after.
+**Fix:** `ocr.ts` version 2 follows the placement matrix and /Rotate and turns each page image the way
+the page shows it. A page that still reads poorly is probed at the other quarter turns, for paper
+fed in sideways. Scans an older OCR version rejected or found empty get one read with the new one.
+Still unexplained: three one-page scans returned 0 characters at confidence 0 (802cu.com,
+csbnetbank.com, onomeafcu.org). The cloud container cannot fetch bank sites, so their bytes were not
+checked.
+**Lesson:** an image inside a PDF is not the page; read it through the matrix that draws it.
+
+## 2026-10-07: 79 reopened pages were selected every run and never read
+**What happened:** after PR 331, 90 reopened pages were read within an hour, but 88 others never
+were. 79 of those 88 still had their earlier failure in the bank playbook's do-not-retry list. The
+read step selected them, the router skipped them as a known failure, and a skip writes nothing, so
+they stayed eligible and were selected again every run. Reopening a page lifted its URL ban but not
+the playbook entry.
+**Fix:** the selection marks a page reopened and not read since (`reopen_pending`). For that one read,
+the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
+**Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
+
+## 2026-10-07: The rules re-check restored fees with no check when their text was gone
+**What happened:** a fee the rules re-check had taken down came back live, with no category
+guard, schedule check or category model, whenever the text it was read from was no longer stored
+(`rules-recheck.ts`, restore reason `text_gone`). 84 live fees at 16 banks came back that way,
+among them NY answer-key misses: an international wire filed as bill pay, "Letter of Protest" as a
+gift card, a $0 "ATM services are UNLIMITED" and a check photocopy filed as document reproduction.
+Each restore also wrote a `restored_after_takedown` lesson that told Knox the takedown was wrong.
+The re-check's "latest" text was also the last by text hash, not the newest read.
+**Fix:** that restore now needs the restore bar (`disputedRestoreVerdict`) on the document's newest
+text; texts are ordered by read id. `restore-recheck.ts` gives the 84 the same bar on a second look
+(archive, never delete), and Knox's lesson readers skip the lessons those unchecked restores wrote.
+**Lesson:** every path that puts a fee live passes the same checks as publish; a restore is a
+publish.
+
+## 2026-10-07: business-only fee schedules fed the consumer benchmarks
+**What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
+names business, commercial, corporate or treasury accounts, the same test Magellan's
+`isBusinessOnlyLink` uses. They counted in national, state and district medians, peer ranges and the
+paid report's rival columns as if they were consumer prices. Dry run: national monthly maintenance
+$5.36 to $5.00, NSF $30.00 to $29.95; most state moves were $0.50 to $2.50 in either direction.
+**Fix:** a read-model filter, not a data change. `STATS_ROW_FILTER` (fee-stats rule 6) and the
+local-market and custom-report rival reads leave those rows out; the bank's own page still shows
+them. `STATS_METHOD_VERSION` 4 makes cached index rows rebuild. Undo by reverting the filter.
+**Lesson:** a fee's source document decides whose price it is, so the statistics contract checks the
+source, not only that one exists.
+
+## 2026-10-07: Bank overdraft income was never loaded, and credit union lines stop after 2024
+**What happened:** `institution_financial_records.overdraft_revenue` had 0 rows for banks; credit
+unions had it for the four 2024 quarters only (17,597 rows, 1,670 above zero). Hamilton's revenue
+line for overdraft and NSF fees was empty for every bank.
+**Cause:** banks: RIAD H032 (consumer overdraft-related service charges, banks of $1B or more) is not
+in the FDIC BankFind API, and no loader read the FFIEC bulk call report. The earlier loader was a
+Modal job that never ran here. Credit unions: NCUA retired accounts IS0048 and IS0049 from the
+March 2025 call report; the 2025 and 2026 files carry the columns but no values (registry detail
+`fee_income_accounts_unreported`). That is the source's limit, not a loader gap.
+**Fix:** registry step `registry-ffiec-overdraft` (`src/lib/regulatory/ffiec.ts`,
+`magellan/registry/ffiec-overdraft.ts`) posts the FFIEC CDR bulk form, reads Schedule RI H032 by
+RSSD, and writes the quarterly figure onto the bank's FDIC row. H032 is year to date, so a quarter
+is stored only when every earlier quarter of that year is on file; partitions run oldest quarter
+first within each year. No migration.
+**Lesson:** a field Hamilton reads needs a loader proven on prod, not only a reader. When a regulator
+retires a line, say so in the data notes rather than leaving it to look like a gap.
+
+## 2026-10-07: Banks on the community bank leverage ratio showed 0% total capital
+**What happened:** in Q2 2026, 1,808 of 4,313 banks had no tier 1 risk-based ratio and a total
+capital ratio of exactly 0; all but 7 are under $10B.
+**Cause:** banks that elect the community bank leverage ratio framework do not file risk-based
+ratios. BankFind returns null for RBC1RWAJ and 0 for RBCRWAJ. The parser stored the 0, the bank page
+showed it and the peer median counted it. The missing tier 1 ratio itself is correct.
+**Fix:** the FDIC parser stores null total capital when tier 1 is null and total capital is 0; the
+bank page and peer median skip a stored 0. Older rows correct themselves as quarters refresh.
+**Lesson:** a regulator's 0 can mean "not filed". Check a field's zeros against the filing rules
+before storing them as values.
+
+## 2026-10-07: The FFIEC overdraft step ran out of memory on prod
+**What happened:** after PR 369 merged, `registry-ffiec-overdraft` failed for 2026Q1 (04:32 UTC)
+and 2026Q2 (05:07 UTC) about a second into each run, with "Array buffer allocation failed". No H032
+values were written.
+**Cause:** the step buffered the whole all-schedules bulk zip and unzipped it in one call, which
+sizes each output buffer from the zip headers. Which of the two allocations failed was not
+confirmed, because the cloud sandbox cannot download from FFIEC. Unit tests used small zips, so
+they did not catch it. A failed registry step also leaves its partition `scheduled`, and that
+partition is retried only after the 6-hour claim expires.
+**Fix:** `unzipScheduleRi` reads the download as a stream, inflates only the Schedule RI files,
+and grows each buffer with the data. The whole zip is never held in memory.
+**Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
+that the loader will fit in a function's memory.
+
+## 2026-10-07: State bills would have taken about four days to cover 52 states
+**What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
+only Alaska had run.
+**Cause:** the registry scheduler starts one step every five minutes. It works round-robin across about
+20 sources and picks the first partition that is due. A source with 52 small partitions gets one
+turn per round, behind every other source's history and retries.
+**Fix:** state bills now has one scheduled partition, `current`. Each run reads the next 12 states
+whose weekly check is due and records each state under its own partition row. The step comes back
+within the hour while states are still due, so all 52 are covered in five runs.
+**Lesson:** for a registry source with many small, quick items, batch them inside one partition.
+Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Knox re-read fees that were already taken down
+**What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
+the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
+fees whose takedown still stood (152 from the source check, 56 for a price outside the category's
+range). It sent 49 of them back to Darwin, and 6 were published again.
+**Fix:** Knox reads `takedown_confirmed` rows, the second look's verdict, for checks that say the
+read was wrong. It holds a matching re-read for review instead of sending it to Darwin, and
+records the count on the extract event. First-look takedowns don't teach: Darwin found 13 of 20
+recent source-check takedowns were real prices.
+**Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
+logged changes nothing.
+
+## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
+**What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
+that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
+ending on "of", "is", "for" and similar, and 1,407 longer than 80 characters.
+**Cause:** `tidyFeeName` (Knox v17, v29) fixes new reads only. Rows published earlier kept the name
+as read ("Stop Payment | Item", "/mo. | Dormant Fee", "An overdraft fee of"), and nothing
+re-tidied them.
+**Fix:** `src/lib/agents/knox/name-retidy.ts` runs in each publish step on a batch of 40 banks. A
+live name takes its tidy name only when it still traces in the fee's own schedule (if it did before),
+still passes the category guard, and does not collide with another live fee of the bank. The old
+name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
+Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
+**Lesson:** a reader fix needs a matching pass over what it already published.

@@ -59,10 +59,35 @@ describe("Hamilton workspace context", () => {
       intent: "competitive-brief",
     });
 
-    expect(result).toEqual({ institution, error: null, source: "url" });
+    expect(result).toEqual({ institution, error: null, source: "url", isWorkspaceBank: true });
     expect(getHamiltonInstitutionContextMock).toHaveBeenCalledWith(2945);
+    // One lookup for a saved bank (none), then the save.
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+    expect(sqlCalls[1].values).toEqual([7, 2945, "url", "competitive-brief"]);
+  });
+
+  it("does not replace a saved bank when browsing another one", async () => {
+    const { resolveHamiltonInstitutionContext } = await import("./workspace-context");
+    const institution = { id: 2945, name: "Hamilton Bank" };
+    getHamiltonInstitutionContextMock.mockResolvedValue({ institution, error: null });
+    queuedRows = [[{ user_id: 7, selected_institution_id: 8109, selected_source: "manual", last_intent: null, updated_at: "2026-10-01" }]];
+
+    const result = await resolveHamiltonInstitutionContext({ userId: 7, instId: "2945" });
+
+    expect(result.institution).toBe(institution);
+    expect(result.isWorkspaceBank).toBe(false);
     expect(sqlMock).toHaveBeenCalledTimes(1);
-    expect(sqlCalls[0].values).toEqual([7, 2945, "url", "competitive-brief"]);
+  });
+
+  it("saves the browsed bank when the user asks to make it theirs", async () => {
+    const { resolveHamiltonInstitutionContext } = await import("./workspace-context");
+    const institution = { id: 2945, name: "Hamilton Bank" };
+    getHamiltonInstitutionContextMock.mockResolvedValue({ institution, error: null });
+
+    await resolveHamiltonInstitutionContext({ userId: 7, instId: "2945", makeDefault: true });
+
+    expect(sqlMock).toHaveBeenCalledTimes(1);
+    expect(sqlCalls[0].values).toEqual([7, 2945, "url", null]);
   });
 
   it("returns saved-artifact source without persisting artifact fallback as workspace context", async () => {

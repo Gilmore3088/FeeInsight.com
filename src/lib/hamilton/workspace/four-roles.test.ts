@@ -35,14 +35,16 @@ describe("four-roles eval: one overdraft answer", () => {
     expect(answer.evidenceLevel).toBe("market");
   });
 
-  it("economist: explains with prices, rates, jobs and the Beige Book, and asks for the missing figure", () => {
+  it("economist: explains with prices, rates, the FOMC, jobs, the Beige Book and district research, and asks for the missing figure", () => {
     expect(answer.drivers.map((d) => d.text)).toEqual([
       "Prices for bank services rose 5.0% in the year to August 2026, faster than the 3.1% change in all consumer prices.",
       "The federal funds rate was 3.9% in August 2026, down from 4.6% a year earlier.",
       "Lower rates shrink what banks earn on deposits, so fee income carries more of the load.",
+      'At its July 29, 2026 meeting, per the FOMC minutes: "In support of the Committee\'s dual-mandate goals, nine members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent."',
       "Tennessee unemployment was 4.1% in August 2026, against 3.6% nationally.",
       "A weaker job market than the nation's usually means more accounts running short.",
       'Per the Atlanta Fed\'s Beige Book of September 3, 2026: "Loan demand softened. Deposit levels were steady across the district, and credit quality held up."',
+      'The Atlanta Fed published "Who Pays Overdraft Fees?" on September 15, 2026.',
     ]);
     expect(answer.question).toMatchObject({ inputKind: "number", fieldKey: "fee.overdraft.annual_items" });
   });
@@ -103,7 +105,7 @@ describe("four-roles eval catches each kind of failure", () => {
 describe("answer edge cases", () => {
   it("asks for the current fee when the schedule has none", () => {
     const answer = buildFeeAnswer(overdraftResearch({ current: null, ownRows: [] }));
-    expect(answer.headline).toBe("Your schedule shows no overdraft fee; the median across 16 peers is $29.50.");
+    expect(answer.headline).toBe("Your overdraft fee is not in the index yet; the median across 16 peers is $29.50.");
     expect(answer.question).toMatchObject({ fieldKey: "fee.overdraft.current_amount" });
     expect(answer.exhibit?.title).toBe("The overdraft fee across 16 peers");
   });
@@ -133,6 +135,18 @@ describe("answer edge cases", () => {
   it("leaves the job-market line out for fees that do not depend on short balances", () => {
     const drivers = economicDrivers(economicBackdrop(economyContext, "Tennessee", 6, "Atlanta"), "wire_domestic_outgoing");
     expect(drivers.map((d) => d.text).join(" ")).not.toContain("accounts running short");
+  });
+
+  it("quotes the FOMC's rate decision and names the district Fed's newest research, each with its source", () => {
+    const drivers = economicDrivers(economicBackdrop(economyContext, "Tennessee", 6, "Atlanta"), "overdraft");
+    const fomc = drivers.find((d) => d.source?.table === "fed_fomc_minutes");
+    expect(fomc?.text).toBe(
+      'At its July 29, 2026 meeting, per the FOMC minutes: "In support of the Committee\'s dual-mandate goals, nine members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent."',
+    );
+    expect(fomc?.source?.url).toContain("fomcminutes20260729");
+    const research = drivers.find((d) => d.source?.table === "fed_publications");
+    expect(research?.text).toBe('The Atlanta Fed published "Who Pays Overdraft Fees?" on September 15, 2026.');
+    expect(research?.source?.label).toBe("Federal Reserve Bank of Atlanta, via Fed in Print");
   });
 
   it("names fees in plain words", () => {

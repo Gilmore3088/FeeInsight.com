@@ -28,6 +28,13 @@ const DOLLAR = new RegExp(AMOUNT_SOURCE, "g");
 const HAS_AMOUNT = new RegExp(AMOUNT_SOURCE);
 const FEE_WORD = /(fee|charge|overdraft|nsf|insufficient|stop payment|wire|returned|statement|cashier|money order|dormant|inactive|research|safe deposit|replacement)/i;
 const RATE_TERM = /(APY|APR|annual percentage)/g;
+/**
+ * A table cell holding a bare amount ("Canadian check fee, per check | 5.00"): a table
+ * whose "Fee Amount" column drops the dollar sign (emb.bank's Schedule of Common Fees,
+ * 30 such rows, was rejected as "only 1 dollar amount"). Counts toward fee lines only,
+ * and only on a line with a fee word.
+ */
+const TABLE_CELL_AMOUNT = /(^|\s\|\s)\$?\s?[0-9]{1,4}\.[0-9]{2}\s*(\s\|\s|$)/;
 
 /**
  * A news, press or investor-relations article (Chase's 2021 "avoid overdraft fees"
@@ -71,7 +78,7 @@ export function scoreFeePage(text: string, url?: string | null): FeePageScore {
   const rateTerms = (text.match(RATE_TERM) ?? []).length;
   let feeLines = 0;
   for (const line of text.split("\n")) {
-    if (HAS_AMOUNT.test(line) && FEE_WORD.test(line)) feeLines += 1;
+    if ((HAS_AMOUNT.test(line) || TABLE_CELL_AMOUNT.test(line)) && FEE_WORD.test(line)) feeLines += 1;
   }
 
   if (isArticleUrl(url)) {

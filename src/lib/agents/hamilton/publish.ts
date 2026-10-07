@@ -11,10 +11,13 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
+import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
+import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
+import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 
 type SqlTag = typeof sql;
 
@@ -199,6 +202,8 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   if (!row.fee_name?.trim()) return "Missing fee name";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
+  // A blog post or story quotes national averages, not this bank's price (article-page.ts).
+  if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
   const amount = normalizedAmount(row.amount);
   if (isPercentFee(row)) {
     // A rate publishes only in a category that publishes rates, inside its range.
@@ -214,6 +219,9 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
     return "Amount outside the category's plausible range";
   }
+  // A transfer or deposit limit read as a price; Knox's excerpt is checked by the sweep.
+  const limit = isPercentFee(row) ? null : limitGuardVerdict(row);
+  if (limit) return `Transaction limit, not a price: ${limit.detail}`;
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
     return "Below publish confidence threshold";
   }
@@ -740,6 +748,50 @@ function movementFor(
   };
 }
 
+type MovementGroupEntry = {
+  canonical_fee_key: string;
+  fee_name: string;
+  previous_fee_published_id: number;
+  new_fee_published_id: number;
+  previous_amount: number;
+  new_amount: number;
+  amount_delta: number;
+  direction: "increase" | "decrease";
+};
+
+interface MovementEvidenceRow {
+  fee_published_id: number | string;
+  fee_name: string | null;
+  source_url: string | null;
+  document_text: string | null;
+}
+
+/** Name, page and current text of each published row, for the movement check below. */
+async function selectMovementEvidence(db: SqlTag, feePublishedIds: number[]): Promise<Map<number, MovementEvidenceRow>> {
+  if (feePublishedIds.length === 0) return new Map();
+  try {
+    const rows = await inSavepoint(db, (scope) => scope<MovementEvidenceRow[]>`
+      SELECT fp.fee_published_id,
+             fp.fee_name,
+             fp.source_url,
+             (SELECT t.normalized_text
+                FROM agent_source_texts t
+               WHERE t.source_document_id = fr.source_document_id
+                 AND t.status = 'completed'
+               ORDER BY t.id DESC
+               LIMIT 1) AS document_text
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.fee_published_id = ANY(${feePublishedIds}::bigint[])
+    `);
+    return new Map(rows.map((row) => [Number(row.fee_published_id), row]));
+  } catch (error) {
+    console.error("selectMovementEvidence failed:", error);
+    return new Map();
+  }
+}
+
 async function recordPublicationSignals(
   db: SqlTag,
   runId: number,
@@ -755,16 +807,7 @@ async function recordPublicationSignals(
   }>();
   const movementGroups = new Map<number, {
     institutionName: string;
-    movements: Array<{
-      canonical_fee_key: string;
-      fee_name: string;
-      previous_fee_published_id: number;
-      new_fee_published_id: number;
-      previous_amount: number;
-      new_amount: number;
-      amount_delta: number;
-      direction: "increase" | "decrease";
-    }>;
+    movements: MovementGroupEntry[];
   }>();
 
   results.forEach((result) => {
@@ -806,8 +849,45 @@ async function recordPublicationSignals(
     }
   });
 
+  // A price move alerts watchers only when the bank really changed the fee: the same
+  // check the alerts and Monthly Pulse use (confirmFeeChange: same page, same name, the
+  // old text states the old price, the new text states the new price and not the old).
+  // A re-read of the same edition or a new copy of the page that pairs a fee with a
+  // neighbouring price is kept as an unconfirmed movement on the publication signal.
+  const unconfirmedMovements = new Map<number, Array<MovementGroupEntry>>();
+  const movementIds = Array.from(movementGroups.values()).flatMap((group) =>
+    group.movements.flatMap((movement) => [movement.previous_fee_published_id, movement.new_fee_published_id]),
+  );
+  const evidence = await selectMovementEvidence(db, movementIds);
+  for (const [institutionId, group] of movementGroups) {
+    const confirmed = group.movements.filter((movement) => {
+      const before = evidence.get(movement.previous_fee_published_id);
+      const after = evidence.get(movement.new_fee_published_id);
+      return confirmFeeChange({
+        institution_name: group.institutionName,
+        state_code: null,
+        charter_type: null,
+        fee_key: movement.canonical_fee_key,
+        fee_name: after?.fee_name ?? movement.fee_name,
+        old_fee_name: before?.fee_name ?? null,
+        old_amount: movement.previous_amount,
+        new_amount: movement.new_amount,
+        changed_at: new Date(),
+        source_url: after?.source_url ?? null,
+        old_source_url: before?.source_url ?? null,
+        new_document_text: after?.document_text ?? null,
+        old_document_text: before?.document_text ?? null,
+      }) != null;
+    });
+    const unconfirmed = group.movements.filter((movement) => !confirmed.includes(movement));
+    if (unconfirmed.length > 0) unconfirmedMovements.set(institutionId, unconfirmed);
+    if (confirmed.length > 0) group.movements = confirmed;
+    else movementGroups.delete(institutionId);
+  }
+
   for (const [institutionId, group] of grouped) {
     const count = group.feePublishedIds.length;
+    const unconfirmed = unconfirmedMovements.get(institutionId) ?? [];
     await inSavepoint(db, (scope) => recordHamiltonMonitorSignal(
       {
         institutionId,
@@ -827,6 +907,8 @@ async function recordPublicationSignals(
           verified_fee_ids: group.feeVerifiedIds,
           canonical_fee_keys: Array.from(new Set(group.canonicalFeeKeys)),
           published_fee_count: count,
+          unconfirmed_movement_count: unconfirmed.length,
+          unconfirmed_movements: unconfirmed,
           refresh_recommended: ["reports", "scenarios", "watchlist"],
           provider_call_queued: false,
         },

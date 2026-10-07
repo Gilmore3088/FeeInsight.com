@@ -191,12 +191,14 @@ export function composableTail(name: string, also: ReadonlySet<string> = new Set
 const CAP_CATEGORIES = new Set(["od_daily_cap", "nsf_daily_cap"]);
 /** A fee for going past a limit, which is a real price ("Over Limit Fee", "Regulation D Transfer Limit Violation"). */
 const PAST_A_LIMIT = /\b(?:over|above|exceed\w*|excess\w*|violat\w*|beyond)\b/i;
-/** A name that ends on a limit ("Zelle transfer limit", "Mobile Deposit Checks are limited to", "Cash Advance Fee (maximum"). */
+/** A name that ends on a limit ("Zelle transfer limit", "Mobile Deposit Checks are limited to", "Cash Advance Fee (maximum", v30: "the limit will increase to", "Daily ATM Limits ($/#)"). */
 const ENDS_ON_LIMIT =
-  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:per|daily|each|for)\b[^)]*\)?)?\s*$|\(\s*maximum\s*$/i;
+  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of|will\s+(?:increase|be\s+(?:increased|raised))\s+to))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:(?:per|daily|each|for)\b|\$\s*\/)[^)]*\)?)?\s*$|\(\s*maximum\s*$/i;
 /** A trailing note that names a limit ("Zelle (Daily Limits)"); a fee's own note ("Mobile Deposit Fee (daily limits apply)") does not count. */
 const LIMIT_NOTE = /\(\s*(?:daily\s+|transaction\s+)?limits?\b[^)]*\)?\s*$/i;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
+/** v31: a cap on what the bank pays back ("The maximum rebate per 12-month cycle | $240") is never a fee. */
+const REBATE_CAP = /\bmax(?:imum)?\s+(?:\w+\s+)?(?:rebates?|refunds?|reimbursements?)\b/i;
 
 /**
  * v28: a price the name says is a limit is not a fee: "If you use ... Zelle, the limit is
@@ -205,6 +207,7 @@ const FEE_WORD = /\b(?:fees?|charges?)\b/i;
  */
 export function namesALimit(feeName: string, canonicalKey: string): boolean {
   const name = feeName.trim();
+  if (REBATE_CAP.test(name)) return true;
   const limitNote = LIMIT_NOTE.test(name) && !FEE_WORD.test(name.replace(LIMIT_NOTE, ""));
   if (PAST_A_LIMIT.test(name) || !(ENDS_ON_LIMIT.test(name) || limitNote)) return false;
   // "Overdraft daily maximum | $150" caps fees; "Courtesy Pay Limit | $600" caps the overdraft.

@@ -150,7 +150,7 @@ function indicator(economy: EconomicBackdrop, key: EconomicIndicator["key"]): Ec
   return economy.indicators.find((i) => i.key === key);
 }
 
-/** Price inflation, rates, the job market and the district Beige Book, each one sentence. */
+/** Price inflation, rates, the FOMC's decision, the job market and the district Fed's own reading, each one sentence. */
 export function economicDrivers(economy: EconomicBackdrop | null | undefined, feeCategory: string): Fact[] {
   if (!economy) return [];
   const out: Fact[] = [];
@@ -184,6 +184,13 @@ export function economicDrivers(economy: EconomicBackdrop | null | undefined, fe
     }
   }
 
+  if (economy.fomc) {
+    out.push({
+      text: `At its ${longDate(economy.fomc.meetingDate)} meeting, per the FOMC minutes: "${economy.fomc.text.replace(/\.$/, "")}."`,
+      source: economy.fomc.source,
+    });
+  }
+
   const state = indicator(economy, "state_unemployment");
   const nation = indicator(economy, "national_unemployment");
   if (state) {
@@ -205,6 +212,15 @@ export function economicDrivers(economy: EconomicBackdrop | null | undefined, fe
     out.push({
       text: `Per ${where} Beige Book of ${longDate(economy.beigeBook.releaseDate)}: "${economy.beigeBook.text}"`,
       source: economy.beigeBook.source,
+    });
+  }
+
+  if (economy.districtResearch) {
+    const who = economy.districtName ? `The ${economy.districtName} Fed` : "The district Reserve Bank";
+    const when = economy.districtResearch.publishedAt ? ` on ${longDate(economy.districtResearch.publishedAt)}` : "";
+    out.push({
+      text: `${who} published "${economy.districtResearch.title}"${when}.`,
+      source: economy.districtResearch.source,
     });
   }
   return out;
@@ -310,8 +326,9 @@ function headline(research: FeeResearch, name: string): string {
     }
     return `Your ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
-  if (band) return `Your schedule shows no ${name} fee; the median across ${count(band.n)} peers is ${money(band.median)}.`;
-  return `Your schedule shows no ${name} fee, and too few peers publish one to compare.`;
+  // No amount on file means the fee is not in the index, never that the bank charges none.
+  if (band) return `Your ${name} fee is not in the index yet; the median across ${count(band.n)} peers is ${money(band.median)}.`;
+  return `Your ${name} fee is not in the index yet, and too few peers publish one to compare.`;
 }
 
 // ─── Economist: the one question ─────────────────────────────────────────────

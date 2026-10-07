@@ -3,91 +3,25 @@
 import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, type FormEvent, type KeyboardEvent } from "react";
+import { ArrowUp, Loader2 } from "lucide-react";
 import { ANALYSIS_FOCUS_TABS, type AnalysisFocus } from "@/lib/hamilton/navigation";
 import { saveAnalysis } from "@/app/pro/(hamilton)/analyze/actions";
-import { HamiltonViewPanel } from "./HamiltonViewPanel";
-import { WhatThisMeansPanel } from "./WhatThisMeansPanel";
-import { WhyItMattersPanel } from "./WhyItMattersPanel";
-import { EvidencePanel } from "./EvidencePanel";
-import { ExploreFurtherPanel } from "./ExploreFurtherPanel";
-import { AnalyzeCTABar } from "./AnalyzeCTABar";
-import { AnalysisInputBar } from "./AnalysisInputBar";
-import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { answerTitle, humanizeAnswerText, parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
+import { renderInline } from "./markdown";
+import { inferFeeCategory } from "@/lib/hamilton/infer-category";
+import { basketItemId } from "@/lib/hamilton/report-basket";
+import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
+import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { StructuredAsk } from "./StructuredAsk";
+import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
 
-// ─── Section Parsing ─────────────────────────────────────────────────────────
-
-interface ParsedResponse {
-  hamiltonView: string;
-  whatThisMeans: string;
-  whyItMatters: string[];
-  evidence: Array<{ label: string; value: string; note?: string }>;
-  exploreFurther: string[];
-}
-
-/**
- * Parse Hamilton's structured analyze response into typed sections.
- * Expects ## headings: Hamilton's View, What This Means, Why It Matters, Evidence, Explore Further.
- * Falls back to raw content in hamiltonView if sections are not found.
- */
-function parseAnalyzeResponse(content: string): ParsedResponse {
-  const sections = content.split(/^##\s+/m);
-
-  function getSection(name: string): string {
-    const match = sections.find((s) => s.toLowerCase().startsWith(name.toLowerCase()));
-    if (!match) return "";
-    return match.replace(/^[^\n]+\n/, "").trim();
-  }
-
-  function parseBullets(text: string): string[] {
-    return text
-      .split("\n")
-      .map((l) => l.replace(/^[-*\s]+/, "").trim())
-      .filter((l) => /\w/.test(l));
-  }
-
-  function parseEvidenceMetrics(
-    text: string
-  ): Array<{ label: string; value: string; note?: string }> {
-    const metrics: Array<{ label: string; value: string; note?: string }> = [];
-    for (const line of text.split("\n").filter((l) => l.trim())) {
-      const bold = line.match(/^[-*]\s*\*\*(.+?)\*\*:\s*(.+?)(?:\s*[—–-]\s*(.+))?$/);
-      if (bold) {
-        metrics.push({ label: bold[1].trim(), value: bold[2].trim(), note: bold[3]?.trim() });
-        continue;
-      }
-      const plain = line.match(/^[-*]?\s*(.+?):\s*(.+?)(?:\s*[—–]\s*(.+))?$/);
-      if (plain) {
-        metrics.push({
-          label: plain[1].replace(/^[-*]\s*/, "").trim(),
-          value: plain[2].trim(),
-          note: plain[3]?.trim(),
-        });
-      }
-    }
-    return metrics;
-  }
-
-  const hamiltonViewRaw = getSection("hamilton");
-  const whatThisMeansRaw = getSection("what this means");
-  const whyItMattersRaw = getSection("why it matters");
-  const evidenceRaw = getSection("evidence");
-  const exploreFurtherRaw = getSection("explore further");
-
-  if (!hamiltonViewRaw && !whatThisMeansRaw && !whyItMattersRaw) {
-    return { hamiltonView: content.trim(), whatThisMeans: "", whyItMatters: [], evidence: [], exploreFurther: [] };
-  }
-
-  return {
-    hamiltonView: hamiltonViewRaw,
-    whatThisMeans: whatThisMeansRaw,
-    whyItMatters: parseBullets(whyItMattersRaw),
-    evidence: parseEvidenceMetrics(evidenceRaw),
-    exploreFurther: parseBullets(exploreFurtherRaw),
-  };
-}
+type MessagePart = { type: string; text?: string; output?: unknown };
 
 function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: string }> }): string {
   return (
@@ -98,7 +32,88 @@ function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: 
   );
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+/** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
+export function lookupsUsed(parts: ReadonlyArray<MessagePart> | undefined): string[] {
+  const names = new Set<string>();
+  for (const p of parts ?? []) {
+    if (!p.type.startsWith("tool-")) continue;
+    const words = p.type
+      .slice(5)
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .toLowerCase()
+      .replace(/^(get|search|lookup|fetch|load|query)\s+/, "")
+      .trim();
+    if (words) names.add(words);
+  }
+  return [...names];
+}
+
+/**
+ * Plain words for a failed request. The server answers with JSON `{ error }`; the AI SDK hands it
+ * over as the error's message text.
+ */
+export function askErrorMessage(error: Error | undefined): string {
+  let text = error?.message ?? "";
+  try {
+    const parsed = JSON.parse(text) as { error?: string; message?: string };
+    text = parsed.error ?? parsed.message ?? text;
+  } catch {
+    // Not JSON: keep the text.
+  }
+  if (/AI service not configured|ANTHROPIC_API_KEY/i.test(text)) {
+    return "Hamilton's AI isn't switched on in this preview copy of the site, so it can't answer here. Questions work on feeinsight.com.";
+  }
+  if (/Hamilton AI requests for today/.test(text)) return text;
+  if (/Emergency stop|budget|circuit/i.test(text)) {
+    return "Hamilton's AI is paused right now while spending is checked, so it can't answer. Everything else on Fee Insight still works.";
+  }
+  return "Hamilton couldn't finish this answer. Your question is back in the box below.";
+}
+
+/** The trail under an answer: what Hamilton read, how its figures were checked, and when. */
+export function answerAuditTrail(input: {
+  lookups: string[];
+  figureCheck: FigureCheckResult | null;
+  institutionName: string | null;
+  preparedAt: string;
+}): AuditTrail {
+  const { figureCheck } = input;
+  return {
+    evidence: "Market data only",
+    sources: [
+      {
+        label: "Bank Fee Index data",
+        detail: input.lookups.length
+          ? `Looked up for this answer: ${input.lookups.join(", ")}.`
+          : "Published fee schedules, peer groups, call reports and complaints, read through Hamilton's data tools.",
+        asOf: input.preparedAt.slice(0, 10),
+      },
+      ...(input.institutionName
+        ? [{ label: "Your institution", detail: `${input.institutionName}'s published fees and filings.`, asOf: null }]
+        : []),
+    ],
+    method: [
+      "Hamilton answers only from its data tools. It doesn't browse the web or use figures from memory.",
+      "Every dollar amount and percentage in the answer is checked against what those tools returned; any that don't match are flagged above the answer.",
+      ...STANDARD_METHOD.slice(0, 2),
+    ],
+    assumptions: figureCheck
+      ? [
+          figureCheck.checked === 0
+            ? "The answer states no dollar amounts or percentages to check."
+            : figureCheck.unmatched.length === 0
+              ? `All ${figureCheck.checked} figures in the answer traced to the data Hamilton looked up.`
+              : `${figureCheck.checked - figureCheck.unmatched.length} of ${figureCheck.checked} figures traced to the data; ${figureCheck.unmatched.join(", ")} did not.`,
+        ]
+      : ["This answer was saved earlier; its figure check isn't stored with it."],
+    ownFeeRows: [],
+    clientFacts: [],
+    peerGroup: null,
+    engineVersion: `Ask, voice ${HAMILTON_VERSION}`,
+    preparedAt: input.preparedAt,
+  };
+}
 
 interface AnalyzeWorkspaceProps {
   userId: number;
@@ -108,21 +123,26 @@ interface AnalyzeWorkspaceProps {
   /** Pre-populated analysis loaded from hamilton_saved_analyses via ?analysis= searchParam */
   initialAnalysis?: AnalyzeResponse | null;
   initialAnalysisId?: string | null;
+  /** A question handed over from another page or the Ask bar */
+  initialQuestion?: string | null;
+  /** True when the question came from the Ask bar, so it is sent on arrival rather than retyped */
+  autoSend?: boolean;
 }
 
 /**
- * AnalyzeWorkspace — Main client shell for the /pro/analyze screen.
- * Owns: analysis focus tab state, useChat streaming, section parsing,
- * explore-further navigation, and auto-save on completion.
- *
- * Uses @ai-sdk/react v3 API: DefaultChatTransport, sendMessage, status.
- * Screen boundary rule enforced at two levels:
- * 1. System prompt via buildAnalyzeModeSuffix (API route)
- * 2. AnalyzeCTABar has no "Recommended Position" element (ARCH-05)
- *
- * When initialAnalysis is provided (via ?analysis= searchParam), parsedResponse
- * is pre-populated so the full analysis UI renders immediately on page load.
+ * Ask Hamilton: one question, one memo. The answer reads like the rest of the workspace: the
+ * question as the heading, Hamilton's answer, why it matters, the evidence, where to look next
+ * and how it was built. Hamilton shows evidence; it never recommends a price.
  */
+/**
+ * Each Ask starts a fresh written answer, so a follow-up ("how does this compare nationally?")
+ * carries the question before it; otherwise "this" has nothing to point at.
+ */
+export function withEarlierQuestion(question: string, earlier: string): string {
+  if (!earlier || earlier === question) return question;
+  return `${question}\n\n(For context, my previous question was: "${earlier}")`;
+}
+
 export function AnalyzeWorkspace({
   userId,
   institutionId,
@@ -130,74 +150,69 @@ export function AnalyzeWorkspace({
   initialIntent,
   initialAnalysis,
   initialAnalysisId = null,
+  initialQuestion = null,
+  autoSend = false,
 }: AnalyzeWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<AnalysisFocus>(() => focusForIntent(initialIntent));
+  // The focus lens still shapes the prompt from deep links; there are no lens tabs on screen.
+  const focus = useRef<AnalysisFocus>(focusForIntent(initialIntent));
   const [parsedResponse, setParsedResponse] = useState<ParsedResponse | null>(() => {
     if (!initialAnalysis) return null;
     return {
-      hamiltonView: initialAnalysis.hamiltonView,
-      whatThisMeans: initialAnalysis.whatThisMeans,
-      whyItMatters: initialAnalysis.whyItMatters,
-      evidence: initialAnalysis.evidence.metrics,
+      hamiltonView: humanizeAnswerText(initialAnalysis.hamiltonView),
+      whatThisMeans: humanizeAnswerText(initialAnalysis.whatThisMeans),
+      whyItMatters: initialAnalysis.whyItMatters.map(humanizeAnswerText),
+      evidence: initialAnalysis.evidence.metrics.map((m) => ({
+        ...m,
+        label: humanizeAnswerText(m.label),
+        value: humanizeAnswerText(m.value),
+      })),
       exploreFurther: initialAnalysis.exploreFurther,
     };
   });
-  // If restoring a saved analysis, mark it already saved to prevent duplicate auto-save
-  const [isSaved, setIsSaved] = useState(!!initialAnalysis);
-  const [input, setInput] = useState(() => {
-    if (!selectedInstitution || initialAnalysis) return "";
-    if (selectedInstitution.insightReadiness === "source_needed") {
-      return `Build a diligence path for ${selectedInstitution.name}. Explain what is known, what is missing, and what source evidence is needed before making fee claims.`;
-    }
-    if (initialIntent === "institution") {
-      return `Analyze ${selectedInstitution.name}'s fee readiness, peer position, financial context, risks, and next diligence questions.`;
-    }
-    return "";
-  });
+  const [input, setInput] = useState(() => (initialQuestion && !initialAnalysis ? initialQuestion : ""));
   const [isExporting, setIsExporting] = useState(false);
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
+  const [lookups, setLookups] = useState<string[]>([]);
+  const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
   const [exportError, setExportError] = useState<string | null>(null);
-
-  // Ref to always have latest activeTab inside async callbacks
-  const activeTabRef = useRef<AnalysisFocus>(activeTab);
-  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
-
-  // Track the last prompt submitted for saving alongside the response
+  const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
   const lastPromptRef = useRef<string>("");
+  // The question before this one, so a follow-up's written answer knows what "this" refers to.
+  const previousPromptRef = useRef<string>("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { messages, sendMessage, status, setMessages, error: chatError, clearError } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/research/hamilton",
       body: () => ({
         mode: "analyze",
-        analysisFocus: activeTabRef.current,
+        analysisFocus: focus.current,
         institutionId: selectedInstitution?.id ?? null,
         intent: initialIntent ?? "analyze",
         evidencePolicy: "provisional-first",
       }),
     }),
-    onFinish: async ({ message }) => {
+    onFinish: async ({ message, isError, isAbort }) => {
       const content = extractTextFromMessage(message);
+      // A failed or empty reply is never shown as an answer, and never saved.
+      if (isError || isAbort || !content.trim()) return;
       const parsed = parseAnalyzeResponse(content);
-      // Every $ and % must trace to the tool data Hamilton was given.
-      const check = checkMessageFigures(message.parts as ReadonlyArray<{ type: string; text?: string; output?: unknown }>);
+      const parts = message.parts as ReadonlyArray<MessagePart>;
+      const check = checkMessageFigures(parts);
       setFigureCheck(check);
+      setLookups(lookupsUsed(parts));
+      setAnsweredAt(new Date().toISOString());
       setParsedResponse(parsed);
-      setIsSaved(false);
       setSavedAnalysisId(null);
 
-      // Auto-save if user context is available
       if (userId) {
-        const canonicalInstitutionId = normalizeCanonicalInstitutionId(
-          selectedInstitution?.id ?? institutionId,
-        );
         const result = await saveAnalysis({
-          institutionId: canonicalInstitutionId ?? "",
-          analysisFocus: activeTabRef.current,
+          institutionId: normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId) ?? "",
+          analysisFocus: focus.current,
           prompt: lastPromptRef.current,
           responseJson: {
-            title: parsed.hamiltonView.slice(0, 80),
+            title: answerTitle(parsed.hamiltonView),
             confidence: confidenceFromFigureCheck(check),
             hamiltonView: parsed.hamiltonView,
             whatThisMeans: parsed.whatThisMeans,
@@ -206,10 +221,7 @@ export function AnalyzeWorkspace({
             exploreFurther: parsed.exploreFurther,
           } satisfies AnalyzeResponse,
         });
-        if ("id" in result) {
-          setIsSaved(true);
-          setSavedAnalysisId(result.id);
-        }
+        if ("id" in result) setSavedAnalysisId(result.id);
       }
     },
   });
@@ -223,39 +235,70 @@ export function AnalyzeWorkspace({
     }
   }, [chatError]);
 
-  const handleRetry = useCallback(() => {
-    const prompt = lastPromptRef.current;
-    if (!prompt) return;
-    clearError();
-    setInput("");
-    sendMessage({ text: prompt });
-  }, [clearError, sendMessage]);
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, [input]);
 
-  const handleAnalysisSubmit = useCallback(() => {
-    const trimmed = input.trim();
-    if (!trimmed || isLoading) return;
-    lastPromptRef.current = trimmed;
-    setParsedResponse(null);
-    setIsSaved(false);
-    sendMessage({ text: trimmed });
-    setInput("");
-  }, [input, isLoading, sendMessage]);
-
-  const handleExploreFurther = useCallback(
-    (prompt: string) => {
-      lastPromptRef.current = prompt;
-      setParsedResponse(null);
-      setIsSaved(false);
-      setMessages([]);
-      sendMessage({ text: prompt });
+  const answerInProse = useCallback(
+    (question: string) => {
+      if (question !== lastPromptRef.current) return;
+      sendMessage({ text: withEarlierQuestion(question, previousPromptRef.current) });
     },
-    [sendMessage, setMessages]
+    [sendMessage],
   );
+
+  const ask = useCallback(
+    (question: string) => {
+      const trimmed = question.trim();
+      if (!trimmed || isLoading) return;
+      if (lastPromptRef.current && lastPromptRef.current !== trimmed) previousPromptRef.current = lastPromptRef.current;
+      lastPromptRef.current = trimmed;
+      clearError();
+      setParsedResponse(null);
+      setFigureCheck(null);
+      setAskedQuestion(trimmed);
+      setMessages([]);
+      // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
+      // question without one is sent on for a written answer (onNoStoryline below), so one
+      // question never pays for two write-ups.
+      setInput("");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [clearError, isLoading, setMessages],
+  );
+
+  // A question typed in the Ask bar on another screen is answered here without retyping it.
+  const autoSent = useRef(false);
+  useEffect(() => {
+    if (autoSend && initialQuestion && !initialAnalysis && !autoSent.current) {
+      autoSent.current = true;
+      // Drop send=1 from the address so a reload doesn't ask (and pay) again.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("send");
+      window.history.replaceState(null, "", url.toString());
+      ask(initialQuestion);
+    }
+  }, [autoSend, initialQuestion, initialAnalysis, ask]);
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    ask(input);
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      ask(input);
+    }
+  }
 
   const handleExportPdf = useCallback(async () => {
     if (!parsedResponse || isExporting) return;
     if (!savedAnalysisId) {
-      setExportError("This analysis is still being saved. Try the export again in a moment.");
+      setExportError("This answer is still being saved. Try the download again in a moment.");
       return;
     }
     setIsExporting(true);
@@ -274,7 +317,7 @@ export function AnalyzeWorkspace({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `hamilton-analysis-${new Date().toISOString().split("T")[0]}.pdf`;
+      a.download = `hamilton-answer-${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -286,248 +329,266 @@ export function AnalyzeWorkspace({
     }
   }, [parsedResponse, isExporting, savedAnalysisId]);
 
-  // CTA bar should only show when Hamilton delivered an actual analysis,
-  // not an info-request like "I need to identify your institution." Use
-  // structured-section presence as the signal — info-requests have content
-  // in hamiltonView but no whyItMatters/evidence sections.
-  const hasAnalysisStructure =
-    parsedResponse !== null &&
-    (parsedResponse.whyItMatters.length > 0 ||
-      parsedResponse.evidence.length > 0);
-  const analysisComplete = !isLoading && hasAnalysisStructure;
-
-  // Live-parse streaming content for progressive rendering
-  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
-  const streamingContent = lastAssistantMessage ? extractTextFromMessage(lastAssistantMessage) : "";
+  // Live-parse streaming content for progressive rendering. Only the reply to the question just
+  // sent counts; an earlier answer must not stand in for it.
+  const lastMessage = messages[messages.length - 1];
+  const streamingContent = lastMessage?.role === "assistant" ? extractTextFromMessage(lastMessage) : "";
   const liveParsed = isLoading && streamingContent ? parseAnalyzeResponse(streamingContent) : null;
-  const displayedResponse = parsedResponse ?? liveParsed;
+  const shown = chatError && !isLoading ? null : (parsedResponse ?? liveParsed);
+  const view = shown ? shapeHamiltonView(shown.hamiltonView) : { lead: "", paragraphs: [] };
+  const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
+  const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
+  const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
+  const complete = !isLoading && parsedResponse !== null && Boolean(view.lead);
+  const instName = selectedInstitution?.name ?? null;
+  const suggestions = [
+    "How does our overdraft fee compare with banks in our counties?",
+    "Which of our fees sit furthest from our peers, and by how much?",
+    "Who in our state changed their NSF fee this year?",
+  ];
 
   return (
-    <div className="@container flex flex-col gap-6 pb-56">
-      {chatError && !isLoading && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm"
-          style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#7f1d1d" }}
-        >
-          <span>Hamilton couldn&apos;t finish this analysis. Your question is back in the box below.</span>
-          <button type="button" onClick={handleRetry} className="font-semibold underline">
-            Retry
-          </button>
+    <MemoPage>
+      {chatError && !isLoading ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
+          <span>{askErrorMessage(chatError)}</span>
+          {lastPromptRef.current ? (
+            <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
+              Try again
+            </button>
+          ) : null}
         </div>
-      )}
-      {exportError && (
-        <p role="alert" className="text-sm" style={{ color: "#7f1d1d" }}>
-          {exportError}
-        </p>
-      )}
-      {/* Analysis prompt title when active */}
-      {displayedResponse && (
-        <div className="flex items-center gap-4 mb-2">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            style={{ color: "var(--hamilton-primary)", opacity: 0.6 }} aria-hidden="true">
-            <path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <h1
-            className="text-3xl italic tracking-tight"
-            style={{
-              fontFamily: "var(--hamilton-font-serif)",
-              color: "var(--hamilton-text-primary)",
-            }}
-          >
-            {activeTab} Assessment
-          </h1>
-        </div>
-      )}
+      ) : null}
 
-      {/* Empty state */}
-      {!displayedResponse && !isLoading && messages.length === 0 && (
-        <div className="py-8">
-          {selectedInstitution ? (
-            <div
-              className="mx-auto max-w-4xl rounded-xl border p-5 text-left"
-              style={{
-                backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-                borderColor: "rgba(216,194,184,0.35)",
-              }}
-            >
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p
-                    className="text-[10px] uppercase tracking-[0.18em]"
-                    style={{ color: "var(--hamilton-text-tertiary)" }}
-                  >
-                    Selected Institution
-                  </p>
-                  <h1
-                    className="mt-1 text-3xl italic tracking-tight"
-                    style={{
-                      fontFamily: "var(--hamilton-font-serif)",
-                      color: "var(--hamilton-text-primary)",
-                    }}
-                  >
-                    {selectedInstitution.name}
-                  </h1>
-                  <p className="mt-2 text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-                    {selectedInstitution.confidenceSummary}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 md:min-w-[360px]">
-                  <ContextStat label="Status" value={selectedInstitution.feePublicationLabel} />
-                  <ContextStat label="Verified" value={selectedInstitution.publishedFeeCount.toLocaleString()} />
-                  <ContextStat label="Provisional" value={selectedInstitution.provisionalFeeCount.toLocaleString()} />
-                  <ContextStat label="Assets" value={selectedInstitution.assetSizeLabel ?? "N/A"} />
-                </div>
-              </div>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {[
-                  `Summarize ${selectedInstitution.name}'s fee evidence and data caveats.`,
-                  `Compare ${selectedInstitution.name}'s service charge income and peer position.`,
-                  `List the diligence questions needed before a board-ready brief for ${selectedInstitution.name}.`,
-                ].map((prompt) => (
+      {askedQuestion || shown ? (
+        <MemoHeader
+          kicker={instName ? `You asked · ${instName}` : "You asked"}
+          title={askedQuestion ?? "A saved answer"}
+        />
+      ) : (
+        <>
+          <MemoHeader
+            kicker="Ask Hamilton"
+            title={instName ? `Ask anything about ${instName}'s fees` : "Ask anything about your fees and your market"}
+            dek="Answers from published fee schedules and regulator filings, with every figure checked."
+          />
+          <MemoSection title="Questions bankers start with">
+            <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+              {suggestions.map((s) => (
+                <li key={s}>
                   <button
-                    key={prompt}
                     type="button"
-                    onClick={() => setInput(prompt)}
-                    className="rounded-full px-3 py-1.5 text-xs transition-colors"
-                    style={{
-                      border: "1px solid rgba(216,194,184,0.5)",
-                      color: "var(--hamilton-text-primary)",
+                    onClick={() => {
+                      setInput(s);
+                      textareaRef.current?.focus();
                     }}
+                    className="w-full px-4 py-3 text-left text-warm-900 hover:bg-warm-100"
+                    style={SERIF}
                   >
-                    {prompt}
+                    {s}
                   </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-16" style={{ color: "var(--hamilton-text-secondary)" }}>
-              <p className="text-base mb-1" style={{ fontFamily: "var(--hamilton-font-serif)" }}>
-                Ask Hamilton to analyze a fee category or competitive position
-              </p>
-              <p className="text-sm">
-                Currently viewing:{" "}
-                <span style={{ color: "var(--hamilton-accent)" }}>{activeTab}</span> analysis
-              </p>
-            </div>
-          )}
-        </div>
+                </li>
+              ))}
+            </ul>
+          </MemoSection>
+        </>
       )}
 
-      {/* Intelligence architecture */}
-      {displayedResponse && (
-        <div className="space-y-6 max-w-5xl">
-          {/* Hamilton's View card — contains What This Means inline */}
-          <div
-            className="p-10 rounded-xl border-l-4"
-            style={{
-              backgroundColor: "var(--hamilton-surface-container-lowest, #ffffff)",
-              border: "1px solid rgba(216,194,184,0.3)",
-              borderLeftWidth: "4px",
-              borderLeftColor: "var(--hamilton-primary)",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.02)",
-            }}
-          >
-            <HamiltonViewPanel
-              content={displayedResponse.hamiltonView}
-              confidence={null}
-              isStreaming={isLoading}
-            />
-            {(displayedResponse.whatThisMeans || isLoading) && (
-              <WhatThisMeansPanel content={displayedResponse.whatThisMeans} isStreaming={isLoading} />
-            )}
+      {askedQuestion ? (
+        <StructuredAsk
+          question={askedQuestion}
+          institutionId={instId}
+          modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
+          researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
+          onNoStoryline={answerInProse}
+        />
+      ) : null}
+
+      {isLoading && !shown ? (
+        <div role="status" aria-live="polite" className="flex flex-col gap-3">
+          <p className="text-sm text-warm-700">Hamilton is reading the fee data and filings for this answer…</p>
+          <div className="space-y-2" aria-hidden="true">
+            <div className="skeleton h-6 w-full rounded" />
+            <div className="skeleton h-6 w-4/6 rounded" />
+            <div className="skeleton h-4 w-5/6 rounded" />
           </div>
-
-          {!isLoading && figureCheck && figureCheck.unmatched.length > 0 && (
-            <p
-              role="status"
-              className="text-sm rounded-lg px-4 py-3"
-              style={{
-                backgroundColor: "var(--hamilton-surface-container-low, #fbf3ee)",
-                border: "1px solid rgba(180,83,9,0.35)",
-                color: "var(--hamilton-text-primary)",
-              }}
-            >
-              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to
-              the data Hamilton retrieved for this answer. Treat them as unverified.
-            </p>
-          )}
-
-          {/* CTA row — shown after stream completes */}
-          <AnalyzeCTABar
-            isVisible={analysisComplete}
-            institutionId={normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId)}
-            onExportPdf={handleExportPdf}
-            isExporting={isExporting}
-          />
-
-          {/* Why It Matters */}
-          {(displayedResponse.whyItMatters.length > 0 || isLoading) && (
-            <WhyItMattersPanel items={displayedResponse.whyItMatters} isStreaming={isLoading} />
-          )}
-
-          {/* Evidence */}
-          {(displayedResponse.evidence.length > 0 || isLoading) && (
-            <EvidencePanel metrics={displayedResponse.evidence} isStreaming={isLoading} />
-          )}
-
-          {/* Save confirmation */}
-          {isSaved && (
-            <p className="text-xs text-center" style={{ color: "var(--hamilton-text-secondary)" }}>
-              Analysis saved to workspace
-            </p>
-          )}
         </div>
-      )}
+      ) : null}
 
-      {/* Explore Further + floating input — always at bottom */}
-      <div
-        className="@container fixed bottom-0 left-0 lg:left-72 right-0 z-20 px-4 @lg:px-8 @xl:px-12 py-10"
-        style={{
-          background: "linear-gradient(to top, var(--hamilton-surface) 60%, transparent)",
-        }}
-      >
-        <div className="max-w-4xl mx-auto flex flex-col gap-6">
-          <ExploreFurtherPanel
-            prompts={parsedResponse?.exploreFurther ?? []}
-            onPromptSelect={handleExploreFurther}
-            isVisible={analysisComplete}
-          />
-
-          <div role="tablist" aria-label="Analysis focus" className="flex flex-wrap gap-2">
-            {ANALYSIS_FOCUS_TABS.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={tab === activeTab}
-                onClick={() => setActiveTab(tab)}
-                className="rounded-full px-3 py-1 text-xs font-medium"
-                style={{
-                  backgroundColor: tab === activeTab ? "var(--hamilton-primary)" : "var(--hamilton-surface-container-low)",
-                  color: tab === activeTab ? "#fff" : "var(--hamilton-text-secondary)",
-                }}
-              >
-                {tab}
-              </button>
+      {shown && view.lead ? (
+        <>
+          <article className="flex max-w-[68ch] flex-col gap-4">
+            {askedQuestion ? (
+              <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
+            ) : null}
+            <p className={askedQuestion ? "text-xl leading-snug text-warm-900" : "text-2xl leading-snug text-warm-900 sm:text-[1.7rem]"} style={SERIF}>
+              {renderInline(view.lead)}
+            </p>
+            {view.paragraphs.slice(0, 1).map((para, i) => (
+              <p key={i} className="text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
+                {renderInline(para)}
+              </p>
             ))}
-          </div>
+            {view.paragraphs.length > 1 || shown.whatThisMeans || shown.whyItMatters.length > 0 ? (
+              <More label="Read the full answer">
+                {view.paragraphs.slice(1).map((para, i) => (
+                  <p key={i} className="text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
+                    {renderInline(para)}
+                  </p>
+                ))}
+                {shown.whatThisMeans ? (
+                  <p className="text-[17px] leading-relaxed text-warm-800">{renderInline(shown.whatThisMeans)}</p>
+                ) : null}
+                {shown.whyItMatters.length > 0 ? (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Why it matters</h3>
+                    <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] text-warm-800">
+                      {shown.whyItMatters.map((item, i) => (
+                        <li key={i}>{renderInline(item)}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </More>
+            ) : null}
+          </article>
 
-          <AnalysisInputBar
+          {complete && figureCheck && figureCheck.unmatched.length > 0 ? (
+            <Callout>
+              <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
+              Hamilton looked up for this answer. Treat them as unverified.
+            </Callout>
+          ) : null}
+
+
+          {shown.evidence.length > 0 ? (
+            <MemoSection title="The evidence">
+              <dl className="divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50 px-4">
+                {shown.evidence.map((m, i) => {
+                  const label = m.label.replace(/^\*+|\*+$/g, "").trim();
+                  const value = m.value.replace(/^\*\*\s*|\s*\*\*$/g, "").trim();
+                  if (!value && !m.note) {
+                    return (
+                      <dt key={i} className="pb-1 pt-4 text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">
+                        {label}
+                      </dt>
+                    );
+                  }
+                  return (
+                    <div key={i} className="grid gap-1 py-2.5 sm:grid-cols-[minmax(0,14rem)_1fr] sm:gap-6">
+                      <dt className="text-sm text-warm-600">{label}</dt>
+                      <dd className="text-sm text-warm-900 [font-variant-numeric:tabular-nums]">
+                        {renderInline(value)}
+                        {m.note ? <> {renderInline(m.note)}</> : null}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </MemoSection>
+          ) : null}
+
+          {complete ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <LinkButton
+                  href={hrefWithInstitutionContext(feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research", instId)}
+                  primary
+                >
+                  {feeName ? `Look closer at ${feeName}` : "Look closer in My fees"}
+                </LinkButton>
+                <LinkButton href={hrefWithInstitutionContext(feeCategory ? `/pro/simulate?fee=${encodeURIComponent(feeCategory)}` : "/pro/simulate", instId)}>
+                  Try a price
+                </LinkButton>
+                <button
+                  type="button"
+                  onClick={handleExportPdf}
+                  disabled={isExporting}
+                  className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50"
+                >
+                  {isExporting ? "Preparing the PDF…" : "Download PDF"}
+                </button>
+                <AddToReportButton
+                  variant="link"
+                  item={{
+                    id: basketItemId("Ask", instId, view.lead),
+                    source: "Ask",
+                    title: view.lead,
+                    detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
+                    feeCategory,
+                    institutionId: instId,
+                  }}
+                />
+              </div>
+              {exportError ? (
+                <p role="alert" className="text-sm text-terra-text">
+                  {exportError}
+                </p>
+              ) : null}
+
+              {shown.exploreFurther.length > 0 ? (
+                <MemoSection title="Ask next">
+                  <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+                    {shown.exploreFurther.map((q) => (
+                      <li key={q}>
+                        <button type="button" onClick={() => ask(q)} className="w-full px-4 py-3 text-left text-warm-900 hover:bg-warm-100">
+                          {q}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </MemoSection>
+              ) : null}
+
+              <AuditPanel
+                trail={answerAuditTrail({ lookups, figureCheck, institutionName: instName, preparedAt: answeredAt })}
+              />
+              {savedAnalysisId ? <p className="text-xs text-warm-600">Saved to your workspace.</p> : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
+
+      <div className="sticky bottom-4 z-30 print:hidden">
+        <form
+          onSubmit={handleSubmit}
+          aria-label="Ask Hamilton"
+          className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-xl border border-warm-ink-700 bg-warm-ink-900 p-2 pl-4 shadow-2xl"
+        >
+          <span aria-hidden className="pb-2 text-sm text-warm-ink-50" style={SERIF}>
+            H
+          </span>
+          <label htmlFor="hamilton-ask-page" className="sr-only">
+            Ask Hamilton
+          </label>
+          <textarea
+            id="hamilton-ask-page"
+            ref={textareaRef}
             value={input}
-            onChange={setInput}
-            onSubmit={handleAnalysisSubmit}
-            isLoading={isLoading}
-            placeholder={`Analyze from the ${activeTab} lens…`}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            maxLength={500}
+            disabled={isLoading}
+            placeholder={askedQuestion ? "Ask a follow-up…" : "Ask Hamilton about your fees or your market"}
+            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-relaxed text-warm-ink-50 placeholder:text-warm-ink-300 focus:outline-none"
           />
-        </div>
+          <button
+            type="submit"
+            disabled={isLoading || !input.trim()}
+            aria-label="Ask"
+            className="flex items-center gap-1.5 rounded-lg bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            Ask
+          </button>
+        </form>
       </div>
-    </div>
+    </MemoPage>
   );
 }
 
-/** The focus tab a deep link asks for (?intent=benchmark → Peer Position, etc.). */
+/** The focus a deep link asks for (?intent=benchmark → Peer Position, etc.). */
 function focusForIntent(intent: string | null | undefined): AnalysisFocus {
   switch (intent) {
     case "benchmark":
@@ -540,27 +601,4 @@ function focusForIntent(intent: string | null | undefined): AnalysisFocus {
     default:
       return ANALYSIS_FOCUS_TABS[0];
   }
-}
-
-function ContextStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="rounded-md px-3 py-2"
-      style={{ backgroundColor: "var(--hamilton-surface-container-low)" }}
-    >
-      <p
-        className="text-[9px] uppercase tracking-[0.14em]"
-        style={{ color: "var(--hamilton-text-tertiary)" }}
-      >
-        {label}
-      </p>
-      <p
-        className="mt-1 truncate font-semibold"
-        style={{ color: "var(--hamilton-text-primary)" }}
-        title={value}
-      >
-        {value}
-      </p>
-    </div>
-  );
 }

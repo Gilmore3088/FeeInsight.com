@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   Activity,
   BarChart3,
-  Bell,
   FileText,
   MessageSquare,
   Users,
@@ -28,39 +27,32 @@ interface ModeCard {
 /** What you do inside Hamilton, one card per mode. Not sibling tools. */
 const MODE_CARDS: ModeCard[] = [
   {
-    mode: "Analyze",
+    mode: "This month",
     icon: MessageSquare,
     body:
-      'Ask "What do community banks in District 7 charge for overdraft?" and get an answer ' +
-      "with the disclosure it came from. Verified fees and fees under review are always kept separate.",
+      "Hamilton opens with the few fees worth your attention, overdraft first, and what changed in " +
+      "your market since you last looked. Observations, not instructions.",
   },
   {
-    mode: "Benchmark",
+    mode: "My fees",
     icon: Users,
     body:
-      "Build peer sets by charter type, asset size and Fed district — as many as you need — " +
-      "and see where each of your fees lands against institutions that actually compete with you.",
+      "See any of your fees against your own counties, your state, your Fed district, your peer group " +
+      "and the nation, with the banks your customers can walk into named and the rules that apply.",
   },
   {
-    mode: "Scenario",
+    mode: "Try a price",
     icon: Activity,
     body:
-      "Model a fee change before you make it: move overdraft to $30, drop the paper statement fee, " +
-      "and see your position against the same peer set on the same lines.",
+      "Put any prices side by side, including no fee at all: where each would sit, what it does to " +
+      "fee income from your own figures, and the notice it needs. Hamilton doesn't pick one.",
   },
   {
-    mode: "Report",
+    mode: "Reports",
     icon: FileText,
     body:
-      "Turn any peer set into a board-ready brief — executive summary, evidence table, peer deltas, " +
-      "caveats — with every figure cited to its source document. PDF, a few pages each.",
-  },
-  {
-    mode: "Monitor",
-    icon: Bell,
-    body:
-      "Every schedule in your peer set is rechecked on a rolling calendar. When a competitor " +
-      "publishes a new fee, you know the day the index picks it up, not at next year's survey.",
+      "Turn a decision into a CEO one-pager or a pricing committee packet, or build a board-ready " +
+      "brief with every figure cited to its source document.",
   },
 ];
 

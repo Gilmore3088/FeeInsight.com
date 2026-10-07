@@ -83,8 +83,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   stop_payment: {
     include: /stop/i,
-    // "Cancel stop payment" removes a stop; "ACH Stop Payment/Cancellation" places one.
-    exclude: /(release|cancel\w*\s+(of\s+)?(a\s+|the\s+)?stop|revoc|line of credit|heloc|loan|cashier|official)/i,
+    // "Cancel stop payment" and "Stop Payment Removal" remove a stop; "ACH Stop
+    // Payment/Cancellation" and "Stop Payments (to put on or remove)" place one.
+    exclude:
+      /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
@@ -163,7 +165,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 15;
+export const CATEGORY_GUARD_VERSION = 16;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -212,6 +214,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
+
+/** Categories fees filed under `canonicalFeeKey` are re-filed to when their name says so. */
+export function neighbourCategories(canonicalFeeKey: string): string[] {
+  return [...new Set(REFILE_RULES.filter((rule) => rule.from === canonicalFeeKey).map((rule) => rule.to))];
+}
 
 /** The category a fee belongs in: its own, or the one its name re-files it to. */
 // PDFs and web pages write "Teller’s Check" and "ATM’s" with curly quotes; the rules use '.

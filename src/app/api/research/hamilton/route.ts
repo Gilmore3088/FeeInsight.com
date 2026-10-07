@@ -13,6 +13,7 @@ import {
   hasAnthropicApiKey,
   MISSING_ANTHROPIC_API_KEY_MESSAGE,
 } from "@/lib/ai-provider";
+import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, type HamiltonRole } from "@/lib/research/agents";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
@@ -34,6 +35,7 @@ import {
   type HamiltonRequestContract,
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
+import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 
 export const maxDuration = 300;
 
@@ -69,7 +71,8 @@ async function handlePOST(request: Request) {
 
   if (user) {
     if (user.role === "admin" || user.role === "analyst") {
-      role = "admin";
+      // "View as customer" answers with the Pro prompt a customer gets.
+      role = viewAsCustomerFromCookieHeader(request.headers.get("cookie")) ? "pro" : "admin";
     } else if (user.role === "premium" || canAccessPremium(user)) {
       // Subscription state decides Pro access, not the role label.
       role = "pro";
@@ -261,6 +264,7 @@ async function handlePOST(request: Request) {
           outputTokens,
           costCents,
         );
+        if (user) await trackFirstHamiltonUse(user.id, "question");
       } catch {
         // Non-critical — don't fail the response
       }
@@ -316,6 +320,7 @@ async function handlePOST(request: Request) {
             outputTokens,
             costCents
           );
+          if (user) await trackFirstHamiltonUse(user.id, "question");
         } catch {
           // Non-critical — don't fail the response
         }

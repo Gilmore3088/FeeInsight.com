@@ -36,10 +36,12 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   `DAILY_FULL_PASS_MISSING_LINKS` (50) of its banks have no fee link and a search can still
   find them (website on file, not offline or manual-review, last search not `dead` or
   `needs_human`). Dead ends wait for the quarterly re-check instead. A state also stays daily
-  while it has paid-find targets (`paid_find_due`, the same banks Magellan's paid find picks
-  this month) or banks with no website still due Magellan's website search
-  (`website_find_due`, the same rows `magellan/website-find.ts` picks). Both run in the paid step,
-  run only on the daily full pass, and the paid caps still bound their spend.
+  while at least `DAILY_FULL_PASS_FIND_DUE` (25) banks are paid-find targets
+  (`paid_find_due`, the same banks Magellan's paid find picks this month) or have no website
+  and are still due Magellan's website search (`website_find_due`, the same rows
+  `magellan/website-find.ts` picks), or while any market leader is among them. A state with
+  fewer of them due runs a weekly full pass until they are tried. The paid caps still bound
+  the spend.
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
   banks in the state with open work or a recent error: due a search, a fee link not fetched
@@ -53,6 +55,14 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   and `NEAR_READY_BANK_PRIORITY` (2000) plus 10 per rich bank while its bank market is within
   `NEAR_READY_GAP` (6) rich banks of ready (`market-readiness.ts`). This only changes when a
   state runs, not what its steps pick.
+- Market leaders next (2026-10-07, James wants all fees for each state's 10 to 15 largest):
+  each institution in `loadMarketLeaderIds` (`data-store/market-leaders.ts`) with fewer than 9
+  headline fees live adds `UNCOVERED_LEADER_PRIORITY` (50) to its home state's lane, since
+  that lane finds its schedule. On 2026-10-07, 585 of 693 leaders were uncovered (ME, UT and
+  WI had 19 each).
+- At most `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane runs are queued or running at once. The
+  executor finishes started runs first, then runs waiting over an hour, then the highest
+  `priority_score`.
 - Idempotency keys (they only dedupe active runs): `atlas:state-lane:<ST>:<YYYY-MM>`,
   `atlas:state-lane-recheck:<ST>:<YYYY>-Q<n>`, `atlas:state-lane-backlog:<ST>:<YYYY-MM-DDTHH>`.
 - State experts (`state-expert/`): one design, 55 memories (`state_memory`). The roster
