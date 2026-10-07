@@ -10,7 +10,9 @@ import {
   RICH_MIN_CATEGORIES,
   countInstitutionsPassingReportRule,
   getMarketReadiness,
+  listReportReadyWeeks,
   type MarketReadiness,
+  type ReportReadyWeek,
 } from "@/lib/data-store/market-readiness";
 import { EmailDeliveryPanel } from "./email-delivery-panel";
 import { LeadsTable } from "./leads-table";
@@ -32,6 +34,13 @@ export default async function LeadsPage() {
     markets = null;
   }
 
+  let weeks: ReportReadyWeek[] | null = null;
+  try {
+    weeks = await listReportReadyWeeks();
+  } catch {
+    weeks = null;
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -49,7 +58,7 @@ export default async function LeadsPage() {
         </p>
       </div>
 
-      <ReportRulePanel markets={markets} />
+      <ReportRulePanel markets={markets} weeks={weeks} />
 
       <EmailDeliveryPanel config={describeLeadEmailConfig()} defaultTo={user.email ?? ""} />
 
@@ -61,7 +70,7 @@ export default async function LeadsPage() {
 const charterLabel = (type: string) => (type === "credit_union" ? "credit unions" : "banks");
 
 /** How many institutions could get an institution report today under James's rule. */
-function ReportRulePanel({ markets }: { markets: MarketReadiness[] | null }) {
+function ReportRulePanel({ markets, weeks }: { markets: MarketReadiness[] | null; weeks: ReportReadyWeek[] | null }) {
   const ready = (markets ?? []).filter((m) => m.ready).sort((a, b) => b.rich - a.rich);
   const closest = (markets ?? [])
     .filter((m) => !m.ready && m.rich > 0)
@@ -98,11 +107,62 @@ function ReportRulePanel({ markets }: { markets: MarketReadiness[] | null }) {
           )}
         </>
       )}
+      <ReportReadyWeeks weeks={weeks} />
       <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
         The rule: the institution has {RICH_MIN_CATEGORIES}+ of the {HEADLINE_FEE_KEYS.length} headline fees live, and{" "}
-        {MIN_RICH_COMPETITORS}+ other institutions of its type in its state do too. Each request&apos;s report check also
+        {MIN_RICH_COMPETITORS}+ other institutions of its type in its state do too, or in its Fed district when the
+        state has too few. Each request&apos;s report check also
         needs its local market (FDIC branch counties) to have enough data. Source document age is not checked yet.
       </p>
     </section>
+  );
+}
+
+const shortDay = (day: string) =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/** Week over week, from Atlas's daily scoreboard (the newest snapshot of each week). */
+function ReportReadyWeeks({ weeks }: { weeks: ReportReadyWeek[] | null }) {
+  if (weeks === null) {
+    return <p className="mt-3 text-gray-500 dark:text-gray-400">The weekly history could not be loaded.</p>;
+  }
+  if (weeks.length === 0) {
+    return (
+      <p className="mt-3 text-gray-500 dark:text-gray-400">
+        Week over week: Atlas starts recording this count with its next daily scoreboard.
+      </p>
+    );
+  }
+  return (
+    <table className="mt-3 w-full max-w-lg text-left tabular-nums">
+      <caption className="mb-1 text-left text-gray-700 dark:text-gray-300">Week over week</caption>
+      <thead className="text-xs text-gray-500 dark:text-gray-400">
+        <tr>
+          <th className="py-1 pr-4 font-medium">Week of</th>
+          <th className="py-1 pr-4 text-right font-medium">Pass the rule</th>
+          <th className="py-1 pr-4 text-right font-medium">Change</th>
+          <th className="py-1 text-right font-medium">On district peers</th>
+        </tr>
+      </thead>
+      <tbody className="text-gray-700 dark:text-gray-300">
+        {weeks.map((week, index) => {
+          const previous = weeks[index + 1];
+          const change = previous ? week.count.institutions - previous.count.institutions : null;
+          return (
+            <tr key={week.weekStart} className="border-t border-gray-100 dark:border-gray-800">
+              <td className="py-1 pr-4">
+                {shortDay(week.weekStart)}
+                <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(as of {shortDay(week.snapshotDate)})</span>
+              </td>
+              <td className="py-1 pr-4 text-right">{week.count.institutions.toLocaleString("en-US")}</td>
+              <td className="py-1 pr-4 text-right">
+                {change === null ? "\u2013" : `${change > 0 ? "+" : ""}${change.toLocaleString("en-US")}`}
+              </td>
+              <td className="py-1 text-right">{week.count.viaDistrict.toLocaleString("en-US")}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

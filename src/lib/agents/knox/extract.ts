@@ -223,6 +223,25 @@ async function selectTextArtifacts(
                   AND copy.superseded_by_id IS NOT NULL
              )` : ""}
            )`;
+    // The current copy of a page whose older copy still carries live fees is read again
+    // once per rules version, so those fees can move to it. An old rules version, or none,
+    // may have read the current copy (2026-10-07: 898 live fees on older copies were
+    // missing from their current copy's rows; most current copies were read at v1-v7).
+    if (currentCopy) {
+      thinTextReextract += `
+           OR EXISTS (
+             SELECT 1
+               FROM source_documents older_copy
+               JOIN published_fee_records live_fee
+                 ON live_fee.rolled_back_at IS NULL
+               JOIN verified_fee_observations live_verified
+                 ON live_verified.fee_verified_id = live_fee.lineage_ref
+               JOIN raw_fee_observations live_raw
+                 ON live_raw.fee_raw_id = live_verified.fee_raw_id
+                AND live_raw.source_document_id = older_copy.id
+              WHERE older_copy.superseded_by_id = adt.source_document_id
+           )`;
+    }
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
