@@ -143,7 +143,16 @@ describe("Magellan agentic discovery", () => {
     const result = await runMagellanDiscovery({ runId: 102, dryRun: true, db: asDiscoveryDb(db), fetchImpl });
 
     expect(result.discovered).toBe(1);
-    expect(db).toHaveBeenCalledTimes(1);
+    // Only reads: the market-leader ranking and the candidate list.
+    expect(db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("market leaders by state"))).toHaveLength(1);
+  });
+
+  it("searches the state's market leaders first", async () => {
+    const db = createDbMock([]);
+    await runMagellanDiscovery({ runId: 103, dryRun: true, stateCode: "TX", leaderIds: [7, 9], db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
+    expect(templateText(call![0])).toMatch(/profile\.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY\(\s*::bigint\[\]\) THEN 0/);
+    expect(call!.slice(1)).toContainEqual([7, 9]);
   });
 
   it("runs every free specialist before calling a bank a miss, and logs each one", async () => {
