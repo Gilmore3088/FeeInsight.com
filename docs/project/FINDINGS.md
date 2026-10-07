@@ -2122,3 +2122,31 @@ timed out on every fetch, so it kept the link, and the paid schedule search re-s
 fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
 the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
 **Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
+
+## 2026-10-07: Bank overdraft income was never loaded, and credit union lines stop after 2024
+**What happened:** `institution_financial_records.overdraft_revenue` had 0 rows for banks; credit
+unions had it for the four 2024 quarters only (17,597 rows, 1,670 above zero). Hamilton's revenue
+line for overdraft and NSF fees was empty for every bank.
+**Cause:** banks: RIAD H032 (consumer overdraft-related service charges, banks of $1B or more) is not
+in the FDIC BankFind API, and no loader read the FFIEC bulk call report. The earlier loader was a
+Modal job that never ran here. Credit unions: NCUA retired accounts IS0048 and IS0049 from the
+March 2025 call report; the 2025 and 2026 files carry the columns but no values (registry detail
+`fee_income_accounts_unreported`). That is the source's limit, not a loader gap.
+**Fix:** registry step `registry-ffiec-overdraft` (`src/lib/regulatory/ffiec.ts`,
+`magellan/registry/ffiec-overdraft.ts`) posts the FFIEC CDR bulk form, reads Schedule RI H032 by
+RSSD, and writes the quarterly figure onto the bank's FDIC row. H032 is year to date, so a quarter
+is stored only when every earlier quarter of that year is on file; partitions run oldest quarter
+first within each year. No migration.
+**Lesson:** a field Hamilton reads needs a loader proven on prod, not only a reader. When a regulator
+retires a line, say so in the data notes rather than leaving it to look like a gap.
+
+## 2026-10-07: Banks on the community bank leverage ratio showed 0% total capital
+**What happened:** in Q2 2026, 1,808 of 4,313 banks had no tier 1 risk-based ratio and a total
+capital ratio of exactly 0; all but 7 are under $10B.
+**Cause:** banks that elect the community bank leverage ratio framework do not file risk-based
+ratios. BankFind returns null for RBC1RWAJ and 0 for RBCRWAJ. The parser stored the 0, the bank page
+showed it and the peer median counted it. The missing tier 1 ratio itself is correct.
+**Fix:** the FDIC parser stores null total capital when tier 1 is null and total capital is 0; the
+bank page and peer median skip a stored 0. Older rows correct themselves as quarters refresh.
+**Lesson:** a regulator's 0 can mean "not filed". Check a field's zeros against the filing rules
+before storing them as values.

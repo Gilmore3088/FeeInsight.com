@@ -706,7 +706,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.noncurrent_loan_rate) AS noncurrent_loan_rate,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.tier1_capital_ratio) AS tier1_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.leverage_ratio) AS leverage_ratio,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) AS total_capital_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) FILTER (WHERE f.total_capital_ratio <> 0) AS total_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS fee_income_ratio
       FROM me
       JOIN institution_sources s
