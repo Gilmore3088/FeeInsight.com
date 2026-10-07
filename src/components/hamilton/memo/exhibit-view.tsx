@@ -77,10 +77,13 @@ export function ExhibitFrame({
   children: ReactNode;
 }) {
   return (
-    <figure className="rounded-lg border border-warm-300 bg-warm-50 p-5 break-inside-avoid">
-      <figcaption className="mb-4">
-        {number != null ? <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span> : null}
-        <span className="text-base text-warm-900" style={SERIF}>
+    <figure className="relative overflow-hidden rounded-xl border border-warm-300 bg-white p-5 shadow-[0_1px_2px_rgba(26,24,21,0.04)] break-inside-avoid sm:p-6 print:shadow-none">
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-terra via-terra/50 to-transparent" />
+      <figcaption className="mb-5 flex flex-col gap-1">
+        {number != null ? (
+          <span className="inline-flex w-fit items-center rounded-full bg-terra-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span>
+        ) : null}
+        <span className="text-lg leading-snug text-warm-900" style={SERIF}>
           {title}
         </span>
       </figcaption>
@@ -259,15 +262,20 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
               </span>
             ) : null}
           </span>
-          <span className="relative h-5">
+          <span className="relative h-7">
             <span className="absolute inset-x-0 top-1/2 h-px bg-warm-200" />
-            {x.own != null ? <span className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-terra/70" style={{ left: `${axis.at(x.own)}%` }} /> : null}
-            <span
-              className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ${x.own != null && item.amount > x.own ? "bg-warm-800" : x.own != null && item.amount < x.own ? "bg-warm-500" : "bg-terra"}`}
-              style={{ left: `${axis.at(item.amount)}%` }}
-            />
+            {x.own != null ? (
+              // A bar from your fee to theirs: the distance reads at a glance, and the side says more or less.
+              <span
+                className={`absolute top-1 h-5 ${item.amount > x.own ? "rounded-r-md bg-warm-700" : "rounded-l-md bg-warm-400"}`}
+                style={{ left: `${Math.min(axis.at(item.amount), axis.at(x.own))}%`, width: `${Math.max(Math.abs(axis.at(item.amount) - axis.at(x.own)), 0.8)}%` }}
+              />
+            ) : (
+              <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warm-700" style={{ left: `${axis.at(item.amount)}%` }} />
+            )}
+            {x.own != null ? <span className="absolute -inset-y-1 w-[3px] -translate-x-1/2 rounded bg-terra" style={{ left: `${axis.at(x.own)}%` }} /> : null}
           </span>
-          <span className="text-right text-warm-900 [font-variant-numeric:tabular-nums]">{fmtMoney(item.amount)}</span>
+          <span className="text-right font-semibold text-warm-900 [font-variant-numeric:tabular-nums]">{fmtMoney(item.amount)}</span>
         </div>
       ))}
       <div className={`grid ${RANGE_COLS} gap-3 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]`}>
@@ -281,15 +289,15 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
       {x.own != null ? (
         <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-warm-700">
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-3 w-0.5 bg-terra/70" />
+            <span className="inline-block h-3.5 w-[3px] rounded bg-terra" />
             {x.ownLabel}: {fmtMoney(x.own)}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-warm-500" />
+            <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-400" />
             Charges less
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-warm-800" />
+            <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-700" />
             Charges more
           </span>
         </p>

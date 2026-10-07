@@ -62,7 +62,7 @@ export function IncomeSplitChart({ data }: { data: IncomeSplitData }) {
     { label: `Peer median (${data.n})`, value: data.peerMedian, cls: "bg-warm-400", own: false },
   ];
   return (
-    <div className="flex break-inside-avoid flex-col gap-5 rounded-lg border border-warm-200 bg-white p-5 [font-variant-numeric:tabular-nums]">
+    <div className="flex break-inside-avoid flex-col gap-5 [font-variant-numeric:tabular-nums]">
       <p className="text-xs uppercase tracking-[0.08em] text-warm-600">
         Service charges per $1,000 of deposits{data.quarterEnd ? `, year to ${quarterLabel(data.quarterEnd)}` : ""}
       </p>
