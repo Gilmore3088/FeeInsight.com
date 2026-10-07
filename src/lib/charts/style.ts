@@ -1,5 +1,7 @@
 /**
- * One chart style for reports, PDFs and in-app answers, in the brand colours (globals.css).
+ * Chart colours and fonts, kept for existing imports. The values live in the shared report
+ * design (src/lib/report-design/tokens.ts); new code imports from there.
+ *
  * The marks mean the same thing everywhere:
  * - the institution being looked at, or banks: terra (filled)
  * - credit unions: hollow ink ring
@@ -8,26 +10,7 @@
  * - other institutions or context bars: warm grey
  * Labels sit on the marks (direct labels), numbers use tabular figures.
  */
-export const CHART = {
-  ink: "#1A1815",
-  inkSoft: "#5A5347",
-  muted: "#A09788",
-  rule: "#EDE5D8",
-  rule2: "#E0D7C9",
-  paper: "#FFFFFF",
-  terra: "#C44B2E",
-  terraText: "#A93D25",
-  terraSoft: "#FDF0ED",
-  /** Middle-half band: terra at about 16%. */
-  band: "rgba(196,75,46,0.16)",
-  context: "#C4B89F",
-  noData: "#E0D7C9",
-  /** Six steps, light to dark, for fee choropleths. */
-  ramp: ["#F6DDD3", "#EDB8A5", "#E09276", "#CF6A4C", "#A93D25", "#7A2817"],
-} as const;
+import { RD, RD_FONTS } from "@/lib/report-design/tokens";
 
-export const CHART_FONTS = {
-  serif: '"Newsreader", Georgia, "Times New Roman", serif',
-  sans: '"Geist", "Inter", "Helvetica Neue", system-ui, sans-serif',
-  mono: '"Geist Mono", "JetBrains Mono", ui-monospace, monospace',
-} as const;
+export const CHART = RD;
+export const CHART_FONTS = RD_FONTS;
