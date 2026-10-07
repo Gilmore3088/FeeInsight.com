@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
+**What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
+ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
+learning sync had logged all of them (10,589 takedown rows, 1,477 restores) in `pipeline_feedback`.
+But each check took a fee down the first time it failed, with no second look. Only the source
+check, the rules re-check and the newer-copy retire restored fees when a fix made them pass. The
+category guard (1,099 takedowns), outlier range (768) and off-taxonomy (94) checks had no way back.
+**Cause:** each check was written as a one-shot cleanup, and restore was added later only where a
+wrong takedown showed up.
+**Fix:** `hamilton/second-look.ts`. A first failure is logged and the fee stays live; a later run,
+at least 12 hours on, that fails it again takes it down. Of 1,345 source-check takedowns later
+restored, 1,311 came back within 12 hours (453 within one), so the 12-hour wait would have kept
+about 97% of them live instead of flickering off and on. Wired into the source check and the category guard, and the
+category guard now restores earlier takedowns that today's guard passes. The rules re-check,
+outlier range and off-taxonomy checks are next.
+**Lesson:** every new takedown path goes through `secondLook` and has a restore path.
+
 ## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
 **What happened:** First National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)
 $10.00", a report requester's headline overdraft fee, was verified by Darwin as
@@ -51,6 +68,22 @@ selected once more when nothing on their own document is verified as the same fe
 01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
 live fee by name and amount. Nothing live comes down.
 **Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
+## 2026-10-07: Lane priority scores never left 0 because the query could not be planned
+**What happened:** PR 262 (merged 17:07 UTC Oct 6) ranks state lanes by open work, report requests
+and near-ready markets. At 00:47 UTC Oct 7 all 55 lanes still had priority_score 0, so Atlas kept
+taking states in waiting order. Postgres logs show "operator is not unique: unknown - unknown" at
+hh:00:32 every hour from 18:00 through 00:00 UTC: the hourly refresh ran and failed each time.
+**Cause:** postgres.js sends JavaScript numbers as untyped parameters, and the near-ready rule wrote
+`${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}`. Postgres cannot pick a "-" for two unknowns, so the
+whole UPDATE failed to plan. The function catches, logs and returns 0, so nothing else noticed.
+**Fix:** every number and array in the refresh query now carries a cast (`::int`, `::text[]`); a
+unit test fails if one is sent uncast. The fixed query, prepared on prod with untyped parameters
+the way postgres.js sends them, plans and scores IL 2274, MO 2173, MA 2169, NJ 2128, CO 2022,
+WA 2017, then TX 299.
+**Lesson:** in a `sql` template, cast every interpolated number unless a column fixes its type
+(`${n}::int`). Arithmetic between two parameters always fails. To test a query, prepare it with
+untyped parameters (`PREPARE q AS ...`), not with the numbers pasted in.
 
 ## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
 **What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
@@ -1825,3 +1858,17 @@ Knox's mistakes with changes elsewhere in the pipeline.
 restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
 balance (62%) are still the weakest reads.
 **Lesson:** a learning signal has to say whose mistake it records.
+
+## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
+**What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
+transfer limit $1,000", "Mobile Deposit Checks are limited to $1,000", "No Bounce Courtesy Pay
+Limit $600" and "cash Advance limit is $500". Knox's rules filed the line under the fee the name
+mentions, and the price beside it was the limit. Separately, the paid reader had no filter for
+superseded copies: since 18:37 Oct 6, 59 of 270 paid reads were older copies whose current copy
+already had text, costing $1.62. Its priced-line count also missed "$.50" and "75¢", and so did the
+shared check, so those prices never traced.
+**Fix:** Knox v28 drops a read whose name ends on a limit (`namesALimit`), except for cap
+categories and fees for going past a limit. The paid reader rejects the same rows and now uses the
+free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
+**Lesson:** a price beside a name is the fee only when the name names a charge. Words like
+"limit", "limited to" and "maximum load" mean the figure is a ceiling.
