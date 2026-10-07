@@ -2707,3 +2707,20 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 **Also:** `institution_financial_records.total_deposits` is in thousands for `fdic` and `ncua` rows but in dollars for `ffiec` rows. Readers must filter by source.
 
 **Unverified:** whether CFPB's search API returns sub-issue buckets. The run ledger records `sub_issues_loaded`.
+
+## 2026-10-07: Checking account lineup fields were never captured
+**What happened:** none of the 1,914 monthly maintenance fees on prod named its product, the
+balance that avoids the fee, the opening deposit, or the waiver (audit:
+`data-inventory/account-lineup-audit-2026-10-07.md`).
+**Cause:**
+- No fee tier had a column for them, and `published_fee_catalog.account_product_type` was a
+  hard-coded `NULL::text`.
+- Knox's paid prompt asked for `conditions` but kept only a `waivable` flag and threw the text
+  away. It also told the model to skip balance requirements.
+- The rule candidate had no field for a product, threshold or waiver.
+**Fix:** migration `20270110000020_account_lineup_fields.sql` adds `product_name`,
+`min_balance_to_avoid`, `min_opening_deposit` and `waiver_text` to `raw_fee_observations`. The
+catalog reads `account_product_type` from `product_name` and adds the other three at its end.
+Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
+`knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
+Rows already on file gain the fields only when Knox reads their document again.
