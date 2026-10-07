@@ -37,6 +37,7 @@ export type FeedbackKind =
   | "outside_range"
   | "off_taxonomy"
   | "duplicate"
+  | "refreshed"
   | "answer_key"
   | "restored_after_takedown"
   | "darwin_verified"
@@ -160,14 +161,41 @@ export function knoxStrategyFromFlags(flags: unknown): string {
   return specialist ? specialist.slice("knox_specialist:".length) : "extract.rules";
 }
 
+/**
+ * A takedown reason's group without the row it points at ("refreshed by #69017" ->
+ * "refreshed by"), so a check or kind is one name, never one per fee; the id stays in
+ * the row's evidence (`takedownPointer`).
+ */
+function takedownGroup(group: string): string {
+  return group.replace(/\s*#\d+\s*$/, "").trim();
+}
+
+/** The live row a takedown reason points at ("superseded by #69017" -> 69017), if any. */
+export function takedownPointer(reason: string): number | null {
+  const match = reason.split(":")[0].match(/#(\d+)\s*$/);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * A refresh closes a live row because the current copy of the page states the same fee
+ * (same name and amount) and that row was published in its place: Knox's read and
+ * Darwin's approval held up, so it is a `right` signal, not a takedown.
+ */
+export function takedownSignal(reason: string): "wrong" | "right" {
+  return takedownGroup(reason.split(":")[0]) === "refreshed by" ? "right" : "wrong";
+}
+
 /** The feedback kind for a Hamilton takedown reason (`published_fee_records.rolled_back_reason`). */
 export function takedownKind(reason: string): FeedbackKind {
-  const [group, detail] = reason.split(":");
+  const [rawGroup, detail] = reason.split(":");
+  const group = takedownGroup(rawGroup);
+  if (group === "refreshed by") return "refreshed";
   if (group === "rules_recheck_unreproduced") return "unreproduced";
   if (group === "category_guard") return "wrong_category";
   if (group === "amount_outside_category_range") return "outside_range";
   if (group === "category_outside_taxonomy") return "off_taxonomy";
-  if (/^(duplicate of|superseded by)/.test(group)) return "duplicate";
+  if (group === "limit_as_fee") return "not_a_fee";
+  if (/^(duplicate of|superseded by|older document than)/.test(group)) return "duplicate";
   if (group === "source_check_untraceable") {
     if (detail === "amount_is_a_threshold") return "threshold";
     if (detail === "amount_not_the_fee") return "wrong_amount";
@@ -179,8 +207,9 @@ export function takedownKind(reason: string): FeedbackKind {
 
 /** The Hamilton check behind a takedown reason. */
 export function takedownCheck(reason: string): string {
-  const group = reason.split(":")[0];
-  if (/^(duplicate of|superseded by)/.test(group)) return "hamilton.duplicate_collapse";
+  const group = takedownGroup(reason.split(":")[0]);
+  if (group === "refreshed by") return "hamilton.refresh_copy";
+  if (/^(duplicate of|superseded by|older document than)/.test(group)) return "hamilton.duplicate_collapse";
   if (group === "rules_recheck_unreproduced") return "hamilton.rules_recheck";
   if (group === "source_check_untraceable") return "hamilton.source_check";
   return `hamilton.${group}`;

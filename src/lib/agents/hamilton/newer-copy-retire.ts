@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
 
@@ -385,7 +386,7 @@ export async function retireFeesDroppedFromNewerCopy(
       }
       if (restoreIds.length > 0) {
         // A restore never makes an exact second copy of a fee that is live again.
-        const restored = await scope<{ lineage_ref: number | string }[]>`
+        const restored = await scope<{ lineage_ref: number | string; fee_published_id: number | string; institution_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NULL,
                  rolled_back_by_batch_id = NULL,
@@ -400,8 +401,9 @@ export async function retireFeesDroppedFromNewerCopy(
                   AND other.amount IS NOT DISTINCT FROM fp.amount
                   AND other.fee_name = fp.fee_name
              )
-          RETURNING fp.lineage_ref
+          RETURNING fp.lineage_ref, fp.fee_published_id, fp.institution_id
         `;
+        await markRestoredForSourceCheck(scope, restored, { runId: options.runId, restoredBy: "hamilton.newer_copy_check" });
         result.restored = restored.length;
         if (restored.length > 0) {
           await scope`

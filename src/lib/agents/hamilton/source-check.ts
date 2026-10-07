@@ -36,6 +36,38 @@ export function sourceCheckFingerprint(maxLiveFeeId: number | string): string {
   return `v${SOURCE_CHECK_STRATEGY.version}:${maxLiveFeeId}`;
 }
 
+/** The marker a restore leaves, so the restored fee's institution is checked again. */
+export const SOURCE_CHECK_RESTORE_PREFIX = "restored:";
+
+/**
+ * Another check (the newer-copy check, the rules re-check) can put an older row live
+ * again. Its id is below the institution's highest live id, so the fingerprint above
+ * would not change and the restored fee would go live without a source check. A marker
+ * attempt per restored row makes the institution due again: a check counts only while
+ * no marker is newer than it.
+ */
+export async function markRestoredForSourceCheck(
+  db: SqlTag,
+  restored: Array<{ institution_id: number | string; fee_published_id: number | string }>,
+  options: { runId: number; restoredBy: string },
+): Promise<void> {
+  if (restored.length === 0) return;
+  await db`
+    INSERT INTO pipeline_attempts (
+      institution_id, stage, strategy, strategy_version, input_fingerprint, outcome,
+      yield_count, cost_microusd, agent_run_id, detail
+    )
+    SELECT v.institution_id, 'publish', ${SOURCE_CHECK_STRATEGY.strategy}, ${SOURCE_CHECK_STRATEGY.version},
+           ${SOURCE_CHECK_RESTORE_PREFIX} || v.fee_published_id::text || ':' || ${options.runId}::text, 'ok',
+           0, 0, ${options.runId},
+           jsonb_build_object('restored_fee_published_id', v.fee_published_id, 'restored_by', ${options.restoredBy}::text)
+      FROM unnest(
+             ${restored.map((row) => Number(row.institution_id))}::bigint[],
+             ${restored.map((row) => Number(row.fee_published_id))}::bigint[]
+           ) AS v(institution_id, fee_published_id)
+  `;
+}
+
 export interface LiveFeeRow extends RateFields {
   fee_published_id: number | string;
   lineage_ref: number | string;
@@ -154,6 +186,15 @@ export async function takeDownUntraceableFees(
             AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
             AND pa.institution_id = live.institution_id
             AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
+            -- A fee restored after this check went live unchecked (markRestoredForSourceCheck).
+            AND NOT EXISTS (
+              SELECT 1 FROM pipeline_attempts restore
+               WHERE restore.stage = 'publish'
+                 AND restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                 AND restore.institution_id = live.institution_id
+                 AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                 AND restore.id > pa.id
+            )
        )
        ORDER BY NOT (
                   (${options.institutionId ?? null}::bigint IS NULL OR live.institution_id = ${options.institutionId ?? null}::bigint)
@@ -167,6 +208,7 @@ export async function takeDownUntraceableFees(
                    WHERE pa.stage = 'publish'
                      AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                      AND pa.institution_id = live.institution_id
+                     AND pa.input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
                 ),
                 live.institution_id
        LIMIT ${limit}

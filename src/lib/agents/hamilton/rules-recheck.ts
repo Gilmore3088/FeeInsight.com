@@ -7,6 +7,7 @@ import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
 
@@ -79,6 +80,12 @@ export interface RulesRecheckResult {
   rollbacks: RulesRecheckRollback[];
   /** Fees an earlier re-check took down that today's rules read again. */
   restores: RulesRecheckRollback[];
+  /**
+   * Fees today's rules did not read that stay live because the text they were read from is
+   * gone: the source check judges the document's newer text, so a re-check never takes a
+   * fee down for what another text says.
+   */
+  textGone: number;
 }
 
 interface LiveKnoxRow {
@@ -117,7 +124,14 @@ interface DocumentText {
   normalized_text: string;
 }
 
-const EMPTY_RESULT: RulesRecheckResult = { documentsChecked: 0, documentsWithoutText: 0, liveFeesChecked: 0, rollbacks: [], restores: [] };
+const EMPTY_RESULT: RulesRecheckResult = {
+  documentsChecked: 0,
+  documentsWithoutText: 0,
+  liveFeesChecked: 0,
+  rollbacks: [],
+  restores: [],
+  textGone: 0,
+};
 
 /**
  * Hamilton repair: roll back live fees Knox's free rules extracted that today's rules
@@ -302,8 +316,16 @@ export async function rollBackUnreproducedFees(
       const fee = asFee(row);
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
       const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
-      if (key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey))) && !keptKeys.has(key)) {
+      const reproduced = key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
+      if (reproduced && !keptKeys.has(key)) {
         keptKeys.add(key);
+        continue;
+      }
+      // A fee comes down only when today's rules read the same text it was read from and get
+      // a different answer. When that text is gone, the document's newer text is the source
+      // check's to judge (and the newer-copy check's, for a newer copy of the page).
+      if (!reproduced && !documentTexts.some((candidate) => candidate.text_hash === row.text_hash)) {
+        result.textGone += 1;
         continue;
       }
       rolledBack += 1;
@@ -314,11 +336,17 @@ export async function rollBackUnreproducedFees(
       if (fee.amount == null) continue;
       const key = feeKey(row.canonical_fee_key, fee.amount);
       if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
-      const text = textFor(row);
-      // Knox reads names tidied; a row stored under an older untidy name is the same read.
-      if (!readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
-      const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
-      if (!traced.ok && traced.reason !== "tiered_fee") continue;
+      // An earlier re-check judged this fee against a text other than its own: it comes back,
+      // and its bank is marked due for the source check, which judges it against the
+      // document's current text (markRestoredForSourceCheck).
+      const ownTextGone = !documentTexts.some((candidate) => candidate.text_hash === row.text_hash);
+      if (!ownTextGone) {
+        const text = textFor(row);
+        // Knox reads names tidied; a row stored under an older untidy name is the same read.
+        if (!readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
+        const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
+        if (!traced.ok && traced.reason !== "tiered_fee") continue;
+      }
       keptKeys.add(key);
       restoredKeys.add(`${institutionId}:${key}`);
       result.restores.push(fee);
@@ -363,7 +391,7 @@ export async function rollBackUnreproducedFees(
       if (result.restores.length > 0) {
         // A restore never makes a second live copy of a category and price the
         // institution already shows.
-        const restored = await scope<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
+        const restored = await scope<{ fee_published_id: number | string; lineage_ref: number | string; institution_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NULL,
                  rolled_back_by_batch_id = NULL,
@@ -377,8 +405,9 @@ export async function rollBackUnreproducedFees(
                   AND live.canonical_fee_key = fp.canonical_fee_key
                   AND live.amount IS NOT DISTINCT FROM fp.amount
              )
-          RETURNING fp.fee_published_id, fp.lineage_ref
+          RETURNING fp.fee_published_id, fp.lineage_ref, fp.institution_id
         `;
+        await markRestoredForSourceCheck(scope, restored, { runId: options.runId, restoredBy: "hamilton.rules_recheck" });
         const restoredIds = new Set(restored.map((row) => Number(row.fee_published_id)));
         result.restores = result.restores.filter((fee) => restoredIds.has(fee.feePublishedId));
         if (restored.length > 0) {
@@ -417,7 +446,7 @@ export async function rollBackUnreproducedFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.rules_recheck', 'completed',
-          ${`Re-checked ${result.liveFeesChecked} live fee(s) in ${result.documentsChecked} document(s) against today's rules; rolled back ${result.rollbacks.length}, restored ${result.restores.length}`},
+          ${`Re-checked ${result.liveFeesChecked} live fee(s) in ${result.documentsChecked} document(s) against today's rules; rolled back ${result.rollbacks.length}, restored ${result.restores.length}, kept ${result.textGone} whose text is gone`},
           ${JSON.stringify({
             batch_id: options.batchId,
             signature,
@@ -426,6 +455,7 @@ export async function rollBackUnreproducedFees(
             live_fees_checked: result.liveFeesChecked,
             rolled_back: result.rollbacks.length,
             restored: result.restores.length,
+            kept_text_gone: result.textGone,
             restored_samples: result.restores.slice(0, 20).map((fee) => ({
               fee_published_id: fee.feePublishedId,
               canonical_fee_key: fee.canonicalFeeKey,

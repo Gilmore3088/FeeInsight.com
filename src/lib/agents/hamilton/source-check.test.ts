@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   SOURCE_CHECK_REASON,
+  SOURCE_CHECK_RESTORE_PREFIX,
+  markRestoredForSourceCheck,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
   takeDownUntraceableFees,
@@ -177,5 +179,27 @@ describe("linkImportedFeesToTwins", () => {
     expect(await linkImportedFeesToTwins(db as never, { runId: 9, dryRun: false })).toEqual({ checked: 1, linked: 0, untraced: 1 });
     const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join(" "));
     expect(statements.some((text) => text.includes("UPDATE verified_fee_observations"))).toBe(false);
+  });
+});
+
+describe("markRestoredForSourceCheck", () => {
+  it("leaves one marker per restored fee so its bank is checked again", async () => {
+    const db = vi.fn<(...args: unknown[]) => Promise<unknown[]>>(() => Promise.resolve([]));
+    await markRestoredForSourceCheck(db as unknown as Parameters<typeof markRestoredForSourceCheck>[0], [
+      { institution_id: 7, fee_published_id: 41 },
+      { institution_id: 8, fee_published_id: 42 },
+    ], { runId: 3, restoredBy: "hamilton.rules_recheck" });
+    expect(db).toHaveBeenCalledTimes(1);
+    const [strings, ...values] = db.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(strings.join("?")).toContain("INSERT INTO pipeline_attempts");
+    expect(values).toContain(SOURCE_CHECK_RESTORE_PREFIX);
+    expect(values).toContainEqual([7, 8]);
+    expect(values).toContainEqual([41, 42]);
+  });
+
+  it("writes nothing when nothing was restored", async () => {
+    const db = vi.fn(() => Promise.resolve([]));
+    await markRestoredForSourceCheck(db as unknown as Parameters<typeof markRestoredForSourceCheck>[0], [], { runId: 3, restoredBy: "x" });
+    expect(db).not.toHaveBeenCalled();
   });
 });

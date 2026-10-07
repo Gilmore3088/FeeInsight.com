@@ -94,6 +94,23 @@ describe("Hamilton rules re-check", () => {
     expect(query).toContain("knox_lesson:%");
   });
 
+  it("never takes a fee down for a text other than the one it was read from", async () => {
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "bill_pay", "Copy of Draft (Check)", "3.00", "older")], texts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", dryRun: true });
+
+    expect(result.rollbacks).toEqual([]);
+    expect(result.textGone).toBe(1);
+  });
+
+  it("restores a fee an earlier re-check judged against another text, for the source check to judge", async () => {
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "nsf", "Returned Item", "25.00", "older", true)], texts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: true });
+
+    expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+  });
+
   it("keeps one live copy of a fee the document states once and asks Knox for the fees it misses", async () => {
     const db = createDbMock(
       [live(1, "stop_payment", "Stop Payment", "30.00"), live(5, "stop_payment", "Stop Payment Fee", "30.00")],
@@ -160,7 +177,9 @@ describe("Hamilton rules re-check", () => {
     const writes = JSON.stringify(db.mock.calls);
     expect(writes).toContain("SET rolled_back_at = NULL");
     expect(writes).toContain("SET review_status = 'verified'");
-    const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts"));
+    const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts") && !String(call[0]).includes("unnest"));
+    // The restored fee's bank is marked due for the source check again.
+    expect(db.mock.calls.some((call) => String(call[0]).includes("INSERT INTO pipeline_attempts") && call.includes("hamilton.rules_recheck"))).toBe(true);
     // safe_deposit_box $30 is read under another name: still missing, so Knox re-reads the text.
     expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 0, restored: 1, missing_fees: 1 });
   });

@@ -1696,3 +1696,33 @@ comparison without its right-hand side. The fixed query was run read-only on pro
 12 rows.
 **Lesson:** when a test mocks the database, run a hand-edited query once on prod (read-only) before
 merging.
+
+## 2026-10-07: transfer limits were live as prices
+**What happened:** Knox read limit lines as fees and nothing downstream caught them, because the
+categories involved (Zelle, mobile deposit, bill pay, cash advance) have no amount range and fall
+back to the $2,500 default. Live examples: "Zelle® transfer limit" $1,000, "Mobile Deposit Checks
+are limited to" $1,000, "Cash Advance: Customer" read from "$2,500 Limit". Prod dry run (read-only,
+7 Oct ~01:50 UTC): 22 live fees.
+**Fix:** Hamilton's limit guard (`hamilton/limit-guard.ts`) rolls them back each publish step,
+archived with a `limit_as_fee:` reason, and refuses new ones at publish. Knox is fixing the read.
+**Lesson:** a category without an amount range accepts any figure; a limit and a price only differ
+in the words next to the figure.
+
+## 2026-10-07: three gaps in Hamilton's own bookkeeping
+**What happened:** (1) The feedback sync named a check after each takedown reason, so PR 311's
+refresh closes ("refreshed by #69017") wrote 632 learning rows, each with its own check name and a
+`wrong` signal, though a refresh means Knox and Darwin were right; 6 more came from "older document
+than #N". (2) The newer-copy check and the rules re-check restore older rows without a new highest
+fee id, so the source check, which re-checks a bank only when that id changes, left restored fees
+unchecked. (3) The rules re-check judged a fee against the document's latest text when its own text
+was gone, so it could take a fee down for what another text says: 438 of 2,158 re-check takedowns
+made 6-30 hours after publishing (Oct 5-7). The rest were newer Knox versions reading the same text
+differently (the burst on Oct 5, 16:00-23:00 UTC, followed a Knox release); only 20 were the
+hint-category case PR 316 fixes.
+**Fix:** reasons that point at a row get one check name (`hamilton.refresh_copy`,
+`hamilton.duplicate_collapse`) with the id in evidence, refreshes count as `right`, and the sync
+relabels the old rows (kept, old name in evidence). Restores leave a marker the source check's due
+query honors. The re-check only takes a fee down for its own text, and brings back the up to 552
+takedowns (195 banks) it judged against another text, each re-judged by the source check.
+**Lesson:** an identifier never belongs in a name something groups by, and a "due" test keyed on
+the highest id misses anything that comes back with an old id.

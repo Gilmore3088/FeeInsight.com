@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { knoxStrategyFromFlags, recordFeedback, takedownCheck, takedownKind } from "./feedback";
-import { syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
+import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
 
 type Db = Parameters<typeof syncPipelineFeedback>[0];
 
@@ -52,6 +52,44 @@ describe("shared learning store", () => {
     expect(takedownKind("duplicate of #15244")).toBe("duplicate");
     expect(takedownCheck("superseded by #17183")).toBe("hamilton.duplicate_collapse");
     expect(takedownCheck("source_check_untraceable:name_not_in_text")).toBe("hamilton.source_check");
+    expect(takedownKind("older document than #14909")).toBe("duplicate");
+    expect(takedownCheck("older document than #14909")).toBe("hamilton.duplicate_collapse");
+    expect(takedownKind("limit_as_fee:name_states_limit: the name states a limit")).toBe("not_a_fee");
+    expect(takedownCheck("limit_as_fee:name_states_limit: the name states a limit")).toBe("hamilton.limit_as_fee");
+  });
+
+  it("names a reason that points at another row once, never once per fee", () => {
+    expect(takedownCheck("refreshed by #69017")).toBe("hamilton.refresh_copy");
+    expect(takedownKind("refreshed by #69017")).toBe("refreshed");
+    expect(takedownCheck("some new reason #123")).toBe("hamilton.some new reason");
+    expect(takedownKind("some new reason #123")).toBe("some_new_reason");
+  });
+
+  it("counts a refresh as Knox and Darwin holding up, with the new row in evidence", () => {
+    const [extract, verify] = takedownFeedback({ ...takedown, rolled_back_reason: "refreshed by #69017" }, 1);
+    expect(extract).toMatchObject({ signal: "right", kind: "refreshed", checkName: "hamilton.refresh_copy" });
+    expect(extract.evidence).toMatchObject({ pointer_fee_published_id: 69017, reason: "refreshed by #69017" });
+    expect(verify).toMatchObject({ signal: "right", checkName: "hamilton.refresh_copy" });
+  });
+
+  it("gives older per-fee takedown rows their fixed names, keeping the rows", async () => {
+    const { db, calls } = mockDb([
+      ["check_name ~", [{ id: 5, reason: "refreshed by #69017" }, { id: 6, reason: "older document than #14909" }]],
+      ["UPDATE pipeline_feedback", [{ id: 5 }, { id: 6 }]],
+    ]);
+    expect(await relabelPerFeeTakedowns(db, { limit: 100, dryRun: false })).toBe(2);
+    const update = calls.find((call) => call.query.includes("UPDATE pipeline_feedback"));
+    expect(update?.query).not.toContain("DELETE");
+    expect(update?.values).toEqual([
+      [5, 6],
+      ["hamilton.refresh_copy", "hamilton.duplicate_collapse"],
+      ["refreshed", "duplicate"],
+      ["right", "wrong"],
+      [69017, 14909],
+    ]);
+    const dry = mockDb([["check_name ~", [{ id: 5, reason: "refreshed by #69017" }]]]);
+    expect(await relabelPerFeeTakedowns(dry.db, { limit: 100, dryRun: true })).toBe(1);
+    expect(dry.calls.some((call) => call.query.includes("UPDATE"))).toBe(false);
   });
 
   it("charges a takedown to Knox's read and to the Darwin attempt that approved it", () => {
@@ -105,7 +143,7 @@ describe("shared learning store", () => {
 
     const result = await syncPipelineFeedback(db, { runId: 7 });
 
-    expect(result).toEqual({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 1, written: 5 });
+    expect(result).toEqual({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 1, written: 5, relabeled: 0 });
     const insert = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
     const rows = JSON.parse(String(insert?.values[0]));
     expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toEqual([
