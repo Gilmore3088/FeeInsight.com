@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchFfiecCallBulk, periodOptionValue, readFfiecOverdraft, readFormState } from "./ffiec";
+import { fetchFfiecCallBulk, periodOptionValue, readFfiecOverdraft, readFormState, readScheduleRiOverdraft } from "./ffiec";
 
 const RI = [
   '"IDRSSD"\t"RIAD4340"\t"RIADH032"\t"RIADH033"',
@@ -17,13 +17,13 @@ function bulkZip(files: Record<string, string>): Uint8Array {
 }
 
 describe("readFfiecOverdraft", () => {
-  it("reads H032 from Schedule RI only, keeps a filed zero, and skips blanks", () => {
+  it("reads H032 from Schedule RI only, keeps a filed zero, and skips blanks", async () => {
     const zip = bulkZip({
       "FFIEC CDR Call Schedule RI 06302026.txt": RI,
       "FFIEC CDR Call Schedule RIA 06302026.txt": '"IDRSSD"\t"RIADH032"\n"999"\t"77"\n',
       "FFIEC CDR Call Bulk POR 06302026.txt": "IDRSSD\n1\n",
     });
-    const out = readFfiecOverdraft(zip);
+    const out = await readFfiecOverdraft(zip);
     expect(out.files).toEqual(["FFIEC CDR Call Schedule RI 06302026.txt"]);
     expect(out.hasColumn).toBe(true);
     expect(out.rows).toEqual([
@@ -32,9 +32,22 @@ describe("readFfiecOverdraft", () => {
     ]);
   });
 
-  it("reports a missing column for quarters before H032 existed", () => {
+  it("reports a missing column for quarters before H032 existed", async () => {
     const zip = bulkZip({ "FFIEC CDR Call Schedule RI 12312014.txt": '"IDRSSD"\t"RIAD4340"\n"1"\t"2"\n' });
-    expect(readFfiecOverdraft(zip)).toMatchObject({ hasColumn: false, rows: [] });
+    expect(await readFfiecOverdraft(zip)).toMatchObject({ hasColumn: false, rows: [] });
+  });
+
+  it("does not size buffers from the zip directory", async () => {
+    const zip = bulkZip({ "FFIEC CDR Call Schedule RI 06302026.txt": RI });
+    // Mark every central directory size as unknown (0xFFFFFFFF); a whole-buffer unzip would allocate 4 GB.
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    for (let i = 0; i + 46 <= zip.length; i += 1) {
+      if (view.getUint32(i, true) === 0x02014b50) {
+        view.setUint32(i + 20, 0xffffffff, true);
+        view.setUint32(i + 24, 0xffffffff, true);
+      }
+    }
+    expect((await readFfiecOverdraft(zip)).rows).toHaveLength(2);
   });
 });
 
@@ -73,7 +86,7 @@ describe("FFIEC bulk form", () => {
     });
     const out = await fetchFfiecCallBulk({ year: 2026, quarter: 1 }, { fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(out.fileName).toBe("FFIEC CDR Call Bulk All Schedules 03312026.zip");
-    expect(readFfiecOverdraft(out.zip as Uint8Array).rows).toHaveLength(2);
+    expect(readScheduleRiOverdraft(out.files ?? {}).rows).toHaveLength(2);
     const last = new URLSearchParams(bodies[4]);
     expect(last.get("ctl00$MainContentHolder$DatesDropDownList")).toBe("154");
     expect(last.get("ctl00$MainContentHolder$FormatType")).toBe("TSVRadioButton");
@@ -84,7 +97,7 @@ describe("FFIEC bulk form", () => {
   it("returns no zip when FFIEC does not list the quarter", async () => {
     const fetchImpl = vi.fn(async () => new Response(PAGE(DATES), { status: 200, headers: { "content-type": "text/html" } }));
     const out = await fetchFfiecCallBulk({ year: 2027, quarter: 1 }, { fetchImpl: fetchImpl as unknown as typeof fetch });
-    expect(out.zip).toBeNull();
+    expect(out.files).toBeNull();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

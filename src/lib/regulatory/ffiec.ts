@@ -1,4 +1,4 @@
-import { strFromU8, unzipSync } from "fflate";
+import { strFromU8, Unzip, UnzipInflate } from "fflate";
 import { REGISTRY_USER_AGENT, RegistryHttpError, type RegistryFetchOptions } from "./http";
 import type { Quarter } from "./quarters";
 import { quarterEndDate } from "./quarters";
@@ -114,8 +114,8 @@ function postBack(state: FormState, target: string, extra: Record<string, string
 }
 
 export interface FfiecBulkDownload {
-  /** null when FFIEC does not list this quarter yet. */
-  zip: Uint8Array | null;
+  /** Schedule RI text files from the bulk zip; null when FFIEC does not list this quarter yet. */
+  files: Record<string, Uint8Array> | null;
   fileName: string | null;
 }
 
@@ -129,7 +129,7 @@ export async function fetchFfiecCallBulk(q: Quarter, options: RegistryFetchOptio
   const productHtml = await product.text();
   state = readFormState(productHtml, cookies);
   const period = periodOptionValue(productHtml, q);
-  if (period === null) return { zip: null, fileName: null };
+  if (period === null) return { files: null, fileName: null };
 
   const base = { [`${FIELD}ListBox1`]: PRODUCT, [`${FIELD}DatesDropDownList`]: period };
   const periodPage = await request(options, cookies, postBack(state, `${FIELD}DatesDropDownList`, base));
@@ -147,7 +147,8 @@ export async function fetchFfiecCallBulk(q: Quarter, options: RegistryFetchOptio
     throw new RegistryHttpError(`FFIEC returned ${type || "no content type"} instead of the bulk zip`, FFIEC_BULK_URL, download.status);
   }
   const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null;
-  return { zip: new Uint8Array(await download.arrayBuffer()), fileName: name };
+  if (!download.body) throw new RegistryHttpError("FFIEC sent an empty bulk download", FFIEC_BULK_URL, download.status);
+  return { files: await unzipScheduleRi(download.body), fileName: name };
 }
 
 /** Schedule RI files only ("Schedule RI 06302026.txt", or "Schedule RI(1 of 2) ..."), not RIA, RIB... */
@@ -170,9 +171,76 @@ export interface FfiecOverdraftFile {
   rows: FfiecOverdraftRow[];
 }
 
+const UNZIP_CHUNK = 1 << 20;
+const MAX_SCHEDULE_BYTES = 256 * 1024 * 1024;
+
+/**
+ * Pull only the Schedule RI files out of the all-schedules bulk zip, reading it as a stream.
+ * The whole zip is never held in memory, and output buffers grow with the inflated data rather
+ * than being sized from the zip headers. Buffering the zip and unzipping it in one call failed on
+ * prod with "Array buffer allocation failed" (Oct 2026).
+ */
+export async function unzipScheduleRi(source: Uint8Array | ReadableStream<Uint8Array>): Promise<Record<string, Uint8Array>> {
+  const files: Record<string, Uint8Array> = {};
+  const pending: Array<Promise<void>> = [];
+  let failure: Error | null = null;
+  const unzip = new Unzip((file) => {
+    if (!SCHEDULE_RI.test(file.name)) return;
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    pending.push(
+      new Promise<void>((resolve) => {
+        file.ondata = (error, data, final) => {
+          if (error) {
+            failure ??= error;
+            return resolve();
+          }
+          size += data.length;
+          if (size > MAX_SCHEDULE_BYTES) {
+            failure ??= new Error(`${file.name} is larger than ${MAX_SCHEDULE_BYTES} bytes`);
+            file.terminate();
+            return resolve();
+          }
+          parts.push(data);
+          if (final) {
+            const out = new Uint8Array(size);
+            let at = 0;
+            for (const part of parts) {
+              out.set(part, at);
+              at += part.length;
+            }
+            files[file.name] = out;
+            resolve();
+          }
+        };
+      }),
+    );
+    file.start();
+  });
+  unzip.register(UnzipInflate);
+
+  if (source instanceof Uint8Array) {
+    for (let at = 0; at < source.length; at += UNZIP_CHUNK) unzip.push(source.subarray(at, at + UNZIP_CHUNK), false);
+  } else {
+    const reader = source.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value?.length) unzip.push(value, false);
+      if (failure) {
+        await reader.cancel();
+        break;
+      }
+    }
+  }
+  unzip.push(new Uint8Array(0), true);
+  await Promise.all(pending);
+  if (failure) throw failure;
+  return files;
+}
+
 /** RIAD H032 for every bank that filed a value; blank cells are left out, never read as zero. */
-export function readFfiecOverdraft(zip: Uint8Array): FfiecOverdraftFile {
-  const files = unzipSync(zip, { filter: (file) => SCHEDULE_RI.test(file.name) });
+export function readScheduleRiOverdraft(files: Record<string, Uint8Array>): FfiecOverdraftFile {
   const rows = new Map<string, number>();
   let hasColumn = false;
   const names = Object.keys(files).sort();
@@ -193,4 +261,9 @@ export function readFfiecOverdraft(zip: Uint8Array): FfiecOverdraftFile {
     }
   }
   return { files: names, hasColumn, rows: [...rows].map(([rssd, ytdThousands]) => ({ rssd, ytdThousands })) };
+}
+
+/** Read H032 straight from a whole bulk zip (tests and small files). */
+export async function readFfiecOverdraft(zip: Uint8Array): Promise<FfiecOverdraftFile> {
+  return readScheduleRiOverdraft(await unzipScheduleRi(zip));
 }
