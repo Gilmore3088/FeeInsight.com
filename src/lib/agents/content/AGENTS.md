@@ -18,6 +18,16 @@ himself, then marks it posted.
    - Every number in the caption must be one of the spread's own figures or the date
      (`unbackedNumbers`).
 
+2. `content-fee-depth` (free, no model): W3, every other week (skips when one was drafted in
+   the last 10 days). Takes the next use case from `USE_CASES` (pricing committee prep, a new
+   account launch, a competitor review, a board question, an annual schedule review) and the
+   metro with the most full schedules (15+ fee types), at least 10 of them, not featured in 8
+   weeks. The card is a competitor grid: the 8 fees local institutions publish most, each with
+   its lowest, median and highest local value (5+ institutions each). Use-case copy is fixed
+   text with no numbers; the caption's numbers pass `unbackedNumbers`.
+
+Cards for both are drawn in `cards.tsx` from the draft's stored facts.
+
 ## Rules
 
 - Institutions are never named on a card or in a caption; posts name markets.

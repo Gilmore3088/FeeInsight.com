@@ -33,11 +33,14 @@ async function handleGET(request: NextRequest) {
     triggeredBy: "hamilton.content",
     triggerSource: "schedule",
     idempotencyKey: `hamilton:content:${day}`,
-    steps: [{ key: "content-market-spread", agent: "hamilton", title: "Draft this week's market-spread post" }],
+    steps: [
+      { key: "content-market-spread", agent: "hamilton", title: "Draft this week's market-spread post" },
+      { key: "content-fee-depth", agent: "hamilton", title: "Draft the fortnightly fee-depth post" },
+    ],
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's content run already exists." }
-    : await executeAgentRun(started.run.id, { maxSteps: 1 });
+    : await executeAgentRun(started.run.id, { maxSteps: 2 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 

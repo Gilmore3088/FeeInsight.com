@@ -50,6 +50,7 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
@@ -1308,6 +1309,10 @@ async function executeAgenticStep(
     case "content-market-spread": {
       const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+    }
+    case "content-fee-depth": {
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({

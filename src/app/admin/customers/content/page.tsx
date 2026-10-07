@@ -14,7 +14,7 @@ const SECTIONS: { status: ContentDraftStatus; title: string; note: string }[] = 
   { status: "skipped", title: "Skipped", note: "Not re-proposed for eight weeks." },
 ];
 
-const WORKFLOW_LABELS: Record<string, string> = { "w1-market-spread": "Market spread" };
+const WORKFLOW_LABELS: Record<string, string> = { "w1-market-spread": "Market spread", "w3-fee-depth": "Fee depth at work" };
 
 function StatusButton({ id, status, label, primary }: { id: number; status: ContentDraftStatus; label: string; primary?: boolean }) {
   return (
@@ -35,13 +35,22 @@ function StatusButton({ id, status, label, primary }: { id: number; status: Cont
 
 function Facts({ draft }: { draft: ContentDraft }) {
   const f = draft.facts as Record<string, number | string | undefined>;
-  if (typeof f.low !== "number") return null;
   const cell = (label: string, value: string) => (
     <div>
       <dt className="text-gray-500">{label}</dt>
       <dd className="font-medium text-gray-900 dark:text-gray-100">{value}</dd>
     </div>
   );
+  if (f.kind === "depth") {
+    return (
+      <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-xs">
+        {cell("Use case", String(f.use_case_label))}
+        {cell("Full schedules", String(f.full_schedules))}
+        {cell("Typical fee types", String(f.median_types))}
+      </dl>
+    );
+  }
+  if (typeof f.low !== "number") return null;
   return (
     <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-xs sm:grid-cols-6">
       {cell("Institutions", String(f.institutions))}

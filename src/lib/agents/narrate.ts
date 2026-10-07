@@ -197,6 +197,11 @@ export function narrateStepFinished(
       if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a market-spread post for ${String(picked.metro)} for James to approve.`;
       return `Drafted no market-spread post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
+    case "content-fee-depth": {
+      const picked = (detail.picked ?? null) as Detail | null;
+      if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a fee-depth post for ${String(picked.metro)} for James to approve.`;
+      return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
+    }
     case "marketing-score": {
       const scored = n(detail, "scored");
       return scored === 0 ? "Stored this month's market snapshot; no sent campaigns to score yet." : `Scored ${count(scored, "sent campaign")} and stored this month's market snapshot.`;
@@ -331,6 +336,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "daily-brief": "atlas",
   "lead-watch": "atlas",
   "pro-digest": "atlas",
+  "content-fee-depth": "hamilton",
   "content-market-spread": "hamilton",
   "marketing-score": "hamilton",
   "marketing-write": "hamilton",
