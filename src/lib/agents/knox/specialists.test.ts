@@ -304,7 +304,7 @@ describe("Knox v25 one-line dot-leader schedules", () => {
 });
 
 
-describe("Knox v26 two-column headings and joined NSF/overdraft rows", () => {
+describe("Knox v27 two-column headings and joined NSF/overdraft rows", () => {
   // First National Bank Alaska, personal fee schedule (doc 19925): the right column's
   // footnotes run beside the left column's headings.
   const text = [

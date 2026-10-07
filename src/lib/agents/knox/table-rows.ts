@@ -94,7 +94,7 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
         heading = filled[0];
         continue;
       }
-      // v26: a two-column page puts the next column's prose beside a heading ("Wire Transfer
+      // v27: a two-column page puts the next column's prose beside a heading ("Wire Transfer
       // Fees | being returned NSF."). The left cell is still the heading.
       if (filled.length === 2 && amountsIn(line).length === 0 && looksLikeHeading(filled[0]) && RIGHT_COLUMN_PROSE.test(filled[1])) {
         heading = filled[0];

@@ -34,7 +34,7 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 26 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 27 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -177,7 +177,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     });
   }
 
-  // v26: one priced line that names both an NSF item and an overdraft ("Non-sufficient
+  // v27: one priced line that names both an NSF item and an overdraft ("Non-sufficient
   // funds item (NSFs/Overdrafts) | $33.00 per item") is the bank's price for both.
   for (const candidate of [...candidates]) {
     const twin = candidate.canonicalHint === "nsf" ? "overdraft" : candidate.canonicalHint === "overdraft" ? "nsf" : null;

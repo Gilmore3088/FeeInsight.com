@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { markCurrentCopy } from "./current-copy";
+import { markCurrentCopy, SAME_PAGE_SUPERSEDE_LIVE, supersedeSamePageCopies } from "./current-copy";
 
 type Db = Parameters<typeof markCurrentCopy>[0];
 
@@ -31,5 +31,49 @@ describe("one current document per page", () => {
     expect(mark).toContain("cur.status = 'success'");
     expect(mark).toContain("other.duplicate_of_id IS NULL");
     expect(mark).not.toMatch(/DELETE/i);
+  });
+
+  it("matches other spellings of the page only when the same-page switch is on", async () => {
+    const db = createDb(true, []);
+    await markCurrentCopy(db as unknown as Db, 9);
+    const call = db.mock.calls.find((args) => (args[0] as unknown as string[]).join("?").includes("SET superseded_by_id = cur.id"))!;
+    expect((call[0] as unknown as string[]).join("?")).toContain("regexp_replace");
+    expect(call.slice(1)).toContain(SAME_PAGE_SUPERSEDE_LIVE);
+  });
+});
+
+describe("same page under two spellings", () => {
+  function pairDb(pairs: Array<{ older_id: number; current_id: number }>) {
+    return vi.fn(async (strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (text.includes("information_schema.columns")) return [{ ready: true }];
+      if (text.includes("same-page current copies")) return pairs;
+      return [];
+    });
+  }
+  const statements = (db: ReturnType<typeof pairDb>) => db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+
+  it("logs the pairs and changes nothing in shadow mode", async () => {
+    const db = pairDb([{ older_id: 2917, current_id: 16048 }]);
+    const result = await supersedeSamePageCopies(db as unknown as Db, { runId: 7, live: false });
+    expect(result).toEqual({ live: false, copies: 1, pairs: [{ olderDocumentId: 2917, currentDocumentId: 16048 }] });
+    expect(statements(db).some((text) => text.includes("UPDATE source_documents"))).toBe(false);
+    expect(statements(db).some((text) => text.includes("magellan.same_page_copies"))).toBe(true);
+  });
+
+  it("points each older spelling at the newest copy when live, and never deletes", async () => {
+    const db = pairDb([{ older_id: 2917, current_id: 16048 }]);
+    const result = await supersedeSamePageCopies(db as unknown as Db, { runId: 7, live: true });
+    expect(result.copies).toBe(1);
+    const update = statements(db).find((text) => text.includes("UPDATE source_documents"))!;
+    expect(update).toContain("SET superseded_by_id = pair.current_id");
+    expect(update).toContain("older.superseded_by_id IS NULL");
+    expect(statements(db).join(" ")).not.toMatch(/DELETE/i);
+  });
+
+  it("does nothing when no page has two current copies", async () => {
+    const db = pairDb([]);
+    await expect(supersedeSamePageCopies(db as unknown as Db, { runId: 7, live: true })).resolves.toEqual({ live: true, copies: 0, pairs: [] });
+    expect(statements(db).some((text) => text.includes("agent_run_events"))).toBe(false);
   });
 });

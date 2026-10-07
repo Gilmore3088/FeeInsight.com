@@ -112,6 +112,19 @@ re-reads up to 300 held unclassified lines from the document's current text with
 (`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
 (`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
 version. A categorized insert that meets a held row takes it over the same way.
+Each re-read is logged in `pipeline_feedback` under `knox.held:raw:<id>` (the versions that read
+it and the outcome). A line still uncategorized after three versions is set aside
+(`knox_set_aside`), never deleted, and later versions keep re-reading it.
+
+v26 (rules 26) folds the held groups James chose to fold (decision card, Oct 7 2026) into the
+category the taxonomy already gives them (`FOLDED_PATTERNS`): returned mail, bad address, fax
+and excess withdrawals into account research; collection items and foreign checks into check
+cashing; loan cancellation, credit reports and UCC filings into loan origination; loan
+refinancing and document fees into other lending. The answer keys left these lines "unmapped",
+so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
+of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
+fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
+stay held.
 
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the
@@ -217,7 +230,7 @@ copies had last been read at rules v1 to v7, and none of the re-read triggers re
 current copies qualify. 211 of the 898 are read already, on a second document that holds the same
 text. Knox reads a text once, so their current copy has no rows of its own.
 
-v26 (rules 26) reads two-column schedules where the right column's footnotes run beside a left-column
+v27 (rules 27) reads two-column schedules where the right column's footnotes run beside a left-column
 heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
 looks like a heading and whose right cell opens lowercase or with a footnote number, now sets the
 heading, so "Domestic Outgoing | $35.00" under it is an outgoing domestic wire. A stop payment
@@ -226,8 +239,8 @@ and overdraft ("NSFs/Overdrafts", "Overdraft or NSF") is filed under both, as th
 it. A balance an account requires ("Minimum Daily Balance Requirement | $1,000") is never held as a
 fee, and an "Insufficient Funds Transfer" from savings is an overdraft protection transfer, not an
 overdraft. Found on First National Bank Alaska (doc 19925), which was 2 headline fees short of a
-report. Answer keys: Texas and held-out unchanged, seven states 680 right (679), the same 47 wrong.
-Live dry run: the same 1,411 of 1,437 kept. Across the 117 live-sample documents it adds 7 reads,
+report. Answer keys: Texas and held-out unchanged, seven states 713 right (712), the same 47 wrong.
+Live dry run: the same 1,412 of 1,437 kept. Across the 117 live-sample documents it adds 7 reads,
 each checked against its line, and moves one $2.50 transfer from NSF to overdraft protection.
 
 ## Learning reader (`lessons.ts`)

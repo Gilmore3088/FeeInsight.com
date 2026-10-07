@@ -216,6 +216,12 @@ export function narrateStepFinished(
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
     }
+    case "pro-digest": {
+      const withNews = n(detail, "withNews");
+      if (detail.dryRun === true) return `Dry run: ${count(withNews, "Pro reader")} would get a Monday digest.`;
+      if (detail.held === true) return `Counted ${count(withNews, "Pro reader")} for the Monday digest; sending is switched off.`;
+      return `Sent ${count(n(detail, "sent"), "Monday digest")}.`;
+    }
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
@@ -319,6 +325,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "pro-digest": "atlas",
   "marketing-score": "hamilton",
   "marketing-write": "hamilton",
   "marketing-send": "hamilton",
