@@ -386,4 +386,20 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(usb, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0, ".").ok).toBe(false);
     expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
   });
+
+  it("gives a two-name row's one price to the second name (First American Bank, Oct 7)", () => {
+    const fab = [
+      "ACCOUNT SERVICES | CHECK AND STATEMENT SERVICES",
+      "Stop Payment | Monthly Statement – Electronic | Free",
+      "Via Customer Service | $35.00",
+      "Via Online Banking | $30.00 | Monthly Statement – Paper | $5.50",
+      "Audit Confirmation or Verification of | Withdrawals at Allpoint & Presto! ATMs | Free",
+      "$20.00",
+      "Deposit (VOD)",
+    ].join("\n");
+    expect(checkFeeAgainstSource(fab, "Stop Payment", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(fab, "Audit Confirmation or Verification", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(fab, "Monthly Statement – Electronic", 0, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(fab, "Withdrawals at Allpoint & Presto! ATMs", 0, ".").ok).toBe(true);
+  });
 });
