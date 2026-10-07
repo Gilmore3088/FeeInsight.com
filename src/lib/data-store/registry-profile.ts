@@ -431,6 +431,84 @@ export async function getRegulatorInfo(institutionId: number): Promise<Regulator
   };
 }
 
+export interface EnforcementActionRow {
+  agency: "OCC" | "FRB";
+  party_name: string;
+  /** True when the action names the holding company rather than this institution. */
+  against_holding_company: boolean;
+  action_type: string | null;
+  subject: string | null;
+  start_date: string | null;
+  termination_date: string | null;
+  penalty_amount: number | null;
+  document_url: string | null;
+}
+
+export interface EnforcementRecord {
+  /** Agencies whose list is loaded and whose actions could name this institution. */
+  agenciesChecked: Array<"OCC" | "FRB">;
+  /** Active (not terminated) actions, newest first. */
+  active: EnforcementActionRow[];
+  /** Terminated actions, newest first, at most ENFORCEMENT_RECENT_LIMIT. */
+  terminated: EnforcementActionRow[];
+  terminatedCount: number;
+  /** Date the lists were last read. */
+  asOf: string | null;
+}
+
+const ENFORCEMENT_RECENT_LIMIT = 5;
+const AGENCY_FOR_REGULATOR: Record<string, "OCC" | "FRB"> = { OCC: "OCC", "Federal Reserve": "FRB" };
+
+/**
+ * OCC and Federal Reserve enforcement actions naming this bank or its holding company.
+ * Null for credit unions, and for a bank with none on file whose regulator's list isn't
+ * loaded (FDIC-supervised banks: FDIC orders aren't loaded), so "none" is only ever said
+ * where the list was actually checked.
+ */
+export async function getEnforcementRecord(institutionId: number): Promise<EnforcementRecord | null> {
+  const [inst] = await sql<Array<Record<string, unknown>>>`
+    SELECT charter_type, primary_regulator, holding_company_name FROM institution_sources WHERE id = ${institutionId}`;
+  if (!inst || inst.charter_type !== "bank") return null;
+  const holding = inst.holding_company_name ? String(inst.holding_company_name) : null;
+  const loaded = await sql<Array<Record<string, unknown>>>`
+    SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions GROUP BY agency`;
+  const loadedAgencies = new Set(loaded.map((r) => String(r.agency)));
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT agency, party_name, institution_id, action_type, subject, start_date, termination_date,
+           penalty_amount, document_url
+      FROM institution_enforcement_actions
+     WHERE institution_id = ${institutionId}
+        OR (${holding}::text IS NOT NULL AND holding_company = ${holding})
+     ORDER BY start_date DESC NULLS LAST, id DESC`;
+  const actions: EnforcementActionRow[] = rows.map((r) => ({
+    agency: String(r.agency) as "OCC" | "FRB",
+    party_name: String(r.party_name),
+    against_holding_company: r.institution_id === null || Number(r.institution_id) !== institutionId,
+    action_type: r.action_type ? String(r.action_type) : null,
+    subject: r.subject ? String(r.subject) : null,
+    start_date: dateStr(r.start_date),
+    termination_date: dateStr(r.termination_date),
+    penalty_amount: numOrNull(r.penalty_amount),
+    document_url: r.document_url ? String(r.document_url) : null,
+  }));
+  const regulatorAgency = AGENCY_FOR_REGULATOR[String(inst.primary_regulator ?? "")];
+  const checked = new Set<"OCC" | "FRB">();
+  if (regulatorAgency && loadedAgencies.has(regulatorAgency)) checked.add(regulatorAgency);
+  // The Fed supervises holding companies, so its list is checked for any bank that has one.
+  if (holding && loadedAgencies.has("FRB")) checked.add("FRB");
+  for (const a of actions) checked.add(a.agency);
+  if (checked.size === 0) return null;
+  const terminated = actions.filter((a) => a.termination_date);
+  const latest = loaded.map((r) => dateStr(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
+  return {
+    agenciesChecked: (["OCC", "FRB"] as const).filter((a) => checked.has(a)),
+    active: actions.filter((a) => !a.termination_date),
+    terminated: terminated.slice(0, ENFORCEMENT_RECENT_LIMIT),
+    terminatedCount: terminated.length,
+    asOf: latest,
+  };
+}
+
 // --- Admin: registry health ---
 
 export interface RegistryPartitionStats {
