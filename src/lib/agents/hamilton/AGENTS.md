@@ -205,6 +205,20 @@ belongs to the publish step once Knox reads the newer copy. Each pair is checked
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
+## Current-copy check
+
+`current-copy.ts` (`secondLookFeesNotOnCurrentCopy`, after `refresh-copy.ts` in each publish
+step) takes the live fees still on a superseded copy of their page that the current copy has
+no verified row for (2,784 of 9,816 such fees, 7 Oct). Each is read against the current copy's
+text with `newerCopyVerdict`. A fee the current copy restates stays live. A fee it names at
+another price, or no longer carries, gets a first look under check `hamilton.current_copy` and
+comes down only on its second look, archived as `not_on_current_copy:#<current document id>`
+with its verified row rejected. A fee the older copy's own text does not state is never
+judged, and neither is a current copy that restates fewer than half (or fewer than two) of the
+older copy's fees. The feedback sync records no lesson against Knox or Darwin for these.
+`CURRENT_COPY_CONFIRM_LIVE` stays false (first looks only) until a hand check of 20 flags
+finds at least 18 really stale. `refresh-copy.ts` moves up to 1,000 fees a step.
+
 ## Outlier Rollback
 
 Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
@@ -247,6 +261,16 @@ feedback sync writes no Knox or Darwin lesson for these. A takedown whose consum
 longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
 banks, 61 beside a consumer fee.
 
+## Article Page
+
+`article-page.ts`: a page whose address has an article segment (articles, blog, stories,
+news) and does not name a schedule is an article (`isArticlePage`). Its prices are national
+averages or examples, not the bank's price: Space Coast CU's $4.73 ATM fee came from a blog
+post (its schedule says $2.50). Publish never puts such a row live; a live one comes down only
+on its second look (check `hamilton.article_page`), archived as `article_page: #<document id>`,
+with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
+is not an article.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
@@ -285,7 +309,13 @@ re-extracting would insert the same raw row, which the raw-row dedupe index (doc
 price) refuses. A fee read again under a new name returns the normal way, through Darwin.
 Documents whose live fees were all taken down are re-checked too. Step detail:
 `rules_recheck_restores`. A fee an earlier re-check judged against a text other than its own
-also comes back. Every restore here, and in the newer-copy check, leaves a
+comes back only over the restore bar (below) judged against the document's newest text
+(`newer_text`). Before 7 Oct it came back with no check (`text_gone`, 84 fees on prod);
+`restore-recheck.ts` gives each of those the restore bar on its newest text: one that clears
+it is marked `rules_recheck_restore_checked`; one that fails is archived on its second look
+(check `hamilton.rules_recheck_restore`, reason `rules_recheck_restore: <bar reason>`, verified
+row rejected, flag `rules_recheck_restore_failed`). Knox's lessons, label queue and calibration
+ignore the `restored_after_takedown` rows of `text_gone` restores. Every restore here, and in the newer-copy check, leaves a
 `restored:<fee id>:<run>` marker attempt under the source check's strategy
 (`markRestoredForSourceCheck`), so the bank is source-checked again even though no newer
 fee id appeared.
@@ -298,7 +328,7 @@ there and disputes no other cell), the text states the fee's price on its own ro
 row is not a $0 price, a minimum balance, a refundable deposit, a limit, a markup on a cost,
 a sentence cut before its figure, or a copy of an item filed as the item. Without the model
 nothing comes back this way. Every restore's verified row carries
-`rules_recheck_restored:<same_read|text_gone|restore_bar>`, and the event counts
+`rules_recheck_restored:<same_read|newer_text|restore_bar>` (`text_gone` on older rows), and the event counts
 `restored_by_reason`.
 
 Each read is filed under the category Darwin files it under (`refileCategory`, strategy
