@@ -39,7 +39,11 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 8: a name split from its price at a ";" in a run-on paragraph ("Check Cashing for
 // non-members;" / "on us only $5.00 Bad Address Correction Fee $3.00") is read to the next row's
 // first price.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 8 } as const;
+// Version 9: a "Current Fee" column label between name and price, a price followed by a
+// sentence ("$25.00 Per Month. Applicable after ..."), an allowance before the price ("5 Free per
+// month," / "$2.50 each additional") and a fee named inside another row's note ("(Lost key
+// replacement $75.00)") are read (a fresh sample of older takedowns: 6 of 11 readable were real).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 9 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
