@@ -1996,3 +1996,17 @@ at $2,500, is a balance threshold read as a fee and is not fixed here.
 "($/#)" note to `namesALimit`.
 **Lesson:** prove a rules change on its first prod run, not only on the answer keys: prod pages carry
 wordings the keyed schedules lack.
+
+## 2026-10-07: Knox's lessons ignored restores
+**What happened:** Hamilton publish found that Knox's lessons read every `wrong_category` takedown as
+wrong without checking whether Hamilton later restored the fee. The 1,603 `restored_after_takedown`
+rows (and the restore bar's, PR 320) were not read at all. Knox never learned from the kinds that are
+restored most (not_on_schedule, wrong_amount, threshold, unreproduced), because the lesson reader
+only reads category verdicts. A first draft that dropped every restored takedown would have removed
+26 correct lessons. Those fees were taken down as domestic wires and restored as international wires,
+so the restore confirmed the takedown.
+**Fix:** lessons v3 (`lessons.ts`, `label-queue.ts`) count a restored fee as verified under the
+category it came back with, and drop a takedown only when the fee was restored under that same
+category. On prod this adds 30 lessons and drops none.
+**Lesson:** a restore can change a fee's category, so check it against the category of the
+verdict it overturns, not just the fee id.
