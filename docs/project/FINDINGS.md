@@ -13,6 +13,48 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
+**What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
+MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
+Reading each of the 25 misses against the bank's own text: about 13 are real fees the key left out
+or mapped elsewhere (a $10 late fee, a loan modification fee, a lien release, a replacement card),
+and the rest are wrong. Two of the wrong ones are a shared-rule gap seen across all live rows: loan
+late fees filed as overdraft (3 live: "Overdraft Loan Late Fee", "Late Payment fee (Overdraft
+L-O-C)", "Loan Late Fee ... Overdraft") and "Int’l Wire Fee Out" filed as a domestic wire (2 live,
+read before Knox v16 learned "Int'l").
+**Fix:** category guard v13 fails a late fee filed as overdraft and an "Int'l" wire filed as domestic
+(one price for "Domestic & Int'l" stays domestic), and Darwin re-files both. Knox v24 files a late
+fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
+5; Hamilton's publish step takes them down.
+**Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
+
+## 2026-10-07: Big banks call it a "Schedule of Charges", on the parent company's site
+**What happened:** James, 00:52 UTC Oct 7. Citibank (institution 3) has no fee link and 0 live
+fees; its consumer schedule is "Schedule_of_Charges_Effective_February_26_2026.pdf" on
+citigroup.com, while its website is citi.com. Only the free finders' link phrases knew the
+words "schedule of charges"; the page check's fee words and the paid prompts did not, and the
+paid finders rejected any answer off the website's own host.
+**Cause:** Magellan's fee vocabulary and domain rule were written from small-bank sites.
+**Fix:** this PR. "Schedule of Charges", "Schedule of Service Charges", "Account Fee Schedule",
+"Consumer Fees" and "Deposit Account Agreement" in the page check, link phrases and paid
+prompts; `onBankDomain` (link-coverage.ts, shared by paid find and schedule search) accepts
+the website's name plus a corporate word (citigroup.com, citibank.com), not look-alikes
+(citizensbank.com).
+**Lesson:** test finders against the largest banks' own wording and hosting, not only community banks.
+
+## 2026-10-06: A fee document dated 2019 counted as a finished link
+**What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
+links `/scheduleoffees`, which today serves `.../files/2019-05/2019-05-15.pdf` (1,764
+characters). Knox reads "Overdrafts Paid $30" from it, so the link passed every rule in
+`link-coverage.ts` and no finder looked for a current schedule. 263 institutions' current
+copies carry a year three or more back in their address; 4 of them are $10B+ banks.
+**Cause:** link coverage asked what the page says, never how old it is.
+**Fix:** this PR. `isStaleDatedLink` / `DOCUMENT_YEAR_SQL`: a current copy dated three or
+more years back by its address counts as an incomplete link for the companion finder and the
+paid schedule search; the old link and its live fees stay until something newer is found.
+**Lesson:** a link that passes the content checks can still be years out of date; check the
+date in its address before calling it done.
+
 ## 2026-10-06: A source-check version bump re-queued every bank at 40 a step
 **What happened:** read-only prod queries, 15:25-15:35 UTC Oct 6. Live fees due a source check
 rose from 4,070 (13:25) to 5,055 (15:25, audit tracker), and at 15:30 2,914 of 3,114 banks
@@ -45,9 +87,60 @@ whose stated terms state a percent (`rate_as_amount`); a rate row has no dollar 
 never fails. Darwin re-files "ATM Foreign Transaction" to `atm_non_network`, and Knox v20 files
 it there on the next read. The dry run takes down 28 of the 45 and keeps 17. Two kept rows are still wrong and need
 the source, not the name: a credit card box whose "$10.00" belongs to the line above while the
-foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows come down with the admin category guard repair run.
+foreign fee is 1%, and "Foreign transaction fee2" $1, whose footnote says it is a foreign-ATM fee. The live rows waited on someone starting the admin category guard repair run, so every publish step now runs the category guard itself (up to 100 rollbacks a step, PR after 280).
+The first step (17:56 UTC, run 1787) rolled back 42: the 29 flat foreign fees plus 13 that
+failed older rules no repair run had applied since 06:18 (night deposit bag purchases, foreign
+returned items, an overdraft loan's annual fee). One of the 13 was wrong: "Foreign Owned ATM
+Fees" read as a bank's own ATM; guard v12 lets "foreign-owned ATM" through as non-network.
 **Lesson:** a category whose fee is usually a rate needs a check that a dollar amount filed
 under it is not the rate's figure; rates belong in the rate columns, never in `amount`.
+
+## 2026-10-06: No bank market can pass the report rule soon, and percentage fees never count
+**What happened:** read-only, 14:10 UTC: 6 of 109 state markets pass James's report rule (16
+rich institutions of one type in a state), all credit unions. The closest bank market is MA
+(12 of 16); OK and IL banks have 9. AK has 5 banks in total and WA 31 with 1 rich, so the
+real requesters there (First National Bank Alaska, Banner Bank) cannot pass the state rule.
+`card_foreign_txn` is a headline fee live at 42 institutions, while 347 more have a foreign
+transaction fee held as `knox_review:percentage`.
+**Cause:** the rule counts only same-state, same-type peers. Percentage fees have no path
+to the catalog. Requester gaps were wrong or partial links (a business-only PDF; a general
+services page without account fees) and Knox misses (wires, prose maintenance fee).
+**Fix:** Atlas now runs states with a failing report request and near-ready bank markets
+first. The link and extraction gaps went to Magellan and Knox. The rule itself (peer fallback
+for small states) and percentage fees are open.
+**Lesson:** check whether a market can reach a threshold at all before scheduling toward it.
+
+## 2026-10-06: The spend ledger left out web search charges, so caps undercounted Magellan
+**What happened:** read-only, 13:50 UTC: `pipeline_attempts` recorded $8.35 for today's 152
+paid web searches; `ai_api_usage_events`, which the budget caps and per-run limits sum, recorded
+$4.41 for the same 152 calls. October so far: $16.47 in attempts, $8.75 in the ledger.
+**Cause:** `trackAnthropicRequest` priced tokens only. Anthropic also bills $10 per 1,000 server
+web searches; `paid-pass.ts` added that to the attempt cost, but the ledger never saw it.
+**Fix:** the ledger estimate (`estimateAnthropicCostMicrousd`) counts
+`server_tool_use.web_search_requests`, and `paidCallCostMicrousd` uses that same estimate, so the
+attempt log and the ledger agree. Covers paid find and website find. Earlier rows stay as written
+(about $7.72 under for October), well inside Magellan's $150 cap.
+**Lesson:** a charge priced in one place and logged in another drifts; price it once, in the
+function the caps read.
+
+## 2026-10-06: Atlas took states in waiting order, not where the work was
+**What happened:** after PR 204, a state's median gap between runs was still 135 minutes (live,
+13:20 UTC, last 6 h). Every lane's `priority_score` was 0, so Atlas picked whichever lane had
+waited longest. Texas (196 banks due a search, 181 not source-checked) waited as long as
+Vermont. The daily-pass rule counted 2,024 dead-end banks, which kept 23 states on daily paid
+passes that could never turn off. The state experts ranked finder strategies (Texas: site crawl
+80%, sitemap 0 of 23), but nothing read the ranking.
+**Cause:** `priority_score` was never written, and the daily rule counted every bank missing a
+link. `stateExpertHints` had no caller.
+**Fix:** the Atlas gaps PR. The hourly sync scores each lane by its banks with open work or a
+recent error, and due lanes run highest first; a lane 3 h overdue goes first. Only findable
+banks count toward the daily rule (5 states on that count alone: TX, IL, MN, IA, MO), and a
+state with paid-find or no-website targets stays daily so the paid steps still run (live
+13:45 UTC: 51 states have paid-find targets, 459 banks, plus 582 institutions with no
+website). Magellan runs each state's best
+finders first. Launches go from 2 to 3 per tick.
+**Lesson:** a column the scheduler sorts on must have a writer, and a promise in AGENTS.md
+("Magellan uses the hints") needs a caller and a test.
 
 ## 2026-10-06: a re-confirmed reader stayed unsubscribed in MailerLite, reported as synced
 **What happened:** James's live test. He unsubscribed at 14:34 UTC, signed up again and confirmed
@@ -1340,3 +1433,122 @@ and the snapshot's `published_fee_catalog` still lacks PR 215's 3-fee rule, so t
 one-fee peer banks would vanish under the real view.
 **Fix:** PR 278 appends its columns to the snapshot. Open: refresh the whole snapshot from prod,
 and give the test's peer banks 3 fees each so it runs under the real catalog rule.
+
+## 2026-10-06: Knox held every percentage fee, often under a sentence fragment
+**What happened:** with rate columns in place, Knox still wrote every rate as a held
+`knox_review:percentage` row with no amount, 1,023 of them in the four rate categories, many
+named by a fragment ("A 1% Currency Conversion Fee will be assessed on", "for customers").
+**Fix:** `src/lib/agents/knox/percent.ts`. A held rate in an allow-listed category whose rate
+traces with `checkRateAgainstSource` goes to Darwin as a rate fee, named from the category's own
+words; "up to" rates, interest rates, two-rate lines and out-of-range rates stay held. Held rows
+are re-read in place by `recheckHeldRates`. Knox v21 also reads the card's currency fee and
+coin counting under the other names banks give them. Answer keys: 20 rate reads, 18 keyed and 2
+real fees the keys leave out (0.2% currency conversion, 0.9% cross-border); flat gates and the
+live dry run (1,416 of 1,437 kept) unchanged. Dry run on the 1,001 held rows with their
+stored excerpts: 287 foreign transaction rates at 217 banks (median 1%), 106 late payment at 82
+(median 5%), 39 cash advance, 37 coin counting.
+**Still open:** 52 of 68 keyed rates still don't publish: about half are never read as a
+rate (prose, rates split across lines), and the rest are "up to", two-rate or interest lines;
+coin counting rows ("Coin Counting | 10% of total") fail the rate
+check because the row has no fee or charge word.
+**Lesson:** a new column is not a new fee until the extractor writes it; score the writer on the
+answer keys, not only on the held rows it was built from.
+
+## 2026-10-06: Knox never read its own corrections
+**What happened:** Darwin and Hamilton write every category rejection and verification to the
+shared learning store (`pipeline_feedback`, 5,835 Darwin category rejects at 15:30 UTC), but Knox
+never read it. Fixes came only as hand rules, and a hand rule can regress: v19's plural
+"overdrafts" rule filed "Overdraft Transfers" under overdraft again, a name the guards had
+already rejected at 13 banks and verified as od_protection_transfer at 7.
+**Fix:** `src/lib/agents/knox/lessons.ts`. Each extract step reads the store's clear lessons (47
+at 15:30 UTC: statement copies, overdraft transfers, outgoing international wires, ATM card
+replacements, paid NSF items) and re-files an exact name that today's rules still put in the
+rejected category, flagged `knox_lesson:`. The rules re-check accepts the rejected-category read
+for such a row. Answer keys: 2 fees re-filed, 1 fixed, 0 broken; flat gates unchanged. Only new
+reads change, so no live fee is taken down.
+**Lesson:** an agent that writes corrections to a shared store must also read them, or the same
+mistake comes back with the next rule change.
+
+## 2026-10-06: Large banks' schedules priced an overdraft fee Knox never read
+**What happened:** the largest-banks thread found 11 banks whose stored schedules price an
+overdraft fee that isn't live. Run on the overdraft lines of 10 of them, today's rules read 4
+correctly (Santander, First Merchants, Enterprise, Navy Federal). ESL's fee depends on the item's
+size and its tier table was not in the lines checked. The misses:
+- a fee stated in a sentence to "customers" (OceanFirst);
+- one-line PDF dot-leader schedules, split mid-leader so the name lost its price (Glacier,
+  United);
+- a long description row with its price in the last cell (Dollar Bank);
+- a long conditional name (Mechanics);
+- a two-column table (Trustmark).
+
+The re-read queue was also broken: see "Knox kept reading older copies of a page".
+**Fix:** Knox v22 (`src/lib/agents/knox/rules.ts`, `families.ts`) and the shared check's long
+rows (`src/lib/custom-report/source-check.ts`). Run on the same lines, v22 reads 9 of the 10.
+Answer keys rise slightly (Texas 454 of 468 from 452 of 467; seven states 674 of 720 from 673 of
+719), and the live dry run keeps the same 1,414 of 1,437 fees.
+**Still open:** Trustmark's two-column table ("Overdrafts (OD)" above "• Personal | $36.00"). The
+specialists don't pair a heading with a row whose own cell is an account type.
+**Lesson:** score a rule change on the specific banks a report depends on, not only on the
+answer keys; the answer keys had none of these layouts.
+
+
+## 2026-10-06: Knox kept reading older copies of a page
+**What happened:** Magellan marks one current document per page (`superseded_by_id`, PR 265),
+and its contract says Knox reads the current copy, but Knox's text selection never checked
+it. At 17:55 UTC, 2,520 texts on older copies had a current copy with its own text (934 were
+read again in the last 24 hours), and 8,689 unverified Knox rows from older copies were still
+queued for Darwin, where a stale price competes with today's.
+**Fix:** `src/lib/agents/knox/extract.ts`. Knox skips an older copy once the current copy has
+a text, and each extract step retires up to 2,000 unverified older-copy rows
+(`superseded_by_newer_copy`) for categories Knox already read from the current copy. Read-only
+count on prod: 3,887 rows at 419 banks qualify today, 3,412 of them at the same price as the
+current copy's row. The other 4,802 wait (their current copy is not read yet, or does not show
+that category), so no fee is lost to a weaker newer read. Verified and live fees are untouched.
+**Also found:** a page re-fetched with unchanged text was never read again. Knox skipped it as
+"the same text under another document id was already extracted", and the older copy that held
+the rows was itself blocked by its identical siblings. Navy Federal's re-check had reported 21
+missing fees on its page at every rules version since v7, but no re-read followed. Separately,
+the re-extract triggers (a thin text, or the rules re-check) only reach documents with live
+fees. So 9 of the largest banks' stored schedules priced an overdraft fee that was never live.
+Now an older copy's rows never block the current copy, and $10B+ banks' current pages are
+re-read once per rules version, first in line. Read-only check at 18:20 UTC: the current pages
+of all 11 flagged banks are selected, and 1,977 texts in total (183 at $10B+ banks) are due.
+**Lesson:** when one agent adds a "current" marker, check every reader of the table honours it;
+a comment saying "Knox reads the current copy" was not the same as Knox doing it.
+
+
+## 2026-10-06: Knox's learning stopped at names many banks share
+**What happened:** the learning reader only learned a name verified at 2 or more banks, so a name
+one bank prints its own way never learned, however often it was corrected there. Names the
+guards rejected with no verified fee anywhere ("Zipper Bags", rejected at 25 banks) never learned
+at all. Knox's confidence was a fixed formula, so a table-read night deposit fee (6 of 58 still
+live in the last 14 days) scored the same as a rule-read overdraft fee. And a new layout read thin
+document by document with nothing tying the thin reads together.
+**Fix:** per-bank lessons in `lessons.ts` (369 at 307 banks); a weekly label queue at
+/admin/knox/labels for the names the store can't settle (`label-queue.ts`); shadow calibrated
+confidence in the audit text from 14-day survival by strategy and category (`calibration.ts`,
+59 of 221 groups would fall below Hamilton's 0.8 floor); and a layout signature on every extract
+attempt with thin reads counted per signature (`layout-signature.ts`). Answer keys with the
+fixture banks' own lessons (guard and Darwin verdicts only, not the keys themselves): 7 states
+674 to 678 right and 66 to 63 category errors on v22; Texas unchanged. Only new reads change; no live
+fee is taken down, and stored confidence is unchanged.
+**Lesson:** a learning store that only learns from agreement across banks misses most of what it
+is told; one bank's own verdicts are the strongest evidence for that bank.
+
+
+## 2026-10-07: Two page layouts hid Trustmark's and ESL's overdraft fees
+**What happened:** Trustmark's fee schedule PDF prints two columns, and the stored text flattens
+them row by row, so the right column's "Overdrafts (OD)" heading ends a left-column row and its
+"• Personal | $36.00" sub-row sits on the next line. ESL's checking page prints each fee as a card
+("Fee TypeCourtesy Pay Overdraft Fee", a description, then "Fee$5.00"). Knox read neither:
+Trustmark's NSF and overdraft ($36) were missed, and ESL's prices were held under the name "Fee".
+The shared accuracy check would also have failed both, since name and price are on different lines.
+**Fix:** Knox v23 (`table-rows.ts` right-column headings; card joining before the specialists) and
+the shared check (`joinLabeledFeeCards`, and a right-column heading over the bulleted line under
+it) read both. Answer keys and the live dry run are unchanged, and the shared check accepts
+exactly the same pairs as before on every other text tried.
+**Still open:** ESL's own fees index page keeps its fees in collapsed sections the stored text
+does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
+**Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
+same way; otherwise Knox's find is held as untraced and never reaches Darwin.
+

@@ -24,7 +24,12 @@ export interface ProviderUsage {
   outputTokens?: number;
   cacheReadInputTokens?: number;
   cacheCreationInputTokens?: number;
+  /** Server web searches the response ran; billed per search on top of tokens. */
+  webSearchRequests?: number;
 }
+
+/** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
+export const WEB_SEARCH_COST_MICROUSD = 10_000;
 
 export interface ProviderCallContext {
   provider: "anthropic" | string;
@@ -54,6 +59,7 @@ interface AnthropicUsageShape {
   cache_creation_input_tokens?: number | null;
   inputTokens?: number | null;
   outputTokens?: number | null;
+  server_tool_use?: { web_search_requests?: number | null } | null;
 }
 
 function nonNegative(value: unknown): number {
@@ -67,6 +73,7 @@ function normalizeUsage(usage: AnthropicUsageShape | null | undefined): Provider
     outputTokens: nonNegative(usage?.output_tokens ?? usage?.outputTokens),
     cacheReadInputTokens: nonNegative(usage?.cache_read_input_tokens),
     cacheCreationInputTokens: nonNegative(usage?.cache_creation_input_tokens),
+    webSearchRequests: nonNegative(usage?.server_tool_use?.web_search_requests),
   };
 }
 
@@ -167,11 +174,13 @@ export function estimateAnthropicCostMicrousd(
   const output = nonNegative(usage.outputTokens);
   const cacheRead = nonNegative(usage.cacheReadInputTokens);
   const cacheCreate = nonNegative(usage.cacheCreationInputTokens);
+  const searches = nonNegative(usage.webSearchRequests);
   return Math.round(
     (input * rate.input)
     + (output * rate.output)
     + (cacheRead * rate.input * 0.1)
-    + (cacheCreate * rate.input * 1.25),
+    + (cacheCreate * rate.input * 1.25)
+    + (searches * WEB_SEARCH_COST_MICROUSD),
   );
 }
 

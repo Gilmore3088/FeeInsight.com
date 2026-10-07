@@ -10,10 +10,14 @@ import { urlIdentity } from "./finders";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
+  DOCUMENT_YEAR_SQL,
   hasOverdraftPrice,
   LARGE_BANK_ASSETS,
+  onBankDomain,
   OVERDRAFT_PRICE_SQL,
   REFERS_ELSEWHERE_SQL,
+  STALE_DOCUMENT_YEARS,
+  websiteHost,
 } from "./link-coverage";
 
 type SqlTag = typeof sql;
@@ -52,6 +56,7 @@ export interface ScheduleSearchRow {
   business_only: boolean | null;
   no_overdraft_price: boolean | null;
   refers_elsewhere: boolean | null;
+  stale_copy?: boolean | null;
 }
 
 interface ScheduleAnswer {
@@ -69,47 +74,23 @@ export interface ScheduleSearchResult {
   results: Array<Record<string, unknown>>;
 }
 
-function host(website: string): string | null {
-  for (const candidate of [website.trim(), `https://${website.trim()}`]) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") return url.hostname.toLowerCase().replace(/^www\./, "");
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-/** On the bank's own domain: the website host or a subdomain of it. */
-function onDomain(url: string, website: string): boolean {
-  const site = host(website);
-  if (!site) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    const candidate = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    return candidate === site || candidate.endsWith(`.${site}`);
-  } catch {
-    return false;
-  }
-}
-
 /** Why the page we hold is not the schedule, in the prompt's words. */
 function whyNotIt(row: ScheduleSearchRow): string {
   if (row.business_only) return "it is the business account schedule, not the personal one";
   if (row.refers_elsewhere) return "it refers to the deposit account agreement or another document for the fees";
+  if (row.stale_copy && !row.no_overdraft_price) return "it is dated several years ago and its prices are likely out of date; find the current edition";
   return "it does not list the overdraft or NSF fee amount";
 }
 
 export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
-  const site = host(row.website_url) ?? row.website_url;
+  const site = websiteHost(row.website_url) ?? row.website_url;
   return [
     "Find the URL of this bank's consumer (personal) fee schedule: the document, usually a PDF,",
     "that lists personal deposit account fees with dollar amounts, including the overdraft and",
     "NSF / returned item fee, stop payment, wires and monthly maintenance. It may be titled",
-    "\"Schedule of Fees\", \"Personal Fee Schedule\", \"Consumer Deposit Account Agreement\" or",
-    "\"Truth in Savings Disclosure\".",
+    "\"Schedule of Fees\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Personal Fee Schedule\",",
+    "\"Account Fee Schedule\", \"Consumer Fees\", \"Consumer Deposit Account Agreement\" or \"Truth in Savings",
+    "Disclosure\". Large banks often publish it on their parent company's domain.",
     "",
     `Bank: ${row.institution_name}`,
     `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
@@ -117,7 +98,7 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
     `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find a different document.`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${site} or a subdomain of it).`,
+    `- The URL must be on the bank's own domain (${site}, a subdomain of it, or its parent company's domain).`,
     "- Not a business or commercial schedule, a rate sheet, a press release, or a marketing page.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -148,7 +129,16 @@ async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[
                 WHERE text.institution_id = inst.id
                   AND text.status = 'completed'
                   AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${REFERS_ELSEWHERE_SQL}
-             ) AS refers_elsewhere
+             ) AS refers_elsewhere,
+             EXISTS (
+               SELECT 1 FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                  AND doc.status = 'success'
+                  AND doc.duplicate_of_id IS NULL
+                  AND doc.superseded_by_id IS NULL
+                  AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
+                      <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
+             ) AS stale_copy
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
@@ -168,7 +158,7 @@ async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[
          )
     )
     SELECT * FROM scoped
-     WHERE business_only OR no_overdraft_price OR refers_elsewhere
+     WHERE business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
      ORDER BY requested DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
@@ -249,7 +239,7 @@ export async function runScheduleSearch(options: {
       if (!proposed) {
         outcome = "no_candidates";
         reason = "Web search found no consumer fee schedule";
-      } else if (!onDomain(proposed, row.website_url)) {
+      } else if (!onBankDomain(proposed, row.website_url)) {
         outcome = "invalid_url";
         reason = `Answer is not on the bank's domain: ${proposed}`;
       } else if ((await knownUrls(db, institutionId, row.fee_schedule_url)).has(urlIdentity(proposed))) {

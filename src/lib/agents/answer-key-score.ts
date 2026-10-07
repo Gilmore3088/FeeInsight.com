@@ -391,7 +391,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
       SELECT institution_id, amount, outlier_flags, conditions
         FROM raw_fee_observations
        WHERE institution_id = ANY(${ids}::int[])
-         AND NOT (COALESCE(outlier_flags, '[]'::jsonb) ? 'superseded_by_reread')
+         AND NOT (COALESCE(outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
     `,
     db`
       SELECT institution_id, canonical_fee_key, amount

@@ -58,6 +58,9 @@ export default async function KnoxPage({
         <p className="admin-eyebrow mt-3">Agent · Extract + Review</p>
         <h1 className="admin-display-title mt-1">Knox</h1>
         <p className="admin-lede mt-2">Knox extracts conservative raw fee observations from Rosetta text and keeps human work anomaly-only.</p>
+        <Link href="/admin/knox/labels" className="admin-meta mt-2 inline-block underline">
+          Label this week&apos;s contested fee names
+        </Link>
       </header>
 
       <div className="mb-7">

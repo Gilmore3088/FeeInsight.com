@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DISCOVERY_METHOD_VERSION,
+  finderOrderFromHints,
   nextDiscoveryResume,
   parseDiscoveryResume,
   rejectedSourcesFrom,
@@ -971,5 +972,28 @@ describe("Magellan agentic discovery", () => {
       expect(sqlText).toContain("ranked.cut_rank <=");
       expect(call).toContain(RESUME_FIRST_PER_STEP);
     });
+  });
+});
+
+describe("finderOrderFromHints", () => {
+  const hints = {
+    stateCode: "TX",
+    expertName: null,
+    finderOrder: ["discover.site_crawl", "discover.hub_pages"],
+    readerOrder: [],
+    avoid: ["discover.sitemap", "discover.common_paths"],
+    platforms: [],
+    source: "memory" as const,
+  };
+
+  it("runs the state's best specialists first and its dead ends last, known link always first", () => {
+    const keys = finderOrderFromHints(hints).map((finder) => finder.key);
+    expect(keys).toEqual(["knownLink", "siteCrawl", "hubPages", "homepageLinks", "platformPaths", "peerHint", "sitemap", "commonPaths"]);
+  });
+
+  it("keeps the default order without state memory", () => {
+    const keys = finderOrderFromHints({ ...hints, source: "none" }).map((finder) => finder.key);
+    expect(keys[0]).toBe("knownLink");
+    expect(keys).toEqual(finderOrderFromHints(null).map((finder) => finder.key));
   });
 });

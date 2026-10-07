@@ -38,6 +38,8 @@ interface CategoryRule {
 }
 
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
+// "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
+const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -51,7 +53,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   overdraft: {
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege)/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b)/i,
   },
   nsf: {
     include:
@@ -65,11 +67,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   atm_non_network: {
     include: /(atm|allpoint|network machine)/i,
     exclude:
-      /(replace|deposit|statement|card fee|annual|\bpin\b|inquir|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other)\b)\w+[- ]owned atm)/i,
+      /(replace|deposit|statement|card fee|annual|\bpin\b|inquir|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
   },
   wire_domestic_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
   },
   wire_intl_outgoing: {
     include: /wire/i,
@@ -77,7 +79,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   wire_domestic_incoming: {
     include: /wire/i,
-    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
   },
   stop_payment: {
     include: /stop/i,
@@ -147,7 +149,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 11;
+export const CATEGORY_GUARD_VERSION = 13;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -190,7 +192,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
   { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid|items? paid)/i },
   { from: "nsf", to: "deposited_item_return", when: /deposit/i },
-  { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl)/i, unless: /domestic/i },
+  { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
+  { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];

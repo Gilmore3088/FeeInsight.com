@@ -17,6 +17,7 @@ const HEALTHY_ATLAS: HealthNumbers = {
   laneRunsFailed: 0,
   backlogRuns: 300,
   emptyBacklogRuns: 5,
+  emptyStreakLanes: 0,
   medianGapMinutes: 62,
   overdueLanes: 3,
   queuedRuns: 0,
@@ -34,9 +35,9 @@ describe("agent health", () => {
   });
 
   it("breaks the Atlas rules the 2026-10-06 audit found", () => {
-    const audit = { ...HEALTHY_ATLAS, backlogRuns: 444, emptyBacklogRuns: 108, medianGapMinutes: 130, phantomExtractTexts: 1506 };
+    const audit = { ...HEALTHY_ATLAS, backlogRuns: 444, emptyBacklogRuns: 108, emptyStreakLanes: 22, medianGapMinutes: 130, phantomExtractTexts: 1506 };
     const broken = atlasRules(audit).filter((rule) => !rule.ok).map((rule) => rule.key);
-    expect(broken).toEqual(["lanes_hourly", "no_empty_runs", "backlog_matches_steps"]);
+    expect(broken).toEqual(["lanes_hourly", "no_empty_runs", "no_empty_streaks", "backlog_matches_steps"]);
   });
 
   it("breaks Darwin's rule when passed fees are taken down at the source", () => {
@@ -76,14 +77,14 @@ describe("agent health", () => {
       changes: [{ agent: "atlas" as const, key: "staleLinks", today: 439, yesterday: 300 }],
     };
     expect(summarizeAgentHealth(report)).toBe(
-      "Agent health: 1 of 6 rules broken: Atlas: Lane runs do not fail (2 failed of 400). Changed since yesterday: Atlas staleLinks 300 → 439.",
+      "Agent health: 1 of 7 rules broken: Atlas: Lane runs do not fail (2 failed of 400). Changed since yesterday: Atlas staleLinks 300 → 439.",
     );
   });
 
   it("says so when everything holds and nothing moved", () => {
     const report = { agents: [{ agent: "atlas" as const, numbers: HEALTHY_ATLAS, rules: atlasRules(HEALTHY_ATLAS) }], changes: [] };
     expect(summarizeAgentHealth(report)).toBe(
-      "Agent health: all 6 rules hold. Nothing moved more than 25% since yesterday.",
+      "Agent health: all 7 rules hold. Nothing moved more than 25% since yesterday.",
     );
   });
 });

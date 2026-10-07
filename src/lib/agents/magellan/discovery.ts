@@ -8,6 +8,7 @@ import {
 } from "@/lib/agents/state-lane-memory";
 import { documentVaultSchemaReady } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { orderByHints, stateExpertHints, type StateExpertHints } from "@/lib/agents/state-expert/memory";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
 import { fetchWithTimeout } from "./find-validate";
@@ -348,6 +349,8 @@ export interface RunMagellanDiscoveryResult {
   learning: boolean;
   /** The shadow page classifier this step scored candidates with, if one is stored. */
   pageClassifier: { trainedAt: string | null; positives: number; negatives: number } | null;
+  /** Specialist strategies in the order this step ran them, and whether the state expert set it. */
+  finderOrder: { strategies: string[]; source: "state_expert" | "default" };
   methodVersion: number;
   secondDocuments: RunSecondDocumentFindResult | null;
   limit: number;
@@ -463,6 +466,8 @@ async function discoverForInstitution(
     fullBudget?: boolean;
     /** The learned fee-page classifier, in shadow (scores trail entries only). */
     pageClassifier?: PageClassifier | null;
+    /** Specialist order for this bank's state (the state expert's ranking); default FINDER_ORDER. */
+    finderOrder?: typeof FINDER_ORDER;
   },
 ): Promise<CandidateDiscoveryResult> {
   const startedAt = Date.now();
@@ -764,7 +769,7 @@ async function discoverForInstitution(
   ctx.platform = platform;
   ctx.pages.set(urlIdentity(site.toString()), html);
 
-  const search = await runFinders(FINDER_ORDER, true);
+  const search = await runFinders(options.finderOrder ?? FINDER_ORDER, true);
   if (search.found) return foundResult(finish, search.found.key, search.found.document);
   if (search.ranOutOfTime) return outOfTimeResult(search.lastReason);
   const sawCandidates = sawCandidatesNow() || Boolean(resumedFrom?.sawCandidates);
@@ -1373,6 +1378,20 @@ async function recordFinderAttempts(
   }
 }
 
+/**
+ * The state expert's advice applied (Atlas audit, 2026-10-06): specialists that found
+ * links in this state run first, best success rate first, and specialists tried at least
+ * AVOID_MIN_ATTEMPTS times there without a find run last. The known link always runs
+ * first. Nothing is dropped, so every specialist still runs while the bank has time.
+ */
+export function finderOrderFromHints(hints: StateExpertHints | null): typeof FINDER_ORDER {
+  if (!hints || hints.source !== "memory") return FINDER_ORDER;
+  const [first, ...rest] = FINDER_ORDER;
+  const byStrategy = new Map<string, (typeof FINDER_ORDER)[number]>(rest.map((finder) => [FINDERS[finder.key].strategy, finder]));
+  const ordered = orderByHints([...byStrategy.keys()], hints.finderOrder, hints.avoid);
+  return [first, ...ordered.map((strategy) => byStrategy.get(strategy)!)];
+}
+
 export async function runMagellanDiscovery(
   options: RunMagellanDiscoveryOptions,
 ): Promise<RunMagellanDiscoveryResult> {
@@ -1397,6 +1416,8 @@ export async function runMagellanDiscovery(
   const knowledge = dryRun ? NO_KNOWLEDGE : createPlatformLearner(db);
   // MG-4 in shadow: the stored classifier scores every opened candidate (trail `page_p`).
   const pageClassifier = learning ? await loadPageClassifier(db) : null;
+  const hints = options.stateCode ? await stateExpertHints(options.stateCode, db).catch(() => null) : null;
+  const finderOrder = finderOrderFromHints(hints);
 
   const startedAt = Date.now();
   const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
@@ -1417,6 +1438,7 @@ export async function runMagellanDiscovery(
       resumable: learning,
       fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= stepDeadline,
       pageClassifier,
+      finderOrder,
     });
     results.push(result);
     if (dryRun) continue;
@@ -1480,6 +1502,10 @@ export async function runMagellanDiscovery(
     blockedHomepageRescues: results.filter((result) => result.code === "found_blocked_homepage").length,
     learning,
     pageClassifier: pageClassifier ? { trainedAt: pageClassifier.trainedAt, positives: pageClassifier.positives, negatives: pageClassifier.negatives } : null,
+    finderOrder: {
+      strategies: finderOrder.map((finder) => FINDERS[finder.key].strategy),
+      source: finderOrder === FINDER_ORDER ? "default" : "state_expert",
+    },
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
     limit,

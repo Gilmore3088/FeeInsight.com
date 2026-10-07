@@ -14,7 +14,7 @@ import { formatRatePercent } from "@/lib/percent-fees";
 import { proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
-import { segmentExhibit } from "./segment";
+import { segmentExhibit, shortSegmentLabel } from "./segment";
 import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, SegmentMember, SourceRef } from "./types";
 
@@ -69,6 +69,12 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
+/** "2026-08-02" -> "Aug 2". */
+function shortDate(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
 function longDate(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -101,7 +107,7 @@ function segmentLed(research: FeeResearch): boolean {
 function comparisonGroup(research: FeeResearch): Group {
   const seg = research.segment;
   if (seg && seg.problem === null) {
-    return { label: seg.segment.label, members: seg.members.map((m: SegmentMember) => ({ name: m.institutionName, amount: m.amount })) };
+    return { label: shortSegmentLabel(seg.segment), members: seg.members.map((m: SegmentMember) => ({ name: m.institutionName, amount: m.amount })) };
   }
   return { label: "peers", members: research.peers.map((p) => ({ name: p.institutionName, amount: p.amount })) };
 }
@@ -116,12 +122,12 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
   const position = research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
   const actionTitle =
     research.current !== null && position !== null
-      ? `Your ${money(research.current)} ${name} fee sits at the ${ordinal(position)} percentile of ${count(band.n)} peers; their median is ${money(band.median)}.`
-      : `Across ${count(band.n)} peers the median ${name} fee is ${money(band.median)}, and the middle half runs ${money(band.p25)} to ${money(band.p75)}.`;
+      ? `Peers' middle half charges ${money(band.p25)} to ${money(band.p75)}; your ${money(research.current)} sits at the ${ordinal(position)} percentile.`
+      : `The middle half of ${count(band.n)} peers charges ${money(band.p25)} to ${money(band.p75)}.`;
   const national = research.layers.find((l) => l.scope === "national");
   const exhibit: Exhibit = {
     kind: "fee_position",
-    title: `${capitalize(name)} fee: you against ${count(band.n)} peers (${research.peerLabel})`,
+    title: `${capitalize(name)} fee: you against ${count(band.n)} peers`,
     unit: "dollars",
     own: research.current,
     ownLabel: research.institutionName,
@@ -133,7 +139,6 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
         .map((l) => ({ label: l.scope === "national" ? "National median" : `${l.label} median`, scope: l.scope, value: l.median as number, n: l.n })),
     ],
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
-    note: "Shaded: the middle half of peers. Each marker is a market's median and its institution count.",
   };
   return {
     key: "position",
@@ -154,16 +159,16 @@ function segmentPiece(research: FeeResearch, name: string): Piece | null {
   const zero = seg.zeroCount > 0 ? `, ${count(seg.zeroCount)} at $0` : "";
   const exhibit: Exhibit = {
     kind: "segment_table",
-    title: `${capitalize(name)} fees, ${seg.segment.label}, largest first`,
+    title: `${capitalize(name)} fees, ${shortSegmentLabel(seg.segment)}, largest first`,
     members: seg.members,
     own: research.current,
     ownLabel: research.institutionName,
     sources: [seg.source],
-    note: `Each row links to the schedule it was read from. ${count(seg.institutionsInSegment - n)} more ${seg.segment.label} publish no ${name} fee in the index yet.`,
+    note: seg.institutionsInSegment > n ? `${count(seg.institutionsInSegment - n)} more publish no ${name} fee yet.` : undefined,
   };
   return {
     key: "segment",
-    actionTitle: `${count(n)} of ${count(seg.institutionsInSegment)} ${seg.segment.label} publish ${article(name)} ${name} fee${zero}${median}.`,
+    actionTitle: `${count(n)} of ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee${zero}${median}.`,
     exhibit,
     takeaway:
       seg.withDailyCap > 0
@@ -182,7 +187,7 @@ function largestPiece(research: FeeResearch, name: string): Piece | null {
   const hi = Math.max(...amounts);
   return {
     key: "largest",
-    actionTitle: `The ${count(exhibit.items.length)} largest ${seg.segment.label} that publish one charge ${money(lo)} to ${money(hi)} for ${article(name)} ${name}.`,
+    actionTitle: `The ${count(exhibit.items.length)} largest ${shortSegmentLabel({ ...seg.segment, largest: null })} that publish one charge ${money(lo)} to ${money(hi)}.`,
     exhibit,
   };
 }
@@ -214,6 +219,13 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
+/** "5 charge over $30 and 11 charge $15.01 to $30": only the groups that have members, largest first. */
+function listParts(parts: [number, string][]): string {
+  const shown = parts.filter(([n]) => n > 0).sort((a, b) => b[0] - a[0]).map(([n, text]) => `${count(n)} ${text}`);
+  if (shown.length <= 1) return shown[0] ?? "none publish one";
+  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+}
+
 export function archetypeOf(amount: number): ArchetypeKey {
   return (ARCHETYPES.find((a) => a.test(amount)) ?? ARCHETYPES[ARCHETYPES.length - 1]).key;
 }
@@ -235,14 +247,20 @@ function archetypePiece(research: FeeResearch, name: string): Piece | null {
   const ownGroup = ownKey ? archetypes.find((a) => a.key === ownKey)! : null;
   return {
     key: "archetype",
-    actionTitle: `Of ${count(n)} ${group.label}, ${count(by.zero_od)} charge $0, ${count(by.low_capped)} charge $15 or less and ${count(by.premium)} charge over $30.`,
+    actionTitle: `Of ${count(n)} ${group.label}, ${listParts(
+      [
+        [by.zero_od, "charge $0"],
+        [by.low_capped, "charge $15 or less"],
+        [by.mid, "charge $15.01 to $30"],
+        [by.premium, "charge over $30"],
+      ],
+    )}.`,
     exhibit: {
       kind: "archetype_map",
-      title: `How ${group.label} price ${article(name)} ${name}: four pricing groups`,
+      title: `${capitalize(name)} pricing groups among ${group.label}`,
       archetypes,
       ownKey,
       sources: [source],
-      note: "Each institution counts once, at its highest published tier.",
     },
     takeaway:
       ownGroup && research.current !== null
@@ -271,7 +289,7 @@ function structurePiece(research: FeeResearch): Piece | null {
     actionTitle: `Of ${count(group.length)} ${label}, ${count(nsf)} also publish an NSF fee, ${count(transfer)} a transfer fee and ${count(cap)} a daily cap.`,
     exhibit: {
       kind: "structure_matrix",
-      title: `Overdraft and NSF structure, you and ${set.groupLabel}`,
+      title: `Overdraft and NSF structure: you and ${label}`,
       columns: set.columns.map((c) => c.label),
       rows: shown.map((r) => ({
         name: r.name,
@@ -279,7 +297,7 @@ function structurePiece(research: FeeResearch): Piece | null {
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
-      note: `A blank cell means the fee is not on that institution's published schedule in the index.${group.length > MAX_MATRIX_ROWS ? ` Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : ""}`,
+      note: group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : undefined,
     },
   };
 }
@@ -312,11 +330,10 @@ function ratePiece(research: FeeResearch, name: string): Piece | null {
     actionTitle,
     exhibit: {
       kind: "structure_matrix",
-      title: `${capitalize(name)} fee stated as a rate: you and the nation`,
+      title: `${capitalize(name)} fee as a rate: you and the nation`,
       columns: ["Rate", "Institutions"],
       rows,
       sources: [...(own ? [ownRateSource(rates, own)] : []), rates.source],
-      note: "Rates are compared only with other rates, one per institution, never with dollar amounts. A blank rate means your schedule states none.",
     },
     takeaway:
       median !== null
@@ -347,7 +364,6 @@ function changePiece(research: FeeResearch, name: string): Piece | null {
       title: `${capitalize(name)} fee changes in ${state}, newest first`,
       events: events.map((e) => ({ date: e.date, institutionName: e.institutionName, from: e.from, to: e.to, url: null })),
       sources: [source],
-      note: "Only changes the institution's own schedule bears out.",
     },
   };
 }
@@ -369,18 +385,18 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
   const missing =
     line === null
       ? fin?.source === "ncua"
-        ? `NCUA's public data carries no separate ${name} income line, so this is all fee income.`
-        : `Your filing carries no separate ${name} income line, so this is all deposit service charges.`
+        ? `NCUA reports no ${name} income line; this is all fee income.`
+        : `Your filing has no ${name} income line; this is all deposit service charges.`
       : undefined;
   const actionTitle = line
     ? fin?.latestTtm
       ? `Your filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin.latestTtm) * 100)}% of all service charges.`
       : `Your filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income.`
-    : `Your service charges came to ${formatDollarsInWords(fin!.latestTtm!)} over the four quarters to ${longDate(fin!.quarterEnd)}.`;
+    : `Your ${fin!.source === "ncua" ? "fee income" : "service charges"} came to ${formatDollarsInWords(fin!.latestTtm!)} in the year to ${longDate(fin!.quarterEnd)}.`;
   return {
     key: "money",
     actionTitle,
-    exhibit: { kind: "money_at_stake", title: `What the ${name} fee is worth to you, from your filings`, rows, sources, note: missing },
+    exhibit: { kind: "money_at_stake", title: `What the ${name} fee is worth to you`, rows, sources, note: missing },
   };
 }
 
@@ -458,7 +474,7 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
   }
   const seg = research.segment;
   if (seg && seg.problem === null && seg.band) {
-    out.push({ value: money(seg.band.median), label: `Median, ${seg.segment.label}`, source: seg.source, n: seg.band.n });
+    out.push({ value: money(seg.band.median), label: `Median, ${shortSegmentLabel(seg.segment)}`, source: seg.source, n: seg.band.n });
   } else if (research.band && research.band.n >= MIN_PEERS_FOR_POSITION) {
     out.push({ value: money(research.band.median), label: "Peer median", source: feeSource(research), n: research.band.n });
   }
@@ -512,7 +528,7 @@ function financeLens(research: FeeResearch, answer: HamiltonAnswer): Fact[] {
 function customerGroup(research: FeeResearch): { label: string; members: { name: string; amount: number }[]; source: SourceRef } | null {
   const seg = research.segment;
   if (seg && seg.problem === null && seg.members.length > 0) {
-    return { label: seg.segment.label, members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount })), source: seg.source };
+    return { label: shortSegmentLabel(seg.segment), members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount })), source: seg.source };
   }
   const local = research.localCompetitors ?? [];
   if (local.length > 0) {
@@ -547,7 +563,7 @@ function rateLens(research: FeeResearch): Fact | null {
   if (!rates || !own) return null;
   const { n, p25, p75 } = rates.national;
   if (p25 === null || p75 === null) return null;
-  const at = `At ${formatRatePercent(own.ratePercent)}, your rate sits`;
+  const at = `At ${formatRatePercent(own.ratePercent)}, you sit`;
   const half = `the middle half of ${count(n)} institutions (${formatRatePercent(p25)} to ${formatRatePercent(p75)})`;
   const text =
     own.ratePercent > p75
@@ -578,7 +594,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       });
     } else {
       out.push({
-        text: `Side by side, ${count(cheaper.length)} of the ${count(n)} charge less than your ${money(current)}, led by ${names(cheaper.map((m) => ({ name: `${m.name} (${money(m.amount)})` })), 2)}.`,
+        text: `${count(cheaper.length)} of ${count(n)} ${group.label} undercut your ${money(current)}; lowest are ${names(cheaper.map((m) => ({ name: `${m.name} (${money(m.amount)})` })), 2)}.`,
         source: group.source,
         sampleSize: n,
       });
@@ -635,7 +651,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
     const last = events[0];
     out.push({
-      text: `In ${state}, the last ${CHANGE_WINDOW_DAYS} days brought ${plural(cuts, "cut", "cuts")} and ${plural(rises, "increase", "increases")} to this fee. The latest was ${last.institutionName}, ${money(last.from as number)} to ${money(last.to as number)}, on ${longDate(last.date)}.`,
+      text: `In ${state}, ${plural(cuts, "cut", "cuts")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days; latest ${last.institutionName}, ${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}.`,
       source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: last.date },
       sampleSize: events.length,
     });
@@ -664,11 +680,22 @@ function priceConsequences(research: FeeResearch, name: string, price: number): 
   const amounts = research.peers.map((p) => p.amount);
   const position = pricePosition(price, amounts);
   if (position !== null && research.band) {
-    out.push({ text: `At ${money(price)} you would sit at the ${ordinal(position)} percentile of ${count(research.band.n)} peers.`, source: feeSource(research), sampleSize: research.band.n });
+    out.push({
+      text:
+        position === 0
+          ? `At ${money(price)} no peer of ${count(research.band.n)} would charge less.`
+          : `At ${money(price)} you would sit at the ${ordinal(position)} percentile of ${count(research.band.n)} peers.`,
+      source: feeSource(research),
+      sampleSize: research.band.n,
+    });
   }
   if (price === 0 && amounts.length > 0) {
     const zero = amounts.filter((a) => a === 0).length;
-    out.push({ text: `${count(zero)} of ${count(amounts.length)} peers publish a $0 ${name} fee today.`, source: feeSource(research), sampleSize: amounts.length });
+    out.push({
+      text: zero === 0 ? `None of ${count(amounts.length)} peers publishes a $0 ${name} fee today.` : `${count(zero)} of ${count(amounts.length)} peers publish a $0 ${name} fee today.`,
+      source: feeSource(research),
+      sampleSize: amounts.length,
+    });
   }
   const line = research.revenueLine;
   if (line && research.current) {
@@ -710,7 +737,7 @@ function watch(research: FeeResearch, name: string): Fact[] {
   }
   if (!research.revenueLine) {
     out.push({
-      text: `Your yearly count of ${name} items would turn the money at stake into a range for each price.`,
+      text: `Your yearly count of ${name} items would put a dollar range on each price.`,
       source: { label: "Figures you give Hamilton", asOf: research.provenance.generatedAt.slice(0, 10) },
     });
   }
@@ -736,16 +763,39 @@ export function buildStoryline(research: FeeResearch, answer: HamiltonAnswer, in
     exhibit: p.exhibit,
     ...(p.takeaway ? { takeaway: p.takeaway } : {}),
   }));
+  // Each line appears once: a lens or watch line that repeats the situation is dropped.
+  // The situation adds to the governing thought: a claim restating one of its dollar figures is left out.
+  const headlineFigures = new Set(answer.headline.match(/\$[\d,.]+\d/g) ?? []);
+  const situation = answer.claims
+    .filter((c) => c.source.label !== "Your published fee schedule")
+    .filter((c) => !(c.text.match(/\$[\d,.]+\d/g) ?? []).some((f) => headlineFigures.has(f)))
+    .slice(0, 2);
+  for (const e of exhibits) {
+    if (e.takeaway && situation.some((f) => f.text === e.takeaway!.text)) delete e.takeaway;
+  }
+  const said = new Set([
+    answer.headline,
+    ...situation.map((f) => f.text),
+    ...exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]),
+  ]);
+  const fresh = (facts: Fact[]) =>
+    facts.filter((f) => {
+      if (said.has(f.text)) return false;
+      said.add(f.text);
+      return true;
+    });
+  const complicationFacts = fresh(complication(research, name));
   return {
     kind,
     governingThought: answer.headline,
-    situation: answer.claims.slice(0, 2),
-    complication: complication(research, name),
+    // The bank's own fee is the first key figure, so the situation opens with the market.
+    situation,
+    complication: complicationFacts,
     keyFigures: keyFigures(research, name),
     exhibits,
-    lenses: { finance: financeLens(research, answer), market: marketLens(research, name) },
+    lenses: { finance: fresh(financeLens(research, answer)), market: fresh(marketLens(research, name)) },
     defaultView: kind === "price_test" || kind === "board_decision" ? "finance" : "market",
     options: options(research, kind, intent, name),
-    watch: watch(research, name),
+    watch: fresh(watch(research, name)),
   };
 }
