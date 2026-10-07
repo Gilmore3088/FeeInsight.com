@@ -10,10 +10,12 @@ import { urlIdentity } from "./finders";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
+  DOCUMENT_YEAR_SQL,
   hasOverdraftPrice,
   LARGE_BANK_ASSETS,
   OVERDRAFT_PRICE_SQL,
   REFERS_ELSEWHERE_SQL,
+  STALE_DOCUMENT_YEARS,
 } from "./link-coverage";
 
 type SqlTag = typeof sql;
@@ -52,6 +54,7 @@ export interface ScheduleSearchRow {
   business_only: boolean | null;
   no_overdraft_price: boolean | null;
   refers_elsewhere: boolean | null;
+  stale_copy?: boolean | null;
 }
 
 interface ScheduleAnswer {
@@ -99,6 +102,7 @@ function onDomain(url: string, website: string): boolean {
 function whyNotIt(row: ScheduleSearchRow): string {
   if (row.business_only) return "it is the business account schedule, not the personal one";
   if (row.refers_elsewhere) return "it refers to the deposit account agreement or another document for the fees";
+  if (row.stale_copy && !row.no_overdraft_price) return "it is dated several years ago and its prices are likely out of date; find the current edition";
   return "it does not list the overdraft or NSF fee amount";
 }
 
@@ -148,7 +152,16 @@ async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[
                 WHERE text.institution_id = inst.id
                   AND text.status = 'completed'
                   AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${REFERS_ELSEWHERE_SQL}
-             ) AS refers_elsewhere
+             ) AS refers_elsewhere,
+             EXISTS (
+               SELECT 1 FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                  AND doc.status = 'success'
+                  AND doc.duplicate_of_id IS NULL
+                  AND doc.superseded_by_id IS NULL
+                  AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
+                      <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
+             ) AS stale_copy
         FROM institution_sources inst
         LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
@@ -168,7 +181,7 @@ async function selectRows(db: SqlTag, limit: number): Promise<ScheduleSearchRow[
          )
     )
     SELECT * FROM scoped
-     WHERE business_only OR no_overdraft_price OR refers_elsewhere
+     WHERE business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
      ORDER BY requested DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;

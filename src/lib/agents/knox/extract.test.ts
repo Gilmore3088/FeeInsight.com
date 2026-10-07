@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -88,6 +88,29 @@ describe("Knox agentic extraction", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("knox_extraction_completed");
     expect(JSON.stringify(db.mock.calls)).toContain("raw_observations_pending_verification");
     expect(JSON.stringify(db.mock.calls)).not.toContain("No fee for e-statements");
+  });
+
+  it("records shadow calibrated confidence and the text's layout without changing the stored confidence", async () => {
+    const db = createDbMock([textArtifact]);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
+    db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (templateText(strings).includes("FROM published_fee_records fp")) {
+        return Promise.resolve([{ strategy: "extract.rules", canonical_fee_key: "overdraft", published: 100, live: 10 }]);
+      }
+      return base(strings, ...values);
+    }) as never);
+
+    const result = await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
+
+    expect(result).toMatchObject({ calibrationGroups: 1, calibratedBelowPublishFloor: 1 });
+    expect(result.layouts).toEqual({ "plain/short": { documents: 1, thin: 0 } });
+    const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
+    const overdraft = inserts.find((call) => String(call[10]).includes("canonical_hint=overdraft"))!;
+    expect(String(overdraft[10])).toMatch(/calibrated_confidence=0\.2\d;/);
+    expect(Number(overdraft[5])).toBeGreaterThanOrEqual(0.8);
+    const maintenance = inserts.find((call) => String(call[10]).includes("canonical_hint=monthly_maintenance"))!;
+    // No survival history for the category: the formula's value, unchanged.
+    expect(String(maintenance[10])).toContain(`calibrated_confidence=${Number(maintenance[5]).toFixed(2)};`);
   });
 
   it("sends free fees to Darwin and holds ranges for review", async () => {
@@ -200,6 +223,62 @@ describe("Knox agentic extraction", () => {
     expect(unsafeSql).toContain("prior.text_hash = adt.text_hash");
   });
 
+  describe("one document per page", () => {
+    function currentCopyDb(rows: Array<Record<string, unknown>>, retired: number[]): DbMock {
+      const db = createDbMock(rows);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        if (text.includes("INSERT INTO raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 900 }]);
+        if (text.includes("superseded_by_newer_copy")) return Promise.resolve(retired.map((id) => ({ fee_raw_id: id })));
+        if (text.includes("old_copy.superseded_by_id IS NOT NULL")) return Promise.resolve(retired.map((id) => ({ fee_raw_id: id })));
+        return Promise.resolve([]);
+      });
+      return db;
+    }
+
+    it("reads the current copy of a page, not an older copy", async () => {
+      const db = currentCopyDb([], []);
+
+      await runKnoxExtract({ runId: 106, db: asExtractDb(db) });
+
+      const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(unsafeSql).toContain("current_text.source_document_id = old_copy.superseded_by_id");
+    });
+
+    it("retires older-copy rows only for a category the current copy has", async () => {
+      const db = currentCopyDb([textArtifact], [11, 12]);
+
+      const result = await runKnoxExtract({ runId: 107, db: asExtractDb(db) });
+
+      expect(result.retiredOlderCopyRows).toBe(2);
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("cur.source_document_id = old_copy.superseded_by_id");
+      expect(sqlText).toContain("NOT EXISTS (\n         SELECT 1 FROM verified_fee_observations fv");
+      expect(sqlText).toContain('|| \'["superseded_by_newer_copy"]\'::jsonb');
+    });
+
+    it("lets a current copy be read when only an older copy of the same text holds rows", async () => {
+      const db = currentCopyDb([], []);
+
+      await runKnoxExtract({ runId: 108, db: asExtractDb(db) });
+
+      const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(unsafeSql).toContain("AND mine.superseded_by_id IS NULL");
+      expect(unsafeSql).toContain("AND theirs.superseded_by_id IS NOT NULL");
+    });
+
+    it("leaves older copies alone before the current-copy column exists", async () => {
+      const db = createDbMock([textArtifact]);
+
+      const result = await runKnoxExtract({ runId: 109, db: asExtractDb(db) });
+
+      expect(result.retiredOlderCopyRows).toBe(0);
+      const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(unsafeSql).not.toContain("old_copy.superseded_by_id");
+    });
+  });
+
   describe("with the learning core", () => {
     function learningDb(rows: Array<Record<string, unknown>>): DbMock {
       const db = createDbMock(rows);
@@ -234,6 +313,10 @@ describe("Knox agentic extraction", () => {
       // A text with few fees goes back to Knox when the rules version moves.
       expect(query).toContain("FROM raw_fee_observations thin");
       expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
+      // A large bank's page is read again once per rules version, ahead of other texts.
+      expect(query).toContain("COALESCE(inst.asset_size, 0) >=");
+      expect(params).toEqual(expect.arrayContaining([KNOX_REREAD_ASSET_FLOOR]));
+      expect(query).toContain(`ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`);
     });
 
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {

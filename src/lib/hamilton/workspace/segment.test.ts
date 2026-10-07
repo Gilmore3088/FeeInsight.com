@@ -91,7 +91,7 @@ describe("segment answer", () => {
       segment: buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false }),
     };
     const answer = buildFeeAnswer(research, { focus: "competitors" });
-    expect(answer.headline).toMatch(/^Your \$32 overdraft fee sits at the 33rd percentile of 6 institutions with \$10 billion or more in assets; their median is \$35\./);
+    expect(answer.headline).toBe("Your $32 overdraft fee is at the 33rd percentile of 6 $10B+ institutions (median $35).");
     expect(answer.claims[0].text).toBe("6 of the 184 institutions with $10 billion or more in assets publish an overdraft fee in the index.");
     expect(answer.claims.map((c) => c.text)).toContain("1 charge $0: Beta Bank.");
     expect(answer.claims.map((c) => c.text)).toContain("2 of them limit how many overdraft fees they charge in a day; the most common limit is 3.");
@@ -99,7 +99,7 @@ describe("segment answer", () => {
     expect(answer.exhibit).toMatchObject({ kind: "competitor_range" });
     if (answer.exhibit?.kind === "competitor_range") {
       expect(answer.exhibit.items.map((i) => i.amount)).toEqual([0, 10, 35, 35, 36, 38]);
-      expect(answer.exhibit.title).toBe("Overdraft fees at the 6 largest institutions with $10 billion or more in assets");
+      expect(answer.exhibit.title).toBe("Overdraft fees at the 6 largest $10B+ institutions");
     }
     expect(JSON.stringify(answer)).not.toMatch(/recommend|should|raise your|lower your/i);
     const verdict = evaluateFourRoles(answer);

@@ -153,7 +153,9 @@ const COMPOSABLE_WORDS = new Set(
     "transfer transfers wire request paid returned unpaid consumer business personal member members non " +
     "nonmember customer first additional subsequent thereafter day month fee fees amount charge charges cost price " +
     // "Cash withdrawals - Within U.S. / U.S. territories" under "ATM fees – At non-Wells Fargo ATMs".
-    "cash withdrawal withdrawals within outside territories"
+    "cash withdrawal withdrawals within outside territories " +
+    // "Business accounts only" under "Non-Sufficient Funds (NSF)".
+    "account accounts only"
   ).split(" "),
 );
 

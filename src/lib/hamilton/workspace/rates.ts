@@ -44,9 +44,9 @@ export function rateClaims(research: FeeResearch, name: string): Fact[] {
   if (own) out.push({ text: `Your schedule states the ${name} fee as ${own.label}.`, source: ownRateSource(rates, own) });
   const { n, median, p25, p75 } = rates.national;
   if (median !== null) {
-    const half = p25 !== null && p75 !== null ? ` The middle half runs ${formatRatePercent(p25)} to ${formatRatePercent(p75)}.` : "";
+    const half = p25 !== null && p75 !== null ? `; the middle half runs ${formatRatePercent(p25)} to ${formatRatePercent(p75)}` : "";
     out.push({
-      text: `Where institutions state it as a rate, the national median is ${formatRatePercent(median)} across ${count(n)} institutions.${half}`,
+      text: `Stated as a rate, the national median is ${formatRatePercent(median)} across ${count(n)} institutions${half}.`,
       source: rates.source,
       sampleSize: n,
     });
@@ -73,11 +73,11 @@ export function rateHeadline(research: FeeResearch, name: string): string | null
   if (own) {
     const relation = rateRelation(own.ratePercent, rates);
     return relation && median !== null
-      ? `Your ${name} fee is ${own.label}, ${relation} the national median rate of ${formatRatePercent(median)} across ${count(n)} institutions.`
-      : `Your ${name} fee is ${own.label}; too few institutions state it as a rate to set a benchmark.`;
+      ? `Your ${name} fee is ${own.label}, ${relation === "at" ? "at" : relation} the ${formatRatePercent(median)} national median.`
+      : `Your ${name} fee is ${own.label}; too few institutions state a rate to compare.`;
   }
   if (median !== null) {
-    return `Your schedule shows no ${name} fee; where institutions state it as a rate, the national median is ${formatRatePercent(median)}.`;
+    return `Your schedule shows no ${name} fee; stated as a rate, the national median is ${formatRatePercent(median)}.`;
   }
   return null;
 }
