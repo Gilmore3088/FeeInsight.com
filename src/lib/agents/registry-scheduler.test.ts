@@ -13,6 +13,7 @@ import {
   isParserStale,
   pickDueCandidate,
   registryCandidates,
+  registryPartitionsBySource,
   scheduleDueRegistryRuns,
 } from "./registry-scheduler";
 
@@ -51,6 +52,13 @@ describe("registry scheduler", () => {
       "sec-filings:batch-1",
     ]);
     expect(candidates.filter((c) => c.startsWith("fdic-financials:"))).toHaveLength(3);
+  });
+
+  it("schedules state bills only once the Open States key is set", () => {
+    const bills = (env: Record<string, string>) =>
+      registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
+    expect(bills({})).toEqual([]);
+    expect(bills({ OPEN_STATES_API_KEY: "key" })).toHaveLength(52);
   });
 
   it("defaults the backfill to 2010Q1 and honours REGISTRY_BACKFILL_FROM", () => {

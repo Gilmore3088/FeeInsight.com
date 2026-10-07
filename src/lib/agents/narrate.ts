@@ -180,6 +180,7 @@ export function narrateStepFinished(
     case "registry-fred":
     case "registry-reg-news":
     case "registry-federal-register":
+    case "registry-state-bills":
     case "registry-state-regulators":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
@@ -282,6 +283,11 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
       return `Read ${count(n(detail, "fetched"), "Federal Register rule")}, ${open} open for comment; ${stored}.`;
     }
+    case "registry-state-bills": {
+      if (detail.missing_key) return "Skipped state bills: the Open States key is not set.";
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
+    }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
     default:
@@ -358,6 +364,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-fred": "magellan",
   "registry-reg-news": "magellan",
   "registry-federal-register": "magellan",
+  "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",

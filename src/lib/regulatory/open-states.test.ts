@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+
+import { billStage, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS } from "./open-states";
+
+describe("Open States client", () => {
+  it("covers the 50 states, DC and Puerto Rico", () => {
+    expect(STATE_BILL_JURISDICTIONS).toHaveLength(52);
+    expect(STATE_BILL_JURISDICTIONS).toEqual(expect.arrayContaining(["DC", "PR", "WY"]));
+    expect(openStatesJurisdictionId("DC")).toBe("ocd-jurisdiction/country:us/district:dc/government");
+    expect(openStatesJurisdictionId("PR")).toBe("ocd-jurisdiction/country:us/territory:pr/government");
+  });
+
+  it("builds a search URL with no key in it", () => {
+    const url = new URL(openStatesUrl("TX", "overdraft", "2025-09-02"));
+    expect(url.searchParams.get("jurisdiction")).toBe("ocd-jurisdiction/country:us/state:tx/government");
+    expect(url.searchParams.getAll("include")).toEqual(["actions", "abstracts"]);
+    expect(url.searchParams.get("apikey")).toBeNull();
+  });
+
+  it("works out a bill's stage from its actions", () => {
+    const lower = { classification: "lower" };
+    const upper = { classification: "upper" };
+    expect(billStage([]).stage).toBe("introduced");
+    expect(billStage([{ date: "2026-01-01", classification: ["introduction"] }, { date: "2026-01-09", classification: ["referral-committee"] }])).toEqual({
+      stage: "in_committee",
+      date: "2026-01-09",
+    });
+    expect(
+      billStage([
+        { date: "2026-03-01", classification: ["passage"], organization: lower },
+        { date: "2026-04-01", classification: ["passage"], organization: upper },
+      ]).stage,
+    ).toBe("passed_legislature");
+    expect(billStage([{ date: "2026-05-01T00:00:00", classification: ["executive-signature"] }])).toEqual({ stage: "signed", date: "2026-05-01" });
+    expect(billStage([{ date: "2026-05-01", classification: ["executive-veto"] }]).stage).toBe("vetoed");
+  });
+
+  it("keeps bank fee bills and drops other junk fee bills", () => {
+    const base = { id: "x", identifier: "HB 1", openstates_url: "https://openstates.org/x" };
+    expect(parseOpenStatesBill({ ...base, title: "Concerning nonsufficient funds fees" }, "co")).toMatchObject({ state_code: "CO", topics: ["fees", "overdraft_nsf"] });
+    expect(parseOpenStatesBill({ ...base, title: "Ticket resale junk fees" }, "co")).toBeNull();
+  });
+});
