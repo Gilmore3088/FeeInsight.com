@@ -12,6 +12,7 @@ vi.mock("./connection", () => {
 });
 
 import {
+  getComplaintBenchmark,
   getDistrictComplaintSummary,
   getInstitutionComplaintProfile,
 } from "./complaints";
@@ -159,8 +160,8 @@ describe("getInstitutionComplaintProfile", () => {
       .mockResolvedValueOnce([                              // by_issue
         { issue: "Fees or interest", count: "80" },
         { issue: "Managing an account", count: "60" },
-      ])
-      .mockResolvedValueOnce([{ fee_count: "140" }]);       // fee issues
+      ]);
+    mock.unsafe.mockResolvedValueOnce([{ fee_count: "140" }]); // fee issues (shared fee definition)
 
     const result = await getInstitutionComplaintProfile(42);
 
@@ -182,12 +183,12 @@ describe("getInstitutionComplaintProfile", () => {
         { issue: "Fees or interest", count: "50" },
         { issue: "Managing an account", count: "50" },
         { issue: "Other", count: "100" },
-      ])
-      .mockResolvedValueOnce([{ fee_count: "100" }]); // 100 fee issues out of 200 total issues
+      ]);
+    mock.unsafe.mockResolvedValueOnce([{ fee_count: "100" }]); // 100 fee complaints out of 200 total
 
     const result = await getInstitutionComplaintProfile(10);
 
-    // fee_related_pct = 100 / (50+50+100) * 100 = 50%
+    // fee_related_pct = 100 / 200 total complaints * 100 = 50%
     expect(result.fee_related_pct).toBe(50.0);
   });
 
@@ -196,8 +197,8 @@ describe("getInstitutionComplaintProfile", () => {
     mock
       .mockResolvedValueOnce([{ total: "0" }])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ fee_count: "0" }]);
+      .mockResolvedValueOnce([]);
+    mock.unsafe.mockResolvedValueOnce([{ fee_count: "0" }]);
 
     const result = await getInstitutionComplaintProfile(99);
 
@@ -205,5 +206,71 @@ describe("getInstitutionComplaintProfile", () => {
     expect(result.fee_related_pct).toBe(0);
     expect(result.by_product).toHaveLength(0);
     expect(result.by_issue).toHaveLength(0);
+  });
+});
+
+// ── getComplaintBenchmark ────────────────────────────────────────────────────
+
+describe("getComplaintBenchmark", () => {
+  beforeEach(() => resetMock(getMock()));
+
+  const row = (id: number, state: string, district: number, fee: number, extra: Record<string, unknown> = {}) => ({
+    institution_id: id,
+    institution_name: `Bank ${id}`,
+    state_code: state,
+    fed_district: district,
+    charter_type: "bank",
+    asset_size_tier: "community_small",
+    deposits: 200_000, // $200M, in thousands
+    total_complaints: fee * 2,
+    fee_complaints: fee,
+    accepted: fee > 0,
+    in_review: false,
+    ...extra,
+  });
+
+  it("says zero plainly and widens from state to district when the state has too few peers", async () => {
+    const cohort = [
+      row(1, "TN", 6, 0),
+      ...Array.from({ length: 4 }, (_, i) => row(10 + i, "TN", 6, 0)),
+      ...Array.from({ length: 8 }, (_, i) => row(20 + i, "GA", 6, i < 3 ? 2 : 0)),
+      // Awaiting review: its count is unknown, so it is not a peer.
+      row(99, "TN", 6, 0, { in_review: true }),
+    ];
+    getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: true }]);
+
+    const result = await getComplaintBenchmark(1, 2025);
+
+    expect(result).toMatchObject({
+      match_status: "none",
+      fee_complaints: 0,
+      peer_level: "fed_district",
+      peer_label: "Fed District 6",
+      peer_count: 12,
+      peers_with_fee_complaints: 3,
+      peer_median_fee_complaints: 0,
+      sub_issues_loaded: true,
+    });
+    expect(result!.summary).toBe("Bank 1 had 0 CFPB fee complaints in 2025. 3 of 12 community small banks in Fed District 6 had any.");
+  });
+
+  it("gives a rate per $1B of deposits next to the peer median", async () => {
+    const cohort = [row(1, "TX", 11, 6), ...Array.from({ length: 12 }, (_, i) => row(30 + i, "TX", 11, i < 4 ? 1 : 0))];
+    getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: false }]);
+
+    const result = await getComplaintBenchmark(1, 2025);
+
+    expect(result).toMatchObject({ match_status: "matched", peer_level: "state", fee_complaints_per_billion: 30, peer_median_per_billion: 0 });
+  });
+
+  it("shows no count while the institution's CFPB match awaits review", async () => {
+    getMock().unsafe.mockResolvedValueOnce([row(1, "OH", 4, 0, { in_review: true, total_complaints: 3511 })]).mockResolvedValueOnce([{ loaded: false }]);
+    const result = await getComplaintBenchmark(1, 2025);
+    expect(result).toMatchObject({ match_status: "unconfirmed", total_complaints: null, fee_complaints: null, fee_complaints_per_billion: null });
+  });
+
+  it("returns null for an unknown institution", async () => {
+    getMock().unsafe.mockResolvedValueOnce([]);
+    await expect(getComplaintBenchmark(404, 2025)).resolves.toBeNull();
   });
 });

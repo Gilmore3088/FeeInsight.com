@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { aggregationBuckets, fetchCfpbCompanyBreakdown, normalizeCompanyName } from "./cfpb";
+import { aggregationBuckets, fetchCfpbCompanyBreakdown, fullCompanyKey, normalizeCompanyName, subIssueBuckets } from "./cfpb";
 import { parseFdicSod } from "./fdic";
 import { isFredNativeSeries, parseBeigeBookPage, parseBeigeBookReleaseCodes, parseFredCsv } from "./fed";
 import { blankUnreportedFeeIncome, ncuaZipUrl, parseCsv, parseNcuaFinancial, parseNcuaInstitution, readNcuaArchive } from "./ncua";
@@ -158,6 +158,19 @@ describe("CFPB", () => {
     expect(normalizeCompanyName("CAPITAL ONE FINANCIAL CORPORATION")).toBe("CAPITAL ONE");
     expect(normalizeCompanyName("Navy Federal Credit Union")).toBe("NAVY FEDERAL CREDIT UNION");
     expect(normalizeCompanyName("The Bank")).toBe("THE BANK");
+    expect(normalizeCompanyName("U S BCORP")).toBe(normalizeCompanyName("U.S. Bank National Association"));
+    expect(fullCompanyKey("HOPE BCORP INC")).toBe(fullCompanyKey("HOPE BANCORP, INC."));
+    expect(fullCompanyKey("CITIZENS FINANCIAL GROUP INC")).toBe("CITIZENS FINANCIAL GROUP");
+  });
+
+  it("reads sub-issue buckets nested in issue buckets, and none when absent", () => {
+    const body = {
+      aggregations: {
+        issue: { issue: { buckets: [{ key: "Managing an account", doc_count: 9, "sub_issue.raw": { buckets: [{ key: "Fee problem", doc_count: 4 }] } }] } },
+      },
+    };
+    expect(subIssueBuckets(body)).toEqual([{ issue: "Managing an account", subIssue: "Fee problem", doc_count: 4 }]);
+    expect(subIssueBuckets({ aggregations: { issue: { issue: { buckets: [{ key: "Fees or interest", doc_count: 2 }] } } } })).toEqual([]);
   });
 
   it("reads nested aggregation buckets and drops empty ones", () => {
