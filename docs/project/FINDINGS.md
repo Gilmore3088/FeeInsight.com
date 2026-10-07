@@ -13,6 +13,45 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
+**What happened:** First National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)
+$10.00", a report requester's headline overdraft fee, was verified by Darwin as
+`od_protection_transfer`, published, then rolled back as `rules_recheck_unreproduced`. On prod,
+140 fees at 128 banks were taken down the same way.
+**Cause:** the re-check filed Knox's reads under Knox's hint (overdraft); Darwin's category guard
+fails that name under overdraft, so the read was dropped and the live fee looked unreproduced.
+Darwin itself files it under `refileCategory`.
+**Fix:** the re-check files reads with `refileCategory`, and strategy version 3 re-checks every
+document once, which restores what still traces to its text.
+**Lesson:** any check that re-reads a fee must file it the way Darwin files it, through the one
+shared `refileCategory`.
+
+## 2026-10-07: Darwin's paid pass never ran because other agents used its per-run call cap
+**What happened:** at 01:20 UTC there were no `verify.adjudicate` or `verify.release_review`
+attempts on prod at all, and no `verify-paid` step had run in 7 days. Every one ended "Paid pass
+skipped: Provider call cap exhausted for run N under agent:darwin" before Darwin made a call
+(runs 1843, 1849, 1850, 1853 had 29, 24, 25 and 22 calls, all from Knox, Magellan and Rosetta).
+**Cause:** `assertRunCaps` compared each agent policy's `max_provider_calls_per_run` (Darwin 10)
+with the whole run's `agent_runs.actual_provider_calls`. A state run holds several agents' paid
+steps, so the earlier agents spent Darwin's cap for it.
+**Fix:** an agent policy's per-run caps count only that agent's completed calls in the run
+(`ai_api_usage_events` by `agent_run_id` and `agent_name`). Daily, monthly and global caps are
+unchanged and still bind.
+**Lesson:** a per-agent cap reads per-agent usage; a run-wide counter is only right for run-wide caps.
+
+## 2026-10-07: Darwin held current-copy fees as duplicates of older copies at the same URL
+**What happened:** at about 01:05 UTC, Hamilton's read-only counts found 1,108 live fees whose
+Knox row on the bank's current page copy was held as `duplicate_in_batch` with no verified row on
+that document. On prod, 1,919 current-copy rows at 199 banks were held that way.
+**Cause:** Darwin's in-batch duplicate key used the source URL, not the stored document. When an
+older and a newer copy of one page were in the same batch, only the older copy's fee was verified;
+the current copy's fee was held as its duplicate and never selected again.
+**Fix:** the key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2), and those rows are
+selected once more when nothing on their own document is verified as the same fee. Dry run at
+01:15 UTC: 1,875 rows at 176 banks re-checked through every normal check; 1,470 of them match a
+live fee by name and amount. Nothing live comes down.
+**Lesson:** a dedupe key for one fee line names the document, not the URL; a URL has many copies.
+
 ## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
 **What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
 failed at 01:28 UTC with "operator does not exist: bigint = text", although
@@ -1595,6 +1634,21 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 **Lesson:** a layout seen at one bank is worth a rule only when the shared check can read it the
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
+
+## 2026-10-07: A bot check or script shell became a page's current copy and hid its readable text
+**What happened:** 87 live fees sat on 5 pages whose current copy had no usable text, so Knox and
+the source check had nothing to read. None was a scan. Three newer copies were a bot check ("Please
+wait while your request is being verified", tvfcu.com, bankofbotetourt.com) or a bare title
+(koolaufcu.org); two were 188- and 233-byte script shells (tcu37.com, yourgcu.org). Each page's
+older copy had a full completed text (3,125 to 40,272 characters) carrying those fees.
+**Cause:** `markCurrentCopy` made every successful fetch the page's current copy, so a fetch the
+site blocked or answered with an empty shell superseded the readable copy, and an unchanged
+re-fetch of the same block page would have done it again.
+**Fix:** same PR. A copy whose text Rosetta read as not a fee page and under 300 characters is a
+thin copy; `markCurrentCopy` hands the place to the page's latest readable copy instead, and
+Rosetta's read step runs `restoreReadableCopies` each pass (`thin_copies_set_aside` in its step
+detail). Read-only dry run: 6 pages qualify (these 5 plus one with no live fees).
+**Lesson:** "newest" is not "current" unless the newer copy is at least readable.
 
 ## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
 **What happened:** some PDF schedules are stored as a single line holding every row

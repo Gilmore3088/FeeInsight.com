@@ -70,6 +70,10 @@ Rosetta owns source text normalization.
     `source_hash`) makes that text readable once more and voids its earlier permanent
     rejection. A page with more amounts is logged `rejected` and stays closed. No fee
     is touched.
+  - A page's current copy that Rosetta read as not a fee page and under 300 characters
+    (a bot check, script shell or bare title) is set aside each read step
+    (`restoreReadableCopies` in `magellan/current-copy.ts`, at most 50): the page's latest
+    copy with a completed text becomes current again (`thin_copies_set_aside`).
   - A download that fails with HTTP 404/410, with HTTP 401/403 when an earlier read of
     the same document was also blocked, or for the third time in 7 days with a block,
     rate limit, server error, timeout or network error (`STUCK_LINK_*` in `read.ts`),

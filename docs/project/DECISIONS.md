@@ -11,6 +11,30 @@ source link on every fee, rather than an anonymized copy without links. Every fi
 already public on the institution pages. James approved the previews and said to move forward
 at 01:37 UTC, so links to the sample show across the site whenever a sample market qualifies.
 
+**Scrapping a fee is a last resort: looked at more than once, logged, archived, never deleted.**
+James, 01:20 UTC ("we need to constantly learn from fees we pass or scrap ... It needs to be last
+case decision, picked over multiple times, decision log. And it's never deleted, just archive and
+can always be revisited"). Every pass or scrap feeds `pipeline_feedback`. Darwin's held-fee pass
+(`verify.release` v4) now takes two looks at least 20 hours apart, the second against the bank's
+current copy, before a reject is final; a fee later found on the schedule gets a `restored` note.
+
+**Held fees with no category fold into an existing one; nothing beyond the ~50 tracked
+categories gets its own.** James, 01:18 UTC, chose "Fold into existing" on the Knox held-lines
+card, then: "do our best to match fees to the right category, but at some point we just need to
+stop caring about anything beyond the top 50." Knox rules v26 (`FOLDED_PATTERNS` in
+`knox/rules.ts`) file returned mail, bad address, fax and excess-withdrawal fees under account
+research, collection items and foreign checks under check cashing, and loan cancellation, credit
+report and UCC fees under loan origination, as the taxonomy and answer keys already map them.
+Groups with no right home (membership, phone transfers, credit card, uncollected funds,
+returned statements) stay held rather than skew a featured fee.
+
+**Nothing Knox sets aside is deleted.** James, 01:20 UTC: "We can't just aimless toss. It needs
+to be last case decision, picked over multiple times, decision log. And it's never deleted, just
+archive and can always be revisited." A held line is set aside (`knox_set_aside`) only after three
+rules versions have read it; every read is logged in `pipeline_feedback`
+(`knox.held:raw:<id>`, versions checked, outcome), the row stays, and every later rules version
+re-reads it.
+
 ## 2026-10-06
 
 **Value funnel answers.** James, 23:49 UTC, in the value funnel thread.
