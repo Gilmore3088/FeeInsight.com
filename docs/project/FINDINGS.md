@@ -1872,3 +1872,16 @@ categories and fees for going past a limit. The paid reader rejects the same row
 free reader's superseded-copy filter. The shared check reads "$.50" and "75¢".
 **Lesson:** a price beside a name is the fee only when the name names a charge. Words like
 "limit", "limited to" and "maximum load" mean the figure is a ceiling.
+
+## 2026-10-07: Fee names ran on into their price
+**What happened:** the audit red team counted 3,599 of 48,297 live Knox fees with a messy name: 1,819
+joined with "|", 1,338 over 80 characters and 1,025 ending on a dangling word ("Replacement Card Fee
+of", "ATM Fee for", "Debit Card Replacement A fee of"). 1,642 of the piped names predate the v17
+name tidy (Oct 6) and only change when Knox reads that page again. The tidy itself kept the words
+that led into the price, and kept the previous row's "None" price cell in the name.
+**Fix:** Knox v29's `tidyFeeName` drops a trailing connector from names of eight words or fewer, a
+leading article, and everything up to a "None"/"Free" cell between names. Longer sentences keep
+their ending, since the category guard reads "fee of" as the sign of a fee sentence.
+**Lesson:** a name is tidied for the reader, but the category guard still reads it, so a tidy rule
+has to be checked against the guard and the answer keys, not only by eye.
+
