@@ -50,3 +50,13 @@ describe("buildLocalOfficeMap", () => {
   });
 });
 
+
+describe("offices at the same spot", () => {
+  it("spreads stacked offices so each shows as its own dot", () => {
+    const town = { latitude: 30.42, longitude: -91.1, city: "Baton Rouge" };
+    const map = buildLocalOfficeMap(["LA"], [town, town, town, { latitude: 30.65, longitude: -91.16, city: "Zachary" }])!;
+    const spots = new Set(map.dots.map((d) => `${d.x},${d.y}`));
+    expect(map.dots).toHaveLength(4);
+    expect(spots.size).toBe(4);
+  });
+});

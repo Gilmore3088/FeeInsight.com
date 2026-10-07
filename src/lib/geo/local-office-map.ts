@@ -69,6 +69,9 @@ export interface LocalOfficeMap {
   labels: Array<{ x: number; y: number; text: string }>;
 }
 
+const DOT_RADIUS = 7;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
 /** Town labels drawn at most, and the closest two may sit (viewBox units). */
 const MAX_LABELS = 5;
 const LABEL_GAP = 70;
@@ -172,6 +175,7 @@ export function buildLocalOfficeMap(
   }
 
   const dots: LocalOfficeMap["dots"] = [];
+  const stacked = new Map<string, number>();
   let ownWeight = 0;
   const towns = new Map<string, { x: number; y: number; n: number; w: number }>();
   for (const p of valid) {
@@ -179,7 +183,15 @@ export function buildLocalOfficeMap(
     if (!xy) continue;
     const [x, y] = xy;
     if (!inFrame(x, y)) continue;
-    dots.push({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+    // Offices at the same spot (one building, or placed at the middle of their town)
+    // spread out on a small spiral so each still shows as its own dot.
+    const spot = `${Math.round(x)},${Math.round(y)}`;
+    const k = stacked.get(spot) ?? 0;
+    stacked.set(spot, k + 1);
+    const r = k === 0 ? 0 : DOT_RADIUS * 2.2 * Math.sqrt(k);
+    const dx = r * Math.cos(k * GOLDEN_ANGLE);
+    const dy = r * Math.sin(k * GOLDEN_ANGLE);
+    dots.push({ x: Math.round((x + dx) * 10) / 10, y: Math.round((y + dy) * 10) / 10 });
     ownWeight += p.weight ?? 1;
     const town = p.city?.trim();
     if (town) {
@@ -211,7 +223,7 @@ export function buildLocalOfficeMap(
     viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
     states,
     dots,
-    dotRadius: 7,
+    dotRadius: DOT_RADIUS,
     labels,
     othersPath: segments.join(""),
     othersCount: segments.length,

@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
+import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
@@ -57,9 +58,18 @@ export interface BranchFootprint {
   mappedOffices?: number;
   /** True when the zoomed map applies but too few offices are placed yet to draw it. */
   mapPending?: boolean;
+  /** Offices on the map drawn at the middle of their town until their address is geocoded. */
+  approxOffices?: number;
 }
 
-type OfficePoint = { latitude: number | string; longitude: number | string; city: string | null; weight?: number | string | null };
+type OfficePoint = {
+  latitude: number | string;
+  longitude: number | string;
+  city: string | null;
+  weight?: number | string | null;
+  /** Placed at the middle of its town, not its own address. */
+  approx?: boolean | null;
+};
 
 /** The zoomed map as the card receives it (server-only fields removed). */
 export type CardLocalMap = Omit<LocalOfficeMap, "othersInFrame" | "ownWeightInFrame">;
@@ -141,7 +151,7 @@ async function localMapFor(
   points: OfficePoint[],
   isBank: boolean,
   totalOffices: number,
-): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
   if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
   const own = points.map((p) => ({
     latitude: Number(p.latitude),
@@ -165,7 +175,8 @@ async function localMapFor(
   const { othersInFrame: _inFrame, ownWeightInFrame, ...localMap } = map;
   void _inFrame;
   void ownWeightInFrame;
-  return { localMap, mappedOffices: map.dots.length, ...(await marketCompetitors(institutionId)) };
+  const approxOffices = points.filter((p) => p.approx).length;
+  return { localMap, mappedOffices: map.dots.length, approxOffices, ...(await marketCompetitors(institutionId)) };
 }
 
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
@@ -241,9 +252,25 @@ async function getCreditUnionFootprint(institutionId: number): Promise<BranchFoo
   const points =
     byState.length > 0 && byState.length <= LOCAL_MAP_MAX_STATES
       ? await sql<OfficePoint[]>`
-          SELECT latitude, longitude, INITCAP(city) AS city
-            FROM credit_union_branches
-           WHERE institution_id = ${institutionId} AND latitude IS NOT NULL AND longitude IS NOT NULL`
+          -- An office not geocoded yet is drawn at the middle of the known offices in its
+          -- town (bank branches from the last two SOD years and geocoded credit union offices).
+          SELECT COALESCE(b.latitude, t.latitude) AS latitude,
+                 COALESCE(b.longitude, t.longitude) AS longitude,
+                 INITCAP(b.city) AS city,
+                 (b.latitude IS NULL) AS approx
+            FROM credit_union_branches b
+            LEFT JOIN LATERAL (
+              SELECT AVG(k.latitude) AS latitude, AVG(k.longitude) AS longitude FROM (
+                SELECT d.latitude, d.longitude FROM institution_branch_deposits d
+                 WHERE d.state = b.state AND upper(d.city) = upper(b.city)
+                   AND d.year >= ${latestSodYear(new Date()) - 1} AND d.latitude IS NOT NULL
+                UNION ALL
+                SELECT c.latitude, c.longitude FROM credit_union_branches c
+                 WHERE c.state = b.state AND upper(c.city) = upper(b.city) AND c.latitude IS NOT NULL
+              ) k
+            ) t ON b.latitude IS NULL
+           WHERE b.institution_id = ${institutionId}
+             AND COALESCE(b.latitude, t.latitude) IS NOT NULL`
       : [];
   const reportDate = dateStr(latest.report_date);
   const year = reportDate ? Number(reportDate.slice(0, 4)) : new Date().getUTCFullYear();

@@ -160,9 +160,12 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                 </span>
               )}
             </div>
-            {mapped < latest.branches && (
+            {(mapped < latest.branches || (footprint.approxOffices ?? 0) > 0) && (
               <p className="text-[10px] text-[#6B6255]">
-                {mapped.toLocaleString("en-US")} of {latest.branches.toLocaleString("en-US")} {isCu ? "offices" : "branches"} placed on the map so far.
+                {mapped < latest.branches &&
+                  `${mapped.toLocaleString("en-US")} of ${latest.branches.toLocaleString("en-US")} ${isCu ? "offices" : "branches"} on the map. `}
+                {(footprint.approxOffices ?? 0) > 0 &&
+                  `${(footprint.approxOffices ?? 0).toLocaleString("en-US")} ${footprint.approxOffices === 1 ? "is" : "are"} shown at the middle of ${footprint.approxOffices === 1 ? "its" : "their"} town until the exact address is found.`}
               </p>
             )}
           </div>
