@@ -86,6 +86,12 @@ export function isStaleDatedLink(url: string, now: Date = new Date()): boolean {
   return Number(match[1]) <= now.getUTCFullYear() - STALE_DOCUMENT_YEARS;
 }
 
+/** Same address test as `looksLikeProductPage` (find-validate.ts), for SQL: an account or product page... */
+export const PRODUCT_LINK_SQL =
+  "^https?://[^/]+/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)";
+/** ...unless its address names a fee document. */
+export const FEE_NAMED_LINK_SQL = "(fee|schedule|charge|disclos|truth|pricing|\\.pdf($|\\?))";
+
 /** Assets (thousands, as call reports) at which a bank is one buyers check first: $10B. */
 export const LARGE_BANK_ASSETS = 10_000_000;
 

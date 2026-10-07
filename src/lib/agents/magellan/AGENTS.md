@@ -164,7 +164,10 @@ and `detail.method_version`).
   then largest first. The model (web search) is told why the held page is not it; the
   answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
   stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
-  and Knox read it; the link and its live fees stay.
+  and Knox read it; the link and its live fees stay. A second lane takes up to
+  `HIDDEN_BANK_SEARCH_PER_RUN` banks of any size that the catalog hides (fewer than three
+  live fee categories) whose link is an account product page or prices no overdraft,
+  largest first. The bank's own domain includes its corporate domain (`onBankDomain`).
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
   and no fee link, once a month each. The model (web search) names the official homepage;
