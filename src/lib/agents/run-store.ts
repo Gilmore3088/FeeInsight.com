@@ -51,6 +51,8 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
@@ -1404,6 +1406,14 @@ async function executeAgenticStep(
         },
       };
     }
+    case "content-market-spread": {
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+    }
+    case "content-fee-depth": {
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
+    }
     case "marketing-score": {
       const result = await runMarketingScore({
         db: tx,
@@ -2068,6 +2078,19 @@ export async function hasQueuedProviderSteps(): Promise<boolean> {
   return Boolean(row);
 }
 
+/** Queued step keys of a run in the order they run. */
+async function peekQueuedStepKeys(runId: number, limit: number): Promise<string[]> {
+  const rows = await sql`
+    SELECT step_key
+      FROM agent_run_steps
+     WHERE agent_run_id = ${runId}
+       AND status = 'queued'
+     ORDER BY sequence ASC, id ASC
+     LIMIT ${limit}::int
+  `;
+  return rows.map((row) => String(row.step_key));
+}
+
 async function peekNextQueuedStepKey(runId: number): Promise<string | null> {
   const [row] = await sql`
     SELECT step_key
@@ -2121,6 +2144,25 @@ const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+
+function isQuickStep(stepKey: string): boolean {
+  return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
+}
+
+/**
+ * Expected time to reach real work: the run's leading quick steps plus the first step
+ * that is not quick. A later run in a tick starts only when this fits, because a run
+ * that ran its quick first steps counts as under way and goes ahead of failed-lane
+ * retries in the next tick's order.
+ */
+export function expectedMsToFirstWork(stepKeys: string[]): number {
+  let total = 0;
+  for (const key of stepKeys) {
+    total += expectedStepMs(key);
+    if (!isQuickStep(key)) break;
+  }
+  return total;
+}
 
 export function expectedStepMs(stepKey: string | null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
@@ -2193,6 +2235,19 @@ export async function executeAgentRun(
   const maxSteps = Math.min(Math.max(Math.floor(options.maxSteps ?? 1), 1), 10);
   let executedSteps = 0;
   let lastResult: AgentRunExecutionResult | null = null;
+
+  if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
+    const keys = await peekQueuedStepKeys(runId, maxSteps);
+    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+      return {
+        runId,
+        status: existing.status,
+        terminal: false,
+        executedSteps: 0,
+        message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+      };
+    }
+  }
 
   for (let index = 0; index < maxSteps; index += 1) {
     // A step that could not finish by the caller's deadline waits for the next tick; the
