@@ -27,7 +27,13 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 5: a price with a note in parentheses under its name ("$29.00/presentment (applies
 // to ...)"), and figures in a name's note ("Gift Cards ($25 up to $500 Only) | $5"), are read,
 // so fees the older check took down for those layouts are checked again and restored.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 5 } as const;
+// Version 6: a price charged per $100 of the item ("Cashier Check (per $100.00) $1.00") is not
+// a flat fee (priced_per_amount); "$.50" is a price; a price with a unit and a qualifier under
+// its name ("$5.00 per month for each acct., following ..."), "Fee $35.00" under a name, a
+// balance to maintain, and a name wrapped onto the next line are read (Darwin's sample: 13 of
+// 20 recent takedowns were real prices). Every institution is checked again; institutions
+// with source-check takedowns go first, so wrongly taken-down fees come back soonest.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 6 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -237,6 +243,12 @@ export async function takeDownUntraceableFees(
                      AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                      AND pa.institution_id = live.institution_id
                      AND pa.input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                ),
+                -- Banks with fees this check took down first: a reader fix restores them soonest.
+                NOT EXISTS (
+                  SELECT 1 FROM published_fee_records down
+                   WHERE down.institution_id = live.institution_id
+                     AND down.rolled_back_reason LIKE ${TAKEN_DOWN}
                 ),
                 live.institution_id
        LIMIT ${limit}

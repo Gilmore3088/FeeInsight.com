@@ -200,6 +200,7 @@ export function takedownKind(reason: string): FeedbackKind {
   if (group === "source_check_untraceable") {
     if (detail === "amount_is_a_threshold") return "threshold";
     if (detail === "amount_not_the_fee") return "wrong_amount";
+    if (detail === "priced_per_amount") return "priced_per_amount";
     if (detail === "category_not_in_text") return "wrong_category";
     return "not_on_schedule";
   }

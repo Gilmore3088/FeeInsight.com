@@ -63,8 +63,12 @@ wrong takedown showed up.
 at least 12 hours on, that fails it again takes it down. Of 1,345 source-check takedowns later
 restored, 1,311 came back within 12 hours (453 within one), so the 12-hour wait would have kept
 about 97% of them live instead of flickering off and on. Wired into the source check and the category guard, and the
-category guard now restores earlier takedowns that today's guard passes. The rules re-check,
-outlier range and off-taxonomy checks are next.
+category guard now restores earlier takedowns that today's guard passes (PR 324). The rules
+re-check (4,580 takedowns, 184 later restored) gets its second look in PR 320: an independent
+check (the source trace or the category guard) must fail too. The outlier range (768 takedowns) and off-taxonomy (94)
+checks never had a restore, because their verdict only changes when a range or the taxonomy
+changes; they now restore a takedown that passes today (0 qualify as of 02:40 UTC Oct 7). A second
+look would add nothing there: the same amount fails the same range 12 hours later.
 **Lesson:** every new takedown path goes through `secondLook` and has a restore path.
 
 ## 2026-10-07: Hamilton's rules re-check took down fees Darwin had re-filed
@@ -1969,6 +1973,44 @@ Knox's mistakes with changes elsewhere in the pipeline.
 restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
 balance (62%) are still the weakest reads.
 **Lesson:** a learning signal has to say whose mistake it records.
+
+## 2026-10-07: a price charged per $100 of the item was published as a flat fee
+**What happened:** a spot check of 10 fees source check v5 restored found two at one credit union
+("Cashier Check - All Others (per $100.00) $1.00", same for money orders) live as a flat $1. A
+query of live flat fees found one more: a check-cashing row "(NOT ON US- PER $100)" that took the
+$30 of a 3x5 safe deposit box printed beside it.
+**Cause:** Knox's rules strip dollar figures from a name, leaving "(per )", and keep the price.
+`checkFeeAgainstSource` read "(per $100.00)" as a note on the name (v5), so nothing objected.
+**Fix:** the shared check refuses a price whose own label says "per $N" (`priced_per_amount`);
+source check v6 re-checks every institution, so the live ones get the second look and then come
+down, archived. Knox, Darwin and Hamilton all read through the same check, so new reads stop too.
+**Lesson:** a figure in a fee's label is either a band, a limit or a basis; the reader has to
+decide which before it calls the price flat.
+
+## 2026-10-07: the source check took down real prices in five layouts
+**What happened:** Darwin hand-checked 20 recent `source_check_untraceable` takedowns: 13 looked
+like real prices. Re-running today's reader over all 424 such takedowns from the last 24 hours
+found two causes. First, v5 had re-checked only 1,523 of 3,296 institutions, so many fees its fixes
+already read were still down. Second, five layouts it still could not read: "$.50" (no leading
+zero), a price with a unit and a qualifier under its name ("$5.00 per month for each acct.,
+following ..."), "Fee $35.00" under a name, "failure to maintain $1,000 daily balance | $3.00"
+(the balance read as a band), and a name wrapped onto the next line ("Replacement Key (1 key |
+$25.00" / "lost)") whose open parenthesis made the price look like a note.
+A second pass over two samples of the fees still down found more: a column heading repeated
+on every row ("Name" / "Fees & Charges" / "$2.00", one credit union's whole schedule), an
+"Area | Per | Fee" table one cell per line, "Fee @$20 per hour", a free allowance in a note
+("(first 6 free)" / "$1.00"), "$200+", "<$100" and a plural "(s)" read as a note.
+**Fix:** the shared reader reads all of these (source check v6); 99 of the 384 takedowns with stored
+text now trace. Spot checks: 19 of 20 restored fees real (the miss: "$5.00 or 2% cash advance"
+shown as its $5 minimum), 34 of 36 from the second pass real. Of Darwin's 13, 4 now trace; 5 are
+right to stay down on the full page (Darwin judged from Knox's excerpt: the price belonged to the
+next row or column); 1 is a rate per $50 (refused by design); 3 have garbled names. Of a fresh
+random 20 still down, 15 are rightly down; the 5 misses are two-column layouts and names glued to
+a neighbouring fee, which the reader does not untangle yet. v6 re-checks banks with source-check takedowns first, so the restore
+runs through the normal check, logged, with `hamilton.restore` rows in `pipeline_feedback`. The
+12-hour second look (PR 324) has gated every source-check takedown since 02:32 UTC.
+**Lesson:** after a reader version bump, count how far the re-check has got before judging what
+it restores; and sample takedowns, not just live fees, each time the reader changes.
 
 ## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
 **What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
