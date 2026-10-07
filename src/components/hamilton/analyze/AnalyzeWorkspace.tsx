@@ -9,7 +9,7 @@ import { ANALYSIS_FOCUS_TABS, type AnalysisFocus } from "@/lib/hamilton/navigati
 import { saveAnalysis } from "@/app/pro/(hamilton)/analyze/actions";
 import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
-import { humanizeAnswerText, parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
+import { answerTitle, humanizeAnswerText, parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
 import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
@@ -212,7 +212,7 @@ export function AnalyzeWorkspace({
           analysisFocus: focus.current,
           prompt: lastPromptRef.current,
           responseJson: {
-            title: parsed.hamiltonView.slice(0, 80),
+            title: answerTitle(parsed.hamiltonView),
             confidence: confidenceFromFigureCheck(check),
             hamiltonView: parsed.hamiltonView,
             whatThisMeans: parsed.whatThisMeans,

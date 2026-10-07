@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Call report rows for closed institutions store no revenue, and the two charters define revenue differently
+**What happened:** building the fee dependence study, 4,248 of 7,747 FDIC rows for 2010-12-31 had
+`total_revenue` (read-only query on `institution_financial_records`, 05:20 UTC). The rest belong to
+institutions no longer in `institution_sources`, which the loaders store with `institution_id` NULL
+and only a few columns. Separately, banks' `total_revenue` is net interest income plus noninterest
+income (FDIC NIMQ + NONIIQ), while credit unions' is gross interest income plus noninterest income
+(NCUA 115 + 117), and the credit union fee line (131) is all fee income, not only deposit service
+charges.
+**Cause:** the `unmatched` insert in `fdic-financials.ts` and `ncua-financials.ts` keeps only assets,
+deposits, loans, net income and service charges; `raw_json` still holds every field. The definitions
+follow what each regulator files.
+**Fix:** Hamilton's fee dependence study (this PR) reads each filing's raw fields, so closed and
+merged institutions count and the series has no survivor bias; it reports banks and credit unions
+side by side and never pools them.
+**Lesson:** a study over history must read the raw filing fields, not only the matched-row columns,
+and must not compare a bank ratio with a credit union ratio as if they were the same measure.
+
 ## 2026-10-07: Admin Today read job health from the retired workers' markers
 **What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
 including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
@@ -122,6 +139,10 @@ in run-store) fits before 270 seconds. Short steps use the end of a tick, and lo
 still start early enough to finish inside the 300-second limit. Runs stay serial, so the
 database load per moment is unchanged. A state whose last finished lane run failed now
 retries ahead of routine passes.
+**Follow-up (04:30):** 22 of the 27 schedules found by hand (`discover.operator_schedule`, among
+them Chase, Citi, U.S. Bank, KeyBank, Regions) were still unfetched 3 hours later, because only
+their state's lane run fetches them and those runs waited in line. Next in the order after
+retries now comes a lane whose state holds a hand-found schedule with status `found`.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 

@@ -315,4 +315,25 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(table, "Statement Copy (", 0, ".").ok).toBe(false);
     expect(checkFeeAgainstSource(table, "Statement Copy (FREE on Virtual Branch)", 2, ".").ok).toBe(true);
   });
+
+  it("reads real prices from a fresh sample of older takedowns (Oct 7, 05:10)", () => {
+    const ok = (text: string, name: string, amount: number) => expect(checkFeeAgainstSource(text, name, amount, ".").ok, `${name} ${amount}`).toBe(true);
+    const no = (text: string, name: string, amount: number) => expect(checkFeeAgainstSource(text, name, amount, ".").ok, `${name} ${amount}`).toBe(false);
+    // A "Current Fee" column label between the name and its price.
+    const labeled = "Paper Statements\n\nCurrent Fee\n\n$2.00 per month\n\nCurrent Fee\n\n$3.00 per month\n\nInactive Account Fee\n\nCurrent Fee\n\n$5.00 per month\n\nCurrent Fee\n\n$6.00 per month\n\nOverdrawn Account Fee\n\nCurrent Fee\n\n$30.00 per transaction";
+    ok(labeled, "Paper Statements", 2);
+    ok(labeled, "Inactive Account Fee", 5);
+    no(labeled, "Inactive Account Fee", 30);
+    // A price followed by a sentence about it.
+    ok("Dormant Account Fee\n\n$25.00 Per Month. Applicable after 1 year of inactivity.\n\nReturn Statement Fee\n\n$13.00 Per Month", "Dormant Account Fee", 25);
+    // An allowance before the price is not a free fee.
+    const allowance = "Out of Network ATM Withdrawals ..... 5 Free per month,\n$2.50 each additional\n*Unlimited Free Withdrawals at In-Network ATMs.";
+    ok(allowance, "Out of Network ATM Withdrawals 5 Free per month", 2.5);
+    no("Out of Network ATM Withdrawals ..... 5 Free per month,\n$2.50 each additional", "Out of Network ATM Withdrawals", 0);
+    // A fee named inside another row's note, and a qualifier note that is not the fee.
+    const drill = "Cost to drill a Safe Deposit Box: Actual cost from Locksmith plus $25.00. (Lost key replacement $75.00)\nMiscellaneous";
+    ok(drill, "(Lost key replacement", 75);
+    no(drill, "Safe Deposit Box drilling", 75);
+    no("Research Fee (hourly fee; 15 minute minimum charge of $10.00) | $40.00", "Research Fee (hourly fee; 15 minute minimum charge of", 10);
+  });
 });
