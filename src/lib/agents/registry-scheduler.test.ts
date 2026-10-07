@@ -83,12 +83,19 @@ describe("registry scheduler", () => {
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
     expect(isParserStale("ncua-financials", "succeeded", null)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);
+    // The first enforcement load (no parser_version) re-runs as soon as the matcher changes.
+    expect(isParserStale("enforcement", "succeeded", null)).toBe(true);
+    expect(isParserStale("enforcement", "succeeded", 2)).toBe(true);
+    expect(isParserStale("enforcement", "succeeded", 3)).toBe(false);
     expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 3)).toBe(false);
     // A claimed or failed partition follows its normal retry time instead of looping.
     expect(isParserStale("ncua-financials", "scheduled", 1)).toBe(false);
     expect(isParserStale("ncua-financials", "failed", 1)).toBe(false);
     expect(isParserStale("fdic-financials", "succeeded", null)).toBe(false);
+    // An "empty" recorded by an older parser is checked again (census v1 misread errors as unpublished).
+    expect(isParserStale("census-acs", "empty", null)).toBe(true);
+    expect(isParserStale("census-acs", "empty", 2)).toBe(false);
   });
 
   it("picks the first never-attempted or due partition", () => {

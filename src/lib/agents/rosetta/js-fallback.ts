@@ -11,13 +11,16 @@ import { CELL_SEPARATOR, extractHtmlDomText } from "./html-dom";
  *      `ld+json` scripts, Next.js flight data (`self.__next_f.push`), and inline
  *      `window.X = {...}` state. Objects of plain values become one " | " row each;
  *      strings holding HTML are read through the DOM reader.
- *   2. links on the page to a PDF or print version of the schedule.
+ *   2. links on the page to a PDF or print version of the schedule, or to a document whose
+ *      link names the fee schedule ("/documents/fee-schedule", "Schedule of Charges"):
+ *      many bank sites serve their PDF from a path with no ".pdf" ending; and a PDF the
+ *      page embeds in an iframe, embed or object viewer.
  *   3. the same URL with common static variants (`?print=1`, `/print`, `?output=amp`).
  * No headless browser: none is configured, and pages with no free route are handed to
  * Magellan's paid finder instead.
  */
 
-export const ROSETTA_JS_FALLBACK_VERSION = 1;
+export const ROSETTA_JS_FALLBACK_VERSION = 3;
 export const JS_FALLBACK_STRATEGY = "read.js_fallback";
 /** Alternate URLs fetched per page, at most. */
 export const JS_FALLBACK_MAX_FETCHES = 4;
@@ -176,6 +179,33 @@ export function embeddedDataText(html: string): string {
 
 const DOCUMENT_WORDS = /(fee|schedule|disclosure|pricing|charges|truth[\s-]in[\s-]savings|account agreement)/i;
 const PRINT_WORDS = /\b(print|printable|pdf|download)\b/i;
+/**
+ * A link that names the fee schedule itself: "Fee Schedule", "Service Charge & Fee Schedule",
+ * "Schedule of Charges", "Fees and Charges", or a path like "/documents/fee-schedule".
+ * On 66 fee-named pages the fallback could not read (Oct 7), the schedule sat behind such
+ * links with no ".pdf" ending (visionsfcu.org/documents/general/service-charge-fee-schedule-...).
+ */
+const SCHEDULE_LINK =
+  /\b(fees?|service charges?|charges?)\b[\s&,]*(schedules?|disclosures?)\b|\bschedules? of [a-z\s&]{0,25}?\b(fees|charges)\b|\bfees? (and|&) (service )?charges\b/i;
+
+/** "/documents/fee-schedule" -> "documents fee schedule", for matching a link's path. */
+function pathWords(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).pathname).replace(/[/_.-]+/g, " ");
+  } catch {
+    return "";
+  }
+}
+
+/** Host without "www." and path without a trailing slash: the same page, however linked. */
+export function samePageKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname.replace(/^www\./i, "").toLowerCase()}${decodeURIComponent(parsed.pathname).replace(/\/+$/, "").toLowerCase()}`;
+  } catch {
+    return url;
+  }
+}
 
 function resolveUrl(href: string | undefined, base: string): string | null {
   if (!href || /^(javascript|mailto|tel):/i.test(href.trim())) return null;
@@ -193,8 +223,10 @@ function resolveUrl(href: string | undefined, base: string): string | null {
 export function alternateDocumentUrls(html: string, pageUrl: string): string[] {
   const document = parseDocument(html, { decodeEntities: true, lowerCaseTags: true });
   const found: string[] = [];
+  const named = new Set<string>();
+  const pageKey = samePageKey(pageUrl);
   const add = (url: string | null) => {
-    if (url && url !== pageUrl && !found.includes(url)) found.push(url);
+    if (url && samePageKey(url) !== pageKey && !found.includes(url)) found.push(url);
   };
   for (const element of elements(document.children)) {
     if (element.name === "link") {
@@ -203,17 +235,30 @@ export function alternateDocumentUrls(html: string, pageUrl: string): string[] {
       if (rel.includes("amphtml") || (rel.includes("alternate") && (type.includes("pdf") || type.includes("html")))) {
         add(resolveUrl(element.attribs.href, pageUrl));
       }
+    } else if (element.name === "iframe" || element.name === "embed" || element.name === "object") {
+      // A schedule shown in an embedded PDF viewer, not linked: the page's own text is
+      // only its title (fiveriversbank.com/documents/five-rivers-bank-fee-schedule, Oct 7).
+      const url = resolveUrl(element.attribs.src ?? element.attribs.data, pageUrl);
+      if (url && (/\.pdf(?:$|[?#])/i.test(url) || DOCUMENT_WORDS.test(pathWords(url)))) {
+        add(url);
+        named.add(url);
+      }
     } else if (element.name === "a") {
       const href = element.attribs.href ?? "";
       const label = `${element.children.map(nodeText).join("")} ${element.attribs.title ?? ""} ${element.attribs["aria-label"] ?? ""}`;
       const isPdf = /\.pdf(?:$|[?#])/i.test(href);
+      const url = resolveUrl(href, pageUrl);
       if ((isPdf && (DOCUMENT_WORDS.test(label) || DOCUMENT_WORDS.test(href))) || (PRINT_WORDS.test(label) && DOCUMENT_WORDS.test(`${label} ${href}`))) {
-        add(resolveUrl(href, pageUrl));
+        add(url);
+      } else if (url && (SCHEDULE_LINK.test(label.replace(/\s+/g, " ")) || SCHEDULE_LINK.test(pathWords(url)))) {
+        add(url);
+        named.add(url);
       }
     }
   }
-  // PDFs first: they are the most likely to hold the full schedule.
-  return found.sort((a, b) => Number(/\.pdf(?:$|[?#])/i.test(b)) - Number(/\.pdf(?:$|[?#])/i.test(a)));
+  // PDFs first: they are the most likely to hold the full schedule; then links that name it.
+  const rank = (url: string) => (/\.pdf(?:$|[?#])/i.test(url) ? 0 : named.has(url) ? 1 : 2);
+  return found.sort((a, b) => rank(a) - rank(b));
 }
 
 /** Common server-rendered variants of the same page. */

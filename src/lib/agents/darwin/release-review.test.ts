@@ -10,6 +10,7 @@ import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
   lessonsFor,
+  lineRefilesTo,
   loadReviewLessons,
   parseReleaseReviews,
   releaseReviewPrompt,
@@ -80,6 +81,22 @@ describe("Darwin held-fee release review", () => {
     ]);
     expect(prompt).toContain("schedule_rows_around");
     expect(prompt).toContain("Early close $10.00");
+  });
+
+  it("never passes a fee its own line re-files, and names the neighbouring categories", () => {
+    const transfer = {
+      row: row({ fee_name: "Service Overdraft Fee", held_canonical_fee_key: "overdraft" }) as unknown as HeldFeeRow,
+      sourceLine: "Service Overdraft Fee | Fee Transfer from Savings to Checking: $5.00",
+    };
+    expect(lineRefilesTo(transfer)).toBe("od_protection_transfer");
+    expect(lineRefilesTo({ row: row({ fee_name: "Overdraft Fee", held_canonical_fee_key: "overdraft" }) as unknown as HeldFeeRow, sourceLine: "Overdraft Fee | $30.00" })).toBeNull();
+    const prompt = releaseReviewPrompt([transfer]);
+    expect(prompt).toContain("not_these");
+    expect(prompt).toContain("od_protection_transfer");
+    expect(prompt).toContain("sentence fragment");
+    expect(prompt).toContain("Smart Safe");
+    expect(prompt).toContain("footnote marker");
+    expect(prompt).toContain("jumbled text");
   });
 
   it("puts the learning store's lessons for a batch's categories in the prompt", () => {

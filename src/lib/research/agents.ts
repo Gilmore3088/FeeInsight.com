@@ -89,10 +89,10 @@ You MUST format your response with exactly these five ## sections in order:
 [The answer first, in 2 to 3 sentences and under 70 words: the core finding through the ${analysisFocus} lens, with the one or two figures that prove it. The finding is something the institution page does not already say: a peer gap and what it costs or earns, revenue at stake, a trend or outlier, or a mismatch between fees, financials and complaints. Never open by restating a fee, a median or a figure shown on the page. Be direct about the finding, never prescriptive about the price. Detail belongs in the sections below.]
 
 ## What This Means
-[One paragraph: practical implications for the institution — what does this finding mean for their position, risk, or competitive standing?]
+[2 to 3 sentences, under 60 words: practical implications for the institution — what does this finding mean for their position, risk, or competitive standing? No figure already given above.]
 
 ## Why It Matters
-[3-5 bullet points, each on its own line starting with "- ". Explain the strategic importance of each dimension. Keep each bullet to one sentence.]
+[3 to 4 bullet points, each on its own line starting with "- ". Explain the strategic importance of each dimension. Each bullet is one sentence under 20 words.]
 
 ## Evidence
 [3 to 6 market figures that support the analysis, one per line, formatted exactly as "- Label: Value — brief note". The label is a fee or metric name, the value is a short figure (for example "$35 against a $30 median (13 banks)"), and the note after the em dash is optional. No bold, no nested bullets, no blank label lines. Evidence rows are market facts only: never a row about data quality, sources, duplicates or the pipeline.]

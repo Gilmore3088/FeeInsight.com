@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
+**What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
+queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
+33 of 36; 66 of the 69 non-ok attempts were `wrong_document` on reopened pages whose link names
+the fee page but whose own text has no fees. None were timeouts, bot blocks or empty renders.
+Of the 66: their routes found a linked scanned PDF on 9 (6 already read as the bank's own
+documents, 3 never read: bogotasavingsbank, 1streetcu, educacu), and most of the rest were landing
+pages whose schedule sits behind a link with no ".pdf" ending (Magellan's crawl shows
+visionsfcu.org/documents/general/service-charge-fee-schedule-effective-june-2026 and
+cu-rockies.org/documents/fee-schedule), plus "available on request" and error pages that are
+correctly not fee pages. Two were real fee tables (emb.bank's 30 rows like "Cashier's check | 5.00").
+**Cause:** the fallback only followed links ending in ".pdf" or labelled print/download, never
+OCR'd a linked scan, and the fee-page check only counted amounts written with "$".
+**Fix:** this PR: follow links that name the fee schedule, OCR a linked scan, skip links the bank
+already has as documents, count bare amounts in fee table cells (15 rejected texts, all fee
+schedule URLs, would now pass), and reopen each such page once per fallback version (144 pages).
+**Lesson:** before calling a reader's non-ok outcomes failures, split them by what the page is: a
+`wrong_document` on a page with no fees is a correct answer, and the fix is to follow where the
+page points, not to count it differently.
+
 ## 2026-10-07: Call report rows for closed institutions store no revenue, and the two charters define revenue differently
 **What happened:** building the fee dependence study, 4,248 of 7,747 FDIC rows for 2010-12-31 had
 `total_revenue` (read-only query on `institution_financial_records`, 05:20 UTC). The rest belong to
@@ -2285,6 +2305,20 @@ the playbook entry.
 the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
 **Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
 
+## 2026-10-07: The rules re-check restored fees with no check when their text was gone
+**What happened:** a fee the rules re-check had taken down came back live, with no category
+guard, schedule check or category model, whenever the text it was read from was no longer stored
+(`rules-recheck.ts`, restore reason `text_gone`). 84 live fees at 16 banks came back that way,
+among them NY answer-key misses: an international wire filed as bill pay, "Letter of Protest" as a
+gift card, a $0 "ATM services are UNLIMITED" and a check photocopy filed as document reproduction.
+Each restore also wrote a `restored_after_takedown` lesson that told Knox the takedown was wrong.
+The re-check's "latest" text was also the last by text hash, not the newest read.
+**Fix:** that restore now needs the restore bar (`disputedRestoreVerdict`) on the document's newest
+text; texts are ordered by read id. `restore-recheck.ts` gives the 84 the same bar on a second look
+(archive, never delete), and Knox's lesson readers skip the lessons those unchecked restores wrote.
+**Lesson:** every path that puts a fee live passes the same checks as publish; a restore is a
+publish.
+
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
 names business, commercial, corporate or treasury accounts, the same test Magellan's
@@ -2338,6 +2372,10 @@ partition is retried only after the 6-hour claim expires.
 and grows each buffer with the data. The whole zip is never held in memory.
 **Lesson:** a loader for a bulk file has to stream it. A test with a small fixture does not prove
 that the loader will fit in a function's memory.
+**Follow-up (05:42 UTC):** once streaming worked, the step got through the download and then failed
+with "operator does not exist: text = date". `institution_financial_records.report_date` is text
+('2026-06-30'), and the update cast its parameters to date. The update now compares text with text,
+and a test fails if the update casts to date.
 
 ## 2026-10-07: State bills would have taken about four days to cover 52 states
 **What happened:** the state bills step merged at 04:24 UTC with one partition per state. By 05:10
@@ -2350,3 +2388,95 @@ whose weekly check is due and records each state under its own partition row. Th
 within the hour while states are still due, so all 52 are covered in five runs.
 **Lesson:** for a registry source with many small, quick items, batch them inside one partition.
 Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Knox re-read fees that were already taken down
+**What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
+the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
+fees whose takedown still stood (152 from the source check, 56 for a price outside the category's
+range). It sent 49 of them back to Darwin, and 6 were published again.
+**Fix:** Knox reads `takedown_confirmed` rows, the second look's verdict, for checks that say the
+read was wrong. It holds a matching re-read for review instead of sending it to Darwin, and
+records the count on the extract event. First-look takedowns don't teach: Darwin found 13 of 20
+recent source-check takedowns were real prices.
+**Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
+logged changes nothing.
+
+## Darwin's category review trusted Knox's amount (2026-10-07)
+`verify.adjudicate` v1 judged a fee from its name and amount alone. Against the answer keys it was right on
+27 of 37 disagreements, but it accepted prices that belonged to a neighbouring row ("Check Printing (fee
+depends on style)" at $3) or were a balance threshold ($50 inactivity "balance is less than"). The prod
+`answer_key_institutions` table is empty; the answer keys live in `src/lib/agents/knox/__fixtures__/`.
+v2 sends the schedule rows around each fee and the source check's verdict on its amount.
+
+## The answer-key tables on prod are empty (2026-10-07)
+`answer_key_institutions` and `answer_key_fees` have no rows, so no `answer_key` lessons reach the learning
+store: Darwin's category model and Knox's lessons never trained on the hand-keyed schedules they cite. The 81
+hand-keyed texts (2,885 fees) exist only as Knox test fixtures. Darwin's verdict score reads a compact copy
+(`src/lib/agents/darwin/answer-key-fees.json`, kept in step by its test). Loading the keys into the tables
+(through the admin answer-key page or a typed agent step) is still open.
+## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
+**What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
+that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
+ending on "of", "is", "for" and similar, and 1,407 longer than 80 characters.
+**Cause:** `tidyFeeName` (Knox v17, v29) fixes new reads only. Rows published earlier kept the name
+as read ("Stop Payment | Item", "/mo. | Dormant Fee", "An overdraft fee of"), and nothing
+re-tidied them.
+**Fix:** `src/lib/agents/knox/name-retidy.ts` runs in each publish step on a batch of 40 banks. A
+live name takes its tidy name only when it still traces in the fee's own schedule (if it did before),
+still passes the category guard, and does not collide with another live fee of the bank. The old
+name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
+Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
+**Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: Rosetta had no per-batch error review
+**What happened:** Rosetta learned only from fees taken down later (text survival), so a read that
+gave Knox nothing, or rejected a real schedule, taught nothing. James asked for a fix per error type
+and a review after every N reads.
+**Measured (prod, read-only, the 200 latest reads 6 to 36 hours old at 06:25 UTC Oct 7):** batches of
+50 had 19, 7, 6 and 7 misses (38%, 14%, 12%, 14%). 37 of the 39 were completed texts Knox found no
+fee in; 2 were unread. No short texts, no rejected page later proven a fee page. Counting only Knox
+rows written after the read overstates the misses, because Knox dedupes rereads, so the review
+counts every Knox fee from the document. A no-fee text is a miss either way: a real schedule Knox
+could not read (an earlier 30-hour window had several fee-schedule pages and a 2,626-char PDF), or a
+page that passed the fee-page check without being one (in this window the 4 fee-named links were
+funds-availability, checking and rates pages; the other 33 were not sampled).
+**Fix:** `rosetta/batch-review.ts` reviews each settled batch of 50, writes every miss as a lesson
+with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
+pass read those lessons. See rosetta/AGENTS.md "Batch review".
+**Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+
+## 2026-10-07: The Census income step recorded a published vintage as "not published"
+**What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
+in December 2025, as "not published yet" and scheduled no retry until October 14. No tract or ZIP
+income loaded.
+**Cause:** the fetch treated any reply that was not JSON data as an unpublished vintage. Census
+answers a key, quota or outage problem with a page, not data, so a real error was filed as normal.
+The actual reply is not known, because the cloud sandbox cannot reach api.census.gov.
+**Fix:** only a 404 counts as unpublished. Any other reply without data fails the step and puts the
+first 200 characters of the reply in the run ledger. The parser version is now 2, and the scheduler
+re-pulls `empty` partitions recorded under an older parser, so 2024 runs again without waiting a week.
+**Lesson:** an "empty" result must be one the source states, never a guess from a parse failure.
+
+## 2026-10-07: Plural "Wires" and balance-named account rows were missed by Knox
+**What happened:** Space Coast CU (James's demo bank) had 7 live fees. Its 1,279-character page lists 22 prices.
+**Cause:**
+- The directional wire patterns required the singular "wire", so "Incoming Wires | $10" was read as no fee.
+- "(Outside U.S.)" fell through the international rewrite, because `\b` does not match after a dot.
+- An account row named with its balance ("(below $2,500) | $15/mo.") was held as unclassified.
+- Two names in one row were glued into one name.
+**Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
+**Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.
+
+## 2026-10-07: The answer key was never on prod
+
+- **Problem.** `answer_key_institutions` and `answer_key_fees` had no rows on prod. The hand-keyed keys
+  (Texas and the 7-state set) lived only in `/mnt/project-files/answer-key/` and the Knox gate fixtures, so
+  no `answer_key` lesson ever reached `pipeline_feedback`, Atlas's answer-key score had nothing to score,
+  and Darwin's batch scoring had to bundle its own copy.
+- **Fix.** Seed migration `20270110000018_answer_key_seed.sql`: 62 banks keyed line by line by the Knox thread
+  (status `confirmed`, `confirmed_by = 'knox-hand-key'`: checked against the stored text, not yet by a person)
+  with 2,321 fee rows, and 55 banks from the 2026-10-04 prefill draft left `prefilled` (710 rows) for a person
+  to confirm on /admin/answer-key. 525 keyed rows with no taxonomy key ("unmapped") are left out. One
+  document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
+  are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
+- **Watch.** Inserts only and idempotent; it never touches a bank already in the key.

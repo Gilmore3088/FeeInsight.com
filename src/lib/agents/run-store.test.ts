@@ -964,6 +964,23 @@ describe("agentic run store", () => {
     expect(waiting).toBeGreaterThan(handFound);
   });
 
+  it("runs Atlas's direct institution runs right after runs already under way", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const underWay = order.indexOf("done.status <> 'queued'");
+    const direct = order.indexOf("COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC");
+    const retry = order.indexOf("= 'failed') DESC");
+    expect(underWay).toBeGreaterThan(0);
+    expect(direct).toBeGreaterThan(underWay);
+    expect(retry).toBeGreaterThan(direct);
+  });
+
   it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
     sqlMock.mockImplementation((strings: TemplateStringsArray) => {
       const text = templateText(strings);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { alternateDocumentUrls, embeddedDataText, looksLikeJsShell, staticVariantUrls } from "./js-fallback";
+import { alternateDocumentUrls, embeddedDataText, looksLikeJsShell, samePageKey, staticVariantUrls } from "./js-fallback";
 
 describe("Rosetta JavaScript-page fallbacks", () => {
   it("recognizes an app shell", () => {
@@ -43,6 +43,34 @@ describe("Rosetta JavaScript-page fallbacks", () => {
       "https://bank.example/docs/fee-schedule.pdf",
       "https://bank.example/fees/print",
       "https://bank.example/fees.amp",
+    ]);
+  });
+
+  it("follows links that name the fee schedule even with no .pdf ending, never the page itself", () => {
+    // visionsfcu.org and cu-rockies.org serve their schedules from paths like these (Oct 7).
+    const html = `<nav><a href="https://www.bank.example/fee-schedule/">Fee Schedule</a><a href="/rates">Rates &amp; Fees</a></nav>
+      <a href="/documents/general/service-charge-fee-schedule-effective-june-2026">Consumer Service Charge &amp; Fee Schedule</a>
+      <a href="/files/1234">Schedule of Charges</a>
+      <a href="/fee-schedule/print">Print this fee schedule</a>
+      <a href="/docs/fees.pdf">Download</a>
+      <a href="/about">About us</a>`;
+    expect(alternateDocumentUrls(html, "https://bank.example/fee-schedule")).toEqual([
+      "https://bank.example/docs/fees.pdf",
+      "https://bank.example/documents/general/service-charge-fee-schedule-effective-june-2026",
+      "https://bank.example/files/1234",
+      "https://bank.example/fee-schedule/print",
+    ]);
+    expect(samePageKey("https://www.Bank.example/Fee-Schedule/")).toBe(samePageKey("https://bank.example/fee-schedule"));
+  });
+
+  it("reads a schedule the page shows in an embedded PDF viewer", () => {
+    const html = `<h1>Five Rivers Bank - Fee Schedule</h1>
+      <iframe src="https://cdn.example.com/files/abc123_fee-schedule.pdf#toolbar=0"></iframe>
+      <object data="/files/schedule-of-fees"></object>
+      <iframe src="https://www.youtube.com/embed/xyz"></iframe>`;
+    expect(alternateDocumentUrls(html, "https://bank.example/documents/fee-schedule")).toEqual([
+      "https://cdn.example.com/files/abc123_fee-schedule.pdf",
+      "https://bank.example/files/schedule-of-fees",
     ]);
   });
 

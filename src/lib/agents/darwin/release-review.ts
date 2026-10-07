@@ -13,6 +13,7 @@ import {
 } from "@/lib/agents/paid-pass";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 import {
@@ -22,6 +23,7 @@ import {
   scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
+import { loadReviewMisses } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
@@ -40,9 +42,18 @@ type SqlTag = typeof sql;
 // Version 5 (2026-10-07): a hand check of 20 v4 verdicts found 3 wrong releases: a stop
 // payment's removal filed as a stop payment, an expedited cashier's check filed at the
 // cashier's check price, and "Cost plus $8" read as an $8 price. The prompt now names all three.
+// Version 6 (2026-10-07): a hand check of 20 v5 passes found two overdraft-protection transfers
+// ("Overdraft Protection Fee $5", "Service Overdraft Fee | Transfer from Savings to Checking")
+// passed as overdraft, and a sentence fragment passed as a fee name. Each item now lists the
+// categories its own category's fees are most often re-filed to, and a fee whose name and line
+// re-file it there by the category guard's own rules (`refileCategory`) never passes.
+// Version 7 (2026-10-07): a hand check of 20 v6 passes found 17 right. "Smart Safe Deposit
+// Correction Notice" (a business cash device) passed as safe deposit box rent, a box price read
+// with its footnote marker ("$651" among $85 and $100 boxes) passed, and a bare "overdrafts | $5.00"
+// from jumbled rows passed. The prompt now names all three.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 5,
+  version: 7,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -65,6 +76,17 @@ export interface ReleaseReviewVerdict {
 
 export function reviewPasses(verdict: ReleaseReviewVerdict | undefined): boolean {
   return Boolean(verdict?.isFee && verdict.categoryFits && verdict.amountIsPrice);
+}
+
+/**
+ * The category the guard's own re-file rules move a fee to when read with its schedule line
+ * ("Service Overdraft Fee | Transfer from Savings to Checking: $5.00" is an overdraft-protection
+ * transfer), or null when the line keeps it where it was filed.
+ */
+export function lineRefilesTo({ row, sourceLine }: ReleaseReviewCandidate): string | null {
+  const key = row.held_canonical_fee_key;
+  const refiled = refileCategory(key, `${row.fee_name ?? ""} ${sourceLine}`);
+  return refiled && refiled !== key ? refiled : null;
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -192,6 +214,14 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     amount: row.amount == null ? null : Number(row.amount),
     filed_as: `${row.held_canonical_fee_key} (${DISPLAY_NAMES[row.held_canonical_fee_key] ?? row.held_canonical_fee_key})`,
     filed_as_includes: ALIASES_BY_KEY.get(row.held_canonical_fee_key) ?? [],
+    ...(neighbourCategories(row.held_canonical_fee_key).length > 0
+      ? {
+          not_these: neighbourCategories(row.held_canonical_fee_key).map((key) => ({
+            category: `${key} (${DISPLAY_NAMES[key] ?? key})`,
+            includes: ALIASES_BY_KEY.get(key) ?? [],
+          })),
+        }
+      : {}),
     schedule_line: sourceLine.slice(0, 300),
     ...(sourceContext ? { schedule_rows_around: sourceContext } : {}),
   }));
@@ -200,17 +230,22 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "Each item has the fee as it was read, the category it was filed under, and the line of the bank's schedule it came from.",
     "For each item decide, from the schedule line:",
     "- is_fee: true only if the line names a price the institution charges a customer.",
-    "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text.",
+    "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text,",
+    "  and when `fee_name` is not a fee's name but a sentence fragment (\"meet the following requirements: A service charge of\").",
     "- category_fits: true only if this fee is what `filed_as` means in this index; `filed_as_includes` lists fee names it files there.",
-    "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit.",
+    "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit,",
+    "  nor a different service that shares a word with the category (a \"Smart Safe\" cash-deposit device is not a safe deposit box).",
     "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
     "  (expedited, rush or overnight) do not fit the service's own category.",
+    "  `not_these` lists neighbouring categories fees filed here often belong to; a fee that is one of those does not fit.",
     "- amount_is_price: true only if `amount` is the price the line charges for this fee.",
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
     "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
-    "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55).",
+    "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55), including a footnote marker read",
+    "  as a digit (\"$651\" in a list of $85, $100 and $120 boxes is $65 with footnote 1).",
     "When an item has `schedule_rows_around` (the rows above and below its line), use them: a price that",
-    "belongs to the next row, another column or another account is not this fee's price.",
+    "belongs to the next row, another column or another account is not this fee's price. When the rows",
+    "are jumbled text rather than a fee table and do not show what the fee is (a bare \"overdrafts | $5.00\"), is_fee is false.",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category_fits\", \"amount_is_price\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
     ...(lessons.length > 0
       ? [
@@ -363,7 +398,18 @@ export async function runDarwinReleaseReview(
       candidate.sourceContext = scheduleContext(texts.get(Number(candidate.row.source_document_id)), candidate.sourceLine);
     }
   }
-  const lessons = await loadReviewLessons(db, candidates.map(({ row }) => row.held_canonical_fee_key));
+  const heldKeys = candidates.map(({ row }) => row.held_canonical_fee_key);
+  // The pipeline's own outcomes, then this review's misses against the answer keys (verdict-score.ts).
+  const lessons = [
+    ...(await loadReviewLessons(db, heldKeys)),
+    ...(await loadReviewMisses(db, "verify.release_review", heldKeys)).map((miss) => ({
+      filedAs: miss.filedAs ?? "",
+      feeName: miss.feeName,
+      amount: miss.amount,
+      scheduleLine: miss.keyLine,
+      found: `wrong: this review said ${miss.said}; the hand-keyed schedule says ${miss.keySays.join(" or ") || "no fee at this amount"}`,
+    })),
+  ];
   result.lessons = lessons.length;
   for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
     const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
@@ -439,7 +485,8 @@ export async function runDarwinReleaseReview(
         continue;
       }
       result.succeeded += 1;
-      const passes = reviewPasses(verdict);
+      const refilesTo = lineRefilesTo(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -460,6 +507,7 @@ export async function runDarwinReleaseReview(
           held_reason: candidate.row.held_reason,
           source_line: candidate.sourceLine.slice(0, 300),
           source_context: candidate.sourceContext ?? null,
+          refiles_to: refilesTo,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,

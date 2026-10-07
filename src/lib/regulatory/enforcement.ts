@@ -99,7 +99,7 @@ export function parseAmount(value: unknown): number | null {
  * names are ("WELLS FARGO&COMPANY", "FIRST NATL FINL SERVICES INC").
  */
 export function normalizeName(name: string | null | undefined): string {
-  return ` ${(name ?? "").toLowerCase()} `
+  return ` ${(name ?? "").toLowerCase().replace(/\s+d\/?b\/?a\s.*$/, "")} `
     .replace(/&/g, " and ")
     .replace(/n\.\s*a\./g, " na ")
     .replace(/[.,'’"()]/g, " ")
@@ -304,6 +304,10 @@ export function buildEnforcementMatcher(candidates: MatchCandidate[]): Enforceme
       if (pool.length > 0) return none;
       const holding = holdingByNameState.get(`${name}|${action.party_state}`);
       if (holding && holding.size === 1) return { institution_id: null, holding_company: [...holding][0], method: "holding_company" };
+      // A holding company is matched only where it has a bank in the action's state.
+      // Matching by name alone tied generic names to unrelated companies (State Holding
+      // Co of Thermopolis, WY to an Arkansas bank), so a CA-based Wells Fargo & Company
+      // stays unmatched rather than risk naming the wrong bank.
       return none;
     },
   };

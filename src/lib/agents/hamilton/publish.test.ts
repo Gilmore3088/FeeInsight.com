@@ -107,6 +107,15 @@ describe("Hamilton agentic publish", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("category_guard:name_contradicts");
   });
 
+  it("never publishes a row read from an article page", async () => {
+    const db = createDbMock([{ ...verifiedFee, source_url: "https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid" }]);
+
+    const result = await runHamiltonPublish({ runId: 117, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({ status: "skipped", reason: "Read from an article page, not a fee schedule" });
+  });
+
   it("only reports category rejections on a dry run", async () => {
     const db = createDbMock([{ ...verifiedFee, fee_name: "Stop Payment Fee" }]);
 

@@ -19,6 +19,14 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * fails, the other still loads and the failure is recorded on the run.
  */
 
+/**
+ * Bumped when the matcher changes, so the scheduler re-runs the partition at once
+ * (REGISTRY_PARSER_VERSIONS) instead of waiting for the weekly refresh. 2: DBA names,
+ * holding companies by name alone. 3: name-alone holding-company matches withdrawn
+ * (they tied generic names to unrelated companies).
+ */
+export const ENFORCEMENT_MATCHER_VERSION = 3;
+
 export const ENFORCEMENT_SOURCE = "enforcement";
 export const ENFORCEMENT_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;
@@ -142,7 +150,7 @@ export async function runRegistryEnforcement(
       sourceUrl: URLS.OCC,
       runId: options.runId ?? null,
       nextAttemptAfterHours: result.failed.length === 0 ? REFRESH_HOURS : RETRY_HOURS,
-      detail: { by_agency: result.byAgency, failed: result.failed },
+      detail: { by_agency: result.byAgency, failed: result.failed, parser_version: ENFORCEMENT_MATCHER_VERSION },
       error: result.failed.length > 0 ? result.failed.join("; ") : null,
     });
   }

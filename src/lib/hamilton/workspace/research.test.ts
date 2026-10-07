@@ -55,6 +55,7 @@ describe("localMarketView", () => {
   const market = {
     basis: "branch_counties" as const,
     places: ["Austin, TX"],
+    county_fips: ["48453"],
     sod_year: 2026,
     members: [
       { institution_id: 1, institution_name: "Subject Bank", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 5e8, is_subject: true },
