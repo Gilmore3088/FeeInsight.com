@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { refileCategory } from "@/lib/fee-category-guard";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -15,7 +16,11 @@ export const RULES_RECHECK_DOCUMENT_LIMIT = 25;
 export const RULES_RECHECK_REASON = "rules_recheck_unreproduced";
 // Version 2: a fee an earlier re-check took down is restored when today's rules read it
 // again (same text, name, category and price), which Knox's raw-row dedupe would block.
-export const RULES_RECHECK_STRATEGY = { strategy: "hamilton.rules_recheck", version: 2 } as const;
+// Version 3: a read is filed under the category Darwin files it under (refileCategory), so
+// a fee Darwin re-filed (an "Insufficient Funds Transfer (Savings Overdraft)" Knox hinted as
+// overdraft is an overdraft protection transfer) is no longer taken down as unreproduced.
+// The bump re-checks every document once, which restores those it took down.
+export const RULES_RECHECK_STRATEGY = { strategy: "hamilton.rules_recheck", version: 3 } as const;
 /** Attempt detail key: fees today's rules read from the document that are not live. */
 export const MISSING_FEES_DETAIL = "missing_fees";
 
@@ -49,15 +54,18 @@ export function reproducibleReads(text: string): Map<string, Set<string>> {
   const result = runFreeSpecialists(text);
   const reads = new Map<string, Set<string>>();
   const add = (key: string, name: string) => reads.set(key, (reads.get(key) ?? new Set()).add(name.toLowerCase()));
+  // The category Darwin files a read under, as its verify step does.
+  const filedAs = (hint: string, name: string) => refileCategory(hint, name) ?? hint;
   for (const candidate of result.candidates) {
-    if (passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) {
-      add(feeKey(candidate.canonicalHint, candidate.amount), candidate.feeName);
+    const key = filedAs(candidate.canonicalHint, candidate.feeName);
+    if (passesDarwinChecks(key, candidate.feeName, candidate.amount)) {
+      add(feeKey(key, candidate.amount), candidate.feeName);
     }
   }
   for (const held of result.held) {
-    if (held.shape === "zero" && held.canonicalHint && passesDarwinChecks(held.canonicalHint, held.feeName, 0)) {
-      add(feeKey(held.canonicalHint, 0), held.feeName);
-    }
+    if (held.shape !== "zero" || !held.canonicalHint) continue;
+    const key = filedAs(held.canonicalHint, held.feeName);
+    if (passesDarwinChecks(key, held.feeName, 0)) add(feeKey(key, 0), held.feeName);
   }
   return reads;
 }
