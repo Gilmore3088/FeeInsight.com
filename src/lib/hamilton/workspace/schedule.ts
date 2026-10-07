@@ -5,7 +5,7 @@
  */
 
 import { formatFeeAmount } from "@/lib/format";
-import type { Fact, FeePositionRow, SchedulePosition, SourceRef } from "./types";
+import type { AskResponse, Fact, FeePositionRow, SchedulePosition, SourceRef } from "./types";
 
 const WHOLE_SCHEDULE =
   /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b/i;
@@ -86,5 +86,18 @@ export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverv
       peerLabel: r.peerLabel,
       direction: r.current - r.band.median >= 0.005 ? "higher" : r.band.median - r.current >= 0.005 ? "lower" : "at",
     })),
+  };
+}
+
+/** Puts the overview first; the detailed answer for the furthest fee follows it. */
+export function withSchedule(response: AskResponse, schedule: ScheduleOverview): AskResponse {
+  if (!schedule.top) {
+    return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts, positions: schedule.positions };
+  }
+  return {
+    ...response,
+    positions: schedule.positions,
+    shortAnswer: `${schedule.shortAnswer} ${response.shortAnswer}`.trim(),
+    facts: [...schedule.facts, ...(response.facts ?? [])],
   };
 }
