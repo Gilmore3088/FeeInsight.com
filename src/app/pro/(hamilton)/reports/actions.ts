@@ -772,20 +772,20 @@ export async function generateReport(
     const [summarySection, strategicSection, recommendationSection] = verifiedSections.map((result) => result.section);
 
     const snapshotRows = selectedFeeDeltas.slice(0, 5).map((delta) => ({
-      label: delta.fee_category.replace(/_/g, " "),
+      label: getDisplayName(delta.fee_category),
       current: `${formatAmount(delta.institution_amount)} (${delta.evidence_tier})`,
       proposed: `${formatAmount(delta.peer_median)} peer median`,
     }));
     const tradeoffRows =
       selectedInstitution && selectedFeeDeltas.length > 0
         ? selectedFeeDeltas.slice(0, 3).map((delta) => ({
-            label: delta.fee_category.replace(/_/g, " "),
+            label: getDisplayName(delta.fee_category),
             value:
               `${formatAmount(delta.institution_amount)} vs ${formatAmount(delta.peer_median)} peer median ` +
               `(${formatSignedAmount(delta.delta_amount)})`,
           }))
         : topCategories.slice(0, 3).map((c) => ({
-            label: c.fee_category.replace(/_/g, " "),
+            label: getDisplayName(c.fee_category),
             value:
               c.median_amount != null
                 ? `$${c.median_amount.toFixed(2)} median`

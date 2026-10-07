@@ -10,6 +10,7 @@ import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
 import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
+import { STATE_BILLS_SOURCE, stateBillPartitions } from "@/lib/agents/magellan/registry/state-bills";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -77,7 +78,11 @@ function years(from: number, to: number): string[] {
 }
 
 /** Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES. */
-export function registryPartitionsBySource(now: Date, from: Quarter = backfillStart()): Array<{ source: string; partitions: string[] }> {
+export function registryPartitionsBySource(
+  now: Date,
+  from: Quarter = backfillStart(),
+  env: NodeJS.ProcessEnv = process.env,
+): Array<{ source: string; partitions: string[] }> {
   const quarters = (lagDays: number) =>
     quartersNewestFirst(from, latestPublishableQuarter(now, lagDays)).map(quarterKey);
   const dynamic: Record<string, string[]> = {
@@ -88,6 +93,8 @@ export function registryPartitionsBySource(now: Date, from: Quarter = backfillSt
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
+    // No key, no runs: state bills wait for OPEN_STATES_API_KEY rather than queue 52 skips.
+    [STATE_BILLS_SOURCE]: env.OPEN_STATES_API_KEY?.trim() ? stateBillPartitions() : [],
   };
   return REGISTRY_SOURCES.map((definition) => ({
     source: definition.source,

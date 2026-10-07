@@ -2026,6 +2026,14 @@ runs through the normal check, logged, with `hamilton.restore` rows in `pipeline
 12-hour second look (PR 324) has gated every source-check takedown since 02:32 UTC.
 **Lesson:** after a reader version bump, count how far the re-check has got before judging what
 it restores; and sample takedowns, not just live fees, each time the reader changes.
+**Follow-up (v7):** a two-column page flattened row by row interleaves two fee lists
+("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" / "($15.00 Minimum) | IRS or Court-ordered
+Garnishments ... $100.00"), so a right-column fee's name and price sit on rows of other fees. The
+reader now also reads each column top to bottom when most two-cell rows carry words in both cells
+(a table's "Name | $2.00 per page" price cell is never split off), and joins a name that runs onto
+the next row ("PROCESSING OF LEVIES IR"). Over the same 424 takedowns, 6 more trace (105): 5 real,
+1 a non-customer price. Still not read: two columns interleaved inside one cell ("Overnight Rush
+Check or Zelle | ..." / "$14.95/ ea.") and names glued to the previous fee's "Free for age 60+".
 
 ## 2026-10-07: Limits went live as prices, and the paid reader read superseded copies
 **What happened:** the audit red team found about 55 live fees that are limits, such as "Zelle
@@ -2179,3 +2187,15 @@ timed out on every fetch, so it kept the link, and the paid schedule search re-s
 fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
 the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
 **Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.
+
+## 2026-10-07: business-only fee schedules fed the consumer benchmarks
+**What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
+names business, commercial, corporate or treasury accounts, the same test Magellan's
+`isBusinessOnlyLink` uses. They counted in national, state and district medians, peer ranges and the
+paid report's rival columns as if they were consumer prices. Dry run: national monthly maintenance
+$5.36 to $5.00, NSF $30.00 to $29.95; most state moves were $0.50 to $2.50 in either direction.
+**Fix:** a read-model filter, not a data change. `STATS_ROW_FILTER` (fee-stats rule 6) and the
+local-market and custom-report rival reads leave those rows out; the bank's own page still shows
+them. `STATS_METHOD_VERSION` 4 makes cached index rows rebuild. Undo by reverting the filter.
+**Lesson:** a fee's source document decides whose price it is, so the statistics contract checks the
+source, not only that one exists.
