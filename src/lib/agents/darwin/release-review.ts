@@ -346,6 +346,7 @@ export async function runDarwinReleaseReview(
   result.lessons = lessons.length;
   for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
     const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
+    const batchLessons = lessonsFor(batch, lessons);
     const startedAt = Date.now();
     const common = ({ row }: ReleaseReviewCandidate) => ({
       institutionId: Number(row.institution_id),
@@ -367,7 +368,7 @@ export async function runDarwinReleaseReview(
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          messages: [{ role: "user", content: releaseReviewPrompt(batch, lessonsFor(batch, lessons)) }],
+          messages: [{ role: "user", content: releaseReviewPrompt(batch, batchLessons) }],
         },
         create: options.create,
         metadata: { fee_raw_ids: batch.map(({ row }) => Number(row.fee_raw_id)) },
@@ -442,6 +443,7 @@ export async function runDarwinReleaseReview(
           amount_is_price: verdict.amountIsPrice,
           passes,
           reason: verdict.reason,
+          lessons: batchLessons.length,
           fee_verified_id: feeVerifiedId,
           acted: acts,
           model,

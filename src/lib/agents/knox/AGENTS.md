@@ -126,6 +126,16 @@ of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
 stay held.
 
+v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
+02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
+collection fee on charged-off accounts and a collection phone call are debt collection, not a
+check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
+report to open an account is not a loan fee. Those lines now stay held. Each extract step also
+re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
+today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
+and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
+already verified are Hamilton's rules re-check's to take down.
+
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the
 account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
@@ -372,6 +382,11 @@ starts after it (`tidyFeeName`). A sentence of more than eight words keeps its e
 category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
 right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
 of 1,437 kept, the same fees.
+
+v30 (rules 30) reads two more limit wordings as ceilings, not prices: a limit that "will increase
+to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
+"($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
 
 Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
 from the second look or the restore bar) counts as verified under the category it came back with,

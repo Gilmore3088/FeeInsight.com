@@ -711,6 +711,16 @@ describe("Magellan agentic discovery", () => {
     const businessDb = () =>
       createDbMock([], learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
 
+    it("keeps slots for business-only links when banks without a link fill the step", async () => {
+      const missing = [1, 2, 3, 4].map((id) => bank(id, `https://bank${id}.example`));
+      const db = createDbMock(missing, learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
+      const result = await runMagellanDiscovery({ runId: 123, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0, limit: 4 });
+      expect(result.selected).toBe(4);
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(79);
+      const businessCall = db.mock.calls.find((call) => templateText(call[0]).includes("business-only link search"))!;
+      expect(businessCall.slice(1)).toContain(3);
+    });
+
     it("replaces a business-only schedule with the consumer one and keeps it as a business companion", async () => {
       const db = businessDb();
       const fetchImpl = site({

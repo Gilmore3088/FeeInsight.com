@@ -67,6 +67,26 @@ describe("storyline memo", () => {
     expect(c.calls[1]).toMatch(/reads as advice/);
   });
 
+  it("asks again when the summary opens with what the data lacks", async () => {
+    const limitFirst = good.replace("Your $32 overdraft fee is at", "The data cannot say who changed a fee this year. Your $32 overdraft fee is at");
+    const c = client(limitFirst, good);
+    const result = await writeStorylineMemo(storyline, "who changed their fee?", { client: c });
+    expect(result.status).toBe("written");
+    expect(c.calls[1]).toMatch(/opens with a limit/);
+  });
+
+  it("never lets a fee missing from the index read as no fee", async () => {
+    const missing = buildFeeAnswer(overdraftResearch({ current: null }), { story: { wantsDecision: true } }).storyline!;
+    const draft = (summary: string) => JSON.stringify({ ...JSON.parse(good), summary });
+    const noFee = draft("Peers have a median of $29.50. The decision is whether a no-fee position is worth defending.");
+    const fixed = draft("Peers have a median of $29.50. Your overdraft fee is not in the index yet, so your own position is not measured.");
+    const c = client(noFee, fixed);
+    const result = await writeStorylineMemo(missing, "q", { client: c });
+    expect(result.status).toBe("written");
+    expect(c.calls[1]).toMatch(/not in the index yet/);
+    expect(missing.governingThought).toMatch(/^Your overdraft fee is not in the index yet/);
+  });
+
   it("says the writer is unavailable when the budget blocks the call", async () => {
     const c: MemoClient = { create: async () => { throw new Error("Provider budget exceeded for route:api.hamilton.chat"); } };
     expect(await writeStorylineMemo(storyline, "q", { client: c })).toEqual({ status: "unavailable", reason: "Hamilton's writing budget for today is used up." });
