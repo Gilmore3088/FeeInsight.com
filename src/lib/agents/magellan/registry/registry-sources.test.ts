@@ -354,6 +354,7 @@ describe("registry dispatch", () => {
       "fred",
       "reg-news",
       "state-regulators",
+      "enforcement",
     ]);
   });
 
