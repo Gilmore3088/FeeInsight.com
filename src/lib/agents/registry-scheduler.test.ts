@@ -85,7 +85,8 @@ describe("registry scheduler", () => {
     expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);
     // The first enforcement load (no parser_version) re-runs as soon as the matcher changes.
     expect(isParserStale("enforcement", "succeeded", null)).toBe(true);
-    expect(isParserStale("enforcement", "succeeded", 2)).toBe(false);
+    expect(isParserStale("enforcement", "succeeded", 2)).toBe(true);
+    expect(isParserStale("enforcement", "succeeded", 3)).toBe(false);
     expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 3)).toBe(false);
     // A claimed or failed partition follows its normal retry time instead of looping.

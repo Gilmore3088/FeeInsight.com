@@ -17,6 +17,7 @@ import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
+import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 
 type SqlTag = typeof sql;
 
@@ -201,6 +202,8 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   if (!row.fee_name?.trim()) return "Missing fee name";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
+  // A blog post or story quotes national averages, not this bank's price (article-page.ts).
+  if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
   const amount = normalizedAmount(row.amount);
   if (isPercentFee(row)) {
     // A rate publishes only in a category that publishes rates, inside its range.
