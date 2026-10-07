@@ -2450,3 +2450,17 @@ pass read those lessons. See rosetta/AGENTS.md "Batch review".
 - Two names in one row were glued into one name.
 **Fix:** Knox v32 covers each of these. The answer keys gained 2 right and no wrong reads.
 **Still open:** size grids and wrapped prices need the shared source check (`checkFeeAgainstSource`) to read them first.
+
+## 2026-10-07: The answer key was never on prod
+
+- **Problem.** `answer_key_institutions` and `answer_key_fees` had no rows on prod. The hand-keyed keys
+  (Texas and the 7-state set) lived only in `/mnt/project-files/answer-key/` and the Knox gate fixtures, so
+  no `answer_key` lesson ever reached `pipeline_feedback`, Atlas's answer-key score had nothing to score,
+  and Darwin's batch scoring had to bundle its own copy.
+- **Fix.** Seed migration `20270110000018_answer_key_seed.sql`: 62 banks keyed line by line by the Knox thread
+  (status `confirmed`, `confirmed_by = 'knox-hand-key'`: checked against the stored text, not yet by a person)
+  with 2,321 fee rows, and 55 banks from the 2026-10-04 prefill draft left `prefilled` (710 rows) for a person
+  to confirm on /admin/answer-key. 525 keyed rows with no taxonomy key ("unmapped") are left out. One
+  document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
+  are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
+- **Watch.** Inserts only and idempotent; it never touches a bank already in the key.
