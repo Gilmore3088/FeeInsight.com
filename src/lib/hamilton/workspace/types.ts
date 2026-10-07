@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.11.0";
+export const WORKSPACE_ENGINE_VERSION = "1.11.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -405,6 +405,10 @@ export interface EconomicBackdrop {
   indicators: EconomicIndicator[];
   /** The district's latest Beige Book, banking section first. */
   beigeBook: { releaseDate: string; text: string; source: SourceRef } | null;
+  /** The latest FOMC minutes' rate decision, quoted. */
+  fomc?: { meetingDate: string; text: string; source: SourceRef } | null;
+  /** The district Reserve Bank's newest banking or household research piece. */
+  districtResearch?: { title: string; publishedAt: string | null; source: SourceRef } | null;
 }
 
 /** A marker on a fee exhibit: one market's median. */
