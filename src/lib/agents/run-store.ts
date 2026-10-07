@@ -37,6 +37,7 @@ import { recheckHeldRates, recheckHeldRows, recheckPromotedRows } from "@/lib/ag
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -424,11 +425,15 @@ async function executeAgenticStep(
         stateCode,
         dryRun: run.runKind === "dry_run",
       });
+      // Error review: every chunk of judged links is scored against Darwin and the answer
+      // key, per finder; finders that keep failing run last (magellan/batch-review.ts).
+      const batchReview = await reviewLinkBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
           link_outcomes: linkOutcomes,
+          batch_review: batchReview,
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -447,6 +452,8 @@ async function executeAgenticStep(
           second_documents_status: discovery.secondDocuments?.status ?? null,
           second_documents_checked: discovery.secondDocuments?.checked ?? 0,
           second_documents_found: discovery.secondDocuments?.found ?? 0,
+          restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
+          restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,

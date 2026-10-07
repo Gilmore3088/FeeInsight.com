@@ -18,10 +18,19 @@ export const LINK_YIELD_CHECK = "magellan.link_yield";
 export const LINK_GOOD_MIN_LIVE = 3;
 /** A link Knox read this long ago with fewer live fees than the bar is thin. */
 export const LINK_THIN_AFTER_HOURS = 24;
+/**
+ * A link is a wrong source of fees when at least this many fees read from it were taken
+ * down and a second look confirmed it (`takedown_confirmed`), and they are at least as many
+ * as its live fees. First-look takedowns never count: 13 of 20 recent source-check
+ * takedowns were real prices (Darwin, 7 Oct 2026).
+ */
+export const LINK_WRONG_MIN_CONFIRMED = 3;
+/** Checks whose confirmed takedown says the fee was read wrong (as Knox's lessons, knox/takedown-lessons.ts). */
+export const READ_WRONG_CHECKS = ["hamilton.source_check", "hamilton.limit_guard", "hamilton.business_schedule"] as const;
 /** Banks are judged in 24 slots by id, one slot per UTC hour, so each is judged daily. */
 export const LINK_YIELD_SLOTS = 24;
 
-export type LinkLabel = "good" | "thin" | "rejected" | "dead" | "business";
+export type LinkLabel = "good" | "thin" | "rejected" | "dead" | "business" | "wrong_fees";
 
 export interface LinkOutcomeRow {
   institution_id: number | string;
@@ -36,6 +45,8 @@ export interface LinkOutcomeRow {
   knox_fees: number | string | null;
   live_fees: number | string | null;
   live_categories: string[] | null;
+  /** Fees read from the link whose takedown a second look confirmed, with no live twin. */
+  confirmed_down?: number | string | null;
   found_by: string | null;
   found_by_version: number | string | null;
   found_attempt_id: number | string | null;
@@ -47,7 +58,7 @@ export interface LinkOutcomeRow {
 export interface LinkJudgement {
   label: LinkLabel;
   signal: "right" | "wrong";
-  kind: "produced_live_fees" | "thin_link" | "wrong_document" | "dead_link" | "business_schedule";
+  kind: "produced_live_fees" | "thin_link" | "wrong_document" | "dead_link" | "business_schedule" | "confirmed_wrong_fees";
   weight: number;
 }
 
@@ -68,6 +79,9 @@ const num = (value: number | string | null | undefined) => (value == null ? null
  * Labels one link. A bank's main link that is a business-only schedule is wrong whatever
  * it produced: its prices are published as the bank's consumer fees (Launch CU, Community
  * CU of Florida, Oct 2026), so finders must learn not to pick such pages as the main link.
+ * Then confirmed takedowns: a link whose fees a second look confirmed wrong (at least
+ * LINK_WRONG_MIN_CONFIRMED, and no fewer than its live fees) is a wrong source, and the
+ * freshness search looks for another page for it.
  * Then live fees decide: a link with enough live fees is good however it was fetched. Then a dead address, then a page Rosetta ruled out, then a page Knox
  * read a day ago that still has too few live fees. Anything else (not read yet, read but
  * not extracted, a bot wall) is not judged yet.
@@ -77,6 +91,10 @@ export function judgeLink(row: LinkOutcomeRow, now = new Date()): LinkJudgement 
     return { label: "business", signal: "wrong", kind: "business_schedule", weight: 1 };
   }
   const live = num(row.live_fees) ?? 0;
+  const confirmed = num(row.confirmed_down) ?? 0;
+  if (confirmed >= LINK_WRONG_MIN_CONFIRMED && confirmed >= live) {
+    return { label: "wrong_fees", signal: "wrong", kind: "confirmed_wrong_fees", weight: confirmed };
+  }
   if (live >= LINK_GOOD_MIN_LIVE) {
     return { label: "good", signal: "right", kind: "produced_live_fees", weight: live };
   }
@@ -115,6 +133,7 @@ export function linkFeedbackRow(row: LinkOutcomeRow, judgement: LinkJudgement, r
       live_fees: num(row.live_fees) ?? 0,
       live_categories: row.live_categories ?? [],
       knox_fees: num(row.knox_fees) ?? 0,
+      confirmed_down: num(row.confirmed_down) ?? 0,
       last_document_id: Number(row.last_document_id),
       last_status: row.last_status,
       last_status_code: num(row.last_status_code),
@@ -162,7 +181,7 @@ export async function recordLinkOutcomes(
     ready: false,
     slot,
     links: 0,
-    judged: { good: 0, thin: 0, rejected: 0, dead: 0, business: 0 },
+    judged: { good: 0, thin: 0, rejected: 0, dead: 0, business: 0, wrong_fees: 0 },
     undecided: 0,
     unchanged: 0,
     written: 0,
@@ -180,19 +199,28 @@ export async function recordLinkOutcomes(
            AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
       ),
       links AS (
-        SELECT banks.id AS institution_id, banks.fee_schedule_url AS url, 'main' AS role, NULL::text AS found_by
+        SELECT banks.id AS institution_id, banks.fee_schedule_url AS url, 'main' AS role, NULL::text AS found_by,
+               NULL::bigint AS companion_id
           FROM banks
          WHERE banks.fee_schedule_url IS NOT NULL AND btrim(banks.fee_schedule_url) <> ''
         UNION
-        SELECT extra.institution_id, extra.url, extra.document_role, extra.found_by_strategy
+        SELECT extra.institution_id, extra.url, extra.document_role, extra.found_by_strategy, extra.id
           FROM institution_additional_sources extra
           JOIN banks ON banks.id = extra.institution_id
       ),
+      -- A companion's documents are matched by its id too: its stored address often
+      -- differs from the one fetched (http to https, a redirect), 399 of 1,359 on 7 Oct.
       docs AS MATERIALIZED (
         SELECT links.institution_id, links.url, links.role, links.found_by, doc.id AS document_id,
                doc.status, doc.status_code
           FROM links
           JOIN source_documents doc ON doc.institution_id = links.institution_id AND doc.document_url = links.url
+        UNION
+        SELECT links.institution_id, links.url, links.role, links.found_by, doc.id AS document_id,
+               doc.status, doc.status_code
+          FROM links
+          JOIN source_documents doc ON doc.companion_source_id = links.companion_id
+         WHERE links.companion_id IS NOT NULL
       ),
       per_link AS (
         SELECT institution_id, url, role, max(found_by) AS found_by,
@@ -228,12 +256,34 @@ export async function recordLinkOutcomes(
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id AND fr.source_document_id = docs.document_id
          GROUP BY docs.institution_id, docs.url
+      ),
+      confirmed AS (
+        SELECT docs.institution_id, docs.url, count(DISTINCT fp.fee_published_id) AS confirmed_down
+          FROM docs
+          JOIN raw_fee_observations fr ON fr.source_document_id = docs.document_id
+          JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
+          JOIN published_fee_records fp ON fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NOT NULL
+         WHERE EXISTS (
+                 SELECT 1 FROM pipeline_feedback f
+                  WHERE f.fee_published_id = fp.fee_published_id
+                    AND f.kind = 'takedown_confirmed'
+                    AND f.check_name = ANY(${[...READ_WRONG_CHECKS]}::text[])
+               )
+           -- Restored, or read again at the same price: not a wrong fee.
+           AND NOT EXISTS (
+                 SELECT 1 FROM published_fee_records twin
+                  WHERE twin.rolled_back_at IS NULL
+                    AND twin.institution_id = fp.institution_id
+                    AND lower(btrim(twin.fee_name)) = lower(btrim(fp.fee_name))
+                    AND twin.amount IS NOT DISTINCT FROM fp.amount
+               )
+         GROUP BY docs.institution_id, docs.url
       )
       SELECT per_link.institution_id, per_link.url, per_link.role,
              per_link.first_document_id, per_link.last_document_id,
              per_link.last_status, per_link.last_status_code,
              reads.last_read, reads.last_extract_at,
-             knox.knox_fees, live.live_fees, live.live_categories,
+             knox.knox_fees, live.live_fees, live.live_categories, confirmed.confirmed_down,
              COALESCE(per_link.found_by, found.strategy) AS found_by,
              found.strategy_version AS found_by_version,
              found.id AS found_attempt_id,
@@ -242,6 +292,7 @@ export async function recordLinkOutcomes(
         LEFT JOIN reads ON reads.institution_id = per_link.institution_id AND reads.url = per_link.url
         LEFT JOIN knox ON knox.institution_id = per_link.institution_id AND knox.url = per_link.url
         LEFT JOIN live ON live.institution_id = per_link.institution_id AND live.url = per_link.url
+        LEFT JOIN confirmed ON confirmed.institution_id = per_link.institution_id AND confirmed.url = per_link.url
         LEFT JOIN LATERAL (
           SELECT pa.id, pa.strategy, pa.strategy_version
             FROM pipeline_attempts pa

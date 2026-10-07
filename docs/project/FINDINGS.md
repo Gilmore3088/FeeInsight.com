@@ -2409,6 +2409,45 @@ within the hour while states are still due, so all 52 are covered in five runs.
 **Lesson:** for a registry source with many small, quick items, batch them inside one partition.
 Use per-item partitions only when each item is a heavy download.
 
+## 2026-10-07: Product-page and out-of-date links waited behind banks without a link
+**What happened:** the tracker found that 22.8% of active fee links are product pages, and that 201 banks' main
+link is a document from 2023 or earlier. Magellan searches both kinds, but only in a discovery step's spare
+capacity, after banks without a link. A step stops starting banks after 75 seconds, so in a state with a long
+no-link backlog they were never reached. On prod, 1,208 of 5,232 links (23%) were product pages and 129 of them
+had been searched at the current version. 260 links named 2023 or earlier and 18 had been searched. Separately,
+58 banks whose link answered 404 before the fetch step learned to clear gone links (6 Oct) were waiting out
+the 30-day stale-link rule.
+**Fix:** each step reserves 3 slots for product pages and 2 for out-of-date links, beside the 3 business slots,
+and searches them right after the cut-off bank resuming its search. A 404 or 410 with no live fee is due at once.
+**Lesson:** "spare capacity" work needs a reserved share and a place near the front, or a time-boxed step never
+reaches it.
+
+## 2026-10-07: Magellan never learned from fees taken down for being wrong
+**What happened:** Hamilton's source check takes fees down as `not_on_schedule`, `wrong_amount` or
+`threshold`. The link they came from stayed "good" in Magellan's ledger as long as 3 other fees stayed live.
+Nothing sent the bank back to a search, so a wrong page could only be fixed by hand. First-look
+takedowns can't be used as they are: 13 of 20 recent source-check takedowns were real prices.
+**Fix:** the ledger reads the second look's verdict (`takedown_confirmed`, from Knox PR 393's reader
+contract and `hamilton/second-look.ts`). A link with 3 or more confirmed wrong fees and no more live
+fees than that is judged `confirmed_wrong_fees`, and its path's score drops. The freshness search then
+looks for another page for it, once per judgement. On a first-look proxy this would reach 84 banks.
+Confirmed rows start landing about 14:40 UTC on 7 Oct.
+**Lesson:** feed agents the confirmed verdict, not the first look, or they learn the checker's mistakes.
+
+## 2026-10-07: Articles and press releases were stored as fee sources
+**What happened:** nothing stopped a finder from taking a bank's article about fees as its fee source.
+Space Coast CU had a live $4.73 out-of-network ATM fee read from its blog post "common checking account
+fees to avoid", a national average; its schedule says $2.50. On prod (read-only, 05:55 UTC) 27 stored
+documents at 12 banks sit under article, blog or news folders, with 23 live fees at 3 banks; 21 of those
+are MTC Federal CU's real "/articles/schedule-of-fees/". Three banks' fee links are articles: Axos
+(an "insights" article), Bank of Bennington (a closing-cost promotion) and JPMorgan Chase (a 2021 press release).
+**Fix:** `isArticleLink` (link-coverage.ts) names such addresses unless the path names a fee document.
+Every finder rejects them (`article_page`), and the upgrade search picks banks whose link is one and
+does not keep the article once the schedule is found. Live fees from article pages are left to
+Hamilton's second look, under the never-delete rule.
+**Lesson:** a page about fees is not a fee schedule. Judge a source by what kind of page it is, not
+only by whether it mentions fees.
+
 ## 2026-10-07: Knox re-read fees that were already taken down
 **What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
 the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
@@ -2420,6 +2459,29 @@ records the count on the extract event. First-look takedowns don't teach: Darwin
 recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
+
+## 2026-10-07: Never-searched banks waited for their own state's lane
+**What happened:** discovery searches only the lane's own state. On prod (read-only, 06:05 UTC)
+1,855 active institutions with no fee link had never been searched (437 of them have no website).
+Most were in big states: TX 304, IL 232, PA 149, MN 137, NY 127. In the 24 hours to 06:05, finders gave
+2,006 banks their first search, and 65 of 405 discover steps ended in under 30 seconds with nothing
+left to search in their state.
+**Fix:** a state step with slots left over takes never-searched banks from any state, largest
+first (`selectNeverSearchedElsewhere`, 45 ms on prod).
+**Lesson:** a queue split by state is only as fast as the slowest state's lane. Let idle capacity
+take work from anywhere.
+
+## 2026-10-07: Banks a headline fee short were never searched for a second document
+**What happened:** the companion finder searched only banks with fewer than 8 fee categories or a
+weak link. Banks near the report bar whose schedule leaves out monthly maintenance or the overdraft
+item fee were never searched. Knox confirmed it for three banks: Coulee Bank (15 categories, no
+maintenance price on its schedule), Spencer Savings (16, no overdraft item price) and Community Bank PA
+(22, overdraft item fees refunded). On prod 2,029 banks with 8 or more live categories lack one of the two.
+**Fix:** a bank with no live monthly maintenance or overdraft fee now qualifies for the companion
+search. Banks of 8+ categories missing one come right after weak links. In PA alone that adds 97 banks.
+**Lesson:** a complete-looking schedule can still leave out the fees a report needs. Search for the
+account disclosure when a headline fee is missing, not only when the page is thin.
+
 
 ## Darwin's category review trusted Knox's amount (2026-10-07)
 `verify.adjudicate` v1 judged a fee from its name and amount alone. Against the answer keys it was right on
@@ -2447,6 +2509,41 @@ still passes the category guard, and does not collide with another live fee of t
 name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
 Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
 **Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: A blank-reading "Fee Schedule" page was swapped for a CD disclosure
+**What happened:** Rosetta sets aside a page that reads no amounts or needs JavaScript, and Magellan
+then saves whatever page next passes its check. Five Rivers Bank's fee page became a 12-month
+time-deposit truth-in-savings sheet on Oct 5. On prod (06:15 UTC Oct 7) 223 banks had a fee-named page
+set aside that way; 65 of them now link a page that is not fee-named. 20 active banks link a CD,
+certificate or time-deposit disclosure.
+**Fix:** finders reject one product's disclosure (`single_product_disclosure`), such links go to the
+upgrade search, and a bank whose fee-named page was set aside for a blank read gets it back as its main
+link once when the weaker page gives no live fee (it stays as a companion), so Rosetta's newer readers try it. About 43 banks qualify.
+**Lesson:** a page that reads blank is a reading problem first. Swap it only for a page that is at least
+as clearly the fee schedule.
+
+## 2026-10-07: Magellan's errors were judged per link but never reviewed per finder
+**What happened:** the outcome ledger judged each link, but nothing added up which finder produced the
+bad ones or folded in Darwin's verdicts. On prod the site crawl finder had 35 wrong of 75 judged links
+and the hub-page finder 36 of 104; both kept their place in the finder order.
+**Fix:** after every chunk of 50 judged links, an error review scores the chunk per finder against the
+ledger, Darwin and the answer key, writes it to `pipeline_feedback`, and a finder wrong in two
+reviews in a row runs last until it recovers.
+**Lesson:** per-item judgements need a regular roll-up that feeds back into what the agent does next.
+
+## 2026-10-07: Companion pages that held no fees were never judged
+**What happened:** Knox and Rosetta flagged 37 documents Magellan had saved as fee sources that hold no
+fees: checking and savings product pages, rates pages, funds-availability notices, overdraft opt-in forms,
+Zelle terms and a join page. 34 came from the companion finder and 3 were main links from the site crawl.
+The companion finder kept an account page with a single fee line. On prod only 77 of 781 account pages with
+1 or 2 fee lines gave live fees, against 23-40% for 3 or more. The ledger never judged 399 of 1,359
+companions, because it matched documents by address and a companion's stored address often differs from
+the fetched one (http to https, a redirect).
+**Fix:** account pages now need 3 fee lines and agreements 2. Non-fee documents are skipped by name. The
+ledger also matches a companion's documents by `companion_source_id`, so these links get judged and feed
+the error review.
+**Lesson:** a learning loop only learns from what it can see. Check that every output has a judged row
+before trusting the scores.
 
 ## 2026-10-07: Rosetta had no per-batch error review
 **What happened:** Rosetta learned only from fees taken down later (text survival), so a read that
