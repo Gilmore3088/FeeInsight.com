@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isBusinessOnlyLink, isBusinessOnlyText, isStaleDatedLink, refersElsewhere } from "./link-coverage";
+import { hasOverdraftPrice, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isStaleDatedLink, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -54,5 +54,21 @@ describe("documents dated years ago", () => {
     expect(isStaleDatedLink("https://bank.example/docs/2025-01/fee-schedule.pdf", now)).toBe(false);
     expect(isStaleDatedLink("https://bank.example/personal/fee-schedule.pdf", now)).toBe(false);
     expect(isStaleDatedLink("https://bank.example/forms/form2019.pdf", now)).toBe(false);
+  });
+});
+
+describe("isErrorPageLink", () => {
+  it("flags the error pages saved as fee links on prod", () => {
+    expect(isErrorPageLink("https://www.northerntrust.com/united-states/page-not-found")).toBe(true);
+    expect(isErrorPageLink("https://www.s1cu.org/404/")).toBe(true);
+    expect(isErrorPageLink("https://www.bankofhays.com/home/diFiles/skins/wcErrors/404.html")).toBe(true);
+    expect(isErrorPageLink("https://bank.example/notfound")).toBe(true);
+  });
+
+  it("leaves fee pages alone", () => {
+    expect(isErrorPageLink("https://bank.example/fee-schedule")).toBe(false);
+    expect(isErrorPageLink("https://bank.example/docs/4040-fees.pdf")).toBe(false);
+    expect(isErrorPageLink("https://bank.example/found-money-fees")).toBe(false);
+    expect(isErrorPageLink(null)).toBe(false);
   });
 });

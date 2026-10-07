@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Admin Today read job health from the retired workers' markers
+**What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
+including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
+run Aug 12" and "Hamilton monthly pulse is overdue", while prod showed Atlas lanes completing at
+03:26 UTC Oct 7, agent steps finishing every few minutes, the registry sync at 03:17 and a monthly
+pulse completed Oct 6 06:07.
+**Cause:** `getJobFreshness` read `workers_last_run`, which only the retired Modal workers wrote; its
+newest row is Aug 13. The report freshness gate read the same table for its Atlas health check.
+**Fix:** job health and the report gate now read `agent_runs`, `agent_run_steps` and `report_jobs`
+(this PR). The tick is only overdue while steps are queued.
+**Lesson:** when a runtime is retired, grep for every table it wrote and move each reader to the new
+ledger in the same change.
+
 ## 2026-10-07: postgres.js sends numbers untyped, so a CASE of them is text
 
 Darwin's release review read no lessons on prod: all 32 reviews after PR 351 recorded `lessons: 0` though the
@@ -2130,3 +2143,24 @@ category it came back with, and drop a takedown only when the fee was restored u
 category. On prod this adds 30 lessons and drops none.
 **Lesson:** a restore can change a fee's category, so check it against the category of the
 verdict it overturns, not just the fee id.
+
+## 2026-10-07: Paid schedule search re-paid for banks whose answer never opens
+**What happened:** the paid schedule search treated a timeout as "not searched", so every paid step
+searched Morgan Stanley Private Bank and Northern Trust again. The model named the schedule each time,
+but the bank's site timed out when we opened it. That made 35 and 34 paid calls in 9 hours. In October
+71 timeouts on 3 banks cost $3.87, a fifth of the step's $15.86, and took 2 of the 10 priority slots
+in every step.
+**Fix:** `MAX_TRANSIENT_TRIES` (3): a bank whose month holds 3 tries that timed out or were refused is
+searched again next month. Budget stops don't count.
+**Lesson:** a retry rule for transient failures needs a count, or a site that always fails is retried
+forever.
+
+## 2026-10-07: Error pages saved as fee links never went back to discovery
+**What happened:** three banks' fee links are the site's own error page: Northern Trust
+(`/united-states/page-not-found`), Service 1st FCU (`/404/`) and Bank of Hays (`.../wcErrors/404.html`).
+Magellan sends a link back to discovery only on a 404, a 410 or a redirect home. Northern Trust's page
+timed out on every fetch, so it kept the link, and the paid schedule search re-searched it.
+**Fix:** `isErrorPageLink` (`link-coverage.ts`): the fetch step treats such a link as gone however the
+fetch went. It keeps the URL in `rejected_source_urls`, clears the link and marks the bank due a search,
+the same path as a 404. Discovery rejects error-page addresses as finds. None of the three has live fees.
+**Lesson:** judge a link by its address as well as by the response; a blocked site never returns the 404.

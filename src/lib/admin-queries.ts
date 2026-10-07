@@ -580,7 +580,7 @@ export async function getPipelineOverview(): Promise<PipelineOverview> {
 export interface JobFreshness {
   job_name: string;
   display_name: string;
-  source: "workers_last_run";
+  source: "agent_runs" | "agent_run_steps" | "report_jobs";
   last_completed_at: string | null;
   hours_since: number | null;
   expected_within_hours: number;
@@ -596,16 +596,107 @@ export interface JobHealthSummary {
   jobs: JobFreshness[];
 }
 
-// Inventory of scheduled jobs we expect the agentic backend to publish.
-// Any stale entry here surfaces as a red banner on /admin/pipeline.
+// The scheduled work the agentic backend runs, read from the run ledger it writes.
+// (The old workers_last_run markers were written by the retired Modal workers and
+// stopped in August, so reading them reported live jobs as overdue.)
 const JOB_INVENTORY: Array<
   Pick<JobFreshness, "job_name" | "display_name" | "source" | "expected_within_hours">
 > = [
-  { job_name: "atlas_cycle",        display_name: "Atlas daily cycle (02:00)",           source: "workers_last_run", expected_within_hours: 26 },
-  { job_name: "review_dispatcher",  display_name: "Agent review dispatcher",             source: "workers_last_run", expected_within_hours: 0.1 },
-  { job_name: "ingest_data",        display_name: "Federal data ingest (10:00)",         source: "workers_last_run", expected_within_hours: 26 },
-  { job_name: "monthly_pulse", display_name: "Hamilton monthly pulse (1st at 07:00)", source: "workers_last_run", expected_within_hours: 24 * 35 },
+  { job_name: "atlas_state_lanes", display_name: "Atlas state lanes",                 source: "agent_runs",      expected_within_hours: 26 },
+  { job_name: "agent_executor",    display_name: "Agent tick (every 5 minutes)",      source: "agent_run_steps", expected_within_hours: 1 },
+  { job_name: "registry_sync",     display_name: "Magellan registry sync",            source: "agent_runs",      expected_within_hours: 26 },
+  { job_name: "monthly_pulse",     display_name: "Hamilton monthly pulse (3rd of the month)", source: "report_jobs", expected_within_hours: 24 * 35 },
 ];
+
+interface JobMarker {
+  completedAt: Date | null;
+  failed: boolean;
+  // False when there is nothing for the job to do, so a quiet job is not overdue.
+  hasWork: boolean;
+}
+
+async function readJobMarkers(): Promise<Record<string, JobMarker>> {
+  const [row] = await sql`
+    SELECT
+      (SELECT MAX(completed_at) FROM agent_runs
+        WHERE agent_name = 'atlas' AND run_kind = 'workflow_lane' AND status = 'completed') AS atlas_lane_done,
+      (SELECT MAX(completed_at) FROM agent_run_steps
+        WHERE status IN ('completed', 'failed', 'skipped')) AS step_done,
+      EXISTS (SELECT 1 FROM agent_run_steps WHERE status = 'queued') AS steps_queued,
+      (SELECT MAX(completed_at) FROM agent_runs
+        WHERE triggered_by = 'api.admin.registry.tick' AND status = 'completed') AS registry_done,
+      (SELECT MAX(completed_at) FROM report_jobs
+        WHERE report_type = 'monthly_pulse' AND status = 'complete') AS pulse_done,
+      (SELECT status FROM report_jobs
+        WHERE report_type = 'monthly_pulse' ORDER BY created_at DESC LIMIT 1) AS pulse_latest_status
+  `;
+  const at = (value: unknown) => (value ? new Date(value as string | Date) : null);
+  return {
+    atlas_state_lanes: { completedAt: at(row?.atlas_lane_done), failed: false, hasWork: true },
+    agent_executor: { completedAt: at(row?.step_done), failed: false, hasWork: Boolean(row?.steps_queued) },
+    registry_sync: { completedAt: at(row?.registry_done), failed: false, hasWork: true },
+    monthly_pulse: {
+      completedAt: at(row?.pulse_done),
+      failed: row?.pulse_latest_status === "failed",
+      hasWork: true,
+    },
+  };
+}
+
+function classifyJobFreshness(
+  marker: JobMarker | undefined,
+  expectedWithinHours: number,
+  now: number,
+): { status: JobFreshness["status"]; hoursSince: number | null } {
+  const lastCompleted = marker?.completedAt ?? null;
+  const hoursSince = lastCompleted ? (now - lastCompleted.getTime()) / (1000 * 60 * 60) : null;
+  if (marker?.failed) return { status: "failed", hoursSince };
+  if (hoursSince === null) return { status: marker && !marker.hasWork ? "ok" : "never_ran", hoursSince };
+  if (hoursSince > expectedWithinHours && marker?.hasWork !== false) return { status: "stale", hoursSince };
+  return { status: "ok", hoursSince };
+}
+
+export async function getJobFreshness(): Promise<JobHealthSummary> {
+  const jobs: JobFreshness[] = [];
+
+  let markers: Record<string, JobMarker> = {};
+  let markersRead = true;
+  try {
+    markers = await readJobMarkers();
+  } catch (e) {
+    markersRead = false;
+    console.error("getJobFreshness marker read failed:", e);
+  }
+
+  const now = Date.now();
+  for (const spec of JOB_INVENTORY) {
+    const marker = markers[spec.job_name];
+    const lastCompleted = marker?.completedAt ?? null;
+    // A failed read is not evidence a job stopped; report nothing rather than a false alarm.
+    const { status, hoursSince } = markersRead
+      ? classifyJobFreshness(marker, spec.expected_within_hours, now)
+      : { status: "ok" as const, hoursSince: null };
+
+    jobs.push({
+      job_name: spec.job_name,
+      display_name: spec.display_name,
+      source: spec.source,
+      last_completed_at: lastCompleted ? toDateStr(lastCompleted) : null,
+      hours_since: hoursSince !== null ? Math.round(hoursSince * 10) / 10 : null,
+      expected_within_hours: spec.expected_within_hours,
+      status,
+    });
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    stale_count: jobs.filter((j) => j.status === "stale").length,
+    failed_count: jobs.filter((j) => j.status === "failed").length,
+    ok_count: jobs.filter((j) => j.status === "ok").length,
+    never_ran_count: jobs.filter((j) => j.status === "never_ran").length,
+    jobs,
+  };
+}
 
 // Reliability Roadmap #11 — URL freshness surface.
 // Stale URLs are surfaced by the admin data-quality checks and agentic run queue.
@@ -724,59 +815,6 @@ export async function getCollectionHealthTiers(): Promise<CollectionHealthTiers>
     console.error("getCollectionHealthTiers failed:", e);
     return { healthy: 0, short_backoff: 0, long_backoff: 0, dormant: 0, total_active: 0 };
   }
-}
-
-export async function getJobFreshness(): Promise<JobHealthSummary> {
-  const jobs: JobFreshness[] = [];
-
-  const markerRows: Record<string, { completedAt: Date | null; status: string | null }> = {};
-  try {
-    const rows = await sql`SELECT job_name, completed_at, status FROM workers_last_run`;
-    for (const r of rows) {
-      markerRows[String(r.job_name)] = {
-        completedAt: (r.completed_at as Date | null) ?? null,
-        status: r.status ? String(r.status) : null,
-      };
-    }
-  } catch (e) {
-    console.error("getJobFreshness marker read failed:", e);
-  }
-
-  const now = Date.now();
-  for (const spec of JOB_INVENTORY) {
-    const marker = markerRows[spec.job_name];
-    const lastCompleted = marker?.completedAt ?? null;
-
-    let hoursSince: number | null = null;
-    let status: JobFreshness["status"] = "never_ran";
-    if (lastCompleted) {
-      hoursSince = (now - lastCompleted.getTime()) / (1000 * 60 * 60);
-      status = marker?.status === "failed"
-        ? "failed"
-        : hoursSince > spec.expected_within_hours
-          ? "stale"
-          : "ok";
-    }
-
-    jobs.push({
-      job_name: spec.job_name,
-      display_name: spec.display_name,
-      source: spec.source,
-      last_completed_at: lastCompleted ? toDateStr(lastCompleted) : null,
-      hours_since: hoursSince !== null ? Math.round(hoursSince * 10) / 10 : null,
-      expected_within_hours: spec.expected_within_hours,
-      status,
-    });
-  }
-
-  return {
-    generated_at: new Date().toISOString(),
-    stale_count: jobs.filter((j) => j.status === "stale").length,
-    failed_count: jobs.filter((j) => j.status === "failed").length,
-    ok_count: jobs.filter((j) => j.status === "ok").length,
-    never_ran_count: jobs.filter((j) => j.status === "never_ran").length,
-    jobs,
-  };
 }
 
 export async function getRecentJobs(limit = 20): Promise<OpsJob[]> {

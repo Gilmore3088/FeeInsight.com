@@ -189,11 +189,12 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for Knox's hidden-bank list, 2026-10-07 01:25",
   },
   {
-    // E*TRADE's agreement library; the bank's pricing page times out on every fetch.
+    // The bank's own copy (Morgan Stanley Online accounts). Its pricing page times out, and
+    // our fetcher has failed on us.etrade.com since 2026-10-04, so the E*TRADE copy is not used.
     institutionId: 16,
     institutionName: "Morgan Stanley Private Bank, National Association",
-    url: "https://us.etrade.com/l/f/agreement-library/bank-rate-fee-schedule",
-    givenBy: "web search for the state market leaders, 2026-10-07 03:50",
+    url: "https://www.morganstanley.com/content/dam/msdotcom/en/wealth-disclosures/pdfs/MSPBNA_MSO_Bank_Deposit_Rate_Fee_Schedule.pdf",
+    givenBy: "web search for the state market leaders, 2026-10-07 03:55",
   },
 ];
 
