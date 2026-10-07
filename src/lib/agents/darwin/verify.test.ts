@@ -321,6 +321,7 @@ describe("Darwin agentic verification", () => {
       db.mockImplementation((strings: TemplateStringsArray) => {
         const text = templateText(strings);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
         if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
         if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 1300 }]);
         return Promise.resolve([]);

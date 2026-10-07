@@ -5,6 +5,7 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
+import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -332,6 +333,7 @@ async function selectRawFees(
   learning: boolean,
   institutionId?: number,
   stateCode?: string,
+  currentCopy = false,
 ): Promise<RawFeeRow[]> {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
@@ -355,18 +357,10 @@ async function selectRawFees(
     const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
     // A row held as an in-batch duplicate under the old URL key is re-checked once when it
     // sits on the bank's current copy and nothing on that same document is verified as the
-    // same fee; a row with a verified twin on its own document stays a duplicate.
-    const batchKeyParam = `$${params.push(DARWIN_BATCH_KEY_VERSION)}`;
-    filters.push(`AND NOT EXISTS (
-           SELECT 1
-             FROM pipeline_attempts pa
-            WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-              AND pa.strategy = ${strategyParam}
-              AND pa.strategy_version = ${versionParam}
-              AND NOT (
-                pa.detail->>'reason_code' = 'category_mismatch'
-                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
-              )
+    // same fee; a row with a verified twin on its own document stays a duplicate. Needs the
+    // current-copy column (source_documents.superseded_by_id).
+    const batchKeyParam = currentCopy ? `$${params.push(DARWIN_BATCH_KEY_VERSION)}` : null;
+    const duplicateRecheck = batchKeyParam ? `
               AND NOT (
                 pa.detail->>'reason_code' = 'duplicate_in_batch'
                 AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${batchKeyParam}
@@ -382,7 +376,18 @@ async function selectRawFees(
                      AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
                      AND twin.amount IS NOT DISTINCT FROM fr.amount
                 )
+              )` : "";
+    filters.push(`AND NOT EXISTS (
+           SELECT 1
+             FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+              AND pa.strategy = ${strategyParam}
+              AND pa.strategy_version = ${versionParam}
+              AND NOT (
+                pa.detail->>'reason_code' = 'category_mismatch'
+                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
               )
+${duplicateRecheck}
          )`);
   }
   return db.unsafe<RawFeeRow[]>(
@@ -732,7 +737,8 @@ export async function runDarwinVerify(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
-  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode);
+  const currentCopy = learning && (await currentCopySchemaReady(db));
+  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode, currentCopy);
   const rowByRawFeeId = new Map(rows.map((row) => [Number(row.fee_raw_id), row]));
   const results: DarwinVerificationResult[] = [];
 
