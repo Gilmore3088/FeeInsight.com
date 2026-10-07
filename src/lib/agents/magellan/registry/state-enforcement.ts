@@ -23,7 +23,7 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 /** Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS). */
-export const STATE_ENFORCEMENT_PARSER_VERSION = 2;
+export const STATE_ENFORCEMENT_PARSER_VERSION = 3;
 export const STATE_ENFORCEMENT_SOURCE = "state-enforcement";
 export const STATE_ENFORCEMENT_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;
@@ -43,6 +43,8 @@ export interface StateEnforcementStateResult {
   sample: Array<Pick<StateOrder, "party_name" | "action_type" | "start_date" | "document_url">>;
   /** The first page's shape when nothing was found on it, so the reader can be fixed. */
   shape?: ReturnType<typeof describePage> & { url: string };
+  /** Table rows on each page where nothing was found (a table with rows the reader missed). */
+  emptyPages?: Array<{ url: string; tables: number; rows: number }>;
 }
 
 export interface RegistryStateEnforcementResult {
@@ -129,7 +131,12 @@ export async function runRegistryStateEnforcement(
         if (source.follow) for (const next of linksMatching(html, url, source.follow)) if (!visited.has(next)) queue.push(next);
         const found = parseStateOrders(source.reader, html, url);
         for (const order of found) byKey.set(stateOrderKey(source.state, order), order);
-        if (found.length === 0 && !stats.shape) stats.shape = { url, ...describePage(html) };
+        if (found.length === 0) {
+          const shape = describePage(html);
+          // Keep the shape of the page with the most table rows: an empty year page says little.
+          if (!stats.shape || shape.rows > stats.shape.rows) stats.shape = { url, ...shape };
+          stats.emptyPages = [...(stats.emptyPages ?? []), { url, tables: shape.tables, rows: shape.rows }];
+        }
       } catch (error) {
         stats.failed.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
       }

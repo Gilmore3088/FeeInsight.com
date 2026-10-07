@@ -445,3 +445,17 @@ v32 (rules 32, from Space Coast CU's page, Oct 7):
 - A figure from a worked example ("Example: Assume you establish a bill pay payment ... in the amount of $100") is not a fee. Hamilton's limit guard flags live ones as `worked_example` and takes them down after its second look (Northwest Bank's $100 bill pay, plus 2 more on Oct 7). Confirmed takedowns become Knox takedown lessons (PR 393).
 - Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
 - Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").
+
+## Fees named by page context (`context-names.ts`, v33)
+
+- Under an overdraft or NSF section heading, a per-item price with no fee name of its own
+  ("$38 fee for each item or transaction paid") is named from the heading: "Overdraft fee for
+  each item or transaction paid". Only a Title Case heading or one ending in ":" counts; the
+  nearest heading that names a fee owns the price.
+- "this $33 fee" is named by the term defined on a line just above ("Bounce Protection Paid
+  Item Fee: ..."), with the sentence's own words after it so the shared source check reads the
+  price on its line. How often the line lets it be charged is a cap, not its frequency.
+- A line saying its fee is being eliminated or will no longer be charged holds no fee.
+- The Reg E notice sentence "We will charge you a fee of up to $35.00 each time we pay an
+  overdraft" is read as the overdraft fee. The shared source check still reads "up to $35.00"
+  as a threshold, so it is held as untraced until that check changes (accuracy thread).

@@ -261,6 +261,11 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     return result;
   }
 
+  // Known links the bank's site blocks go first: a few cheap calls on links already found.
+  // Run last, they got what the run's call cap left (one bank of three on 7 Oct, 08:23).
+  await addBlockedFetch(result, options, db);
+  if (result.budgetStopped) return result;
+
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
   const usePick = options.pick ?? process.env.MAGELLAN_PAID_PICK?.trim().toLowerCase() !== "off";
@@ -416,13 +421,13 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   }
   if (!result.budgetStopped) await addWebsiteFind(result, options, db);
   if (!result.budgetStopped) await addScheduleSearch(result, options, db);
-  if (!result.budgetStopped) await addBlockedFetch(result, options, db);
   return result;
 }
 
 /**
- * Fee links the bank's site refuses (HTTP 403) get one paid server-side fetch in the same
- * step (blocked-fetch.ts); what it returns is stored and read like any fetched document.
+ * Fee links and companion pages the bank's site blocks (refused, timing out, or a PDF
+ * answered with a web page) get one paid server-side fetch in the same step
+ * (blocked-fetch.ts); what it returns is stored and read like any fetched document.
  */
 async function addBlockedFetch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
   const fetched = await runBlockedFetch({
