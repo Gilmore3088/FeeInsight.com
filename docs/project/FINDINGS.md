@@ -13,6 +13,18 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Hamilton's source check takes down real prices, so its judgements can't teach yet
+**What happened:** building lessons for Darwin's held-fee review from `pipeline_feedback`, a hand
+check of 20 random source-check takedowns from the 24 hours to 02:50 UTC (`wrong_amount` and
+`threshold`, not restored) found 13 that read as real prices from Knox's excerpt ("Wire Transfer
+Outgoing $20.00", "Deposit return item / $10.00", "$150.00 Drill Safe Deposit Box"), 4 right and 3 unclear.
+**Cause:** not yet known. The misses share a balance or "per $50" in the same line (read as a
+threshold) or an amount written before the name (read as not the fee).
+**Fix:** none here. Darwin's review learns only from category-check takedowns and restores; the
+finding went to the Accuracy and Hamilton publish threads. The fees are archived, not deleted.
+**Lesson:** a judgement becomes a training signal only after it has been checked to hold up;
+a wrong lesson teaches the next check to throw away real fees.
+
 ## 2026-10-07: Takedowns were final on the first failure, and most checks had no way back
 **What happened:** an audit of every Hamilton takedown path (01:30 UTC Oct 7) found that nothing is
 ever hard-deleted. Each of the 9,244 takedowns keeps `rolled_back_at` and a reason, and the
