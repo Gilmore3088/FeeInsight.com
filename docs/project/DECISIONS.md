@@ -3,6 +3,15 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-07
+
+**Scrapping a fee is a last resort: looked at more than once, logged, archived, never deleted.**
+James, 01:20 UTC ("we need to constantly learn from fees we pass or scrap ... It needs to be last
+case decision, picked over multiple times, decision log. And it's never deleted, just archive and
+can always be revisited"). Every pass or scrap feeds `pipeline_feedback`. Darwin's held-fee pass
+(`verify.release` v4) now takes two looks at least 20 hours apart, the second against the bank's
+current copy, before a reject is final; a fee later found on the schedule gets a `restored` note.
+
 ## 2026-10-06
 
 **One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets

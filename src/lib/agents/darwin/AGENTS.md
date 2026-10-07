@@ -100,7 +100,13 @@ Darwin owns verification and classification.
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
   writes a `darwin.release` note of kind `not_on_schedule` to `pipeline_feedback` and leaves
-  the held pile. Those fees were never live, so nothing comes down. Releases stay a dry run
+  the held pile. Those fees were never live, so nothing comes down. v4 (James, 2026-10-07:
+  scrapping is a last resort, looked at more than once, logged, never deleted) takes two
+  looks: the first "not stated" is `reject_pending` (logged, no note, still held); at least
+  `DARWIN_REJECT_SECOND_LOOK_HOURS` later the fee is read again against its own document and
+  the bank's current copy, and only a second "not stated" is a final `reject` with its note.
+  A fee found on the schedule replaces an earlier reject note with a `restored` one
+  (`stated_on_later_look`). Raw rows, attempts and notes are never deleted. Releases stay a dry run
   while `DARWIN_RELEASE_ACTS` is false; switching it on needs James's word and a version bump,
   and writes released fees as `darwin_verified` notes. Step detail: `held_release`.
 - Learning store: every verify decision except duplicates and category rejects (the

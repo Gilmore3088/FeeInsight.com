@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Darwin's paid pass never ran because other agents used its per-run call cap
+**What happened:** at 01:20 UTC there were no `verify.adjudicate` or `verify.release_review`
+attempts on prod at all, and no `verify-paid` step had run in 7 days. Every one ended "Paid pass
+skipped: Provider call cap exhausted for run N under agent:darwin" before Darwin made a call
+(runs 1843, 1849, 1850, 1853 had 29, 24, 25 and 22 calls, all from Knox, Magellan and Rosetta).
+**Cause:** `assertRunCaps` compared each agent policy's `max_provider_calls_per_run` (Darwin 10)
+with the whole run's `agent_runs.actual_provider_calls`. A state run holds several agents' paid
+steps, so the earlier agents spent Darwin's cap for it.
+**Fix:** an agent policy's per-run caps count only that agent's completed calls in the run
+(`ai_api_usage_events` by `agent_run_id` and `agent_name`). Daily, monthly and global caps are
+unchanged and still bind.
+**Lesson:** a per-agent cap reads per-agent usage; a run-wide counter is only right for run-wide caps.
+
 ## 2026-10-07: Darwin held current-copy fees as duplicates of older copies at the same URL
 **What happened:** at about 01:05 UTC, Hamilton's read-only counts found 1,108 live fees whose
 Knox row on the bank's current page copy was held as `duplicate_in_batch` with no verified row on
