@@ -1951,3 +1951,17 @@ skipped. Category guard v15 rejects the two live rows, so Hamilton's rules re-ch
 Dry run on 794 unverified promotions: 7 go back on hold.
 **Lesson:** sample real prod output right after a rules change ships, and give every automatic
 promotion a way back.
+
+
+## 2026-10-07: Hamilton read a fee missing from the index as "no fee"
+**What happened:** a live Pro answer for Space Coast Federal Credit Union (saved 02:31 UTC Oct 7) to
+"Who in our state changed their NSF fee this year?" said "Your schedule shows no NSF fee" and weighed
+"a no-NSF position". The index has no NSF row for Space Coast at all, which only means the fee is not
+in the index. The memo also opened with what the data could not say. Its local comparison used
+business fee schedules for Launch Credit Union and Community Credit Union of Florida.
+**Fix:** engine 1.9.1 heads a missing fee "Your NSF / returned item fee is not in the index yet". The
+memo writer is told that `own: null` is never a fee of $0, and is asked again when it calls a missing
+fee "no-fee" or opens its summary with a limit. A recorded fee change now counts only when both prices
+were read from the same page.
+**Lesson:** missing data and a $0 price must never share wording. The business-schedule rows are a
+consumer/business split for the fee readers, not something Hamilton can fix.
