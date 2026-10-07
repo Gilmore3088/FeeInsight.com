@@ -2480,3 +2480,23 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
   are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
 - **Watch.** Inserts only and idempotent; it never touches a bank already in the key.
+
+## 2026-10-07: CFPB fee complaints were over-counted, cut short, and missing for big banks
+
+**What happened:** Checking the complaint data for the peer benchmark found four problems.
+
+**Cause:**
+- "Fee-related" counted every "Managing an account" complaint, which is mostly deposits, withdrawals and errors.
+- The step kept only each institution's top 15 issues, which dropped 23,855 complaints in 2025.
+- It deleted only the institutions it touched. That left 56,389 old-loader complaints at 259 institutions, some on wrong matches.
+- Short names ("PNC", "TD", "BMO", "U S", "M T") always went to review. FFIEC also writes holding companies as "BCORP" and "FINL", so U.S. Bank, PNC, TD, BMO, M&T, Citizens and First Citizens had no complaints linked. Only 77 of 160 $10B+ banks were linked.
+
+**Fix:**
+- A shared fee definition (`src/lib/complaints/fee-issues.ts`) counts only the issues within deposit and card products. "Managing an account" counts only through its "Fee problem" sub-issue.
+- The step stores all issues and replaces the whole year.
+- A short name is accepted for one $10B+ parent. A full holding-company name is matched first.
+- The CFPB parser version is now 2, so every year re-pulls.
+
+**Also:** `institution_financial_records.total_deposits` is in thousands for `fdic` and `ncua` rows but in dollars for `ffiec` rows. Readers must filter by source.
+
+**Unverified:** whether CFPB's search API returns sub-issue buckets. The run ledger records `sub_issues_loaded`.
