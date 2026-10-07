@@ -41,6 +41,7 @@ import { getLocalFeeMoves, getLocalMarketCompetitors } from "@/lib/data-store/lo
 import { annualServiceCharges, buildReportExhibits } from "@/lib/hamilton/report-exhibits";
 import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/regulatory-context";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import {
   ANSWER_SECTION_FORMAT,
@@ -572,6 +573,9 @@ export async function generateReport(
       complaintYears: selectedInstitution
         ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])
         : [],
+      enforcement: selectedInstitution
+        ? await getEnforcementRecord(selectedInstitution.id).catch(() => null)
+        : null,
     });
     // Fee income over time: real (GDP price index), seasonally adjusted, tested for
     // trend, stationarity and structural breaks, against the industry. Computed, never modeled.
