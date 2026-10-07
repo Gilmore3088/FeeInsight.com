@@ -75,6 +75,21 @@ function depositsLabel(dollars: number): string {
 }
 
 /** "12 branches · 8.4% of local deposits", or null when the institution has no SOD branches here. */
+/** "READING" -> "Reading", "KING OF PRUSSIA" -> "King of Prussia"; mixed-case names such as "McAllen" are kept. */
+export function cityLabel(city: string): string {
+  if (city !== city.toUpperCase()) return city;
+  return city
+    .toLowerCase()
+    .replace(/(^|[\s\-'.])([a-z])/g, (_m, sep: string, ch: string) => sep + ch.toUpperCase())
+    .replace(/ (Of|The|And|On|In) /g, (word) => word.toLowerCase());
+}
+
+/** "READING, PA" -> "Reading, PA": the city part only, so the state code stays upper case. */
+export function placeLabel(place: string): string {
+  const cut = place.lastIndexOf(", ");
+  return cut < 0 ? cityLabel(place) : `${cityLabel(place.slice(0, cut))}${place.slice(cut)}`;
+}
+
 export function footprintLine(branches: MarketBranchFootprint | null | undefined, institutionId: number): string | null {
   const own = branches?.byInstitution[institutionId];
   if (!branches || !own || own.branches === 0) return null;
@@ -135,7 +150,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
   const name = data.subject.institution_name;
-  const marketLabel = `${market.places[0]} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
+  const marketLabel = `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`;
   const comparable = analysis.lines.filter((l) => l.comparable);
   const tableKeys = comparable.slice(0, 6).map((l) => l.key);
   const ownFees = Object.fromEntries(analysis.lines.filter((l) => l.own).map((l) => [l.key, l.own!.amount]));
@@ -289,7 +304,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <a href={`/institution/${competitor.institution_id}`} className="text-[#1A1815] underline-offset-2 hover:underline">
                           {competitor.institution_name}
                         </a>
-                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-[#8A8173]"> · {competitor.city}</span>}
+                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-[#8A8173]"> · {cityLabel(competitor.city)}</span>}
                         {footprintLine(branches, competitor.institution_id) && (
                           <span className="block whitespace-nowrap text-[12px] text-[#6B6255]">{footprintLine(branches, competitor.institution_id)}</span>
                         )}
