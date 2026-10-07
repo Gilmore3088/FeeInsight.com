@@ -102,7 +102,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   card_replacement: {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
-    exclude: /(check|statement|key|book|expedit|rush|overnight|gift)/i,
+    // A "check card" is a debit card; checks, checkbooks and checking accounts are not. A PIN
+    // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
+    exclude: /(check(?!\s?card)|statement|key|book|expedit|rush|overnight|gift|^(?!.*\bcards?\b[^|]{0,20}replace)(?!.*replace[^|]{0,20}\bcards?\b).*\bpins?\b|liabilit|closed account)/i,
   },
   // The fee charged when a balance falls below the minimum, not the minimum itself. "Minimum
   // balance to open", "to earn APY" and "to avoid the fee" lines state a balance, so their
@@ -123,8 +125,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(charge-?back (on )?(loan|deposit)|charge-?back (items?|message)\b|return\/charge-?back)/i,
   },
   deposited_item_return: {
-    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|chargeback)/i,
-    exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction)/i,
+    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b)/i,
+    exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
   // fee for the night deposit service ("Zipper Bags $3.00" is not a night deposit fee).
@@ -149,7 +151,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 13;
+export const CATEGORY_GUARD_VERSION = 14;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -194,18 +196,24 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "deposited_item_return", when: /deposit/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
+  { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
 /** The category a fee belongs in: its own, or the one its name re-files it to. */
+// PDFs and web pages write "Teller’s Check" and "ATM’s" with curly quotes; the rules use '.
+function plainQuotes(name: string): string {
+  return name.replace(/[‘’ʼ`]/g, "'");
+}
+
 export function refileCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
 ): string | null {
   if (!canonicalFeeKey) return null;
   if (checkFeeCategory(canonicalFeeKey, feeName).ok) return canonicalFeeKey;
-  const name = feeName ?? "";
+  const name = plainQuotes(feeName ?? "");
   const rule = REFILE_RULES.find(
     (candidate) =>
       candidate.from === canonicalFeeKey &&
@@ -223,7 +231,7 @@ export function checkFeeCategory(
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
   if (!canonicalFeeKey || !rule) return { ok: true };
-  const name = (feeName ?? "").trim();
+  const name = plainQuotes(feeName ?? "").trim();
   const rate = statesRate(canonicalFeeKey, name, context);
   if (rate) {
     return {

@@ -135,6 +135,27 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v14 reads curly quotes, check cards and deposit charge backs as the bank wrote them (rejected rows, Oct 6)", () => {
+    for (const name of ["Teller’s Check", "Teller’s Check (To Third Party)"]) {
+      expect(checkFeeCategory("cashiers_check", name)).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("cashiers_check", "Cashier’s Check Copy").ok).toBe(false);
+    for (const name of ["Visa® Check Card Replacement", "ATM/CheckCard Replacement Card", "Lost ATM/Check Card Fee"]) {
+      expect(checkFeeCategory("card_replacement", name)).toEqual({ ok: true });
+    }
+    for (const name of ["Check Printing", "Checkbook replacement", "Visa Check Card Reissue Pin"]) {
+      expect(checkFeeCategory("card_replacement", name).ok).toBe(false);
+    }
+    expect(refileCategory("atm_non_network", "Replacement ATM/Check Card")).toBe("card_replacement");
+    for (const name of ["Charge Back Item Fee", "Deposit Charge Back Item", "Charge back", "Returned Deposit/Loan Payment"]) {
+      expect(checkFeeCategory("deposited_item_return", name)).toEqual({ ok: true });
+    }
+    for (const name of ["VISA Chargeback", "Chargeback for debit card transactions", "Loan Payment Chargeback Fee", "Chargeback on Loan"]) {
+      expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
+    }
+    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("card_dispute");
+  });
+
   it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
     for (const name of ["Late Payment fee (Overdraft L-O-C)", "Overdraft Loan Late Fee (no grace period)"]) {
       expect(checkFeeCategory("overdraft", name).ok).toBe(false);
