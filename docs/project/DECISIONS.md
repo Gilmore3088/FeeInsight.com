@@ -31,6 +31,16 @@ only as a peer outlier is released; stated but outside the hand-set range stays 
 since Hamilton's publish gate uses that range. It runs as a dry run on live data first
 (`verify.release` v1 records verdicts only) and acts only after the dry run is reported.
 
+**Institution reports may compare thin states against Fed district peers.** James picked "District
+fallback" on the decision card at 14:34 UTC: when a state has too few peers with rich fee data, the
+report compares against same-charter peers in the bank's Fed district, labelled as such. Only 6 of
+109 state markets passed the state-only rule (card context, 14:11 UTC). The build is question 1 of
+the funnel thread's plan and waits for his answers there.
+
+**The mailing address stays blank until the state registration comes through.** James, 13:03 UTC
+("its blank for right now. im waiting on the state"). `MARKETING_MAILING_ADDRESS` is not set and
+nobody asks him for it; until it exists no marketing email can send, which is the intended state.
+
 **Every agent gets the same fixed daily health check, compared with yesterday.** James, about
 05:40 UTC ("a clear process to break this into manageable chunks that stay consistent so any new
 or change is easy to spot"; chose "Build it" on the Atlas audit thread). Each agent's AGENTS.md has
@@ -59,6 +69,11 @@ pay link (`/pay/report/<signed token>`). The requester pays on Stripe Checkout; 
 the request row, never the link. The Stripe webhook marks the request Paid, alerts James, and emails
 the requester their private report link. A quote is saved only when the report check says "ready to
 quote", so no one pays for a report built on thin data. The report stays "priced on request".
+
+**Work keeps going overnight without Allow taps.** James, 07:13 UTC ("i dont want it to stop because
+i have to check allow"). Threads skip any step that needs a tap and use a safe alternative (no
+force-push, reset or push to main; after a merge, merge `origin/main` and push normally). Reviews,
+merges to main, database and production changes wait in a list for him.
 
 **Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
 shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan
