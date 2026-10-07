@@ -7,6 +7,7 @@ import {
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
+import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -147,6 +148,14 @@ async function handleGET(request: NextRequest) {
     console.error("Priority institution scheduling failed:", error);
     priorityInstitutions = { error: error instanceof Error ? error.message : String(error) };
   }
+  // A state whose missed banks must not wait on its lane gets a direct re-search run.
+  let priorityStateResearch: Awaited<ReturnType<typeof schedulePriorityStateResearchRuns>> | { error: string };
+  try {
+    priorityStateResearch = await schedulePriorityStateResearchRuns();
+  } catch (error) {
+    console.error("Priority state re-search scheduling failed:", error);
+    priorityStateResearch = { error: error instanceof Error ? error.message : String(error) };
+  }
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -157,7 +166,7 @@ async function handleGET(request: NextRequest) {
     providerRunLimit,
     deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
   });
-  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, priorityInstitutions, ...result });
+  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, priorityInstitutions, priorityStateResearch, ...result });
 }
 
 async function handlePOST(request: NextRequest) {
