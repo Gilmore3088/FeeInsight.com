@@ -563,7 +563,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
         ? "darwin"
         : schedule.job_name.includes("pulse")
           ? "hamilton"
-          : schedule.job_name.includes("discovery") || schedule.job_name.includes("extraction") || schedule.job_name.includes("magellan")
+          : schedule.job_name.includes("registry") || schedule.job_name.includes("magellan")
             ? "magellan"
             : "atlas";
     attention.push({

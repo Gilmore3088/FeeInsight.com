@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Admin Today read job health from the retired workers' markers
+**What happened:** the admin Today page (James's phone, Oct 6 20:16 PDT) said "6 things need you",
+including "Atlas daily cycle is overdue, last run Aug 11", "Agent review dispatcher is overdue, last
+run Aug 12" and "Hamilton monthly pulse is overdue", while prod showed Atlas lanes completing at
+03:26 UTC Oct 7, agent steps finishing every few minutes, the registry sync at 03:17 and a monthly
+pulse completed Oct 6 06:07.
+**Cause:** `getJobFreshness` read `workers_last_run`, which only the retired Modal workers wrote; its
+newest row is Aug 13. The report freshness gate read the same table for its Atlas health check.
+**Fix:** job health and the report gate now read `agent_runs`, `agent_run_steps` and `report_jobs`
+(this PR). The tick is only overdue while steps are queued.
+**Lesson:** when a runtime is retired, grep for every table it wrote and move each reader to the new
+ledger in the same change.
+
 ## 2026-10-07: postgres.js sends numbers untyped, so a CASE of them is text
 
 Darwin's release review read no lessons on prod: all 32 reviews after PR 351 recorded `lessons: 0` though the
