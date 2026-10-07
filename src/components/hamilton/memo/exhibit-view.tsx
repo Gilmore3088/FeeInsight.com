@@ -189,20 +189,48 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
   );
 }
 
+/** "$1.2B", "$850M": local deposits, compact. */
+function fmtDeposits(v: number): string {
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(v >= 1e10 ? 0 : 1)}B`;
+  if (v >= 1e6) return `$${Math.round(v / 1e6)}M`;
+  return `$${Math.round(v / 1e3)}K`;
+}
+
+const RANGE_COLS = "grid-cols-[minmax(0,7.5rem)_1fr_3rem] sm:grid-cols-[minmax(0,12rem)_1fr_3.5rem]";
+
 function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_range" }> }) {
   const axis = axisFor([...x.items.map((i) => i.amount), ...(x.own != null ? [x.own] : [])]);
+  // Local deposits (FDIC Summary of Deposits) size each competitor in the market, when the engine carries them.
+  const maxDeposits = Math.max(0, ...x.items.map((i) => i.deposits ?? 0));
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
+      {maxDeposits > 0 ? (
+        <div className={`grid ${RANGE_COLS} gap-3 text-[11px] text-warm-600`}>
+          <span>Local deposits</span>
+          <span />
+          <span className="text-right">Fee</span>
+        </div>
+      ) : null}
       {x.items.map((item) => (
-        <div key={item.name} className="grid grid-cols-[minmax(0,11rem)_1fr_3.5rem] items-center gap-3 text-sm">
-          <span className="truncate text-warm-800" title={item.name}>
-            {item.url ? (
-              <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-terra-text hover:underline">
-                {item.name}
-              </a>
-            ) : (
-              item.name
-            )}
+        <div key={item.name} className={`grid ${RANGE_COLS} items-center gap-3 text-sm`}>
+          <span className="min-w-0">
+            <span className="block truncate text-warm-800" title={item.name}>
+              {item.url ? (
+                <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-terra-text hover:underline">
+                  {item.name}
+                </a>
+              ) : (
+                item.name
+              )}
+            </span>
+            {maxDeposits > 0 ? (
+              <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]">
+                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-warm-100">
+                  <span className="block h-full rounded-full bg-warm-500" style={{ width: `${((item.deposits ?? 0) / maxDeposits) * 100}%` }} />
+                </span>
+                <span className="w-10 shrink-0 text-right">{item.deposits != null ? fmtDeposits(item.deposits) : "n/a"}</span>
+              </span>
+            ) : null}
           </span>
           <span className="relative h-5">
             <span className="absolute inset-x-0 top-1/2 h-px bg-warm-200" />
@@ -215,7 +243,7 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
           <span className="text-right text-warm-900 [font-variant-numeric:tabular-nums]">{fmtMoney(item.amount)}</span>
         </div>
       ))}
-      <div className="grid grid-cols-[minmax(0,11rem)_1fr_3.5rem] gap-3 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]">
+      <div className={`grid ${RANGE_COLS} gap-3 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]`}>
         <span />
         <span className="flex justify-between">
           <span>{fmtMoney(axis.lo)}</span>

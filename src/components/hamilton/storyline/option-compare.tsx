@@ -30,15 +30,11 @@ export interface OptionScale {
 
 const LETTERS = "ABCDEFGH";
 
-/** The price an option tests: the engine's own figure when it gives one, else read from its label. */
+/** The price an option tests, as the engine states it; null when the option names none. */
 export function optionPrice(option: StoryOption): number | null {
-  const given = (option as StoryOption & { price?: number | null }).price;
-  if (typeof given === "number" && Number.isFinite(given)) return given;
-  if (/^remove\b/i.test(option.label.trim())) return 0;
-  const m = option.label.match(/\$([\d,]+(?:\.\d+)?)/);
-  if (!m) return null;
-  const v = Number(m[1].replace(/,/g, ""));
-  return Number.isFinite(v) ? v : null;
+  return typeof option.price === "number" && Number.isFinite(option.price)
+    ? option.price
+    : null;
 }
 
 export function optionPoints(options: readonly StoryOption[]): OptionPoint[] {

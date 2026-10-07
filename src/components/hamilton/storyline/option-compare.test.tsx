@@ -51,9 +51,9 @@ function pricedStory(): Storyline {
           own: 32,
           ownLabel: "Example Bank",
           items: [
-            { name: "Alpha Bank", amount: 35, url: null },
-            { name: "Beta Bank", amount: 30, url: null },
-            { name: "Gamma Bank", amount: 0, url: null },
+            { name: "Alpha Bank", amount: 35, url: null, deposits: 2400000000 },
+            { name: "Beta Bank", amount: 30, url: null, deposits: 850000000 },
+            { name: "Gamma Bank", amount: 0, url: null, deposits: 310000000 },
           ],
           sources: [src],
         },
@@ -62,14 +62,17 @@ function pricedStory(): Storyline {
     options: [
       {
         label: "Hold at $32",
+        price: 32,
         consequences: [{ text: "No change to income.", source: src }],
       },
       {
         label: "Peer median, $29",
+        price: 29,
         consequences: [{ text: "About $90,000 less a year.", source: src }],
       },
       {
         label: "Remove the overdraft fee",
+        price: 0,
         consequences: [{ text: "About $900,000 less a year.", source: src }],
       },
     ],
@@ -77,24 +80,18 @@ function pricedStory(): Storyline {
 }
 
 describe("options side by side", () => {
-  it("reads each option's price from the engine's labels", () => {
-    expect(optionPrice({ label: "Hold at $32", consequences: [] })).toBe(32);
-    expect(optionPrice({ label: "Test $1,250.50", consequences: [] })).toBe(
-      1250.5,
-    );
+  it("takes each option's price from the engine, never from its label", () => {
     expect(
-      optionPrice({ label: "Remove the overdraft fee", consequences: [] }),
-    ).toBe(0);
-    expect(
-      optionPrice({ label: "Add a daily cap", consequences: [] }),
-    ).toBeNull();
+      optionPrice({ label: "Hold at $32", price: 32, consequences: [] }),
+    ).toBe(32);
     expect(
       optionPrice({
-        label: "Hold at $32",
+        label: "Remove the overdraft fee",
+        price: 0,
         consequences: [],
-        price: 31,
-      } as never),
-    ).toBe(31);
+      }),
+    ).toBe(0);
+    expect(optionPrice({ label: "Hold at $32", consequences: [] })).toBeNull();
   });
 
   it("says lower, in line or higher against the peer middle half", () => {
@@ -114,6 +111,9 @@ describe("options side by side", () => {
     expect(html).toContain("Lower than most peers");
     expect(html).toContain("2 of 3 local competitors charge less");
     expect(html).toContain("0 of 3 local competitors charge less");
+    expect(html).toContain("Local deposits");
+    expect(html).toContain("$2.4B");
+    expect(html).toContain("$850M");
     expect(html).not.toMatch(/recommend|cheapest|best option/i);
   });
 
@@ -130,24 +130,28 @@ describe("FeeScorecard", () => {
   const rows = [
     {
       feeCategory: "overdraft",
+      displayName: "Overdraft",
       current: 35,
       band: { p25: 25, median: 29, p75: 32, n: 40 },
       peerLabel: "Banks $10B and up",
     },
     {
       feeCategory: "nsf",
+      displayName: "NSF / returned item",
       current: 20,
       band: { p25: 25, median: 29, p75: 32, n: 38 },
       peerLabel: "Banks $10B and up",
     },
     {
       feeCategory: "wire_domestic_outgoing",
+      displayName: "Outgoing domestic wire",
       current: 25,
       band: { p25: 20, median: 25, p75: 30, n: 30 },
       peerLabel: "Banks $10B and up",
     },
     {
       feeCategory: "stop_payment",
+      displayName: "Stop payment",
       current: 30,
       band: null,
       peerLabel: "Banks $10B and up",

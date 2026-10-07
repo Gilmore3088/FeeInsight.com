@@ -20,6 +20,7 @@ const briefing = (observations: Observation[]): Briefing => ({
   institutionFinancials: null,
   nationalIncome: null,
   nationalIncomeSeries: [],
+  positions: [],
   feesReviewed: 12,
   peerLabel: "Texas community banks",
   generatedAt: "2026-10-06T00:00:00Z",

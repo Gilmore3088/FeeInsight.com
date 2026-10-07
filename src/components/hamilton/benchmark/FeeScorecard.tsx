@@ -5,6 +5,7 @@
  * scorecard describes where fees sit and never says which to change.
  */
 import Link from "next/link";
+import type { FeePositionRow } from "@/lib/hamilton/workspace/types";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import {
@@ -13,13 +14,7 @@ import {
   type PeerStanding,
 } from "@/components/hamilton/storyline/option-compare";
 
-export interface ScorecardRow {
-  feeCategory: string;
-  displayName?: string;
-  current: number;
-  band: { p25: number; median: number; p75: number; n: number } | null;
-  peerLabel: string;
-}
+export type ScorecardRow = FeePositionRow;
 
 const money = (v: number) =>
   Number.isInteger(v) ? `$${v.toLocaleString("en-US")}` : `$${v.toFixed(2)}`;
@@ -37,7 +32,7 @@ const CHIP: Record<PeerStanding, string> = {
 };
 
 function name(row: ScorecardRow): string {
-  const n = row.displayName ?? proseFeeName(row.feeCategory);
+  const n = row.displayName || proseFeeName(row.feeCategory);
   return n.charAt(0).toUpperCase() + n.slice(1);
 }
 
