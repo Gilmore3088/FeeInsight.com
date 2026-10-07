@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON, RULES_RECHECK_STRATEGY } from "./rules-recheck";
+import { trainCategoryModel } from "@/lib/agents/darwin/category-model";
+
+import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON, RULES_RECHECK_RESTORED_FLAG, RULES_RECHECK_STRATEGY } from "./rules-recheck";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -199,6 +201,38 @@ describe("Hamilton rules re-check", () => {
     expect(db.mock.calls.some((call) => String(call[0]).includes("INSERT INTO pipeline_attempts") && call.includes("hamilton.rules_recheck"))).toBe(true);
     // safe_deposit_box $30 is read under another name: still missing, so Knox re-reads the text.
     expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 0, restored: 1, missing_fees: 1 });
+  });
+
+  it("restores a disputed takedown only when it meets the restore bar, and logs why", async () => {
+    const barText = "Stop Payment | $30.00\nReload Travel Money Card | $5.00 | Per Card\nCourier Pickup Service | $12.00";
+    const barTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: barText }];
+    const categoryModel = trainCategoryModel([
+      { name: "Reload money card", categoryKey: "prepaid_card_reload", count: 30 },
+      { name: "Card reload", categoryKey: "prepaid_card_reload", count: 30 },
+      { name: "Courier service", categoryKey: "courier", count: 30 },
+      { name: "Stop payment", categoryKey: "stop_payment", count: 50 },
+    ]);
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Payment", "30.00"),
+        // Today's rules do not read it, but it traces, its row is its own and the model agrees.
+        live(2, "prepaid_card_reload", "Reload Travel Money Card", "5.00", "abc", true),
+        // The model files a courier pickup elsewhere: it stays down.
+        live(3, "prepaid_card_reload", "Courier Pickup Service", "12.00", "abc", true),
+      ],
+      barTexts,
+    );
+    db.mockImplementation(((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(barTexts);
+      if (query.includes("RETURNING fp.fee_published_id")) return Promise.resolve([{ fee_published_id: 2, lineage_ref: 1002 }]);
+      return Promise.resolve([]);
+    }) as never);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: false, categoryModel });
+
+    expect(result.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "restore_bar"]]);
+    expect(JSON.stringify(db.mock.calls)).toContain(`${RULES_RECHECK_RESTORED_FLAG}:restore_bar`);
   });
 
   it("re-checks documents whose live fees were all taken down", async () => {

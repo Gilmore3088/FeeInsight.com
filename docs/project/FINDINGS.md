@@ -1834,3 +1834,24 @@ that is the current copy of its page gets its one read even when the bank has a 
 document, and only current copies are reopened.
 **Lesson:** a success rate is only meaningful over inputs the reader could ever handle.
 Check which inputs a ladder or reopen sends before reading its score.
+
+## 2026-10-07: Darwin's dispute threshold was too loose to bring takedowns back
+**What happened:** 4,467 live fees were taken down by the rules re-check before the second look
+existed; 3,783 still have their own text and 3,156 have no live copy of the same category and price.
+Restoring those that pass the second look and that Darwin's category model does not dispute
+(probability above 0.05) was hand-checked on a random 20 (read-only, text near each fee): 16 right.
+Misses were a fax service filed as account research, an in-network ATM filed as non-network, a
+price from the next column, and a refundable key deposit. Each tighter filter was checked on a
+fresh random 20: 17, 15, 16, 16 right. Misses included two-column rows ("Legal Processing ... | Stop
+payments ... $35"), $0 in-house services, "Minimum balance of $25", "UPS Fee + $1", "Copy of Money
+Order check" as a money order, and a safe deposit size row joined to "Credit card cash advance".
+**Fix:** the restore bar (`hamilton/restore-guard.ts`): the model's top category must be the
+fee's own at probability 0.8 or more (first pipe cell too, no other cell disputed), the price must
+sit on the fee's own row, and $0, minimum-balance, refundable, limit, markup, cut-off and copy-of
+rows stay down. A fresh random 20 that passed it: 19 right (bar 18); the miss, a reproduction of
+cashier's checks filed as a cashier's check, led to the copy-of rule. About half of the ~1,400 rows
+the database-side part of the bar keeps passed the full bar in two samples (24 of 50), so roughly
+700 should come back; that is an estimate, and the first run's `restored_by_reason` gives the count.
+**Lesson:** a dispute threshold tuned to flag fees is not a bar for restoring them; restoring
+needs positive agreement, measured on fresh samples rather than the sample a filter was tuned on.
+

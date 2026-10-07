@@ -269,6 +269,17 @@ also comes back. Every restore here, and in the newer-copy check, leaves a
 (`markRestoredForSourceCheck`), so the bank is source-checked again even though no newer
 fee id appeared.
 
+Past takedowns whose own text still states the fee (made before the second look existed)
+come back only over the restore bar (`restore-guard.ts`, strategy version 4, James 7 Oct):
+the second look passes, Darwin's category model files the name under the fee's own category
+with probability at least 0.8 (and, for a name joined across a pipe, files its first cell
+there and disputes no other cell), the text states the fee's price on its own row, and the
+row is not a $0 price, a minimum balance, a refundable deposit, a limit, a markup on a cost,
+a sentence cut before its figure, or a copy of an item filed as the item. Without the model
+nothing comes back this way. Every restore's verified row carries
+`rules_recheck_restored:<same_read|text_gone|restore_bar>`, and the event counts
+`restored_by_reason`.
+
 Each read is filed under the category Darwin files it under (`refileCategory`, strategy
 version 3, 2026-10-07). Before that, a fee Darwin re-filed from Knox's hint, such as First
 National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)" (hint overdraft,

@@ -10,6 +10,8 @@ import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
+import { disputedRestoreVerdict } from "@/lib/agents/hamilton/restore-guard";
+import { loadCategoryModel, type CategoryModel } from "@/lib/agents/darwin/category-model";
 
 type SqlTag = typeof sql;
 
@@ -22,7 +24,14 @@ export const RULES_RECHECK_REASON = "rules_recheck_unreproduced";
 // a fee Darwin re-filed (an "Insufficient Funds Transfer (Savings Overdraft)" Knox hinted as
 // overdraft is an overdraft protection transfer) is no longer taken down as unreproduced.
 // The bump re-checks every document once, which restores those it took down.
-export const RULES_RECHECK_STRATEGY = { strategy: "hamilton.rules_recheck", version: 3 } as const;
+// Version 4: a fee an earlier re-check took down although its own text still states it comes
+// back when it meets the restore bar (restore-guard.ts: the second look, Darwin's category
+// model, its own row); the bump revisits every document so past takedowns are judged once.
+export const RULES_RECHECK_STRATEGY = { strategy: "hamilton.rules_recheck", version: 4 } as const;
+
+/** Why a fee an earlier re-check took down came back (verified flag `rules_recheck_restored:<reason>`). */
+export type RulesRecheckRestoreReason = "same_read" | "text_gone" | "restore_bar";
+export const RULES_RECHECK_RESTORED_FLAG = "rules_recheck_restored";
 /** Attempt detail key: fees today's rules read from the document that are not live. */
 export const MISSING_FEES_DETAIL = "missing_fees";
 
@@ -82,6 +91,8 @@ export interface RulesRecheckRollback {
   amount: number | null;
   /** The second look's verdict: why the source trace or the category guard also failed. */
   secondLook?: string;
+  /** For a restore: why it came back. */
+  restoreReason?: RulesRecheckRestoreReason;
 }
 
 export interface RulesRecheckResult {
@@ -184,6 +195,8 @@ export async function rollBackUnreproducedFees(
     institutionId?: number;
     stateCode?: string | null;
     documentLimit?: number;
+    /** Darwin's category model for the restore bar; loaded when omitted. */
+    categoryModel?: CategoryModel | null;
   },
 ): Promise<RulesRecheckResult> {
   const signature = knoxFreeSignature();
@@ -285,6 +298,18 @@ export async function rollBackUnreproducedFees(
     rowsByDocument.set(id, [...(rowsByDocument.get(id) ?? []), row]);
   }
 
+  // Darwin's category model, loaded once and only when a pulled fee's own text is here.
+  let categoryModel: CategoryModel | null | undefined = options.categoryModel;
+  const modelForRestores = async () => {
+    if (categoryModel === undefined) {
+      categoryModel = await inSavepoint(db, (scope) => loadCategoryModel(scope)).catch((error) => {
+        console.error("rollBackUnreproducedFees category model failed:", error);
+        return null;
+      });
+    }
+    return categoryModel;
+  };
+
   const result: RulesRecheckResult = { ...EMPTY_RESULT, rollbacks: [], restores: [], disputed: [] };
   const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number; disputed?: number; missing?: number }> = [];
   // One restore per institution, category and price in a batch.
@@ -372,12 +397,25 @@ export async function rollBackUnreproducedFees(
       // and its bank is marked due for the source check, which judges it against the
       // document's current text (markRestoredForSourceCheck).
       const ownTextGone = !documentTexts.some((candidate) => candidate.text_hash === row.text_hash);
+      fee.restoreReason = "text_gone";
       if (!ownTextGone) {
         const text = textFor(row);
         // Knox reads names tidied; a row stored under an older untidy name is the same read.
-        if (!readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase())) continue;
-        const traced = checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
-        if (!traced.ok && traced.reason !== "tiered_fee") continue;
+        const sameRead = readsFrom(text).get(key)?.has(tidyFeeName(row.raw_fee_name ?? row.fee_name).toLowerCase());
+        const traced = sameRead ? checkFeeAgainstSource(text.normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key) : null;
+        if (traced && (traced.ok || traced.reason === "tiered_fee")) {
+          fee.restoreReason = "same_read";
+        } else {
+          // Taken down although its own text still states it (before the second look
+          // existed): it comes back only over the restore bar (James, 7 Oct).
+          const verdict = disputedRestoreVerdict(
+            text.normalized_text,
+            { feeName: row.fee_name, amount: fee.amount, canonicalFeeKey: row.canonical_fee_key },
+            await modelForRestores(),
+          );
+          if (!verdict.restore) continue;
+          fee.restoreReason = "restore_bar";
+        }
       }
       keptKeys.add(key);
       restoredKeys.add(`${institutionId}:${key}`);
@@ -450,13 +488,18 @@ export async function rollBackUnreproducedFees(
         const restoredIds = new Set(restored.map((row) => Number(row.fee_published_id)));
         result.restores = result.restores.filter((fee) => restoredIds.has(fee.feePublishedId));
         if (restored.length > 0) {
+          // Logged as restored, with the reason; the takedown's second-look flag stays as history.
+          const reasonById = new Map(result.restores.map((fee) => [fee.feeVerifiedId, fee.restoreReason ?? "same_read"]));
+          const verifiedIds = restored.map((row) => Number(row.lineage_ref));
+          const restoredFlags = verifiedIds.map((id) => `${RULES_RECHECK_RESTORED_FLAG}:${reasonById.get(id) ?? "same_read"}`);
           await scope`
-            UPDATE verified_fee_observations
+            UPDATE verified_fee_observations fv
                SET review_status = 'verified',
-                   outlier_flags = outlier_flags - ${RULES_RECHECK_REASON}
-             WHERE fee_verified_id = ANY(${restored.map((row) => Number(row.lineage_ref))}::bigint[])
-               AND review_status = 'rejected'
-               AND outlier_flags ? ${RULES_RECHECK_REASON}
+                   outlier_flags = (fv.outlier_flags - ${RULES_RECHECK_REASON}) || jsonb_build_array(v.flag)
+              FROM unnest(${verifiedIds}::bigint[], ${restoredFlags}::text[]) AS v(fee_verified_id, flag)
+             WHERE fv.fee_verified_id = v.fee_verified_id
+               AND fv.review_status = 'rejected'
+               AND fv.outlier_flags ? ${RULES_RECHECK_REASON}
           `;
         }
       }
@@ -495,6 +538,12 @@ export async function rollBackUnreproducedFees(
             live_fees_checked: result.liveFeesChecked,
             rolled_back: result.rollbacks.length,
             restored: result.restores.length,
+            restored_by_reason: Object.fromEntries(
+              (["same_read", "text_gone", "restore_bar"] as const).map((reason) => [
+                reason,
+                result.restores.filter((fee) => fee.restoreReason === reason).length,
+              ]),
+            ),
             kept_text_gone: result.textGone,
             kept_disputed: result.disputed.length,
             disputed_samples: result.disputed.slice(0, 20).map((fee) => ({
@@ -508,6 +557,7 @@ export async function rollBackUnreproducedFees(
               canonical_fee_key: fee.canonicalFeeKey,
               fee_name: fee.feeName,
               amount: fee.amount,
+              reason: fee.restoreReason ?? null,
             })),
             samples: result.rollbacks.slice(0, 20).map((rollback) => ({
               fee_published_id: rollback.feePublishedId,
