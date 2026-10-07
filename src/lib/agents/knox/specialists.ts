@@ -6,7 +6,7 @@ import {
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
-import { namesALimit, passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
+import { namesALimit, namesAWorkedExample, passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
@@ -134,6 +134,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
       // ATM) | $60") is the end of the line above, and the price is another column's.
       if (closesUnopenedParen(candidate.feeName)) continue;
+      // v32: a worked example's figure is not a price.
+      if (namesAWorkedExample(candidate.feeName)) continue;
       if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
         selfCheckFailed += 1;
         untraced.push({

@@ -205,6 +205,19 @@ const REBATE_CAP = /\bmax(?:imum)?\s+(?:\w+\s+)?(?:rebates?|refunds?|reimburseme
  * $2,500", "Mobile Deposit (daily limit) $50", "No Bounce Courtesy Pay Limit $600". A cap
  * category keeps its cap, and a fee for going past a limit keeps its price.
  */
+/**
+ * v32: a figure from a worked example ("Example: Assume you establish a bill pay payment ...
+ * in the amount of $100", "For example, if you have 1 overdraft ...", "example results in
+ * total Overdraft Transfer Fees of $18") is not a price. Hamilton's limit guard uses the same
+ * test on live fees (`WORKED_EXAMPLE_PG` is its Postgres form).
+ */
+export const WORKED_EXAMPLE = /^\W*(?:for\s+)?(?:example|e\.g\.|assume|suppose|illustration|hypothetical)\b|\bexample results?\b/i;
+export const WORKED_EXAMPLE_PG = String.raw`^\W*(for\s+)?(example|e\.g\.|assume|suppose|illustration|hypothetical)\M|\mexample results?\M`;
+
+export function namesAWorkedExample(feeName: string): boolean {
+  return WORKED_EXAMPLE.test(feeName.trim());
+}
+
 export function namesALimit(feeName: string, canonicalKey: string): boolean {
   const name = feeName.trim();
   if (REBATE_CAP.test(name)) return true;
