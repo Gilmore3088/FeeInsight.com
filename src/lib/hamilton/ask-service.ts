@@ -26,7 +26,7 @@ import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
 import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
 import { asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
 import { withDepth, type IncomeWhy } from "./workspace/story-extras";
-import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
+import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
 import { peerPhrase } from "./answer-brief";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
@@ -309,7 +309,7 @@ async function scheduleFor(institutionId: number, question: string): Promise<Sch
 /** The price split of the bank's fee income gap, for a question asking why income is where it is. */
 async function incomeWhyFor(institutionId: number, question: string): Promise<IncomeWhy | null> {
   if (!asksIncomeWhy(question)) return null;
-  const [intensity, briefing] = await Promise.all([
+  const [intensity, briefing, trend] = await Promise.all([
     getServiceChargeIntensity(institutionId).catch((error) => {
       console.error("[hamilton-ask] income intensity failed", error);
       return null;
@@ -318,10 +318,14 @@ async function incomeWhyFor(institutionId: number, question: string): Promise<In
       console.error("[hamilton-ask] briefing failed", error);
       return null;
     }),
+    getServiceChargeIntensityTrend(institutionId).catch((error) => {
+      console.error("[hamilton-ask] income trend failed", error);
+      return [];
+    }),
   ]);
   if (!intensity || !briefing) return null;
   const split = incomeSplit(intensity, briefing.positions, peerPhrase(intensity.charterType, intensity.assetTier));
-  return split ? { split, explained: explainIncome(split), top: scheduleOverview(briefing.positions).top } : null;
+  return split ? { split, explained: explainIncome(split), top: scheduleOverview(briefing.positions).top, trend } : null;
 }
 
 export interface AskMemoResult {
