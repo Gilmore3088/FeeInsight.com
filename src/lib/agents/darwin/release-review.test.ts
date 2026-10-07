@@ -91,6 +91,9 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("Bad Address Fee | $5.00/month");
     expect(prompt).toContain("account_research");
     expect(prompt).toContain("bad address");
+    expect(prompt).toContain("removing or releasing a stop payment");
+    expect(prompt).toContain("expedited, rush or overnight");
+    expect(prompt).toContain("Cost plus $8");
   });
 
   it("records a review per fee and publishes nothing while release is off", async () => {

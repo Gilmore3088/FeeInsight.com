@@ -137,6 +137,12 @@ describe("FDIC institution parser", () => {
     });
   });
 
+  it("keeps only a real Fed district (1-12)", () => {
+    expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, FED: "12" })?.fed_district).toBe(12);
+    expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, FED: 0 })?.fed_district).toBeNull();
+    expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, FED: 13 })?.fed_district).toBeNull();
+  });
+
   it("records the end date for an inactive institution", () => {
     const parsed = parseFdicInstitution({ ...STATE_STREET_INSTITUTION, ACTIVE: 0, ENDEFYMD: "04/15/2025" });
     expect(parsed?.active).toBe(false);

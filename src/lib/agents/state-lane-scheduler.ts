@@ -536,6 +536,8 @@ export const NEAR_READY_BANK_PRIORITY = 2000;
 
 export async function refreshLanePriorities(): Promise<number> {
   try {
+    // postgres.js sends numbers untyped, so every number here carries a cast: an uncast
+    // "${a} - ${b}" fails to plan ("operator is not unique: unknown - unknown").
     const updated = await sql`
       WITH due_search AS (
         SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS banks
@@ -555,7 +557,7 @@ export async function refreshLanePriorities(): Promise<number> {
           FROM public.institution_sources inst
          WHERE COALESCE(inst.status, 'active') = 'active'
            AND NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL
-           AND inst.last_crawl_at < NOW() - ${MAGELLAN_STALE_LINK_REFETCH_DAYS} * INTERVAL '1 day'
+           AND inst.last_crawl_at < NOW() - ${MAGELLAN_STALE_LINK_REFETCH_DAYS}::int * INTERVAL '1 day'
          GROUP BY 1
       ),
       newest AS (
@@ -596,12 +598,12 @@ export async function refreshLanePriorities(): Promise<number> {
         -- Headline categories live per institution: the count market-readiness.ts uses.
         SELECT institution_id, COUNT(DISTINCT canonical_fee_key)::int AS categories
           FROM public.published_fee_catalog
-         WHERE canonical_fee_key = ANY(${[...HEADLINE_FEE_KEYS]})
+         WHERE canonical_fee_key = ANY(${[...HEADLINE_FEE_KEYS]}::text[])
          GROUP BY institution_id
       ),
       market AS (
         SELECT upper(btrim(inst.state_code)) AS state_code, inst.charter_type,
-               count(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES})::int AS rich
+               count(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES}::int)::int AS rich
           FROM public.institution_sources inst
           LEFT JOIN coverage ON coverage.institution_id = inst.id
          WHERE inst.state_code IS NOT NULL AND inst.charter_type IS NOT NULL
@@ -611,8 +613,8 @@ export async function refreshLanePriorities(): Promise<number> {
         SELECT state_code, max(rich) AS rich
           FROM market
          WHERE charter_type = 'bank'
-           AND rich < ${MARKET_READY_MIN_RICH}
-           AND rich >= ${MARKET_READY_MIN_RICH} - ${NEAR_READY_GAP}
+           AND rich < ${MARKET_READY_MIN_RICH}::int
+           AND rich >= ${MARKET_READY_MIN_RICH}::int - ${NEAR_READY_GAP}::int
          GROUP BY 1
       ),
       requested AS (
@@ -626,19 +628,19 @@ export async function refreshLanePriorities(): Promise<number> {
           LEFT JOIN market ON market.state_code = upper(btrim(inst.state_code))
                           AND market.charter_type = inst.charter_type
          WHERE 'report' = ANY(string_to_array(lead.source, ','))
-           AND lead.created_at > NOW() - ${REPORT_REQUEST_DAYS} * INTERVAL '1 day'
+           AND lead.created_at > NOW() - ${REPORT_REQUEST_DAYS}::int * INTERVAL '1 day'
            AND lead.paid_at IS NULL
            AND position('src=e2e-test' IN COALESCE(lead.use_case, '')) = 0
-           AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}
-                OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH})
+           AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
+                OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH}::int)
       ),
       score AS (
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
                  + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
-                 + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY} ELSE 0 END
+                 + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
                  + CASE WHEN near_ready.state_code IS NOT NULL
-                        THEN ${NEAR_READY_BANK_PRIORITY} + 10 * near_ready.rich ELSE 0 END AS priority
+                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END AS priority
           FROM public.agent_state_lanes lane
           LEFT JOIN due_search ON due_search.state_code = lane.state_code
           LEFT JOIN stale ON stale.state_code = lane.state_code

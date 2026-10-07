@@ -24,9 +24,11 @@ Magellan owns institution source discovery and source fetching.
   read as a bot check, script shell or bare title (a thin copy, `restoreReadableCopies`);
   nothing is deleted.
   A page is matched by its normalized address (host without www or port, path without trailing
-  slash or `#fragment`, query kept) once `SAME_PAGE_SUPERSEDE_LIVE` is on; until then each fetch
-  step logs the current copies another spelling would supersede (`magellan.same_page_copies`,
-  `supersedeSamePageCopies`) and changes none.
+  slash or `#fragment`, query kept; `SAME_PAGE_SUPERSEDE_LIVE`, on since 7 Oct 2026). Each fetch
+  step also backfills pages already stored under two spellings (`supersedeSamePageCopies`,
+  logged as `magellan.same_page_copies`); a thin copy never takes a readable copy's place.
+  Superseding moves no fee by itself: Hamilton's refresh moves a live fee to the current copy
+  when that copy reads the same line, and nothing is taken down because a spelling changed.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 - A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and

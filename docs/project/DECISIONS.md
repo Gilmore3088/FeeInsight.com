@@ -5,6 +5,23 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-07
 
+**Taking a fee down is a last resort: a second look, a decision log, and a way back.** James,
+01:20 UTC (Live board cleanup thread): "we need to constantly learn from fees we pass or scrap...
+It needs to be last case decision, picked over multiple times, decision log. And it's never
+deleted, just archive and can always be revisited." A Hamilton check that fails a live fee logs
+it as `takedown_pending` in `pipeline_feedback` and leaves it live; only a later run (at least
+12 hours on) that fails it again takes it down (`hamilton/second-look.ts`). A fee that passes
+in between is logged `takedown_cleared`. Takedowns stay soft (`rolled_back_at` plus the reason),
+every takedown and restore is synced to `pipeline_feedback`, and a check that is fixed brings
+back the fees it now passes. Started with the source check and the category guard. The rules
+re-check, outlier range and off-taxonomy checks follow.
+
+**The public sample report names a real bank.** James, 01:00 UTC, in the value funnel thread.
+The sample is a live report for one real community bank and its named competitors, with the
+source link on every fee, rather than an anonymized copy without links. Every figure on it is
+already public on the institution pages. James approved the previews and said to move forward
+at 01:37 UTC, so links to the sample show across the site whenever a sample market qualifies.
+
 **Scrapping a fee is a last resort: looked at more than once, logged, archived, never deleted.**
 James, 01:20 UTC ("we need to constantly learn from fees we pass or scrap ... It needs to be last
 case decision, picked over multiple times, decision log. And it's never deleted, just archive and
