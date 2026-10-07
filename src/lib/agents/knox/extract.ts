@@ -68,6 +68,9 @@ export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
   321, 836, 1170, 1024, 8082, 7723, 8606, 5622,
   // Report-gap list re-run on current copies only (2026-10-07).
   1995, 7929,
+  // Full schedules Rosetta saw read empty by v4-v15 (State Street, Openland, NY Times CU, Downriver,
+  // Wisdom Heritage, Education First); v32 reads them.
+  2300, 7156, 5401, 4895, 1582, 6809,
 ];
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
