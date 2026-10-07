@@ -8,6 +8,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { addAlertSubscription } from "@/lib/data-store/alerts";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonInstitutionContext, parseInstitutionId } from "@/lib/hamilton/institution-context";
 import {
@@ -20,6 +21,15 @@ import { setHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 export type WatchlistActionResult =
   | { ok: true; entry?: WatchlistEntry; message?: string }
   | { ok: false; error: string };
+
+/**
+ * A watched institution also gets the fee-change emails a free saved institution gets, for
+ * every fee it publishes. Removing it from the watchlist leaves the email in place; /account
+ * manages it.
+ */
+async function followFeeChanges(userId: number, institutionId: number) {
+  await addAlertSubscription(userId, institutionId, null);
+}
 
 /**
  * Add an institution to the user's watchlist.
@@ -82,6 +92,7 @@ export async function addToWatchlist(
       : [];
 
     if (currentIds.includes(normalizedId)) {
+      await followFeeChanges(user.id, institution.id);
       await setHamiltonWorkspaceContext({
         userId: user.id,
         institutionId: institution.id,
@@ -110,6 +121,7 @@ export async function addToWatchlist(
     `;
   }
 
+  await followFeeChanges(user.id, institution.id);
   await setHamiltonWorkspaceContext({
     userId: user.id,
     institutionId: institution.id,
