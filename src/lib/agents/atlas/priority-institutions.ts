@@ -53,6 +53,11 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     institutionName,
     reason: "Tennessee report: largest deposit holder with no live overdraft fee",
   })),
+  {
+    institutionId: 393,
+    institutionName: "ACNB Bank",
+    reason: "Adams County, PA market study: 61% of county deposits, no fee schedule on file",
+  },
   { institutionId: 8109, institutionName: "Space Coast Federal Credit Union", reason: "Hamilton answer had only 5 fees; full schedule needed" },
   ...([
     [51, "First National Bank of Pennsylvania"],
