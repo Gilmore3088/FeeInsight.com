@@ -345,6 +345,8 @@ describe("registry dispatch", () => {
       "fdic-financials",
       "ncua-financials",
       "fdic-sod",
+      "ncua-branches",
+      "ncua-branch-geocode",
       "cfpb",
       "sec-links",
       "sec-filings",

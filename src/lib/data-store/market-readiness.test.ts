@@ -8,6 +8,7 @@ import {
   isInstitutionRich,
   isMarketReady,
   passesReportRule,
+  summarizeReportReady,
   reportRulePeers,
   toMarketReadiness,
 } from "./market-readiness";
@@ -72,6 +73,15 @@ describe("market readiness", () => {
     ).toBe(28);
     expect(toMarketReadiness({ state_code: "WA", charter_type: "bank", institutions: 80, rich: 2, rich_via_district: "2" }).richViaDistrict).toBe(2);
     expect(toMarketReadiness({ state_code: "TX", charter_type: "credit_union", institutions: 380, rich: 38, rich_via_district: 38 }).richViaDistrict).toBe(0);
+  });
+
+  it("summarizes the count Atlas stores on the scoreboard", () => {
+    const markets = [
+      toMarketReadiness({ state_code: "TX", charter_type: "credit_union", institutions: 380, rich: 38, rich_via_district: 38 }),
+      toMarketReadiness({ state_code: "WA", charter_type: "bank", institutions: 80, rich: 2, rich_via_district: 2 }),
+      toMarketReadiness({ state_code: "AK", charter_type: "bank", institutions: 10, rich: 1, rich_via_district: 0 }),
+    ];
+    expect(summarizeReportReady(markets)).toEqual({ institutions: 40, viaDistrict: 2, marketsReady: 1 });
   });
 
   it("counts every rich institution in a ready market and none elsewhere", () => {

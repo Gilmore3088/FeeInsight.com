@@ -62,6 +62,49 @@ interface FeePattern {
 }
 
 /**
+ * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
+ * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
+ * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
+ * excess-activity fees -> account research; collection items and foreign checks -> check
+ * cashing; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
+ * file them; loan refinancing and document fees -> other lending). Returned statements stay
+ * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
+ * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
+ * Kept last in FEE_PATTERNS, so they only claim lines no other rule recognizes. Membership,
+ * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
+ */
+export const FOLDED_PATTERNS: FeePattern[] = [
+  {
+    key: "account_research",
+    pattern:
+      /\b(?:return(?:ed)?|undeliverable|bad|invalid|incorrect|wrong) (?:mail|address)\b|\baddress (?:correction|search|locat\w*)\b|\b(?:member |account holder )?locator fee\b|\bfax(?:es|ing)?\b/i,
+  },
+  {
+    key: "account_research",
+    pattern:
+      /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b/i,
+  },
+  {
+    key: "check_cashing",
+    pattern:
+      /\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
+  },
+  {
+    key: "loan_origination",
+    pattern: /\bloan cancell?ation\b|\bcredit report fee\b|\bUCC (?:filing|release|lien)\b|\buniform commercial code\b/i,
+  },
+  {
+    key: "other_lending_fee",
+    pattern: /\bloan (?:refinanc\w*|document(?:ation)? (?:prep\w*|fee))\b/i,
+  },
+];
+
+/** The folded category for a line no earlier rule names, or null. */
+export function foldedCategory(text: string): string | null {
+  return FOLDED_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
+}
+
+/**
  * First match wins, so the most specific patterns come first and the generic ones
  * (monthly maintenance, minimum balance) last. An overdraft "service charge" is an
  * overdraft fee, not monthly maintenance; a card replacement is not an ATM fee; a stop
@@ -92,6 +135,9 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "document_reproduction", pattern: /\b(?:reproduction|supporting documents?)\b/i },
   // A box size with three dimensions ("3"X10"X 21"") is a safe deposit box anywhere on the line.
   { key: "safe_deposit_box", pattern: /\b\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\s?["”]?\s?[x×]\s?\d{1,2}\b/i },
+  // v25: so is a two-dimension size in inches ("OVERDRAFT AND NSF FEES 10.5x10.5 Inch", a box
+  // row under the next section's heading in a one-line schedule).
+  { key: "safe_deposit_box", pattern: /\b\d{1,2}(?:\.\d)?\s?["”]?\s?[x×]\s?\d{1,2}(?:\.\d)?\s?(?:["”]|inch(?:es)?\b)/i },
   { key: "card_dispute", pattern: /\b(?:card|transaction) disputes?\b|\b(?:debit|credit|card)\b.{0,15}\bchargebacks?\b/i },
   // v22: "Maximum daily Overdraft or Returned Item fees ..... $140.00" is the daily cap.
   { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+overdraft\b/i },
@@ -252,6 +298,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern:
       /\b(?:minimum|mininum|minumum) balance\b.{0,30}\b(?:fee|charge)\b|\blow[- ]balance\b.{0,30}\b(?:fee|charge)\b|\bbelow (?:the )?minimum(?: daily| average)? balance\b|\b(?:average|avg\.?|minimum|min\.?) (?:daily |monthly |ledger |collected )?balance\s*\(?\s*(?:falls? |drops? |is )?(?:below|under|less than)\b|\bless than (?:an? )?(?:avg\.?|average|minimum) (?:daily |monthly )?balance\b|\b(?:fee|charge) charged if (?:balance )?falls? below\b/i,
   },
+  ...FOLDED_PATTERNS,
 ];
 
 /**

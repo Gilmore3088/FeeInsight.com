@@ -212,7 +212,7 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       unit: "dollars",
       own: research.current,
       ownLabel: research.institutionName,
-      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null })),
+      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null })),
       sources: [research.localMarket?.source ?? feeSource(research)],
       note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
     },
@@ -358,7 +358,7 @@ function changePiece(research: FeeResearch, name: string): Piece | null {
   const source: SourceRef = { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: events[0].date };
   return {
     key: "changes",
-    actionTitle: `${count(events.length)} ${events.length === 1 ? "institution" : "institutions"} in ${state} changed ${article(name)} ${name} fee in the last ${CHANGE_WINDOW_DAYS} days; ${count(cuts)} cut it.`,
+    actionTitle: `${count(events.length)} ${events.length === 1 ? "institution" : "institutions"} in ${state} changed ${article(name)} ${name} fee in the last ${CHANGE_WINDOW_DAYS} days; ${count(cuts)} lowered it.`,
     exhibit: {
       kind: "change_timeline",
       title: `${capitalize(name)} fee changes in ${state}, newest first`,
@@ -588,13 +588,13 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const n = group.members.length;
     if (cheaper.length === 0) {
       out.push({
-        text: `None of the ${count(n)} ${group.label} undercut your ${money(current)}, so price is a point you can make rather than one made against you.`,
+        text: `None of the ${count(n)} ${group.label} price below your ${money(current)}, so price is a point you can make rather than one made against you.`,
         source: group.source,
         sampleSize: n,
       });
     } else {
       out.push({
-        text: `${count(cheaper.length)} of ${count(n)} ${group.label} undercut your ${money(current)}; lowest are ${names(cheaper.map((m) => ({ name: `${m.name} (${money(m.amount)})` })), 2)}.`,
+        text: `${count(cheaper.length)} of ${count(n)} ${group.label} price below your ${money(current)}; lowest are ${names(cheaper.map((m) => ({ name: `${m.name} (${money(m.amount)})` })), 2)}.`,
         source: group.source,
         sampleSize: n,
       });
@@ -651,7 +651,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
     const last = events[0];
     out.push({
-      text: `In ${state}, ${plural(cuts, "cut", "cuts")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days; latest ${last.institutionName}, ${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}.`,
+      text: `In ${state}, ${plural(cuts, "decrease", "decreases")} and ${plural(rises, "increase", "increases")} in ${CHANGE_WINDOW_DAYS} days; latest ${last.institutionName}, ${money(last.from as number)} to ${money(last.to as number)} on ${shortDate(last.date)}.`,
       source: { label: "Fee changes seen on published schedules", table: "fee_change_records", asOf: last.date },
       sampleSize: events.length,
     });
@@ -698,7 +698,8 @@ function priceConsequences(research: FeeResearch, name: string, price: number): 
     });
   }
   const line = research.revenueLine;
-  if (line && research.current) {
+  // A filed line that also holds another fee's income (overdraft with NSF) can't be scaled by this fee's price alone.
+  if (line && research.current && !line.combinedWith) {
     const estimate = (line.annualIncome * price) / research.current;
     out.push({
       text: `At today's item count, ${name} income would be about ${formatDollarsInWords(estimate)} a year, against ${formatDollarsInWords(line.annualIncome)} filed.`,
@@ -719,7 +720,7 @@ function options(research: FeeResearch, kind: StorylineKind, intent: StoryIntent
     if (research.band.median !== research.current) prices.push({ label: `Peer median, ${money(research.band.median)}`, price: research.band.median });
     if (research.current !== 0) prices.push({ label: `Remove the ${name} fee`, price: 0 });
   }
-  const out = prices.map((p) => ({ label: p.label, consequences: priceConsequences(research, name, p.price) })).filter((o) => o.consequences.length > 0);
+  const out = prices.map((p) => ({ label: p.label, price: p.price, consequences: priceConsequences(research, name, p.price) })).filter((o) => o.consequences.length > 0);
   return out.length > 1 ? out : undefined;
 }
 

@@ -3,6 +3,7 @@ import { extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/kno
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
+import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
 
@@ -20,6 +21,14 @@ type SqlTag = typeof sql;
  */
 export const HELD_RECHECK_DEFAULT_LIMIT = 300;
 export const HELD_RECHECK_PROMOTED_FLAG = "knox_promoted_from_held";
+/**
+ * A line still uncategorized after this many rules versions is set aside: flagged
+ * `knox_set_aside` and logged, never deleted. Every later rules version still re-reads it,
+ * so a set-aside line can come back (James, Oct 7 2026: "never deleted, just archive and
+ * can always be revisited").
+ */
+export const HELD_SET_ASIDE_AFTER_VERSIONS = 3;
+export const HELD_SET_ASIDE_FLAG = "knox_set_aside";
 
 export function heldRecheckFlag(version: number = KNOX_RULES_STRATEGY.version): string {
   return `knox_recheck:${KNOX_RULES_STRATEGY.strategy}:v${version}`;
@@ -29,15 +38,86 @@ export interface HeldRow {
   fee_raw_id: number | string;
   amount: number | string | null;
   conditions: string | null;
+  institution_id?: number | string | null;
+  source_document_id?: number | string | null;
+  fee_name?: string | null;
+  outlier_flags?: unknown;
 }
 
 export interface HeldRecheckResult {
   checked: number;
   promoted: number;
   stillHeld: number;
+  /** Lines set aside in this pass after HELD_SET_ASIDE_AFTER_VERSIONS versions. */
+  setAside: number;
+  /** Decisions written to the shared learning store (`pipeline_feedback`). */
+  logged: number;
   /** Category -> lines promoted to it in this pass. */
   promotedByCategory: Record<string, number>;
   dryRun: boolean;
+}
+
+function flagList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** Rules versions that have read this held line, this pass included, oldest first. */
+export function versionsChecked(row: HeldRow, version: number = KNOX_RULES_STRATEGY.version): number[] {
+  const prefix = `knox_recheck:${KNOX_RULES_STRATEGY.strategy}:v`;
+  const seen = new Set(
+    flagList(row.outlier_flags)
+      .filter((flag) => flag.startsWith(prefix))
+      .map((flag) => Number(flag.slice(prefix.length)))
+      .filter(Number.isFinite),
+  );
+  seen.add(version);
+  return [...seen].sort((a, b) => a - b);
+}
+
+/**
+ * The decision log entry for one held line: every pass re-judges it under one dedupe key,
+ * so the row carries the versions that read it and the latest outcome.
+ */
+export function heldDecision(
+  row: HeldRow,
+  outcome: { promotedTo: string } | { setAside: boolean },
+  versions: number[],
+  runId: number | null,
+): FeedbackRow {
+  const promoted = "promotedTo" in outcome;
+  return {
+    aboutStage: "extract",
+    aboutStrategy: KNOX_RULES_STRATEGY.strategy,
+    aboutVersion: KNOX_RULES_STRATEGY.version,
+    signal: promoted ? "restored" : "missed",
+    kind: promoted ? "promoted_from_held" : outcome.setAside ? "set_aside_no_category" : "held_no_category",
+    reportedBy: "knox",
+    checkName: "knox.held_recheck",
+    institutionId: row.institution_id == null ? null : Number(row.institution_id),
+    sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+    feeRawId: Number(row.fee_raw_id),
+    canonicalFeeKey: promoted ? outcome.promotedTo : null,
+    amount: row.amount == null ? null : Number(row.amount),
+    weight: promoted ? 1 : 0.5,
+    evidence: {
+      fee_name: row.fee_name ?? null,
+      excerpt: heldExcerpt(row.conditions),
+      versions_checked: versions,
+      promoted_to: promoted ? outcome.promotedTo : null,
+      set_aside: !promoted && "setAside" in outcome && outcome.setAside,
+    },
+    runId,
+    dedupeKey: `knox.held:raw:${Number(row.fee_raw_id)}`,
+  };
 }
 
 /** The line Knox stored with a held row: `excerpt="..."` at the end of `conditions`. */
@@ -69,7 +149,13 @@ export function promotedConditions(conditions: string, candidate: ExtractedFeeCa
 
 export async function recheckHeldRows(
   db: SqlTag,
-  options: { limit?: number; dryRun?: boolean; institutionId?: number | null; stateCode?: string | null } = {},
+  options: {
+    limit?: number;
+    dryRun?: boolean;
+    institutionId?: number | null;
+    stateCode?: string | null;
+    runId?: number | null;
+  } = {},
 ): Promise<HeldRecheckResult> {
   const limit = Math.max(1, Math.min(Number(options.limit) || HELD_RECHECK_DEFAULT_LIMIT, 1000));
   const dryRun = Boolean(options.dryRun);
@@ -77,7 +163,8 @@ export async function recheckHeldRows(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const rows = await db<HeldRow[]>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions
+    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+           fr.fee_name, fr.outlier_flags
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
@@ -100,13 +187,20 @@ export async function recheckHeldRows(
 
   const promotedByCategory: Record<string, number> = {};
   const stillHeldIds: number[] = [];
+  const setAsideIds: number[] = [];
+  const decisions: FeedbackRow[] = [];
   let promoted = 0;
   for (const row of rows) {
+    const versions = versionsChecked(row);
     const candidate = recategorizeHeld(row);
     if (!candidate) {
       stillHeldIds.push(Number(row.fee_raw_id));
+      const setAside = versions.length >= HELD_SET_ASIDE_AFTER_VERSIONS;
+      if (setAside && !flagList(row.outlier_flags).includes(HELD_SET_ASIDE_FLAG)) setAsideIds.push(Number(row.fee_raw_id));
+      decisions.push(heldDecision(row, { setAside }, versions, options.runId ?? null));
       continue;
     }
+    decisions.push(heldDecision(row, { promotedTo: candidate.canonicalHint }, versions, options.runId ?? null));
     if (!dryRun) {
       const flags = ["needs_darwin_verification", `canonical_hint:${candidate.canonicalHint}`, HELD_RECHECK_PROMOTED_FLAG];
       if (candidate.waivable) flags.push("waivable");
@@ -135,8 +229,29 @@ export async function recheckHeldRows(
        WHERE fee_raw_id = ANY(${stillHeldIds}::bigint[])
     `;
   }
+  if (!dryRun && setAsideIds.length > 0) {
+    // Set aside, never deleted: the row and its evidence stay, and later versions re-read it.
+    await db`
+      UPDATE raw_fee_observations
+         SET outlier_flags = COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([HELD_SET_ASIDE_FLAG])}::jsonb
+       WHERE fee_raw_id = ANY(${setAsideIds}::bigint[])
+         AND NOT outlier_flags ? ${HELD_SET_ASIDE_FLAG}
+    `;
+  }
+  let logged = 0;
+  if (!dryRun && decisions.length > 0 && (await feedbackSchemaReady(db))) {
+    logged = await recordFeedback(db, decisions);
+  }
 
-  return { checked: rows.length, promoted, stillHeld: stillHeldIds.length, promotedByCategory, dryRun };
+  return {
+    checked: rows.length,
+    promoted,
+    stillHeld: stillHeldIds.length,
+    setAside: setAsideIds.length,
+    logged,
+    promotedByCategory,
+    dryRun,
+  };
 }
 
 /**
