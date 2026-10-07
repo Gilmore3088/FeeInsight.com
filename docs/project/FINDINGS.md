@@ -1555,3 +1555,15 @@ unchanged, so no price change is recorded and no fee comes down without its repl
 read.
 **Lesson:** a dedupe that only asks "is this value already live?" also has to ask "from which
 copy?", or freshness silently stops moving.
+
+## 2026-10-07: 87 imported live fees had no source document
+**What happened:** the April import (`migration_v10`) wrote some fee lines twice, once with the
+schedule's document and once without, and published the copy without one. The source check traced
+them to the schedule but its relink is skipped when the slot is taken (an imported row is unique per
+source, document and name), so they stayed live with no document. 82 of the 87 have a twin at the
+same amount that was never verified; the other 5 have a twin at a different amount (separate lines).
+**Fix:** every publish step points such a fee's verified row at its twin once the twin's document
+states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothing is published or
+taken down.
+**Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
+stay broken without anyone seeing them.

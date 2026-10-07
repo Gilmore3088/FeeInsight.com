@@ -9,7 +9,7 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
-import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import {
@@ -890,6 +890,13 @@ async function executeAgenticStep(
         stateCode,
       });
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
+      // Imported fees with no document take their schedule through an identical imported
+      // row the source check could not relink them past.
+      const importedTwins = await linkImportedFeesToTwins(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Every agent learns from what happened to its output: this step's takedowns and
       // restores (and a batch of older outcomes) go into the shared learning store.
       const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -997,6 +1004,8 @@ async function executeAgenticStep(
             amount: rollback.amount,
             companion_source_id: rollback.companionSourceId,
           })),
+          imported_twin_checked: importedTwins.checked,
+          imported_twin_linked: importedTwins.linked,
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
           refresh_copy_skipped: refreshCopy.skipped,
