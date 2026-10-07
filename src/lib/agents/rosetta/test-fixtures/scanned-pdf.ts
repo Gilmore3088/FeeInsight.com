@@ -82,8 +82,12 @@ export function rasterizeLines(lines: string[], scale = 3, blur = 1): Raster {
   return { width, height, data };
 }
 
-/** An image-only PDF: one page per raster, each page a single DeviceGray image. */
-export function imageOnlyPdf(pages: Raster[]): Uint8Array {
+/**
+ * An image-only PDF: one page per raster, each page a single DeviceGray image.
+ * `storedFlipped` stores each image bottom row first and lets the placement matrix flip it
+ * back, as many scanners do: the page looks the same, the stored pixels are upside down.
+ */
+export function imageOnlyPdf(pages: Raster[], options: { storedFlipped?: boolean } = {}): Uint8Array {
   const chunks: Buffer[] = [];
   const offsets: number[] = [];
   let length = 0;
@@ -101,8 +105,11 @@ export function imageOnlyPdf(pages: Raster[]): Uint8Array {
     // Fit the image on a letter page at 72/150 scale.
     const drawWidth = Math.min(540, raster.width * 0.48);
     const drawHeight = drawWidth * (raster.height / raster.width);
-    const content = `q ${drawWidth.toFixed(2)} 0 0 ${drawHeight.toFixed(2)} 36 ${(756 - drawHeight).toFixed(2)} cm /Im1 Do Q`;
-    const image = deflateSync(Buffer.from(raster.data));
+    const content = options.storedFlipped
+      ? `q ${drawWidth.toFixed(2)} 0 0 ${(-drawHeight).toFixed(2)} 36 756 cm /Im1 Do Q`
+      : `q ${drawWidth.toFixed(2)} 0 0 ${drawHeight.toFixed(2)} 36 ${(756 - drawHeight).toFixed(2)} cm /Im1 Do Q`;
+    const stored = options.storedFlipped ? flipRows(raster) : raster.data;
+    const image = deflateSync(Buffer.from(stored));
     objects.push(
       latin(
         `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im1 ${pageId + 2} 0 R >> >> /Contents ${pageId + 1} 0 R >>`,
@@ -133,6 +140,14 @@ export function imageOnlyPdf(pages: Raster[]): Uint8Array {
     ),
   );
   return new Uint8Array(Buffer.concat(chunks));
+}
+
+function flipRows(raster: Raster): Uint8Array {
+  const out = new Uint8Array(raster.data.length);
+  for (let y = 0; y < raster.height; y += 1) {
+    out.set(raster.data.subarray(y * raster.width, (y + 1) * raster.width), (raster.height - 1 - y) * raster.width);
+  }
+  return out;
 }
 
 export function scannedFeePdf(lines: string[]): Uint8Array {

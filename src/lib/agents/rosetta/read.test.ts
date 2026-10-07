@@ -12,6 +12,7 @@ import {
   STUCK_LINK_WINDOW_DAYS,
   runRosettaRead,
 } from "./read";
+import { ROSETTA_OCR_VERSION } from "./ocr";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -888,7 +889,12 @@ describe("Rosetta agentic read", () => {
         expect(query).toContain("AS last_text_lost");
         expect(query).toContain("AS reader_record");
         expect(selection?.[1]).toEqual(expect.arrayContaining(["rosetta.text_survival", "read.html_dom", "read.js_fallback"]));
-        expect(selection?.[1]).not.toContain("read.ocr_tesseract");
+        // OCR is no rung for a lost text: its only use here is the one re-read of a scan an
+        // older OCR version gave up on.
+        expect((selection?.[1] as unknown[]).filter((value) => value === "read.ocr_tesseract")).toHaveLength(1);
+        expect(query).toContain("old_ocr.strategy_version < $");
+        expect(query).toContain("adt.status = 'needs_ocr' AND");
+        expect(selection?.[1]).toEqual(expect.arrayContaining([ROSETTA_OCR_VERSION, ["rejected", "empty"]]));
       });
 
       it("starts a bank's new web page on the JavaScript fallbacks when its DOM texts keep losing fees", async () => {

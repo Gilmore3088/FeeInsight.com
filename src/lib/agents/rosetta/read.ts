@@ -399,6 +399,8 @@ export const AUXILIARY_READ_STRATEGIES = [
   "read.paid_transcribe",
 ];
 const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+/** Free OCR outcomes a newer OCR version may turn around: it read the page, but poorly. */
+const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
 /**
  * An older text with fewer Knox fees than this is read again with the current reader.
  * A real fee schedule lists far more; one or two fees usually means the table was
@@ -918,6 +920,9 @@ async function selectCandidates(
   let rereadable = "FALSE";
   // A reopened page waiting for its one read, even when the bank has a newer document.
   let reopenedPage = "FALSE";
+  // A scan that an older OCR version gave up on, waiting for its one read with the current one.
+  let ocrRereadable = "FALSE";
+  let ocrRetryDocument = "FALSE";
   if (learning) {
     // Skip inputs that already failed permanently with the current reader version.
     // Capture each placeholder as it is pushed: later pushes must not shift earlier ones.
@@ -957,6 +962,35 @@ async function selectCandidates(
                      AND reopen.institution_id = ${institution}
                      AND reopen.input_fingerprint = ${fingerprint}
                 )`;
+    // A scan whose free OCR gave up (rejected or empty) with an older OCR version gets one
+    // read with the current one: version 2 turns pages upright, the usual cause.
+    params.push(OCR_STRATEGY);
+    const ocrStrategyParam = `$${params.length}`;
+    params.push(ROSETTA_OCR_VERSION);
+    const ocrVersionParam = `$${params.length}`;
+    params.push(OCR_RETRY_OUTCOMES);
+    const ocrRetryOutcomesParam = `$${params.length}`;
+    const ocrRetry = (institution: string, fingerprint: string) => `(
+                EXISTS (
+                  SELECT 1 FROM pipeline_attempts old_ocr
+                   WHERE old_ocr.stage = 'read'
+                     AND old_ocr.strategy = ${ocrStrategyParam}
+                     AND old_ocr.institution_id = ${institution}
+                     AND old_ocr.input_fingerprint = ${fingerprint}
+                     AND old_ocr.strategy_version < ${ocrVersionParam}
+                     AND old_ocr.outcome = ANY(${ocrRetryOutcomesParam}::text[])
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts new_ocr
+                   WHERE new_ocr.stage = 'read'
+                     AND new_ocr.strategy = ${ocrStrategyParam}
+                     AND new_ocr.institution_id = ${institution}
+                     AND new_ocr.input_fingerprint = ${fingerprint}
+                     AND new_ocr.strategy_version >= ${ocrVersionParam}
+                )
+              )`;
+    ocrRereadable = `(adt.status = 'needs_ocr' AND ${ocrRetry("adt.institution_id", "adt.source_hash")})`;
+    ocrRetryDocument = ocrRetry("cr.institution_id", "cr.content_hash");
     // A reopened page is its own page, often not the bank's newest document (its main fee
     // link moved on). As the current copy of its page it gets its one read regardless.
     if (currentCopy) {
@@ -1054,6 +1088,7 @@ async function selectCandidates(
     }
     rereadable = `(
               ${lostTextRereadable}
+              OR ${ocrRereadable}
               OR (
                 adt.status = 'wrong_document'
                 AND ${reopenedAt("adt.institution_id", "adt.source_hash")} IS NOT NULL
@@ -1127,7 +1162,7 @@ async function selectCandidates(
                 AND stuck.created_at > NOW() - make_interval(days => ${stuckDaysParam}::int)
            ) >= ${stuckMaxParam}::int
          )`);
-    filters.push(`AND NOT EXISTS (
+    filters.push(`AND (${ocrRetryDocument} OR NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.stage = 'read'
@@ -1140,7 +1175,7 @@ async function selectCandidates(
               AND pa.created_at > COALESCE(${reopenedAt("cr.institution_id", "cr.content_hash")}, '-infinity'::timestamptz)
               -- Word files were logged "unsupported" before read.docx_text existed.
               AND NOT (pa.strategy = 'read.docx' AND pa.outcome = 'unsupported_format')
-         )`);
+         ))`);
   }
   const vaultColumns = vaultSchema
     ? `,
