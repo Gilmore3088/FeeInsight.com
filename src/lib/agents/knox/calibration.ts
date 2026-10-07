@@ -83,6 +83,7 @@ export async function loadKnoxCalibration(db: SqlTag): Promise<KnoxCalibration> 
                  SELECT 1 FROM pipeline_feedback restored
                   WHERE restored.kind = 'restored_after_takedown'
                     AND restored.fee_raw_id = fr.fee_raw_id
+                    AND COALESCE(restored.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
                )
              )
            )

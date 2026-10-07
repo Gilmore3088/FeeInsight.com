@@ -6,6 +6,7 @@ import {
   hasQueuedProviderSteps,
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
+import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -138,6 +139,14 @@ async function handleGET(request: NextRequest) {
     limit: stateLaneLimit,
     triggeredBy: "api.admin.agents.tick",
   });
+  // Institutions that must not wait on their state's lane get their own run.
+  let priorityInstitutions: Awaited<ReturnType<typeof schedulePriorityInstitutionRuns>> | { error: string };
+  try {
+    priorityInstitutions = await schedulePriorityInstitutionRuns();
+  } catch (error) {
+    console.error("Priority institution scheduling failed:", error);
+    priorityInstitutions = { error: error instanceof Error ? error.message : String(error) };
+  }
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -148,7 +157,7 @@ async function handleGET(request: NextRequest) {
     providerRunLimit,
     deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
   });
-  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
+  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, priorityInstitutions, ...result });
 }
 
 async function handlePOST(request: NextRequest) {
