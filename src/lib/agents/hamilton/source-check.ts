@@ -47,8 +47,7 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // wrapped under its name ("Returned Check | Verification of Deposit | $20" / "$30 | ...") are
 // read one fee per row, so neither fee takes the other's price (Space Coast, Oct 7).
 // Version 11: a row with two columns' names and one price ("Stop Payment | Monthly Statement –
-// Electronic | Free") gives the price to the second name; a figure after "on the" and a $0 balance
-// condition are not prices; a price with a dash note and a price after an unclosed note are read.
+// Electronic | Free") gives the price to the second name (First American Bank, Oct 7).
 export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 11 } as const;
 
 /**
