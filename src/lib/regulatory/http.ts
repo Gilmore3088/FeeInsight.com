@@ -41,10 +41,15 @@ export interface RegistryJsonBody {
   json: unknown;
 }
 
+/** A multipart POST body for APIs that take an uploaded file (Census batch geocoder). */
+export interface RegistryFormBody {
+  form: () => FormData;
+}
+
 export async function registryFetch(
   url: string,
   options: RegistryFetchOptions = {},
-  body?: RegistryJsonBody,
+  body?: RegistryJsonBody | RegistryFormBody,
 ): Promise<Response> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const retries = options.retries ?? 3;
@@ -55,12 +60,14 @@ export async function registryFetch(
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     if (attempt > 0) await sleep(backoffMs * 2 ** (attempt - 1));
     try {
+      const isJson = body !== undefined && "json" in body;
       const response = await fetchImpl(url, {
-        ...(body ? { method: "POST", body: JSON.stringify(body.json) } : {}),
+        // A FormData body is rebuilt per attempt and sets its own multipart Content-Type.
+        ...(body ? { method: "POST", body: isJson ? JSON.stringify(body.json) : body.form() } : {}),
         headers: {
           "User-Agent": REGISTRY_USER_AGENT,
           Accept: "application/json, */*",
-          ...(body ? { "Content-Type": "application/json" } : {}),
+          ...(isJson ? { "Content-Type": "application/json" } : {}),
         },
         signal: AbortSignal.timeout(timeoutMs),
         redirect: "follow",

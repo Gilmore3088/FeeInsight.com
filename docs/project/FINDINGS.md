@@ -1585,6 +1585,32 @@ does not hold; that needs a fuller fetch (Magellan or Rosetta), not a Knox rule.
 same way; otherwise Knox's find is held as untraced and never reaches Darwin.
 
 
+## 2026-10-07: The accuracy check split one-line PDF schedules inside their dot leaders
+**What happened:** some PDF schedules are stored as a single line holding every row
+("Stop Payment………………. $35.00 Dormant Account Fee……. $7.00/Month ..."). The shared check
+(`source-check.ts`) splits long lines into sentences after every period, and the last period of
+each dot leader counted as one. So each fee's name ended one piece and its price began the next.
+Knox read West Shore Bank's stop payment, cashier's check, dormant, overdraft and late charge
+correctly, then held every one as untraced. The bank stayed hidden behind the 3-fee rule.
+**Fix:** the shared check no longer splits inside a leader (Knox's own splitter already worked
+this way since v22). Knox v25 also files a box size in inches as a safe deposit box.
+**Also found:** of the 108 hidden banks under $10B, 61 have no fee schedule stored at all
+(checking, rate or Truth-in-Savings pages), so they went to Magellan. 49 have 128 Knox rows that
+Darwin hasn't judged yet.
+**Lesson:** Knox and the shared check must split text the same way. When one learns a layout,
+change the other in the same PR.
+
+**Same day, newer page copies:** 898 live fees on older page copies had no matching Knox row on the
+page's current copy, though the current text still carried the amount. The causes:
+- about 370 were read on the current copy under another category;
+- about 110 were held there;
+- 211 were read on a second document holding the identical text;
+- the remaining ~200 sat on current copies last read at rules v1 to v7.
+
+Nothing re-read a current copy, because the re-read triggers only reach thin texts, flagged texts
+and $10B+ banks. Knox now reads a current copy again once per rules version while an older copy
+still carries live fees.
+
 ## 2026-10-07: 14,133 live fees still pointed at a superseded copy of their page
 **What happened:** when Magellan fetches a newer copy of a fee page, Knox reads it and Darwin
 verifies its rows. A line whose amount did not change is skipped by Hamilton's publish rules as
@@ -1620,3 +1646,17 @@ states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothin
 taken down.
 **Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
 stay broken without anyone seeing them.
+
+## 2026-10-07: the free companion finder never reached most hidden banks
+**What happened:** the companion finder (`second-document.ts`) only takes banks in the step's own
+state. On 6-7 Oct it checked 507 banks in 30 smaller states and found pages at 353 (1,307 pages, $0),
+while 488 discovery steps ran but only 111 gave it any bank: a state checked this month leaves the
+step idle. Of the ~2,200 banks the catalog hides (fewer than 3 live categories), only 253 had ever
+been checked (197 with a page found); 1,606 product-page or no-overdraft banks had not, most of them
+in states the lanes had not reached (most in Texas 144, Illinois 108, California 97, Ohio 86). Knox's list of
+61 hidden banks was 37 of them.
+**Fix:** spare slots now go to hidden banks from any state (`hiddenOnly` top-up in
+`selectThinBanks`), same order: requesters, $10B+, incomplete links, fewest categories. Free, no
+provider call.
+**Lesson:** a per-state queue needs a cross-state fallback, or its capacity idles while the backlog
+sits in states it has not reached.

@@ -34,11 +34,12 @@ const thinBank = {
   categories: 4,
 };
 
-function createDb(ready = true): DbMock {
-  return vi.fn((strings: TemplateStringsArray) => {
+function createDb(ready = true, stateRows: unknown[] = [thinBank], hiddenRows: unknown[] = []): DbMock {
+  return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
     if (text.includes("AS companion_ready")) return Promise.resolve([{ companion_ready: ready }]);
-    if (text.includes("FROM published_fee_records")) return Promise.resolve([thinBank]);
+    // The hidden-bank top-up passes hiddenOnly = true; the state's own query passes false.
+    if (text.includes("FROM published_fee_records")) return Promise.resolve(values.includes(true) ? hiddenRows : stateRows);
     if (text.includes("SELECT document_url AS url")) return Promise.resolve([{ url: thinBank.fee_schedule_url }]);
     return Promise.resolve([]);
   });
@@ -105,6 +106,33 @@ describe("Magellan companion finder", () => {
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_records"));
     expect(select).toContain(THIN_BANK_CATEGORY_LIMIT);
+  });
+
+  it("fills spare slots with hidden banks from any state, never the same bank twice", async () => {
+    const hiddenBank = { ...thinBank, id: 1562, state_code: "MN", categories: 1 };
+    const db = createDb(true, [], [hiddenBank]);
+    const fetchImpl = vi.fn(async () => notFound());
+
+    const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 5, stateCode: "MT", deadline: Date.now() + 60_000, learning: true, dryRun: true });
+
+    expect(result.results.map((row) => row.institutionId)).toEqual([1562]);
+    const selects = db.mock.calls.filter(([strings]) => templateText(strings).includes("FROM published_fee_records"));
+    expect(selects).toHaveLength(2);
+    // State query: its own state, not hidden-only. Top-up: every state, hidden-only, at most the spare slots.
+    expect(selects[0].slice(1)).toContain("MT");
+    expect(selects[0].slice(1)).not.toContain(true);
+    expect(selects[1].slice(1)).toContain(true);
+    expect(selects[1].slice(1)).not.toContain("MT");
+  });
+
+  it("skips the top-up when the state fills every slot, or with no state", async () => {
+    const full = createDb(true, Array.from({ length: 6 }, (_, index) => ({ ...thinBank, id: index + 1 })), [thinBank]);
+    await runSecondDocumentFind({ db: asDb(full), fetchImpl: vi.fn(async () => notFound()), runId: 5, stateCode: "MT", deadline: Date.now() + 60_000, learning: true, dryRun: true });
+    expect(full.mock.calls.filter(([strings]) => templateText(strings).includes("FROM published_fee_records"))).toHaveLength(1);
+
+    const national = createDb(true, [], [thinBank]);
+    await runSecondDocumentFind({ db: asDb(national), fetchImpl: vi.fn(async () => notFound()), runId: 5, deadline: Date.now() + 60_000, learning: true, dryRun: true });
+    expect(national.mock.calls.filter(([strings]) => templateText(strings).includes("FROM published_fee_records"))).toHaveLength(1);
   });
 
   it("waits for its migration and the attempt log", async () => {
