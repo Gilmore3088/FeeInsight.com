@@ -63,6 +63,7 @@ function deriveWhyItMatters(body: string): string | null {
 
 const CHANGE_KIND: Record<string, string> = {
   hamilton_fee_movement_detected: "Fee change",
+  hamilton_competitor_fee_change: "Competitor fee change",
   hamilton_publication_completed: "Fees published",
   darwin_verification_completed: "Fees verified",
   darwin_verification_needs_review: "Fees need a second look",
@@ -122,6 +123,10 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
     const params = new URLSearchParams({ intent: "fee-movement" });
     if (hasInstitutionId) params.set("instId", institutionId);
     return { href: `/pro/reports?${params.toString()}`, label: "Rerun the brief" };
+  }
+
+  if (signalType === "hamilton_competitor_fee_change") {
+    return { href: "/pro/market", label: "Compare your market" };
   }
 
   if (signalType === "darwin_verification_completed") {
