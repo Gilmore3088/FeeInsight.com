@@ -35,6 +35,8 @@ describe("Darwin verdict score", () => {
     // Right: a balance limit the key has no fee for, and a free service.
     expect(scoreClaim({ feeName: "Teen Accounts: You may not exceed", amount: 500, isFee: false, category: null }, prosperity).result).toBe("right");
     expect(scoreClaim({ feeName: "Bill Payment Monthly Fee", amount: 0, isFee: false, category: null }, rally).result).toBe("right");
+    // Right: a daily cap the review calls not a fee but names in the key's own cap category.
+    expect(scoreClaim({ feeName: "Maximum Daily Overdraft Fee Limit", amount: 150, isFee: false, category: "od_daily_cap" }, [["od_daily_cap", 150, "Maximum Daily Overdraft Fee Limit | $150.00"]]).result).toBe("right");
     // Wrong: a price the key does not have, and a related line in another category.
     expect(scoreClaim({ feeName: "Account Inactivity Fee balance is less than", amount: 50, isFee: true, category: "dormant_account" }, rally).result).toBe("wrong");
     const knox = scoreClaim({ feeName: "Wire Transfer Fee – International Incoming", amount: 20, isFee: true, category: "wire_domestic_incoming" }, rabun);

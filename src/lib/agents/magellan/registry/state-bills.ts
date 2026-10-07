@@ -1,6 +1,11 @@
 import { sql } from "@/lib/data-store/connection";
-import { type RegistryFetchOptions } from "@/lib/regulatory/http";
-import { fetchStateFeeBills, STATE_BILL_JURISDICTIONS, type BillStage } from "@/lib/regulatory/open-states";
+import { RegistryHttpError, type RegistryFetchOptions } from "@/lib/regulatory/http";
+import {
+  fetchStateFeeBills,
+  OPEN_STATES_REQUEST_INTERVAL_MS,
+  STATE_BILL_JURISDICTIONS,
+  type BillStage,
+} from "@/lib/regulatory/open-states";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -8,8 +13,9 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * reg_tracker_items, so the regulation tracker can show which bills are moving and where
  * each one stands. The scheduler queues one partition, "current"; each run reads the
  * next STATES_PER_RUN states not checked in the last week and records each state under
- * its own partition row (refreshed weekly). One state per run took about four days to
- * cover all 52, since the registry runs one step every five minutes across all sources.
+ * its own partition row (refreshed weekly). Open States allows about ten requests a
+ * minute, so requests are paced and a run starts no new state after STATE_START_CUTOFF_MS;
+ * a 429 stops the run and leaves the remaining states due.
  *
  * Needs OPEN_STATES_API_KEY. Without it the step records the partition as waiting on
  * the key and checks again the next day. Shadow mode until STATE_BILLS_TRACKER_LIVE=true:
@@ -23,8 +29,14 @@ const MISSING_KEY_RETRY_HOURS = 24;
 export const STATE_BILLS_LOOKBACK_DAYS = 400;
 
 export const STATE_BILLS_PARTITION = "current";
-/** About 5 Open States requests and 5 seconds a state, so a run stays near a minute. */
+/** Most states a run reads. In practice the time cutoff below stops a run first. */
 export const STATES_PER_RUN = 12;
+/**
+ * A run starts no new state after this long. Requests are paced to about ten a minute
+ * (OPEN_STATES_REQUEST_INTERVAL_MS) and a state takes up to six, so a run reads about
+ * three or four states and ends within about two minutes.
+ */
+export const STATE_START_CUTOFF_MS = 60_000;
 const STATE_FAILED_RETRY_HOURS = 6;
 const BATCH_BACKLOG_RETRY_HOURS = 1;
 const BATCH_IDLE_RETRY_HOURS = 24;
@@ -57,6 +69,7 @@ export async function runRegistryStateBills(
     now?: Date;
     live?: boolean;
     apiKey?: string | null;
+    requestIntervalMs?: number;
   },
 ): Promise<RegistryStateBillsResult> {
   const db = options.db ?? sql;
@@ -103,7 +116,13 @@ export async function runRegistryStateBills(
     return result;
   }
 
-  const { items, searched, requests } = await fetchStateFeeBills(stateCode, since, apiKey, options.fetchOptions);
+  const { items, searched, requests } = await fetchStateFeeBills(
+    stateCode,
+    since,
+    apiKey,
+    options.fetchOptions,
+    options.requestIntervalMs ?? OPEN_STATES_REQUEST_INTERVAL_MS,
+  );
   for (const item of items) stages[item.stage] += 1;
   result.searched = searched;
   result.requests = requests;
@@ -163,6 +182,8 @@ export interface RegistryStateBillsBatchResult {
   missingKey: boolean;
   states: string[];
   failedStates: string[];
+  /** True when Open States answered 429: the run stopped and the rest stay due. */
+  rateLimited: boolean;
   remaining: number;
   fetched: number;
   stored: number;
@@ -182,6 +203,9 @@ export async function runRegistryStateBillsBatch(
     live?: boolean;
     apiKey?: string | null;
     statesPerRun?: number;
+    requestIntervalMs?: number;
+    startCutoffMs?: number;
+    clock?: () => number;
   } = {},
 ): Promise<RegistryStateBillsBatchResult> {
   const db = options.db ?? sql;
@@ -201,6 +225,7 @@ export async function runRegistryStateBillsBatch(
     missingKey: !apiKey,
     states: [],
     failedStates: [],
+    rateLimited: false,
     remaining: 0,
     fetched: 0,
     stored: 0,
@@ -230,18 +255,29 @@ export async function runRegistryStateBillsBatch(
   `;
   const notDue = new Set(fresh.map((row) => row.partition_key));
   const due = STATE_BILL_JURISDICTIONS.filter((code) => !notDue.has(code));
-  const batch = due.slice(0, options.statesPerRun ?? STATES_PER_RUN);
-  result.states = batch;
-  result.remaining = due.length - batch.length;
+  const candidates = due.slice(0, options.statesPerRun ?? STATES_PER_RUN);
+  const clock = options.clock ?? Date.now;
+  const startedAt = clock();
+  const cutoffMs = options.startCutoffMs ?? STATE_START_CUTOFF_MS;
+  const batch: string[] = [];
 
   const errors: string[] = [];
-  for (const stateCode of batch) {
+  for (const stateCode of candidates) {
+    if (batch.length > 0 && clock() - startedAt >= cutoffMs) break;
     try {
       const one = await runRegistryStateBills({ ...options, partitionKey: stateCode, apiKey, db });
       result.fetched += one.fetched;
       result.stored += one.stored;
       for (const key of Object.keys(stages) as BillStage[]) stages[key] += one.stages[key];
+      batch.push(stateCode);
     } catch (error) {
+      // Rate limited: stop here and leave this state due rather than marking it failed for hours.
+      if (error instanceof RegistryHttpError && error.status === 429) {
+        result.rateLimited = true;
+        errors.push(`${stateCode}: rate limited (HTTP 429), left for the next run`);
+        break;
+      }
+      batch.push(stateCode);
       const message = error instanceof Error ? error.message : String(error);
       result.failedStates.push(stateCode);
       errors.push(`${stateCode}: ${message}`);
@@ -258,6 +294,11 @@ export async function runRegistryStateBillsBatch(
       }
     }
   }
+  result.states = batch;
+  result.remaining = due.length - batch.length;
+  if (batch.length === 0 && result.rateLimited) {
+    throw new Error(`Open States rate limited the first request of this run: ${errors[0]}`);
+  }
   if (batch.length > 0 && result.failedStates.length === batch.length) {
     throw new Error(`Every state in this run failed: ${errors.slice(0, 3).join("; ")}`);
   }
@@ -273,7 +314,14 @@ export async function runRegistryStateBillsBatch(
     runId: options.runId ?? null,
     // Come back within the hour while states are still due; otherwise check daily.
     nextAttemptAfterHours: result.remaining > 0 ? BATCH_BACKLOG_RETRY_HOURS : BATCH_IDLE_RETRY_HOURS,
-    detail: { states: batch, failed: errors, remaining: result.remaining, stages, shadow: result.shadow },
+    detail: {
+      states: batch,
+      failed: errors,
+      rate_limited: result.rateLimited,
+      remaining: result.remaining,
+      stages,
+      shadow: result.shadow,
+    },
   });
   return result;
 }
