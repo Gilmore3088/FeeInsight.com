@@ -151,6 +151,11 @@ Darwin owns verification and classification.
   v9 (2026-10-07): a hand check of 20 v8 passes had 18 right (an "Emergency Card Replacement" passed
   as card replacement, and a $10 rush card read from "Debit Card Replacement Rush Order | $10 $75").
   The prompt names emergency service and two prices in one row.
+  v10 (2026-10-07): a hand check of 20 v9 passes had 18 sure right (an "Overnight Fee (Business Bill
+  Pay)" passed as bill pay; a $2.75 "Return Check Item" beside a $30 returned-check fee is unclear).
+  A fee whose name says it is the expedited, rush, overnight, emergency or same/next/second-day
+  version of a service now never passes outside a premium category such as `rush_card`
+  (`premiumServiceMisfiled`, attempt detail `premium_service`).
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
