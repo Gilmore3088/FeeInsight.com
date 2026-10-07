@@ -43,10 +43,11 @@ describe("priority institutions", () => {
     }));
   });
 
-  it("lists each requested institution once, Space Coast first", () => {
+  it("lists each requested institution once, the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids[0]).toBe(8109);
+    expect(ids.slice(0, 6)).toEqual([37, 47, 27, 122, 5, 251]);
+    expect(ids).toContain(8109);
   });
 
   it("ranks hand-found schedules, then requests, then large banks with no live overdraft fee", async () => {
@@ -70,7 +71,7 @@ describe("priority institutions", () => {
     expect(gap).toBeGreaterThan(requested);
     expect(text).toContain("hand.last_fetched_at IS NULL");
     expect(text).toContain("r.status IN ('queued', 'running', 'cancel_requested')");
-    expect(text).toContain("ORDER BY c.tier ASC, COALESCE(c.asset_size, 0) DESC");
+    expect(text).toContain("CASE WHEN c.tier = 2 THEN array_position(");
     expect(values).toContain(PRIORITY_INSTITUTION_SOURCE);
     expect(values).toContainEqual([7, 9]);
     expect(values).toContainEqual(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId));
