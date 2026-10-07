@@ -1813,3 +1813,15 @@ Transfer" as an overdraft).
 567 per-bank lessons. A test now checks that the query's parentheses balance.
 **Lesson:** a reader that swallows its own errors needs a test of the SQL it sends, because a
 silent empty result looks the same as "nothing to learn".
+
+## 2026-10-07: Knox's calibration counted every takedown as a misread
+**What happened:** Knox's shadow calibration (`knox/calibration.ts`) scores each strategy and
+category by how many of its recent published fees are still live. It counted every rollback as a
+misread, including rules re-checks (4,467 in 14 days), newer copies (915), duplicates (174) and
+takedowns Hamilton later restored. Overall survival read 85.6%, and the learning signal mixed
+Knox's mistakes with changes elsewhere in the pipeline.
+**Fix:** calibration v2 counts a takedown against a read only when it says Knox misread the fee
+(`source_check_untraceable`, `amount_outside_category_range`, `category_guard`) and was not later
+restored. Other rollbacks are left out. Survival is now 95.1%. Night deposit (42%) and minimum
+balance (62%) are still the weakest reads.
+**Lesson:** a learning signal has to say whose mistake it records.
