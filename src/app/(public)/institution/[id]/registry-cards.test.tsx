@@ -23,6 +23,7 @@ describe("BranchFootprintCard", () => {
     const { container } = render(<BranchFootprintCard footprint={CREDIT_UNION} />);
     expect(screen.getByText("12 offices in 2 states (June 30, 2026)")).toBeInTheDocument();
     expect(screen.getByText("Cities with the most offices")).toBeInTheDocument();
+    expect(screen.getByText("More offices")).toBeInTheDocument();
     expect(screen.getByText("Austin, TX")).toBeInTheDocument();
     expect(container.textContent).toContain("NCUA does not report deposits by office.");
     expect(container.textContent).not.toMatch(/\$/);

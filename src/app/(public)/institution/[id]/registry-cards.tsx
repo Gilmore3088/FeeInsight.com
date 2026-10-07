@@ -117,15 +117,15 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
             {hoveredState
               ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
               : hovered
-                ? `${STATE_NAMES[hovered] ?? hovered}: no branches`
-                : "Hover a state for its branch count."}
+                ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
+                : `Hover a state for its ${isCu ? "office" : "branch"} count.`}
           </p>
           <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6B6255]">
             <span>Fewer</span>
             {RAMP.map((color) => (
               <span key={color} className="inline-block h-2 w-5 rounded-sm" style={{ background: color }} />
             ))}
-            <span>More branches</span>
+            <span>{isCu ? "More offices" : "More branches"}</span>
           </div>
         </div>
         <div>
