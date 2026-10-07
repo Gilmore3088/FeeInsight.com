@@ -26,7 +26,7 @@ import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
 import { asksWholeSchedule, scheduleOverview, withSchedule, type ScheduleOverview } from "./workspace/schedule";
 import { asksIncomeWhy, explainIncome, incomeSplit, withIncomeSplit, type IncomeExplanation } from "./workspace/why";
 import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
-import { ASSET_TIER_RANGES } from "./peer-index";
+import { peerPhrase } from "./answer-brief";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
@@ -317,10 +317,7 @@ async function incomeWhyFor(institutionId: number, question: string): Promise<In
     }),
   ]);
   if (!intensity || !briefing) return null;
-  const kind = intensity.charterType === "credit_union" ? "credit unions" : "banks";
-  const range = ASSET_TIER_RANGES[intensity.assetTier];
-  const peerLabel = range ? `${kind} with ${range} in assets` : `${kind} of the same size`;
-  const split = incomeSplit(intensity, briefing.positions, peerLabel);
+  const split = incomeSplit(intensity, briefing.positions, peerPhrase(intensity.charterType, intensity.assetTier));
   return split ? explainIncome(split) : null;
 }
 
