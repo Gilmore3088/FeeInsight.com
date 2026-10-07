@@ -928,6 +928,15 @@ export function shouldRunNationwideLaneSync(now: Date = new Date()): boolean {
 /** State lanes launched per 5-minute tick (36 an hour). Raised from 2 on 2026-10-06 after load checks. */
 export const STATE_LANE_LIMIT_PER_TICK = 3;
 
+/**
+ * Lane runs allowed queued or running at once. The executor runs one step at a time and
+ * finishes about six full passes an hour, so launching 3 lanes every tick (36 an hour)
+ * left ~40 runs queued in launch order with a 1h40m wait, and the priority order never
+ * applied (2026-10-07). With a short queue, each free slot goes to the highest-priority
+ * due lane when it opens.
+ */
+export const MAX_ACTIVE_STATE_LANE_RUNS = 3;
+
 export async function scheduleDueStateLaneRuns({
   limit = STATE_LANE_LIMIT_PER_TICK,
   triggeredBy = "atlas.scheduler",
@@ -944,8 +953,24 @@ export async function scheduleDueStateLaneRuns({
     await refreshLanePriorities();
   }
 
+  const emptyResult: DueStateLaneScheduleResult = {
+    selected: 0,
+    scheduled: 0,
+    reused: 0,
+    idle: 0,
+    failed: [],
+    results: [],
+  };
   let dueRows: Array<{ state_code: string }>;
   try {
+    const [active] = await sql<{ runs: number }[]>`
+      SELECT count(*)::int AS runs
+        FROM public.agent_runs
+       WHERE run_kind = 'workflow_lane'
+         AND status IN ('queued', 'running', 'cancel_requested')
+    `;
+    const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
+    if (slots <= 0) return emptyResult;
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (
         SELECT state_code
@@ -961,7 +986,7 @@ export async function scheduleDueStateLaneRuns({
          -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all.
          ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
                   priority_score DESC, next_run_after ASC, state_code ASC
-         LIMIT ${safeLimit}
+         LIMIT ${slots}
          FOR UPDATE SKIP LOCKED
       )
       UPDATE public.agent_state_lanes lane
@@ -973,16 +998,7 @@ export async function scheduleDueStateLaneRuns({
       RETURNING lane.state_code
     `);
   } catch (error) {
-    if (isMissingStateLaneSchemaError(error)) {
-      return {
-        selected: 0,
-        scheduled: 0,
-        reused: 0,
-        idle: 0,
-        failed: [],
-        results: [],
-      };
-    }
+    if (isMissingStateLaneSchemaError(error)) return emptyResult;
     throw error;
   }
 

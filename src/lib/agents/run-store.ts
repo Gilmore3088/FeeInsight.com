@@ -2233,6 +2233,8 @@ export async function executeQueuedAgentRuns({
   const rows = await sql`
     SELECT r.id
       FROM agent_runs r
+      LEFT JOIN agent_state_lanes lane
+        ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
      WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.status = 'queued'
        AND (
@@ -2251,9 +2253,18 @@ export async function executeQueuedAgentRuns({
               )
          )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page, while
-     -- the pipeline backlog keeps ~20 lane runs queued (about 50 minutes of work).
-     ORDER BY (r.run_kind = 'report') DESC, r.started_at ASC, r.id ASC
+     -- Report runs go first: someone pressed Generate and is watching the page. Then a
+     -- run already under way finishes before a new one starts, then any run waiting over
+     -- an hour, then state lanes by Atlas's priority score (open work, report requests,
+     -- near-ready markets), then launch order.
+     ORDER BY (r.run_kind = 'report') DESC,
+              EXISTS (
+                SELECT 1 FROM agent_run_steps done
+                 WHERE done.agent_run_id = r.id AND done.status <> 'queued'
+              ) DESC,
+              (r.started_at < NOW() - INTERVAL '1 hour') DESC,
+              COALESCE(lane.priority_score, 0) DESC,
+              r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
   // Runs advance one after another. Running state lanes side by side held several
