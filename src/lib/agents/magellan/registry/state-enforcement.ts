@@ -3,6 +3,8 @@ import { buildEnforcementMatcher, type MatchCandidate } from "@/lib/regulatory/e
 import { RegistryHttpError, registryFetch, type RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   STATE_ORDER_SOURCES,
+  describePage,
+  linksMatching,
   parseStateOrders,
   stateAgencyCode,
   stateOrderKey,
@@ -21,7 +23,7 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 /** Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS). */
-export const STATE_ENFORCEMENT_PARSER_VERSION = 1;
+export const STATE_ENFORCEMENT_PARSER_VERSION = 2;
 export const STATE_ENFORCEMENT_SOURCE = "state-enforcement";
 export const STATE_ENFORCEMENT_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;
@@ -35,8 +37,12 @@ export interface StateEnforcementStateResult {
   missing: number;
   failed: string[];
   orders: number;
+  /** Rows from an earlier read that the state's list no longer has (or an older reader misread). */
+  removed: number;
   matched: number;
-  sample: Array<Pick<StateOrder, "party_name" | "action_type" | "start_date">>;
+  sample: Array<Pick<StateOrder, "party_name" | "action_type" | "start_date" | "document_url">>;
+  /** The first page's shape when nothing was found on it, so the reader can be fixed. */
+  shape?: ReturnType<typeof describePage> & { url: string };
 }
 
 export interface RegistryStateEnforcementResult {
@@ -105,9 +111,14 @@ export async function runRegistryStateEnforcement(
   const rows: Array<Record<string, unknown>> = [];
 
   for (const source of sources) {
-    const stats: StateEnforcementStateResult = { state: source.state, pages: 0, missing: 0, failed: [], orders: 0, matched: 0, sample: [] };
+    const stats: StateEnforcementStateResult = { state: source.state, pages: 0, missing: 0, failed: [], orders: 0, removed: 0, matched: 0, sample: [] };
     const byKey = new Map<string, StateOrder>();
-    for (const url of source.urls(today)) {
+    const queue = [...source.urls(today)];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const url = queue.shift() as string;
+      if (visited.has(url)) continue;
+      visited.add(url);
       try {
         const html = await fetcher(url, options.fetchOptions ?? {});
         if (html === null) {
@@ -115,7 +126,10 @@ export async function runRegistryStateEnforcement(
           continue;
         }
         stats.pages += 1;
-        for (const order of parseStateOrders(source.reader, html, url)) byKey.set(stateOrderKey(source.state, order), order);
+        if (source.follow) for (const next of linksMatching(html, url, source.follow)) if (!visited.has(next)) queue.push(next);
+        const found = parseStateOrders(source.reader, html, url);
+        for (const order of found) byKey.set(stateOrderKey(source.state, order), order);
+        if (found.length === 0 && !stats.shape) stats.shape = { url, ...describePage(html) };
       } catch (error) {
         stats.failed.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -142,7 +156,7 @@ export async function runRegistryStateEnforcement(
       });
     }
     stats.orders = byKey.size;
-    stats.sample = [...byKey.values()].slice(0, 3).map((o) => ({ party_name: o.party_name, action_type: o.action_type, start_date: o.start_date }));
+    stats.sample = [...byKey.values()].slice(0, 3).map((o) => ({ party_name: o.party_name, action_type: o.action_type, start_date: o.start_date, document_url: o.document_url }));
     result.byState.push(stats);
   }
 
@@ -174,6 +188,17 @@ export async function runRegistryStateEnforcement(
         RETURNING id
       `;
       result.upserted += [...written].length;
+    }
+
+    // The table mirrors each state's list: a state read in full drops rows its list no longer has.
+    for (const stats of result.byState) {
+      if (stats.pages === 0 || stats.failed.length > 0 || stats.orders === 0) continue;
+      const keys = rows.filter((r) => r.agency === stateAgencyCode(stats.state)).map((r) => String(r.source_key));
+      const removed = await db`
+        DELETE FROM institution_enforcement_actions
+         WHERE agency = ${stateAgencyCode(stats.state)} AND NOT (source_key = ANY(${keys}))
+        RETURNING id`;
+      stats.removed = [...removed].length;
     }
 
     const readStates = result.byState.filter((s) => s.pages > 0).length;
