@@ -2,6 +2,8 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { DAILY_CAP_CATEGORIES } from "@/lib/custom-report/source-check";
+import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
 
@@ -30,6 +32,10 @@ export const LIMIT_GUARD_REASON = "limit_as_fee";
 export const LIMIT_GUARD_MIN_AMOUNT = 100;
 /** Live rows rolled back per publish step; later steps pick up the rest. */
 export const LIMIT_GUARD_ROLLBACK_LIMIT = 200;
+/** The check name its second-look flags carry in `pipeline_feedback`. */
+export const LIMIT_GUARD_CHECK = "hamilton.limit_guard";
+/** Most limit takedowns brought back in one step once the guard no longer fails them. */
+export const LIMIT_GUARD_RESTORE_LIMIT = 200;
 
 /** Categories whose schedules print transfer and load limits next to their fees. */
 export const TRANSACTION_LIMIT_CEILINGS: Readonly<Record<string, number>> = {
@@ -152,10 +158,13 @@ export interface LimitRollback {
 
 /**
  * Roll back live dollar fees whose figure is a transaction limit (`limitGuardVerdict`).
- * Rows are kept, not deleted: `rolled_back_at`, the run's batch id and a reason that
- * names the reading say why, the feedback sync turns each into a lesson for Knox, and
- * clearing `rolled_back_at` restores a row. A dry run reports what it would roll back and
- * writes nothing.
+ * A takedown is a last resort (James, 7 Oct): a fee's first failure is only logged as
+ * pending, and it comes down when the guard fails it again on a later run at least 12 hours
+ * on (`secondLook`); a fee that passes after a first failure is logged cleared. Rows are
+ * kept, not deleted: `rolled_back_at`, the run's batch id and a reason that names the
+ * reading say why, and the feedback sync turns each into a lesson for Knox. A takedown the
+ * current guard no longer fails comes back (`restorePassingLimitTakedowns`). A dry run
+ * reports what it would roll back and writes nothing.
  */
 export async function rollBackLimitsPublishedAsFees(
   db: SqlTag,
@@ -180,11 +189,15 @@ export async function rollBackLimitsPublishedAsFees(
     return [];
   }
 
-  const rollbacks: LimitRollback[] = [];
+  const failing: LimitRollback[] = [];
+  const passing: number[] = [];
   for (const row of candidates) {
     const verdict = limitGuardVerdict(row);
-    if (!verdict) continue;
-    rollbacks.push({
+    if (!verdict) {
+      passing.push(Number(row.fee_published_id));
+      continue;
+    }
+    failing.push({
       feePublishedId: Number(row.fee_published_id),
       institutionId: Number(row.institution_id),
       canonicalFeeKey: row.canonical_fee_key,
@@ -193,8 +206,10 @@ export async function rollBackLimitsPublishedAsFees(
       code: verdict.code,
       reason: limitGuardReason(verdict),
     });
-    if (rollbacks.length >= limit) break;
   }
+  await restorePassingLimitTakedowns(db, options);
+  const look = await secondLook(db, { check: LIMIT_GUARD_CHECK, runId: options.runId, failing, passing, dryRun: options.dryRun });
+  const rollbacks = look.confirmed.slice(0, limit);
   if (options.dryRun || rollbacks.length === 0) return rollbacks;
 
   let closed: LimitRollback[];
@@ -247,4 +262,89 @@ export async function rollBackLimitsPublishedAsFees(
     console.error("limit rollback event failed:", error);
   }
   return closed;
+}
+
+interface LimitTakedownRow {
+  fee_published_id: number | string;
+  institution_id: number | string;
+  canonical_fee_key: string;
+  fee_name: string;
+  amount: number | string | null;
+  conditions: string | null;
+}
+
+/**
+ * Brings back limit takedowns the current guard no longer fails (a wrong limit call, or a
+ * guard since narrowed), unless the bank already has the same fee live. Each restore is
+ * logged with its reason and marks the bank due for the source check. Returns the count
+ * (what would come back, in a dry run).
+ */
+export async function restorePassingLimitTakedowns(
+  db: SqlTag,
+  options: { runId: number; dryRun: boolean; institutionId?: number },
+): Promise<number> {
+  let rows: LimitTakedownRow[];
+  try {
+    rows = await inSavepoint(db, (scope) => scope<LimitTakedownRow[]>`
+      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.rolled_back_at IS NOT NULL
+         AND fp.rolled_back_reason LIKE ${`${LIMIT_GUARD_REASON}:%`}
+         ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
+       ORDER BY fp.rolled_back_at DESC
+       LIMIT ${LIMIT_GUARD_RESTORE_LIMIT * 4}
+    `);
+  } catch (error) {
+    console.error("limit guard restore read failed:", error);
+    return 0;
+  }
+  const passing = rows.filter((row) => !limitGuardVerdict(row)).slice(0, LIMIT_GUARD_RESTORE_LIMIT);
+  if (options.dryRun || passing.length === 0) return passing.length;
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const restored = await scope<{ fee_published_id: number | string; institution_id: number | string; reason: string }[]>`
+        UPDATE published_fee_records fp
+           SET rolled_back_at = NULL,
+               rolled_back_by_batch_id = NULL,
+               rolled_back_reason = NULL
+          FROM (SELECT fee_published_id, rolled_back_reason AS reason FROM published_fee_records
+                 WHERE fee_published_id = ANY(${passing.map((row) => Number(row.fee_published_id))}::bigint[])) old
+         WHERE fp.fee_published_id = old.fee_published_id
+           AND fp.rolled_back_reason LIKE ${`${LIMIT_GUARD_REASON}:%`}
+           AND NOT EXISTS (
+             SELECT 1 FROM published_fee_records live
+              WHERE live.rolled_back_at IS NULL
+                AND live.institution_id = fp.institution_id
+                AND live.canonical_fee_key = fp.canonical_fee_key
+                AND live.amount IS NOT DISTINCT FROM fp.amount
+           )
+        RETURNING fp.fee_published_id, fp.institution_id, old.reason
+      `;
+      if (restored.length === 0) return 0;
+      invalidatePublicReadCache();
+      await markRestoredForSourceCheck(scope, restored, { runId: options.runId, restoredBy: LIMIT_GUARD_CHECK });
+      await scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, 'hamilton.limit_guard_restored', 'completed',
+          ${`Restored ${restored.length} fee(s) the limit guard took down and no longer fails`},
+          ${JSON.stringify({
+            restored: restored.length,
+            reason: "limit_guard_no_longer_fails",
+            samples: restored.slice(0, 20).map((row) => ({
+              fee_published_id: Number(row.fee_published_id),
+              institution_id: Number(row.institution_id),
+              taken_down_for: row.reason,
+            })),
+          })}::jsonb
+        )
+      `;
+      return restored.length;
+    });
+  } catch (error) {
+    console.error("limit guard restore failed:", error);
+    return 0;
+  }
 }

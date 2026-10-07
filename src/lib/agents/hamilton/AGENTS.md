@@ -226,6 +226,13 @@ card, prepaid reload). Over-limit fees are fees and are never matched; a daily c
 limit by design, so only a name that caps no fee counts there. First dry run (7 Oct, prod): 22
 live fees, all transfer, deposit or load limits.
 
+A live fee comes down only on its second look (`second-look.ts`, check `hamilton.limit_guard`):
+its first failure is logged `takedown_pending` in `pipeline_feedback`, and it comes down when the
+guard fails it again on another run at least 12 hours later; a fee that passes in between is
+logged `takedown_cleared`. A limit takedown the current guard no longer fails comes back each step
+(`restorePassingLimitTakedowns`), unless the bank already has the same fee live, with a
+`hamilton.limit_guard_restored` event and the source check's restore marker.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another

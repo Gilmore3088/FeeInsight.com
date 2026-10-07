@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
-import { knoxExcerpt, limitGuardReason, limitGuardVerdict, rollBackLimitsPublishedAsFees } from "./limit-guard";
+import { knoxExcerpt, limitGuardReason, limitGuardVerdict, restorePassingLimitTakedowns, rollBackLimitsPublishedAsFees } from "./limit-guard";
 
 function row(canonical_fee_key: string, fee_name: string, amount: number, excerpt?: string) {
   return { canonical_fee_key, fee_name, amount, conditions: excerpt ? `Knox read. excerpt="${excerpt}"` : null };
@@ -69,30 +69,65 @@ describe("rollBackLimitsPublishedAsFees", () => {
     { fee_published_id: 1, institution_id: 7, canonical_fee_key: "bill_pay", fee_name: "Bill Payment Limits (per 24 Hours)", amount: "1000.00", conditions: null },
     { fee_published_id: 2, institution_id: 7, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Box 10x10", amount: "120.00", conditions: null },
   ];
-  function createDb() {
+  const takenDown = [
+    // Taken down as a limit; the current guard no longer fails it.
+    { fee_published_id: 3, institution_id: 7, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing wire", amount: "150.00", conditions: null },
+    // Still a limit: stays down.
+    { fee_published_id: 4, institution_id: 7, canonical_fee_key: "bill_pay", fee_name: "Bill Payment Limits (per 24 Hours)", amount: "1000.00", conditions: null },
+  ];
+  function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | null) {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = templateText(strings);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback")) {
+        return Promise.resolve(pendingFlag ? [{ fee_published_id: 1, kind: "takedown_pending", evidence: { ...pendingFlag, reason: "limit" } }] : []);
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve(takenDown);
       if (text.includes("SELECT fp.fee_published_id")) return Promise.resolve(live);
+      if (text.includes("SET rolled_back_at = NULL")) return Promise.resolve([{ fee_published_id: 3, institution_id: 7, reason: "limit_as_fee:name_states_limit: x" }]);
       if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 1 }]);
       return Promise.resolve([]);
     });
     return db as unknown as Parameters<typeof rollBackLimitsPublishedAsFees>[0] & typeof db;
   }
+  const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => templateText(call[0]));
 
-  it("rolls back only the limit, keeping the row and its reason", async () => {
-    const db = createDb();
+  it("only logs a limit the first time it fails, keeping it live", async () => {
+    const db = createDb(null);
+    const result = await rollBackLimitsPublishedAsFees(db, { runId: 3, batchId: "agentic-run-3", dryRun: false });
+    expect(result).toEqual([]);
+    expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    expect(JSON.stringify(db.mock.calls)).toContain("takedown_pending");
+  });
+
+  it("takes a limit down on its second look, keeping the row and its reason", async () => {
+    const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() });
     const result = await rollBackLimitsPublishedAsFees(db, { runId: 3, batchId: "agentic-run-3", dryRun: false });
     expect(result.map((r) => r.feePublishedId)).toEqual([1]);
-    const update = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
-    expect(templateText(update?.[0])).toContain("rolled_back_reason");
-    expect(templateText(update?.[0])).not.toContain("DELETE");
-    expect(db.mock.calls.some((call) => templateText(call[0]).includes("hamilton.limit_guard_rolled_back"))).toBe(true);
+    const update = writes(db).find((text) => text.includes("SET rolled_back_at = NOW()"));
+    expect(update).toContain("rolled_back_reason");
+    expect(writes(db).some((text) => text.includes("DELETE"))).toBe(false);
+    expect(writes(db).some((text) => text.includes("hamilton.limit_guard_rolled_back"))).toBe(true);
+  });
+
+  it("waits when the first look is under 12 hours old", async () => {
+    const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 3_600_000).toISOString() });
+    expect(await rollBackLimitsPublishedAsFees(db, { runId: 3, batchId: "agentic-run-3", dryRun: false })).toEqual([]);
+  });
+
+  it("brings back a limit takedown the guard no longer fails, logged with its reason", async () => {
+    const db = createDb(null);
+    expect(await restorePassingLimitTakedowns(db, { runId: 3, dryRun: true })).toBe(1);
+    expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
+    expect(await restorePassingLimitTakedowns(db, { runId: 3, dryRun: false })).toBe(1);
+    expect(writes(db).some((text) => text.includes("hamilton.limit_guard_restored"))).toBe(true);
+    expect(writes(db).some((text) => text.includes("INSERT INTO pipeline_attempts"))).toBe(true);
   });
 
   it("changes nothing in a dry run", async () => {
-    const db = createDb();
+    const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() });
     const result = await rollBackLimitsPublishedAsFees(db, { runId: 3, batchId: "agentic-run-3", dryRun: true });
     expect(result).toHaveLength(1);
-    expect(db.mock.calls.some((call) => /UPDATE|INSERT INTO/.test(templateText(call[0])))).toBe(false);
+    expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
   });
 });
