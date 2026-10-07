@@ -42,6 +42,12 @@ const PRICE_BELOW_MAX_LENGTH = 40;
  * not covered unless you opt in"), never another fee's name.
  */
 const PRICE_THEN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per \w+|each)?\s*\|\s*[a-z]/;
+/**
+ * Or a price, its unit, and a note in parentheses ("$29.00/presentment (applies to
+ * transactions of $10 or more...)", "$10.00 per card replacement (normally up to 7 to 10
+ * business days delivery)").
+ */
+const PRICE_THEN_PAREN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:\/|per\b|each\b|for\b)[^|()$]{0,40})?\(\s*[a-z]/i;
 const CATEGORY_LOOKBACK_LINES = 3;
 const NAME_HEADING_LINES = 8;
 const NAME_WORD_SHARE = 0.75;
@@ -107,11 +113,18 @@ const ROW_TITLE = /^((?:[A-Z][\w'’&/-]*\s+){0,5}(?:Fee|Charge)s?)\b/;
 const PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/;
 
 /**
+ * Where a run-on line splits: after a sentence's period, never inside a dot leader, so
+ * "Stop Payment……………. $35.00" keeps its name and price together. A one-line PDF schedule
+ * stays whole, where each price belongs to the words since the previous price.
+ */
+const LONG_LINE_SPLIT = /(?<=(?<![.…])[.;])(?![.…])\s+|\s{3,}|•/;
+
+/**
  * A long line split into sentences. A description row whose only other cell is its price
  * also keeps its title with that price, since the sentences leave the price on its own.
  */
 function longLineParts(line: string): string[] {
-  const parts = line.split(/(?<=[.;])\s+|\s{3,}|•/);
+  const parts = line.split(LONG_LINE_SPLIT);
   const cells = line.split("|").map((cell) => cell.trim());
   const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
   return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
@@ -204,7 +217,11 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   // price; the fee's price is the one after the words that name it best. A line that
   // prints the price before the name ("$35 Overdraft Fee for each item") reads the
   // words after each price instead.
-  const prices = tokens.filter((t) => !isThreshold(line, t));
+  // Figures in a note ("Gift Cards ($25 up to $500 Only) | $5 per card") are not prices
+  // when the row prints one outside it; a row whose only figure is in parentheses keeps it.
+  const unlimited = tokens.filter((t) => !isThreshold(line, t));
+  const outside = unlimited.filter((t) => !inNote(line, t));
+  const prices = outside.length > 0 ? outside : unlimited;
   const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
   const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
@@ -234,8 +251,7 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   const from = index === 0 ? 0 : prices[index - 1].end;
   // A minimum charge ("$10.00 minimum / $25.00 per hour") or a note in the name
   // ("Gift Cards (load $10-$1000)") is not a balance band.
-  const inNote = (t: MoneyToken) => line.lastIndexOf("(", t.start) > line.lastIndexOf(")", t.start);
-  const band = (t: MoneyToken) => isThreshold(line, t) && !/^\s*min/i.test(line.slice(t.end)) && !inNote(t);
+  const band = (t: MoneyToken) => isThreshold(line, t) && !/^\s*min/i.test(line.slice(t.end)) && !inNote(line, t);
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
@@ -304,17 +320,24 @@ function feeRow(lines: string[], index: number): string {
   // A long flattened line keeps its own prices; `leaderRow` offers its last name's row too.
   const leader = leaderRow(lines, index);
   if (leader && line.length <= PRICE_FIRST_MAX_LENGTH) return leader;
-  if (moneyTokens(line).length > 0 || ZERO_WORDS.test(line)) return line;
+  // A figure that is only a limit in the name's note ("Non-Customer check cashing (or 1% if
+  // check is over $500)") is not the row's price; the price may still be printed under it.
+  if (moneyTokens(line).some((t) => !isThreshold(line, t) && !inNote(line, t)) || ZERO_WORDS.test(line)) return line;
   // Only a price line may follow; another name ("Incoming" then "Outgoing" then "$25")
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
-    .find((next) => (next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next)) && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
+    .find((next) => (next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   // Units ("/Item") and notes that only qualify the name ("If checks are not on order
   // (10 maximum)", "(up to $1,000)") may sit between a name and its price.
   return between.every((next) => /^\s*(\/|per\b)/i.test(next) || QUALIFIER_LINE.test(next)) ? `${line} | ${price}` : line;
+}
+
+/** The figure sits inside parentheses. */
+function inNote(line: string, token: MoneyToken): boolean {
+  return line.lastIndexOf("(", token.start) > line.lastIndexOf(")", token.start);
 }
 
 function isThreshold(line: string, token: MoneyToken): boolean {

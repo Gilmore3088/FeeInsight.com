@@ -1,13 +1,16 @@
 import { sql } from "./connection";
 
 /**
- * Bank branch locations from the FDIC Summary of Deposits (institution_branch_deposits),
- * latest survey year. Banks only: credit unions are not in the SOD.
+ * Branch locations: banks from the FDIC Summary of Deposits (institution_branch_deposits,
+ * latest survey year, with deposits) and credit unions from NCUA's branch file
+ * (credit_union_branches, no deposits; coordinates once the Census geocoder has run).
  */
 
 const SOD_THOUSANDS = 1_000;
 
 export interface BranchRow {
+  /** fdic_sod for banks, ncua for credit unions. */
+  source: "fdic_sod" | "ncua";
   institution_id: number | null;
   institution_name: string | null;
   branch_name: string | null;
@@ -17,10 +20,11 @@ export interface BranchRow {
   state: string | null;
   zip: string | null;
   county_fips: number | null;
+  county_name: string | null;
   msa_name: string | null;
   latitude: number | null;
   longitude: number | null;
-  /** Deposits at the branch, whole dollars. */
+  /** Deposits at the branch, whole dollars; null for credit unions (NCUA reports none by branch). */
   deposits: number | null;
 }
 
@@ -31,6 +35,7 @@ export interface BranchPage {
 }
 
 interface RawBranch {
+  source: "fdic_sod" | "ncua";
   institution_id: string | number | null;
   institution_name: string | null;
   branch_name: string | null;
@@ -40,17 +45,19 @@ interface RawBranch {
   state: string | null;
   zip: string | null;
   county_fips: number | null;
+  county_name: string | null;
   msa_name: string | null;
   latitude: number | null;
   longitude: number | null;
   deposits: string | number | null;
-  year: number;
+  year: number | null;
   total: string | number;
 }
 
 function toRow(r: RawBranch): BranchRow {
   const deposits = r.deposits === null ? null : Number(r.deposits);
   return {
+    source: r.source,
     institution_id: r.institution_id === null ? null : Number(r.institution_id),
     institution_name: r.institution_name,
     branch_name: r.branch_name,
@@ -60,6 +67,7 @@ function toRow(r: RawBranch): BranchRow {
     state: r.state,
     zip: r.zip,
     county_fips: r.county_fips,
+    county_name: r.county_name,
     msa_name: r.msa_name,
     latitude: r.latitude === null ? null : Number(r.latitude),
     longitude: r.longitude === null ? null : Number(r.longitude),
@@ -69,32 +77,44 @@ function toRow(r: RawBranch): BranchRow {
 
 function toPage(rows: RawBranch[]): BranchPage {
   return {
-    sod_year: rows[0]?.year ?? null,
+    sod_year: rows.find((r) => r.year !== null)?.year ?? null,
     total: rows.length ? Number(rows[0].total) : 0,
     rows: rows.map(toRow),
   };
 }
 
-/** Every branch of one institution in the latest survey year, largest deposits first. */
+/** Both branch sources as one row shape; banks from the latest SOD year, credit unions as last reported. */
+function allBranches() {
+  return sql`
+  SELECT 'fdic_sod'::text AS source, b.institution_id, s.institution_name, b.branch_name, b.is_main_office,
+         b.address, b.city, b.state, b.zip, b.county_fips, NULL::text AS county_name, b.msa_name,
+         b.latitude, b.longitude, b.deposits, b.year, b.branch_number::text AS sort_key
+    FROM institution_branch_deposits b
+    LEFT JOIN institution_sources s ON s.id = b.institution_id
+   WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+  UNION ALL
+  SELECT 'ncua', c.institution_id, COALESCE(s.institution_name, c.cu_name), c.site_name, c.is_main_office,
+         c.address, c.city, c.state, c.zip, NULL::integer, c.county_name, NULL::text,
+         c.latitude, c.longitude, NULL::bigint, NULL::integer, c.site_id
+    FROM credit_union_branches c
+    LEFT JOIN institution_sources s ON s.id = c.institution_id`;
+}
+
+/** Every branch of one institution, largest deposits first (credit unions: main office first). */
 export async function getBranchesForInstitution(
   institutionId: number,
   opts: { limit: number; offset: number },
 ): Promise<BranchPage> {
   const rows = await sql<RawBranch[]>`
-    WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits)
-    SELECT b.institution_id, s.institution_name, b.branch_name, b.is_main_office, b.address, b.city,
-           b.state, b.zip, b.county_fips, b.msa_name, b.latitude, b.longitude, b.deposits, b.year,
-           COUNT(*) OVER () AS total
-    FROM institution_branch_deposits b
-    JOIN latest ON b.year = latest.y
-    LEFT JOIN institution_sources s ON s.id = b.institution_id
-    WHERE b.institution_id = ${institutionId}
-    ORDER BY b.deposits DESC NULLS LAST, b.branch_number
-    LIMIT ${opts.limit} OFFSET ${opts.offset}`;
+    SELECT a.*, COUNT(*) OVER () AS total
+      FROM (${allBranches()}) a
+     WHERE a.institution_id = ${institutionId}
+     ORDER BY a.deposits DESC NULLS LAST, a.is_main_office DESC, a.sort_key
+     LIMIT ${opts.limit} OFFSET ${opts.offset}`;
   return toPage(rows);
 }
 
-/** Every bank branch in a state, optionally narrowed to a city or ZIP code, in the latest survey year. */
+/** Every bank and credit union branch in a state, optionally narrowed to a city or ZIP code. */
 export async function getBranchesInArea(
   area: { state: string; city?: string | null; zip?: string | null },
   opts: { limit: number; offset: number },
@@ -102,17 +122,12 @@ export async function getBranchesInArea(
   const city = area.city ?? null;
   const zip = area.zip ?? null;
   const rows = await sql<RawBranch[]>`
-    WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits)
-    SELECT b.institution_id, s.institution_name, b.branch_name, b.is_main_office, b.address, b.city,
-           b.state, b.zip, b.county_fips, b.msa_name, b.latitude, b.longitude, b.deposits, b.year,
-           COUNT(*) OVER () AS total
-    FROM institution_branch_deposits b
-    JOIN latest ON b.year = latest.y
-    LEFT JOIN institution_sources s ON s.id = b.institution_id
-    WHERE b.state = ${area.state}
-      AND (${city}::text IS NULL OR UPPER(b.city) = UPPER(${city}::text))
-      AND (${zip}::text IS NULL OR LEFT(b.zip, 5) = ${zip}::text)
-    ORDER BY b.deposits DESC NULLS LAST, b.institution_id, b.branch_number
-    LIMIT ${opts.limit} OFFSET ${opts.offset}`;
+    SELECT a.*, COUNT(*) OVER () AS total
+      FROM (${allBranches()}) a
+     WHERE a.state = ${area.state}
+       AND (${city}::text IS NULL OR UPPER(a.city) = UPPER(${city}::text))
+       AND (${zip}::text IS NULL OR LEFT(a.zip, 5) = ${zip}::text)
+     ORDER BY a.deposits DESC NULLS LAST, a.source, a.institution_id, a.sort_key
+     LIMIT ${opts.limit} OFFSET ${opts.offset}`;
   return toPage(rows);
 }
