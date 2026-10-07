@@ -117,6 +117,14 @@ describe("fee dependence", () => {
     expect(p.detail?.first_year).toBe(2010);
     expect(String(built.record.findings.headline)).toContain("typical bank");
   });
+
+  it("handles a full-size panel without overflowing the call stack", () => {
+    const big: DependenceRow[] = [];
+    for (let i = 0; i < 200_000; i++) {
+      big.push({ institutionId: (i % 12_000) + 1, charter: i % 2 ? "bank" : "credit_union", year: 2010 + (i % 16), assetsThousands: 200_000, ratio: 0.05 });
+    }
+    expect(buildFeeDependence(big)!.record.asOf).toBe("2025");
+  });
 });
 
 describe("inferred volume", () => {
