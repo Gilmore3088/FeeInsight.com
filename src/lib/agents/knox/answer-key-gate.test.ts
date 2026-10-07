@@ -16,10 +16,11 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * the floor there; never lower it silently.
  */
 // Since v17 the gate counts only reads that pass Knox's self-check (the shared accuracy
-// check Darwin applies before publishing). Main at v16 scored 444 right / 15 wrong on that basis.
+// check Darwin applies before publishing). Main at v16 scored 444 right / 15 wrong on that basis;
+// floors raised to main at v29 (2026-10-07).
 const FLOORS = {
-  all: { right: 444, wrong: 15 },
-  holdout: { right: 43, wrong: 6 },
+  all: { right: 501, wrong: 15 },
+  holdout: { right: 49, wrong: 5 },
 };
 
 const fixture = JSON.parse(
