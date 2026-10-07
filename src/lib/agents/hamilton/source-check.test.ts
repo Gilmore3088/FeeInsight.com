@@ -68,11 +68,21 @@ describe("traceLiveFee", () => {
 });
 
 describe("takeDownUntraceableFees", () => {
-  function createDb(rows: LiveFeeRow[]) {
+  // Fee 1 failed its first look 13 hours ago, on another run.
+  const firstLook = [
+    {
+      fee_published_id: 1,
+      kind: "takedown_pending",
+      evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "amount_is_a_threshold" },
+    },
+  ];
+  function createDb(rows: LiveFeeRow[], flags: unknown[] = firstLook) {
     const calls: string[] = [];
     const db = vi.fn((strings: TemplateStringsArray) => {
       const query = strings.join("?");
       calls.push(query);
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(flags);
       if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 9 }]);
       if (query.includes("FROM agent_source_texts")) return Promise.resolve(texts.map((text) => ({ ...text, institution_id: 42 })));
       if (query.includes("JOIN raw_fee_observations")) return Promise.resolve(rows);
@@ -97,6 +107,30 @@ describe("takeDownUntraceableFees", () => {
     expect(calls.some((query) => query.includes("INSERT INTO pipeline_attempts"))).toBe(true);
     expect(calls.some((query) => query.includes("'hamilton.source_check'"))).toBe(true);
     expect(SOURCE_CHECK_REASON).toBe("source_check_untraceable");
+  });
+
+  it("takes nothing down on a first failure: it logs the fee for a second look", async () => {
+    const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")], []);
+    const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: false, stateCode: "TX" });
+
+    expect(result.takedowns).toEqual([]);
+    expect(result.flagged).toBe(1);
+    expect(calls.some((query) => query.includes("INSERT INTO pipeline_feedback"))).toBe(true);
+    expect(calls.some((query) => query.includes("SET rolled_back_at = NOW()"))).toBe(false);
+  });
+
+  it("waits when the first look is from this run or too recent", async () => {
+    const recent = [{ ...firstLook[0], evidence: { ...firstLook[0].evidence, flagged_at: new Date().toISOString() } }];
+    const { db } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")], recent);
+    const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: false, stateCode: "TX" });
+    expect(result.takedowns).toEqual([]);
+    expect(result.awaitingSecondLook).toBe(1);
+  });
+
+  it("makes a fee whose first look is pending due again", async () => {
+    const { db, calls } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
+    await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });
+    expect(calls[0]).toMatch(/OR EXISTS[\s\S]*FROM pipeline_feedback[\s\S]*kind = \?/);
   });
 
   it("restores an earlier takedown that now traces and leaves the rest down", async () => {

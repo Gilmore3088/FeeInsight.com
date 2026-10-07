@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
+import { KNOX_FAULT_REASONS } from "./calibration";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -103,6 +104,11 @@ describe("Knox agentic extraction", () => {
     const result = await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
 
     expect(result).toMatchObject({ calibrationGroups: 1, calibratedBelowPublishFloor: 1 });
+    // Only takedowns that say Knox misread the fee count against it (calibration v2).
+    const survival = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_records fp"))!;
+    expect(templateText(survival[0])).toContain("rolled_back_reason ~");
+    expect(templateText(survival[0])).toContain("restored_after_takedown");
+    expect(survival).toContain(KNOX_FAULT_REASONS);
     expect(result.layouts).toEqual({ "plain/short": { documents: 1, thin: 0 } });
     const inserts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"));
     const overdraft = inserts.find((call) => String(call[10]).includes("canonical_hint=overdraft"))!;
