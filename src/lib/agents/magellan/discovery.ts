@@ -32,7 +32,7 @@ import {
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
+import { ARTICLE_LINK_SQL, BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_DOCUMENT_NAME_SQL, FEE_NAMED_LINK_SQL, isArticleLink, PRODUCT_LINK_SQL } from "./link-coverage";
 import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
@@ -956,8 +956,9 @@ async function selectCandidates(
 }
 
 /**
- * Banks whose fee link is an account or product page, not yet searched for the real
- * schedule at this upgrade version. Their link is kept until a fee schedule is found.
+ * Banks whose fee link is an account or product page, or an article, blog post or news
+ * item (`isArticleLink`), not yet searched for the real schedule at this upgrade version.
+ * Their link is kept until a fee schedule is found.
  */
 async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
   if (limit <= 0) return [];
@@ -981,8 +982,10 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
-       AND lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL}
-       AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}
+       AND (
+             (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
+             OR (lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
+           )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
@@ -1527,7 +1530,8 @@ export async function runMagellanDiscovery(
     );
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
-    if (upgraded && row.upgrade && row.fee_schedule_url) {
+    // An article or blog link is not kept beside the schedule: its amounts were never the bank's.
+    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {

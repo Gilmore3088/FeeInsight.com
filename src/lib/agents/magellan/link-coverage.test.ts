@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isStaleDatedLink, refersElsewhere } from "./link-coverage";
+import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isStaleDatedLink, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -70,5 +70,22 @@ describe("isErrorPageLink", () => {
     expect(isErrorPageLink("https://bank.example/docs/4040-fees.pdf")).toBe(false);
     expect(isErrorPageLink("https://bank.example/found-money-fees")).toBe(false);
     expect(isErrorPageLink(null)).toBe(false);
+  });
+});
+
+describe("isArticleLink", () => {
+  it("flags the article, blog and news links saved as fee sources on prod", () => {
+    expect(isArticleLink("https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid")).toBe(true);
+    expect(isArticleLink("https://www.axosbank.com/personal/insights/finance/digital-banking/understanding-overdraft-fees-protection-and-more")).toBe(true);
+    expect(isArticleLink("https://www.jpmorganchase.com/ir/news/2021/chase-helps-more-than-two-million-customers-avoid-overdraft-service-fees")).toBe(true);
+    expect(isArticleLink("https://www.ally.com/stories/spend/what-is-overdraft-protection/")).toBe(true);
+  });
+
+  it("leaves fee documents filed in those folders alone", () => {
+    expect(isArticleLink("https://www.mtcfederal.com/articles/schedule-of-fees/")).toBe(false);
+    expect(isArticleLink("https://www.alamosastatebank.com/home/personal/education-center/service-fees")).toBe(false);
+    expect(isArticleLink("https://bank.example/news/2025-fee-update.pdf")).toBe(false);
+    expect(isArticleLink("https://bank.example/fee-schedule")).toBe(false);
+    expect(isArticleLink(null)).toBe(false);
   });
 });

@@ -40,6 +40,39 @@ export function isErrorPageLink(url: string | null | undefined): boolean {
   }
 }
 
+/** Folders where banks post articles, blog posts and news, not their fee schedule. */
+const ARTICLE_PATH = /\/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)\//i;
+/**
+ * A path segment that names a fee document even inside such a folder
+ * ("/articles/schedule-of-fees/", "/education-center/service-fees"), with at most one
+ * word before it ("consumer-fee-schedule"), or a PDF. A headline that merely ends in
+ * "overdraft-service-fees" is not one.
+ */
+const FEE_DOCUMENT_NAME =
+  /((^|\/)([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\.pdf($|\?))/i;
+/** The same tests for SQL, on the lowercased link. */
+export const ARTICLE_LINK_SQL = "/(blogs?|articles?|news|newsroom|insights?|press-releases?|stories|learning-center|education-center)/";
+export const FEE_DOCUMENT_NAME_SQL =
+  "(/([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\\.pdf($|\\?))";
+
+/**
+ * True when the address is an article, blog post, news item or press release: a page
+ * about fees in general ("common checking account fees to avoid", Space Coast CU; a 2021
+ * Chase press release), whose amounts are national figures or old news, never the bank's
+ * own schedule. A fee document filed in such a folder ("/articles/schedule-of-fees/",
+ * MTC Federal CU) is not one.
+ */
+export function isArticleLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const path = decodeURIComponent(parsed.pathname + parsed.search);
+    return ARTICLE_PATH.test(path) && !FEE_DOCUMENT_NAME.test(path);
+  } catch {
+    return false;
+  }
+}
+
 /** True when the link's address names a business-only schedule or page. */
 export function isBusinessOnlyLink(url: string): boolean {
   let path: string;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ARTICLE_LINK_SQL } from "./link-coverage";
 
 import {
   DISCOVERY_METHOD_VERSION,
@@ -710,6 +711,27 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
+    });
+
+    it("picks article links for the same search and does not keep the article once the schedule is found", async () => {
+      const articleBank = bank(78, "https://artbank.example", {
+        fee_schedule_url: "https://artbank.example/articles/common-checking-account-fees-to-avoid",
+        profile_canonical_source_url: "https://artbank.example/articles/common-checking-account-fees-to-avoid",
+      });
+      const db = createDbMock([], learningHandler((text) => (text.includes("product-page upgrade search") ? [articleBank] : undefined)));
+      const fetchImpl = site({
+        "https://artbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://artbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://artbank.example/disclosures/fee-schedule" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
+      const upgradeCall = db.mock.calls.find((call) => templateText(call[0]).includes("product-page upgrade search"))!;
+      expect(upgradeCall.slice(1)).toContain(ARTICLE_LINK_SQL);
     });
   });
 

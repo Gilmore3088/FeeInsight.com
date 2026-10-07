@@ -2366,3 +2366,17 @@ fees than that is judged `confirmed_wrong_fees`, and its path's score drops. The
 looks for another page for it, once per judgement. On a first-look proxy this would reach 84 banks.
 Confirmed rows start landing about 14:40 UTC on 7 Oct.
 **Lesson:** feed agents the confirmed verdict, not the first look, or they learn the checker's mistakes.
+
+## 2026-10-07: Articles and press releases were stored as fee sources
+**What happened:** nothing stopped a finder from taking a bank's article about fees as its fee source.
+Space Coast CU had a live $4.73 out-of-network ATM fee read from its blog post "common checking account
+fees to avoid", a national average; its schedule says $2.50. On prod (read-only, 05:55 UTC) 27 stored
+documents at 12 banks sit under article, blog or news folders, with 23 live fees at 3 banks; 21 of those
+are MTC Federal CU's real "/articles/schedule-of-fees/". Three banks' fee links are articles: Axos
+(an "insights" article), Bank of Bennington (a closing-cost promotion) and JPMorgan Chase (a 2021 press release).
+**Fix:** `isArticleLink` (link-coverage.ts) names such addresses unless the path names a fee document.
+Every finder rejects them (`article_page`), and the upgrade search picks banks whose link is one and
+does not keep the article once the schedule is found. Live fees from article pages are left to
+Hamilton's second look, under the never-delete rule.
+**Lesson:** a page about fees is not a fee schedule. Judge a source by what kind of page it is, not
+only by whether it mentions fees.

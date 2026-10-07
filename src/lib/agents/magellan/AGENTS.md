@@ -119,6 +119,10 @@ and `detail.method_version`).
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.
+  Links to an article, blog post, news item or press release (`isArticleLink`, unless the
+  path names a fee document such as "/articles/schedule-of-fees/") go to the same search,
+  and a find does not keep the article as a companion. Every finder rejects such a
+  candidate (`article_page`) before opening it.
 - Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
   link looks out of date are searched once per version for a newer schedule
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the

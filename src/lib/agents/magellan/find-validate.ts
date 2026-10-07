@@ -1,7 +1,7 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
-import { isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink } from "./link-coverage";
+import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink } from "./link-coverage";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -91,6 +91,7 @@ export type CandidateVerdict =
   | "product_page"
   | "business_schedule"
   | "error_page"
+  | "article_page"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -187,6 +188,9 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   }
   if (isErrorPageLink(candidate.url)) {
     return rejected("error_page", "Candidate address is the site's error page", null, candidate.score);
+  }
+  if (isArticleLink(candidate.url)) {
+    return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
   }
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
   if (!response.ok) {
