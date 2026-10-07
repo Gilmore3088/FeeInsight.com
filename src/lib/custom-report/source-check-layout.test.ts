@@ -231,5 +231,28 @@ describe("checkFeeAgainstSource daily caps", () => {
     const wire = "Domestic - Incoming Wire | $10.00 | Loose Currency Ordered (per $100) | $0.50";
     expect(checkFeeAgainstSource(wire, "Domestic - Incoming Wire", 10, ".").ok).toBe(true);
   });
+
+  it("keeps real prices the source check took down (Darwin's sample of takedowns, Oct 7)", () => {
+    const ok = (text: string, name: string, amount: number) => expect(checkFeeAgainstSource(text, name, amount, ".").ok, `${name} ${amount}`).toBe(true);
+    ok("Wire Transfer Outgoing $20.00", "Wire Transfer Outgoing", 20);
+    ok("Minimum Balance Fee (if Balance is Below $7,500):\n$15", "Minimum Balance Fee (if Balance is Below )", 15);
+    ok("Dormant Account Fee\n$5.00/Mo", "Dormant Account Fee", 5);
+    ok("$150.00 Drill Safe Deposit Box", "Drill Safe Deposit Box", 150);
+    ok("Deposit return item\n$10.00", "Deposit return item", 10);
+    ok("Chargebacks\n$15.00 per item", "Chargebacks", 15);
+    // A balance the fee asks you to keep is a condition, not a balance band.
+    ok("Monthly Service Fee for failure to maintain $1,000 daily balance | $3.00", "Monthly Service Fee for failure to maintain daily balance", 3);
+    // A price with its unit and a qualifier under the name, or labelled "Fee".
+    ok("Dormant Account Fee – Checking, Savings, Money Market\n$5.00 per month for each acct., following 18 consecutive months of inactivity", "Dormant Account Fee – Checking, Savings, Money Market", 5);
+    ok("Stop Payment\nFee $35.00", "Stop Payment: Fee", 35);
+    // "$.50" is a price.
+    ok("Coin Counting (Non-Customer)-Mixed Coins---$.50/Per 100 Coins", "Coin Counting (Non-Customer)-Mixed Coins", 0.5);
+    ok("Statement copy | $.50 per copy", "Statement copy", 0.5);
+    // A name wrapped onto the next line leaves its parenthesis open; the price is not in a note.
+    ok("Consulate Letter | $40.00 | Replacement Key (1 key | $25.00\nlost)", "Replacement Key (1 key", 25);
+    // Still refused: a $5 charged per $50 of coin is not a flat fee, and a wrapped name does not take the next fee's price.
+    expect(checkFeeAgainstSource("Coin Counting for non-customers, per $50 of coin counted | $5.00", "Coin Counting for non-customers, per of coin counted", 5, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Consulate Letter | $40.00 | Replacement Key (1 key | $25.00", "Replacement Key (1 key", 40, ".").ok).toBe(false);
+  });
 });
 

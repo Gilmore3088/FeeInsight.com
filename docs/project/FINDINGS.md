@@ -1859,3 +1859,20 @@ source check v6 re-checks every institution, so the live ones get the second loo
 down, archived. Knox, Darwin and Hamilton all read through the same check, so new reads stop too.
 **Lesson:** a figure in a fee's label is either a band, a limit or a basis; the reader has to
 decide which before it calls the price flat.
+
+## 2026-10-07: the source check took down real prices in five layouts
+**What happened:** Darwin hand-checked 20 recent `source_check_untraceable` takedowns: 13 looked
+like real prices. Re-running today's reader over all 424 such takedowns from the last 24 hours
+found two causes. First, v5 had re-checked only 1,523 of 3,296 institutions, so many fees its fixes
+already read were still down. Second, five layouts it still could not read: "$.50" (no leading
+zero), a price with a unit and a qualifier under its name ("$5.00 per month for each acct.,
+following ..."), "Fee $35.00" under a name, "failure to maintain $1,000 daily balance | $3.00"
+(the balance read as a band), and a name wrapped onto the next line ("Replacement Key (1 key |
+$25.00" / "lost)") whose open parenthesis made the price look like a note.
+**Fix:** the shared reader reads all five (source check v6); 55 of the 384 takedowns with stored
+text now trace, and a spot check of 20 of them found 19 real (the miss: "$5.00 or 2% cash advance"
+shown as its $5 minimum). v6 re-checks banks with source-check takedowns first, so the restore
+runs through the normal check, logged, with `hamilton.restore` rows in `pipeline_feedback`. The
+12-hour second look (PR 324) has gated every source-check takedown since 02:32 UTC.
+**Lesson:** after a reader version bump, count how far the re-check has got before judging what
+it restores; and sample takedowns, not just live fees, each time the reader changes.

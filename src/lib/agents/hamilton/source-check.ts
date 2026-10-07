@@ -28,8 +28,11 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // to ...)"), and figures in a name's note ("Gift Cards ($25 up to $500 Only) | $5"), are read,
 // so fees the older check took down for those layouts are checked again and restored.
 // Version 6: a price charged per $100 of the item ("Cashier Check (per $100.00) $1.00") is not
-// a flat fee (priced_per_amount), so every institution is checked again; such fees get the
-// second look and then come down, archived, never deleted.
+// a flat fee (priced_per_amount); "$.50" is a price; a price with a unit and a qualifier under
+// its name ("$5.00 per month for each acct., following ..."), "Fee $35.00" under a name, a
+// balance to maintain, and a name wrapped onto the next line are read (Darwin's sample: 13 of
+// 20 recent takedowns were real prices). Every institution is checked again; institutions
+// with source-check takedowns go first, so wrongly taken-down fees come back soonest.
 export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 6 } as const;
 
 /**
@@ -198,6 +201,12 @@ export async function takeDownUntraceableFees(
                    WHERE pa.stage = 'publish'
                      AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                      AND pa.institution_id = live.institution_id
+                ),
+                -- Banks with fees this check took down first: a reader fix restores them soonest.
+                NOT EXISTS (
+                  SELECT 1 FROM published_fee_records down
+                   WHERE down.institution_id = live.institution_id
+                     AND down.rolled_back_reason LIKE ${TAKEN_DOWN}
                 ),
                 live.institution_id
        LIMIT ${limit}

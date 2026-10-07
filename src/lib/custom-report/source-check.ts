@@ -44,6 +44,11 @@ const PRICE_BELOW_MAX_LENGTH = 40;
  */
 const PRICE_THEN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per \w+|each)?\s*\|\s*[a-z]/;
 /**
+ * Or a price, its unit, and a qualifier ("$5.00 per month for each acct., following 18
+ * consecutive months of inactivity"), or a price labelled "Fee" ("Stop Payment" / "Fee $35.00").
+ */
+const PRICE_THEN_QUALIFIER = /^\s*(?:\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:\/\s*[a-z]+|per\s+[a-z]+|each)\s*,?\s*(?:for|following|after|if|when|until)\b|(?:fee|charge)s?\s*:?\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per\s+[a-z]+|each|\/\s*[a-z]+)?\s*$)/i;
+/**
  * Or a price, its unit, and a note in parentheses ("$29.00/presentment (applies to
  * transactions of $10 or more...)", "$10.00 per card replacement (normally up to 7 to 10
  * business days delivery)").
@@ -55,7 +60,7 @@ const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
-const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
+const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|maintain(?:s|ed)?|keep|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
@@ -72,7 +77,8 @@ export const DAILY_CAP_CATEGORIES: ReadonlySet<string> = new Set(["od_daily_cap"
 const DAILY_CAP_NAME_WORDS = new Set(["daily", "maxim", "max", "cap", "limit", "day"]);
 const DAILY_CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?|no more than|daily)\b[^$|]{0,30}$/i;
 const DAILY_CAP_AFTER = /^\s*\)?\s*(?:(?:per|a|each|in (?:a|one))\s+(?:business\s+|calendar\s+)?day\b|daily\b|(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b)/i;
-const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])/g;
+// "$.50" (no leading zero) is a price too: "Coin Counting---$.50/Per 100 Coins".
+const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)|(?<![\d,$])(?<!\d\.)(\d+)\.(\d{2})(?![\d])|\$\s*\.(\d{2})(?!\d)/g;
 
 interface MoneyToken {
   value: number;
@@ -93,8 +99,8 @@ function comparable(value: string): string {
 function moneyTokens(line: string): MoneyToken[] {
   const tokens: MoneyToken[] = [];
   for (const match of line.matchAll(MONEY)) {
-    const whole = (match[1] ?? match[3]).replace(/,/g, "");
-    const cents = match[2] ?? match[4] ?? "00";
+    const whole = (match[1] ?? match[3] ?? "0").replace(/,/g, "");
+    const cents = match[2] ?? match[4] ?? match[5] ?? "00";
     tokens.push({ value: Number(`${whole}.${cents}`), start: match.index ?? 0, end: (match.index ?? 0) + match[0].length });
   }
   return tokens;
@@ -252,7 +258,12 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   const from = index === 0 ? 0 : prices[index - 1].end;
   // A minimum charge ("$10.00 minimum / $25.00 per hour") or a note in the name
   // ("Gift Cards (load $10-$1000)") is not a balance band.
-  const band = (t: MoneyToken) => isThreshold(line, t) && !/^\s*min/i.test(line.slice(t.end)) && !inNote(line, t);
+  // Nor is a balance the fee asks you to keep ("failure to maintain $1,000 daily balance | $3.00").
+  const band = (t: MoneyToken) =>
+    isThreshold(line, t) &&
+    !/^\s*min/i.test(line.slice(t.end)) &&
+    !inNote(line, t) &&
+    !/\b(?:maintain(?:s|ed)?|keep)\s*$/i.test(line.slice(Math.max(0, t.start - 16), t.start));
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
@@ -328,7 +339,13 @@ function feeRow(lines: string[], index: number): string {
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
-    .find((next) => (next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
+    .find(
+      (next) =>
+        PRICE_THEN_QUALIFIER.test(next) ||
+        ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
+          PRICE_LINE.test(next) &&
+          (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
+    );
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   // Units ("/Item") and notes that only qualify the name ("If checks are not on order
@@ -338,7 +355,10 @@ function feeRow(lines: string[], index: number): string {
 
 /** The figure sits inside parentheses. */
 function inNote(line: string, token: MoneyToken): boolean {
-  return line.lastIndexOf("(", token.start) > line.lastIndexOf(")", token.start);
+  const open = line.lastIndexOf("(", token.start);
+  // A parenthesis left open across a cell ("Replacement Key (1 key | $25.00" / "lost)") is
+  // a name wrapped onto the next line, not a note around the price.
+  return open > line.lastIndexOf(")", token.start) && !line.slice(open, token.start).includes("|");
 }
 
 function isThreshold(line: string, token: MoneyToken): boolean {

@@ -17,8 +17,11 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  */
 // Since v17 the gate counts only reads that pass Knox's self-check (the shared accuracy
 // check Darwin applies before publishing). Main at v16 scored 444 right / 15 wrong on that basis.
+// Oct 7: the shared check reads "$.20" as a price, so Knox's "Temporary check – $.20 each"
+// (tid 38) now passes its self-check; the key leaves temporary checks unmapped, so the read
+// counts wrong (+1) while three right fees join (495 -> 498 right).
 const FLOORS = {
-  all: { right: 444, wrong: 15 },
+  all: { right: 444, wrong: 16 },
   holdout: { right: 43, wrong: 6 },
 };
 
