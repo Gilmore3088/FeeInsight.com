@@ -304,6 +304,8 @@ function fmtTrendValue(v: number, unit: "dollars" | "percent"): string {
   if (a >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
   if (a >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
   if (a >= 1e3) return `$${Math.round(v / 1e3)}K`;
+  // Small figures (service charges per $1,000 of deposits) keep their cents.
+  if (a < 100) return `$${v.toFixed(2)}`;
   return `$${Math.round(v)}`;
 }
 
@@ -314,8 +316,12 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   const dates = [...new Set(x.series.flatMap((s) => s.points.map((p) => p.date)))].sort();
   const vals = x.series.flatMap((s) => s.points.map((p) => p.value));
   if (dates.length < 2 || vals.length === 0) return <p className="text-sm text-warm-700">Not enough points on file to draw a trend.</p>;
-  const lo = Math.min(0, ...vals);
-  const hi = Math.max(...vals) * 1.08 || 1;
+  // Zoom to the data rather than to zero, so a gap of cents between two lines is visible.
+  const vMin = Math.min(...vals);
+  const vMax = Math.max(...vals);
+  const span = vMax - vMin || Math.abs(vMax) * 0.1 || 1;
+  const lo = vMin < 0 ? vMin - span * 0.2 : Math.max(0, vMin - span * 0.6);
+  const hi = vMax + span * 0.3;
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
   const strokes = ["var(--color-terra, #C44B2E)", "#6b6255", "#a39a8c"];
@@ -334,6 +340,17 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
             </g>
           );
         })}
+        {/* The space between the bank and its peers is shaded, so the gap reads as a shape. */}
+        {x.series.length >= 2 && x.series[0].points.length > 1 && x.series[1].points.length > 1 ? (
+          <polygon
+            fill="var(--color-terra, #C44B2E)"
+            fillOpacity={0.1}
+            points={[
+              ...x.series[0].points.map((p) => `${px(p.date)},${py(p.value)}`),
+              ...[...x.series[1].points].reverse().map((p) => `${px(p.date)},${py(p.value)}`),
+            ].join(" ")}
+          />
+        ) : null}
         {x.series.map((s, i) => (
           <polyline
             key={s.label}
@@ -344,6 +361,12 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
             points={s.points.map((p) => `${px(p.date)},${py(p.value)}`).join(" ")}
           />
         ))}
+        {x.series.map((s, i) => {
+          const last = s.points[s.points.length - 1];
+          return last ? (
+            <circle key={`end-${s.label}`} cx={px(last.date)} cy={py(last.value)} r={i === 0 ? 4 : 3} fill={strokes[i % strokes.length]} stroke="#fff" strokeWidth={1.5} />
+          ) : null;
+        })}
         <text x={pad.l} y={H - 6} fontSize="11" fill="#8a8073">
           {label(dates[0])}
         </text>
