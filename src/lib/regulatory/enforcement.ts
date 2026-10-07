@@ -99,7 +99,7 @@ export function parseAmount(value: unknown): number | null {
  * names are ("WELLS FARGO&COMPANY", "FIRST NATL FINL SERVICES INC").
  */
 export function normalizeName(name: string | null | undefined): string {
-  return ` ${(name ?? "").toLowerCase()} `
+  return ` ${(name ?? "").toLowerCase().replace(/\s+d\/?b\/?a\s.*$/, "")} `
     .replace(/&/g, " and ")
     .replace(/n\.\s*a\./g, " na ")
     .replace(/[.,'’"()]/g, " ")
@@ -277,6 +277,9 @@ export interface EnforcementMatcher {
 export function buildEnforcementMatcher(candidates: MatchCandidate[]): EnforcementMatcher {
   const byNameState = new Map<string, MatchCandidate[]>();
   const holdingByNameState = new Map<string, Set<string>>();
+  // A holding company is often based in another state than its banks
+  // (Wells Fargo & Company in CA, its bank in SD), so its name also counts alone.
+  const holdingByName = new Map<string, Set<string>>();
   for (const c of candidates) {
     if (!c.state_code) continue;
     const key = `${normalizeName(c.name)}|${c.state_code}`;
@@ -286,6 +289,8 @@ export function buildEnforcementMatcher(candidates: MatchCandidate[]): Enforceme
       const set = holdingByNameState.get(hk) ?? new Set<string>();
       set.add(c.holding_company_name);
       holdingByNameState.set(hk, set);
+      const nk = normalizeName(c.holding_company_name);
+      holdingByName.set(nk, (holdingByName.get(nk) ?? new Set<string>()).add(c.holding_company_name));
     }
   }
   const none: ActionMatch = { institution_id: null, holding_company: null, method: null };
@@ -304,6 +309,9 @@ export function buildEnforcementMatcher(candidates: MatchCandidate[]): Enforceme
       if (pool.length > 0) return none;
       const holding = holdingByNameState.get(`${name}|${action.party_state}`);
       if (holding && holding.size === 1) return { institution_id: null, holding_company: [...holding][0], method: "holding_company" };
+      if (holding) return none;
+      const anywhere = holdingByName.get(name);
+      if (anywhere && anywhere.size === 1) return { institution_id: null, holding_company: [...anywhere][0], method: "holding_company" };
       return none;
     },
   };
