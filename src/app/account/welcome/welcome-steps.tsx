@@ -130,9 +130,9 @@ export function WelcomeSteps({
 
       {pendingWorkspaceInvitations.length > 0 && !isPro && (
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Workspace invitation ready after Pro activation</p>
+          <p className="font-semibold">Workspace invitation waiting</p>
           <p className="mt-1">
-            Your email has delegated Hamilton access waiting. Activate a Pro seat to attach:
+            Your email has been invited to an institution account. It includes up to five teammates, so you don&apos;t need to pay. Open the invite link the account owner sent you to join:
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {pendingWorkspaceInvitations.map((invitation) => (
@@ -145,10 +145,10 @@ export function WelcomeSteps({
             ))}
           </div>
           <Link
-            href="/subscribe?invite=workspace"
+            href="/workspace-invite"
             className="mt-4 inline-flex rounded-full bg-[#C44B2E] px-4 py-2 text-xs font-semibold text-white no-underline"
           >
-            Activate Pro Seat
+            Accept invitation
           </Link>
         </div>
       )}

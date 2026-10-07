@@ -62,6 +62,12 @@ export interface User {
   fed_district: number | null;
   job_role: string | null;
   interests: string | null;
+  /**
+   * Holds a team seat: an active member of an institution workspace whose owner's own
+   * subscription is active (past-due grace included). Loaded by `getCurrentUser`; absent
+   * or false everywhere else, so it fails closed.
+   */
+  workspace_seat?: boolean;
 }
 
 export type Permission =
@@ -257,6 +263,7 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
   const row = rows[0] as (User & { session_expires_at?: string | Date | null }) | undefined;
   if (!row) return null;
   const { session_expires_at: sessionExpiresAt, ...user } = row;
+  user.workspace_seat = await hasWorkspaceSeat(user.id);
   if (shouldRenewSession(sessionExpiresAt)) {
     // Sliding expiry. A database write is allowed during render; the cookie is refreshed
     // separately by `/api/session` (`renewSessionCookie`). Never blocks or fails the read.
@@ -267,6 +274,53 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
   }
   return user as User;
 });
+
+/**
+ * Past-due days a seat owner's team keeps access. Same value as `PAST_DUE_GRACE_DAYS` in
+ * access.ts (kept here so auth does not import access at runtime; a test holds them equal).
+ */
+export const WORKSPACE_SEAT_GRACE_DAYS = 7;
+
+/**
+ * One query: is this user an active member of an institution workspace that has an active
+ * owner whose own subscription is active, or past due inside the grace window (an unknown
+ * past-due start counts as in grace, as in `isInPaymentGrace`)? The owner of such a
+ * workspace holds a seat too. Any error returns false.
+ */
+export async function hasWorkspaceSeat(userId: number, db: SqlClient = sql): Promise<boolean> {
+  try {
+    const rows = await db<Array<{ has_seat: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1
+          FROM institution_workspace_memberships seat
+          JOIN institution_workspace_memberships owner_seat
+            ON owner_seat.institution_id = seat.institution_id
+           AND owner_seat.membership_role = 'owner'
+           AND owner_seat.membership_status = 'active'
+          JOIN users owner_user
+            ON owner_user.id = owner_seat.user_id
+           AND owner_user.is_active = true
+         WHERE seat.user_id = ${userId}
+           AND seat.membership_status = 'active'
+           AND (
+             owner_user.subscription_status = 'active'
+             OR (
+               owner_user.subscription_status = 'past_due'
+               AND (
+                 to_jsonb(owner_user.*) ->> 'past_due_since' IS NULL
+                 OR (to_jsonb(owner_user.*) ->> 'past_due_since')::timestamptz
+                      > NOW() - make_interval(days => ${WORKSPACE_SEAT_GRACE_DAYS})
+               )
+             )
+           )
+      ) AS has_seat
+    `;
+    return rows[0]?.has_seat === true;
+  } catch (error) {
+    console.error("[auth] workspace seat check failed:", error);
+    return false;
+  }
+}
 
 /** True when a session has less than 15 days left and should be extended to 30. */
 export function shouldRenewSession(expiresAt: string | Date | null | undefined, now = Date.now()): boolean {

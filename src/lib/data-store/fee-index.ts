@@ -219,16 +219,11 @@ export async function getSourcedInstitutionCount(): Promise<number> {
 }
 
 export async function getPeerIndex(
-  filters: {
-    charter_type?: string;
-    asset_tiers?: string[];
-    fed_districts?: number[];
-    state_code?: string;
-  },
+  filters: PeerFilterSet,
   approvedOnly = true
 ): Promise<IndexEntry[]> {
   const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
-  const params: (string | number)[] = [];
+  const params: (string | number | string[] | number[])[] = [];
   let paramIdx = 0;
 
   conditions.push(
@@ -237,31 +232,44 @@ export async function getPeerIndex(
       : "ef.review_status != 'rejected'"
   );
 
-  if (filters.charter_type) {
+  const institutionIds = peerInstitutionIds(filters);
+  if (institutionIds) {
+    // Hand-picked peers are exactly those institutions; the other filters do not apply.
     paramIdx++;
-    conditions.push(`ct.charter_type = $${paramIdx}`);
-    params.push(filters.charter_type);
-  }
-  if (filters.asset_tiers && filters.asset_tiers.length > 0) {
-    const placeholders = filters.asset_tiers.map(() => {
+    conditions.push(`ct.id = ANY($${paramIdx}::int[])`);
+    params.push(institutionIds);
+  } else {
+    if (filters.charter_type) {
       paramIdx++;
-      return `$${paramIdx}`;
-    }).join(",");
-    conditions.push(`ct.asset_size_tier IN (${placeholders})`);
-    params.push(...filters.asset_tiers);
-  }
-  if (filters.fed_districts && filters.fed_districts.length > 0) {
-    const placeholders = filters.fed_districts.map(() => {
+      conditions.push(`ct.charter_type = $${paramIdx}`);
+      params.push(filters.charter_type);
+    }
+    if (filters.asset_tiers && filters.asset_tiers.length > 0) {
+      const placeholders = filters.asset_tiers.map(() => {
+        paramIdx++;
+        return `$${paramIdx}`;
+      }).join(",");
+      conditions.push(`ct.asset_size_tier IN (${placeholders})`);
+      params.push(...filters.asset_tiers);
+    }
+    if (filters.fed_districts && filters.fed_districts.length > 0) {
+      const placeholders = filters.fed_districts.map(() => {
+        paramIdx++;
+        return `$${paramIdx}`;
+      }).join(",");
+      conditions.push(`ct.fed_district IN (${placeholders})`);
+      params.push(...filters.fed_districts);
+    }
+    if (filters.state_code) {
       paramIdx++;
-      return `$${paramIdx}`;
-    }).join(",");
-    conditions.push(`ct.fed_district IN (${placeholders})`);
-    params.push(...filters.fed_districts);
-  }
-  if (filters.state_code) {
-    paramIdx++;
-    conditions.push(`ct.state_code = $${paramIdx}`);
-    params.push(filters.state_code);
+      conditions.push(`ct.state_code = $${paramIdx}`);
+      params.push(filters.state_code);
+    }
+    if (filters.states && filters.states.length > 0) {
+      paramIdx++;
+      conditions.push(`ct.state_code = ANY($${paramIdx}::text[])`);
+      params.push(filters.states);
+    }
   }
 
   const where = conditions.join(" AND ");
@@ -272,7 +280,7 @@ export async function getPeerIndex(
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${where}`,
-    params
+    params as never[]
   ) as {
     fee_category: string;
     amount: number | null;
@@ -290,6 +298,16 @@ export interface PeerFilterSet {
   asset_tiers?: string[];
   fed_districts?: number[];
   state_code?: string;
+  /** Any of these states (a saved peer group's state filter). */
+  states?: string[];
+  /** Hand-picked peers. When set, the peers are exactly these institutions and the other filters are ignored. */
+  institutionIds?: number[];
+}
+
+/** The hand-picked peer ids, or null when the set is filter-based. */
+export function peerInstitutionIds(filters: PeerFilterSet): number[] | null {
+  const ids = (filters.institutionIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  return ids.length > 0 ? [...new Set(ids)] : null;
 }
 
 interface PeerRow extends IndexRow {
@@ -299,9 +317,14 @@ interface PeerRow extends IndexRow {
 }
 
 export function matchesPeerFilters(
-  row: Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code">,
+  row: Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code"> & {
+    institution_id?: number | string;
+  },
   filters: PeerFilterSet,
 ): boolean {
+  const ids = peerInstitutionIds(filters);
+  if (ids) return ids.includes(Number(row.institution_id));
+  if (filters.states?.length && !filters.states.includes(row.state_code ?? "")) return false;
   if (filters.charter_type && row.charter_type !== filters.charter_type) return false;
   if (filters.state_code && row.state_code !== filters.state_code) return false;
   if (filters.asset_tiers?.length && !filters.asset_tiers.includes(row.asset_size_tier ?? "")) return false;
@@ -324,13 +347,19 @@ export async function getPeerIndexes(
     STATS_ROW_FILTER,
     approvedOnly ? "ef.review_status = 'approved'" : "ef.review_status != 'rejected'",
   ];
-  const params: string[][] = [];
-  // Every set anchored on a charter or a state lets the query skip everything else.
-  if (filterSets.every((filters) => filters.charter_type || filters.state_code)) {
+  const params: (string[] | number[])[] = [];
+  // Every set anchored on a charter, a state or hand-picked peers lets the query skip everything else.
+  if (filterSets.every((f) => f.charter_type || f.state_code || f.states?.length || peerInstitutionIds(f))) {
     const charters = [...new Set(filterSets.map((f) => f.charter_type).filter((v): v is string => !!v))];
-    const states = [...new Set(filterSets.map((f) => f.state_code).filter((v): v is string => !!v))];
+    const states = [...new Set(filterSets.flatMap((f) => [f.state_code, ...(f.states ?? [])]).filter((v): v is string => !!v))];
+    const ids = [...new Set(filterSets.flatMap((f) => peerInstitutionIds(f) ?? []))];
     params.push(charters, states);
-    conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]))");
+    if (ids.length > 0) {
+      params.push(ids);
+      conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]) OR ct.id = ANY($3::int[]))");
+    } else {
+      conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]))");
+    }
   }
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.review_status, ef.created_at,
@@ -341,6 +370,44 @@ export async function getPeerIndexes(
     params as never[],
   ) as PeerRow[];
   return filterSets.map((filters) => buildIndexEntries(rows.filter((row) => matchesPeerFilters(row, filters))));
+}
+
+export interface PeerGroupCount {
+  /** Active institutions in the group (the asking institution left out). */
+  institutions: number;
+  /** Of those, how many have at least one live fee that counts toward statistics. */
+  publishing: number;
+}
+
+/**
+ * How many institutions each peer group holds, and how many of them publish live fees,
+ * from one read of the registry. Results follow the order of `filterSets`.
+ */
+export async function getPeerGroupCounts(
+  filterSets: PeerFilterSet[],
+  excludeInstitutionId?: number | null,
+): Promise<PeerGroupCount[]> {
+  if (filterSets.length === 0) return [];
+  const rows = await sql.unsafe(
+    `SELECT ct.id AS institution_id, ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
+            EXISTS (
+              SELECT 1 FROM published_fee_catalog ef
+               WHERE ef.institution_id = ct.id
+                 AND ef.fee_category IS NOT NULL
+                 AND ef.review_status = 'approved'
+                 AND ${STATS_ROW_FILTER}
+            ) AS publishes
+       FROM institution_sources ct
+      WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'`,
+  ) as (Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code"> & {
+    institution_id: number | string;
+    publishes: boolean;
+  })[];
+  const peers = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
+  return filterSets.map((filters) => {
+    const members = peers.filter((row) => matchesPeerFilters(row, filters));
+    return { institutions: members.length, publishing: members.filter((row) => row.publishes).length };
+  });
 }
 
 export async function getIndexSnapshot(
