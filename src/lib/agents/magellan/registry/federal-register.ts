@@ -31,6 +31,8 @@ export interface RegistryFederalRegisterResult {
   pages: number;
   stored: number;
   stages: Record<TrackerStage, number>;
+  /** Rules per agency short name; a joint rule counts once for each agency. */
+  agencies: Record<string, number>;
   fee_related: number;
   shadow: boolean;
   dryRun: boolean;
@@ -46,7 +48,11 @@ export async function runRegistryFederalRegister(
   const { items, total, pages } = await fetchFederalRegisterRules(since, options.fetchOptions);
 
   const stages: Record<TrackerStage, number> = { comment_open: 0, comment_closed: 0, final_not_yet_effective: 0, in_effect: 0 };
-  for (const item of items) stages[trackerStage(item, today)] += 1;
+  const agencies: Record<string, number> = {};
+  for (const item of items) {
+    stages[trackerStage(item, today)] += 1;
+    for (const agency of item.agencies) agencies[agency] = (agencies[agency] ?? 0) + 1;
+  }
   const shadow = !(options.live ?? federalRegisterLive());
   const result: RegistryFederalRegisterResult = {
     source: FEDERAL_REGISTER_SOURCE,
@@ -57,6 +63,7 @@ export async function runRegistryFederalRegister(
     pages,
     stored: 0,
     stages,
+    agencies,
     fee_related: items.filter((item) => item.topics.length > 0).length,
     shadow,
     dryRun: Boolean(options.dryRun),
@@ -104,7 +111,7 @@ export async function runRegistryFederalRegister(
     sourceUrl: null,
     runId: options.runId ?? null,
     nextAttemptAfterHours: FEDERAL_REGISTER_REFRESH_HOURS,
-    detail: { since, stages, fee_related: result.fee_related, shadow, reported_total: total },
+    detail: { since, stages, agencies, fee_related: result.fee_related, shadow, reported_total: total },
   });
   return result;
 }

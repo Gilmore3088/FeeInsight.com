@@ -175,8 +175,9 @@ describe("/api/admin/agents/tick", () => {
     const call = executeQueuedAgentRunsMock.mock.calls.at(-1)?.[0];
     expect(call.runLimit).toBe(10);
     expect(call.maxStepsPerRun).toBe(10);
-    expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 150_000);
-    expect(call.deadlineAt).toBeLessThan(before + 180_000);
+    // Steps must finish inside the 300 s function limit and the 5-minute interval.
+    expect(call.deadlineAt).toBeGreaterThanOrEqual(before + 270_000);
+    expect(call.deadlineAt).toBeLessThan(before + 290_000);
   });
 
   it("holds provider steps but still drains deterministic work when the budget denies provider calls", async () => {

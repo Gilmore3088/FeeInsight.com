@@ -45,6 +45,8 @@ Hard rules:
   price change from anything else. When DATA lists none, say the change history is still building.
 - Plain language, short sentences, no jargon, no internal system names.`;
 
+/** Price position is "lower" or "higher", never "cheapest". */
+const CHEAP_WORDING = /\bcheap(?:er|est)?\b/i;
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
 const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
 /** An opening sentence that leads with what the data lacks. */
@@ -126,6 +128,8 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
   if (internal) problems.push(`Internal name in the text: "${internal[0]}".`);
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
   if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. Its fee is not in the index yet; say that instead.`);
+  const cheap = all.match(CHEAP_WORDING);
+  if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   return { problems, figureCheck };
