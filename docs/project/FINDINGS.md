@@ -13,6 +13,38 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: The source check took down real fees whose price carried a note
+**What happened:** a hand check of 24 random source-check takedowns from the last 30 hours (00:55
+UTC Oct 7) found at least 6 real fees the bank's page states exactly, among them "Item Returned
+for Non-Sufficient Funds / $29.00/presentment (applies to transactions of $10 or more...)", "Debit
+Card Replacement / $10.00 per card replacement (normally up to 7 to 10 business days delivery)",
+"Non-Customer check cashing (or 1% if check is over $500) / $5" and "Gift Cards ($25 up to $500
+Only) | $5 per card". About 8 of the 24 were right to come down (wrong amount, wrong box size, a
+cap read as a fee), and the rest could not be judged from the stored text.
+**Cause:** `checkFeeAgainstSource` read a price printed under a name only when that line was short,
+so a price followed by a note in parentheses never joined its name. It also treated a limit inside
+the name's note ("over $500") as the row's price, and scored a figure inside a note
+("($25 up to $500 Only)") ahead of the price printed after it.
+**Fix:** the shared reader now accepts a price line that carries a note in parentheses. It ignores
+figures inside a name's note when the row prints a price outside it, and looks below a name whose
+only figures are limits. Hamilton's source check goes to v5, so every institution is checked again
+and fees the older check took down are restored when they now trace. Wrong amounts still fail.
+**Lesson:** sample takedowns as well as live rows; a strict check costs right fees too.
+
+## 2026-10-07: The category guard was rejecting real check-card, teller's-check and charge-back fees
+**What happened:** Darwin's category guard rejects about 100-170 new Knox fees an hour. Sampling
+them (read-only, 00:50 UTC Oct 7) showed three groups of real fees it threw away: 82 check-card
+replacements ("Visa Check Card Replacement": the card exclusion read "check" as a paper check), 13
+"Teller’s Check" fees (the rule allowed "teller's" with a straight quote only) and 55 deposited-item
+"Charge Back" fees (the rule knew only "chargeback"). The same check found 7 live rows in deposited
+item returns that are card disputes or loan payment chargebacks.
+**Fix:** category guard v14 reads curly quotes as straight ones, treats a "check card" as a debit
+card (checks, checkbooks, PIN-only reissues and liability notes still fail), and reads "charge back" as a
+deposited-item return unless it names a card, dispute or loan; card chargebacks re-file to card
+disputes. A guard version bump makes Darwin re-check its rejected rows once, so about 150 rejected
+fees get another chance (each still has to pass the source check). The 7 wrong live rows come down.
+**Lesson:** a guard that rejects is also a coverage cost; sample its rejects, not just the live rows.
+
 ## 2026-10-06: The 7-state answer-key misses are mostly gaps in the keys, and five were real rules gaps
 **What happened:** at 23:55 UTC, 425 of 450 live fees at the 38 answer-key banks in CA, FL, GA, IL,
 MI, MN and NY matched their key (94.4%; 222 more came from other documents and are not scored).
@@ -27,6 +59,20 @@ read before Knox v16 learned "Int'l").
 fee that names an overdraft line as a late payment fee. The dry run over live rows fails exactly those
 5; Hamilton's publish step takes them down.
 **Lesson:** an answer-key miss is a lead, not a verdict; check the bank's own line before changing a rule.
+
+## 2026-10-07: Big banks call it a "Schedule of Charges", on the parent company's site
+**What happened:** James, 00:52 UTC Oct 7. Citibank (institution 3) has no fee link and 0 live
+fees; its consumer schedule is "Schedule_of_Charges_Effective_February_26_2026.pdf" on
+citigroup.com, while its website is citi.com. Only the free finders' link phrases knew the
+words "schedule of charges"; the page check's fee words and the paid prompts did not, and the
+paid finders rejected any answer off the website's own host.
+**Cause:** Magellan's fee vocabulary and domain rule were written from small-bank sites.
+**Fix:** this PR. "Schedule of Charges", "Schedule of Service Charges", "Account Fee Schedule",
+"Consumer Fees" and "Deposit Account Agreement" in the page check, link phrases and paid
+prompts; `onBankDomain` (link-coverage.ts, shared by paid find and schedule search) accepts
+the website's name plus a corporate word (citigroup.com, citibank.com), not look-alikes
+(citizensbank.com).
+**Lesson:** test finders against the largest banks' own wording and hosting, not only community banks.
 
 ## 2026-10-06: A fee document dated 2019 counted as a finished link
 **What happened:** read-only prod query, 18:15 UTC Oct 6. Enterprise Bank & Trust ($17B, MO)
@@ -1565,3 +1611,38 @@ Nothing re-read a current copy, because the re-read triggers only reach thin tex
 and $10B+ banks. Knox now reads a current copy again once per rules version while an older copy
 still carries live fees.
 
+## 2026-10-07: 14,133 live fees still pointed at a superseded copy of their page
+**What happened:** when Magellan fetches a newer copy of a fee page, Knox reads it and Darwin
+verifies its rows. A line whose amount did not change is skipped by Hamilton's publish rules as
+"identical fee already published", so the live fee kept its old document, old source date and old
+published date. On 7 Oct, 14,133 live fees at 1,051 banks pointed at a superseded copy; for 8,607
+of them (669 banks) the current copy states the same fee under the same name at the same amount,
+verified by Darwin and never published.
+**Fix:** every publish step moves up to 300 of those fees to the current copy
+(`hamilton/refresh-copy.ts`): it publishes the current copy's verified row under today's publish
+rules and category guard, and closes the old row as `refreshed by #<new id>`. Amounts are
+unchanged, so no price change is recorded and no fee comes down without its replacement.
+**The other ~5,500, sorted (prod, read-only, 7 Oct ~01:05 UTC):** 2,104 are read by Knox from the
+current copy at the same name and amount but not yet verified by Darwin (1,108 held as
+`duplicate_in_batch`, 782 not reached yet, 172 peer outliers); 683 have a same-amount row Darwin did
+not verify or filed under another variant; 934 are not in the current copy's Knox rows, but the
+current copy's text still carries the amount for all but 1 (a Knox miss, not a dropped fee); 1,206
+sit on a current copy with no Knox rows: 972 of them because the current copy's text is identical
+(Knox skips text it has read), 147 because Knox read nothing from changed text, 87 because the copy
+has no stored text; 10 are real price changes. So none of the groups shows stale prices at scale.
+The identical-text copies are fixed here too: `moveRowsToIdenticalCopy` moves the superseded copy's
+rows to the identical current copy (912 live fees at 55 banks; one superseded copy per current copy).
+**Lesson:** a dedupe that only asks "is this value already live?" also has to ask "from which
+copy?", or freshness silently stops moving.
+
+## 2026-10-07: 87 imported live fees had no source document
+**What happened:** the April import (`migration_v10`) wrote some fee lines twice, once with the
+schedule's document and once without, and published the copy without one. The source check traced
+them to the schedule but its relink is skipped when the slot is taken (an imported row is unique per
+source, document and name), so they stayed live with no document. 82 of the 87 have a twin at the
+same amount that was never verified; the other 5 have a twin at a different amount (separate lines).
+**Fix:** every publish step points such a fee's verified row at its twin once the twin's document
+states the fee (`linkImportedFeesToTwins` in `hamilton/source-check.ts`). Nothing is published or
+taken down.
+**Lesson:** a uniqueness guard that skips a write silently needs a fallback, or the skipped rows
+stay broken without anyone seeing them.

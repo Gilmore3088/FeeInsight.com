@@ -28,6 +28,7 @@ import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
   competitorMoveObservations,
+  feePositionRows,
   marketPositionObservations,
   rankObservations,
   revenueShiftObservation,
@@ -405,6 +406,7 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
     nationalIncome,
     nationalIncomeSeries,
     feesReviewed: base.ownValues.size,
+    positions: feePositionRows(positions),
     peerLabel: base.peerLabel,
     generatedAt: now.toISOString(),
     provenance: {

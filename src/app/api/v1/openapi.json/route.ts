@@ -6,7 +6,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.4.0",
+    version: "1.5.0",
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
     contact: {
@@ -729,9 +729,9 @@ const spec = {
     "/branches": {
       get: {
         operationId: "getBranches",
-        summary: "Bank branch locations",
+        summary: "Branch locations",
         description:
-          "Bank branches from the FDIC Summary of Deposits, latest survey year, with address and latitude/longitude. Give institution_id for one bank, or state (optionally with city or zip) for an area. Credit unions are not included. Pro and Enterprise only.",
+          "Bank branches from the FDIC Summary of Deposits (latest survey year, with deposits) and credit union branches from NCUA (no deposits; coordinates added over time), with address and latitude/longitude. Give institution_id for one institution, or state (optionally with city or zip) for an area. Pro and Enterprise only.",
         tags: ["Branches"],
         parameters: [
           { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 } },
@@ -761,6 +761,7 @@ const spec = {
                       items: {
                         type: "object",
                         properties: {
+                          source: { type: "string", enum: ["fdic_sod", "ncua"] },
                           institution_id: { type: "integer", nullable: true },
                           institution_name: { type: "string", nullable: true },
                           branch_name: { type: "string", nullable: true },
@@ -770,10 +771,11 @@ const spec = {
                           state: { type: "string", nullable: true },
                           zip: { type: "string", nullable: true },
                           county_fips: { type: "integer", nullable: true },
+                          county_name: { type: "string", nullable: true },
                           msa_name: { type: "string", nullable: true },
                           latitude: { type: "number", nullable: true },
                           longitude: { type: "number", nullable: true },
-                          deposits: { type: "number", nullable: true, description: "Whole US dollars" },
+                          deposits: { type: "number", nullable: true, description: "Whole US dollars; null for credit unions" },
                         },
                       },
                     },
@@ -871,7 +873,7 @@ const spec = {
     },
     {
       name: "Branches",
-      description: "Bank branch locations and local market competitors from the FDIC Summary of Deposits.",
+      description: "Bank and credit union branch locations, and local market competitors.",
     },
   ],
   "x-rateLimit": {
