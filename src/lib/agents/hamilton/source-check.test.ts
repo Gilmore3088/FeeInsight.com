@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SOURCE_CHECK_REASON, takeDownUntraceableFees, traceLiveFee, type LiveFeeRow } from "./source-check";
+import {
+  SOURCE_CHECK_REASON,
+  importedTwinFingerprint,
+  linkImportedFeesToTwins,
+  takeDownUntraceableFees,
+  traceLiveFee,
+  twinStatesFee,
+  type LiveFeeRow,
+} from "./source-check";
 
 // From Texar FCU's stored fee schedule text.
 const TEXAR = [
@@ -125,5 +133,49 @@ describe("takeDownUntraceableFees", () => {
     const result = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });
     expect(result.takedowns).toHaveLength(1);
     expect(calls.some((query) => query.includes("UPDATE"))).toBe(false);
+  });
+});
+
+describe("linkImportedFeesToTwins", () => {
+  const twin = (name: string, amount: string, text: string | null = TEXAR) => ({
+    ...fee(9, name, amount, "migration_v10", null),
+    twin_raw_id: 3009,
+    twin_document_id: 7,
+    normalized_text: text,
+  });
+
+  it("links an imported fee to its twin's document only when that document states the fee", () => {
+    expect(twinStatesFee(twin("Cashiers Check", "3.00"))).toBe(true);
+    expect(twinStatesFee(twin("Cashiers Check", "8.00"))).toBe(false);
+    expect(twinStatesFee(twin("Cashiers Check", "3.00", null))).toBe(false);
+  });
+
+  function twinDb(rows: unknown[]) {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const text = Array.isArray(strings) ? strings.join(" ") : String(strings);
+      if (text.includes("JOIN raw_fee_observations twin")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+  }
+
+  it("points the verified row at the twin and records the pair", async () => {
+    const db = twinDb([twin("Cashiers Check", "3.00")]);
+    const result = await linkImportedFeesToTwins(db as never, { runId: 9, dryRun: false });
+    expect(result).toEqual({ checked: 1, linked: 1, untraced: 0 });
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join(" "));
+    expect(statements.some((text) => text.includes("UPDATE verified_fee_observations"))).toBe(true);
+    expect(statements.some((text) => /(UPDATE|INSERT INTO) published_fee_records/.test(text))).toBe(false);
+    const attempt = db.mock.calls.find((call) => (call[0] as unknown as string[]).join(" ").includes("INSERT INTO pipeline_attempts"));
+    expect(attempt).toContain(importedTwinFingerprint(1009, 3009));
+  });
+
+  it("writes nothing in a dry run, and nothing but the attempt when the fee does not trace", async () => {
+    const dry = twinDb([twin("Cashiers Check", "3.00")]);
+    expect(await linkImportedFeesToTwins(dry as never, { runId: 9, dryRun: true })).toEqual({ checked: 1, linked: 1, untraced: 0 });
+    expect(dry.mock.calls).toHaveLength(1);
+    const db = twinDb([twin("Cashiers Check", "8.00")]);
+    expect(await linkImportedFeesToTwins(db as never, { runId: 9, dryRun: false })).toEqual({ checked: 1, linked: 0, untraced: 1 });
+    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join(" "));
+    expect(statements.some((text) => text.includes("UPDATE verified_fee_observations"))).toBe(false);
   });
 });

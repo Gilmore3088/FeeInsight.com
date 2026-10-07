@@ -371,3 +371,153 @@ export async function takeDownUntraceableFees(
   if (result.takedowns.length > 0 || result.restored > 0) invalidatePublicReadCache();
   return result;
 }
+
+/** Imported fees linked to their document through an identical imported row, per publish step. */
+export const IMPORTED_TWIN_LINK_LIMIT = 100;
+
+/** One check per (verified row, twin raw row) pair. */
+export function importedTwinFingerprint(feeVerifiedId: number | string, twinRawId: number | string): string {
+  return `twin-v1:${feeVerifiedId}:${twinRawId}`;
+}
+
+interface ImportedTwinRow extends LiveFeeRow {
+  twin_raw_id: number | string;
+  twin_document_id: number | string;
+  normalized_text: string | null;
+}
+
+export interface ImportedTwinLinkResult {
+  checked: number;
+  linked: number;
+  untraced: number;
+}
+
+/**
+ * Pure: an imported live fee may take its twin's document only when that document's text
+ * states the fee (the same shared check the source check uses).
+ */
+export function twinStatesFee(row: ImportedTwinRow): boolean {
+  if (!row.normalized_text) return false;
+  const verdict = traceLiveFee({ ...row, source_document_id: row.twin_document_id }, [
+    { source_document_id: row.twin_document_id, normalized_text: row.normalized_text },
+  ]);
+  return verdict.kind === "traced";
+}
+
+/**
+ * Hamilton repair: an imported live fee with no document gets its document. The April
+ * import (`migration_v10`) wrote some fee lines twice, once with the schedule's document
+ * and once without, and published the copy without one. The source check traces those
+ * fees to the schedule but cannot relink them: an imported row is unique per (source,
+ * document, name), and the twin already holds that slot. Here the fee's verified row is
+ * pointed at the twin (same institution, source, name and amount, never Darwin-verified
+ * itself) once the twin's document states the fee. No fee is published or taken down; a
+ * dry run reports and writes nothing.
+ */
+export async function linkImportedFeesToTwins(
+  db: SqlTag,
+  options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number },
+): Promise<ImportedTwinLinkResult> {
+  const empty: ImportedTwinLinkResult = { checked: 0, linked: 0, untraced: 0 };
+  let rows: ImportedTwinRow[];
+  try {
+    rows = await inSavepoint(db, (scope) => scope<ImportedTwinRow[]>`
+      SELECT DISTINCT ON (fp.fee_published_id)
+             fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent,
+             twin.fee_raw_id AS twin_raw_id, twin.source_document_id AS twin_document_id,
+             (SELECT t.normalized_text FROM agent_source_texts t
+               WHERE t.source_document_id = twin.source_document_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+               ORDER BY t.id DESC LIMIT 1) AS normalized_text
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN raw_fee_observations twin
+          ON twin.institution_id = fr.institution_id
+         AND twin.source = fr.source
+         AND twin.fee_name = fr.fee_name
+         AND twin.fee_raw_id <> fr.fee_raw_id
+         AND twin.source_document_id IS NOT NULL
+         AND twin.amount IS NOT DISTINCT FROM fr.amount
+         AND twin.rate_percent IS NOT DISTINCT FROM fr.rate_percent
+       WHERE fp.rolled_back_at IS NULL
+         AND fr.source_document_id IS NULL
+         AND fr.source <> 'knox'
+         AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
+         AND NOT EXISTS (
+           SELECT 1 FROM verified_fee_observations tv
+            WHERE tv.fee_raw_id = twin.fee_raw_id AND tv.outlier_flags ? 'agentic_darwin_verified'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.stage = 'publish'
+              AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+              AND pa.input_fingerprint = 'twin-v1:' || fv.fee_verified_id::text || ':' || twin.fee_raw_id::text
+         )
+       ORDER BY fp.fee_published_id, twin.fee_raw_id
+       LIMIT ${options.limit ?? IMPORTED_TWIN_LINK_LIMIT}
+    `);
+  } catch (error) {
+    console.error("linkImportedFeesToTwins select failed:", error);
+    return empty;
+  }
+  if (rows.length === 0) return empty;
+  // One verified row per twin: the Darwin dedupe index allows one verified row per raw row.
+  const usedTwins = new Set<string>();
+  const links = rows.filter((row) => {
+    if (!twinStatesFee(row) || usedTwins.has(String(row.twin_raw_id))) return false;
+    usedTwins.add(String(row.twin_raw_id));
+    return true;
+  });
+  const linkedIds = new Set(links.map((row) => String(row.fee_published_id)));
+  const result: ImportedTwinLinkResult = { checked: rows.length, linked: links.length, untraced: rows.length - links.length };
+  if (options.dryRun) return result;
+  try {
+    await inSavepoint(db, async (scope) => {
+      if (links.length > 0) {
+        await scope`
+          UPDATE verified_fee_observations fv
+             SET fee_raw_id = link.twin_raw_id
+            FROM unnest(${links.map((row) => Number(row.lineage_ref))}::bigint[], ${links.map((row) => Number(row.twin_raw_id))}::bigint[])
+                 AS link(fee_verified_id, twin_raw_id)
+           WHERE fv.fee_verified_id = link.fee_verified_id
+        `;
+      }
+      for (const row of rows) {
+        const linked = linkedIds.has(String(row.fee_published_id));
+        await recordAttempt(scope, {
+          institutionId: Number(row.institution_id),
+          sourceDocumentId: Number(row.twin_document_id),
+          stage: "publish",
+          strategy: SOURCE_CHECK_STRATEGY.strategy,
+          version: SOURCE_CHECK_STRATEGY.version,
+          fingerprint: importedTwinFingerprint(row.lineage_ref, row.twin_raw_id),
+          outcome: linked ? "ok" : "unchanged",
+          yieldCount: linked ? 1 : 0,
+          costMicrousd: 0,
+          runId: options.runId,
+          foldIntoPlaybook: false,
+          detail: {
+            fee_published_id: Number(row.fee_published_id),
+            previous_fee_raw_id: Number(row.fee_raw_id),
+            twin_raw_id: Number(row.twin_raw_id),
+            twin_document_id: Number(row.twin_document_id),
+            linked,
+          },
+        });
+      }
+      await scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, 'hamilton.imported_twin_link', 'completed',
+          ${`Linked ${result.linked} imported live fee(s) with no document to their schedule through an identical imported row; ${result.untraced} left as they are`},
+          ${JSON.stringify({ checked: result.checked, linked: result.linked, untraced: result.untraced })}::jsonb
+        )
+      `;
+    });
+  } catch (error) {
+    console.error("linkImportedFeesToTwins write failed:", error);
+    return { ...result, linked: 0 };
+  }
+  return result;
+}

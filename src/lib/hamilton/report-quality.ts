@@ -40,6 +40,8 @@ function joinReportText(report: ReportSummaryResponse): string {
     ...report.snapshot.flatMap((row) => [row.label, row.current, row.proposed]),
     ...report.tradeoffs.flatMap((row) => [row.label, row.value]),
     ...report.implementationNotes,
+    ...(report.watchlist ?? []),
+    ...(report.answer?.decisions.map((decision) => decision.confidenceReason) ?? []),
   ]
     .map(normalizeText)
     .filter(Boolean)
@@ -53,6 +55,7 @@ function joinClaimText(report: ReportSummaryResponse): string {
     report.recommendation,
     ...report.snapshot.flatMap((row) => [row.label, row.current, row.proposed]),
     ...report.tradeoffs.flatMap((row) => [row.label, row.value]),
+    ...(report.watchlist ?? []),
   ]
     .map(normalizeText)
     .filter(Boolean)

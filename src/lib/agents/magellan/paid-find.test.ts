@@ -132,6 +132,15 @@ describe("Magellan paid find (pass 3)", () => {
     expect(onBankDomain("ftp://alpha.example/fees.pdf", "alpha.example")).toBe(false);
   });
 
+  it("accepts the bank's corporate domain (Citi's schedule on citigroup.com)", () => {
+    const citi = "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges_Effective_February_26_2026.pdf";
+    expect(onBankDomain(citi, "https://www.citi.com")).toBe(true);
+    expect(onBankDomain("https://online.citibank.com/fees.pdf", "citi.com")).toBe(true);
+    expect(onBankDomain("https://www.citizensbank.com/fees.pdf", "citi.com")).toBe(false);
+    expect(onBankDomain("https://www.notchase.example/fees.pdf", "abc.com")).toBe(false);
+    expect(onBankDomain("https://bigbank.com/fees.pdf", "big.com")).toBe(false);
+  });
+
   describe("pick from homepage links", () => {
     const pickAnswer = (json: Record<string, unknown>) =>
       ({ content: [{ type: "text", text: JSON.stringify(json) }], usage: { input_tokens: 3000, output_tokens: 40 } }) as never;
