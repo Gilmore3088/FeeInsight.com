@@ -199,19 +199,28 @@ export async function recordLinkOutcomes(
            AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
       ),
       links AS (
-        SELECT banks.id AS institution_id, banks.fee_schedule_url AS url, 'main' AS role, NULL::text AS found_by
+        SELECT banks.id AS institution_id, banks.fee_schedule_url AS url, 'main' AS role, NULL::text AS found_by,
+               NULL::bigint AS companion_id
           FROM banks
          WHERE banks.fee_schedule_url IS NOT NULL AND btrim(banks.fee_schedule_url) <> ''
         UNION
-        SELECT extra.institution_id, extra.url, extra.document_role, extra.found_by_strategy
+        SELECT extra.institution_id, extra.url, extra.document_role, extra.found_by_strategy, extra.id
           FROM institution_additional_sources extra
           JOIN banks ON banks.id = extra.institution_id
       ),
+      -- A companion's documents are matched by its id too: its stored address often
+      -- differs from the one fetched (http to https, a redirect), 399 of 1,359 on 7 Oct.
       docs AS MATERIALIZED (
         SELECT links.institution_id, links.url, links.role, links.found_by, doc.id AS document_id,
                doc.status, doc.status_code
           FROM links
           JOIN source_documents doc ON doc.institution_id = links.institution_id AND doc.document_url = links.url
+        UNION
+        SELECT links.institution_id, links.url, links.role, links.found_by, doc.id AS document_id,
+               doc.status, doc.status_code
+          FROM links
+          JOIN source_documents doc ON doc.companion_source_id = links.companion_id
+         WHERE links.companion_id IS NOT NULL
       ),
       per_link AS (
         SELECT institution_id, url, role, max(found_by) AS found_by,

@@ -3150,3 +3150,9 @@ CREATE INDEX IF NOT EXISTS pipeline_feedback_raw_idx
   ON public.pipeline_feedback (fee_raw_id) WHERE fee_raw_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS pipeline_feedback_published_idx
   ON public.pipeline_feedback (fee_published_id) WHERE fee_published_id IS NOT NULL;
+
+-- source_documents.companion_source_id (20270109000000_companion_fee_pages.sql)
+ALTER TABLE public.source_documents ADD COLUMN IF NOT EXISTS companion_source_id BIGINT;
+CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
+  ON public.source_documents (companion_source_id, id DESC)
+  WHERE companion_source_id IS NOT NULL;

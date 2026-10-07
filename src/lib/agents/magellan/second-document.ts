@@ -124,7 +124,7 @@ const AGREEMENT =
   /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
 const NOT_A_FEE_DOCUMENT =
-  /\b(privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
+  /\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
 /** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
 const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
@@ -163,6 +163,8 @@ function linkText(link: PageLink): string {
 export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string | null = null): CompanionCandidate | null {
   const lower = linkText(link);
   if (BUSINESS.test(lower) || NOT_A_FEE_DOCUMENT.test(lower)) return null;
+  // A rates page ("Savings Rates", "/rates-fees/account-rates") lists rates, not fees.
+  if (/\brates?\b/.test(lower) && !/\b(fees?|charges?)\b/.test(lower.replace(/\brates? fees\b/g, ""))) return null;
   let url: URL;
   try {
     url = new URL(link.url);
@@ -278,9 +280,21 @@ export function siteSearchUrl(html: string, site: URL, query: string = PRIMARY_S
 }
 
 /** An account page is kept when it lists at least one fee with an amount. */
-export function accountPageListsFees(html: string, url: string): { ok: boolean; feeLines: number; reason: string } {
+/**
+ * Fee lines an account page or agreement must show to be kept. On prod (7 Oct) account
+ * pages kept with 1 or 2 fee lines gave live fees 9-11% of the time (77 of 781), with 3+
+ * 23-40%; agreements with 1 fee line 2 of 37. Knox read nothing from the rest.
+ */
+export const ACCOUNT_PAGE_MIN_FEE_LINES = 3;
+export const AGREEMENT_MIN_FEE_LINES = 2;
+
+export function accountPageListsFees(
+  html: string,
+  url: string,
+  minFeeLines = ACCOUNT_PAGE_MIN_FEE_LINES,
+): { ok: boolean; feeLines: number; reason: string } {
   const page = scoreFeePage(htmlToScoringText(html), url);
-  if (page.verdict === "wrong_document" || page.feeLines < 1) {
+  if (page.verdict === "wrong_document" || page.feeLines < minFeeLines) {
     return { ok: false, feeLines: page.feeLines, reason: page.reason };
   }
   return { ok: true, feeLines: page.feeLines, reason: `${page.feeLines} fee line${page.feeLines === 1 ? "" : "s"} on the account page` };
@@ -339,12 +353,12 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     const text = await pdfCheckText(bytes, AGREEMENT_PDF_PAGES);
     if (!text) return { ok: false, documentType: "pdf", feeLines: 0, verdict: "unreadable_pdf", reason: "Agreement PDF has no readable text" };
     const page = scoreFeePage(text);
-    return page.feeLines >= 1 ? kept("pdf", page.feeLines) : noFee("pdf");
+    return page.feeLines >= AGREEMENT_MIN_FEE_LINES ? kept("pdf", page.feeLines) : noFee("pdf", page.feeLines);
   }
   if (!contentType.includes("text/html")) {
     return { ok: false, documentType: null, feeLines: 0, verdict: "unsupported_type", reason: `Unsupported content type ${contentType || "unknown"}` };
   }
-  const check = accountPageListsFees(await response.text(), url);
+  const check = accountPageListsFees(await response.text(), url, AGREEMENT_MIN_FEE_LINES);
   return check.ok ? kept("html", check.feeLines) : noFee("html", check.feeLines);
 }
 

@@ -2478,3 +2478,17 @@ and the hub-page finder 36 of 104; both kept their place in the finder order.
 ledger, Darwin and the answer key, writes it to `pipeline_feedback`, and a finder wrong in two
 reviews in a row runs last until it recovers.
 **Lesson:** per-item judgements need a regular roll-up that feeds back into what the agent does next.
+
+## 2026-10-07: Companion pages that held no fees were never judged
+**What happened:** Knox and Rosetta flagged 37 documents Magellan had saved as fee sources that hold no
+fees: checking and savings product pages, rates pages, funds-availability notices, overdraft opt-in forms,
+Zelle terms and a join page. 34 came from the companion finder and 3 were main links from the site crawl.
+The companion finder kept an account page with a single fee line. On prod only 77 of 781 account pages with
+1 or 2 fee lines gave live fees, against 23-40% for 3 or more. The ledger never judged 399 of 1,359
+companions, because it matched documents by address and a companion's stored address often differs from
+the fetched one (http to https, a redirect).
+**Fix:** account pages now need 3 fee lines and agreements 2. Non-fee documents are skipped by name. The
+ledger also matches a companion's documents by `companion_source_id`, so these links get judged and feed
+the error review.
+**Lesson:** a learning loop only learns from what it can see. Check that every output has a judged row
+before trusting the scores.
