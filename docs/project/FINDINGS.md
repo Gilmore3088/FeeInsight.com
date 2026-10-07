@@ -2382,3 +2382,17 @@ records the count on the extract event. First-look takedowns don't teach: Darwin
 recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
+
+## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
+**What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
+that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
+ending on "of", "is", "for" and similar, and 1,407 longer than 80 characters.
+**Cause:** `tidyFeeName` (Knox v17, v29) fixes new reads only. Rows published earlier kept the name
+as read ("Stop Payment | Item", "/mo. | Dormant Fee", "An overdraft fee of"), and nothing
+re-tidied them.
+**Fix:** `src/lib/agents/knox/name-retidy.ts` runs in each publish step on a batch of 40 banks. A
+live name takes its tidy name only when it still traces in the fee's own schedule (if it did before),
+still passes the category guard, and does not collide with another live fee of the bank. The old
+name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
+Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
+**Lesson:** a reader fix needs a matching pass over what it already published.
