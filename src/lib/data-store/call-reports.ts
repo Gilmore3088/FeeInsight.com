@@ -1,4 +1,5 @@
 import { getSql } from "./connection";
+import { financialSourceFilter } from "./financial-sources";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
 
@@ -7,9 +8,9 @@ import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
  * quarters in other units (whole-dollar balances, service charges over-scaled
  * further; see financial-units.ts), so mixing them into one series or one peer
  * group produces fake drops and wrong ranks. Every query here reads the
- * thousands-scale sources only.
+ * thousands-scale sources only (see financial-sources.ts).
  */
-const SAME_SCALE_SOURCES = "inf.source IN ('fdic', 'ncua')";
+const SAME_SCALE_SOURCES = financialSourceFilter("inf");
 
 /**
  * NCUA 5300 income lines are year-to-date; FDIC rows are already quarterly. Single-quarter
@@ -211,6 +212,7 @@ export async function getTopRevenueInstitutions(
       SELECT MAX(report_date) AS latest_date
       FROM institution_financial_records
       WHERE service_charge_income > 0
+        AND source IN ('fdic', 'ncua')
     `;
 
     if (!latestRow?.latest_date) return [];
@@ -503,6 +505,7 @@ export async function getDistrictFeeRevenue(
       SELECT MAX(report_date)::text AS latest_date
       FROM institution_financial_records
       WHERE service_charge_income > 0
+        AND source IN ('fdic', 'ncua')
     `;
     if (!row?.latest_date) return null;
     date = String(row.latest_date);
@@ -561,6 +564,7 @@ export async function getRevenueByTier(
       SELECT MAX(report_date)::text AS latest_date
       FROM institution_financial_records
       WHERE service_charge_income > 0
+        AND source IN ('fdic', 'ncua')
     `;
     if (!row?.latest_date) return [];
     date = row.latest_date as string;
