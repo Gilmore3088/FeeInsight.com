@@ -208,6 +208,26 @@ WA 2017, then TX 299.
 (`${n}::int`). Arithmetic between two parameters always fails. To test a query, prepare it with
 untyped parameters (`PREPARE q AS ...`), not with the numbers pasted in.
 
+## 2026-10-07: None of a week's fee-movement signals were real price changes
+**What happened:** the 546 movements in `hamilton_fee_movement_detected` signals from Sep 30 to
+Oct 7 were traced back to the documents behind the old and new rows. 502 were the same document
+read twice with different amounts (498 before Oct 5), 23 had a different fee name, 10 came from a
+copy of a different URL, 6 had no document lineage, and 1 was a byte-identical page. 4 came from a
+newer copy of the same URL, but in each of those the old price was still listed on the new copy. None
+was a clean price change on the same page.
+**Cause:** Hamilton publish signals a movement whenever a newer read supersedes a live row at a new
+amount. While fees are loading, those reads are rereads, recategorizations and new copies, not banks
+changing prices.
+**Fix:** `src/lib/agents/fee-movement-check.ts` keeps a movement only when both rows trace to
+different copies of the same page URL, the new copy is newer, and `confirmFeeChange` (the rule Hamilton
+and the Monthly Pulse use, in `monthly-pulse.ts`) bears it out. Fee alerts (free and watchlist) and the
+Pro digest report only those. On prod, 19 of the 546 pairs pass the same-page filter; 3 of those have
+the same fee name, and the two checked by hand (Mount Dora's "Monthly fee", a credit union's "Stop
+Payments") were two lines or two layouts of one unchanged schedule. Publish itself still signals every
+movement; that call belongs to the Hamilton publish owners.
+**Lesson:** a "movement" signal is not evidence of a price change. Check the documents behind it before
+telling a reader a fee moved.
+
 ## 2026-10-07: Prod's hamilton_watchlists.user_id is not the integer the migration declares
 **What happened:** a read-only join `hamilton_watchlists w JOIN users u ON u.id = w.user_id` on prod
 failed at 01:28 UTC with "operator does not exist: bigint = text", although
