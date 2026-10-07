@@ -55,6 +55,8 @@ export interface BranchFootprint {
   ownDepositSharePct?: number | null;
   /** Offices placed on the zoomed map (credit union coordinates are added over time). */
   mappedOffices?: number;
+  /** True when the zoomed map applies but too few offices are placed yet to draw it. */
+  mapPending?: boolean;
 }
 
 type OfficePoint = { latitude: number | string; longitude: number | string; city: string | null; weight?: number | string | null };
@@ -130,12 +132,16 @@ async function marketCompetitors(
  * in view, and (for a bank) its share of bank deposits in view. Empty when the
  * institution's offices span too many states for the zoomed map.
  */
+/** Share of an institution's offices that must have coordinates before its zoomed map is drawn. */
+const MIN_MAPPED_SHARE = 0.5;
+
 async function localMapFor(
   institutionId: number,
   states: string[],
   points: OfficePoint[],
   isBank: boolean,
-): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+  totalOffices: number,
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
   if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
   const own = points.map((p) => ({
     latitude: Number(p.latitude),
@@ -152,6 +158,10 @@ async function localMapFor(
   );
   if (!map) return { localMap: null, mappedOffices: 0 };
 
+  // A map with one dot for nine offices misleads, so wait until most offices are placed.
+  if (map.dots.length < Math.max(1, Math.ceil(totalOffices * MIN_MAPPED_SHARE))) {
+    return { localMap: null, mappedOffices: map.dots.length, mapPending: true, ...(await marketCompetitors(institutionId)) };
+  }
   const { othersInFrame: _inFrame, ownWeightInFrame, ...localMap } = map;
   void _inFrame;
   void ownWeightInFrame;
@@ -197,7 +207,7 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
     topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
-    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true)),
+    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true, Number(byYear[byYear.length - 1]?.branches ?? 0))),
   };
 }
 
@@ -244,7 +254,7 @@ async function getCreditUnionFootprint(institutionId: number): Promise<BranchFoo
     byYear: [{ year, branches: total, deposits: 0 }],
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: 0 })),
     topMarkets: topCities.map((r) => ({ msa_name: r.city, branches: Number(r.branches), deposits: 0 })),
-    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], false)),
+    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], false, total)),
   };
 }
 

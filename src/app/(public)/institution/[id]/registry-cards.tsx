@@ -166,6 +166,14 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
               </p>
             )}
           </div>
+        ) : footprint.mapPending ? (
+          <div className="flex min-h-[10rem] flex-col justify-center rounded-lg border border-dashed border-[#E0D7C9] bg-[#FAF7F2] px-4 py-6 text-center">
+            <p className="text-[12px] font-medium text-[#1A1815]">Map coming soon</p>
+            <p className="mt-1 text-[11px] text-[#6B6255]">
+              We are placing each {isCu ? "office" : "branch"} on the map from its address. {mapped.toLocaleString("en-US")} of{" "}
+              {latest.branches.toLocaleString("en-US")} are placed so far; the map appears once most are.
+            </p>
+          </div>
         ) : (
           <div className="relative">
             <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Branches by state">

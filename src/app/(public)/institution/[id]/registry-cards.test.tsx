@@ -45,3 +45,12 @@ describe("BranchFootprintCard", () => {
     expect(screen.getByText(/in branch deposits \(June 2026\)/)).toBeInTheDocument();
   });
 });
+
+describe("BranchFootprintCard map waiting on addresses", () => {
+  it("shows a placeholder instead of a nearly empty map", () => {
+    render(<BranchFootprintCard footprint={{ ...CREDIT_UNION, localMap: null, mappedOffices: 1, mapPending: true }} />);
+    expect(screen.getByText("Map coming soon")).toBeInTheDocument();
+    expect(screen.getByText(/1 of 12 are placed so far/)).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Branches by state/ })).toBeNull();
+  });
+});
