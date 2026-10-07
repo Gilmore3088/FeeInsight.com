@@ -20,10 +20,14 @@ describe("ConfigSidebar", () => {
         peerCoverageError={null}
         onPeerSetChange={vi.fn()}
         onNarrativeToneChange={vi.fn()}
+        clientGoal="win_accounts"
+        onClientGoalChange={vi.fn()}
         onGenerate={vi.fn()}
       />,
     );
 
     expect(html).toContain('href="/pro/settings?instId=2945"');
+    expect(html).toContain('aria-label="Goal"');
+    expect(html).toMatch(/aria-checked="true"[^>]*>.*?Win accounts/);
   });
 });

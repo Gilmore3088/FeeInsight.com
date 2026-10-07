@@ -245,8 +245,40 @@ export interface SimulationResponse {
 }
 
 /** Report Builder screen response — read-only presentation with export controls (ARCH-05) */
+export type ReportConfidence = "High" | "Medium" | "Low";
+
+/** One decision on the report's answer page. */
+export interface ReportDecision {
+  action: string;
+  why: string;
+  confidence: ReportConfidence | null;
+  confidenceReason: string | null;
+}
+
+/** A table built from data (never written by the model); its title is the takeaway. */
+export interface ReportExhibit {
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "statistical_appendix";
+  title: string;
+  subtitle: string;
+  columns: string[];
+  rows: string[][];
+  note: string | null;
+}
+
+export interface ReportSource {
+  label: string;
+  detail: string;
+  url: string | null;
+}
+
 export interface ReportSummaryResponse {
   title: string;
+  /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
+  answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
+  exhibits?: ReportExhibit[];
+  /** "What to watch" lines from the trade-offs section. */
+  watchlist?: string[];
+  sources?: ReportSource[];
   executiveSummary: string[];
   snapshot: Array<{ label: string; current: string; proposed: string }>;
   strategicRationale: string;
