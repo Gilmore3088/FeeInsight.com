@@ -11,6 +11,7 @@ import { ASSET_TIER_RANGES } from "./peer-index";
 import { getFeeResearch, getWorkspaceBriefing } from "./workspace/research";
 import { scheduleOverview } from "./workspace/schedule";
 import type { FeePositionRow, InstitutionFinancials, SchedulePosition } from "./workspace/types";
+import { loadBriefContext, type BriefContext } from "./brief-context";
 import { explainIncome, incomeSplit, type IncomeExplanation, type IncomeSplit } from "./workspace/why";
 
 export interface AnswerBrief {
@@ -24,6 +25,8 @@ export interface AnswerBrief {
   uncompared: number;
   financials: InstitutionFinancials | null;
   income: { split: IncomeSplit; explained: IncomeExplanation } | null;
+  /** The state and district economy, the local deposit market and household income there. */
+  context: BriefContext | null;
 }
 
 export interface LocalCompetitorFee {
@@ -50,13 +53,17 @@ export function peerPhrase(charterType: string, assetTier: string): string {
 }
 
 export async function loadAnswerBrief(institutionId: number): Promise<AnswerBrief | null> {
-  const [briefing, intensity] = await Promise.all([
+  const [briefing, intensity, context] = await Promise.all([
     getWorkspaceBriefing(institutionId).catch((error) => {
       console.error("[answer-brief] briefing failed", error);
       return null;
     }),
     getServiceChargeIntensity(institutionId).catch((error) => {
       console.error("[answer-brief] income intensity failed", error);
+      return null;
+    }),
+    loadBriefContext(institutionId).catch((error) => {
+      console.error("[answer-brief] context failed", error);
       return null;
     }),
   ]);
@@ -88,5 +95,6 @@ export async function loadAnswerBrief(institutionId: number): Promise<AnswerBrie
     uncompared: briefing.positions.length - overview.positions.length,
     financials: briefing.institutionFinancials,
     income: split ? { split, explained: explainIncome(split) } : null,
+    context,
   };
 }

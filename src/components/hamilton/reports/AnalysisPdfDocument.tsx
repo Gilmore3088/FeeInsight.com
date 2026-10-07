@@ -18,7 +18,7 @@ import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import type { AnswerBrief } from "@/lib/hamilton/answer-brief";
 import type { IncomeSplit } from "@/lib/hamilton/workspace/why";
-import { CompetitorBars, FeeRangeChart, IncomeTrendChart } from "./BriefCharts";
+import { CompetitorBars, FeeRangeChart, IncomeCompareBars, IncomeTrendChart, MarketShareBars, UnemploymentChart } from "./BriefCharts";
 import { headFigure, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "@/components/hamilton/analyze/parse-response";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
@@ -114,6 +114,26 @@ const styles = StyleSheet.create({
     color: COLORS.textTertiary,
     marginTop: 6,
     lineHeight: 1.4,
+  },
+  quote: {
+    marginTop: 10,
+    paddingLeft: 10,
+    borderLeftWidth: 2,
+    borderLeftColor: "#b45309",
+    borderLeftStyle: "solid",
+  },
+  quoteLabel: {
+    fontSize: 7.5,
+    color: "#78716c",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 3,
+  },
+  quoteText: {
+    fontSize: 9.5,
+    lineHeight: 1.5,
+    color: "#1c1917",
+    fontFamily: "Helvetica-Oblique",
   },
   tileRow: {
     flexDirection: "row",
@@ -290,6 +310,9 @@ export function AnalysisPdfDocument({
   const meaningAsList = meaningSentences.length > 3;
   const fin = brief?.financials ?? null;
   const incomeLines = brief?.income ? splitSentences(brief.income.explained.shortAnswer) : [];
+  const economy = brief?.context?.economy ?? null;
+  const market = brief?.context?.market ?? null;
+  const localIncome = brief?.context?.localIncome ?? null;
   const incomeTiles = brief?.income ? incomeFigures(brief.income.split) : [];
   // The sentence after the income, price and share figures: what the split means. The tiles carry the figures.
   const incomeTakeaway = incomeLines.length > 3 ? incomeLines[3] : null;
@@ -423,6 +446,64 @@ export function AnalysisPdfDocument({
                       {fin.sourceRef.label}. Call reports do not separate how often from which fees are charged for most filers.
                     </Text>
                   </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {economy ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionHeading} minPresenceAhead={160}>
+                  {economy.districtName ? `The ${economy.place} and ${economy.districtName} Fed district economy` : `The ${economy.place} economy`}
+                </Text>
+                {economy.tiles.length > 0 ? (
+                  <View style={styles.tileRow} wrap={false}>
+                    {economy.tiles.map((tile) => (
+                      <View key={tile.label} style={styles.tile}>
+                        <Text style={styles.tileLabel}>{tile.label}</Text>
+                        <Text style={styles.tileFigure}>{tile.figure}</Text>
+                        <Text style={styles.tileComparison}>{tile.comparison}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                {economy.unemployment.length > 1 ? <UnemploymentChart points={economy.unemployment} place={economy.place} /> : null}
+                {economy.commentary.length > 0 ? <Text style={[styles.paragraph, { marginTop: 10 }]}>{economy.commentary.join(" ")}</Text> : null}
+                {economy.beigeBook ? (
+                  <View style={styles.quote} wrap={false}>
+                    <Text style={styles.quoteLabel}>
+                      Federal Reserve Beige Book, {economy.districtName ?? "district"} district, {economy.beigeBook.releaseDate}, {economy.beigeBook.section}
+                    </Text>
+                    <Text style={styles.quoteText}>{`\u201C${economy.beigeBook.quote}\u201D`}</Text>
+                  </View>
+                ) : null}
+                {economy.fomc ? (
+                  <View style={styles.quote} wrap={false}>
+                    <Text style={styles.quoteLabel}>Federal Open Market Committee minutes, meeting of {economy.fomc.meetingDate}</Text>
+                    <Text style={styles.quoteText}>{`\u201C${economy.fomc.text}\u201D`}</Text>
+                  </View>
+                ) : null}
+                <Text style={styles.tableSource}>Sources: {economy.sources.join("; ")}.</Text>
+              </View>
+            ) : null}
+
+            {market || localIncome ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionHeading} minPresenceAhead={160}>Your local market</Text>
+                {market ? (
+                  <>
+                    <MarketShareBars shares={market.shares} />
+                    <Text style={[styles.paragraph, { marginTop: 8 }]}>{market.commentary.join(" ")}</Text>
+                    <Text style={styles.tableSource}>
+                      FDIC Summary of Deposits, {market.sodYear}, branches in {market.places.join("; ")}. HHI is the sum of squared deposit shares.
+                    </Text>
+                  </>
+                ) : null}
+                {localIncome ? (
+                  <>
+                    <IncomeCompareBars counties={localIncome.counties} state={localIncome.state} />
+                    <Text style={[styles.paragraph, { marginTop: 8 }]}>{localIncome.commentary.join(" ")}</Text>
+                    <Text style={styles.tableSource}>U.S. Census Bureau, American Community Survey 5-year estimates, {localIncome.year}.</Text>
+                  </>
                 ) : null}
               </View>
             ) : null}
