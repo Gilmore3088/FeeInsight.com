@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { KNOX_EXTRACT_STRATEGY } from "./knox/extract";
-import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -504,6 +504,7 @@ export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
       (SELECT COUNT(*) FROM published_fee_records WHERE rolled_back_at IS NULL)::int AS live_fees,
       (SELECT COUNT(*) FROM pipeline_attempts
         WHERE strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+          AND input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
           AND created_at > NOW() - INTERVAL '24 hours')::int AS source_checks,
       (SELECT COUNT(*)
          FROM (
@@ -519,6 +520,13 @@ export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
            WHERE pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
              AND pa.institution_id = live.institution_id
              AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_id::text
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts restore
+                WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                  AND restore.institution_id = live.institution_id
+                  AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                  AND restore.id > pa.id
+             )
         ))::int AS banks_not_source_checked,
       (SELECT MIN(hard_daily_microusd) FROM api_budget_policies
         WHERE policy_key = 'agent:hamilton' AND enabled) AS daily_cap_microusd
