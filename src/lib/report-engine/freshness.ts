@@ -83,9 +83,10 @@ export async function checkFreshness(
     const healthRows = await sql<Array<{ atlas_healthy: boolean }>>`
       SELECT EXISTS (
         SELECT 1
-          FROM workers_last_run
-         WHERE job_name = 'atlas_cycle'
-           AND status = 'ok'
+          FROM agent_runs
+         WHERE agent_name = 'atlas'
+           AND run_kind = 'workflow_lane'
+           AND status = 'completed'
            AND completed_at >= NOW() - INTERVAL '26 hours'
       ) AS atlas_healthy
     `;

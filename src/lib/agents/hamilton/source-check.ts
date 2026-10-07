@@ -27,7 +27,13 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 5: a price with a note in parentheses under its name ("$29.00/presentment (applies
 // to ...)"), and figures in a name's note ("Gift Cards ($25 up to $500 Only) | $5"), are read,
 // so fees the older check took down for those layouts are checked again and restored.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 5 } as const;
+// Version 6: a price charged per $100 of the item ("Cashier Check (per $100.00) $1.00") is not
+// a flat fee (priced_per_amount); "$.50" is a price; a price with a unit and a qualifier under
+// its name ("$5.00 per month for each acct., following ..."), "Fee $35.00" under a name, a
+// balance to maintain, and a name wrapped onto the next line are read (Darwin's sample: 13 of
+// 20 recent takedowns were real prices). Every institution is checked again; institutions
+// with source-check takedowns go first, so wrongly taken-down fees come back soonest.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 6 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -35,6 +41,38 @@ export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", versio
  */
 export function sourceCheckFingerprint(maxLiveFeeId: number | string): string {
   return `v${SOURCE_CHECK_STRATEGY.version}:${maxLiveFeeId}`;
+}
+
+/** The marker a restore leaves, so the restored fee's institution is checked again. */
+export const SOURCE_CHECK_RESTORE_PREFIX = "restored:";
+
+/**
+ * Another check (the newer-copy check, the rules re-check) can put an older row live
+ * again. Its id is below the institution's highest live id, so the fingerprint above
+ * would not change and the restored fee would go live without a source check. A marker
+ * attempt per restored row makes the institution due again: a check counts only while
+ * no marker is newer than it.
+ */
+export async function markRestoredForSourceCheck(
+  db: SqlTag,
+  restored: Array<{ institution_id: number | string; fee_published_id: number | string }>,
+  options: { runId: number; restoredBy: string },
+): Promise<void> {
+  if (restored.length === 0) return;
+  await db`
+    INSERT INTO pipeline_attempts (
+      institution_id, stage, strategy, strategy_version, input_fingerprint, outcome,
+      yield_count, cost_microusd, agent_run_id, detail
+    )
+    SELECT v.institution_id, 'publish', ${SOURCE_CHECK_STRATEGY.strategy}, ${SOURCE_CHECK_STRATEGY.version},
+           ${SOURCE_CHECK_RESTORE_PREFIX} || v.fee_published_id::text || ':' || ${options.runId}::text, 'ok',
+           0, 0, ${options.runId},
+           jsonb_build_object('restored_fee_published_id', v.fee_published_id, 'restored_by', ${options.restoredBy}::text)
+      FROM unnest(
+             ${restored.map((row) => Number(row.institution_id))}::bigint[],
+             ${restored.map((row) => Number(row.fee_published_id))}::bigint[]
+           ) AS v(institution_id, fee_published_id)
+  `;
 }
 
 export interface LiveFeeRow extends RateFields {
@@ -172,6 +210,15 @@ export async function takeDownUntraceableFees(
             AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
             AND pa.institution_id = live.institution_id
             AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
+            -- A fee restored after this check went live unchecked (markRestoredForSourceCheck).
+            AND NOT EXISTS (
+              SELECT 1 FROM pipeline_attempts restore
+               WHERE restore.stage = 'publish'
+                 AND restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                 AND restore.institution_id = live.institution_id
+                 AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                 AND restore.id > pa.id
+            )
        )
           -- A live fee that failed its first look is due its second.
           OR EXISTS (
@@ -195,6 +242,13 @@ export async function takeDownUntraceableFees(
                    WHERE pa.stage = 'publish'
                      AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                      AND pa.institution_id = live.institution_id
+                     AND pa.input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                ),
+                -- Banks with fees this check took down first: a reader fix restores them soonest.
+                NOT EXISTS (
+                  SELECT 1 FROM published_fee_records down
+                   WHERE down.institution_id = live.institution_id
+                     AND down.rolled_back_reason LIKE ${TAKEN_DOWN}
                 ),
                 live.institution_id
        LIMIT ${limit}

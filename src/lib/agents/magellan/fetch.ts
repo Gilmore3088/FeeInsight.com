@@ -20,6 +20,7 @@ import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/forma
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, type OperatorScheduleResult } from "./operator-schedules";
+import { isErrorPageLink } from "./link-coverage";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -180,9 +181,18 @@ export function redirectedToHomepage(requestedUrl: string, finalUrl: string | nu
   }
 }
 
-/** Fetch outcomes that mean the link itself is gone, not that the site had a bad moment. */
+/**
+ * Fetch outcomes that mean the link itself is gone, not that the site had a bad moment.
+ * A link whose address is the site's error page is gone however the fetch went: Northern
+ * Trust's ".../page-not-found" timed out on every fetch and kept the bank out of discovery.
+ */
 function linkIsGone(result: FetchResult): boolean {
-  return result.attemptOutcome === "http_404" || result.attemptOutcome === "http_410" || result.redirectedHome === true;
+  return (
+    result.attemptOutcome === "http_404" ||
+    result.attemptOutcome === "http_410" ||
+    result.redirectedHome === true ||
+    isErrorPageLink(result.sourceUrl)
+  );
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -827,6 +837,7 @@ export async function runMagellanFetch(
       supersededCopies += await markCurrentCopy(db, sourceDocumentId);
     }
     if (linkIsGone(result)) {
+      if (isErrorPageLink(result.sourceUrl)) result.reason = "Link is the site's error page, not a fee schedule";
       result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
     }
     // New content is always stored; an unchanged document is stored once if it predates the vault.
