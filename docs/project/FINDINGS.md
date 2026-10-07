@@ -2887,6 +2887,20 @@ Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-r
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
 
+## 2026-10-07: Overdraft pages named their fee in a heading Knox did not read
+
+- **Problem.** $10B+ banks' overdraft pages were being read, but no overdraft fee went live
+  (78 of 192). Knox took the words right before each price as the name, so it named the fee
+  "fee for each item or transaction paid" (Wilson Bank & Trust), "This" or "Maximum amount of
+  times this" (SouthEast Bank). With no category, nothing reached Darwin. SmartBank's Reg E
+  consent form, "a fee of up to $35.00 each time we pay an overdraft", gave no row at all.
+- **Fix.** Knox v33 (`knox/context-names.ts`) names a per-item price from the overdraft heading
+  above it and "this $X fee" from the term defined just above. It drops a fee the page says is
+  being eliminated, and it reads "a fee of up to $X each time we pay an overdraft".
+- **Watch.** The shared source check reads "up to $35.00" as a threshold, so the Reg E form's fee
+  is held as untraced until the accuracy thread changes `source-check.ts`. ACNB's document 20915
+  is a list of services with no overdraft price; finding its schedule is Magellan's work.
+
 ## 2026-10-07: Darwin's release review only read the held fees of the lane's own state
 
 - **Problem.** `verify-paid` runs inside each state lane, and the release review picked held fees
