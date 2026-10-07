@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   HELD_SET_ASIDE_FLAG,
   heldExcerpt,
+  heldConditions,
   heldRecheckFlag,
   promotedConditions,
+  promotionCheckedFlag,
+  promotionWithdrawnFlag,
   recategorizeHeld,
   recheckHeldRows,
+  recheckPromotedRows,
   versionsChecked,
 } from "./held-recheck";
 
@@ -114,6 +118,57 @@ describe("Knox held-line re-check", () => {
     const db = createDb([courtesyPay, membership]);
     const result = await recheckHeldRows(db as unknown as Db, { dryRun: true });
     expect(result).toMatchObject({ checked: 2, promoted: 1, stillHeld: 1, setAside: 1, logged: 0, dryRun: true });
+    expect(db).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts a promotion back on hold when today's rules no longer file it the same", async () => {
+    // Raw 145118 (prod, Oct 7): v26 filed a collection phone call as check cashing.
+    const promotedConditionsText =
+      'Knox extract.rules v26 categorized a line held for review from Rosetta artifact #9. canonical_hint=check_cashing; text_hash=abc; excerpt="Phone Call Collection Fee | $10.00 per call"';
+    const phoneCall = {
+      fee_raw_id: 145118,
+      amount: "10.00",
+      fee_name: "Phone Call Collection Fee",
+      conditions: promotedConditionsText,
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:check_cashing", "knox_promoted_from_held"],
+    };
+    const kept = {
+      ...courtesyPay,
+      conditions: promotedConditions(courtesyPay.conditions, recategorizeHeld(courtesyPay)!),
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:overdraft", "knox_promoted_from_held"],
+    };
+    expect(heldConditions(promotedConditionsText)).toBe(
+      'Knox held for review (unclassified) from Rosetta artifact #9. canonical_hint=none; text_hash=abc; excerpt="Phone Call Collection Fee | $10.00 per call"',
+    );
+    const db = createDb([phoneCall, kept]);
+    const result = await recheckPromotedRows(db as unknown as Db, { runId: 9 });
+    expect(result).toEqual({ checked: 2, withdrawn: 1, withdrawnByCategory: { check_cashing: 1 }, logged: 1, dryRun: false });
+    const calls = db.mock.calls.map((call) => ({ text: templateText(call[0]), json: JSON.stringify(call) }));
+    expect(calls[0].text).toContain("FROM verified_fee_observations fv");
+    const withdraw = calls.find((call) => call.json.includes(promotionWithdrawnFlag()));
+    expect(withdraw?.json).toContain("145118");
+    expect(withdraw?.json).toContain("knox_review:unclassified");
+    expect(withdraw?.text).toContain("- 'needs_darwin_verification'");
+    const checked = calls.find((call) => call.json.includes(promotionCheckedFlag()) && call.text.includes("UPDATE"));
+    expect(checked?.json).toContain("118567");
+    expect(checked?.json).not.toContain("145118");
+    const log = calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"));
+    expect(log?.json).toContain("knox.held_withdrawn:raw:145118");
+    expect(log?.json).toContain("promotion_withdrawn");
+    expect(calls.some((call) => /\bDELETE\b/i.test(call.text))).toBe(false);
+  });
+
+  it("changes nothing on a dry run of the promotion re-check", async () => {
+    const db = createDb([
+      {
+        fee_raw_id: 1,
+        amount: "10.00",
+        conditions: 'canonical_hint=check_cashing; excerpt="Phone Call Collection Fee | $10.00 per call"',
+        outlier_flags: ["canonical_hint:check_cashing", "knox_promoted_from_held"],
+      },
+    ]);
+    const result = await recheckPromotedRows(db as unknown as Db, { dryRun: true });
+    expect(result).toMatchObject({ checked: 1, withdrawn: 1, logged: 0, dryRun: true });
     expect(db).toHaveBeenCalledTimes(1);
   });
 });

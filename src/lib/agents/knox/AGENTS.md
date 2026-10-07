@@ -130,7 +130,11 @@ v28 (rules 28) narrows the fold after checking prod's first v26 pass (three extr
 02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
 collection fee on charged-off accounts and a collection phone call are debt collection, not a
 check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
-report to open an account is not a loan fee. Those lines now stay held.
+report to open an account is not a loan fee. Those lines now stay held. Each extract step also
+re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
+today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
+and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
+already verified are Hamilton's rules re-check's to take down.
 
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the

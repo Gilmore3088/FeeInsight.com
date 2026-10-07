@@ -482,6 +482,7 @@ describe("Knox extract.rules", () => {
     "Credit Report Fee to Open Account",
   ])("v28 does not fold %s (wrong homes found on prod's first v26 pass)", (name) => {
     expect(foldedCategory(name)).toBeNull();
+    expect(classifyFeeText(name)).toBeNull();
   });
 
   it.each([
