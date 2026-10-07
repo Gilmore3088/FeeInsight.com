@@ -14,6 +14,14 @@
 import type { Exhibit, Fact, HamiltonAnswer, HamiltonRole } from "./types";
 
 export const MAX_SENTENCE_WORDS = 25;
+/** Storyline lines sit in cards and table rows on the Pro page: one short sentence each. */
+export const MAX_STORY_LINE_WORDS = 20;
+/** The governing thought is the one line the reader sees first. */
+export const MAX_GOVERNING_WORDS = 16;
+/** Exhibit titles sit on one line above the chart. */
+export const MAX_TITLE_WORDS = 10;
+/** Exhibit notes sit under the chart. */
+export const MAX_NOTE_WORDS = 16;
 
 export interface RoleCheck {
   role: HamiltonRole;
@@ -27,11 +35,11 @@ export interface FourRolesResult {
 }
 
 /** Words that tell the reader what to do with a fee; Hamilton gives an opinion only on request. */
-const RECOMMENDATION =
+export const RECOMMENDATION =
   /\b(should|ought to|recommend(s|ed|ation)?|we suggest|you need to|consider (raising|lowering|cutting|dropping|eliminating)|(raise|lower|cut|drop|increase|reduce) (your|the|this) (fee|price))\b/i;
 
 /** Internal names a bank reader should never see: agent names, and any snake_case table or column name. */
-const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
+export const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
 
 /** "$209400", "$2,640,000" (a total over $1 million belongs in words), "2.38%". */
 const UNFORMATTED_UNITS = [
@@ -70,8 +78,33 @@ export function sentences(text: string): string[] {
   return out;
 }
 
+/** The storyline's sourced lines that state a figure: lenses and exhibit takeaways. */
+function storyFacts(answer: HamiltonAnswer): Fact[] {
+  const story = answer.storyline;
+  if (!story) return [];
+  return [
+    ...story.lenses.finance,
+    ...story.lenses.market,
+    ...story.exhibits.flatMap((e) => (e.takeaway ? [e.takeaway] : [])),
+  ];
+}
+
+function storyText(answer: HamiltonAnswer): string[] {
+  const story = answer.storyline;
+  if (!story) return [];
+  return [
+    story.governingThought,
+    ...story.situation.map((f) => f.text),
+    ...story.complication.map((f) => f.text),
+    ...story.exhibits.flatMap((e) => [e.actionTitle, e.exhibit.title]),
+    ...storyFacts(answer).map((f) => f.text),
+    ...(story.options ?? []).flatMap((o) => [o.label, ...o.consequences.map((c) => c.text)]),
+    ...story.watch.map((f) => f.text),
+  ];
+}
+
 function allText(answer: HamiltonAnswer): string[] {
-  return [answer.headline, ...answer.claims.map((c) => c.text), ...answer.drivers.map((d) => d.text), answer.exhibit?.title ?? ""].filter(Boolean);
+  return [answer.headline, ...answer.claims.map((c) => c.text), ...answer.drivers.map((d) => d.text), answer.exhibit?.title ?? "", ...storyText(answer)].filter(Boolean);
 }
 
 function dated(fact: Fact): boolean {
@@ -94,7 +127,7 @@ function checkEconomist(answer: HamiltonAnswer): RoleCheck {
 function checkConsultant(answer: HamiltonAnswer): RoleCheck {
   const failures: string[] = [];
   if (answer.claims.length === 0) failures.push("No sourced claims.");
-  for (const claim of answer.claims) {
+  for (const claim of [...answer.claims, ...storyFacts(answer)]) {
     if (!/\d/.test(claim.text)) failures.push(`Claim has no number: "${claim.text}"`);
     if (!dated(claim)) failures.push(`Claim has no named, dated source: "${claim.text}"`);
     if (MARKET_FIGURE.test(claim.text) && !(claim.sampleSize && claim.sampleSize > 0)) {
@@ -116,6 +149,16 @@ function exhibitPoints(exhibit: Exhibit): number {
       return exhibit.series.reduce((sum, s) => sum + s.points.length, 0);
     case "competitor_range":
       return exhibit.items.length;
+    case "segment_table":
+      return exhibit.members.length;
+    case "change_timeline":
+      return exhibit.events.length;
+    case "structure_matrix":
+      return exhibit.rows.length;
+    case "money_at_stake":
+      return exhibit.rows.length;
+    case "archetype_map":
+      return exhibit.archetypes.reduce((sum, a) => sum + a.count, 0);
   }
 }
 
@@ -134,11 +177,46 @@ function checkDataEngineer(answer: HamiltonAnswer): RoleCheck {
       if (!exhibit.markers.some((m) => m.scope === "national")) failures.push("Fee position exhibit has no national marker.");
     }
   }
+  for (const story of answer.storyline?.exhibits ?? []) {
+    if (!story.actionTitle.trim() || !/\d/.test(story.actionTitle)) failures.push(`Exhibit ${story.id} has no point with a number in its title.`);
+    if (story.exhibit.sources.length === 0) failures.push(`Exhibit ${story.id} names no source.`);
+    if (exhibitPoints(story.exhibit) === 0) failures.push(`Exhibit ${story.id} has no data to draw.`);
+  }
   return { role: "data_engineer", pass: failures.length === 0, failures };
+}
+
+/** Clean, precise storyline copy (James, 2026-10-06): one idea per line, short, never said twice. */
+function checkStoryCopy(answer: HamiltonAnswer, failures: string[]): void {
+  const story = answer.storyline;
+  if (!story) return;
+  const lines = [
+    story.governingThought,
+    ...[...story.situation, ...story.complication, ...story.lenses.finance, ...story.lenses.market, ...story.watch].map((f) => f.text),
+    ...(story.options ?? []).flatMap((o) => o.consequences.map((c) => c.text)),
+    ...story.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]),
+  ].filter(Boolean);
+  const g = words(story.governingThought);
+  if (g > MAX_GOVERNING_WORDS) failures.push(`${g}-word governing thought: "${story.governingThought}"`);
+  const seen = new Set<string>();
+  for (const line of lines) {
+    if (sentences(line).length !== 1) failures.push(`Storyline line is not one sentence: "${line}"`);
+    const n = words(line);
+    if (n > MAX_STORY_LINE_WORDS) failures.push(`${n}-word storyline line: "${line}"`);
+    const key = line.toLowerCase().replace(/[^a-z0-9$%.]+/g, " ").trim();
+    if (seen.has(key)) failures.push(`Storyline says this twice: "${line}"`);
+    seen.add(key);
+  }
+  for (const e of story.exhibits) {
+    const t = words(e.exhibit.title);
+    if (t > MAX_TITLE_WORDS) failures.push(`${t}-word exhibit title: "${e.exhibit.title}"`);
+    const note = e.exhibit.note ?? "";
+    if (note && words(note) > MAX_NOTE_WORDS) failures.push(`${words(note)}-word exhibit note: "${note}"`);
+  }
 }
 
 function checkWriter(answer: HamiltonAnswer): RoleCheck {
   const failures: string[] = [];
+  checkStoryCopy(answer, failures);
   const head = sentences(answer.headline);
   if (head.length !== 1) failures.push("The headline is not one sentence.");
   if (!/\$\d|\d%|\d/.test(answer.headline)) failures.push("The headline carries no number.");

@@ -86,6 +86,54 @@ export function qualifiesName(line: string): boolean {
   return line.length <= 120 && !LEADING_VALUE.test(line) && (/^\(.*\)$/.test(line) || /^(?:if|when|for each|per)\b/i.test(line));
 }
 
+/** A cell that only qualifies a price or belongs to the row beside it: "Per Item", "/Item", "each", "N/C", "APY of .00%". */
+const UNIT_CELL =
+  /^(?:\/\s*[a-z.]+|per\s+[\w/ -]{1,30}|each|ea\.?|monthly|annual(?:ly)?|fee|amount|charge|n\/c|free|none|no charge|[^a-z]*|apy\b.*)$/i;
+/** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
+const LEADING_FRAGMENT = /^(?:(?:\/\s*[A-Za-z.]+|per\s+[a-z/]+(?:\s+[a-z]+)?|each|ea\.)\s+(?=[A-Z“"(•●▪■◦➢►▸])|[a-z]\.\s+(?=[A-Z])|\d{1,2}[.)]\s+(?=[A-Z]))/;
+
+/** Trailing stops and separators, except the stop of an abbreviation ("Outside U.S."). */
+function trimEnd(name: string): string {
+  let result = name;
+  while (/[\s:;,\-–|/.]$/.test(result) && !/(?:^|[^A-Za-z])[A-Za-z]\.$/.test(result)) result = result.slice(0, -1);
+  return result;
+}
+
+/**
+ * The fee name a reader sees: table separators, dot leaders, bullets and the unit or
+ * list-marker fragments of neighbouring cells removed. Category, price and the excerpt
+ * (the evidence) are untouched. Returns the input when tidying would leave no usable name.
+ */
+export function tidyFeeName(raw: string): string {
+  let cells = raw
+    .replace(LEADERS, " ")
+    .replace(/::/g, ":")
+    .split(/\s+\|\s+|\s*\|\s*/)
+    .map((cell) => cell.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  // A unit cell at either end is the price's qualifier or the next row's, not the name.
+  // So is the end of the previous row's sentence ("than 22 years. | Out-of-Network ATMs",
+  // "Use your Checking Account for ... | Money Order").
+  const notAName = (cell: string) => UNIT_CELL.test(cell) || /^[a-z]/.test(cell) || PROSE.test(cell) || /\.$/.test(cell);
+  while (cells.length > 1 && notAName(cells[0])) cells = cells.slice(1);
+  while (cells.length > 1 && UNIT_CELL.test(cells[cells.length - 1])) cells = cells.slice(0, -1);
+  let name = cells.map((cell) => trimEnd(cell.replace(/[\s:]+$/, ""))).join(": ");
+  // Bullets and unit fragments can stack ("/transfer ● Drill lock on box").
+  for (let pass = 0; pass < 3; pass += 1) {
+    name = name.replace(LEADING_FRAGMENT, "").replace(/^[\s•●▪■◦➢►▸–—\-*·:;,)\]]+/u, "");
+  }
+  name = name
+    .replace(/\(\s*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[\s:;,\-–|/]+$/, "")
+    .trim();
+  name = trimEnd(name);
+  // "(Money Order)" alone is the name in parentheses.
+  const wrapped = name.match(/^\(([^()]+)\)$/);
+  if (wrapped) name = wrapped[1].trim();
+  return usableName(name) ? name : raw.trim();
+}
+
 /** A short title line: a section heading such as "Wire Transfers". */
 export function looksLikeHeading(line: string, maxWords = 6): boolean {
   const words = line.split(/\s+/).filter(Boolean);
@@ -105,7 +153,9 @@ const COMPOSABLE_WORDS = new Set(
     "transfer transfers wire request paid returned unpaid consumer business personal member members non " +
     "nonmember customer first additional subsequent thereafter day month fee fees amount charge charges cost price " +
     // "Cash withdrawals - Within U.S. / U.S. territories" under "ATM fees – At non-Wells Fargo ATMs".
-    "cash withdrawal withdrawals within outside territories"
+    "cash withdrawal withdrawals within outside territories " +
+    // "Business accounts only" under "Non-Sufficient Funds (NSF)".
+    "account accounts only"
   ).split(" "),
 );
 

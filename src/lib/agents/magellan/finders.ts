@@ -50,6 +50,9 @@ const STRONG_LINK_PHRASES = [
   "rates and fees",
   "fee sheet",
   "schedule of charges",
+  "schedule of service charges",
+  "account fee schedule",
+  "deposit account agreement",
 ];
 
 const MEDIUM_LINK_PHRASES = [

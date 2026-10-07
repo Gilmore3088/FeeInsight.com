@@ -526,6 +526,11 @@ describe("decidePriorFee", () => {
     expect(decidePriorFee(row, [other, named])).toEqual({ kind: "supersede", prior: named });
   });
 
+  it("replaces a line published under an older untidy name (table cells, list markers)", () => {
+    const untidy = live({ fee_published_id: 611, fee_name: "Per Item | b. Overdraft Fee" });
+    expect(decidePriorFee(row, [untidy])).toEqual({ kind: "supersede", prior: untidy });
+  });
+
   it("adds a differently named line from a newer document instead of calling it a change", () => {
     const other = live({ fee_published_id: 605, fee_name: "Returned item" });
     expect(decidePriorFee(row, [other])).toEqual({ kind: "additional_line" });

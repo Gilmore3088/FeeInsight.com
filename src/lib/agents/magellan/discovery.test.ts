@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DISCOVERY_METHOD_VERSION,
+  finderOrderFromHints,
   nextDiscoveryResume,
   parseDiscoveryResume,
   rejectedSourcesFrom,
@@ -25,6 +26,7 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("business-only link search")) return Promise.resolve([]);
     if (text.includes("stale-link freshness search")) return Promise.resolve([]);
     if (text.includes("AS profile_canonical_source_url")) return Promise.resolve(rows);
     return Promise.resolve([]);
@@ -700,6 +702,33 @@ describe("Magellan agentic discovery", () => {
     });
   });
 
+  describe("business-only link search", () => {
+    const businessBank = bank(79, "https://fnbak.example", {
+      fee_schedule_url: "https://fnbak.example/wp-content/uploads/Business-Account-Fee-Schedule.pdf",
+      profile_canonical_source_url: "https://fnbak.example/wp-content/uploads/Business-Account-Fee-Schedule.pdf",
+    });
+    const businessDb = () =>
+      createDbMock([], learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
+
+    it("replaces a business-only schedule with the consumer one and keeps it as a business companion", async () => {
+      const db = businessDb();
+      const fetchImpl = site({
+        "https://fnbak.example/": () =>
+          response('<a href="/business-fee-schedule">Business Fees</a><a href="/disclosures/fee-schedule">Personal Fee Schedule</a>'),
+        "https://fnbak.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://fnbak.example/disclosures/fee-schedule" });
+      const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
+      expect(companion).toBeDefined();
+      expect(templateText(companion![0])).toContain("'business'");
+      expect(companion).toContain("https://fnbak.example/wp-content/uploads/Business-Account-Fee-Schedule.pdf");
+      expect(attempts(db).every((attempt) => attempt.detail.business_search === 1)).toBe(true);
+    });
+  });
+
   describe("stale-link freshness search", () => {
     const staleBank = {
       ...bank(78, "https://oldbank.example", {
@@ -943,5 +972,28 @@ describe("Magellan agentic discovery", () => {
       expect(sqlText).toContain("ranked.cut_rank <=");
       expect(call).toContain(RESUME_FIRST_PER_STEP);
     });
+  });
+});
+
+describe("finderOrderFromHints", () => {
+  const hints = {
+    stateCode: "TX",
+    expertName: null,
+    finderOrder: ["discover.site_crawl", "discover.hub_pages"],
+    readerOrder: [],
+    avoid: ["discover.sitemap", "discover.common_paths"],
+    platforms: [],
+    source: "memory" as const,
+  };
+
+  it("runs the state's best specialists first and its dead ends last, known link always first", () => {
+    const keys = finderOrderFromHints(hints).map((finder) => finder.key);
+    expect(keys).toEqual(["knownLink", "siteCrawl", "hubPages", "homepageLinks", "platformPaths", "peerHint", "sitemap", "commonPaths"]);
+  });
+
+  it("keeps the default order without state memory", () => {
+    const keys = finderOrderFromHints({ ...hints, source: "none" }).map((finder) => finder.key);
+    expect(keys[0]).toBe("knownLink");
+    expect(keys).toEqual(finderOrderFromHints(null).map((finder) => finder.key));
   });
 });

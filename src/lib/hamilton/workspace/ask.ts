@@ -17,8 +17,12 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, waiverRateQuestion } from "./scenario";
+import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
+import { rateVolumeQuestion } from "./rates";
+import { asksAboutStructure } from "./storyline";
 import type {
   AskObjective,
+  AskSegment,
   AskResponse,
   ClarifyingQuestion,
   ClientFactRef,
@@ -85,10 +89,14 @@ const ELIMINATE = /\b(eliminat\w*|remov\w*|get rid of|scrap\w*|drop(ping)? (it|t
 
 export interface AskIntent {
   feeCategory: string | null;
+  /** The slice of the market the question names ("$10B and up"), or null. */
+  segment: AskSegment | null;
   /** Prices the question names, in the order given (0 when it asks about eliminating the fee). */
   tested: number[];
   wantsOpinion: boolean;
   focus: ExhibitFocus;
+  /** The question is about caps, transfers or how the fee is charged, not only its price. */
+  structure?: boolean;
 }
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
@@ -104,11 +112,15 @@ export function pricesIn(question: string): number[] {
 }
 
 export function parseAsk(question: string, fallbackCategory: string | null = null): AskIntent {
+  const segment = parseSegment(question);
   return {
     feeCategory: matchFeeCategory(question) ?? fallbackCategory,
-    tested: pricesIn(question),
+    segment,
+    // Asset sizes ("$10B") are not prices.
+    tested: segment ? pricesIn(question.replace(SEGMENT_AMOUNTS, " ")) : pricesIn(question),
     wantsOpinion: OPINION.test(question),
-    focus: COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
+    focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
+    structure: asksAboutStructure(question),
   };
 }
 
@@ -160,7 +172,9 @@ export function clarifyAgain(fieldKey: string): AskResponse {
           ? annualItemsQuestion(fee)
           : fee && fieldKey.endsWith(".waiver_rate")
             ? waiverRateQuestion(fee)
-            : feeQuestion();
+            : fee && fieldKey.endsWith(".annual_volume")
+              ? rateVolumeQuestion(fee)
+              : feeQuestion();
   return { kind: "clarifying_question", shortAnswer: `Hamilton could not read that as an answer. ${question.prompt}`, pageChange: { screen: "none" }, question };
 }
 
@@ -331,6 +345,12 @@ function clarify(question: ClarifyingQuestion, pageChange: AskResponse["pageChan
 }
 
 export function buildAskResponse(input: AskInput): AskResponse {
+  const response = respond(input);
+  const segment = input.research?.segment;
+  return segment ? { ...response, segment } : response;
+}
+
+function respond(input: AskInput): AskResponse {
   const { intent, research, memory } = input;
   if (!intent.feeCategory || !research) return clarify(feeQuestion());
   const fee = research.feeCategory;
@@ -350,7 +370,7 @@ export function buildAskResponse(input: AskInput): AskResponse {
         kind: "research",
         shortAnswer: `Fewer than ${MIN_PEERS_FOR_POSITION} peers publish this fee, so no tested price can be placed against the market.`,
         pageChange: { screen: "model", feeCategory: fee, tested },
-        answer: buildFeeAnswer(research),
+        answer: buildFeeAnswer(research, { story: { tested, wantsDecision: true } }),
       };
     }
     const { chosen, ...rest } = opinion;
@@ -376,7 +396,10 @@ export function buildAskResponse(input: AskInput): AskResponse {
     };
   }
 
-  const answer = buildFeeAnswer(research, { focus: intent.focus });
+  const answer = buildFeeAnswer(research, {
+    focus: intent.focus,
+    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure },
+  });
   const section = intent.focus === "competitors" ? "competitors" : intent.focus === "trend" ? "economy" : "position";
   return {
     kind: "research",

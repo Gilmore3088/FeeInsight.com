@@ -9,7 +9,7 @@
 import { PALETTE } from "./styles";
 import { RESEARCH_IMPRINT, SITE_NAME } from "@/lib/constants";
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -95,6 +95,9 @@ function formatCell(val: string | number | null | undefined, fmt?: string): stri
   return escapeHtml(String(val));
 }
 
+/** Tables with at most this many rows never split across pages in print. */
+export const SHORT_TABLE_ROWS = 6;
+
 /**
  * Full-width data table with warm styling matching brief-generator.ts visual language.
  * Null values render as "—" (em dash). Positive percent values get "+" prefix.
@@ -116,8 +119,10 @@ export function dataTable(props: DataTableProps): string {
     })
     .join("");
 
+  // A short table prints whole; a long one splits between rows (print rules in styles.ts).
+  const short = props.rows.length <= SHORT_TABLE_ROWS ? " report-table-short" : "";
   return `
-<div class="report-table-wrapper">
+<div class="report-table-wrapper${short}">
   ${props.caption ? `<div class="report-table-caption">${escapeHtml(props.caption)}</div>` : ""}
   <table class="report-table">
     <thead><tr>${headers}</tr></thead>
@@ -288,6 +293,71 @@ export function horizontalBarChart(props: HorizontalBarChartProps): string {
 </div>`;
 }
 
+// ─── Column Chart ──────────────────────────────────────────────────────────────
+
+export interface ColumnChartSegment {
+  value: number;
+  /** Legend name; segments with the same index share a colour. */
+  label: string;
+}
+
+export interface ColumnChartColumn {
+  label: string;
+  segments: ColumnChartSegment[];
+  /** Text above the column, e.g. the total. */
+  displayValue?: string;
+  /** Small text under the label, e.g. a year-over-year change. */
+  note?: string;
+}
+
+export interface ColumnChartProps {
+  columns: ColumnChartColumn[];
+  title?: string;
+  source?: string;
+}
+
+const COLUMN_SEGMENT_COLORS = ["var(--col-seg-0)", "var(--col-seg-1)", "var(--col-seg-2)"];
+
+/**
+ * CSS-only vertical column chart with optional stacked segments (no SVG).
+ * Column heights are a share of the tallest column's total.
+ */
+export function columnChart(props: ColumnChartProps): string {
+  const totals = props.columns.map((c) => c.segments.reduce((sum, s) => sum + Math.max(s.value, 0), 0));
+  const max = Math.max(...totals, 0);
+  const legend = props.columns[0]?.segments.length > 1
+    ? `<div class="col-chart-legend">${props.columns[0].segments
+        .map((s, i) => `<span><i style="background:${COLUMN_SEGMENT_COLORS[i % COLUMN_SEGMENT_COLORS.length]}"></i>${escapeHtml(s.label)}</span>`)
+        .join("")}</div>`
+    : "";
+  const cols = props.columns
+    .map((col, ci) => {
+      const heightPct = max > 0 ? (totals[ci] / max) * 100 : 0;
+      const segs = col.segments
+        .map((s, i) => {
+          const share = totals[ci] > 0 ? (Math.max(s.value, 0) / totals[ci]) * 100 : 0;
+          return `<div class="col-chart-seg" style="height:${share.toFixed(1)}%;background:${COLUMN_SEGMENT_COLORS[i % COLUMN_SEGMENT_COLORS.length]};"></div>`;
+        })
+        .reverse()
+        .join("");
+      return `
+  <div class="col-chart-col">
+    <div class="col-chart-value">${escapeHtml(col.displayValue ?? "")}</div>
+    <div class="col-chart-plot"><div class="col-chart-bar" style="height:${heightPct.toFixed(1)}%;">${segs}</div></div>
+    <div class="col-chart-label">${escapeHtml(col.label)}</div>
+    <div class="col-chart-note">${col.note ? escapeHtml(col.note) : "&nbsp;"}</div>
+  </div>`;
+    })
+    .join("");
+  return `
+<div class="col-chart">
+  ${props.title ? `<div class="h-bar-title">${escapeHtml(props.title)}</div>` : ""}
+  ${legend}
+  <div class="col-chart-cols">${cols}</div>
+  ${props.source ? `<div class="h-bar-source">${escapeHtml(props.source)}</div>` : ""}
+</div>`;
+}
+
 // ─── Two Column ────────────────────────────────────────────────────────────────
 
 /**
@@ -323,7 +393,8 @@ export interface TocEntry {
   number?: string;       // "01", "02" etc — omit for exec summary, playbook, appendix
   title: string;
   description: string;   // subtitle line
-  page: number;
+  /** Omit when the page is not known: chapters flow, so a fixed number would go stale. */
+  page?: number;
   sectionLabel?: string; // "Core Analysis", "Strategy", "Data" — renders as group header
 }
 
@@ -343,7 +414,12 @@ export function tableOfContents(chapters: TocEntry[]): string {
         parts.push(`<div class="toc-section-label">${escapeHtml(ch.sectionLabel)}</div>`);
       }
 
-      const pageStr = String(ch.page).padStart(2, "0");
+      const pageStr = ch.page === undefined ? "" : String(ch.page).padStart(2, "0");
+      const pageCell = pageStr
+        ? `
+          <span class="toc-leader"></span>
+          <span class="toc-entry-page">${escapeHtml(pageStr)}</span>`
+        : "";
 
       if (ch.number) {
         // Numbered chapter entry with large number
@@ -352,9 +428,7 @@ export function tableOfContents(chapters: TocEntry[]): string {
       <div class="toc-chapter-num">${escapeHtml(ch.number)}</div>
       <div class="toc-entry-body">
         <div class="toc-entry-title-row">
-          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>
-          <span class="toc-leader"></span>
-          <span class="toc-entry-page">${escapeHtml(pageStr)}</span>
+          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>${pageCell}
         </div>
         <div class="toc-entry-desc">${escapeHtml(ch.description)}</div>
       </div>
@@ -365,9 +439,7 @@ export function tableOfContents(chapters: TocEntry[]): string {
     <div class="toc-entry">
       <div class="toc-entry-body">
         <div class="toc-entry-title-row">
-          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>
-          <span class="toc-leader"></span>
-          <span class="toc-entry-page">${escapeHtml(pageStr)}</span>
+          <span class="toc-entry-title">${escapeHtml(ch.title)}</span>${pageCell}
         </div>
         <div class="toc-entry-desc">${escapeHtml(ch.description)}</div>
       </div>
@@ -601,6 +673,97 @@ export function playbook(segments: PlaybookSegment[]): string {
   <h2 class="playbook-heading">What Winning Institutions Will Do Next</h2>
   <div class="playbook-segments">${segmentsHtml}\n  </div>
 </div>`;
+}
+
+// ─── Figure Findings ──────────────────────────────────────────────────────────
+
+export interface FigureFinding {
+  /** The number that leads the finding, already formatted (e.g. "$35.00", "+12%"). */
+  figure: string;
+  headline: string;
+  detail: string;
+}
+
+/**
+ * Executive-summary findings led by a figure, as on the public research pages:
+ * the figure in a fixed left column, the headline and its supporting detail beside it.
+ */
+export function figureFindings(findings: FigureFinding[]): string {
+  const items = findings
+    .map(
+      (f) => `
+  <div class="figure-finding">
+    <div class="figure-finding-figure">${escapeHtml(f.figure)}</div>
+    <div>
+      <div class="figure-finding-headline">${escapeHtml(f.headline)}</div>
+      <div class="figure-finding-detail">${escapeHtml(f.detail)}</div>
+    </div>
+  </div>`,
+    )
+    .join("");
+  return `<div class="figure-findings">${items}\n</div>`;
+}
+
+// ─── Release List ─────────────────────────────────────────────────────────────
+
+export interface ReleaseListItem {
+  /** Short date shown in the margin, e.g. "Oct 2". */
+  date: string;
+  /** Who issued it, e.g. "FDIC, Federal Reserve". */
+  source: string;
+  title: string;
+  /** Link to the original release; http(s) only. */
+  href?: string | null;
+}
+
+export interface ReleaseListGroup {
+  title: string;
+  items: ReleaseListItem[];
+  /** Line under the group, e.g. "4 more in this window". */
+  note?: string;
+}
+
+/** Dated, sourced items grouped under small headings (agency releases, fee changes). */
+export function releaseList(groups: ReleaseListGroup[]): string {
+  return groups
+    .filter((g) => g.items.length > 0)
+    .map((g) => {
+      const items = g.items
+        .map((i) => {
+          const safeHref = i.href && /^https?:\/\//i.test(i.href) ? i.href : null;
+          const title = safeHref
+            ? `<a href="${escapeHtml(safeHref)}">${escapeHtml(i.title)}</a>`
+            : escapeHtml(i.title);
+          return `<li class="release-item"><span class="release-date">${escapeHtml(i.date)}</span><span class="release-body"><span class="release-source">${escapeHtml(i.source)}</span> ${title}</span></li>`;
+        })
+        .join("");
+      return `
+<div class="release-group">
+  <div class="release-group-title">${escapeHtml(g.title)}</div>
+  <ul class="release-list">${items}</ul>
+  ${g.note ? `<div class="release-note">${escapeHtml(g.note)}</div>` : ""}
+</div>`;
+    })
+    .join("");
+}
+
+// ─── Report Section ───────────────────────────────────────────────────────────
+
+/**
+ * One report section: its header and content in a single block. In print the header
+ * stays on the same page as the first block of content (see the print rules in styles.ts).
+ */
+export function reportSection(header: SectionHeaderProps, content: string, id?: string): string {
+  return `
+<section class="report-section"${id ? ` id="${escapeHtml(id)}"` : ""}>
+  ${sectionHeader(header)}
+  ${content}
+</section>`;
+}
+
+/** Plain statement shown in place of an exhibit that has no data. */
+export function emptyNotice(text: string): string {
+  return `<p class="report-empty">${escapeHtml(text)}</p>`;
 }
 
 // ─── Layout Wrappers ──────────────────────────────────────────────────────────

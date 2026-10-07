@@ -17,6 +17,10 @@ Magellan owns institution source discovery and source fetching.
   is `unchanged`; content matching an older copy (A, B, A) reuses that document
   (`reused_documents`) instead of inserting a new row. Older duplicates carry
   `duplicate_of_id`, and a unique partial index enforces the rule.
+- One current document per page (institution, `document_url`). The copy a fetch stores or
+  confirms is current; the page's other successful copies get `superseded_by_id` pointing at
+  it (`current-copy.ts`). Current = `status = 'success' AND duplicate_of_id IS NULL AND
+  superseded_by_id IS NULL`. Failed fetches never supersede a good copy; nothing is deleted.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
 - Avoid repeatedly selecting the same failed source without a changed input, backoff expiry, or operator action.
 - A fee link found after the bank's last fetch (`rescue_status = 'rescued'` and
@@ -62,7 +66,7 @@ and `detail.method_version`).
 | 1 | `discover.common_paths` | Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Version 2. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
-| 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop: live banks with fewer than 8 published fee categories, or an HTML fee link and no monthly fee, get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists a fee (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least one fee with a dollar amount (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped. Never replaces the fee link. Each bank at most monthly. |
+| 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop: banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists a fee (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least one fee with a dollar amount (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped. Never replaces the fee link. Each bank at most monthly. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then the fewest categories. |
 | 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; the other 3 rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". One attempt row per query (`detail.query`, `candidates`, `kept`; not folded into the playbook): `ok` when a page it found was kept, `rejected` when its hits were all dropped, `no_candidates` when it linked to nothing useful. |
 | 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
 | 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, once a month per bank. |
@@ -75,6 +79,19 @@ and `detail.method_version`).
   (3 fee lines) HTML passes only when its address names the fee page, or its label is
   strong and it lists a fee; an account or product page (`looksLikeProductPage`) is
   rejected as `product_page` and belongs to the companion finder as an account page.
+  A business-only schedule (its address or its own heading names business/commercial and
+  nothing names personal or consumer accounts) is rejected as `business_schedule`.
+- Link coverage (`link-coverage.ts`), one shared rule for "is the stored page the
+  consumer fee schedule?": not when the link is business-only, when none of the bank's
+  stored texts prices an overdraft or NSF item (`hasOverdraftPrice`: the word, then $10+
+  on the same line, not a threshold or limit), or when its text sends the reader to the
+  account agreement or another document (`refersElsewhere`), or when its current copy's
+  address is dated three or more years back (`isStaleDatedLink`, e.g. a 2019 PDF). Such a bank keeps its link
+  and live fees; the companion finder and the paid schedule search keep looking.
+- Business-only search (`BUSINESS_SEARCH_VERSION`): before the upgrade searches, banks
+  whose link is a business-only schedule are searched once per version for the consumer
+  schedule (`detail.business_search`). A find replaces the link and keeps the old one as a
+  `business` companion; a miss leaves the link alone.
 - Upgrade search (`UPGRADE_SEARCH_VERSION`): in spare discovery capacity, banks whose fee
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
@@ -139,6 +156,24 @@ and `detail.method_version`).
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
+  Report requesters go first, then the largest banks; $10B+ banks and requesters are
+  picked from any state's paid step, not only their own.
+- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`), in the same paid
+  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks or report requesters, from any state,
+  whose link is not the consumer schedule (link coverage), once a month each, requesters
+  then largest first. The model (web search) is told why the held page is not it; the
+  answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
+  stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
+  and Knox read it; the link and its live fees stay.
+- Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
+  the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
+  and no fee link, once a month each. The model (web search) names the official homepage;
+  it is saved only when it is not a directory, social, government or another institution's
+  domain, and the homepage names the institution (every distinctive name word) plus its
+  city or its FDIC certificate / NCUA charter number. Saving resets the bank's search
+  (`rescue_status = 'pending'`) so the free finders search the new site next. Anything
+  else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
+  name ("CALIFORNIA") is not searched.
 
 ## Outcome ledger (`outcomes.ts`)
 
@@ -205,3 +240,17 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 - Identity matching (`registry/identity.ts`) accepts only unambiguous names. Shared names are stored as `needs_review` and never used until a person accepts them. Links with `verified_by` set are never overwritten.
 - Operator view: `/admin/magellan/registry`. Manual queue: `POST /api/admin/registry/run` with `{ source, partition_key?, dry_run? }`.
 - Add a source: write a client in `regulatory/`, a worker in `registry/`, an entry in `REGISTRY_SOURCES` (`registry/index.ts`), a scheduler partition list, and a `narrate.ts` sentence. `run-store.ts` dispatches every `registry-*` key automatically.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores these numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. A broken rule, or any
+number that moved more than 25% since yesterday, is named in the scoreboard step's summary.
+Change this table and `agent-health.ts` in the same PR.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Steps do not fail | `stepsFailed` (24 h) | 0 |
+| No fee link fails the same way 3+ times a day | `repeatFailures` (fetch: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
+
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`.

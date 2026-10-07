@@ -9,7 +9,7 @@ import {
   FAMILY_COLORS,
   TAXONOMY_COUNT,
   FEATURED_COUNT,
-  getSpotlightCategories,
+  getFeaturedCategories,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -42,11 +42,11 @@ export default async function NationalFeeIndexPage() {
   const allIndex = await getPublicNationalIndex();
   const cpi = await getCpiContext();
 
-  // Pro: full index. Free: spotlight preview only (6 categories)
-  const spotlightCats = new Set(getSpotlightCategories());
+  // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
+  const headlineCats = new Set(getFeaturedCategories());
   const index = isPro
     ? allIndex
-    : allIndex.filter((e) => spotlightCats.has(e.fee_category));
+    : allIndex.filter((e) => headlineCats.has(e.fee_category));
   const gatedCount = allIndex.length - index.length;
 
   // Group by family
@@ -101,7 +101,7 @@ export default async function NationalFeeIndexPage() {
           </>
         ) : (
           <>
-            Preview of {index.length} spotlight fee categories from our full
+            Preview of {index.length} headline fee categories from our full
             index of {TAXONOMY_COUNT} categories.{" "}
             <Link
               href="/subscribe"
@@ -123,7 +123,7 @@ export default async function NationalFeeIndexPage() {
         className="mt-5"
         eyebrow="National index updates"
         headline="Get the national fee index in your inbox"
-        body="New national medians, the fee changes that moved them, and one chart. No more than once a month."
+        body="New national medians and one table worth bringing to a pricing meeting. No more than once a month."
         buttonLabel="Subscribe"
         secondaryLink={SAMPLE_REPORT_LIVE ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
       />
@@ -236,7 +236,7 @@ export default async function NationalFeeIndexPage() {
                 You&apos;re viewing a preview
               </h2>
               <p className="text-[13px] text-[#6B6255] mt-1">
-                Showing {index.length} spotlight categories with median only.
+                Showing {index.length} headline categories with median only.
                 The full index includes {gatedCount} more categories with
                 P25/P75 percentiles, bank vs. credit union breakdowns, and range
                 data.
