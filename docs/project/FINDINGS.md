@@ -1996,6 +1996,9 @@ at $2,500, is a balance threshold read as a fee and is not fixed here.
 "($/#)" note to `namesALimit`.
 **Lesson:** prove a rules change on its first prod run, not only on the answer keys: prod pages carry
 wordings the keyed schedules lack.
+**Follow-up (v31):** v30's first prod run (03:21 UTC, 362 rows) had none of these wordings but read
+an ATM rebate cap ("The maximum rebate per 12-month cycle" $180/$240) as a fee; v31 reads a maximum
+rebate, refund or reimbursement as a limit.
 
 ## 2026-10-07: Knox's lessons ignored restores
 **What happened:** Hamilton publish found that Knox's lessons read every `wrong_category` takedown as
