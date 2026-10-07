@@ -1801,3 +1801,15 @@ the district most active banks in their city have (else their state's). A parser
 run on the next registry tick (`registry/fdic-universe.ts`).
 **Lesson:** `COALESCE(stored, fresh)` freezes the first value forever; refreshed regulator fields go
 `COALESCE(fresh, stored)`.
+
+## 2026-10-07: Knox's learning reader never loaded a lesson after PR 300
+**What happened:** PR 300 added per-bank lessons to the lessons query in `knox/lessons.ts` and
+left an extra ")" after the `tally` step. Postgres rejected the query on every extract run.
+`loadKnoxLessons` caught the error inside its savepoint and returned no lessons, so Knox re-filed
+nothing (the audit red team counted 0 lesson refiles in 110 extract runs). Darwin kept rejecting the
+same names under the same wrong categories ("Statement Copy" as a paper statement, "Overdraft
+Transfer" as an overdraft).
+**Fix:** the paren is gone. The same query, run read-only on prod, returns 79 global lessons and
+567 per-bank lessons. A test now checks that the query's parentheses balance.
+**Lesson:** a reader that swallows its own errors needs a test of the SQL it sends, because a
+silent empty result looks the same as "nothing to learn".
