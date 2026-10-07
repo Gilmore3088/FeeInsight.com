@@ -23,6 +23,7 @@ import {
 } from "@/lib/agents/knox/extract";
 import { amountsIn, confidenceFor, detectFrequency, MAX_REASONABLE_FEE_AMOUNT } from "@/lib/agents/knox/rules";
 import { namesALimit } from "@/lib/agents/knox/layout";
+import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 type SqlTag = typeof sql;
@@ -42,7 +43,8 @@ type SqlTag = typeof sql;
  * budget cap or the automation stop ends the step cleanly before any money is spent.
  */
 
-export const KNOX_PAID_STRATEGY = { strategy: "extract.paid", version: 1 } as const;
+/** Version 2: monthly maintenance rows carry the account's lineup fields (`lineup.ts`). */
+export const KNOX_PAID_STRATEGY = { strategy: "extract.paid", version: 2 } as const;
 export const PAID_MIN_PRICED_LINES = 15;
 export const KNOX_PAID_FLAG = "knox_paid_extraction";
 /** Long texts are cut to keep one call's cost bounded. */
@@ -71,6 +73,11 @@ export interface PaidFeeRow {
   frequency?: unknown;
   conditions?: unknown;
   source_line?: unknown;
+  /** monthly_maintenance only. */
+  product_name?: unknown;
+  min_balance_to_avoid?: unknown;
+  min_opening_deposit?: unknown;
+  waiver_text?: unknown;
 }
 
 export interface AcceptedPaidFee {
@@ -80,6 +87,8 @@ export interface AcceptedPaidFee {
   frequency: string | null;
   conditions: string | null;
   sourceLine: string;
+  /** monthly_maintenance only; each value grounded in the text or null. */
+  lineup: AccountLineup | null;
 }
 
 export type PaidRowRejection = "missing_fields" | "unknown_canonical" | "invalid_amount" | "not_in_text" | "limit_not_fee";
@@ -156,13 +165,28 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
     return "not_in_text";
   }
   const frequency = typeof row.frequency === "string" && row.frequency.trim() ? row.frequency.trim().toLowerCase() : null;
+  const conditions = typeof row.conditions === "string" && row.conditions.trim() ? row.conditions.trim().slice(0, 240) : null;
+  // The waiver may come back in `conditions` instead of `waiver_text`; either is kept only
+  // when the text states it.
+  const lineup = mapped === LINEUP_CATEGORY
+    ? groundLineup(
+        {
+          productName: row.product_name,
+          minBalanceToAvoid: row.min_balance_to_avoid,
+          minOpeningDeposit: row.min_opening_deposit,
+          waiverText: typeof row.waiver_text === "string" && row.waiver_text.trim() ? row.waiver_text : conditions,
+        },
+        text,
+      )
+    : null;
   return {
     feeName,
     canonicalKey: mapped,
     amount: rounded,
     frequency: frequency && /^(monthly|annual|per_item|per_transaction|daily|one_time)$/.test(frequency) ? frequency : detectFrequency(sourceLine),
-    conditions: typeof row.conditions === "string" && row.conditions.trim() ? row.conditions.trim().slice(0, 240) : null,
+    conditions,
     sourceLine: sourceLine || feeName,
+    lineup,
   };
 }
 
@@ -175,13 +199,18 @@ function canonicalFeeList(): string {
 export function paidExtractPrompt(text: string): string {
   return [
     "Below is the text of a bank or credit union fee schedule. List every fee it states.",
-    "Return only JSON: {\"fees\": [{\"fee_name\", \"canonical_key\", \"amount\", \"frequency\", \"conditions\", \"source_line\"}]}.",
+    "Return only JSON: {\"fees\": [{\"fee_name\", \"canonical_key\", \"amount\", \"frequency\", \"conditions\", \"source_line\", \"product_name\", \"min_balance_to_avoid\", \"min_opening_deposit\", \"waiver_text\"}]}.",
     "- fee_name: the fee's name as written.",
     "- canonical_key: one key from the list below; skip fees that fit none.",
-    "- amount: the dollar price as a number (0 for a fee stated as free). Skip percentages, ranges, balance requirements, interest rates, limits and caps.",
+    "- amount: the dollar price as a number (0 for a fee stated as free). Skip percentages, ranges, balance requirements, interest rates, limits and caps as fees.",
     "- frequency: monthly, annual, per_item, per_transaction, daily, one_time or null.",
     "- conditions: waivers, caps or tiers stated with the fee, or null.",
     "- source_line: the exact text from the document that states the fee and its amount, copied verbatim.",
+    "For a monthly_maintenance fee only, also return these four (null when the text does not state one):",
+    "- product_name: the account's name as written, e.g. \"Premier Checking\".",
+    "- min_balance_to_avoid: the balance that avoids the monthly fee, as a number.",
+    "- min_opening_deposit: the deposit needed to open the account, as a number.",
+    "- waiver_text: the text that says how the fee is waived or avoided, copied verbatim.",
     "Do not guess. Use only what the text says.",
     "",
     "Canonical keys:",
@@ -381,6 +410,7 @@ export async function runKnoxPaidExtract(
               confidence: confidenceFor(excerpt),
               excerpt,
               waivable: /\bwaiv/i.test(`${fee.conditions ?? ""} ${fee.sourceLine}`),
+              lineup: fee.lineup,
             },
             extraFlags: [KNOX_PAID_FLAG],
             method: `paid extraction (${model})`,
