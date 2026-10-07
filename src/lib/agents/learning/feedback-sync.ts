@@ -93,6 +93,7 @@ interface AnswerKeyRow {
   source_line: string | null;
   uncertain: boolean | null;
   document_url: string | null;
+  confirmed_by: string | null;
 }
 
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
@@ -293,7 +294,7 @@ export async function syncPipelineFeedback(
     result.categoryRejects = rejects.length;
 
     const answerKeyFees = await inSavepoint(db, (scope) => scope<AnswerKeyRow[]>`
-      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url
+      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url, f.confirmed_by
         FROM answer_key_fees f
         JOIN answer_key_institutions ak ON ak.id = f.answer_key_institution_id
        WHERE f.status = 'confirmed'
@@ -306,14 +307,15 @@ export async function syncPipelineFeedback(
         aboutStage: "extract",
         signal: "right",
         kind: "answer_key",
-        reportedBy: "human",
+        // Keys the Knox thread keyed line by line are not a person's check; say so.
+        reportedBy: row.confirmed_by === "knox-hand-key" ? "knox" : "human",
         checkName: "answer_key",
         institutionId: num(row.institution_id),
         sourceUrl: row.document_url,
         canonicalFeeKey: row.canonical_key,
         amount: num(row.amount),
         weight: row.uncertain ? 0.5 : 1,
-        evidence: { source_line: row.source_line, amount_kind: row.amount_kind },
+        evidence: { source_line: row.source_line, amount_kind: row.amount_kind, confirmed_by: row.confirmed_by ?? null },
         runId: options.runId,
         dedupeKey: `answer_key:fee:${row.id}`,
       });

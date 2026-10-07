@@ -2396,3 +2396,17 @@ still passes the category guard, and does not collide with another live fee of t
 name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
 Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
 **Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: The answer key was never on prod
+
+- **Problem.** `answer_key_institutions` and `answer_key_fees` had no rows on prod. The hand-keyed keys
+  (Texas and the 7-state set) lived only in `/mnt/project-files/answer-key/` and the Knox gate fixtures, so
+  no `answer_key` lesson ever reached `pipeline_feedback`, Atlas's answer-key score had nothing to score,
+  and Darwin's batch scoring had to bundle its own copy.
+- **Fix.** Seed migration `20270110000018_answer_key_seed.sql`: 62 banks keyed line by line by the Knox thread
+  (status `confirmed`, `confirmed_by = 'knox-hand-key'`: checked against the stored text, not yet by a person)
+  with 2,321 fee rows, and 55 banks from the 2026-10-04 prefill draft left `prefilled` (710 rows) for a person
+  to confirm on /admin/answer-key. 525 keyed rows with no taxonomy key ("unmapped") are left out. One
+  document per bank (the table's rule): where a bank had two keyed copies, the current one; 20 older copies
+  are not loaded. Learning rows from Knox-keyed fees say `reported_by = 'knox'`, not `human`.
+- **Watch.** Inserts only and idempotent; it never touches a bank already in the key.
