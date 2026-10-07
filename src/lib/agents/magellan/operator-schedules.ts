@@ -7,7 +7,8 @@ import { urlIdentity } from "./finders";
 type SqlTag = typeof sql;
 
 /**
- * Consumer fee schedules James found by hand for banks Magellan had not found yet. Each is
+ * Consumer fee schedules found by hand (James, or a web search for the banks he listed) for
+ * banks Magellan had not found yet. Each is
  * stored as a companion document (`consumer_supplement`), the same way the paid schedule
  * search stores its answers, so the bank keeps its link and live fees and companion fetch,
  * Rosetta and Knox read the schedule next. Adding a link here is the whole change: the
@@ -36,6 +37,60 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName: "Citibank, National Association",
     url: "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges_Effective_February_26_2026.pdf",
     givenBy: "James, 2026-10-07 00:52",
+  },
+  {
+    institutionId: 5,
+    institutionName: "U.S. Bank National Association",
+    url: "https://www.usbank.com/dam/documents/pdf/deposits/consumer-pricing-information/deposit-products.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 18,
+    institutionName: "Citizens Bank, National Association",
+    url: "https://www.citizensbank.com/dam/ceb2aa29-d6d9-4973-8a02-b3fa012f5f28/personal-fees-original-file.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 22,
+    institutionName: "The Huntington National Bank",
+    url: "https://www.huntington.com/-/media/pdf/RR5INTCHKRPAC",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 23,
+    institutionName: "KeyBank National Association",
+    url: "https://www.key.com/content/dam/kco/documents/personal/key_smart_checking_fee_transparency.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 27,
+    institutionName: "Regions Bank",
+    url: "https://www.regions.com/virtualDocuments/Checking-Pricing-Schedule.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 30,
+    institutionName: "USAA Federal Savings Bank",
+    url: "https://content.usaa.com/mcontent/static_assets/Media/bk-depository-agreement-disclosures-toc-current.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 33,
+    institutionName: "Flagstar Bank, National Association",
+    url: "https://www.flagstar.com/content/dam/flagstar/pdfs/OverdraftProtectionCoveragePreEnrollmentTC.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 37,
+    institutionName: "First Horizon Bank",
+    url: "https://www.firsthorizon.com/-/media/Files/Access-Checking-Account-Service-Fee-Guide.pdf",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+  },
+  {
+    institutionId: 47,
+    institutionName: "Pinnacle Bank",
+    url: "https://www.pnfp.com/Overdraft",
+    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
   },
 ];
 

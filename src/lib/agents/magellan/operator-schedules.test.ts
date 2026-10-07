@@ -53,8 +53,10 @@ describe("schedules James found by hand", () => {
     expect(attempts(db)).toHaveLength(0);
   });
 
-  it("lists Chase and Citi with links on their own domains", () => {
-    expect(OPERATOR_SCHEDULES.map((schedule) => schedule.institutionId)).toEqual([1, 3]);
-    for (const schedule of OPERATOR_SCHEDULES) expect(() => new URL(schedule.url)).not.toThrow();
+  it("lists each bank once, Chase and Citi first, with https links", () => {
+    const ids = OPERATOR_SCHEDULES.map((schedule) => schedule.institutionId);
+    expect(ids.slice(0, 2)).toEqual([1, 3]);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const schedule of OPERATOR_SCHEDULES) expect(new URL(schedule.url).protocol).toBe("https:");
   });
 });
