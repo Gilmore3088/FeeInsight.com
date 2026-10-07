@@ -1,5 +1,7 @@
 import type { RegistryDb } from "./partitions";
+import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
+import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
@@ -241,6 +243,34 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           complaints: r.complaints,
           rows_written: r.rowsWritten,
         },
+      };
+    },
+  },
+  {
+    source: CENSUS_ACS_SOURCE,
+    stepKey: "registry-census-acs",
+    title: "Pull Census household income by state, county, ZIP and tract",
+    run: async (input) => {
+      const r = await runRegistryCensusAcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `Census has not published the ${r.partitionKey} ACS 5-year estimates yet; will check again.`
+          : `Magellan loaded ${r.partitionKey} ACS household income for ${n(r.counts.state)} states, ${n(r.counts.county)} counties, ${n(r.counts.zcta)} ZIP areas and ${n(r.counts.tract)} tracts; ${n(r.withIncome)} have a median income${dry(r.dryRun)}.`,
+        detail: { year: r.year, counts: r.counts, with_income: r.withIncome, upserted_rows: r.upsertedRows, empty: r.empty },
+      };
+    },
+  },
+  {
+    source: IRS_ZIP_INCOME_SOURCE,
+    stepKey: "registry-irs-zip-income",
+    title: "Pull IRS income and interest by ZIP code",
+    run: async (input) => {
+      const r = await runRegistryIrsZipIncome({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `The IRS has not published tax year ${r.partitionKey} ZIP income yet; will check again.`
+          : `Magellan loaded tax year ${r.partitionKey} IRS income for ${n(r.zips)} ZIP codes; ${n(r.withInterest)} report taxable interest${dry(r.dryRun)}.`,
+        detail: { tax_year: r.taxYear, zips: r.zips, with_interest: r.withInterest, upserted_rows: r.upsertedRows, empty: r.empty },
       };
     },
   },
