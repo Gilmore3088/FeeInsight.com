@@ -61,6 +61,10 @@ describe("registry scheduler", () => {
       registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "state-bills")?.partitions ?? [];
     expect(bills({})).toEqual([]);
     expect(bills({ OPEN_STATES_API_KEY: "key" })).toHaveLength(52);
+    const federal = (env: Record<string, string>) =>
+      registryPartitionsBySource(now, { year: 2025, quarter: 4 }, env as NodeJS.ProcessEnv).find((entry) => entry.source === "federal-bills")?.partitions;
+    expect(federal({})).toEqual([]);
+    expect(federal({ CONGRESS_GOV_API_KEY: "key" })).toEqual(["current"]);
   });
 
   it("defaults the backfill to 2010Q1 and honours REGISTRY_BACKFILL_FROM", () => {
