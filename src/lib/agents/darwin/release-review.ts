@@ -19,9 +19,10 @@ import {
   DARWIN_RELEASE_ACTS,
   DARWIN_RELEASE_STRATEGY,
   releaseHeldFee,
+  scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
-import { rawFeeFingerprint } from "./verify";
+import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
 type SqlTag = typeof sql;
 
@@ -51,6 +52,8 @@ const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveE
 export interface ReleaseReviewCandidate {
   row: HeldFeeRow;
   sourceLine: string;
+  /** The rows around the line in the stored schedule (release-held `scheduleContext`). */
+  sourceContext?: string | null;
 }
 
 export interface ReleaseReviewVerdict {
@@ -104,10 +107,11 @@ const LESSON_FOUND: Readonly<Record<string, string>> = {
  * pipeline's own outcomes, not only from rules written into this prompt.
  *
  * Only judgements that hold up are lessons. The source check's amount judgements
- * (`wrong_amount`, `threshold`) are left out: a hand check of 20 from the 24 hours to
- * 2026-10-07 02:50 UTC found 13 were real prices ("Wire Transfer Outgoing $20.00",
- * "Deposit return item / $10.00"), and a wrong lesson would teach the review to hold real
- * fees. Empty when the store is missing or cannot be read.
+ * (`wrong_amount`, `threshold`) are left out: of 20 random ones from the 24 hours to
+ * 2026-10-07 02:50 UTC, read against the full page, 4 were real prices it should have kept
+ * ("Wire Transfer Outgoing $20.00"; PR 341 fixes those) and 3 more could not be read, and a
+ * wrong lesson would teach the review to hold real fees. Empty when the store is missing or
+ * cannot be read.
  */
 export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<ReviewLesson[]> {
   const unique = [...new Set(keys.filter(Boolean))];
@@ -181,13 +185,14 @@ export function lessonsFor(batch: ReleaseReviewCandidate[], lessons: ReviewLesso
 }
 
 export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lessons: ReviewLesson[] = []): string {
-  const items = candidates.map(({ row, sourceLine }) => ({
+  const items = candidates.map(({ row, sourceLine, sourceContext }) => ({
     id: Number(row.fee_raw_id),
     fee_name: row.fee_name,
     amount: row.amount == null ? null : Number(row.amount),
     filed_as: `${row.held_canonical_fee_key} (${DISPLAY_NAMES[row.held_canonical_fee_key] ?? row.held_canonical_fee_key})`,
     filed_as_includes: ALIASES_BY_KEY.get(row.held_canonical_fee_key) ?? [],
     schedule_line: sourceLine.slice(0, 300),
+    ...(sourceContext ? { schedule_rows_around: sourceContext } : {}),
   }));
   return [
     "You check fees read from bank and credit union fee schedules before they are published.",
@@ -203,6 +208,8 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
     "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
     "  or a number misread from spaced or broken text (\"$ 5 5 . 0 0\" is $55).",
+    "When an item has `schedule_rows_around` (the rows above and below its line), use them: a price that",
+    "belongs to the next row, another column or another account is not this fee's price.",
     "Return only JSON: {\"verdicts\": [{\"id\", \"is_fee\", \"category_fits\", \"amount_is_price\", \"reason\"}]} with one entry per item and a reason of at most 12 words.",
     ...(lessons.length > 0
       ? [
@@ -245,7 +252,7 @@ export function parseReleaseReviews(parsed: unknown): Map<number, ReleaseReviewV
   return verdicts;
 }
 
-type CandidateRow = HeldFeeRow & { source_line: string };
+type CandidateRow = HeldFeeRow & { source_line: string; source_context: string | null };
 
 async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: string): Promise<ReleaseReviewCandidate[]> {
   const params: Array<string | number> = [
@@ -274,7 +281,8 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
              upper(btrim(inst.state_code)) AS state_code,
              rel.detail->>'held_reason' AS held_reason,
              rel.detail->>'canonical_fee_key' AS held_canonical_fee_key,
-             rel.detail->>'source_line' AS source_line
+             rel.detail->>'source_line' AS source_line,
+             rel.detail->>'source_context' AS source_context
         FROM pipeline_attempts rel
         JOIN raw_fee_observations fr ON fr.fee_raw_id = substring(rel.input_fingerprint from 5)::bigint
         JOIN institution_sources inst ON inst.id = fr.institution_id
@@ -297,7 +305,11 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
     `,
     params,
   );
-  return (rows ?? []).map(({ source_line, ...row }) => ({ row: row as HeldFeeRow, sourceLine: source_line }));
+  return (rows ?? []).map(({ source_line, source_context, ...row }) => ({
+    row: row as HeldFeeRow,
+    sourceLine: source_line,
+    sourceContext: source_context,
+  }));
 }
 
 function failureOutcome(error: unknown): AttemptOutcome {
@@ -342,6 +354,14 @@ export async function runDarwinReleaseReview(
 
   const acts = DARWIN_RELEASE_ACTS;
   const model = PAID_PASS_MODELS.verify();
+  // Fees judged before the release step stored their schedule's surrounding rows read them now.
+  const missing = candidates.filter((candidate) => !candidate.sourceContext && candidate.row.source_document_id != null);
+  if (missing.length > 0) {
+    const texts = await loadSourceTexts(db, [...new Set(missing.map(({ row }) => Number(row.source_document_id)))]);
+    for (const candidate of missing) {
+      candidate.sourceContext = scheduleContext(texts.get(Number(candidate.row.source_document_id)), candidate.sourceLine);
+    }
+  }
   const lessons = await loadReviewLessons(db, candidates.map(({ row }) => row.held_canonical_fee_key));
   result.lessons = lessons.length;
   for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
@@ -438,6 +458,7 @@ export async function runDarwinReleaseReview(
           amount: candidate.row.amount == null ? null : Number(candidate.row.amount),
           held_reason: candidate.row.held_reason,
           source_line: candidate.sourceLine.slice(0, 300),
+          source_context: candidate.sourceContext ?? null,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,
