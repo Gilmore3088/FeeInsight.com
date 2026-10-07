@@ -2361,3 +2361,15 @@ whose weekly check is due and records each state under its own partition row. Th
 within the hour while states are still due, so all 52 are covered in five runs.
 **Lesson:** for a registry source with many small, quick items, batch them inside one partition.
 Use per-item partitions only when each item is a heavy download.
+
+## 2026-10-07: Knox re-read fees that were already taken down
+**What happened:** a takedown left no trace Knox could read, so a new copy of the same page brought
+the fee back. The raw dedupe is per document. In the 48 hours to Oct 7 05:50 UTC Knox re-read 208
+fees whose takedown still stood (152 from the source check, 56 for a price outside the category's
+range). It sent 49 of them back to Darwin, and 6 were published again.
+**Fix:** Knox reads `takedown_confirmed` rows, the second look's verdict, for checks that say the
+read was wrong. It holds a matching re-read for review instead of sending it to Darwin, and
+records the count on the extract event. First-look takedowns don't teach: Darwin found 13 of 20
+recent source-check takedowns were real prices.
+**Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
+logged changes nothing.

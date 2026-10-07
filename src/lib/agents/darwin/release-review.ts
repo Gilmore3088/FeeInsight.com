@@ -13,6 +13,7 @@ import {
 } from "@/lib/agents/paid-pass";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 import {
@@ -40,9 +41,14 @@ type SqlTag = typeof sql;
 // Version 5 (2026-10-07): a hand check of 20 v4 verdicts found 3 wrong releases: a stop
 // payment's removal filed as a stop payment, an expedited cashier's check filed at the
 // cashier's check price, and "Cost plus $8" read as an $8 price. The prompt now names all three.
+// Version 6 (2026-10-07): a hand check of 20 v5 passes found two overdraft-protection transfers
+// ("Overdraft Protection Fee $5", "Service Overdraft Fee | Transfer from Savings to Checking")
+// passed as overdraft, and a sentence fragment passed as a fee name. Each item now lists the
+// categories its own category's fees are most often re-filed to, and a fee whose name and line
+// re-file it there by the category guard's own rules (`refileCategory`) never passes.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 5,
+  version: 6,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -65,6 +71,17 @@ export interface ReleaseReviewVerdict {
 
 export function reviewPasses(verdict: ReleaseReviewVerdict | undefined): boolean {
   return Boolean(verdict?.isFee && verdict.categoryFits && verdict.amountIsPrice);
+}
+
+/**
+ * The category the guard's own re-file rules move a fee to when read with its schedule line
+ * ("Service Overdraft Fee | Transfer from Savings to Checking: $5.00" is an overdraft-protection
+ * transfer), or null when the line keeps it where it was filed.
+ */
+export function lineRefilesTo({ row, sourceLine }: ReleaseReviewCandidate): string | null {
+  const key = row.held_canonical_fee_key;
+  const refiled = refileCategory(key, `${row.fee_name ?? ""} ${sourceLine}`);
+  return refiled && refiled !== key ? refiled : null;
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -192,6 +209,14 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     amount: row.amount == null ? null : Number(row.amount),
     filed_as: `${row.held_canonical_fee_key} (${DISPLAY_NAMES[row.held_canonical_fee_key] ?? row.held_canonical_fee_key})`,
     filed_as_includes: ALIASES_BY_KEY.get(row.held_canonical_fee_key) ?? [],
+    ...(neighbourCategories(row.held_canonical_fee_key).length > 0
+      ? {
+          not_these: neighbourCategories(row.held_canonical_fee_key).map((key) => ({
+            category: `${key} (${DISPLAY_NAMES[key] ?? key})`,
+            includes: ALIASES_BY_KEY.get(key) ?? [],
+          })),
+        }
+      : {}),
     schedule_line: sourceLine.slice(0, 300),
     ...(sourceContext ? { schedule_rows_around: sourceContext } : {}),
   }));
@@ -200,11 +225,13 @@ export function releaseReviewPrompt(candidates: ReleaseReviewCandidate[], lesson
     "Each item has the fee as it was read, the category it was filed under, and the line of the bank's schedule it came from.",
     "For each item decide, from the schedule line:",
     "- is_fee: true only if the line names a price the institution charges a customer.",
-    "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text.",
+    "  False for balance requirements, minimum deposits, limits, rates, reimbursements or garbled text,",
+    "  and when `fee_name` is not a fee's name but a sentence fragment (\"meet the following requirements: A service charge of\").",
     "- category_fits: true only if this fee is what `filed_as` means in this index; `filed_as_includes` lists fee names it files there.",
     "  A fee named for something else (an official check filed as NSF, an overdraft-protection transfer filed as overdraft) does not fit.",
     "  Undoing a service (removing or releasing a stop payment) and a faster or premium version of it",
     "  (expedited, rush or overnight) do not fit the service's own category.",
+    "  `not_these` lists neighbouring categories fees filed here often belong to; a fee that is one of those does not fit.",
     "- amount_is_price: true only if `amount` is the price the line charges for this fee.",
     "  False for a cap or maximum (\"5% of amount owed, $100 maximum\"), a threshold, another fee's price,",
     "  only part of the price (\"Cost plus $8\" or \"$5 plus postage\" is not an $8 or $5 price),",
@@ -439,7 +466,8 @@ export async function runDarwinReleaseReview(
         continue;
       }
       result.succeeded += 1;
-      const passes = reviewPasses(verdict);
+      const refilesTo = lineRefilesTo(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -460,6 +488,7 @@ export async function runDarwinReleaseReview(
           held_reason: candidate.row.held_reason,
           source_line: candidate.sourceLine.slice(0, 300),
           source_context: candidate.sourceContext ?? null,
+          refiles_to: refilesTo,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,
