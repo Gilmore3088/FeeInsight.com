@@ -159,8 +159,8 @@ export function ConfigSidebar({
             className="text-xs tracking-wide leading-relaxed"
             style={{ color: "var(--hamilton-secondary)" }}
           >
-            What should these decisions achieve? Hamilton ranks its
-            recommendations by this goal.
+            What should these decisions achieve? Hamilton orders the
+            decisions by this goal.
           </p>
         </div>
         <form
@@ -342,6 +342,12 @@ export function ConfigSidebar({
                   : `Generate ${activeAudience.label} Report`}
               </span>
             </button>
+
+            {!selectedTemplate && !isGenerating && (
+              <p className="text-[11px] text-center mt-3" style={{ color: "var(--hamilton-secondary)" }}>
+                Pick a report type first.
+              </p>
+            )}
 
             {/* Implicit context — what this run will use. Quiet, single line.
                 Replaces the old Institution / Peer Set / Focus Area inputs. */}
