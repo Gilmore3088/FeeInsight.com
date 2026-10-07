@@ -2410,3 +2410,20 @@ still passes the category guard, and does not collide with another live fee of t
 name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
 Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
 **Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: Rosetta had no per-batch error review
+**What happened:** Rosetta learned only from fees taken down later (text survival), so a read that
+gave Knox nothing, or rejected a real schedule, taught nothing. James asked for a fix per error type
+and a review after every N reads.
+**Measured (prod, read-only, the 200 latest reads 6 to 36 hours old at 06:25 UTC Oct 7):** batches of
+50 had 19, 7, 6 and 7 misses (38%, 14%, 12%, 14%). 37 of the 39 were completed texts Knox found no
+fee in; 2 were unread. No short texts, no rejected page later proven a fee page. Counting only Knox
+rows written after the read overstates the misses, because Knox dedupes rereads, so the review
+counts every Knox fee from the document. A no-fee text is a miss either way: a real schedule Knox
+could not read (an earlier 30-hour window had several fee-schedule pages and a 2,626-char PDF), or a
+page that passed the fee-page check without being one (in this window the 4 fee-named links were
+funds-availability, checking and rates pages; the other 33 were not sampled).
+**Fix:** `rosetta/batch-review.ts` reviews each settled batch of 50, writes every miss as a lesson
+with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
+pass read those lessons. See rosetta/AGENTS.md "Batch review".
+**Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
