@@ -29,7 +29,7 @@ import {
   type SearchContext,
   type TrailEntry,
 } from "./finders";
-import { LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
+import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
@@ -1062,7 +1062,9 @@ async function selectStaleCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
-  const rows = await db<Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null }>>`
+  const rows = await db<
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; searched_at: string | Date | null }>
+  >`
     -- stale-link freshness search
     WITH due AS (
       SELECT inst.id,
@@ -1102,22 +1104,40 @@ async function selectStaleCandidates(
          AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
-         AND NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.detail @> ${marker}::jsonb
-         )
+    ),
+    marked AS (
+      SELECT due.*,
+             (
+               SELECT max(pa.created_at) FROM pipeline_attempts pa
+                WHERE pa.institution_id = due.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${marker}::jsonb
+             ) AS searched_at,
+             -- The outcome ledger judged the link a wrong source of fees (confirmed takedowns).
+             (
+               SELECT max(f.updated_at) FROM pipeline_feedback f
+                WHERE f.check_name = ${LINK_YIELD_CHECK}
+                  AND f.kind = 'confirmed_wrong_fees'
+                  AND f.institution_id = due.id
+                  AND f.source_url = due.fee_schedule_url
+             ) AS wrong_at
+        FROM due
     )
-    SELECT * FROM due
-     WHERE COALESCE(effective_year, url_year) <= ${staleYear}
-     ORDER BY asset_size DESC NULLS LAST, id ASC
+    SELECT * FROM marked
+     WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
+        OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
+     ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, ...row }) => ({
     ...row,
     freshness: true,
-    stale_reason: effective_year != null ? `effective ${effective_year}` : `address names ${url_year}`,
+    stale_reason:
+      wrong_at != null
+        ? "fees read from it were confirmed wrong on a second look"
+        : effective_year != null
+          ? `effective ${effective_year}`
+          : `address names ${url_year}`,
   }));
 }
 

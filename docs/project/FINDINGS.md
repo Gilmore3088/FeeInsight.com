@@ -2354,3 +2354,15 @@ the 30-day stale-link rule.
 and searches them right after the cut-off bank resuming its search. A 404 or 410 with no live fee is due at once.
 **Lesson:** "spare capacity" work needs a reserved share and a place near the front, or a time-boxed step never
 reaches it.
+
+## 2026-10-07: Magellan never learned from fees taken down for being wrong
+**What happened:** Hamilton's source check takes fees down as `not_on_schedule`, `wrong_amount` or
+`threshold`. The link they came from stayed "good" in Magellan's ledger as long as 3 other fees stayed live.
+Nothing sent the bank back to a search, so a wrong page could only be fixed by hand. First-look
+takedowns can't be used as they are: 13 of 20 recent source-check takedowns were real prices.
+**Fix:** the ledger reads the second look's verdict (`takedown_confirmed`, from Knox PR 393's reader
+contract and `hamilton/second-look.ts`). A link with 3 or more confirmed wrong fees and no more live
+fees than that is judged `confirmed_wrong_fees`, and its path's score drops. The freshness search then
+looks for another page for it, once per judgement. On a first-look proxy this would reach 84 banks.
+Confirmed rows start landing about 14:40 UTC on 7 Oct.
+**Lesson:** feed agents the confirmed verdict, not the first look, or they learn the checker's mistakes.

@@ -789,6 +789,18 @@ describe("Magellan agentic discovery", () => {
     const staleDb = () =>
       createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [staleBank] : undefined)));
 
+    it("re-searches a link the ledger judged a wrong source of fees, once per judgement", async () => {
+      const wrongBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-07T05:00:00Z", searched_at: null };
+      const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [wrongBank] : undefined)));
+      const result = await runMagellanDiscovery({ runId: 126, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
+      const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
+      const text = templateText(call[0]);
+      expect(text).toContain("'confirmed_wrong_fees'");
+      expect(text).toMatch(/searched_at < wrong_at/);
+      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "fees read from it were confirmed wrong on a second look")).toBe(true);
+    });
+
     it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
       const db = staleDb();
       const fetchImpl = site({

@@ -215,12 +215,17 @@ bank's main fee link or a companion page; all fetches of the same address count 
 
 | Label | Rule | Signal, kind, weight |
 |---|---|---|
+| wrong_fees | 3 or more fees read from it were taken down and a second look confirmed it (`takedown_confirmed` from the source check, limit guard or business-schedule check, no live twin), and they are at least its live fees | wrong, `confirmed_wrong_fees`, confirmed count |
 | good | 3 or more distinct fees from it are live | right, `produced_live_fees`, live fee count |
 | dead | last fetch 404/410, or Rosetta's last read was a 404 | wrong, `dead_link`, 1 |
 | rejected | Rosetta's last read ruled it the wrong document | wrong, `wrong_document`, 1 |
 | thin | Knox extracted it over 24 hours ago, fewer than 3 live fees | wrong, `thin_link`, 1 |
 | business | the bank's main link is a business-only schedule (`isBusinessOnlyLink`), whatever it produced | wrong, `business_schedule`, 1 |
 
+First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`) never count; only the
+second look's verdict does. A main link judged `wrong_fees` goes to the freshness search
+(stale reason "fees read from it were confirmed wrong on a second look"), once per judgement,
+first among that search's banks; the path's score in platform learning drops by 2.
 Anything else (not read or extracted yet, a bot wall) is not judged yet. `about_strategy`
 is the Magellan specialist whose attempt found the address (null for links the old
 crawler left). Only changed judgements are written; the step's `link_outcomes` detail
