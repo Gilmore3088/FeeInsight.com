@@ -372,3 +372,8 @@ starts after it (`tidyFeeName`). A sentence of more than eight words keeps its e
 category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
 right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
 of 1,437 kept, the same fees.
+
+v30 (rules 30) reads two more limit wordings as ceilings, not prices: a limit that "will increase
+to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
+"($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
