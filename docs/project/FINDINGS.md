@@ -2397,6 +2397,19 @@ recent source-check takedowns were real prices.
 **Lesson:** every verdict needs a reader in the agent that made the mistake. A verdict that is only
 logged changes nothing.
 
+## Darwin's category review trusted Knox's amount (2026-10-07)
+`verify.adjudicate` v1 judged a fee from its name and amount alone. Against the answer keys it was right on
+27 of 37 disagreements, but it accepted prices that belonged to a neighbouring row ("Check Printing (fee
+depends on style)" at $3) or were a balance threshold ($50 inactivity "balance is less than"). The prod
+`answer_key_institutions` table is empty; the answer keys live in `src/lib/agents/knox/__fixtures__/`.
+v2 sends the schedule rows around each fee and the source check's verdict on its amount.
+
+## The answer-key tables on prod are empty (2026-10-07)
+`answer_key_institutions` and `answer_key_fees` have no rows, so no `answer_key` lessons reach the learning
+store: Darwin's category model and Knox's lessons never trained on the hand-keyed schedules they cite. The 81
+hand-keyed texts (2,885 fees) exist only as Knox test fixtures. Darwin's verdict score reads a compact copy
+(`src/lib/agents/darwin/answer-key-fees.json`, kept in step by its test). Loading the keys into the tables
+(through the admin answer-key page or a typed agent step) is still open.
 ## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
 **What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
 that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870

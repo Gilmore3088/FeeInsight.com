@@ -163,6 +163,8 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("card_replacement", name).ok).toBe(false);
     }
     expect(refileCategory("atm_non_network", "Replacement ATM/Check Card")).toBe("card_replacement");
+    expect(refileCategory("overdraft", "Account Link Overdraft Protection")).toBe("od_protection_transfer");
+    expect(refileCategory("overdraft", "Overdraft Fee")).toBe("overdraft");
     for (const name of ["Charge Back Item Fee", "Deposit Charge Back Item", "Charge back", "Returned Deposit/Loan Payment"]) {
       expect(checkFeeCategory("deposited_item_return", name)).toEqual({ ok: true });
     }
