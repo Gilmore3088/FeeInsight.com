@@ -30,7 +30,7 @@ describe("NCUA credit union branches", () => {
 
   it("loads every office and records the partition", async () => {
     const { db, statements } = createDb([["INSERT INTO credit_union_branches", () => [{ matched: true }]]]);
-    const fetchImpl = vi.fn(async () => new Response(archive(5_000)));
+    const fetchImpl = vi.fn(async () => new Response(archive(5_000) as unknown as BodyInit));
 
     const result = await runRegistryNcuaBranches({
       partitionKey: "2026Q2",
@@ -45,7 +45,7 @@ describe("NCUA credit union branches", () => {
 
   it("refuses a branch file too short to be complete", async () => {
     const { db } = createDb([]);
-    const fetchImpl = vi.fn(async () => new Response(archive(10)));
+    const fetchImpl = vi.fn(async () => new Response(archive(10) as unknown as BodyInit));
 
     await expect(
       runRegistryNcuaBranches({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl: fetchImpl as unknown as typeof fetch, backoffMs: 0 } }),
