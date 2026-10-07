@@ -2754,6 +2754,12 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
 - **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
   (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
   (an LPL disclosure, a car-price site); they are wrong links and are skipped.
+- **First run (08:03).** Citizens, Pinnacle and Flagstar were tried, and none was fetched: at
+  64 output tokens the model stopped while writing the fetch call. Room raised to 1,024
+  (only used tokens bill), version 2. Those tries no longer count toward the weekly wait, and
+  the bank list now reads the plain fetch's last outcome, because a failed paid try rewrote
+  `failure_reason`. Banks whose site keeps timing out (First Horizon, Northern Trust, USAA,
+  Morgan Stanley, Associated) are included too.
 
 ## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
 
