@@ -64,6 +64,8 @@ export interface ScheduleSearchRow {
   asset_size: number | string | null;
   requested: boolean | null;
   business_only: boolean | null;
+  /** The free business search already looked for the consumer schedule. */
+  business_searched?: boolean | null;
   no_overdraft_price: boolean | null;
   refers_elsewhere: boolean | null;
   stale_copy?: boolean | null;
@@ -146,6 +148,12 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promi
                lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
                AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
              ) AS business_only,
+             EXISTS (
+               SELECT 1 FROM pipeline_attempts searched
+                WHERE searched.institution_id = inst.id
+                  AND searched.stage = 'discover'
+                  AND searched.detail ? 'business_search'
+             ) AS business_searched,
              NOT EXISTS (
                SELECT 1 FROM agent_source_texts text
                 WHERE text.institution_id = inst.id
@@ -191,6 +199,8 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number): Promi
         FROM scoped
        WHERE (priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy))
           OR (NOT priority AND hidden AND (product_page OR no_overdraft_price))
+          -- Any bank whose link is a business-only schedule, once the free business search missed.
+          OR (NOT priority AND business_only AND business_searched)
     )
     SELECT * FROM lanes
      WHERE (priority AND lane_rank <= ${limit}) OR (NOT priority AND lane_rank <= ${hiddenLimit})

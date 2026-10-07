@@ -2,6 +2,8 @@ import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
+import { isBusinessOnlyLink } from "./link-coverage";
+
 type SqlTag = typeof sql;
 
 /**
@@ -19,7 +21,7 @@ export const LINK_THIN_AFTER_HOURS = 24;
 /** Banks are judged in 24 slots by id, one slot per UTC hour, so each is judged daily. */
 export const LINK_YIELD_SLOTS = 24;
 
-export type LinkLabel = "good" | "thin" | "rejected" | "dead";
+export type LinkLabel = "good" | "thin" | "rejected" | "dead" | "business";
 
 export interface LinkOutcomeRow {
   institution_id: number | string;
@@ -45,13 +47,14 @@ export interface LinkOutcomeRow {
 export interface LinkJudgement {
   label: LinkLabel;
   signal: "right" | "wrong";
-  kind: "produced_live_fees" | "thin_link" | "wrong_document" | "dead_link";
+  kind: "produced_live_fees" | "thin_link" | "wrong_document" | "dead_link" | "business_schedule";
   weight: number;
 }
 
 export interface LinkOutcomeResult {
   ready: boolean;
-  slot: number;
+  /** The hour's slot of banks, or null when the step judged its whole state. */
+  slot: number | null;
   links: number;
   judged: Record<LinkLabel, number>;
   undecided: number;
@@ -62,12 +65,17 @@ export interface LinkOutcomeResult {
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
 
 /**
- * Labels one link. Live fees decide first: a link with enough live fees is good however
- * it was fetched. Then a dead address, then a page Rosetta ruled out, then a page Knox
+ * Labels one link. A bank's main link that is a business-only schedule is wrong whatever
+ * it produced: its prices are published as the bank's consumer fees (Launch CU, Community
+ * CU of Florida, Oct 2026), so finders must learn not to pick such pages as the main link.
+ * Then live fees decide: a link with enough live fees is good however it was fetched. Then a dead address, then a page Rosetta ruled out, then a page Knox
  * read a day ago that still has too few live fees. Anything else (not read yet, read but
  * not extracted, a bot wall) is not judged yet.
  */
 export function judgeLink(row: LinkOutcomeRow, now = new Date()): LinkJudgement | null {
+  if (row.role === "main" && isBusinessOnlyLink(row.url)) {
+    return { label: "business", signal: "wrong", kind: "business_schedule", weight: 1 };
+  }
   const live = num(row.live_fees) ?? 0;
   if (live >= LINK_GOOD_MIN_LIVE) {
     return { label: "good", signal: "right", kind: "produced_live_fees", weight: live };
@@ -130,6 +138,16 @@ export function linkYieldSlot(now = new Date()): number {
 }
 
 /**
+ * The slot a step works on, or null for every bank. A state's step covers the whole state:
+ * a state lane runs about once a day, often at the same hour, so an hourly slot inside it
+ * reached the same 24th of the state's banks each time and never the rest (19 of 714 read
+ * companion links had ever been judged, 7 Oct 2026). Steps without a state keep the slot.
+ */
+export function stepSlot(stateCode: string | null | undefined, now = new Date()): number | null {
+  return stateCode && stateCode.trim() ? null : linkYieldSlot(now);
+}
+
+/**
  * Judges the links of one slot of banks (about a 24th of them) and writes changed
  * judgements to `pipeline_feedback`. Reads use the per-bank indexes on documents,
  * attempts and live fees. Never blocks the step it runs in.
@@ -139,12 +157,12 @@ export async function recordLinkOutcomes(
   options: { runId: number | null; stateCode?: string | null; dryRun?: boolean; now?: Date },
 ): Promise<LinkOutcomeResult> {
   const now = options.now ?? new Date();
-  const slot = linkYieldSlot(now);
+  const slot = stepSlot(options.stateCode, now);
   const result: LinkOutcomeResult = {
     ready: false,
     slot,
     links: 0,
-    judged: { good: 0, thin: 0, rejected: 0, dead: 0 },
+    judged: { good: 0, thin: 0, rejected: 0, dead: 0, business: 0 },
     undecided: 0,
     unchanged: 0,
     written: 0,
@@ -158,7 +176,7 @@ export async function recordLinkOutcomes(
         SELECT inst.id, inst.fee_schedule_url
           FROM institution_sources inst
          WHERE COALESCE(inst.status, 'active') = 'active'
-           AND inst.id % ${LINK_YIELD_SLOTS} = ${slot}
+           AND (${slot}::int IS NULL OR inst.id % ${LINK_YIELD_SLOTS} = ${slot}::int)
            AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
       ),
       links AS (

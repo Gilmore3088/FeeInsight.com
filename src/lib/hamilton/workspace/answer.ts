@@ -310,8 +310,9 @@ function headline(research: FeeResearch, name: string): string {
     }
     return `Your ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
-  if (band) return `Your schedule shows no ${name} fee; the median across ${count(band.n)} peers is ${money(band.median)}.`;
-  return `Your schedule shows no ${name} fee, and too few peers publish one to compare.`;
+  // No amount on file means the fee is not in the index, never that the bank charges none.
+  if (band) return `Your ${name} fee is not in the index yet; the median across ${count(band.n)} peers is ${money(band.median)}.`;
+  return `Your ${name} fee is not in the index yet, and too few peers publish one to compare.`;
 }
 
 // ─── Economist: the one question ─────────────────────────────────────────────
