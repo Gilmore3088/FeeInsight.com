@@ -4,7 +4,9 @@ import {
   dateIn,
   enforcementAgencyLabel,
   enforcementAgencyList,
+  cleanParty,
   isBankParty,
+  parseStateOrders,
   mapColumns,
   parseOrderLinks,
   parseOrderTables,
@@ -66,3 +68,30 @@ describe("state enforcement readers", () => {
     expect(enforcementAgencyList(["OCC", "FRB", "STATE_NJ", "STATE_NY"])).toBe("OCC, Federal Reserve and 2 state banking departments");
   });
 });
+
+describe("readers after the first prod run (Oct 7)", () => {
+  it("reads New Jersey's labelled cells", () => {
+    const html = `<table><tr><th>Institution</th></tr>
+      <tr><td>Institution: Union County Savings Bank Type of Action: Consent Order Effective Date: February 17, 2026 Reason: Fund Management. <a href="/o/ucsb.pdf">Order</a></td></tr></table>`;
+    expect(parseStateOrders("table", html, "https://www.nj.gov/dobi/x.html")).toEqual([
+      { party_name: "Union County Savings Bank", party_city: null, action_type: "Consent order", start_date: "2026-02-17", termination_date: null, document_url: "https://www.nj.gov/o/ucsb.pdf" },
+    ]);
+  });
+
+  it("finds labelled blocks outside tables", () => {
+    const html = `<div><p>Institution: GSL Savings Bank Type of Action: Consent Order Effective Date: August 18, 2025 Reason: Liquidity.</p></div>`;
+    expect(parseStateOrders("table", html, "https://x.gov/")[0]).toMatchObject({ party_name: "GSL Savings Bank", start_date: "2025-08-18" });
+  });
+
+  it("cleans Maryland and New York party names", () => {
+    expect(cleanParty("IN THE MATTER OF FORBRIGHT BANK (PDF)")).toBe("FORBRIGHT BANK");
+    expect(cleanParty("IN THE MATTER OF THE BANK OF MISSOURI, successor by merger to MID-AMERICA BANK & TRUST COMPANY")).toBe("THE BANK OF MISSOURI");
+    expect(cleanParty("to Nordea Bank Abp")).toBe("Nordea Bank Abp");
+  });
+
+  it("skips menu links that name no order and no date", () => {
+    const html = `<a href="/banking">Banking and Sending Money</a><a href="/ea/20240827_nordea.pdf">Consent Order to Nordea Bank Abp</a>`;
+    expect(parseStateOrders("links", html, "https://www.dfs.ny.gov/").map((o) => [o.party_name, o.start_date])).toEqual([["Nordea Bank Abp", "2024-08-27"]]);
+  });
+});
+
