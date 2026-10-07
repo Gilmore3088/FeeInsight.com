@@ -43,7 +43,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // sentence ("$25.00 Per Month. Applicable after ..."), an allowance before the price ("5 Free per
 // month," / "$2.50 each additional") and a fee named inside another row's note ("(Lost key
 // replacement $75.00)") are read (a fresh sample of older takedowns: 6 of 11 readable were real).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 9 } as const;
+// Version 10: a box-size grid (sizes closing one row, their prices closing the next) and a price
+// wrapped under its name ("Returned Check | Verification of Deposit | $20" / "$30 | ...") are
+// read one fee per row, so neither fee takes the other's price (Space Coast, Oct 7).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 10 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
