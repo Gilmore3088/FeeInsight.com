@@ -15,7 +15,9 @@ import {
 type SqlTag = typeof sql;
 
 /** Live fees moved to the current copy of their page per publish step; later steps take the rest. */
-export const REFRESH_COPY_FEE_LIMIT = 300;
+// 1,000 (was 300, 7 Oct): 9,816 live fees pointed at a superseded copy, about 6,300 with a
+// current-copy row to move to; at 300 a step the pass moved about 1,200 an hour.
+export const REFRESH_COPY_FEE_LIMIT = 1_000;
 export const REFRESH_COPY_REASON_PREFIX = "refreshed by #";
 export const REFRESH_COPY_STRATEGY = { strategy: "hamilton.refresh_copy", version: 1 } as const;
 

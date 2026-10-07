@@ -14,6 +14,7 @@ import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
+import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
   currentMonth,
   mailingAddress,
@@ -922,6 +923,15 @@ async function executeAgenticStep(
         institutionId,
         stateCode,
       });
+      // A live fee the current copy does not restate at its price is read against the
+      // current copy's text; one it no longer states comes down only on a second look.
+      const currentCopy = await secondLookFeesNotOnCurrentCopy(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        stateCode,
+      });
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
@@ -990,6 +1000,7 @@ async function executeAgenticStep(
               duplicateCollapses.length > 0 ||
               newerCopyRetired > 0 ||
               newerCopyRestored > 0 ||
+              currentCopy.takenDown.length > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
               sourceTakedowns > 0 ||
@@ -1041,13 +1052,17 @@ async function executeAgenticStep(
         refreshCopy.refreshed > 0
           ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
           : "";
+      const currentCopyNote =
+        currentCopy.failing > 0 || currentCopy.takenDown.length > 0
+          ? ` Current-copy check: ${currentCopy.failing.toLocaleString()} live fee(s) not restated at their price on the current copy of their page (${currentCopy.flagged.toLocaleString()} newly flagged for a second look), ${currentCopy.takenDown.length.toLocaleString()} archived.`
+          : "";
       const duplicateNote =
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${recheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1119,6 +1134,17 @@ async function executeAgenticStep(
           refresh_copy_refreshed: refreshCopy.refreshed,
           refresh_copy_skipped: refreshCopy.skipped,
           refresh_copy_samples: refreshCopy.samples.slice(0, 10),
+          current_copy: {
+            documents_checked: currentCopy.documentsChecked,
+            unrecognized: currentCopy.unrecognized,
+            stated: currentCopy.stated,
+            failing: currentCopy.failing,
+            flagged: currentCopy.flagged,
+            waiting: currentCopy.waiting,
+            cleared: currentCopy.cleared,
+            taken_down: currentCopy.takenDown.length,
+            confirm_live: currentCopy.confirmLive,
+          },
           newer_copy_live: newerCopy.live,
           newer_copy_documents: newerCopy.documentsChecked,
           newer_copy_unrecognized: newerCopy.unrecognized,

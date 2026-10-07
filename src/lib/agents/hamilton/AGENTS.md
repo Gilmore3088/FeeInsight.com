@@ -205,6 +205,20 @@ belongs to the publish step once Knox reads the newer copy. Each pair is checked
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
+## Current-copy check
+
+`current-copy.ts` (`secondLookFeesNotOnCurrentCopy`, after `refresh-copy.ts` in each publish
+step) takes the live fees still on a superseded copy of their page that the current copy has
+no verified row for (2,784 of 9,816 such fees, 7 Oct). Each is read against the current copy's
+text with `newerCopyVerdict`. A fee the current copy restates stays live. A fee it names at
+another price, or no longer carries, gets a first look under check `hamilton.current_copy` and
+comes down only on its second look, archived as `not_on_current_copy:#<current document id>`
+with its verified row rejected. A fee the older copy's own text does not state is never
+judged, and neither is a current copy that restates fewer than half (or fewer than two) of the
+older copy's fees. The feedback sync records no lesson against Knox or Darwin for these.
+`CURRENT_COPY_CONFIRM_LIVE` stays false (first looks only) until a hand check of 20 flags
+finds at least 18 really stale. `refresh-copy.ts` moves up to 1,000 fees a step.
+
 ## Outlier Rollback
 
 Before each publish step, `outlier-rollback.ts` rolls back live `published_fee_records`
