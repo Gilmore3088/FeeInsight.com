@@ -37,7 +37,7 @@ export interface GateScore {
 
 /**
  * Categories the key files under one name where Knox may use the other. Lines the keys
- * leave "unmapped" that James folded into an existing category (v25) count under it.
+ * leave "unmapped" that James folded into an existing category (v26) count under it.
  */
 const EQUIVALENT: Record<string, string> = { minimum_balance: "monthly_maintenance" };
 

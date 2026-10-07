@@ -62,7 +62,7 @@ interface FeePattern {
 }
 
 /**
- * v25: the held groups James folded into existing categories (decision card, Oct 7 2026:
+ * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
  * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
  * excess-activity fees -> account research; collection items and foreign checks -> check

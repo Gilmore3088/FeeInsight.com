@@ -8,7 +8,7 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 **Held fees with no category fold into an existing one; nothing beyond the ~50 tracked
 categories gets its own.** James, 01:18 UTC, chose "Fold into existing" on the Knox held-lines
 card, then: "do our best to match fees to the right category, but at some point we just need to
-stop caring about anything beyond the top 50." Knox rules v25 (`FOLDED_PATTERNS` in
+stop caring about anything beyond the top 50." Knox rules v26 (`FOLDED_PATTERNS` in
 `knox/rules.ts`) file returned mail, bad address, fax and excess-withdrawal fees under account
 research, collection items and foreign checks under check cashing, and loan cancellation, credit
 report and UCC fees under loan origination, as the taxonomy and answer keys already map them.

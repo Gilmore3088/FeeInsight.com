@@ -57,7 +57,7 @@ describe("Knox held-line re-check", () => {
   it("categorizes held lines today's rules know, at the same amount", () => {
     expect(recategorizeHeld(courtesyPay)?.canonicalHint).toBe("overdraft");
     expect(recategorizeHeld(inactivity)?.canonicalHint).toBe("dormant_account");
-    // v25 folds returned mail into account research (James, Oct 7 2026).
+    // v26 folds returned mail into account research (James, Oct 7 2026).
     expect(recategorizeHeld(returnedMail)?.canonicalHint).toBe("account_research");
     expect(recategorizeHeld(membership)).toBeNull();
     expect(recategorizeHeld({ ...courtesyPay, amount: "35.00" })).toBeNull();

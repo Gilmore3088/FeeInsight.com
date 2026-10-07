@@ -116,13 +116,13 @@ Each re-read is logged in `pipeline_feedback` under `knox.held:raw:<id>` (the ve
 it and the outcome). A line still uncategorized after three versions is set aside
 (`knox_set_aside`), never deleted, and later versions keep re-reading it.
 
-v25 (rules 25) folds the held groups James chose to fold (decision card, Oct 7 2026) into the
+v26 (rules 26) folds the held groups James chose to fold (decision card, Oct 7 2026) into the
 category the taxonomy already gives them (`FOLDED_PATTERNS`): returned mail, bad address, fax
 and excess withdrawals into account research; collection items and foreign checks into check
 cashing; loan cancellation, credit reports and UCC filings into loan origination; loan
 refinancing and document fees into other lending. The answer keys left these lines "unmapped",
-so the gate re-files them the same way. At v25: Texas 486 right of 500 reads; seven states 711
-of 758; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
+so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
+of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
 stay held.
 

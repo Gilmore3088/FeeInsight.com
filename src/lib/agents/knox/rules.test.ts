@@ -461,7 +461,7 @@ describe("Knox extract.rules", () => {
     ["Collection Item", "check_cashing"],
     ["Loan Cancellation Fee", "loan_origination"],
     ["Loan Refinance Fee", "other_lending_fee"],
-  ])("v25 folds %s into %s (James, Oct 7 2026)", (name, key) => {
+  ])("v26 folds %s into %s (James, Oct 7 2026)", (name, key) => {
     expect(classifyFeeText(name)).toBe(key);
     expect(foldedCategory(name)).toBe(key);
   });
@@ -471,7 +471,7 @@ describe("Knox extract.rules", () => {
     "Membership Fee",
     "Telephone Transfer Fee",
     "Uncollected Funds Fee",
-  ])("v25 keeps %s held (no right home, or a featured fee it would skew)", (name) => {
+  ])("v26 keeps %s held (no right home, or a featured fee it would skew)", (name) => {
     expect(classifyFeeText(name)).toBeNull();
   });
 
