@@ -49,6 +49,7 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
@@ -1303,6 +1304,10 @@ async function executeAgenticStep(
           agent_health: result.agentHealth ?? null,
         },
       };
+    }
+    case "content-market-spread": {
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({
