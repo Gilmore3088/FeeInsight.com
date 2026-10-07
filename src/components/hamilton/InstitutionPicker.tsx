@@ -148,22 +148,21 @@ export function InstitutionPicker({
         style={inputStyle}
         aria-describedby={helpId}
       />
-      <p id={helpId} className="text-xs" style={{ color: "var(--hamilton-text-tertiary, #8A8073)" }}>
+      <p id={helpId} className="text-xs text-warm-600">
         {help}
       </p>
 
       {showSuggestions && (suggestions.length > 0 || isSearching || searchError) && (
         <div
-          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-md border bg-white shadow-lg"
-          style={{ borderColor: "var(--hamilton-border, #E8DFD1)" }}
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-md border border-warm-200 bg-white shadow-lg"
         >
           {isSearching && (
-            <div className="px-3 py-2 text-xs" style={{ color: "var(--hamilton-text-tertiary, #8A8073)" }}>
+            <div className="px-3 py-2 text-xs text-warm-600">
               Searching...
             </div>
           )}
           {searchError && (
-            <div className="px-3 py-2 text-xs" style={{ color: "oklch(0.55 0.22 25)" }}>
+            <div className="px-3 py-2 text-xs text-red-700" role="alert">
               {searchError}
             </div>
           )}
@@ -172,14 +171,10 @@ export function InstitutionPicker({
               key={result.id}
               type="button"
               onMouseDown={() => selectInstitution(result)}
-              className="block w-full border-b px-3 py-2 text-left text-sm last:border-b-0 hover:bg-stone-50"
-              style={{
-                borderColor: "var(--hamilton-border, #E8DFD1)",
-                color: "var(--hamilton-text-primary, #1A1815)",
-              }}
+              className="block w-full border-b border-warm-200 px-3 py-2 text-left text-sm text-warm-900 last:border-b-0 hover:bg-warm-50 focus-visible:bg-warm-50 focus-visible:outline-none"
             >
               <span className="block truncate font-semibold">{result.institution_name}</span>
-              <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px]" style={{ color: "var(--hamilton-text-secondary, #6B6255)" }}>
+              <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-warm-700">
                 {institutionLocation(result) && <span>{institutionLocation(result)}</span>}
                 <span>{result.fee_publication_label}</span>
                 <span>{result.published_fee_count} verified fees</span>

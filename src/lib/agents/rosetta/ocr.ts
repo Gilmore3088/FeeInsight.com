@@ -14,13 +14,18 @@ import { layoutPageText, type PdfTextItem } from "./pdf-layout";
  * Recognized words keep their positions and go through the same layout as PDF text,
  * so a fee name and its amount column share a line, cells joined by " | ".
  *
+ * Version 2: a page image is turned the way the page shows it (the image's placement
+ * matrix and the page's /Rotate; scanners often store a page flipped or sideways and let
+ * the matrix turn it back), and a page that still reads poorly is tried at a quarter,
+ * half and three-quarter turn for a page that was fed into the scanner sideways.
+ *
  * English language data ships with the app (`@tesseract.js-data/eng`, the 2.9 MB
  * `4.0.0_best_int` LSTM model) so OCR never depends on a CDN at run time; set
  * ROSETTA_OCR_LANG_PATH to override. If the package cannot be resolved, tesseract.js
  * falls back to the same files on cdn.jsdelivr.net, cached in the temp dir.
  */
 
-export const ROSETTA_OCR_VERSION = 1;
+export const ROSETTA_OCR_VERSION = 2;
 export const OCR_STRATEGY = "read.ocr_tesseract";
 /** Longer scans go to the paid pass; a 10-page schedule is a few seconds of OCR. */
 export const OCR_MAX_PAGES = 10;
@@ -34,6 +39,10 @@ export const OCR_MIN_CHARS_PER_PAGE = 40;
 const OCR_MAX_IMAGE_SIDE = 3400;
 /** Images smaller than this on both sides are logos or icons, not pages. */
 const MIN_PAGE_IMAGE_SIDE = 200;
+/** Turns are probed on a copy at most this many pixels on the long side, to keep them quick. */
+const OCR_PROBE_IMAGE_SIDE = 1700;
+/** A turn replaces the page as drawn only when its probe is this much more confident. */
+const OCR_TURN_MIN_GAIN = 10;
 
 export interface GrayImage {
   width: number;
@@ -154,9 +163,70 @@ function normalizePolarity(image: GrayImage): GrayImage {
   return image;
 }
 
-/** Box-filter downscale by an integer factor so the long side fits OCR_MAX_IMAGE_SIDE. */
-export function fitForOcr(image: GrayImage): GrayImage {
-  const factor = Math.ceil(Math.max(image.width, image.height) / OCR_MAX_IMAGE_SIDE);
+/** A PDF matrix [a b c d e f]: x' = a*x + c*y + e, y' = b*x + d*y + f. */
+export type Matrix = [number, number, number, number, number, number];
+
+const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+
+/** The matrix that applies `inner` first, then `outer`. */
+export function composeMatrix(outer: Matrix, inner: Matrix): Matrix {
+  const [a, b, c, d, e, f] = outer;
+  const [ia, ib, ic, id, ie, iff] = inner;
+  return [a * ia + c * ib, b * ia + d * ib, a * ic + c * id, b * ic + d * id, a * ie + c * iff + e, b * ie + d * iff + f];
+}
+
+type Axis = [number, number];
+
+function dominantAxis(x: number, y: number): Axis | null {
+  if (Math.abs(x) > Math.abs(y) * 4) return [Math.sign(x), 0];
+  if (Math.abs(y) > Math.abs(x) * 4) return [0, Math.sign(y)];
+  return null;
+}
+
+/**
+ * Turns and flips an image so it looks as it does on screen. `deviceMatrix` maps the
+ * image's unit square to device space (y down, the page's /Rotate applied): the image's
+ * columns run along (a, b), and its rows, stored top first, run along -(c, d).
+ * Skewed placements are left as stored.
+ */
+export function orientAsDrawn(image: GrayImage, deviceMatrix: Matrix): GrayImage {
+  const [a, b, c, d] = deviceMatrix;
+  const u = dominantAxis(a, b);
+  const v = dominantAxis(-c, -d);
+  if (!u || !v || u[0] * v[0] + u[1] * v[1] !== 0) return image;
+  if (u[0] === 1 && v[1] === 1) return image;
+  const { width, height } = image;
+  const outWidth = u[0] !== 0 ? width : height;
+  const outHeight = u[0] !== 0 ? height : width;
+  const offsetX = u[0] < 0 || v[0] < 0 ? outWidth - 1 : 0;
+  const offsetY = u[1] < 0 || v[1] < 0 ? outHeight - 1 : 0;
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const outX = offsetX + x * u[0] + y * v[0];
+      const outY = offsetY + x * u[1] + y * v[1];
+      data[outY * outWidth + outX] = image.data[y * width + x];
+    }
+  }
+  return { width: outWidth, height: outHeight, data };
+}
+
+/** The image turned clockwise by `quarterTurns` quarter turns. */
+export function turnImage(image: GrayImage, quarterTurns: number): GrayImage {
+  const turns = ((quarterTurns % 4) + 4) % 4;
+  // Clockwise quarter turn in device space: columns go down, rows go left.
+  const matrices: Record<number, Matrix> = {
+    0: [1, 0, 0, -1, 0, 0],
+    1: [0, 1, 1, 0, 0, 0],
+    2: [-1, 0, 0, 1, 0, 0],
+    3: [0, -1, -1, 0, 0, 0],
+  };
+  return turns === 0 ? image : orientAsDrawn(image, matrices[turns]);
+}
+
+/** Box-filter downscale by an integer factor so the long side fits `maxSide`. */
+function downscale(image: GrayImage, maxSide: number): GrayImage {
+  const factor = Math.ceil(Math.max(image.width, image.height) / maxSide);
   if (factor <= 1) return image;
   const width = Math.floor(image.width / factor);
   const height = Math.floor(image.height / factor);
@@ -173,6 +243,11 @@ export function fitForOcr(image: GrayImage): GrayImage {
     }
   }
   return { width, height, data };
+}
+
+/** Box-filter downscale by an integer factor so the long side fits OCR_MAX_IMAGE_SIDE. */
+export function fitForOcr(image: GrayImage): GrayImage {
+  return downscale(image, OCR_MAX_IMAGE_SIDE);
 }
 
 /** A binary PGM (P5): the simplest format Tesseract's image reader accepts. */
@@ -222,16 +297,54 @@ interface OperatorListLike {
 
 interface PageLike {
   getOperatorList(): Promise<OperatorListLike>;
+  getViewport?(options: { scale: number }): { transform: number[] };
   objs: { get(key: string, callback: (value: unknown) => void): void };
   commonObjs: { get(key: string, callback: (value: unknown) => void): void };
 }
 
+function asMatrix(value: unknown): Matrix | null {
+  if (!Array.isArray(value) && !ArrayBuffer.isView(value)) return null;
+  const numbers = Array.from(value as ArrayLike<number>).map(Number);
+  return numbers.length === 6 && numbers.every(Number.isFinite) ? (numbers as Matrix) : null;
+}
+
+/**
+ * The page's largest image, turned the way the page shows it. The placement matrix is
+ * followed through save/restore, cm and form XObjects; the page's /Rotate comes in
+ * through the viewport transform.
+ */
 async function pageImage(page: PageLike, ops: Record<string, number>): Promise<GrayImage | null> {
   const list = await page.getOperatorList();
-  let best: GrayImage | null = null;
+  const viewport = asMatrix(page.getViewport?.({ scale: 1 }).transform) ?? IDENTITY;
+  let ctm: Matrix = IDENTITY;
+  const stack: Matrix[] = [];
+  let best: { image: GrayImage; matrix: Matrix } | null = null;
   for (let index = 0; index < list.fnArray.length; index += 1) {
     const op = list.fnArray[index];
     const args = list.argsArray[index] ?? [];
+    if (op === ops.save) {
+      stack.push(ctm);
+      continue;
+    }
+    if (op === ops.restore) {
+      ctm = stack.pop() ?? ctm;
+      continue;
+    }
+    if (op === ops.transform) {
+      const matrix = asMatrix(args);
+      if (matrix) ctm = composeMatrix(ctm, matrix);
+      continue;
+    }
+    if (op === ops.paintFormXObjectBegin) {
+      stack.push(ctm);
+      const matrix = asMatrix(args[0]);
+      if (matrix) ctm = composeMatrix(ctm, matrix);
+      continue;
+    }
+    if (op === ops.paintFormXObjectEnd) {
+      ctm = stack.pop() ?? ctm;
+      continue;
+    }
     let image: GrayImage | null = null;
     if (op === ops.paintImageXObject && typeof args[0] === "string") {
       const key = args[0];
@@ -244,9 +357,11 @@ async function pageImage(page: PageLike, ops: Record<string, number>): Promise<G
       image = toGray(args[0] as PdfImageObject, true);
     }
     if (!image || (image.width < MIN_PAGE_IMAGE_SIDE && image.height < MIN_PAGE_IMAGE_SIDE)) continue;
-    if (!best || image.width * image.height > best.width * best.height) best = image;
+    if (!best || image.width * image.height > best.image.width * best.image.height) {
+      best = { image, matrix: composeMatrix(viewport, ctm) };
+    }
   }
-  return best;
+  return best ? orientAsDrawn(best.image, best.matrix) : null;
 }
 
 /** The page images of a scanned PDF, at most `maxPages` pages. */
@@ -346,6 +461,56 @@ function meanConfidence(words: OcrWord[]): number {
   return chars > 0 ? weighted / chars : 0;
 }
 
+function pageReadsWell(page: OcrPage): boolean {
+  const chars = page.words.reduce((sum, word) => sum + word.text.trim().length, 0);
+  return chars >= OCR_MIN_CHARS_PER_PAGE && meanConfidence(page.words) >= OCR_MIN_CONFIDENCE;
+}
+
+/** How well a probe read: confidence, with near-empty reads scored as nothing. */
+function probeScore(page: OcrPage): number {
+  const chars = page.words.reduce((sum, word) => sum + word.text.trim().length, 0);
+  return chars >= OCR_MIN_CHARS_PER_PAGE ? meanConfidence(page.words) : 0;
+}
+
+/**
+ * Reads a page the way it is drawn, starting with `preferredTurns`. When that reads
+ * poorly (too few characters or low confidence), the other quarter turns are probed on a
+ * smaller copy, and the page is read again at full size in the turn that probed clearly
+ * best. A page that reads well is never turned.
+ */
+export async function recognizeUpright(
+  engine: OcrEngine,
+  image: GrayImage,
+  preferredTurns = 0,
+  stopped: () => boolean = () => false,
+): Promise<{ page: OcrPage; height: number; turns: number }> {
+  const first = fitForOcr(turnImage(image, preferredTurns));
+  const page = await engine.recognize(first);
+  if (pageReadsWell(page) || stopped()) return { page, height: first.height, turns: preferredTurns };
+  const small = downscale(image, OCR_PROBE_IMAGE_SIDE);
+  let bestTurns = preferredTurns;
+  let bestScore = -1;
+  let baseScore = 0;
+  for (let offset = 0; offset < 4; offset += 1) {
+    if (stopped()) break;
+    const turns = (preferredTurns + offset) % 4;
+    const score = probeScore(await engine.recognize(turnImage(small, turns)));
+    if (offset === 0) baseScore = score;
+    if (score > bestScore) {
+      bestScore = score;
+      bestTurns = turns;
+    }
+  }
+  if (bestTurns === preferredTurns || bestScore < baseScore + OCR_TURN_MIN_GAIN || stopped()) {
+    return { page, height: first.height, turns: preferredTurns };
+  }
+  const turned = fitForOcr(turnImage(image, bestTurns));
+  const again = await engine.recognize(turned);
+  // Keep the turned read only when it really is better at full size.
+  if (probeScore(again) <= probeScore(page)) return { page, height: first.height, turns: preferredTurns };
+  return { page: again, height: turned.height, turns: bestTurns };
+}
+
 /**
  * Reads scanned PDFs page by page with one OCR engine. Bounded per document: when the
  * time is up the engine is stopped (the next document starts a fresh one) and the
@@ -368,16 +533,22 @@ export function createScannedPdfReader(engineFactory: () => OcrEngine = createTe
         engine ??= engineFactory();
         const pages: string[] = [];
         const words: OcrWord[] = [];
+        // A scan's pages are usually all turned the same way: try the last page's turn first.
+        let turnsSoFar = 0;
         for (const image of images) {
           if (timedOut) break;
           if (!image) {
             pages.push("");
             continue;
           }
-          const fitted = fitForOcr(image);
-          const page = await engine.recognize(fitted);
-          words.push(...page.words);
-          pages.push(page.words.length > 0 ? layoutOcrWords(page.words, fitted.height) : page.text.split("\n").map(cleanOcrLine).filter(Boolean).join("\n"));
+          const read = await recognizeUpright(engine, image, turnsSoFar, () => timedOut);
+          turnsSoFar = read.turns;
+          words.push(...read.page.words);
+          pages.push(
+            read.page.words.length > 0
+              ? layoutOcrWords(read.page.words, read.height)
+              : read.page.text.split("\n").map(cleanOcrLine).filter(Boolean).join("\n"),
+          );
         }
         return { text: pages.filter(Boolean).join("\n\n"), pages, pageCount, imagePages, confidence: meanConfidence(words) };
       })();

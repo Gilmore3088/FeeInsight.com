@@ -285,6 +285,8 @@ export interface ReportSummaryResponse {
   tradeoffs: Array<{ label: string; value: string }>;
   recommendation: string;
   implementationNotes: string[];
+  /** Findings and tests the reader added to the report basket, shown as written */
+  addedFindings?: Array<{ source: "Position" | "Ask" | "Test"; title: string; detail: string }>;
   exportControls: {
     pdfEnabled: boolean;
     shareEnabled: boolean;

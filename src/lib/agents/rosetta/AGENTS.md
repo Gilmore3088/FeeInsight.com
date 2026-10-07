@@ -52,12 +52,19 @@ Rosetta owns source text normalization.
     scan. Over the allowance the scan is `deferred` (nothing written, read next run).
     OCR that fails, is too long, or has mean confidence under `OCR_MIN_CONFIDENCE` leaves
     the text `needs_ocr` for pass 3. OCR fixes only unambiguous `$` misreads (`#35.00`).
+    Each page image is turned the way the page draws it (placement matrix and /Rotate);
+    a page that still reads poorly is probed at the other quarter turns and read in the
+    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
+    version rejected or found empty gets one read with the current version.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
-    `window.X = {...}`), then linked PDF/print versions, then `?print=1`, `?output=amp`,
-    `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches). The stored `source_url` is the
-    URL actually read. With no free route the text is `skipped` with outcome
+    `window.X = {...}`), then linked PDF/print versions and links that name the fee
+    schedule even with no `.pdf` ending ("Schedule of Charges", `/documents/fee-schedule`),
+    then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
+    A linked scan gets free OCR. A linked document the bank already has as its own
+    `source_documents` row is not fetched (it is read there); the attempt's detail lists
+    it as `covered_by`. The stored `source_url` is the URL actually read. With no free route the text is `skipped` with outcome
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
@@ -65,8 +72,8 @@ Rosetta owns source text normalization.
     whose own text reads fine but is no fee schedule (a home page or "not found" page at
     a guessed fee link) logs the fallback as `wrong_document`.
   - Pages like that rejected as `wrong_document` before the fallback existed (an html
-    text whose link names the fee page, at most one amount, never tried by
-    `read.js_fallback`) are reopened once at the start of each read step, at most
+    text whose link names the fee page, at most one amount, never tried by the current
+    `ROSETTA_JS_FALLBACK_VERSION`) are reopened once per fallback version at the start of each read step, at most
     `ROSETTA_REOPEN_LIMIT` (100) per step (`reopenScriptLoadedFeePages`): the URL leaves
     `rejected_source_urls`, a bank with no `fee_schedule_url` (and no correction lock)
     gets it back, and a `read.reopen` attempt (outcome `ok`, fingerprint = the text's

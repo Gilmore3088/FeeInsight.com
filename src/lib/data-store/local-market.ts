@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 
 /**
  * Local competitors for a Hamilton report: the institutions with branches in the
@@ -114,6 +115,9 @@ export async function getLocalMarketCompetitors(params: {
          AND c.review_status = 'approved'
          AND c.amount IS NOT NULL
          AND c.fee_category = ANY(${params.categories})
+         -- Business-only schedules are not the rival's consumer price (fee-stats rule 6).
+         AND NOT (lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
+                  AND lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL})
        GROUP BY c.institution_id, c.fee_category
     )
     SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type,

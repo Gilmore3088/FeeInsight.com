@@ -140,6 +140,7 @@ vi.mock("@/lib/agents/rosetta/read", () => ({
 import {
   cancelAgentRun,
   executeAgentRun,
+  expectedStepMs,
   executeQueuedAgentRuns,
   startAgentRun,
   reapStaleAgentSteps,
@@ -943,6 +944,25 @@ describe("agentic run store", () => {
     expect(JSON.stringify(sqlMock.mock.calls[0])).toContain("state_agent");
   });
 
+  it("orders failed-lane retries, then lanes with an unfetched hand-found schedule, ahead of routine passes", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    expect(selection).toBeDefined();
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const retry = order.indexOf("= 'failed') DESC");
+    const handFound = order.indexOf("hand.found_by_strategy = 'discover.operator_schedule'");
+    const waiting = order.indexOf("INTERVAL '1 hour'");
+    expect(retry).toBeGreaterThan(0);
+    expect(handFound).toBeGreaterThan(retry);
+    expect(order).toContain("hand.status = 'found'");
+    expect(waiting).toBeGreaterThan(handFound);
+  });
+
   it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
     sqlMock.mockImplementation((strings: TemplateStringsArray) => {
       const text = templateText(strings);
@@ -1024,6 +1044,29 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() - 1 }),
     ).resolves.toMatchObject({ executedSteps: 1 });
+  });
+
+  it("starts no step in a later run of the tick when that step cannot finish by the deadline", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await expect(
+      executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
+    ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("expects long steps to need most of a tick and quick ones only seconds", () => {
+    expect(expectedStepMs("discover-paid")).toBe(200_000);
+    expect(expectedStepMs("publish")).toBe(30_000);
+    expect(expectedStepMs("public-discovery")).toBe(30_000);
+    expect(expectedStepMs("registry-fdic-sod")).toBe(30_000);
+    // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.
+    expect(expectedStepMs("registry-cfpb")).toBe(180_000);
+    expect(expectedStepMs("some-new-step")).toBe(120_000);
   });
 
   it("runs the fee-alert dispatch as a visible step while the pipeline is paused", async () => {

@@ -145,7 +145,8 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden dark:bg-[oklch(0.205_0_0)] dark:border-white/[0.08]">
+      {/* On a phone the box sits at the top so the keyboard never pushes it over the page. */}
+      <DialogContent className="top-3 translate-y-0 sm:top-[50%] sm:translate-y-[-50%] sm:max-w-lg p-0 gap-0 overflow-hidden dark:bg-[oklch(0.205_0_0)] dark:border-white/[0.08]">
         <div className="flex items-center border-b px-4 dark:border-white/[0.08]">
           <Search className="mr-2 size-4 shrink-0 text-gray-400 dark:text-gray-500" />
           <input
@@ -155,7 +156,8 @@ export function CommandPalette() {
             onChange={(e) => handleQueryChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search banks, fees, or any screen..."
-            className="w-full py-3 text-sm outline-none placeholder:text-gray-400 dark:bg-transparent dark:text-gray-100 dark:placeholder:text-gray-500"
+            aria-label="Search banks, fees, or any screen"
+            className="command-palette-input w-full py-3 pr-8 text-sm outline-none placeholder:text-gray-400 dark:bg-transparent dark:text-gray-100 dark:placeholder:text-gray-500"
           />
           {loading && (
             <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin shrink-0 dark:border-gray-600 dark:border-t-blue-400" />
@@ -327,7 +329,8 @@ export function CommandPalette() {
           </div>
         )}
 
-        <div className="border-t px-4 py-2 flex items-center justify-between text-xs text-gray-400 dark:border-white/[0.08] dark:text-gray-500">
+        {/* Keyboard hints mean nothing on a touch screen. */}
+        <div className="border-t px-4 py-2 hidden sm:flex items-center justify-between text-xs text-gray-400 dark:border-white/[0.08] dark:text-gray-500">
           <div className="flex gap-3">
             <span>
               <kbd className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 font-mono dark:bg-white/[0.08] dark:text-gray-400">

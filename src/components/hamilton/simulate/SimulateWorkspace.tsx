@@ -31,6 +31,8 @@ import { HamiltonInterpretation } from "./HamiltonInterpretation";
 import { ScenarioArchive, type ScenarioListItem } from "./ScenarioArchive";
 import { InsufficientConfidenceGate } from "./InsufficientConfidenceGate";
 import { GenerateBoardSummaryButton } from "./GenerateBoardSummaryButton";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import {
   PeerBaselineSelector,
   type HamiltonPeerSetOption,
@@ -654,6 +656,18 @@ export function SimulateWorkspace({
                   savedScenarioId={savedScenarioId}
                   onGenerate={handleGenerateSummary}
                 />
+                {selectedCategory && distribution && currentPosition && proposedPosition && (
+                  <AddToReportButton
+                    item={{
+                      id: basketItemId("Test", institutionId, selectedCategory, currentFee, proposedFee),
+                      source: "Test",
+                      title: `${formatCategory(selectedCategory)}: ${formatDollar(currentFee)} to ${formatDollar(proposedFee)}`,
+                      detail: `Moves from about the ${Math.round(currentPosition.percentile)}th to the ${Math.round(proposedPosition.percentile)}th percentile among peers. Peer median ${formatDollar(distribution.median_amount)} across ${distribution.institution_count} institutions.`,
+                      feeCategory: selectedCategory,
+                      institutionId: institutionId ?? null,
+                    }}
+                  />
+                )}
                 {proposedPosition && (
                   <RecommendedPositionCard
                     confidenceTier={confidenceTier!}

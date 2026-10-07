@@ -1,6 +1,7 @@
 import type { User } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
 import { acceptPendingWorkspaceInvitationsForUser } from "@/lib/hamilton/institution-membership";
+import { trackServerEvent } from "@/lib/analytics-server";
 
 /**
  * Activation fallback for when the Stripe webhook has not landed yet: if the user's
@@ -29,6 +30,7 @@ export async function activateIfPaid(
           userId: user.id,
           email: user.email ?? user.username,
         }).catch(() => []);
+        await trackServerEvent("pro_activated", { source: "fallback" });
         return true;
       }
     } catch (e) {

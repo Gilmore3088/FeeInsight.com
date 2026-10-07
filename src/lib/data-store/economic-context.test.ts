@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { buildIndicatorSeries } from "./economic-context";
+import { buildIndicatorSeries, fomcPolicyAction } from "./economic-context";
 
 describe("buildIndicatorSeries", () => {
   it("finds the year-ago point and returns history oldest first", () => {
@@ -31,5 +31,19 @@ describe("buildIndicatorSeries", () => {
     ];
     expect(buildIndicatorSeries("TXUR", rows)!.history.map((p) => p.value)).toEqual([4.2, 4.3]);
     expect(buildIndicatorSeries("FEDFUNDS", rows)!.history.map((p) => p.value)).toEqual([4.2, 0, 4.3]);
+  });
+});
+
+describe("fomcPolicyAction", () => {
+  it("finds the sentence that records the rate decision", () => {
+    const text =
+      "Staff Economic Outlook. Inflation eased. Committee Policy Actions In support of the Committee's goals, almost all members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent. Members noted risks.";
+    expect(fomcPolicyAction(text)).toBe(
+      "In support of the Committee's goals, almost all members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent.",
+    );
+  });
+
+  it("returns null when the minutes have no decision sentence", () => {
+    expect(fomcPolicyAction("Participants discussed the outlook. No action.")).toBeNull();
   });
 });
