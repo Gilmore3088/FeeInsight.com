@@ -2431,3 +2431,15 @@ funds-availability, checking and rates pages; the other 33 were not sampled).
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+
+## 2026-10-07: The Census income step recorded a published vintage as "not published"
+**What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
+in December 2025, as "not published yet" and scheduled no retry until October 14. No tract or ZIP
+income loaded.
+**Cause:** the fetch treated any reply that was not JSON data as an unpublished vintage. Census
+answers a key, quota or outage problem with a page, not data, so a real error was filed as normal.
+The actual reply is not known, because the cloud sandbox cannot reach api.census.gov.
+**Fix:** only a 404 counts as unpublished. Any other reply without data fails the step and puts the
+first 200 characters of the reply in the run ledger. The parser version is now 2, and the scheduler
+re-pulls `empty` partitions recorded under an older parser, so 2024 runs again without waiting a week.
+**Lesson:** an "empty" result must be one the source states, never a guess from a parse failure.
