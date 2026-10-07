@@ -277,9 +277,6 @@ export interface EnforcementMatcher {
 export function buildEnforcementMatcher(candidates: MatchCandidate[]): EnforcementMatcher {
   const byNameState = new Map<string, MatchCandidate[]>();
   const holdingByNameState = new Map<string, Set<string>>();
-  // A holding company is often based in another state than its banks
-  // (Wells Fargo & Company in CA, its bank in SD), so its name also counts alone.
-  const holdingByName = new Map<string, Set<string>>();
   for (const c of candidates) {
     if (!c.state_code) continue;
     const key = `${normalizeName(c.name)}|${c.state_code}`;
@@ -289,8 +286,6 @@ export function buildEnforcementMatcher(candidates: MatchCandidate[]): Enforceme
       const set = holdingByNameState.get(hk) ?? new Set<string>();
       set.add(c.holding_company_name);
       holdingByNameState.set(hk, set);
-      const nk = normalizeName(c.holding_company_name);
-      holdingByName.set(nk, (holdingByName.get(nk) ?? new Set<string>()).add(c.holding_company_name));
     }
   }
   const none: ActionMatch = { institution_id: null, holding_company: null, method: null };
@@ -309,9 +304,10 @@ export function buildEnforcementMatcher(candidates: MatchCandidate[]): Enforceme
       if (pool.length > 0) return none;
       const holding = holdingByNameState.get(`${name}|${action.party_state}`);
       if (holding && holding.size === 1) return { institution_id: null, holding_company: [...holding][0], method: "holding_company" };
-      if (holding) return none;
-      const anywhere = holdingByName.get(name);
-      if (anywhere && anywhere.size === 1) return { institution_id: null, holding_company: [...anywhere][0], method: "holding_company" };
+      // A holding company is matched only where it has a bank in the action's state.
+      // Matching by name alone tied generic names to unrelated companies (State Holding
+      // Co of Thermopolis, WY to an Arkansas bank), so a CA-based Wells Fargo & Company
+      // stays unmatched rather than risk naming the wrong bank.
       return none;
     },
   };

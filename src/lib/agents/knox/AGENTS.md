@@ -410,3 +410,8 @@ First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`, `unreprodu
 because many are restored. The extract event carries `takedown_lessons_loaded` and `takedown_holds`.
 Before this, in the 48 hours to Oct 7 05:50 UTC, Knox re-read 208 taken-down fees, sent 49 back to
 Darwin, and 6 were published again.
+
+Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
+Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
+publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
+the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).

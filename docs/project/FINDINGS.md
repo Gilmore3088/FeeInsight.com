@@ -2305,6 +2305,20 @@ the playbook entry.
 the router ignores do-not-retry entries for its bytes. The read's own attempt then settles it.
 **Lesson:** when a router skip writes nothing, check that a skipped row can't be selected forever.
 
+## 2026-10-07: The rules re-check restored fees with no check when their text was gone
+**What happened:** a fee the rules re-check had taken down came back live, with no category
+guard, schedule check or category model, whenever the text it was read from was no longer stored
+(`rules-recheck.ts`, restore reason `text_gone`). 84 live fees at 16 banks came back that way,
+among them NY answer-key misses: an international wire filed as bill pay, "Letter of Protest" as a
+gift card, a $0 "ATM services are UNLIMITED" and a check photocopy filed as document reproduction.
+Each restore also wrote a `restored_after_takedown` lesson that told Knox the takedown was wrong.
+The re-check's "latest" text was also the last by text hash, not the newest read.
+**Fix:** that restore now needs the restore bar (`disputedRestoreVerdict`) on the document's newest
+text; texts are ordered by read id. `restore-recheck.ts` gives the 84 the same bar on a second look
+(archive, never delete), and Knox's lesson readers skip the lessons those unchecked restores wrote.
+**Lesson:** every path that puts a fee live passes the same checks as publish; a restore is a
+publish.
+
 ## 2026-10-07: business-only fee schedules fed the consumer benchmarks
 **What happened:** 979 live fees at 86 banks (Oct 7, prod) were read from schedules whose address
 names business, commercial, corporate or treasury accounts, the same test Magellan's
@@ -2396,3 +2410,33 @@ store: Darwin's category model and Knox's lessons never trained on the hand-keye
 hand-keyed texts (2,885 fees) exist only as Knox test fixtures. Darwin's verdict score reads a compact copy
 (`src/lib/agents/darwin/answer-key-fees.json`, kept in step by its test). Loading the keys into the tables
 (through the admin answer-key page or a typed agent step) is still open.
+## 2026-10-07: Live fee names stored before Knox tidied its reads stayed run-on
+**What happened:** the audit tracker counted about 1,780 live fee names joined with "|" and about 680
+that end on a lead-in word. On prod (05:30 UTC Oct 7) there were 52,055 live fees: 1,756 piped, 870
+ending on "of", "is", "for" and similar, and 1,407 longer than 80 characters.
+**Cause:** `tidyFeeName` (Knox v17, v29) fixes new reads only. Rows published earlier kept the name
+as read ("Stop Payment | Item", "/mo. | Dormant Fee", "An overdraft fee of"), and nothing
+re-tidied them.
+**Fix:** `src/lib/agents/knox/name-retidy.ts` runs in each publish step on a batch of 40 banks. A
+live name takes its tidy name only when it still traces in the fee's own schedule (if it did before),
+still passes the category guard, and does not collide with another live fee of the bank. The old
+name is kept as a `name_retidied` row in `pipeline_feedback`; raw and verified rows are unchanged.
+Dry run on 27 banks: 76 of 121 messy names renamed, 0 that would stop tracing.
+**Lesson:** a reader fix needs a matching pass over what it already published.
+
+## 2026-10-07: Rosetta had no per-batch error review
+**What happened:** Rosetta learned only from fees taken down later (text survival), so a read that
+gave Knox nothing, or rejected a real schedule, taught nothing. James asked for a fix per error type
+and a review after every N reads.
+**Measured (prod, read-only, the 200 latest reads 6 to 36 hours old at 06:25 UTC Oct 7):** batches of
+50 had 19, 7, 6 and 7 misses (38%, 14%, 12%, 14%). 37 of the 39 were completed texts Knox found no
+fee in; 2 were unread. No short texts, no rejected page later proven a fee page. Counting only Knox
+rows written after the read overstates the misses, because Knox dedupes rereads, so the review
+counts every Knox fee from the document. A no-fee text is a miss either way: a real schedule Knox
+could not read (an earlier 30-hour window had several fee-schedule pages and a 2,626-char PDF), or a
+page that passed the fee-page check without being one (in this window the 4 fee-named links were
+funds-availability, checking and rates pages; the other 33 were not sampled).
+**Fix:** `rosetta/batch-review.ts` reviews each settled batch of 50, writes every miss as a lesson
+with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
+pass read those lessons. See rosetta/AGENTS.md "Batch review".
+**Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
