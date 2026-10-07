@@ -25,6 +25,21 @@ const CONSUMER_WORDS = /(personal|consumer|individual|retail|household)/i;
 export const BUSINESS_PATH_SQL = "(business|commercial|corporate|treasury)";
 export const CONSUMER_PATH_SQL = "(personal|consumer|individual|retail|household)";
 
+const ERROR_PAGE_PATH = /(^|[/_.-])(page-?not-?found|not-?found|404)([/_.?#-]|$)/i;
+
+/**
+ * True when the address is the site's own error page ("/page-not-found", "/404/",
+ * ".../wcErrors/404.html"): a link a crawler saved after a redirect, never a fee schedule.
+ */
+export function isErrorPageLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    return ERROR_PAGE_PATH.test(decodeURIComponent(new URL(url).pathname));
+  } catch {
+    return false;
+  }
+}
+
 /** True when the link's address names a business-only schedule or page. */
 export function isBusinessOnlyLink(url: string): boolean {
   let path: string;
