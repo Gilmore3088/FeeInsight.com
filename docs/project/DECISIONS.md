@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-06
 
+**Value funnel answers.** James, 23:49 UTC, in the value funnel thread.
+1. The report rule falls back to Fed district peers when a state has too few (PR 302).
+2. No "from $300" anchor on the report offer.
+3. Pro pricing stays as it is ($499.99/mo or $5,000/yr per seat); no per-institution plan.
+4. Fee-change alerts on a followed institution are free; Pro is sold on Hamilton, not alerts.
+5. Every paid report ends with "Track this market in Hamilton", linking to the Pro plans.
+
 **One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets
 that state's edition instead of the national email; everyone else (and readers in a state too
 thin for its own edition) gets one national email. Product and site updates ride in a one-line
