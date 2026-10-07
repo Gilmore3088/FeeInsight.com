@@ -59,8 +59,9 @@ export const KNOX_STALE_READ_BELOW_VERSION = 26;
  * a priced line for the missing fee (report-ready thread, 2026-10-07), and Space Coast CU.
  */
 export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
-  // In this order: S&T (most missing-fee leads) and Space Coast first.
-  161, 8109, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
+  // In this order: S&T (most missing-fee leads), Space Coast, then First National Bank Alaska
+  // (last read at v22, which missed its two outgoing wires; v32 reads both. 8 of 15 report fees).
+  161, 8109, 281, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
   749, 1680, 2334, 2580, 2756, 156, 528, 641, 1068, 1200, 1411, 1104, 3262, 7096, 8078, 6775, 6358, 5058, 7503,
   6788, 5998,
   // Magellan confirmed these current copies are full fee pages (2026-10-07).
