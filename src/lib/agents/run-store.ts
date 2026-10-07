@@ -2410,7 +2410,8 @@ export async function executeQueuedAgentRuns({
          )
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
-     -- run already under way finishes before a new one starts, then a retry of a failed
+     -- run already under way finishes before a new one starts, then a direct run for one
+     -- institution, then a retry of a failed
      -- state lane, then a lane with a hand-found schedule to fetch, then any run waiting
      -- over an hour, then state lanes by Atlas's priority score (open work, report
      -- requests, near-ready markets), then launch order.
@@ -2419,6 +2420,9 @@ export async function executeQueuedAgentRuns({
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
               ) DESC,
+              -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
+              -- a hand-found schedule or a large bank missing its overdraft fee.
+              COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
