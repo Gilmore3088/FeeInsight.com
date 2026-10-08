@@ -7,6 +7,7 @@ import { buildFeeDependence, latestYearOf, withinTrend, type DependenceRow } fro
 import { buildInferredVolume, type IncomeFeeRow } from "./inferred-volume";
 import { runPriceStudy } from "./price-study";
 import { median, midRankPercentile, ols, quartileOf, ranks, spearman } from "./stats";
+import { sourcesChanged } from "./store";
 
 describe("stats", () => {
   it("ranks ties at their mean rank and computes Spearman", () => {
@@ -147,5 +148,22 @@ describe("inferred volume", () => {
     expect(built.record.asOf).toBe("2026-06-30");
     expect(String(built.record.findings.headline)).toContain("$1B+ bank");
     expect(String(built.record.findings.headline)).toContain("credit union");
+  });
+});
+
+describe("sourcesChanged", () => {
+  const stored = [
+    { name: "Bank Fee Index live published fees (published_fee_catalog)", asOf: "2026-Q4" },
+    { name: "Census ACS county median household income", asOf: "2022" },
+  ];
+
+  it("rebuilds a study when a source's period moves", () => {
+    expect(sourcesChanged(stored, [stored[0], { name: "Census ACS county median household income", asOf: "2024" }])).toBe(true);
+    expect(sourcesChanged(stored, [...stored, { name: "FDIC Summary of Deposits", asOf: "2026" }])).toBe(true);
+  });
+
+  it("keeps a study whose sources are unchanged", () => {
+    expect(sourcesChanged(stored, [...stored])).toBe(false);
+    expect(sourcesChanged([{ name: "x", asOf: null }], [{ name: "x", asOf: null }])).toBe(false);
   });
 });

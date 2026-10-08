@@ -158,6 +158,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   the main fee link with its own earlier copies, each companion page (one account's page,
   a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
   outdates Value Checking's line, or the main schedule's; it publishes beside them.
+- Within a stream, only a newer copy of the same page supersedes or outdates a line
+  (`feePageKey` in `page-key.ts`: host without "www.", path without dates and version
+  words). A consumer schedule's price never replaces the business schedule's. Rows a
+  different page superseded before 8 Oct come back through the restore bar
+  (`cross-page-restore.ts`, each publish step), unless they are business-schedule fees
+  beside a live consumer fee, which the business-schedule rule keeps down.
 - Each publish step rolls back live fees read from companion pages Magellan retired as not
   a consumer fee page (`companion-retire.ts`, reason `companion_page_retired`, up to 500 a
   step) and rejects their verified rows, so they never publish again. Pages retired for a

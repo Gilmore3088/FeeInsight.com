@@ -387,6 +387,20 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
   });
 
+  it("never reads a per-day charge after an account stays overdrawn as the per-item fee (Oct 8)", () => {
+    const text = [
+      "Notary Fee ........ $15.00 per signature",
+      "Overdraft Fee .......... $5.00 per day after 10 business day",
+      "Courtesy Pay Fee | $30.00 per item",
+      "Sustained Overdraft | $5.00/day after 7th day",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee", 5, ".", "overdraft").ok).toBe(false);
+    expect(checkFeeAgainstSource(text, "Courtesy Pay Fee", 30, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdraft | $30.00 per day, per account", "Overdraft", 30, ".", "overdraft").ok).toBe(true);
+    // Only the per-item categories: a sustained-overdraft fee keeps its own row.
+    expect(checkFeeAgainstSource(text, "Sustained Overdraft", 5, ".", "od_sustained").ok).toBe(true);
+  });
+
   it("never reads a balance \"greater than or equal to $0\" as a $0 fee (Citizens, Oct 7)", () => {
     const citizens = "transactions that post to the account that day. If the available balance,\nexcluding the overdraft fees, is positive (greater than or equal to $0)\nat the end of the following business day, any overdraft fees will be\nreversed.";
     expect(checkFeeAgainstSource(citizens, "excluding the overdraft fees, is positive (greater than or equal to", 0, ".", "overdraft").ok).toBe(false);

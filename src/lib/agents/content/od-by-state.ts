@@ -107,7 +107,7 @@ export function draftOdArticle(summary: OdSummary, asOf: Date): OdArticle | null
   const higher = summary.states.slice(-ENDS).reverse();
   const month = monthLabel(asOf);
   const content = [
-    `The national median overdraft fee is ${dollars(national)}, from the published fee schedules of ${summary.national.institutions} banks and credit unions. Across the ${summary.states.length} states with enough data to report, the typical overdraft fee runs from ${dollars(summary.states[0].median)} to ${dollars(summary.states[summary.states.length - 1].median)}.`,
+    `The national median overdraft fee is ${dollars(national)}, from the published fee schedules of ${summary.national.institutions.toLocaleString("en-US")} banks and credit unions. Across the ${summary.states.length} states with enough data to report, the typical overdraft fee runs from ${dollars(summary.states[0].median)} to ${dollars(summary.states[summary.states.length - 1].median)}.`,
     `## States with the lowest median overdraft fee`,
     lower.map((state) => stateLine(state, national)).join("\n"),
     `## States with the highest median overdraft fee`,
