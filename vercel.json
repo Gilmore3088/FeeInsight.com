@@ -33,6 +33,10 @@
       "schedule": "51 14 * * *"
     },
     {
+      "path": "/api/admin/crew/indexnow",
+      "schedule": "13 16 * * *"
+    },
+    {
       "path": "/api/admin/crew/lead-watch",
       "schedule": "41 * * * *"
     },
