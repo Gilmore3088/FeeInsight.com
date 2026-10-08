@@ -35,7 +35,7 @@ import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names"
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 35 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 36 } as const;
 
 export interface SpecialistRun {
   strategy: string;

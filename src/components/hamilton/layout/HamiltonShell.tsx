@@ -5,6 +5,7 @@ import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonAskDock } from "./HamiltonAskDock";
+import { SearchModal } from "@/components/public/search-modal";
 
 interface HamiltonShellProps {
   isAdmin: boolean;
@@ -74,8 +75,11 @@ export function HamiltonShell({
       )}
 
       {/* The Fee Insight site header, the same one as the public site; for Pro users its links are
-          Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro). */}
-      <div className="print:hidden">
+          Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro).
+          The page-reveal animation gives each shell child its own stacking context, so the
+          wrapper carries the header's sticky z-index; without it the page painted over the
+          account menu. */}
+      <div className="sticky top-0 z-40 print:hidden">
         <ConsumerNav />
       </div>
 
@@ -92,6 +96,9 @@ export function HamiltonShell({
 
       {/* Ask Hamilton, docked on every screen */}
       <HamiltonAskDock selectedInstitutionId={selectedInstitutionId} />
+
+      {/* The header's Search button and Cmd/Ctrl+K open this; the public layout mounts its own. */}
+      <SearchModal />
     </div>
   );
 }
