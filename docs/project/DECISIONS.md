@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**A paying Pro buyer holds their bank's owner seat at checkout, before claim review.** James, 13:44
+UTC ("Grant at checkout" on the decision card). The plan sells 5 seats, so they work the moment the
+buyer pays. The claim is still filed for James to review, and rejecting it revokes that seat
+(`src/lib/pro-checkout-institution.ts`, `rejectInstitutionClaim`). The other option was to unlock
+seats only after review.
+
 **When an agent breaks, recovery fixes it without asking first.** James, 12:26 UTC ("Fix" on the
 recovery card), after a deploy broke every Hamilton publish at 12:06 ("Hamilton is blocked. We
 need a way to automate resolution when this happens"). A scheduled recovery check finds the break,
