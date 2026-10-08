@@ -296,7 +296,7 @@ describe("checkFeeCategory", () => {
     }
   });
 
-  // v23: prepaid card reloads folded into gift_card_purchase (top 50, Oct 8).
+  // v25: prepaid card reloads folded into gift_card_purchase (top 50, Oct 8).
   it("keeps a gift card's replacement and inactivity fees out of its purchase price", () => {
     for (const name of [
       "Gift Card Monthly Inactivity Fee (after 12 mo. non-use)",
@@ -454,7 +454,7 @@ describe("checkFeeCategory", () => {
       "Foreign ATM Inquiry or Transfer Fee",
       "ATM Withdrawal/Inquiry on all other networks",
       "Inquiry or transactions at non-Seacoast ATMs",
-      // v23: a balance inquiry at an ATM is an ATM fee (top 50, Oct 8).
+      // v25: a balance inquiry at an ATM is an ATM fee (top 50, Oct 8).
       "Foreign ATM Balance Inquiry",
       "ATM Foreign Transaction Fee - Balance Inquiry",
       "Balance Inquiry at non-Pathfinder ATM",
@@ -491,8 +491,21 @@ describe("checkFeeCategory", () => {
     const context = (amount: string, document_nsf_amount: string | null) => ({ amount, document_nsf_amount });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", null))).toEqual({ ok: true });
-    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toEqual({ ok: true });
+    // v23: at any price below the schedule's NSF fee; at the NSF fee's own price it is that fee.
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("35.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Check Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Item Charge")).toEqual({ ok: true });
     expect(checkFeeCategory("nsf", "NSF Fee", context("7.00", "35.00"))).toEqual({ ok: true });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "10.00"))).toEqual({ ok: true });
+  });
+
+  it("v24 keeps statement and photocopy fees off overdraft and NSF (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "OVERDRAFT & NSF FEES: Statement Copy Fee8").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "Returned Item Photocopy").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "Copy of returned check").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "per copy Nonsufficient funds (NSF) (each debit or check returned)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item on Lifeline 18/65 Checking or Statement Savings \"Overdraft Fee\"")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
   });
 });

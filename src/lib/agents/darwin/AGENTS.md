@@ -170,6 +170,12 @@ Darwin owns verification and classification.
   coming back as NSF, so Hamilton's category guard takes the live ones down after its second look.
   Guard v22 (2026-10-08) also fails a returned check or item under $10 filed as NSF when the same
   schedule prices NSF separately at $15 or more (`schedule_contradicts`; Dean Co-operative Bank).
+  Guard v23 drops the $10 ceiling (any price below the schedule's NSF fee). Once Hamilton takes such
+  a fee off NSF, the classify step's `verify.schedule_refile` re-files its verified row as
+  `deposited_item_return` (flag `darwin_schedule_refiled`, attempt detail from/to), and Hamilton
+  publishes it as an RDI through its normal checks.
+  Guard v24 (2026-10-08) rejects statement-copy and photocopy fees ("Statement Copy Fee",
+  "Returned Item Photocopy", "Copy of ...") filed as overdraft or NSF, even under a section heading.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

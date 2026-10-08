@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
 import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
@@ -69,7 +70,8 @@ export function retidiedFeeName(name: string, canonicalKey: string): string | nu
   return tidy;
 }
 
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 1 } as const;
+/** v2: a footnote number glued to the name ("Check Cashing Fee1") is messy too. */
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 2 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 export const NAME_RETIDY_INSTITUTION_LIMIT = 40;
@@ -177,11 +179,12 @@ export async function retidyLiveFeeNames(
       SELECT live.institution_id, live.max_fee_id
         FROM (
           SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_fee_id,
-                 -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on.
+                 -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on, a footnote number.
                  bool_or(
                    fp.fee_name LIKE '%|%'
                    OR fp.fee_name ~* '[[:space:]](of|for|at|is|to|and|or|with|by|a|an|the)$'
                    OR length(fp.fee_name) > 80
+                   OR fp.fee_name ~ ${FOOTNOTE_SQL}
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -321,7 +324,15 @@ export async function retidyLiveFeeNames(
   return result;
 }
 
-/** The live names this step looks at: joined cells, a dangling lead-in word, or a run-on. */
+/** The live names this step looks at: joined cells, a dangling lead-in word, a run-on, or a footnote number. */
 export function isMessyName(name: string): boolean {
-  return name.includes("|") || /\s(?:of|for|at|is|to|and|or|with|by|a|an|the)$/i.test(name) || name.length > 80;
+  return (
+    name.includes("|") ||
+    /\s(?:of|for|at|is|to|and|or|with|by|a|an|the)$/i.test(name) ||
+    name.length > 80 ||
+    stripFootnoteMarks(name) !== name.trim()
+  );
 }
+
+/** Postgres twin of `stripFootnoteMarks`'s match, so the due query finds the same names. */
+const FOOTNOTE_SQL = "([A-Za-z][a-z]{2}|\\))[0-9]{1,2}(,[0-9]{1,2})*(\\s*\\(|\\s*$)";

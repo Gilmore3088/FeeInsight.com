@@ -1158,6 +1158,16 @@ flattens into a digit. The table and family specialists (pass 2) already strippe
 **Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
 merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
 **Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+**Follow-up (2026-10-08):** issue 163 was run on Oct 6 (155 to 0), but by 08:40 UTC Oct 8, 22 live
+fees at 14 institutions had the digit again, 19 of them published after the fix. In a dot-leader
+line ("Check Cashing Fee1. . . . $5.00") the digit isn't at the end of the name until the leaders
+are removed, and that happens later, in `tidyFeeName`. Fix: `tidyFeeName` strips the footnote
+number in each cell after the leaders are gone. The live repair now runs in the pipeline: Knox
+name retidy v2 counts a footnoted name as messy and renames it (logged per row in
+`pipeline_feedback`), so no hand SQL is needed. A dry run on the live rows renamed all 22 and
+skipped none.
+**Lesson 2:** a cleanup that keys on "end of the name" has to run after every other step that
+trims the name.
 
 ## 2026-10-05: Public pages showed different counts and medians on the same day
 **What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
@@ -3058,4 +3068,28 @@ Rows already on file gain the fields only when Knox reads their document again.
   least $15 and twice its price, fails. Hamilton's guard reads that price from both raw readers'
   rows for the same document, logs each to `pipeline_feedback`, and takes it down after the second look.
 - **Watch.** `hamilton.category_guard` byCode `schedule_contradicts`; Knox still misses split NSF rows.
+- **Follow-up (v23, same day).** James: a returned check fee is a return deposited item (RDI),
+  not NSF. Of 382 live plain "Returned check/item" fees filed as NSF, 130 sat beside a separate,
+  higher NSF fee on the same schedule; 72 had the NSF fee's own price; 154 had no NSF line. Guard
+  v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
+  `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
+- **Follow-up (v24, same day).** WCU's $5 "Statement Copy Fee" was live as overdraft because Knox
+  kept the section heading in its name ("OVERDRAFT & NSF FEES: Statement Copy Fee"), and a
+  $5 "Returned Item Photocopy" was live as NSF. Guard v24 rejects statement copies, photocopies,
+  "copy fee" and "copy of" names under overdraft and NSF; these 2 are the only live matches.
 
+
+## 2026-10-08: Every Stripe webhook failed
+
+- **Problem.** The webhook recorded each event with `INSERT INTO stripe_events (id, event_type,
+  stripe_customer_id, payload_json)`, the shape of the old SQLite schema
+  (`src/lib/data-store/migrations/001-payments.sql`). Prod's `stripe_events` has a bigint `id`,
+  a unique `stripe_event_id`, `event_type` and `processed_at`, so the insert errored and the
+  route answered 500 to every delivery. Prod had 0 rows in `stripe_events` on 8 Oct. A paid Pro
+  checkout only activated through the welcome-page fallback; a paid institution report was
+  never marked Paid and its link never sent; cancellations and failed payments never landed.
+- **Fix.** `recordStripeEvent` writes `stripe_event_id` and `event_type` with
+  `ON CONFLICT (stripe_event_id)`. Checkout also replaces a saved Stripe customer that the
+  current key can't find (test-mode customers after the switch to live keys, or one deleted
+  in the dashboard), which failed checkout with "No such customer".
+- **Watch.** `stripe_events` gains a row for each delivery; Stripe's webhook page shows 200s.

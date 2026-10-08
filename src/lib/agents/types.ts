@@ -121,13 +121,15 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
 ];
 
 /**
- * Growth's marketing steps (content drafts, monthly email). They obey the `marketing`
- * control (`getMarketingControl`) instead of the pipeline pause: pausing marketing
- * leaves data runs going, and pausing the pipeline leaves marketing runs going.
+ * Growth's marketing steps (content drafts, monthly email, queue intake, weekly scoring).
+ * They obey the `marketing` control (`getMarketingControl`) instead of the pipeline pause:
+ * pausing marketing leaves data runs going, and pausing the pipeline leaves marketing runs going.
  */
 export const MARKETING_STEP_KEYS: readonly string[] = [
   "content-fee-depth",
   "content-market-spread",
+  "growth-intake",
+  "growth-score",
   "marketing-score",
   "marketing-send",
   "marketing-states",
