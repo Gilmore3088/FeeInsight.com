@@ -43,10 +43,11 @@ describe("priority institutions", () => {
     }));
   });
 
-  it("lists each requested institution once, the Tennessee report's largest banks first", () => {
+  it("lists each requested institution once, Marketing's outreach batch then the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 10)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
+    expect(ids.slice(0, 14)).toEqual([1223, 767, 4715, 8085, 4522, 3331, 4779, 850, 400, 599, 348, 424, 7034, 5579]);
+    expect(ids.slice(14, 24)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
     expect(ids).toContain(8109);
   });
 
@@ -97,6 +98,8 @@ describe("priority institutions", () => {
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
     expect(select).toContain("CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END");
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
+    // A request by name does not wait out the retry window of an earlier overdraft-gap run.
+    expect(select).toContain("c.tier <> 2 OR r.params_json->>'tier' = 'requested'");
   });
 
   it("runs only free steps, each scoped to the one institution", () => {

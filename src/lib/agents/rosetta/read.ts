@@ -19,6 +19,7 @@ import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
 import {
   detectFormat,
   documentTypeForFormat,
+  hasReadableWords,
   isLikelyScannedPdf,
   type DocumentFormat,
   type PlaybookFormat,
@@ -65,7 +66,7 @@ import {
   ROSETTA_OCR_VERSION,
   type ScannedPdfReader,
 } from "@/lib/agents/rosetta/ocr";
-import { layoutPageText, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { layoutPageText, PDF_LAYOUT_VERSION, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
 import {
   ROSETTA_TABLE_ROWS_VERSION,
   rosettaTextColumnsReady,
@@ -241,6 +242,8 @@ export interface RunRosettaReadResult {
   reopenedFeePages: number;
   reopenedBansLifted: number;
   reopenedLinksRestored: number;
+  /** PDF texts whose embedded font read as noise, reopened for one more read (free OCR). */
+  reopenedUnreadablePdfs: number;
   /** Current copies read as a bot check, script shell or bare title, put back on the page's readable copy. */
   thinCopiesSetAside: number[];
   /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
@@ -417,6 +420,15 @@ const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
  * flattened and most rows were lost.
  */
 export const REREAD_MAX_KNOX_FEES = 5;
+/**
+ * A PDF text an older layout read across prose columns joins each line with its
+ * neighbour columns' lines as " | " cells of running prose. This many such joins (a
+ * lowercase word or comma, a cell break, a lowercase word) mark a page read across its
+ * columns; on prod (8 Oct) 251 of 1,981 PDF texts had at least 25, Origin Bank's 687,
+ * and the layout-version-2 reader reads each of them once more.
+ */
+export const INTERLEAVED_PROSE_CELLS = 25;
+export const INTERLEAVED_PROSE_CELL_PATTERN = String.raw`[a-z,;] \| [a-z]`;
 /**
  * The first PDF reader (no `reader` recorded) ran a document's text onto one line. Knox
  * splits a line only at wide gaps and sentence ends, so a schedule longer than this ran
@@ -851,7 +863,9 @@ async function readCandidate(
     const scanError =
       normalizedText.length === 0
         ? `No embedded PDF text found across ${extracted.totalPages} pages; OCR required`
-        : `Only ${normalizedText.length} characters of embedded text across ${extracted.totalPages} pages; likely a scan, OCR required`;
+        : !hasReadableWords(normalizedText)
+          ? `Embedded text across ${extracted.totalPages} pages is unreadable (its font maps letters to other codes); OCR required`
+          : `Only ${normalizedText.length} characters of embedded text across ${extracted.totalPages} pages; likely a scan, OCR required`;
     const needsOcr = (error: string) =>
       finish(
         { status: "needs_ocr", charCount: normalizedText.length, error, attemptOutcome: "scanned_pdf", format: "pdf_scanned" },
@@ -1007,6 +1021,16 @@ async function selectCandidates(
     // read with the current reader; Knox then re-extracts it if the text changed.
     params.push(REREAD_MAX_KNOX_FEES);
     const rereadMaxParam = `$${params.length}`;
+    // A PDF text an older layout read across its prose columns gets one read with the
+    // column-aware layout (pdf-layout.ts, layout version 2).
+    params.push(PRIMARY_READERS.pdf);
+    const pdfLayoutParam = `$${params.length}`;
+    params.push(PDF_LAYOUT_VERSION);
+    const pdfLayoutVersionParam = `$${params.length}`;
+    params.push(INTERLEAVED_PROSE_CELL_PATTERN);
+    const interleavedPatternParam = `$${params.length}`;
+    params.push(INTERLEAVED_PROSE_CELLS);
+    const interleavedMinParam = `$${params.length}`;
     // Page checks, table rows, OCR, fallbacks and the paid pass never settle a read.
     params.push(AUXILIARY_READ_STRATEGIES);
     const auxiliaryParam = `$${params.length}`;
@@ -1188,7 +1212,8 @@ async function selectCandidates(
               ${lostTextRereadable}
               OR ${ocrRereadable}
               OR (
-                adt.status = 'wrong_document'
+                -- A completed text reopens only as unreadable PDF text (reopenUnreadablePdfTexts).
+                adt.status IN ('wrong_document', 'completed')
                 AND ${reopenedAt("adt.institution_id", "adt.source_hash")} IS NOT NULL
                 AND NOT EXISTS (
                   SELECT 1 FROM pipeline_attempts after_reopen
@@ -1202,6 +1227,23 @@ async function selectCandidates(
               OR (
                 adt.status IN ('needs_ocr', 'empty')
                 AND ${notSettledByCurrentReader}
+              )
+              OR (
+                adt.status = 'completed'
+                AND adt.reader = ${pdfLayoutParam}
+                -- CASE keeps the text scan behind the cheap checks.
+                AND CASE
+                  WHEN position(' | ' in adt.normalized_text) = 0 THEN FALSE
+                  WHEN EXISTS (
+                    SELECT 1 FROM pipeline_attempts columns_read
+                     WHERE columns_read.stage = 'read'
+                       AND columns_read.strategy = ${pdfLayoutParam}
+                       AND columns_read.institution_id = adt.institution_id
+                       AND columns_read.input_fingerprint = adt.source_hash
+                       AND COALESCE((columns_read.detail->>'pdf_layout')::int, 1) >= ${pdfLayoutVersionParam}
+                  ) THEN FALSE
+                  ELSE (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, ${interleavedPatternParam}, 'g')) >= ${interleavedMinParam}
+                END
               )
               OR (
                 adt.status = 'completed'
@@ -1837,6 +1879,90 @@ async function reopenScriptLoadedFeePages(
   return { reopened, unbanned, relinked };
 }
 
+/**
+ * A PDF text read before Rosetta told unreadable embedded text from a real one (its font
+ * maps letters to control codes or shifted letters; TruStone's fee schedule, Hfs FCU's
+ * disclosure) gets one more read: a `read.reopen` attempt makes the stored text readable
+ * once more, and the PDF read now sends such text to free OCR. A text that reads as words
+ * is logged "rejected" and never checked again. Nothing here touches a fee.
+ */
+async function reopenUnreadablePdfTexts(
+  db: SqlTag,
+  options: { runId: number; stepId: number | null; institutionId?: number; stateCode?: string; currentCopy?: boolean },
+): Promise<number> {
+  const params: Array<number | string> = [ROSETTA_REOPEN_LIMIT, REOPEN_STRATEGY, CONTROL_CODES_PATTERN];
+  const filters: string[] = [];
+  if (options.currentCopy) {
+    filters.push(`AND EXISTS (
+           SELECT 1 FROM source_documents doc
+            WHERE doc.id = adt.source_document_id
+              AND doc.superseded_by_id IS NULL
+              AND doc.duplicate_of_id IS NULL
+         )`);
+  }
+  if (options.institutionId) {
+    params.push(options.institutionId);
+    filters.push(`AND adt.institution_id = $${params.length}`);
+  }
+  const normalizedState = normalizeStateCode(options.stateCode);
+  if (normalizedState) {
+    params.push(normalizedState);
+    filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  const rows = await db.unsafe<Array<{
+    text_id: number | string;
+    source_document_id: number | string;
+    institution_id: number | string;
+    source_url: string | null;
+    source_hash: string;
+    normalized_text: string;
+  }>>(
+    `
+      SELECT adt.id AS text_id, adt.source_document_id, adt.institution_id, adt.source_url,
+             adt.source_hash, adt.normalized_text
+        FROM agent_source_texts adt
+        JOIN institution_sources inst ON inst.id = adt.institution_id
+       WHERE adt.status IN ('completed', 'wrong_document')
+         AND adt.document_type = 'pdf'
+         AND adt.source_hash IS NOT NULL
+         ${filters.join("\n         ")}
+         -- Cheap first cut: control codes near the top of the text.
+         AND left(adt.normalized_text, 400) ~ $3
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts reopen
+            WHERE reopen.stage = 'read' AND reopen.institution_id = adt.institution_id
+              AND reopen.input_fingerprint = adt.source_hash AND reopen.strategy = $2
+         )
+       ORDER BY adt.id
+       LIMIT $1
+    `,
+    params,
+  );
+  let reopened = 0;
+  for (const row of rows) {
+    const unreadable = !hasReadableWords(row.normalized_text);
+    if (unreadable) reopened += 1;
+    await recordAttempt(db, {
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: Number(row.source_document_id),
+      stage: "read",
+      strategy: REOPEN_STRATEGY,
+      version: REOPEN_VERSION,
+      fingerprint: row.source_hash,
+      outcome: unreadable ? "ok" : "rejected",
+      yieldCount: 0,
+      costMicrousd: 0,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: { text_id: Number(row.text_id), url: row.source_url, unreadable_pdf_text: unreadable },
+    });
+  }
+  return reopened;
+}
+
+/** Five control codes (not tab or line breaks) in a stretch of text. */
+export const CONTROL_CODES_PATTERN = "([\\x01-\\x08\\x0e-\\x1f][^\\x01-\\x08\\x0e-\\x1f]*){5}";
+
 export async function runRosettaRead(
   options: RunRosettaReadOptions,
 ): Promise<RunRosettaReadResult> {
@@ -1862,6 +1988,15 @@ export async function runRosettaRead(
         currentCopy,
       })
     : { reopened: 0, unbanned: 0, relinked: 0 };
+  const reopenedUnreadablePdfs = vaultSchema
+    ? await reopenUnreadablePdfTexts(db, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+        currentCopy,
+      })
+    : 0;
   // A copy read as a bot check or script shell never displaces the page's readable copy.
   const thinCopies = learning
     ? await restoreReadableCopies(db, { institutionId: options.institutionId })
@@ -1979,6 +2114,7 @@ export async function runRosettaRead(
             from_vault: result.fromVault,
             table_rows: result.tableRows,
             reader: result.reader,
+            pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
             reread: result.reread,
             escalation: result.escalation ?? null,
             page_check: result.pageCheck,
@@ -2085,6 +2221,7 @@ export async function runRosettaRead(
     reopenedFeePages: reopen.reopened,
     reopenedBansLifted: reopen.unbanned,
     reopenedLinksRestored: reopen.relinked,
+    reopenedUnreadablePdfs,
     thinCopiesSetAside: thinCopies.thinCopies,
     textSurvivalRefreshed: survival.refreshed,
     textsHeldUp: survival.held,

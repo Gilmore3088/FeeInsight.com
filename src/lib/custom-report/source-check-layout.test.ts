@@ -1,10 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { checkFeeAgainstSource, joinLabeledFeeCards } from "./source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCards, stripPriceFootnoteMarks } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
   it("reads a price printed under its fee's name", () => {
     const text = "Overnight Courier Service\n$50.00\n/Item";
     expect(checkFeeAgainstSource(text, "Overnight Courier Service", 50, ".").ok).toBe(true);
+  });
+
+  it("reads a price under a name whose note runs onto the next line", () => {
+    const text = [
+      "Overdraft Fee (per item, both returned or paid created by check, in person withdrawal,",
+      "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)",
+      "",
+      "$36.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee", 36, ".", "overdraft").ok).toBe(true);
+    // A note that never closes is not a qualifier: the next line may be another fee.
+    expect(checkFeeAgainstSource("Overdraft Fee (per item\nStop payment\n$36.00", "Overdraft Fee", 36, ".", "overdraft").ok).toBe(false);
+  });
+
+  it("reads a price whose footnote marks were read onto it", () => {
+    const text = [
+      "Overdraft Fee³ - All Checking and Savings Accounts",
+      "$334, 5",
+      "(Including Money Markets)",
+      "4. Please be aware that an item may be presented multiple times.",
+      "5. Maximum of six (6) Overdraft Fees and/or NSF Fees combined may be charged per day.",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee - All Checking and Savings Accounts", 33, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Overdraft Fee - All Checking and Savings Accounts", 334, ".", "overdraft").ok).toBe(false);
+    // With no footnotes printed, the figure stays as written.
+    expect(stripPriceFootnoteMarks("Overdraft Fee\n$334, 5")).toBe("Overdraft Fee\n$334, 5");
   });
 
   it("does not give a name the next fee's price", () => {

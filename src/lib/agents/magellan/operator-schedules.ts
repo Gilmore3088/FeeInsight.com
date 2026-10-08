@@ -91,7 +91,8 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   {
     institutionId: 104,
     institutionName: "FirstBank Puerto Rico",
-    url: "https://www.1firstbank.com/pr/en/documents/accounts/Disclosures-of-Rates-Terms-and-Fees-Deposit-UNO-Account-Eng.pdf",
+    // Perfecta account: $15 per item paid into insufficient funds (2026-10-08 16:05 search).
+    url: "https://www.1firstbank.com/pr/en/documents/accounts/Disclosure-of-Rates-Terms-and-Fees-Deposit-Perfecta-Account-Eng.pdf",
     givenBy: "web search for banks hidden by the 3-fee rule, 2026-10-07 01:10",
   },
   {
@@ -324,7 +325,8 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // fee schedule page, 2025-08-22.
     institutionId: 4677,
     institutionName: "Police & Fire Federal Credit Union",
-    url: "https://www.pffcu.org/membership/fee-schedule",
+    // The fee page never read; the July 2025 disclosure PDF states $18 and $7 per overdraft.
+    url: "https://www.pffcu.org/wp-content/uploads/2025/06/PFFCT44Web_07-01-2025.pdf",
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
@@ -401,15 +403,16 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // No fee schedule link on file.
     [43, "SouthState Bank, National Association", "https://www.southstatebank.com/PersonalAccountFeeSchedule"],
     [85, "Eastern Bank", "https://www.easternbank.com/media/5301"],
-    // Deposit agreement: overdraft $25 per item, $100 a day. The checking TISA answered 404
-    // (2026-10-08 03:10); this link replaced it at 2026-10-08 15:00.
-    [147, "BancFirst", "https://www.bancfirst.bank/getContentAsset/2d3ceb3f-5a36-4b96-9398-feb856ffeebd/582e10d9-e479-4901-9a67-7b8c0f57354b/depositagreement.pdf?language=en"],
+    // Checking disclosure: "Overdraft Charge ... $25.00", $100 a day. The deposit agreement
+    // read at 15:00 states only the daily cap; this link replaced it at 2026-10-08 16:05.
+    [147, "BancFirst", "https://www.bancfirst.bank/BancFirst/media/Documents/NewDisclosureDocs/BancFirst-Checking-TISA.pdf"],
     [206, "Bankers Trust Company", "https://www.bankerstrust.com/consumer-service-fee-schedule/"],
     [400, "MVB Bank, Inc", "https://mvbbanking.com/wp-content/uploads/2024/03/4.-MVB-Retail-Fee-Schedule-3.31.22-reviewed-2024.pdf"],
     [4966, "Bank Fund Staff Federal Credit Union", "https://bfsfcu.org/documents/Fee_Schedule.pdf"],
     // Link on file was a product, rates or loan page.
     [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf"],
-    [96, "Beacon Bank and Trust", "https://www.beaconbank.com/disclosures/consumer-fee-schedule"],
+    // Courtesy Pay page: $35 per item (the fee schedule page never read; 2026-10-08 16:05).
+    [96, "Beacon Bank and Trust", "https://www.beaconbank.com/personal/courtesy-pay"],
     [300, "Hills Bank and Trust Company", "https://www.hillsbank.com/sites/www.hillsbank.com/files/media/terms-and-conditions-fee-schedule.pdf"],
     [7656, "Dupaco Community Federal Credit Union", "https://www.dupaco.com/hubfs/dupaco-credit-union-fee-schedule-miscellaneous-fees-jan-15-2025.pdf?hsLang=en"],
     [8086, "Summit Federal Credit Union", "https://www.summitcreditunion.com/_docs/Consumer%20Fee%20Schedule_3-1-2025.pdf"],
@@ -432,14 +435,29 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     [41, "Old National Bank", "https://www.oldnational.com/personal/services/overdraft-solutions/"],
     [165, "Origin Bank", "https://www.origin.bank/deposit-account-agreement-disclosures.pdf"],
     [7559, "Idaho Central Federal Credit Union", "https://www.iccu.com/file/notices/account-agreement.pdf"],
-    [133, "Bell Bank", "https://Bell.Bank/-/media/project/bell/bank-redesign/pdf-files/banking-related-items/understanding-funds-availability-and-overdrafts-2023.pdf"],
+    // Overdrafts and overdraft fees: $33 each time (replaced the 2023 flyer at 16:05).
+    [133, "Bell Bank", "https://edge.sitecorecloud.io/bellbank1e14e-bellbankab0c-prod3ddb-d33b/media/project/bellbank/bellbankcorporate/terms-and-conditions/online-banking-legal-notices/overdrafts-and-overdraft-fees.pdf"],
     [107, "Apple Bank", "https://www.applebank.com/AppleBank/media/Documents/PDFs/B-294-ClassValue-Checking.pdf"],
+    // Search snippets show a consumer per-item overdraft fee on each (2026-10-08 16:05).
+    [45, "CIBC Bank USA", "https://us.cibc.com/content/dam/us-public-assets/documents/pdf/cibc-bank-usa-smart-account-agreements-and-disclosures.pdf"],
+    [106, "The Central Trust Bank", "https://www.centralbank.net/globalassets/includedcontent/enterprise/uyda-personal.pdf?v=1DC23F7AD8F0D80"],
+    [115, "Seacoast National Bank", "https://www.seacoastbank.com/overdraft-info"],
+    [39, "Comerica Bank", "https://www.comerica.com/content/dam/comerica/en/documents/resources/about/cra/SEMI-PSC.pdf"],
+    [48, "Cadence Bank", "https://cadencebank.com/personal/checking/my-way"],
+    [83, "FirstBank", "https://www.efirstbank.com/customer-service/questions-answers.htm"],
+    [98, "Centennial Bank", "https://www.my100bank.com/public/userfiles/Disclosures/CEN-SOF.pdf"],
+    [170, "Stock Yards Bank & Trust Company", "https://www.syb.com/overdraft-privilege"],
+    [7464, "Boeing Employees Federal Credit Union", "https://www.becu.org/-/media/Files/PDF/P-6850.pdf?rev=b84f4b81f7564db9ab1706a2a0de02a2&sc_lang=en&hash=FB0646071579AEFCC1F0BC48F4DF21E3"],
+    [6394, "First Technology Federal Credit Union", "https://www.firsttechfed.com/-/media/FirstTech-Web/Documents/Terms-And-Conditions-Pdf/account-and-service-fees.pdf"],
+    [38, "East West Bank", "https://www.eastwestbank.com/content/dam/ewb-dotcom/docs/CONSUMER_FEE_SCHEDULE.pdf"],
+    [135, "ConnectOne Bank", "https://www.connectonebank.com/about/miscellaneous-fee-schedule"],
   ] as const).map(([institutionId, institutionName, url]) => ({
     institutionId,
     institutionName,
     url,
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
-  })),  // Top-10-by-deposits banks under $10B with no live overdraft fee: each link is on the
+  })),
+  // Top-10-by-deposits banks under $10B with no live overdraft fee: each link is on the
   // bank's own site and a search snippet showed a consumer fee schedule or overdraft
   // disclosure (2026-10-08 15:45-15:50).
   ...([
@@ -478,6 +496,27 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url,
     givenBy: "web search for state top-10 banks under $10B with no live overdraft fee, 2026-10-08 15:50",
   })),
+  // Second search pass for the same banks. Each link is on the bank's own stored domain or its
+  // own file host; links on a domain that may be a different bank (Bankwell Direct, 1stnorthern)
+  // were left out (2026-10-08 16:05).
+  ...([
+    [404, "First Dakota National Bank", "https://com-firstdakota-cdn.s3.amazonaws.com/general-uploads/Customer-Overdraft-Disclosure.pdf"],
+    [453, "Cornerstone Bank", "https://www.cornerstoneconnect.com/gallery/Services%20and%20Costs.pdf"],
+    [8397, "Greater Nevada Federal Credit Union", "https://www.gncu.org/wp-content/uploads/2025/05/20250519-GNCU-Personal-Accounts-Fee-Schedule-FINAL.pdf"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "second web search for state top-10 banks with no live overdraft fee, 2026-10-08 16:05",
+  })),
+  {
+    // Marketing's outreach batch (2026-10-08 18:20): Magellan holds only Quantum's business
+    // schedule. Its personal Service Fee Schedule lists Courtesy Pay at $30 (web search 18:45).
+    institutionId: 8085,
+    institutionName: "Quantum Federal Credit Union",
+    url: "https://www.theq.org/service-fee-schedule",
+    givenBy: "web search for Marketing's outreach batch, 2026-10-08 18:45",
+  },
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");

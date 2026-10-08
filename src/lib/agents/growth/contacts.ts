@@ -56,8 +56,8 @@ const PAGE_HINTS: Array<{ pattern: RegExp; rank: number }> = [
 
 /** A role from a title or a mailbox name; the first match wins, so "SVP Marketing" is marketing. */
 const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
-  { role: "marketing", pattern: /market|brand|communications|\bcmo\b/i },
-  { role: "retail", pattern: /retail|deposit|product|consumer bank|branch|member experience|member services/i },
+  { role: "marketing", pattern: /\bmarketing\b|brand|communications|\bcmo\b/i },
+  { role: "retail", pattern: /retail|deposit|product|consumer bank/i },
   { role: "finance", pattern: /\bcfo\b|chief financial|finance|treasurer|controller/i },
   { role: "executive", pattern: /\bceo\b|chief executive|president/i },
   { role: "operations", pattern: /\bcoo\b|chief operating|operations/i },
@@ -67,6 +67,15 @@ const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
 /** Shared mailboxes rather than a person. */
 const GENERAL_MAILBOX =
   /^(info|contact|contactus|customerservice|customer\.?service|service|services|support|help|hello|questions|webmaster|web|mail|online|onlinebanking|ebanking|loans?|lending|mortgages?|cards?|fraud|security|careers|jobs|hr|humanresources|privacy|deposits?|accounting|bsa|compliance|memberservices?|members?|marketing|media|press|news|investor|investors|ir|noreply|no-reply|donotreply)$/i;
+
+/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees, the board, card lines. */
+const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|boardof|directors|^members?[._-]|^(?:visa|debit|mastercard|board)$/i;
+
+/** True when an address is a shared mailbox, not one person's. */
+export function isSharedMailbox(email: string): boolean {
+  const local = email.split("@")[0] ?? "";
+  return GENERAL_MAILBOX.test(local) || SHARED_MAILBOX_PART.test(local);
+}
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}/g;
 const NOT_EMAIL_TLD = /\.(png|jpe?g|gif|svg|webp|css|js)$/i;
@@ -137,8 +146,64 @@ export function belongsToSite(email: string, websiteHost: string): boolean {
   return brandLabel(domain) === brandLabel(websiteHost);
 }
 
+/** "Vice President" is a rank, not the president: it is read past before the roles are matched. */
+const VICE_PRESIDENT = /\b(?:senior\s+|executive\s+|assistant\s+|first\s+)?vice[\s-]+president\b/gi;
+/** A title that names a buyer outright, so a lending word in it doesn't rule it out ("SVP, Chief Retail Officer"). */
+const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|marketing|retail|operating|deposit|experience)|\bmarketing\b|\bretail\b(?! lending)|\bdeposits?\b/i;
+/**
+ * Titles that sell or service rather than buy a fee study: lenders, mortgage and loan staff,
+ * business development, relationship and cash management, wealth and trust, branch staff.
+ */
+const NOT_BUYER_TITLE =
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+
+/**
+ * Member services and member experience are retail only at a decision maker's rank (PR 652's
+ * decision-maker rule): "VP of Member Experience" buys a fee study, a "Member Services Manager" doesn't.
+ */
+const MEMBER_ROLE = /member (?:experience|services?)/i;
+const DECISION_MAKER_RANK = /\b(?:vp|svp|evp|vice[\s-]+president|director|chief|head)\b/i;
+
 export function roleFor(text: string): ContactRole {
-  return ROLE_PATTERNS.find(({ pattern }) => pattern.test(text))?.role ?? "other";
+  const title = text.replace(VICE_PRESIDENT, " ");
+  if (!BUYER_TITLE.test(title) && NOT_BUYER_TITLE.test(title)) return "other";
+  const seniorMember = MEMBER_ROLE.test(title) && DECISION_MAKER_RANK.test(text);
+  return ROLE_PATTERNS.find(({ role, pattern }) => pattern.test(title) || (role === "retail" && seniorMember))?.role ?? "other";
+}
+
+/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...", a line quoting an address). */
+const NOT_A_TITLE = /@|\be-?mail:|message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+/** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
+const NOT_A_NAME =
+  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual)\b/i;
+
+/** A printed name we can greet, or null for a label that sits where a name would. */
+export function cleanContactName(name: string | null): string | null {
+  if (!name) return null;
+  const trimmed = name.trim();
+  if (NOT_A_NAME.test(trimmed) || trimmed === trimmed.toUpperCase()) return null;
+  return trimmed;
+}
+
+/** A printed title, or null for a heading that only looks like one. */
+export function cleanContactTitle(title: string | null): string | null {
+  if (!title) return null;
+  const trimmed = title.trim().replace(/[,&|*]+\s*$/, "").trim();
+  return trimmed && !NOT_A_TITLE.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * A saved contact read with today's rules: its name and title checked again and its role
+ * re-read from the title, so rows saved before a rule changed are judged the same way.
+ */
+export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind }>(contact: T): T {
+  const title = cleanContactTitle(contact.title);
+  return {
+    ...contact,
+    name: cleanContactName(contact.name),
+    title,
+    role: contact.kind === "person" ? (title ? roleFor(title) : "other") : contact.role,
+  };
 }
 
 function looksLikeTitle(line: string): boolean {
@@ -165,8 +230,8 @@ export function extractContacts(html: string, pageUrl: string, websiteHost: stri
       const kind: ContactKind = GENERAL_MAILBOX.test(local) ? "general" : "person";
       const window = lines.slice(Math.max(0, index - 3), index + 1);
       const before = window.map((text) => text.replace(raw, "").trim()).filter(Boolean);
-      const title = kind === "person" ? ([...before].reverse().find(looksLikeTitle) ?? null) : null;
-      const name = kind === "person" ? ([...before].reverse().find(looksLikeName) ?? null) : null;
+      const title = kind === "person" ? cleanContactTitle([...before].reverse().find(looksLikeTitle) ?? null) : null;
+      const name = kind === "person" ? cleanContactName([...before].reverse().find(looksLikeName) ?? null) : null;
       found.set(email, {
         email,
         kind,
@@ -178,7 +243,10 @@ export function extractContacts(html: string, pageUrl: string, websiteHost: stri
       });
     }
   });
-  return [...found.values()];
+  // A "name" printed beside several different addresses is a heading ("North Pointe"), not a person.
+  const nameUses = new Map<string, number>();
+  for (const contact of found.values()) if (contact.name) nameUses.set(contact.name, (nameUses.get(contact.name) ?? 0) + 1);
+  return [...found.values()].map((contact) => (contact.name && (nameUses.get(contact.name) ?? 0) > 1 ? { ...contact, name: null } : contact));
 }
 
 /** Same-site links that look like leadership, about or contact pages, best first. */
@@ -447,7 +515,7 @@ export async function listProspectContacts(db: SqlTag = sql): Promise<ProspectCo
       JOIN institution_sources s ON s.id = c.institution_id
      ORDER BY s.state_code, s.institution_name, (c.kind = 'person') DESC, c.role, c.email
   `;
-  return rows.map((row) => ({
+  return rows.map((row) => normalizeContact({
     institution_id: Number(row.institution_id),
     institution_name: String(row.institution_name),
     charter_type: row.charter_type === null ? null : String(row.charter_type),
@@ -490,7 +558,56 @@ function csvCell(value: unknown): string {
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
+/**
+ * How sure we are the address reaches a decision-maker (James, 15:39 Oct 8: each prospect
+ * needs a contact, title, source, email and confidence level). High: a named person with a
+ * title in a buying role. Medium: a person's own address with a name or title, but not a
+ * buying role. Low: a person's address with neither, or a shared mailbox.
+ */
+export type ContactConfidence = "high" | "medium" | "low";
+
+export function contactConfidence(contact: Pick<ProspectContactRow, "kind" | "name" | "title" | "role">): ContactConfidence {
+  if (contact.kind !== "person") return "low";
+  if (contact.name && contact.title && contact.role !== "other") return "high";
+  return contact.name || contact.title ? "medium" : "low";
+}
+
+/** Who the first email goes to, best first: marketing and deposit owners before the CEO. */
+const ROLE_PRIORITY: Record<ContactRole, number> = {
+  marketing: 0,
+  retail: 1,
+  executive: 2,
+  finance: 3,
+  operations: 4,
+  compliance: 5,
+  other: 6,
+};
+const CONFIDENCE_PRIORITY: Record<ContactConfidence, number> = { high: 0, medium: 1, low: 2 };
+
+/** One institution's contacts, best first; the first is the primary and the second the backup. */
+export function rankContacts<T extends Pick<ProspectContactRow, "kind" | "name" | "title" | "role" | "email">>(contacts: T[]): T[] {
+  return [...contacts].sort(
+    (a, b) =>
+      CONFIDENCE_PRIORITY[contactConfidence(a)] - CONFIDENCE_PRIORITY[contactConfidence(b)] ||
+      ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role] ||
+      a.email.localeCompare(b.email),
+  );
+}
+
 export function contactsCsv(rows: ProspectContactRow[]): string {
-  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
-  return [header.join(","), ...rows.map((row) => header.map((key) => csvCell(row[key])).join(","))].join("\n") + "\n";
+  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
+  const byInstitution = new Map<number, ProspectContactRow[]>();
+  for (const row of rows) {
+    const list = byInstitution.get(row.institution_id);
+    if (list) list.push(row);
+    else byInstitution.set(row.institution_id, [row]);
+  }
+  const lines: string[] = [];
+  for (const list of byInstitution.values()) {
+    rankContacts(list).forEach((row, index) => {
+      const cells = { ...row, pick: index === 0 ? "primary" : index === 1 ? "backup" : "", confidence: contactConfidence(row) };
+      lines.push(header.map((key) => csvCell(cells[key])).join(","));
+    });
+  }
+  return [header.join(","), ...lines].join("\n") + "\n";
 }
