@@ -70,9 +70,12 @@ type SqlTag = typeof sql;
 // member's NSF check released as NSF, a $5 "Overdraft Protection Fee" beside a $25 Courtesy Pay
 // fee released as overdraft, and an early-closure fee read as "$251 | 1" ($25, footnote 1). Those
 // now stay held (`charged_to_merchant`, `small_overdraft_protection`, `footnote_in_price`).
+// Version 15 (2026-10-08): James set the bar as the complete record, frequency included. "Excess
+// activity charge - $5.00 each after 6" was released as monthly; a fee whose frequency says the
+// opposite of its schedule line now stays held (`frequency_contradicts_line`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 14,
+  version: 15,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -148,6 +151,39 @@ const THIRD_DECIMAL_PRICE = /\$\d+\.\d{3}\b/;
 const MARK_REPEATS_LAST_DIGIT = /\$\d*(\d)\s*\|\s*\1\b/;
 const LAST_DIGIT_ONE_PRICE = /^\d+1$/;
 
+const PERIODIC_FREQUENCIES = new Set(["monthly", "annual", "quarterly"]);
+const PER_ITEM_FREQUENCIES = new Set(["per_item", "per_transaction", "per_occurrence"]);
+const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))\b/i;
+const PERIODIC_WORDING = /\b(per (month|year|quarter)|monthly|annual(ly)?|quarterly|\/\s?(mo|month|yr|year)\b|a month|a year)/i;
+
+/** The words right after the fee's own price on its line ("$5.00 each after 6"), else the whole line. */
+function wordsAfterPrice(sourceLine: string, amount: number | null): string {
+  if (amount == null) return sourceLine;
+  for (const match of sourceLine.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) < 0.005) {
+      const start = (match.index ?? 0) + match[0].length;
+      return sourceLine.slice(start, start + 40).split(/[|;]/)[0];
+    }
+  }
+  return sourceLine;
+}
+
+/**
+ * The fee's frequency says the opposite of its schedule line: "$5.00 each after 6" filed as
+ * monthly, or "$5.00 per month" filed per item. The words after the fee's own price decide, so
+ * "6 withdrawals included per month; ... $5.00 each" reads as each. Wording both ways stays undecided.
+ */
+export function frequencyContradictsLine(frequency: string | null | undefined, sourceLine: string, amount: number | null = null): boolean {
+  if (!frequency || !sourceLine) return false;
+  const words = wordsAfterPrice(sourceLine, amount);
+  const perItem = PER_ITEM_WORDING.test(words);
+  const periodic = PERIODIC_WORDING.test(words);
+  if (perItem === periodic) return false;
+  if (PERIODIC_FREQUENCIES.has(frequency)) return perItem;
+  if (PER_ITEM_FREQUENCIES.has(frequency)) return periodic;
+  return false;
+}
+
 export type ReleaseHoldReason =
   | "category_guard"
   | "business_service_monthly"
@@ -155,7 +191,8 @@ export type ReleaseHoldReason =
   | "name_fragment"
   | "charged_to_merchant"
   | "small_overdraft_protection"
-  | "footnote_in_price";
+  | "footnote_in_price"
+  | "frequency_contradicts_line";
 
 /** True when the price was likely read with a footnote mark printed onto its last digit. */
 export function footnoteInPrice(amount: number | null, sourceLine: string, sourceContext: string | null | undefined): boolean {
@@ -194,6 +231,7 @@ export function releaseHoldReason({
     return "small_overdraft_protection";
   }
   if (footnoteInPrice(price, sourceLine ?? "", sourceContext)) return "footnote_in_price";
+  if (frequencyContradictsLine(row.frequency, sourceLine ?? "", price)) return "frequency_contradicts_line";
   if (key === "monthly_maintenance" && BARE_MONTHLY_NAME.test(name) && BUSINESS_SERVICE_ROWS.test(sourceContext ?? "")) {
     return "business_service_monthly";
   }

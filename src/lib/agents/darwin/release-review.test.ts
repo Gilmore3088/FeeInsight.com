@@ -273,9 +273,9 @@ describe("Darwin held-fee release review", () => {
       sourceLine,
       sourceContext,
     });
-    // Guard v39 (PR 679) rejects a merchant's NSF check outright, before the merchant hold.
+    // Guard v39 (PR 679) now fails a merchant's NSF filing first; it stays held either way.
     expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("category_guard");
-    expect(releaseHoldReason(held("Merchant Overdraft Fee", "overdraft", "25.00"))).toBe("charged_to_merchant");
+    expect(releaseHoldReason(held("Merchant overdraft charge", "overdraft", "5.00"))).toBe("charged_to_merchant");
     expect(releaseHoldReason(held("Charge Back (Merchant Returned Check) per item", "deposited_item_return", "10.00"))).toBeNull();
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("small_overdraft_protection");
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "30.00"))).toBeNull();
@@ -288,6 +288,21 @@ describe("Darwin held-fee release review", () => {
     ).toBe("footnote_in_price");
     expect(releaseHoldReason(held("Wire Transfer", "wire_domestic_outgoing", "21.00", "Wire Transfer | $21", "Stop Payment | $30.00"))).toBeNull();
     expect(releaseHoldReason(held("Stop Payment", "stop_payment", "35.00", "Stop Payment | $35 | 1"))).toBeNull();
+  });
+
+  it("v15 keeps a fee whose frequency contradicts its schedule line held (James, complete-record bar, Oct 8)", () => {
+    const held = (frequency: string | null, sourceLine: string) => ({
+      row: row({ fee_name: "Excess activity charge", held_canonical_fee_key: "account_research", amount: "5.00", frequency }) as unknown as HeldFeeRow,
+      sourceLine,
+      sourceContext: null,
+    });
+    const excess = "6 Withdrawals/debits included per month; Excess activity charge - $5.00 each after 6";
+    expect(releaseHoldReason(held("monthly", excess))).toBe("frequency_contradicts_line"); // "each" follows the $5.00
+    expect(releaseHoldReason(held("monthly", "Monthly fee | $5.00 per month or $1.00 each"))).toBeNull();
+    expect(releaseHoldReason(held("monthly", "Excess activity charge - $5.00 each after 6"))).toBe("frequency_contradicts_line");
+    expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 per month"))).toBe("frequency_contradicts_line");
+    expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 each"))).toBeNull();
+    expect(releaseHoldReason(held(null, "Excess activity charge | $5.00 each"))).toBeNull();
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {
