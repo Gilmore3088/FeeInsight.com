@@ -1,4 +1,4 @@
-import { REPORT_OFFER } from "@/lib/constants";
+import { REPORT_INCLUDES, REPORT_OFFER } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 
 export type ProPlan = "monthly" | "annual";
@@ -58,9 +58,5 @@ export function proFeatureList(summary: PublicStatsSummary): string[] {
   ];
 }
 
-export const REPORT_BULLETS = [
-  "15 headline fees vs your true peer cohort",
-  "Named competitors on the same lines",
-  "Outlier flags and a source citation for every figure",
-  "A board-ready PDF for your pricing committee",
-];
+/** The institution report's contents, worded the same as every other page that lists them. */
+export const REPORT_BULLETS: readonly string[] = REPORT_INCLUDES;
