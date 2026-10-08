@@ -407,10 +407,43 @@ function longLineParts(line: string): string[] {
   return parts;
 }
 
+/**
+ * v46: a paragraph wrapped across lines is read as its sentences. Read line by line, "we will
+ * charge you an overdrawn account fee of $10.00 on the 5th consecutive" named the $10 by the
+ * line above it ("overdrafts created by check, in-person withdrawal ...", Origin Bank) and
+ * "overdrawn $5 / or less" lost the words that make $5 a threshold. A line joins the one above
+ * when neither is a table row, the one above is long and ends mid-sentence, and it starts in
+ * lower case; the joined line is then cut into sentences like any long line.
+ */
+const MIN_WRAPPED_LINE_CHARS = 40;
+const ENDS_SENTENCE = /[.:;!?)]\s*$/;
+const STARTS_LOWER = /^[a-z]/;
+
+export function joinWrappedProse(lines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const previous = joined.at(-1);
+    if (
+      previous != null &&
+      !previous.includes(CELL_SEPARATOR) &&
+      !line.includes(CELL_SEPARATOR) &&
+      previous.length >= MIN_WRAPPED_LINE_CHARS &&
+      !ENDS_SENTENCE.test(previous) &&
+      STARTS_LOWER.test(line)
+    ) {
+      joined[joined.length - 1] = `${previous} ${line}`;
+    } else {
+      joined.push(line);
+    }
+  }
+  return joined;
+}
+
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
-  for (const rawLine of text.split(/\n+/)) {
+  const lines = joinWrappedProse(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()));
+  for (const rawLine of lines) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
     const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];

@@ -11,6 +11,7 @@ import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
+import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
@@ -68,8 +69,8 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
-import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
-import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
@@ -78,7 +79,7 @@ import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learni
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
-import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
+import { lessonsLine, recentLessons, skippedSubjects } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
@@ -961,6 +962,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // The complete-record eval's critical rows (down now, James Oct 8) and the two name
+      // shapes they taught: a rebate published as an ATM fee, a "no fee for" sentence as a fee.
+      const evalVerdicts = await retireEvalVerdictFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A fee read from an article (a blog post quoting a national average), not a schedule.
       const articlePage = await retireArticlePageFees(tx, {
         runId: run.id,
@@ -1183,6 +1192,10 @@ async function executeAgenticStep(
         otherBank.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website.`
           : "";
+      const evalVerdictNote =
+        evalVerdicts.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${evalVerdicts.rolledBack.length.toLocaleString()} fee(s) the complete-record eval or a name rule found wrong.`
+          : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
@@ -1236,7 +1249,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1278,6 +1291,19 @@ async function executeAgenticStep(
             waiting: otherBank.waiting,
             rolled_back: otherBank.rolledBack.length,
             links_cleared: otherBank.linksCleared,
+          },
+          eval_verdict: {
+            eval_matched: evalVerdicts.evalMatched,
+            eval_changed: evalVerdicts.evalChanged,
+            rule_failing: evalVerdicts.ruleFailing,
+            flagged: evalVerdicts.flagged,
+            waiting: evalVerdicts.waiting,
+            rolled_back: evalVerdicts.rolledBack.length,
+            samples: evalVerdicts.rolledBack.slice(0, 11).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              fee_name: fee.feeName,
+              reason: fee.reason,
+            })),
           },
           cross_page_restore: {
             superseded: crossPageRestore.superseded,
@@ -1717,14 +1743,15 @@ async function executeAgenticStep(
       };
     }
     case "content-market-spread": {
-      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts.
+      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts; a
+      // subject James skipped stays out of the next drafts.
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
-      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, MARKET_SPREAD_WORKFLOW) });
       return { status: "completed", summary: [summarizeMarketSpread(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-fee-depth": {
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
-      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, FEE_DEPTH_WORKFLOW) });
       return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-od-by-state": {

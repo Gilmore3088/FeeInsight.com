@@ -3709,6 +3709,23 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
   them live from another bank's host after that.
 
+## 2026-10-08: The failure-streak alert went quiet mid-break
+- **What happened.** Replaying the admin alerts on prod against the 12:06-12:36 publish break:
+  the streak alert was up from 12:08 (3 failed in a row) to 12:25, then went quiet when one
+  publish (run 2883) succeeded at 12:25:46. Two more publishes failed with the same error
+  (12:27, 12:32) with no alert, because the streak was 2 and 8 of ~35 publishes in two hours
+  was under the 50% rate bar.
+- **Why.** The streak resets on any success, and a run with nothing to write can succeed
+  while every run that writes fails.
+- **Fix.** A shared-failure alert (`sharedFailureAlerts`): one step type failing with the same
+  error in 3 or more runs within 24 hours, with no success of that step type since the
+  latest of them. Replayed every 15 minutes from Oct 7 00:00 to Oct 8 23:20, it fires only on
+  four real breaks (discover-paid syntax error Oct 7 01:30, FFIEC `text = date` 06:30,
+  FFIEC HTTP 403 15:15-20:45, publish `fee_category` Oct 8) and is quiet now.
+- **Watch.** Alerts are computed live for the admin home page and the daily brief, not stored,
+  so there is no row to count. The next break shows on the admin home page as soon as a third
+  run fails with the same error.
+
 ## 2026-10-08: Stated frequencies were read from the row above
 - **What happened.** In the seven-state answer keys, 25 of 131 live fees with a stated
   frequency had the wrong one: "Reverse Stop Payment Request $20" was published as annual, and

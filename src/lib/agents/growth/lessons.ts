@@ -9,7 +9,8 @@ type SqlTag = typeof sql;
  * says why, the reason is written to the shared learning store (`pipeline_feedback`) as a
  * `wrong` judgement by growth about stage `marketing`, keyed to the agent that drafted it
  * (`about_strategy` = the queue row's agent). `recentLessons` reads them back so that agent's
- * next brief carries them: the weekly content run lists them in its step result, and a
+ * next brief carries them: the weekly content run leaves a skipped subject out of its next
+ * drafts for the lesson window and lists the lessons in its step result, and a
  * scheduled session reads them from `GET /api/admin/growth/intake?agent=<name>`.
  *
  * Sending a skipped item back to review marks its lesson `restored`, so it drops out of the
@@ -31,6 +32,8 @@ export interface GrowthLesson {
   agent: string;
   kind: string;
   workflow: string | null;
+  /** The skipped draft's subject (a metro, fee and metro, or slug), so its writer can leave it out. */
+  subjectKey: string | null;
   title: string;
   reason: string;
   /** When James skipped it (the lesson's last write). */
@@ -101,11 +104,17 @@ export async function recentLessons(
       agent: String(evidence.agent ?? agent),
       kind: String(evidence.kind ?? ""),
       workflow: evidence.workflow ? String(evidence.workflow) : null,
+      subjectKey: evidence.subject_key ? String(evidence.subject_key) : null,
       title: String(evidence.title ?? ""),
       reason: String(evidence.reason ?? ""),
       at: iso(row.updated_at),
     };
   });
+}
+
+/** Subjects James skipped, with a reason, in one workflow: its writer leaves them out for the lesson window. */
+export function skippedSubjects(lessons: GrowthLesson[], workflow: string): Set<string> {
+  return new Set(lessons.filter((lesson) => lesson.workflow === workflow && lesson.subjectKey).map((lesson) => lesson.subjectKey!));
 }
 
 /** One line for a step summary: how many lessons the brief carried. */
