@@ -10,6 +10,7 @@ import { formatAmount, formatAssets } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
+import { ProNextStep } from "@/components/public/pro-next-step";
 import { getCityFeeAveragesCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
@@ -274,6 +275,8 @@ export default async function CityFeePage({ params }: PageProps) {
             </div>
           </div>
         )}
+
+        <ProNextStep className="mt-8" />
 
         {/* Links */}
         <div className="mt-6 flex flex-wrap gap-3">
