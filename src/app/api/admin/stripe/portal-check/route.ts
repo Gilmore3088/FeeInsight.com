@@ -9,8 +9,9 @@ export const revalidate = 0;
 /**
  * Admin check for the Stripe customer portal behind "Manage billing". Reads the default
  * portal configuration (what a customer can do there and which Terms/Privacy links it shows),
- * then opens one portal session for an existing customer to prove the button works. Nothing is
- * charged or changed. Stripe's customer email settings are not readable through its API.
+ * sets those links when missing, then opens one portal session for an existing customer to prove
+ * the button works. Nothing is charged. Stripe's customer email settings are not readable
+ * through its API.
  */
 async function handleGET() {
   const user = await getCurrentUser();
@@ -21,9 +22,20 @@ async function handleGET() {
   const origin = process.env.NEXT_PUBLIC_SITE_URL || "https://feeinsight.com";
 
   let configuration = null;
+  let linksSet = false;
   try {
     const configs = await stripe.billingPortal.configurations.list({ is_default: true, limit: 1 });
-    const config = configs.data[0];
+    let config = configs.data[0];
+    // The portal shows our Privacy and Terms links. Set them when missing; idempotent.
+    if (config && (!config.business_profile.privacy_policy_url || !config.business_profile.terms_of_service_url)) {
+      config = await stripe.billingPortal.configurations.update(config.id, {
+        business_profile: {
+          privacy_policy_url: config.business_profile.privacy_policy_url || `${origin}/privacy`,
+          terms_of_service_url: config.business_profile.terms_of_service_url || `${origin}/terms`,
+        },
+      });
+      linksSet = true;
+    }
     if (config) {
       configuration = {
         id: config.id,
@@ -44,16 +56,19 @@ async function handleGET() {
   }
 
   // Prefer the admin's own customer; otherwise the most recent one. No customer is created.
-  let portal: { customer: string; opened: boolean } | { error: string } | null = null;
+  // A session needs a customer that exists for this key; ids saved before the switch to live
+  // keys are test-mode ones, so the check asks Stripe for a live customer instead.
+  let portal: { customer: string; opened: boolean } | { error: string } | { skipped: string };
   try {
-    const customerId =
-      user.stripe_customer_id ?? (await stripe.customers.list({ limit: 1 })).data[0]?.id ?? null;
+    const customerId = (await stripe.customers.list({ limit: 1 })).data[0]?.id ?? null;
     if (customerId) {
       const session = await stripe.billingPortal.sessions.create({
         customer: customerId,
         return_url: `${origin}/account`,
       });
       portal = { customer: customerId, opened: Boolean(session.url) };
+    } else {
+      portal = { skipped: "No customer exists in this Stripe mode yet; the first checkout creates one." };
     }
   } catch (err) {
     portal = { error: err instanceof Error ? err.message : String(err) };
@@ -64,13 +79,15 @@ async function handleGET() {
       configuration.cancelSubscriptions &&
       configuration.updatePaymentMethod &&
       configuration.invoiceHistory &&
-      portal &&
-      "opened" in portal &&
-      portal.opened,
+      configuration.privacyPolicyUrl &&
+      configuration.termsOfServiceUrl &&
+      !("error" in portal) &&
+      !("opened" in portal && !portal.opened),
   );
   return NextResponse.json({
     ok,
     configuration,
+    linksSet,
     portal,
     emails: "Stripe's receipt and failed-payment email settings are not readable through its API.",
     checkedAt: new Date().toISOString(),
