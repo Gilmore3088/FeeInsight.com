@@ -10,6 +10,7 @@ import { timeAgo } from "@/lib/format";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import type { SignalEntry, AlertEntry } from "@/lib/hamilton/home-data";
 import { LinkButton, SERIF } from "@/components/hamilton/memo/memo";
+import { CompetitorAlertExhibit } from "@/components/hamilton/monitor/CompetitorAlertExhibit";
 
 interface SignalFeedProps {
   signals: SignalEntry[];
@@ -219,15 +220,28 @@ function ChangeItem({ signal, isAlert }: { signal: SignalEntry; isAlert: boolean
             </time>
           ) : null}
         </div>
-        <h3 className="mt-1 text-lg leading-snug text-warm-900" style={SERIF}>
-          {institutionName}
-        </h3>
-        <p className="mt-1 text-pretty text-sm leading-relaxed text-warm-800">{whatChanged}</p>
-        {detail ? <p className="mt-1 text-pretty text-sm leading-relaxed text-warm-700">{detail}</p> : null}
+        {signal.competitorChange ? (
+          <div className="mt-2">
+            <CompetitorAlertExhibit signalId={signal.id} title={signal.title} detail={signal.competitorChange} />
+          </div>
+        ) : (
+          <>
+            <h3 className="mt-1 text-lg leading-snug text-warm-900" style={SERIF}>
+              {institutionName}
+            </h3>
+            <p className="mt-1 text-pretty text-sm leading-relaxed text-warm-800">{whatChanged}</p>
+            {detail ? <p className="mt-1 text-pretty text-sm leading-relaxed text-warm-700">{detail}</p> : null}
+          </>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           <Link href={action.href} className="text-terra-text underline">
             {action.label}
           </Link>
+          {signal.competitorChange?.scheduleUrl ? (
+            <a href={signal.competitorChange.scheduleUrl} rel="noopener noreferrer" target="_blank" className="text-terra-text underline">
+              See the fee schedule
+            </a>
+          ) : null}
           {evidence ? <span className="text-xs text-warm-600">{evidence}</span> : null}
         </div>
       </article>
