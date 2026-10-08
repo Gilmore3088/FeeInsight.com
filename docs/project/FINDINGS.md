@@ -62,6 +62,9 @@ deploy (`VERCEL_GIT_COMMIT_SHA`); each tick, a lane whose last run failed on a f
 runs, which the current deploy has not repeated, reruns at once with a `run.recovery_rerun` event.
 **Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
 deploy, not one success.
+**Follow-up (13:30 UTC):** the rerun fired at 13:00 for 7 states (IA, KS, LA, MO, MS, NM, NH), but
+42 lanes were due and the queue runs about 5 an hour, so none had started 30 minutes later. Woken
+lanes now go first in the due queue. Waking a lane is not a rerun until it has a slot.
 
 ## 2026-10-08: Hand-given schedules were invisible on the Gold standard queue
 **What happened:** James gave Chase's and Citi's fee schedule links, but the Knox Gold standard

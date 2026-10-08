@@ -6,6 +6,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { getBeigeBookHeadline } from "@/lib/data-store/fed";
+import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
 import { feeRules } from "@/lib/hamilton/workspace/context";
 import type { Fact } from "@/lib/hamilton/workspace/types";
 
@@ -79,6 +80,7 @@ async function loadReleases(): Promise<{ fee: RegulatoryRelease[]; enforcement: 
     SELECT source, title, link, published_at
       FROM reg_articles
      WHERE published_at >= NOW() - make_interval(days => ${RELEASE_WINDOW_DAYS})
+       AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
      ORDER BY published_at DESC NULLS LAST
      LIMIT 500
   `) as unknown as ArticleRow[];

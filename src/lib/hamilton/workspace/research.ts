@@ -18,6 +18,7 @@ import {
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
+import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
@@ -310,6 +311,7 @@ async function loadRegArticles(days: number, now = new Date()): Promise<RegArtic
       SELECT source, title, link, topic, published_at
         FROM reg_articles
        WHERE published_at >= ${sinceDate(days, now)}
+         AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
        ORDER BY published_at DESC
        LIMIT 300`;
     return rows.map((r) => ({
