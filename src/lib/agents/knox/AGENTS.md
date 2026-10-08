@@ -458,6 +458,7 @@ v35 (rules 35, from the $10B+ banks with no live overdraft fee, Oct 8):
 - "OD" and "O/D" followed by the fee's own word ("OD Privilege", "OD Fee-Item Paid", "Paid Item O/D Fee") name the overdraft fee. Before, such a line was read as no fee at all, not even held (GreenState's "OD Privilege* ... | $29.00/Item"). 29 banks' texts have such a line, 10 of them with no live overdraft fee.
 - "Continued OD Charge", "Consecutive Day OD Fee" and "Daily OD Fee" are the continuous overdraft charge, as the spelled-out names already were.
 - "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).
+- The held re-check takes $10B+ banks' held lines first, as Knox's re-reads do; a full pass over about 19,000 held lines takes about 12 hours at 300 a step.
 
 ## Fees named by page context (`context-names.ts`, v33)
 
