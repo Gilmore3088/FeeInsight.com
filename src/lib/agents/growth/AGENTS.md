@@ -150,7 +150,9 @@ Skipping a queue item with a reason at `/admin/customers/content` writes a `pipe
 row: `reported_by` growth, `about_stage` marketing, `about_strategy` the item's agent, signal
 `wrong`, kind `skipped_by_james`, dedupe key `growth.skip:draft:<id>`. Sending it back to review
 marks it `restored`. `recentLessons(db, agent)` returns the standing ones (90 days, newest 10):
-the weekly content steps read MURROW's before drafting and list them in their step result, and a
+the weekly content steps read MURROW's before drafting, leave each skipped subject (a fee and
+metro, or a metro) out of that workflow's drafts while its lesson stands (`skippedSubjects`), and
+list them in their step result, and a
 scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
 
 These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
