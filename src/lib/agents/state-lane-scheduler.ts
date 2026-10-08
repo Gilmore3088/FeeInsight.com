@@ -1119,7 +1119,15 @@ export async function scheduleDueStateLaneRuns({
          -- longest overdue first. Busy lanes come back due every hour and wait past the cut-off
          -- too, so ranking overdue lanes by score kept GA, KY, CT, PR, VI, DC and GU waiting
          -- since Oct 7 (2026-10-08).
-         ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
+         -- A lane woken by wakeLanesAfterRecovery goes first: its pass already failed once
+         -- on our break, and with 40+ lanes due the woken ones waited hours (2026-10-08).
+         -- The event sits on the failed run, so the new run ends the head start.
+         ORDER BY EXISTS (
+                    SELECT 1 FROM public.agent_run_events rerun
+                     WHERE rerun.agent_run_id = agent_state_lanes.last_agent_run_id
+                       AND rerun.event_type = 'run.recovery_rerun'
+                  ) DESC,
+                  (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
                   CASE WHEN next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour'
                        THEN next_run_after END ASC NULLS LAST,
                   priority_score DESC, next_run_after ASC, state_code ASC

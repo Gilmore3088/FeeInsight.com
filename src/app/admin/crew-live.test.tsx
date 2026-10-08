@@ -38,13 +38,20 @@ describe("CrewLive", () => {
     expect(screen.getAllByText("Downloaded 25 fee schedules in GA.").length).toBeGreaterThan(0);
   });
 
-  it("filters the activity log to one worker when its card is clicked", () => {
+  it("opens each worker's screen from its card", () => {
+    render(<CrewLive initialCrew={crew} initialFeed={feed} />);
+    expect(screen.getByRole("link", { name: /Magellan/ }).getAttribute("href")).toBe("/admin/magellan");
+    expect(screen.getByRole("link", { name: /Knox/ }).getAttribute("href")).toBe("/admin/knox");
+  });
+
+  it("filters the activity log to one worker from the Show menu", () => {
     render(<CrewLive initialCrew={crew} initialFeed={feed} />);
     expect(screen.getByText("Stopped with an error")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Magellan/ }));
+    const select = screen.getByLabelText(/Show/);
+    fireEvent.change(select, { target: { value: "magellan" } });
     expect(screen.queryByText("Stopped with an error")).toBeNull();
     expect(screen.getByText("Activity log · Magellan")).toBeTruthy();
-    fireEvent.click(screen.getByText("Show everyone"));
+    fireEvent.change(select, { target: { value: "" } });
     expect(screen.getByText("Stopped with an error")).toBeTruthy();
   });
 });

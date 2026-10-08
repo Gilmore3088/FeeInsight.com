@@ -75,7 +75,7 @@ async function handlePOST(request: Request) {
       {
         error: "Authentication required",
         code: "public_ai_disabled",
-        message: "Public Hamilton AI is disabled. Sign in with a Seat License to run provider-backed analysis.",
+        message: "Public Hamilton AI is disabled. Sign in with Fee Insight Pro to run provider-backed analysis.",
       },
       { status: 401 },
     );
@@ -110,7 +110,7 @@ async function handlePOST(request: Request) {
       {
         error: "Active subscription required",
         code: "public_ai_disabled",
-        message: "Public Hamilton AI is disabled. Use deterministic institution evidence publicly or sign in with a Seat License.",
+        message: "Public Hamilton AI is disabled. Use deterministic institution evidence publicly or sign in with Fee Insight Pro.",
       },
       { status: 403 },
     );

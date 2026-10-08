@@ -22,6 +22,13 @@ describe("repairWebsiteUrl", () => {
     expect(repairIsWorthSaving(repair)).toBe(false);
   });
 
+  it("drops a scheme stored twice", () => {
+    const repair = repairWebsiteUrl("https://HTTP://WWW.BANKWITHCHOICE.COM");
+    expect(repair).toMatchObject({ status: "repaired", url: "https://www.bankwithchoice.com" });
+    expect(repair.changes).toContain("removed_doubled_scheme");
+    expect(repairIsWorthSaving(repair)).toBe(true);
+  });
+
   it("adds the dot missing after www", () => {
     const repair = repairWebsiteUrl("wwwfirstbank.com");
     expect(repair).toMatchObject({ status: "repaired", url: "https://www.firstbank.com" });

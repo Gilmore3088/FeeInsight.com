@@ -13,6 +13,33 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro checkout's own error messages never reached the buyer
+**What happened:** the buyer-path audit (overnight Oct 8) found `createCheckoutSession` threw
+"Pick your bank or credit union first", the "we don't have its asset size, email us" line and
+"Not authenticated". Production builds replace a thrown server-action message with a generic one,
+so the buyer saw "Something went wrong" and a signed-out click never reached the register hand-off.
+No count of affected buyers is known (0 paid so far).
+**Cause:** server actions that throw for expected, buyer-facing outcomes.
+**Fix:** the buyer-path audit PR on branch `claude/ux-audit-9d9mdr` returns `{ url, error, needsSignIn }` instead.
+**Lesson:** a server action returns expected problems as data; throw only for real faults.
+
+## 2026-10-08: Admin Health and Learning screens read stale or misleading numbers
+**What happened:** James said the Health and Learning tabs looked "weird or not working". Health
+read `agent_health_rollup`, a rollup from the old plan that holds 57 agent names. 51 of them are
+retired `state_xx` agents frozen on 2026-08-12, plus `discoverer`, `extractor` and the old atlas,
+hamilton and magellan rows, all frozen in August. Only knox and darwin still get rows. Two of its
+five metrics (`review_latency_seconds`, `confidence_drift`) are empty in every row, prod 09:03 UTC.
+Learning scored every attempt that wasn't `ok` as a failure. So "no candidates" (a document with
+no wire fees) and "unchanged" (copy already current) drew red bars. Examples: Knox's checks family
+showed 35% when 65% of its tries simply had nothing to find, and Darwin's release step showed 28%
+with 67% unchanged.
+**Cause:** Health was never moved to the run ledger when the agents were. Learning's success
+share had no third outcome.
+**Fix:** PR 546 rebuilds Health on `agent_run_steps` (done and failed per agent per day, judged on
+the last two days). Learning now shows worked / nothing there / failed. Waiting for James to merge.
+**Lesson:** an admin screen that reads a rollup table must show where the rollup's newest row is.
+Count "nothing to do" apart from failures wherever a success rate is shown.
+
 ## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
 **What happened:** the first `registry-state-reg-news` run (12:27 UTC, PR 568) read 31 of 55 regulator
 sites and 311 items, but many were menu links ("Public Meetings and Notices"), links named by their own
@@ -45,6 +72,9 @@ deploy (`VERCEL_GIT_COMMIT_SHA`); each tick, a lane whose last run failed on a f
 runs, which the current deploy has not repeated, reruns at once with a `run.recovery_rerun` event.
 **Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
 deploy, not one success.
+**Follow-up (13:30 UTC):** the rerun fired at 13:00 for 7 states (IA, KS, LA, MO, MS, NM, NH), but
+42 lanes were due and the queue runs about 5 an hour, so none had started 30 minutes later. Woken
+lanes now go first in the due queue. Waking a lane is not a rerun until it has a slot.
 
 ## 2026-10-08: Hand-given schedules were invisible on the Gold standard queue
 **What happened:** James gave Chase's and Citi's fee schedule links, but the Knox Gold standard
@@ -3200,3 +3230,82 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
   what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
   230 s at a time).
+
+## 2026-10-08: Almost every recorded fee change pairs two different fee schedules
+**What happened:** a read-only check of prod at 13:30 UTC on Oct 8 found 22 `fee_change_records` since
+`FEE_MOVES_TRACKED_SINCE`. All 22 are past the 12-hour second look and have a Darwin-verified live
+new row. In 21 of them the old price was read from a different page than the new price. Examples:
+Tidemark FCU's business rate sheet against its consumer Truth-in-Savings disclosure, and Opportunity
+Bank's business fee schedule against its consumer one. The one same-page pair, Net FCU's stop payment
+($35 to $30), was its February 2026 schedule read twice, with the second read pairing the neighbouring
+price. None was a bank changing a price.
+**Cause:** `supersedePriorFee` in `src/lib/agents/hamilton/publish.ts` closes the live row for the same
+institution and `canonical_fee_key` whatever page it came from, and writes a change record. When a bank
+publishes separate business and consumer schedules, the newer read of one schedule takes the other
+schedule's price off the live catalog and logs the difference as a price change.
+**Fix:** none yet in publish; that rule belongs to the Hamilton publish owners. Competitor alerts (PR 430)
+pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
+alert has been raised from these records.
+**Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
+
+## 2026-10-08: Paid search answers dropped because the bank's site refused our check
+
+- **Problem.** The paid web search and the paid schedule search open the model's answer with
+  our own fetcher before keeping it. When the bank's site refused that fetch (HTTP 403), the
+  answer was dropped: the search was paid for and the bank kept no link. A 403 is not a
+  monthly-retry outcome, so the bank was never searched again. On 8 Oct, 72 such answers sat
+  in `pipeline_attempts` (53 banks with no fee link at all), among them Synchrony, Independence
+  Bank of Kentucky, Community National Bank (VT), Aloha Pacific and Alliant, all in their
+  state's top 10 by deposits with no live fee. The web search started keeping 403 answers on
+  7 Oct; the schedule search never did.
+- **Fix.** The schedule search keeps a 403 answer as a companion. `keepRefusedPaidAnswers`
+  (`refused-answers.ts`) stores each answer dropped before, once, at no cost, from the discover
+  step; the paid fetch then reads the page.
+- **Watch.** `discover.keep_refused_answer` attempts (`ok` vs `unchanged`) and, after the paid
+  fetch, live fees for the banks kept.
+
+## 2026-10-08: The paid fetch for blocked pages fell behind
+
+- **Problem.** About nine paid Magellan steps ran a day on 8 Oct, each fetching 3 blocked pages,
+  while 24 blocked pages waited (PenFed's schedule among them, never tried) and the refused
+  paid answers above were adding 72 more. Zions' hand-given schedule sits on amegybank.com,
+  which the companion selection's own-site check threw out, so it was never fetched at all.
+- **Fix.** Six pages per paid step, two kept for companions. A companion given by hand
+  (`discover.operator_schedule`) passes the own-site check.
+- **Watch.** `fetch.paid_web_fetch%` attempts a day, and Zions (35) and PenFed (4382) documents.
+
+## 2026-10-08: Banks the old crawler marked offline were never searched
+
+- **Problem.** 17 active banks (Alaska, Wyoming, Kansas) carried `document_type = 'offline'` from
+  the old crawler, which became `source_kind = 'offline'` / `read_strategy = 'manual_review'`
+  on their profile (4 Oct). Discovery skips both, so none was ever searched, although all but two
+  have a working website. Four are in their state's top 10 by deposits: First Bank, Mt. McKinley
+  Bank and Denali State Bank (AK) and The Converse County Bank (WY). Separately, 11 banks' websites
+  were stored with the scheme twice (`https://HTTP://WWW.BANKWITHCHOICE.COM`); website repair
+  rejected them and they waited a month as `needs_human`.
+- **Fix.** Discovery searches an offline-marked bank once per discovery method version (never
+  one locked by a person's correction). Website repair drops a doubled scheme, and a bank whose
+  website could not be repaired is due again after 12 hours, since that check costs no fetch.
+- **Watch.** `discover` attempts for those 17 and the 11, and their links.
+
+## 2026-10-08: Fee links on government, broker and car-price sites
+
+- **Problem.** 11 banks' fee link was a page on another site: a city's HSA agreement for Bell
+  Bank (ND top 10), CFPB card agreements for Barclays, Charter Oak, Marine FCU and Vantage West,
+  LPL's broker summary, a bankruptcy court fee schedule, the FDIC's overdraft explainer, JD Power
+  and NADA car pages. The upgrade search only looked at product pages, articles and single
+  product disclosures, so these stood as the bank's schedule.
+- **Fix.** The upgrade search also takes a link on such a host (`isOtherSiteLink`), unless the
+  host is the bank's own website, and never keeps it as a companion.
+- **Watch.** Upgrade `discover` attempts for those 11 and their new links.
+
+
+## 2026-10-08: Hamilton's studies kept old Census income after a new year landed
+**What happened:** Census ACS 2024 loaded on prod at 13:37 UTC on Oct 8. The current local income study
+(`hamilton_studies`, as of 2026-Q4) still named ACS 2022 as its income source, and the daily studies
+run would have reported it "already current" until the quarter changed.
+**Cause:** `store` in `src/lib/agents/hamilton/studies/index.ts` skipped any study whose key, method
+and quarter were already stored, without looking at the periods of the data behind it.
+**Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
+(`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
+**Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
