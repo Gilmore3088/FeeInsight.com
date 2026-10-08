@@ -221,8 +221,8 @@ export function narrateStepFinished(
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
     case "content-od-by-state": {
-      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted the overdraft-fees-by-state article for James to publish.`;
-      return `Drafted no overdraft-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
+      return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;

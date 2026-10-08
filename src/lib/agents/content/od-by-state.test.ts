@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { unbackedNumbers } from "@/lib/agents/marketing/facts";
 import {
   ENDS,
+  FEE_TOPICS,
   allowedOdNumbers,
+  nextTopic,
   articleSlug,
   draftOdArticle,
   summarizeOdByState,
@@ -61,5 +63,36 @@ describe("draftOdArticle", () => {
 
   it("names one article per month", () => {
     expect(articleSlug(new Date("2026-11-01T00:00:00Z"))).toBe("overdraft-fees-by-state-2026-11");
+  });
+
+  it("writes another fee's article in that fee's words", () => {
+    const summary = summarizeOdByState(rows(), "nsf");
+    const article = draftOdArticle(summary, asOf, FEE_TOPICS[1])!;
+    expect(article.slug).toBe("nsf-fees-by-state-2026-10");
+    expect(article.title).toBe("NSF fees by state, October 2026");
+    expect(article.content).toContain("## States with the highest median NSF fee");
+    expect(article.content).toContain("publish an NSF fee;");
+    expect(article.content).not.toMatch(/overdraft/i);
+    const text = `${article.title}\n${article.subtitle}\n${article.content.replace(/\]\([^)]*\)/g, "]")}`;
+    expect(unbackedNumbers(text, allowedOdNumbers(summary, asOf))).toEqual([]);
+  });
+});
+
+describe("nextTopic", () => {
+  const asOf = new Date("2026-10-11T13:37:00Z");
+
+  it("starts with overdraft and moves to the next fee once that month's article exists", () => {
+    expect(nextTopic(new Set(), asOf)?.category).toBe("overdraft");
+    expect(nextTopic(new Set(["overdraft-fees-by-state-2026-10"]), asOf)?.category).toBe("nsf");
+    // Last month's articles don't count against this month.
+    expect(nextTopic(new Set(["overdraft-fees-by-state-2026-09"]), asOf)?.category).toBe("overdraft");
+  });
+
+  it("stops once every topic has this month's article", () => {
+    expect(nextTopic(new Set(FEE_TOPICS.map((topic) => articleSlug(asOf, topic))), asOf)).toBeNull();
+  });
+
+  it("uses dashes in slugs for multi-word fees", () => {
+    expect(articleSlug(asOf, FEE_TOPICS[3])).toBe("atm-non-network-fees-by-state-2026-10");
   });
 });
