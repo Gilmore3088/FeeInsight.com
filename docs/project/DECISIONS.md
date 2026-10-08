@@ -52,7 +52,9 @@ Appraisal as its own type (folding it into loan origination would move that medi
 11:44 UTC picked Mortgage Lien Release (with reconveyance) to fold into Other Lending Fee in its
 place. He also asked to see the fees with no home before any
 are archived, so Hamilton's fold step flags them but keeps them live
-(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
+(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. At 15:42 UTC, after seeing the list
+of 248, he said "drop them -- the 248", so the switch is on: they are archived (rolled back with
+reason `taxonomy_fold:`, logged) once their 12-hour second look passes. Nothing is deleted.
 
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
