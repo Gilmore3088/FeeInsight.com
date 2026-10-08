@@ -6,6 +6,7 @@ import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
@@ -885,6 +886,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // The top-50 fold: fees under the fifteen retired categories move to the one their
+      // wording places them in, before any sweep judges them by category (fee-fold.ts).
+      const taxonomyFold = await foldRetiredCategories(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -1056,6 +1064,8 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              taxonomyFold.movedLive > 0 ||
+              taxonomyFold.noHomeRolledBack > 0 ||
               outlierRestores.length > 0 ||
               offTaxonomyRestores.length > 0 ||
               limitRollbacks.length > 0 ||
@@ -1077,6 +1087,10 @@ async function executeAgenticStep(
       const outlierNote =
         outlierRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
+          : "";
+      const foldNote =
+        taxonomyFold.moved + taxonomyFold.noHomeRolledBack + taxonomyFold.noHomeHeld > 0
+          ? ` ${published.dryRun ? "Would fold" : "Folded"} ${taxonomyFold.moved.toLocaleString()} fee(s) from retired categories into the top 50${taxonomyFold.noHomeRolledBack > 0 ? `; ${published.dryRun ? "would take" : "took"} down ${taxonomyFold.noHomeRolledBack.toLocaleString()} with no home there after a second look` : ""}${taxonomyFold.noHomeHeld > 0 ? `; kept ${taxonomyFold.noHomeHeld.toLocaleString()} with no home live until James decides` : ""}.`
           : "";
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0
@@ -1138,7 +1152,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1156,6 +1170,7 @@ async function executeAgenticStep(
             amount: rollback.amount,
             reason: rollback.reason,
           })),
+          taxonomy_fold: taxonomyFold,
           off_taxonomy_rollbacks: offTaxonomyRollbacks.length,
           off_taxonomy_rollback_samples: offTaxonomyRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,

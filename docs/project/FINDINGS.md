@@ -1180,7 +1180,10 @@ are removed, and that happens later, in `tidyFeeName`. Fix: `tidyFeeName` strips
 number in each cell after the leaders are gone. The live repair now runs in the pipeline: Knox
 name retidy v2 counts a footnoted name as messy and renames it (logged per row in
 `pipeline_feedback`), so no hand SQL is needed. A dry run on the live rows renamed all 22 and
-skipped none.
+skipped none. At 11:11 UTC, 13 of those 22 were renamed. The other 9 live footnoted names sit at 5
+institutions: 4 of those institutions are later in the retidy sweep (it goes by institution id,
+40 per step). The fifth has a 14-word name that the run-on limit kept as it was, which retidy v3
+fixes.
 **Lesson 2:** a cleanup that keys on "end of the name" has to run after every other step that
 trims the name.
 
