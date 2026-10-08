@@ -73,9 +73,14 @@ type SqlTag = typeof sql;
 // Version 15 (2026-10-08): James set the bar as the complete record, frequency included. "Excess
 // activity charge - $5.00 each after 6" was released as monthly; a fee whose frequency says the
 // opposite of its schedule line now stays held (`frequency_contradicts_line`).
+// Version 16 (2026-10-08): the first 200-fee complete-record eval found frequency blank on 48% of
+// live fees although the line said "each" or "per month", and 25 of 31 bad names were dot leaders,
+// footnotes, bullet text, table headers or two-column glue. A released fee now takes its frequency
+// from the words after its own price when they point one way (`frequencyFromLine`), and those name
+// shapes stay held (`name_fragment`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 15,
+  version: 16,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -130,8 +135,21 @@ const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit
 const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
 /** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
 const SMALL_NSF_AMOUNT = 10;
-/** A name cut from the middle of a line: "/hr incl. reproduction", "account research fee may apply)". */
-const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$/;
+/**
+ * A name cut from the middle of a line ("/hr incl. reproduction", "account research fee may apply)"),
+ * or text that is not a name: dot leaders or a footnote mark glued on ("Replacement ………", "00/item
+ * Counter Checks"), a sentence or bullet fragment ("charge for each one-time debit", "Fees: o A
+ * Minimum Balance Fee", "(for each overdraft item"), or a table header kept ("Garnishment / Levy: Fee").
+ */
+const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$|[.…]{3,}|(\.\s){3,}|^\s*\d+\s*\/|^\s*\(|^\s*[Ff]ees?:\s|\bo\s[A-Z]|:\s*[Ff]ee\s*$/;
+/** A name that starts lowercase is a sentence cut from its line, unless it is a product spelled that way. */
+const SENTENCE_START = /^\s*[a-z]/;
+const LOWERCASE_PRODUCT_NAME = /^\s*e-?(statement|banking|bill)/i;
+
+export function nameIsFragment(name: string): boolean {
+  if (NAME_FRAGMENT.test(name)) return true;
+  return SENTENCE_START.test(name) && !LOWERCASE_PRODUCT_NAME.test(name);
+}
 
 /** A fee the merchant or payee pays ("Merchant presenting NSF check from member"), not the member. */
 const CHARGED_TO_MERCHANT = /\bmerchants?\b/i;
@@ -184,6 +202,22 @@ export function frequencyContradictsLine(frequency: string | null | undefined, s
   return false;
 }
 
+/**
+ * The frequency the fee's own line states after its price, when the wording points one way:
+ * "$5.00 each" is per_item, "$5.00 per month" monthly. Null when the line says nothing or both.
+ */
+export function frequencyFromLine(sourceLine: string, amount: number | null): string | null {
+  if (!sourceLine) return null;
+  const words = wordsAfterPrice(sourceLine, amount);
+  const perItem = PER_ITEM_WORDING.test(words);
+  const periodic = PERIODIC_WORDING.test(words);
+  if (perItem === periodic) return null;
+  if (perItem) return "per_item";
+  if (/\b(per quarter|quarterly)\b/i.test(words)) return "quarterly";
+  if (/\b(per year|annual(ly)?|\/\s?(yr|year)|a year)\b/i.test(words)) return "annual";
+  return "monthly";
+}
+
 export type ReleaseHoldReason =
   | "category_guard"
   | "business_service_monthly"
@@ -218,7 +252,7 @@ export function releaseHoldReason({
   const key = row.held_canonical_fee_key;
   const name = row.fee_name ?? "";
   if (!checkFeeCategory(key, name, row).ok) return "category_guard";
-  if (NAME_FRAGMENT.test(name)) return "name_fragment";
+  if (nameIsFragment(name)) return "name_fragment";
   const price = row.amount == null ? null : Number(row.amount);
   if (MEMBER_OVERDRAFT_CATEGORIES.has(key) && CHARGED_TO_MERCHANT.test(name)) return "charged_to_merchant";
   if (
@@ -656,9 +690,13 @@ export async function runDarwinReleaseReview(
       const holdReason = releaseHoldReason(candidate);
       const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null;
       if (passes) result.passed += 1;
+      // A blank frequency takes what the line says after the price; a stated one is kept (or held above).
+      const price = candidate.row.amount == null ? null : Number(candidate.row.amount);
+      const lineFrequency = candidate.row.frequency ? null : frequencyFromLine(candidate.sourceLine, price);
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
-        feeVerifiedId = (await releaseHeldFee(db, { runId: options.runId, row: candidate.row, sourceLine: candidate.sourceLine })).feeVerifiedId;
+        const row = lineFrequency ? { ...candidate.row, frequency: lineFrequency } : candidate.row;
+        feeVerifiedId = (await releaseHeldFee(db, { runId: options.runId, row, sourceLine: candidate.sourceLine })).feeVerifiedId;
         if (feeVerifiedId != null) result.released += 1;
       }
       await recordAttempt(db, {
@@ -678,6 +716,7 @@ export async function runDarwinReleaseReview(
           refiles_to: refilesTo,
           premium_service: premium,
           hold_reason: holdReason,
+          frequency_filled: lineFrequency,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,
