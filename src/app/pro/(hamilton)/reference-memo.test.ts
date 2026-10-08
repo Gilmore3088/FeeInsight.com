@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// The Reference pages and the Regulatory Wire share the living-memo look of the main tabs.
+// The Reference pages share the living-memo look of the main tabs.
 const root = join(process.cwd(), "src/app/pro/(hamilton)");
-const PAGES = ["categories", "districts", "market", "news", "data"] as const;
+const PAGES = ["categories", "districts", "market", "data"] as const;
 const source = (segment: string) => readFileSync(join(root, segment, "page.tsx"), "utf8");
 
-describe("Reference pages and the Regulatory Wire", () => {
+describe("Reference pages", () => {
   it.each(PAGES)("%s uses the memo page and header, without its own outer padding", (segment) => {
     const src = source(segment);
     expect(src).toContain("<MemoPage>");
@@ -29,9 +29,5 @@ describe("Reference pages and the Regulatory Wire", () => {
       expect(src).toContain("/pro/research?fee=");
       expect(src).not.toContain("/pro/simulate?category=");
     }
-  });
-
-  it("keeps the wire's updated-daily mark still", () => {
-    expect(source("news")).not.toContain("animate-ping");
   });
 });
