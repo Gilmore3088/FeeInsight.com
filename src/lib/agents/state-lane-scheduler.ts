@@ -180,11 +180,15 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
  * hourly too (James, 2026-10-06: close the 297 dense schedules the free team can't
  * read): it picks only dense texts the current free version read poorly and that no paid
  * attempt has read, at most PAID_PASS_ITEMS_PER_RUN a run, so it spends nothing once they
- * are read, and the Knox and global budget caps still stop it. A re-read downloads a
+ * are read, and the Knox and global budget caps still stop it. Darwin's paid pass runs
+ * hourly for the same reason (2026-10-07: with it on the full pass only, held fees went
+ * unreviewed from 14:24 UTC once the last full passes drained): it reviews only held fees
+ * and disagreements no attempt of the current version has read, so it too spends nothing
+ * once they are done, and the Darwin and global budget caps still stop it. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "verify-paid", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));

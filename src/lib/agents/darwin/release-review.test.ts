@@ -15,6 +15,7 @@ import {
   parseReleaseReviews,
   releaseReviewPrompt,
   reviewPasses,
+  premiumServiceMisfiled,
   runDarwinReleaseReview,
 } from "./release-review";
 
@@ -76,6 +77,9 @@ describe("Darwin held-fee release review", () => {
     expect(scheduleContext(text, "Return item $5.00")).toBe("Account Fees\nReturn item $5.00\nEarly close $10.00\nStop Payment $30.00\nWire $20.00");
     expect(scheduleContext(text, "Not on this page $1")).toBeNull();
     expect(scheduleContext(null, "Return item $5.00")).toBeNull();
+    expect(scheduleContext("Closed Savings Fee\n$5.00\nIncorrect Address Fee\n$5.00 per month", "Incorrect Address Fee | $5.00 per month")).toBe(
+      "Closed Savings Fee\n$5.00\nIncorrect Address Fee\n$5.00 per month",
+    );
     const prompt = releaseReviewPrompt([
       { row: row() as unknown as HeldFeeRow, sourceLine: "Stop Payment $30.00", sourceContext: "Early close $10.00\nStop Payment $30.00" },
     ]);
@@ -97,6 +101,11 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("Smart Safe");
     expect(prompt).toContain("footnote marker");
     expect(prompt).toContain("jumbled text");
+    expect(prompt).toContain("FEE WAIVED");
+    expect(prompt).toContain("re-clearing a check");
+    expect(prompt).toContain("online wires");
+    expect(prompt).toContain("emergency");
+    expect(prompt).toContain("prices go with the names in order");
   });
 
   it("puts the learning store's lessons for a batch's categories in the prompt", () => {
@@ -168,12 +177,11 @@ describe("Darwin held-fee release review", () => {
     expect(prompt).toContain("account_research");
     expect(prompt).toContain("bad address");
     expect(prompt).toContain("removing or releasing a stop payment");
-    expect(prompt).toContain("expedited, rush or overnight");
+    expect(prompt).toContain("expedited, rush, emergency or overnight");
     expect(prompt).toContain("Cost plus $8");
   });
 
   it("records a review per fee and publishes nothing while release is off", async () => {
-    expect(DARWIN_RELEASE_ACTS).toBe(false);
     const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
     const create = vi.fn(async () => reply({
       verdicts: [
@@ -182,7 +190,7 @@ describe("Darwin held-fee release review", () => {
       ],
     }));
 
-    const result = await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+    const result = await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2, acts: false });
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(trackAnthropicRequest.mock.calls.at(-1)?.[0]).toMatchObject({ agent: "darwin", operation: "release_review" });
@@ -196,12 +204,37 @@ describe("Darwin held-fee release review", () => {
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
   });
 
+  it("publishes only the fees that pass once release is on", async () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(true);
+    const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
+    const create = vi.fn(async () => reply({
+      verdicts: [
+        { id: 1, is_fee: true, category_fits: true, amount_is_price: true, reason: "stop payment price" },
+        { id: 2, is_fee: true, category_fits: true, amount_is_price: false, reason: "amount is the cap" },
+      ],
+    }));
+
+    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+
+    const inserts = db.mock.calls.filter(([strings]) => templateText(strings).includes("INSERT INTO verified_fee_observations"));
+    expect(inserts).toHaveLength(1);
+    expect(attempts(db).map((attempt) => attempt.detail.acted)).toEqual([true, true]);
+  });
+
   it("spends nothing on a dry run or with no calls left", async () => {
     const db = createDbMock([row()]);
     const create = vi.fn();
     expect((await runDarwinReleaseReview({ runId: 5, dryRun: true, db: asDb(db), create, calls: 2 })).selected).toBe(1);
     expect((await runDarwinReleaseReview({ runId: 5, db: asDb(db), create, calls: 0 })).selected).toBe(0);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("keeps a premium version of a service held outside a premium category", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string) => ({ row: row({ fee_name, held_canonical_fee_key }) as unknown as HeldFeeRow });
+    expect(premiumServiceMisfiled(held("Overnight Fee (Business Bill Pay)", "bill_pay"))).toBe(true);
+    expect(premiumServiceMisfiled(held("Emergency Card Replacement", "card_replacement"))).toBe(true);
+    expect(premiumServiceMisfiled(held("Debit Card Rush Delivery", "rush_card"))).toBe(false);
+    expect(premiumServiceMisfiled(held("Bill Pay", "bill_pay"))).toBe(false);
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {

@@ -23,7 +23,7 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 /** Bumped when a reader changes, so the scheduler re-reads at once (REGISTRY_PARSER_VERSIONS). */
-export const STATE_ENFORCEMENT_PARSER_VERSION = 4;
+export const STATE_ENFORCEMENT_PARSER_VERSION = 5;
 export const STATE_ENFORCEMENT_SOURCE = "state-enforcement";
 export const STATE_ENFORCEMENT_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;
