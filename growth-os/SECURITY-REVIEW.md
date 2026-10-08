@@ -38,6 +38,22 @@ skill reads first, overrides them.
    or similar (by MCP or API) and scraping LinkedIn with Apify. Ours: James posts by hand; no
    scheduling tools, no scrapers. Its `curl` listening recipes (Reddit, Hacker News, Bluesky
    public APIs) only read public posts; they are not run without asking.
+7. **Email platforms and automated flows** (`emails`). It assumes an email platform sends
+   trigger-based sequences and lists Customer.io, Mailchimp, Resend and SendGrid. Ours: MailerLite
+   only, automations stay off, and every email is a draft until James sends it.
+8. **Guarantees, discounts and urgency** (`offers`, `pricing`). They suggest money-back
+   guarantees, annual discounts, scarcity and price increases. Ours: prices, discounts and
+   guarantees are James's decisions, and no deadline or scarcity is ever invented.
+9. **Press and event outreach** (`public-relations`, `events`). Pitches, media lists and
+   sponsorships. Ours: pitches are drafts James sends, no paid media databases, no event spend
+   without James, and no booking links. The `newsjacking` reference has three `curl` reads of
+   public news feeds; not run without asking.
+10. **Partners** (`co-marketing`). Partner outreach is drafted, never sent, and no partner gets
+    personal data about leads.
+
+The 7 skills added later on 2026-10-08 (`public-relations`, `events`, `co-marketing`, `emails`,
+`site-architecture`, `pricing`, `offers`; 39 markdown files) passed the same checks: no files
+that run, no hidden Unicode, no injection phrases.
 
 ## Ongoing risk
 

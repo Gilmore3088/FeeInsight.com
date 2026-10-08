@@ -23,24 +23,31 @@ the commit above.
 | NIELSEN | `analytics`, `attribution`, `ab-testing` |
 | EDISON | `free-tools`, `lead-magnets`, `programmatic-seo`, `onboarding` |
 | CARNEGIE | `prospecting`, `cold-email`, `sales-enablement`, `revops` |
+| ERNEST (added) | `site-architecture` |
+| Owner set in the marketing loop plan (James decides) | `public-relations`, `events`, `co-marketing`, `emails`, `pricing`, `offers` |
 
 Names in James's proposal mapped to the library's directories: `launch-strategy` is `launch`;
 `competitor-analysis` is `competitors`; `competitor-profiles` is `competitor-profiling`; there is
 no `positioning` skill (positioning lives in `product-marketing`).
 
-## Not copied
+## Added 2026-10-08 (James: "I agree", 05:13 UTC)
 
-Left out because they don't fit the plan or need paid channels: `ads`, `ad-creative`, `aso`,
-`churn-prevention`, `co-marketing`, `community-marketing`, `directory-submissions`, `emails`
-(the monthly email already exists in `src/lib/agents/marketing/`), `events`,
-`influencer-marketing`, `image`, `marketing-council`, `marketing-plan`, `offers`, `paywalls`,
-`popups`, `pricing` (prices are James's decision), `public-relations`, `referrals`,
-`site-architecture`, `sms`, `video`, and the library's `tools/` folder. Copy one later when an
-agent needs it; `public-relations`, `co-marketing` and `events` are the likely next ones.
+`public-relations`, `events`, `co-marketing`, `emails`, `site-architecture`, `pricing` and
+`offers`, from the same commit. These cover work nobody owned: press, events, partnerships,
+follow-up after a free report, site structure, and how the paid report and Pro are framed.
+Prices stay James's decision.
+
+## Not copied (later, or not under our rules)
+
+Later, once there are customers: `marketing-plan`, `referrals`, `churn-prevention`, `paywalls`,
+`popups`, `community-marketing`, `directory-submissions`, `marketing-council`.
+Not under our rules: `ads` and `ad-creative` (no ad spend before the first sale), `aso` (no app),
+`sms` (no texting consent), `influencer-marketing`, `image` and `video` (paid AI tools; the
+content/video plan covers video). The library's `tools/` folder is also left out.
 
 ## In use
 
-28 skills are copied. 16 are used by the four agents that start first (DRAPER, SHERLOCK,
+35 skills are copied (28 on day one, 7 added the same day). 16 are used by the four agents that start first (DRAPER, SHERLOCK,
 ERNEST, MURROW). The other 12 wait for later agents: `cro`, `signup`, `ab-testing` (NORMAN);
 `analytics`, `attribution` (NIELSEN); `free-tools`, `lead-magnets`, `onboarding` (EDISON);
 `prospecting`, `cold-email`, `sales-enablement`, `revops` (CARNEGIE).
