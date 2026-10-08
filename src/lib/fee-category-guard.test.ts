@@ -69,7 +69,6 @@ describe("checkFeeCategory", () => {
     ["stop_payment", "Removal of Stop Payment"],
     ["stop_payment", "Remove Stop Payment"],
     ["stop_payment", "Stop Payment Fee (removal)"],
-    ["atm_non_network", "Foreign ATM Balance Inquiry"],
   ])("flags %s: %s as filed under the wrong category", (key, name) => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_contradicts" });
   });
@@ -171,7 +170,8 @@ describe("checkFeeCategory", () => {
     for (const name of ["VISA Chargeback", "Chargeback for debit card transactions", "Loan Payment Chargeback Fee", "Chargeback on Loan"]) {
       expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
     }
-    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("card_dispute");
+    // card_dispute folded into account_research (top 50, Oct 8).
+    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("account_research");
   });
 
   it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
@@ -296,16 +296,16 @@ describe("checkFeeCategory", () => {
     }
   });
 
-  it("keeps a gift card's reload, replacement and inactivity fees out of its purchase price", () => {
+  // v25: prepaid card reloads folded into gift_card_purchase (top 50, Oct 8).
+  it("keeps a gift card's replacement and inactivity fees out of its purchase price", () => {
     for (const name of [
-      "Visa Gift Card Reload Fee",
       "Gift Card Monthly Inactivity Fee (after 12 mo. non-use)",
       "Monthly Share Account Fee",
       "Card delivery",
     ]) {
       expect(checkFeeCategory("gift_card_purchase", name).ok).toBe(false);
     }
-    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card"]) {
+    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card", "Visa Gift Card Reload Fee"]) {
       expect(checkFeeCategory("gift_card_purchase", name)).toEqual({ ok: true });
     }
     expect(checkFeeCategory("card_replacement", "Replacement VISA® Gift Card Fee").ok).toBe(false);
@@ -446,6 +446,20 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps savings withdrawal limits and lobby ATMs out of out-of-network ATM fees (seven-state misses, Oct 8)", () => {
+    for (const name of [
+      "ATM Savings Withdrawal",
+      "ATM Share Savings Withdrawal (over 3x per month)",
+      "Reg-D Savings Withdrawal Fee (In excess of six per month, excluding ATM or in-person)",
+      "Lobby ATM",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    for (const name of ["ATM Surcharge", "Non-Network ATM Withdrawal", "Foreign ATM Fee"]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
     for (const name of [
       "Deposits/Withdrawals at an ATM we do not own or operate",
@@ -454,19 +468,58 @@ describe("checkFeeCategory", () => {
       "Foreign ATM Inquiry or Transfer Fee",
       "ATM Withdrawal/Inquiry on all other networks",
       "Inquiry or transactions at non-Seacoast ATMs",
+      // v25: a balance inquiry at an ATM is an ATM fee (top 50, Oct 8).
+      "Foreign ATM Balance Inquiry",
+      "ATM Foreign Transaction Fee - Balance Inquiry",
+      "Balance Inquiry at non-Pathfinder ATM",
+      "ATM Balance Inquiry (other bank ATM) per transaction",
     ]) {
       expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
     }
     for (const name of [
-      "Foreign ATM Balance Inquiry",
-      "ATM Foreign Transaction Fee - Balance Inquiry",
       "ATM Foreign Transaction Fee - Deposit",
       "ATM Deposit Correction",
       "Non-Member ATM Deposit/Withdrawal",
-      "Balance Inquiry at non-Pathfinder ATM",
-      "ATM Balance Inquiry (other bank ATM) per transaction",
     ]) {
       expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
     }
+  });
+
+  it("v21 keeps business services' monthly fees out of monthly maintenance and deposited returns out of NSF (prod, Oct 8)", () => {
+    for (const name of [
+      "Remote Deposit Capture Machine Rental (monthly fee)",
+      "IntraFi Network-ICS Monthly Fee (Consumer)",
+      "Monthly Maintenance Fee Per Location",
+      "Each Additional Scanner Monthly Service Fee",
+      "Waiving the Monthly Fee",
+    ]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly service charge (waived with statement cycle balance)")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Item-Reroute of Return Fee (Business)").ok).toBe(false);
+    expect(refileCategory("nsf", "Returned Item fee (written to you)")).toBe("deposited_item_return");
+    expect(checkFeeCategory("nsf", "Returned Check Fee")).toEqual({ ok: true });
+  });
+
+  it("v22 reads a small returned check as a deposited return when the schedule prices NSF separately (Dean, Oct 8)", () => {
+    const context = (amount: string, document_nsf_amount: string | null) => ({ amount, document_nsf_amount });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", null))).toEqual({ ok: true });
+    // v23: at any price below the schedule's NSF fee; at the NSF fee's own price it is that fee.
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("35.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Check Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Item Charge")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "NSF Fee", context("7.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "10.00"))).toEqual({ ok: true });
+  });
+
+  it("v24 keeps statement and photocopy fees off overdraft and NSF (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "OVERDRAFT & NSF FEES: Statement Copy Fee8").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "Returned Item Photocopy").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "Copy of returned check").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "per copy Nonsufficient funds (NSF) (each debit or check returned)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item on Lifeline 18/65 Checking or Statement Savings \"Overdraft Fee\"")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
   });
 });

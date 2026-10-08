@@ -1,18 +1,30 @@
 import type { ReactNode } from "react";
 import { TrackLink } from "@/components/track-link";
-import { SubscribeButton } from "./subscribe-button";
 import {
-  ANNUAL_PRICE_LABEL,
-  ANNUAL_SAVINGS_LABEL,
-  MONTHLY_PRICE_LABEL,
-  type ProPlan,
-} from "./pricing";
+  CONSULTANT_PRICE_NOTE,
+  PRO_TIERS,
+  annualMonthsFree,
+  tierAmountLabel,
+  tierPriceLabel,
+  type ProTier,
+} from "@/lib/pro-tiers";
+import { SubscribeButton } from "./subscribe-button";
+import { PLAN_TEAM_LABEL, type ProPlan } from "./pricing";
+
+/** Who the plan covers, once the buyer has chosen; the server worked out the tier. */
+export interface ProTierSelection {
+  tier: ProTier;
+  institutionId: number | null;
+  otherOrganization: boolean;
+}
 
 interface ProPlanCardsProps {
   features: string[];
   isLoggedIn: boolean;
-  monthlyPriceId: string;
-  annualPriceId: string;
+  /** The institution picker, or what was picked. */
+  chooser: ReactNode;
+  /** Null until a bank, credit union or "other organization" is chosen and priced. */
+  selection: ProTierSelection | null;
   returnTo?: string;
   registerHrefFor: (plan: ProPlan) => string;
   highlightedPlan: ProPlan | null;
@@ -27,25 +39,28 @@ const SECONDARY_BUTTON =
   "block w-full rounded-md border border-[#D5CBBF] px-4 py-2.5 text-center text-sm font-medium text-[#1A1815] hover:border-[#1A1815] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 /**
- * Two price columns sharing ONE feature list — annual is a discount, not a tier.
+ * Pro priced by institution size: the three tiers sit under ONE feature list (the tiers
+ * differ by price, not features). Once the buyer picks who the plan covers, the two price
+ * columns show that tier's monthly and annual price.
  */
 export function ProPlanCards({
   features,
   isLoggedIn,
-  monthlyPriceId,
-  annualPriceId,
+  chooser,
+  selection,
   returnTo,
   registerHrefFor,
   highlightedPlan,
   autoStartPlan = null,
 }: ProPlanCardsProps) {
-  const ctaFor = (plan: ProPlan, priceId: string, label: string, className: string) => {
+  const ctaFor = (plan: ProPlan, chosen: ProTierSelection, label: string, className: string) => {
     const autoStart = autoStartPlan === plan;
     if (isLoggedIn) {
       return (
         <SubscribeButton
-          priceId={priceId}
-          mode="subscription"
+          plan={plan}
+          institutionId={chosen.institutionId}
+          otherOrganization={chosen.otherOrganization}
           returnTo={returnTo}
           label={autoStart ? "Continue to checkout" : label}
           className={className}
@@ -56,7 +71,7 @@ export function ProPlanCards({
     return (
       <TrackLink
         event="checkout_start"
-        eventProps={{ plan }}
+        eventProps={{ plan, tier: chosen.tier }}
         href={registerHrefFor(plan)}
         className={className}
       >
@@ -70,7 +85,7 @@ export function ProPlanCards({
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            Included with every seat
+            Included for everyone on the plan
           </p>
           <ul className="mt-3 space-y-2 text-sm text-[#5A5347]">
             {features.map((feature) => (
@@ -80,30 +95,71 @@ export function ProPlanCards({
               </li>
             ))}
           </ul>
+          <TierTable highlighted={selection?.tier ?? null} />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <PriceColumn
-            plan="monthly"
-            eyebrow="Monthly"
-            priceLabel={MONTHLY_PRICE_LABEL}
-            priceSuffix="/mo per seat"
-            note="Cancel at the end of any billing period"
-            highlighted={highlightedPlan === "monthly"}
-            cta={ctaFor("monthly", monthlyPriceId, "Start monthly", SECONDARY_BUTTON)}
-          />
-          <PriceColumn
-            plan="annual"
-            eyebrow="Annual"
-            priceLabel={ANNUAL_PRICE_LABEL}
-            priceSuffix="/yr per seat"
-            note={`Save ${ANNUAL_SAVINGS_LABEL} vs monthly`}
-            badge="Best value"
-            highlighted={highlightedPlan === "annual"}
-            cta={ctaFor("annual", annualPriceId, "Start annual", PRIMARY_BUTTON)}
-          />
+        <div className="grid content-start gap-4">
+          {chooser}
+          {selection ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <PriceColumn
+                plan="monthly"
+                eyebrow="Monthly"
+                priceLabel={tierAmountLabel(selection.tier, "monthly")}
+                priceSuffix={`/mo ${PLAN_TEAM_LABEL}`}
+                note="Cancel at the end of any billing period"
+                highlighted={highlightedPlan === "monthly"}
+                cta={ctaFor("monthly", selection, "Start monthly", SECONDARY_BUTTON)}
+              />
+              <PriceColumn
+                plan="annual"
+                eyebrow="Annual"
+                priceLabel={tierAmountLabel(selection.tier, "annual")}
+                priceSuffix={`/yr ${PLAN_TEAM_LABEL}`}
+                note={`${annualMonthsFree(selection.tier)} months free against paying monthly`}
+                badge="Best value"
+                highlighted={highlightedPlan === "annual"}
+                cta={ctaFor("annual", selection, "Start annual", PRIMARY_BUTTON)}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-[#6B6255]">Pick who the plan is for to see your price and start.</p>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** All three tiers, so the price is on the page before anyone picks an institution. */
+function TierTable({ highlighted }: { highlighted: ProTier | null }) {
+  return (
+    <div className="mt-6 overflow-x-auto rounded-lg border border-[#E0D7C9] bg-white">
+      <table className="w-full text-left text-sm">
+        <caption className="sr-only">Pro price by institution size</caption>
+        <thead className="text-[11px] uppercase tracking-[0.12em] text-[#6B6255]">
+          <tr>
+            <th scope="col" className="px-3 py-2 font-bold">Institution size</th>
+            <th scope="col" className="px-3 py-2 font-bold">Monthly</th>
+            <th scope="col" className="px-3 py-2 font-bold">Annual</th>
+          </tr>
+        </thead>
+        <tbody>
+          {PRO_TIERS.map((tier) => (
+            <tr
+              key={tier.key}
+              className={`border-t border-[#E0D7C9] ${tier.key === highlighted ? "bg-[#FBEFEA] font-semibold text-[#1A1815]" : "text-[#5A5347]"}`}
+            >
+              <th scope="row" className="px-3 py-2 font-medium">{tier.assetsLabel}</th>
+              <td className="px-3 py-2 tabular-nums">{tierPriceLabel(tier.key, "monthly")}</td>
+              <td className="px-3 py-2 tabular-nums">{tierPriceLabel(tier.key, "annual")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="border-t border-[#E0D7C9] px-3 py-2 text-xs text-[#6B6255]">
+        Every tier is {PLAN_TEAM_LABEL}. {CONSULTANT_PRICE_NOTE}
+      </p>
     </div>
   );
 }

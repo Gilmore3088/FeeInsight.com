@@ -9,9 +9,18 @@ This repository uses one agentic experience for data trust, validation, publishi
 - Scheduled advancement happens through `/api/admin/agents/tick`.
 - Manual advancement happens through `/api/admin/agents/runs/[id]/execute`.
 - Provider access must flow through `src/lib/ai-provider.ts` and usage/circuit accounting.
-- `src/lib/automation-control.ts` holds two controls. The `global` provider stop blocks provider steps (`PROVIDER_STEP_KEYS`, paid model calls) and provider calls; deterministic steps keep running. The `pipeline` control is the operator pause for deterministic steps; a paused run stays queued. The Atlas emergency stop engages both.
-- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued.
+- `src/lib/automation-control.ts` holds three controls. The `global` provider stop blocks provider steps (`PROVIDER_STEP_KEYS`, paid model calls) and provider calls; deterministic steps keep running. The `pipeline` control is the operator pause for deterministic steps; a paused run stays queued. The `marketing` control is the operator pause for Growth's steps (`MARKETING_STEP_KEYS`), which obey it instead of the pipeline pause; each pause leaves the other side's runs going. The Atlas emergency stop engages the provider stop and the pipeline pause.
+- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued. With the pipeline paused it schedules no data runs but still drains Growth's runs; it does nothing only when both the pipeline and marketing are paused.
+- Every agent, marketing included, works through the run ledger: a run that writes, drafts or sends anything is an `agent_runs` row with visible steps and events. No marketing work runs outside it.
 - `/api/admin/job-health` is the external alerting endpoint: it returns 503 with plain-language problems when ticks stop succeeding, ticks are blocked, steps are stuck, lanes are overdue, or nothing has been published for a week.
+
+## Marketing Team
+
+Marketing runs on the same run ledger as the data agents, as agent `growth` (Growth, below). It
+never writes fee data. The GrowthOS team definitions (DRAPER, SHERLOCK and the others), rules and
+work queue are in `growth-os/README.md`; their skills are in `.agents/skills/`. App-side
+marketing work (the LinkedIn drafts, the monthly email) runs as Growth's steps, under the
+marketing pause and the `agent:growth` budget.
 
 ## Agent Roster
 
@@ -84,6 +93,16 @@ Hamilton owns publication and analysis surfaces.
 - Saved reports, saved scenarios, and watchlist rows must preserve the selected-institution source and source label so artifacts still explain whether context came from a URL, manual Settings selection, Profile, or Watchlist.
 - Account, Pro dashboard, Pro marketing, and summary/index modules must label whether a figure is a verified-only benchmark, a verified-only export, or provisional-first Hamilton analysis. Do not show benchmark medians without making clear that provisional evidence is excluded from scoring.
 
+### Growth
+
+Growth owns marketing: the weekly LinkedIn drafts and the monthly marketing email
+(`src/lib/agents/growth/AGENTS.md`).
+
+- Runs on the run ledger as agent `growth`; its steps obey the marketing pause, not the pipeline pause.
+- Never sends or posts on its own: drafts wait in `content_drafts` or MailerLite for James's approval.
+- Bills `ANTHROPIC_API_KEY_GROWTH` and the `agent:growth` budget ($5 a day, $60 a month, off until James enables it).
+- Writes results and lessons to `pipeline_feedback` and drafts to `content_drafts` only; never writes fee data.
+
 ## Data Boundaries
 
 Use these current semantic tables and read models:
@@ -94,6 +113,7 @@ Use these current semantic tables and read models:
 - Institution authority: `institution_claims`, `institution_claim_events`, `institution_workspace_memberships`, `institution_workspace_invitations`.
 - Agent ledger: `agent_runs`, `agent_run_steps`, `agent_run_events`.
 - Provider safety: `automation_control`, `ai_api_usage_events`.
+- Marketing (Growth): `content_drafts`, `pipeline_feedback`.
 - Hamilton Pro persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
 
 Do not use retired runtime contracts such as `fee_crawler`, `ops_jobs`, Modal worker IDs, old crawler table aliases, or request-time DDL.

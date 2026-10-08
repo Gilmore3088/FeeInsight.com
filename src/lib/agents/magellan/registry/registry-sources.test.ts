@@ -344,6 +344,9 @@ describe("registry FRED worker: BLS and required series", () => {
     const regional = inserts.find((s) => s.values[0] === "CUUR0100SEMC")!;
     // A stored medical series keeps refreshing but under its real name, not a bank label.
     expect(regional.values[1]).toBe("CPI: Medical Professional Services, Northeast");
+    // Rows older than the pull window are relabelled too.
+    const relabel = statements.find((s) => s.text.includes("UPDATE fed_economic_indicators") && s.values.includes("CUUR0100SEMC"));
+    expect(relabel?.values).toContain("CPI: Medical Professional Services, Northeast");
     const blsRows = payloadOf(regional.values);
     expect(blsRows).toEqual([{ observation_date: "2026-08-01", value: 301.5 }]);
   });
@@ -677,6 +680,8 @@ describe("registry dispatch", () => {
       "federal-register",
       "federal-bills",
       "state-bills",
+      "state-reg-news",
+      "state-bill-news",
       "state-regulators",
       "enforcement",
       "state-enforcement",
@@ -692,5 +697,16 @@ describe("registry dispatch", () => {
       status: "skipped",
       detail: { missing_partition: true },
     });
+  });
+
+  it("shows a Census vintage skipped for a missing key as a skipped step, not a completed one", async () => {
+    const { db } = createDb([]);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Missing Key</html>", { status: 200 })));
+    try {
+      const outcome = await runRegistryStep({ stepKey: "registry-census-acs", runId: 1, partitionKey: "2024", dryRun: false, db });
+      expect(outcome).toMatchObject({ status: "skipped", detail: { skipped_no_key: true } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

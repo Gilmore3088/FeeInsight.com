@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 const SAMPLE_PATH = "/reports/sample-competitive-fee-position";
 const SAMPLE_CSV_PATH = "/reports/sample-competitive-fee-position/csv";
-const REQUEST_HREF = "/for-institutions#report";
+const REQUEST_HREF = "/for-institutions?report=institution#report";
 const REPORT_TITLE = "Sample Competitive Fee Position Report";
 const REPORT_DESCRIPTION = `A live ${REPORT_OFFER.name} for a community bank: its fees against its local competitors, the lines outside the local range, and named competitors with the schedule behind every amount. ${REPORT_OFFER_LINE}.`;
 
@@ -83,7 +83,7 @@ function SampleComingSoon() {
           href={REQUEST_HREF}
           className={PRIMARY_BUTTON}
         >
-          {REPORT_OFFER.ctaLabel}
+          {REPORT_OFFER.institutionCtaLabel}
         </TrackLink>
         <Link href="/research" className={SECONDARY_BUTTON}>
           Browse the research
@@ -145,7 +145,7 @@ export default async function SampleReportPage() {
             href={REQUEST_HREF}
             className={PRIMARY_BUTTON}
           >
-            {REPORT_OFFER.ctaLabel}
+            {REPORT_OFFER.institutionCtaLabel}
           </TrackLink>
           <p className="text-[13px] text-[#6B6255]">{REPORT_OFFER_LINE}.</p>
         </div>
@@ -197,7 +197,7 @@ export default async function SampleReportPage() {
           href={REQUEST_HREF}
           className={PRIMARY_BUTTON}
         >
-          {REPORT_OFFER.ctaLabel}
+          {REPORT_OFFER.institutionCtaLabel}
         </TrackLink>
       </section>
     </div>

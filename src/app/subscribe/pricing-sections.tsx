@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
@@ -14,7 +15,7 @@ const CHECK = "✓";
 const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
-const WALKTHROUGH_HREF = "/contact?source=enterprise";
+const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
@@ -129,11 +130,17 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes. Monthly seats cancel at the end of the current billing period; no long-term commitment.",
+      answer: "Yes. Monthly plans cancel at the end of the current billing period; no long-term commitment.",
     },
     {
       question: "Do you invoice or accept POs?",
-      answer: `Yes, for annual seats. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+      answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+    },
+    {
+      question: "How is the Pro price set?",
+      answer: `By your institution's total assets from its latest call report: ${PRO_TIERS.map(
+        (tier) => `${tier.assetsLabel.toLowerCase()} is ${tierPriceLabel(tier.key, "annual")}`,
+      ).join(", ")}. ${CONSULTANT_PRICE_NOTE} If we don't have your fee schedule yet, send it to ${CONTACT_EMAIL} and we'll add it.`,
     },
     {
       question: "How do seats work?",
@@ -165,13 +172,17 @@ export function PricingFaq({ summary }: { summary: PublicStatsSummary }) {
       <p className="mt-4 text-sm text-[#5A5347]">
         Prefer to talk it through?{" "}
         <TrackLink
-          event="book_walkthrough"
+          event="contact_sales"
           eventProps={{ placement: "pricing_faq" }}
-          href={WALKTHROUGH_HREF}
+          href={CONTACT_SALES_HREF}
           className="font-medium text-[#1A1815] underline underline-offset-2"
         >
-          Book a 20-minute walkthrough
-        </TrackLink>
+          Send us a message
+        </TrackLink>{" "}
+        or email{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#1A1815] underline underline-offset-2">
+          {CONTACT_EMAIL}
+        </a>
         .
       </p>
     </section>

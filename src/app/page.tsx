@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
-import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
@@ -33,6 +33,7 @@ const ORGANIZATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: SITE_NAME,
+  legalName: LEGAL_ENTITY_NAME,
   url: SITE_URL,
   contactPoint: {
     "@type": "ContactPoint",

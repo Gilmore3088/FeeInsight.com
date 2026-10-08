@@ -83,7 +83,7 @@ describe("Hamilton rules re-check", () => {
     // category guard rejects "Copy of Draft (Check)" as an overdraft fee.
     expect(result.rollbacks.map((rollback) => [rollback.feePublishedId, rollback.secondLook])).toEqual([
       [4, "source_trace:amount_not_the_fee"],
-      [6, "category_guard:name_unsupported"],
+      [6, "category_guard:name_contradicts"],
     ]);
     // Still traced, and no guard covers them: live until the next Knox version settles them.
     expect(result.disputed.map((fee) => fee.feePublishedId)).toEqual([3, 2]);

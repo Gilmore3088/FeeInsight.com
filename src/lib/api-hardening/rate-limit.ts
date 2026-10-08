@@ -11,6 +11,8 @@ export const RATE_LIMITS: Record<string, { max: number; windowMinutes: number }>
   "lead-write": { max: 8, windowMinutes: 10 },
   // Free account signups (a server action; see action-rate-limit.ts): the same limit.
   "account-register": { max: 8, windowMinutes: 10 },
+  // Tracked-link visits: one per browser session, so a person stays far below this.
+  "touch-write": { max: 20, windowMinutes: 10 },
 };
 
 export async function isRateLimited(policy: ApiRoutePolicy, subjectKey: string | null): Promise<boolean> {

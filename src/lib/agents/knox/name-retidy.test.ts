@@ -42,6 +42,24 @@ describe("retidiedFeeName", () => {
     expect(retidiedFeeName("Dormant accounts will incur", "dormant_account")).toBeNull();
   });
 
+  it("drops a footnote number glued to the name (v2)", () => {
+    expect(retidiedFeeName("Check Cashing Fee1", "check_cashing")).toBe("Check Cashing Fee");
+    expect(retidiedFeeName("Overdraft Fee5 (per paid item)", "overdraft")).toBe("Overdraft Fee (per paid item)");
+    expect(retidiedFeeName("Insufficient Funds (for items $100.00 or more)1,2,3", "nsf")).toBe(
+      "Insufficient Funds (for items $100.00 or more)",
+    );
+    expect(retidiedFeeName("Overdraft – paid per day per account11", "overdraft")).toBe("Overdraft – paid per day per account");
+  });
+
+  it("drops the footnote number from a long name the full tidy leaves alone (v3)", () => {
+    expect(
+      retidiedFeeName(
+        "Overdraft Protection Transfer Fee4 (from Line of Credit Advance in Increments of $100.00)",
+        "od_protection_transfer",
+      ),
+    ).toBe("Overdraft Protection Transfer Fee (from Line of Credit Advance in Increments of $100.00)");
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
   });
@@ -53,6 +71,9 @@ describe("isMessyName", () => {
     expect(isMessyName("Replacement card fee of")).toBe(true);
     expect(isMessyName("x".repeat(81))).toBe(true);
     expect(isMessyName("Stop Payment")).toBe(false);
+    expect(isMessyName("Paid NSF Item1")).toBe(true);
+    expect(isMessyName("Safe deposit box 10x10")).toBe(false);
+    expect(isMessyName("W2 copy")).toBe(false);
   });
 });
 
@@ -64,6 +85,12 @@ describe("planRetidy", () => {
     expect(plan.renames).toEqual([
       expect.objectContaining({ feePublishedId: 1, oldName: "Stop Payment | Item", newName: "Stop Payment" }),
     ]);
+  });
+
+  it("renames a footnoted name that the schedule prints with its footnote", () => {
+    const own = { source_document_id: 70, normalized_text: "Check Cashing Fee1. . . . . . . . $5.00 per item" };
+    const plan = planRetidy([fee({ fee_name: "Check Cashing Fee1", canonical_fee_key: "check_cashing", amount: 5 })], [own]);
+    expect(plan.renames.map((rename) => rename.newName)).toEqual(["Check Cashing Fee"]);
   });
 
   it("never makes a traced fee untraceable", () => {
