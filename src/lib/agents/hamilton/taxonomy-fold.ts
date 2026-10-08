@@ -207,8 +207,7 @@ async function applyMoves(db: SqlTag, moves: FoldMove[]): Promise<{ published: n
     }
     const updated = await db`
       UPDATE verified_fee_observations fv
-         SET canonical_fee_key = v.to_key,
-             fee_category = v.to_key
+         SET canonical_fee_key = v.to_key
         FROM unnest(${chunk.map((move) => move.feeVerifiedId)}::bigint[], ${chunk.map((move) => move.from)}::text[],
                     ${chunk.map((move) => move.to)}::text[]) AS v(fee_verified_id, from_key, to_key)
        WHERE fv.fee_verified_id = v.fee_verified_id

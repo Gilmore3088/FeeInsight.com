@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: The taxonomy fold wrote a generated column and stopped every Hamilton publish
+**What happened:** after PR 560 merged at 12:01 UTC, Hamilton's publish step failed on every
+state run (IA and AL at 12:06, MS at 12:08, KS at 12:15, atlas job #2877) with `column
+"fee_category" can only be updated to DEFAULT`.
+**Cause:** the fold's `applyMoves` set `verified_fee_observations.fee_category` as well as
+`canonical_fee_key`. On prod `fee_category` is `GENERATED ALWAYS AS (canonical_fee_key) STORED`
+(`20260406_report_jobs.sql`), so the UPDATE is refused, and the publish transaction rolls back.
+Unit tests use a fake database and never ran the SQL.
+**Fix:** this PR drops the `fee_category` assignment; the column follows `canonical_fee_key`.
+**Lesson:** before writing a column on a tier table, check `information_schema.columns.is_generated`
+on prod. New SQL inside the publish transaction can stop all publishing, so read the first
+publish step on prod right after such a merge.
+
 ## 2026-10-08: CFPB refuses bursts with 429, then 403, and one refusal killed a whole year
 **What happened:** `registry-cfpb` failed 10 of 39 steps from Oct 3 to Oct 8 (agent_run_steps,
 read 09:10 UTC Oct 8): six HTTP 403, three HTTP 429, one older timeout. They came while the parser
@@ -403,6 +416,16 @@ tick, so a lane's first step never fit. Direct runs now go ahead of lanes only w
 lane has started a step in the last ten minutes; otherwise the waiting lane goes first.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
+
+## 2026-10-08: Seven state lanes waited since Oct 7 although overdue lanes go first
+**What happened:** at 12:17 UTC Oct 8 Admin Today showed 7 lanes more than 6 hours overdue:
+GA (due since 03:57 Oct 7), PR, CT, KY, VI, DC and GU. The scheduler puts any lane overdue
+3 hours ahead of the rest, but busy lanes come back due every hour and, with three lane runs
+at a time, also wait past 3 hours. Inside the overdue group lanes were still ranked by
+priority score, so the busy ones (scores around 700) kept winning and these seven (scores
+102 to 352) never ran.
+**Fix:** overdue lanes now run longest overdue first; score orders only the rest.
+**Lesson:** an anti-starvation rule must order by age, not by the score it overrides.
 
 ## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
 **What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
