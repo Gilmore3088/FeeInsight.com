@@ -144,7 +144,24 @@ export function matchCompany(name: string, index: IdentityIndex): IdentityMatch 
       candidates: candidates.length,
     };
   }
+  const exact = matchExactBankName(name, candidates);
+  if (exact) return exact;
   return { institutionId: largest.id, confidence: 0.5, method: "ambiguous_name", status: "needs_review", candidates: candidates.length };
+}
+
+/**
+ * A company name that is a bank's own full name ("COMMERCE BANK", "STATE STREET BANK AND TRUST
+ * COMPANY") goes to that bank when its parent is $10B or more and at least 20 times every other
+ * parent whose bank has the same full name. Debt collectors and holding-style names ("FMS Inc.",
+ * "Fidelity National Financial") never equal a bank's full name, so they stay for review.
+ */
+function matchExactBankName(name: string, candidates: IdentityCandidate[]): IdentityMatch | null {
+  const key = fullCompanyKey(name);
+  const exact = candidates.filter((c) => c.via === "institution_name" && fullCompanyKey(c.name) === key);
+  if (exact.length === 0) return null;
+  const [first, second] = parentGroups(exact);
+  if (first.assets < LARGE_BANK_ASSETS || (second && first.assets < second.assets * DOMINANT_PARENT_RATIO)) return null;
+  return { institutionId: first.largest.id, confidence: 0.8, method: "exact_bank_name_dominant", status: "accepted", candidates: candidates.length };
 }
 
 export interface IdentityLinkInput {
@@ -192,6 +209,35 @@ export async function upsertIdentityLinks(
       updated_at = NOW()
     WHERE institution_identity_links.verified_by IS NULL
   `;
+}
+
+/** Registry source whose past partitions must re-run when a link of this type is accepted by hand. */
+const BACKFILL_SOURCE: Record<IdentityLinkType, string> = { cfpb_company: "cfpb", sec_cik: "sec-filings" };
+
+/**
+ * A person accepts or rejects a link waiting for review. verified_by keeps matcher runs from
+ * changing it later. Accepting makes that source's loaded partitions due again, so the next
+ * ticks backfill the company's history (past CFPB years are otherwise not re-pulled for months).
+ */
+export async function decideIdentityLink(
+  db: RegistryDb,
+  input: { linkType: IdentityLinkType; externalKey: string; decision: "accepted" | "rejected"; verifiedBy: string },
+): Promise<boolean> {
+  const updated = await db`
+    UPDATE institution_identity_links
+       SET status = ${input.decision}, verified_by = ${input.verifiedBy}, updated_at = NOW()
+     WHERE link_type = ${input.linkType} AND external_key = ${input.externalKey} AND status = 'needs_review'
+    RETURNING id
+  `;
+  if ([...updated].length === 0) return false;
+  if (input.decision === "accepted") {
+    await db`
+      UPDATE registry_ingest_partitions
+         SET next_attempt_after = NOW(), updated_at = NOW()
+       WHERE source = ${BACKFILL_SOURCE[input.linkType]} AND status IN ('succeeded', 'empty')
+    `;
+  }
+  return true;
 }
 
 /** external_key -> institution_id for links that may be used for data. */

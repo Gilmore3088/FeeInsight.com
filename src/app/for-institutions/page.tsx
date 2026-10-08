@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
+import { linkPreview } from "@/lib/link-preview";
 import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
@@ -18,11 +19,15 @@ import { CompareTableSection } from "./compare-table";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REPORT_ANCHOR = "#report";
 
+const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
+const PAGE_DESCRIPTION =
+  `Compare your institution's published fees with named local competitors, line by line, with a source ` +
+  `for every figure. Start with the free national and Fed district fee reports from the ${PRODUCT_NAME}.`;
+
 export const metadata: Metadata = {
-  title: "Bank Fee Benchmarking and Competitive Fee Reports",
-  description:
-    `Compare your institution's published fees with named local competitors, line by line, with a source ` +
-    `for every figure. Start with the free national and Fed district fee reports from the ${PRODUCT_NAME}.`,
+  title: PAGE_TITLE,
+  description: PAGE_DESCRIPTION,
+  ...linkPreview({ title: PAGE_TITLE, description: PAGE_DESCRIPTION, path: "/for-institutions" }),
 };
 
 const HERO_BUTTON_BASE =
