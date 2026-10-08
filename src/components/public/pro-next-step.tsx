@@ -1,7 +1,7 @@
 import Link from "next/link";
 
-/** Where the Pro strip's link goes: plans and prices on /subscribe. */
-export const PRO_PLANS_HREF = "/subscribe";
+/** Where the Pro strip's link goes: the Pro plans on /subscribe (below Free and Report on a phone). */
+export const PRO_PLANS_HREF = "/subscribe#pro";
 
 /**
  * The ongoing next step after a free report or a bank page: Fee Insight Pro.
@@ -13,7 +13,7 @@ export function ProNextStep({ className = "" }: { className?: string }) {
       className={`flex flex-col gap-3 rounded-2xl border border-[#E8DFD1] bg-white px-6 py-5 print:hidden sm:flex-row sm:items-center sm:justify-between sm:px-8 ${className}`}
     >
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8A8072]">Fee Insight Pro</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6B6255]">Fee Insight Pro</p>
         <p className="mt-1 text-[15px] font-semibold text-[#1A1815]">Need this every month, for your whole team?</p>
         <p className="mt-1 text-[13px] leading-relaxed text-[#5A5347]">
           Pro gives up to 5 people the Hamilton workspace: your fees against peers you pick, a watchlist of competitor

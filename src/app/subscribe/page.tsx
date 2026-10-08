@@ -50,6 +50,8 @@ interface SubscribeSearchParams {
   inst?: string;
   /** "other": a consultant or other organization (NON_INSTITUTION_TIER). */
   org?: string;
+  /** "1" when the buyer backed out of Stripe Checkout. */
+  canceled?: string;
 }
 
 function buildSubscribeReturnPath(options: {
@@ -91,7 +93,13 @@ export default async function SubscribePage({
   }
 
   const isLoggedIn = !!user;
-  const reasonLine = subscribeReasonLine(params.reason, SITE_NAME);
+  // /pro says "activating" for anyone with a Stripe customer, and that customer is now made
+  // when checkout opens. activateIfPaid just asked Stripe and found no live subscription, so
+  // "if you've just paid" would only tell someone who backed out of checkout to wait.
+  const reasonLine =
+    params.canceled === "1"
+      ? "Checkout was canceled. Nothing was charged."
+      : subscribeReasonLine(params.reason === "activating" && user ? "pro_required" : params.reason, SITE_NAME);
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
   const autoStartPlan = isLoggedIn && checkoutRequested ? requestedPlan : null;
   const pendingInvitations =
@@ -128,8 +136,11 @@ export default async function SubscribePage({
     const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
     return `/register?plan=${plan}&from=${encodeURIComponent(back)}`;
   };
+  // A returning subscriber who already picked a plan goes straight on to Stripe after
+  // signing in, the same hand-off a new signup gets.
+  const loginBack = buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection });
   const loginHref = `/login?from=${encodeURIComponent(
-    buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection }),
+    requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
   return (
@@ -175,8 +186,9 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({PRO_ANNUAL_RANGE_LABEL} by
-            institution size, {PLAN_TEAM_LABEL}) → {SITE_NAME} Advisory (custom)
+            Fee lookup and the national reports are free, and an institution report is priced on request.{" "}
+            {SITE_NAME} Pro is {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}, and{" "}
+            {SITE_NAME} Advisory is custom work.
           </p>
         </div>
 

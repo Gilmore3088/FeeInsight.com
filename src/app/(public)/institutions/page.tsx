@@ -138,6 +138,44 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
     return `/institutions?${search.toString()}`;
   };
 
+  // A name search with no state picked: the results go straight under the search box.
+  // Below the state map and filters they sat about three phone screens down.
+  const resultsFirst = hasQuery && !hasState;
+  const resultsSection = shouldShowResults && (
+    <>
+      {results.total > 0 && (
+        <section className="fi-reveal fi-reveal-delay-2 pt-5">
+          <div className="mb-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
+              {selectedStateName ? `${selectedStateName} directory` : "Search results"}
+            </p>
+            <p className="mt-1 text-sm text-[#6B6255]">
+              {results.total.toLocaleString("en-US")} institution{results.total !== 1 ? "s" : ""} found
+              {query && (
+                <span>
+                  {" "}for <strong className="text-[#1A1815]">{query}</strong>
+                </span>
+              )}
+              . Institutions with published fees are listed first.
+            </p>
+          </div>
+
+          <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
+          <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
+          <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
+        </section>
+      )}
+
+      {results.total === 0 && (
+        <div className="fi-reveal fi-reveal-delay-2 py-8 text-center">
+          <p className="text-sm text-[#6B6255]">
+            No institutions found. Try adjusting your search or filters.
+          </p>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
       <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
@@ -187,7 +225,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               </p>
               <div className="mt-5 max-w-2xl">
                 <InstitutionSearchBar
-                  autoFocus
+                  autoFocus={!hasQuery}
+                  initialQuery={query}
                   ariaLabel="Search institution name, city, or state"
                   placeholder="Search institution name, city, or state..."
                 />
@@ -201,6 +240,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </div>
           </div>
         </section>
+
+        {resultsFirst && resultsSection}
 
         <StateDirectoryMap
           summaries={stateSummaries}
@@ -230,36 +271,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           </section>
         )}
 
-        {shouldShowResults && results.total > 0 && (
-          <section className="fi-reveal fi-reveal-delay-2 pt-5">
-            <div className="mb-4">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
-                {selectedStateName ? `${selectedStateName} directory` : "Search results"}
-              </p>
-              <p className="mt-1 text-sm text-[#6B6255]">
-                {results.total.toLocaleString("en-US")} institution{results.total !== 1 ? "s" : ""} found
-                {query && (
-                  <span>
-                    {" "}for <strong className="text-[#1A1815]">{query}</strong>
-                  </span>
-                )}
-                . Institutions with published fees are listed first.
-              </p>
-            </div>
-
-            <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
-            <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
-            <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
-          </section>
-        )}
-
-        {shouldShowResults && results.total === 0 && (
-          <div className="fi-reveal fi-reveal-delay-2 py-8 text-center">
-            <p className="text-sm text-[#6B6255]">
-              No institutions found. Try adjusting your search or filters.
-            </p>
-          </div>
-        )}
+        {!resultsFirst && resultsSection}
       </div>
     </div>
   );

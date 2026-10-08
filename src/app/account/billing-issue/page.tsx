@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { CONTACT_EMAIL } from "@/lib/constants";
+import { activateIfPaid } from "@/lib/subscription-activation";
 import { ManageBillingButton } from "../manage-billing-button";
 
 export const metadata: Metadata = { title: "Payment issue" };
@@ -14,6 +15,8 @@ export default async function BillingIssuePage() {
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect("/login?from=%2Faccount%2Fbilling-issue");
   if (canAccessPremium(user)) redirect("/pro/hamilton");
+  // Stripe events can arrive out of order: if Stripe says the subscription is paid, restore it now.
+  if (await activateIfPaid(user)) redirect("/pro/hamilton");
 
   return (
     <main className="mx-auto max-w-lg px-6 py-20">

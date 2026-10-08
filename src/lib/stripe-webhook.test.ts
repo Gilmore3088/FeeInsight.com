@@ -76,6 +76,48 @@ describe("applyStripeEvent", () => {
     expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
   });
 
+  it("anchors the bank chosen at checkout, files its claim and grants the owner seat, without overwriting a choice", async () => {
+    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { id: "cs_1", mode: "subscription", payment_status: "paid", customer: "cus_9", metadata: { user_id: "7", institution_id: "8109" } }),
+    );
+    const sql = issued();
+    expect(sql[1]).toContain("INSERT INTO hamilton_workspace_contexts");
+    expect(sql[1]).toContain("ON CONFLICT (user_id) DO NOTHING");
+    expect(sql[2]).toContain("UPDATE users u");
+    expect(sql[2]).toContain("u.institution_name IS NULL");
+    expect(sql[3]).toContain("INSERT INTO institution_claims");
+    expect(sql[3]).toContain("NOT EXISTS");
+    expect(tx.mock.calls[3]).toContain(8109);
+    expect(tx.mock.calls[3]).toContain("Filed at Pro checkout (cs_1).");
+    expect(sql[4]).toContain("INSERT INTO institution_workspace_memberships");
+    expect(sql[4]).toContain("'owner', 'active', 'claim', c.id");
+    expect(sql[4]).toContain("DO NOTHING");
+  });
+
+  it("anchors nothing when checkout named no institution", async () => {
+    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7", organization: "other" } }),
+    );
+    expect(issued()).toHaveLength(1);
+  });
+
+  it("waits for the money: an unpaid session grants nothing until async payment succeeds", async () => {
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "subscription", payment_status: "unpaid", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    expect(issued()).toHaveLength(0);
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.async_payment_succeeded", { mode: "subscription", payment_status: "paid", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    expect(issued()[0]).toContain("SET subscription_status = 'active'");
+  });
+
   it("sends no welcome for renewals or a checkout that activated nobody", async () => {
     expect((await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "active" }))).welcome).toEqual([]);
     expect((await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }))).welcome).toEqual([]);

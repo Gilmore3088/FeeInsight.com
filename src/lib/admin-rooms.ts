@@ -80,7 +80,8 @@ export const ROOMS: Room[] = [
     pages: [
       { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
       { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
-      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category", activePrefixes: ["/admin/fees"] },
+      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
+      { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
       {
         href: "/admin/quality",
         label: "Trust review",
@@ -91,7 +92,6 @@ export const ROOMS: Room[] = [
       { href: "/admin/verify", label: "Verify", role: "Fees to check by hand" },
       { href: "/admin/answer-key", label: "Answer key", role: "Hand-checked truth" },
       { href: "/admin/peers", label: "Peers", role: "Peer groups", more: true },
-      { href: "/admin/market", label: "Market", role: "Local markets", more: true },
       { href: "/admin/districts", label: "Districts", role: "Fed districts", more: true },
       { href: "/admin/index", label: "Index", role: "National index", activePrefixes: ["/admin/national"], more: true },
       { href: "/admin/query", label: "Query", role: "Ask the database", more: true },
