@@ -18,6 +18,7 @@ import { CompareTableSection } from "./compare-table";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REPORT_ANCHOR = "#report";
+const PRO_ANCHOR = "#pro";
 
 const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
 const PAGE_DESCRIPTION =
@@ -87,19 +88,16 @@ export default async function ForInstitutionsPage() {
                     <ArrowRight className="h-4 w-4" />
                   </TrackLink>
                 )}
+                {/* With the sample offline the first button already leads to #report, so the
+                    second one leads to Pro instead of repeating it. */}
                 <a
-                  href={REPORT_ANCHOR}
+                  href={sampleLive ? REPORT_ANCHOR : PRO_ANCHOR}
                   className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
                 >
-                  What&apos;s in the report
+                  {sampleLive ? "What’s in the report" : `See ${SITE_NAME} Pro`}
                 </a>
               </div>
-              <p className="mt-4 text-[13px] text-[#D5CBBF]">
-                <a href={REPORT_ANCHOR} className="underline underline-offset-2 hover:text-warm-150">
-                  Get your free report
-                </a>{" "}
-                · National and Fed district reports, free and instant.
-              </p>
+              <p className="mt-4 text-[13px] text-[#D5CBBF]">National and Fed district reports, free and instant.</p>
             </div>
           </div>
           <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-terra/[0.06] to-transparent" />

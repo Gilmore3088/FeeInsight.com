@@ -79,7 +79,9 @@ export default function TermsPage() {
           <ul className="list-disc pl-6 space-y-1.5">
             <li>
               Subscriptions are billed in advance on a monthly or annual basis
-              depending on the plan selected.
+              depending on the plan selected, and renew automatically at the end
+              of each billing period until you cancel. You can cancel from your
+              account&apos;s billing page at any time.
             </li>
             <li>
               All fees are non-refundable except where required by law. You may

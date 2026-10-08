@@ -9,6 +9,7 @@ import { PAID_PASS_MODELS, paidModelCall, type PaidMessageCreator } from "@/lib/
 import { COMPANION_FETCH_STRATEGY, fetchAndRecordCompanion, type CompanionRow } from "./companion-fetch";
 import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, type FetchCandidateRow } from "./fetch";
 import { onBankDomain, websiteHost } from "./link-coverage";
+import { OPERATOR_SCHEDULE_STRATEGY } from "./operator-schedules";
 
 type SqlTag = typeof sql;
 
@@ -25,8 +26,14 @@ type SqlTag = typeof sql;
 export const BLOCKED_FETCH_STRATEGY = { strategy: "fetch.paid_web_fetch", version: 2 } as const;
 /** Companion pages (a bank's other fee PDFs) blocked the same way: Fifth Third's 53.com, 7 Oct 2026. */
 export const BLOCKED_COMPANION_FETCH_STRATEGY = { strategy: "fetch.paid_web_fetch_companion", version: 1 } as const;
-/** Main links and companion pages together, per paid step (one slot kept for a companion). */
-export const BLOCKED_FETCH_PER_RUN = 3;
+/**
+ * Main links and companion pages together, per paid step (two slots kept for companions).
+ * Was 3: on 8 Oct only about nine paid steps ran a day, 24 blocked pages waited and the
+ * refused paid answers (refused-answers.ts) were adding 72 more. Six fetches use 6 of the
+ * run's 30 provider calls, at about a cent each.
+ */
+export const BLOCKED_FETCH_PER_RUN = 6;
+const COMPANION_SLOTS = 2;
 export const BLOCKED_FETCH_RETRY_DAYS = 7;
 /** Caps the fetched page's tokens (the main cost of the call). */
 const MAX_CONTENT_TOKENS = 60_000;
@@ -125,7 +132,9 @@ const BLANK_READ_REASON_SQL = "(only 0 dollar amounts|no fee lines|built by java
 
 export interface BlockedCompanionRow extends CompanionRow {
   website_url: string | null;
+  found_by_strategy?: string | null;
 }
+
 
 /**
  * Companion pages the bank's site keeps from us: a PDF link answered with a web page (the
@@ -137,7 +146,7 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
   const rows = await db<BlockedCompanionRow[]>`
     -- companion pages blocked by the bank's site
     SELECT ias.id, ias.institution_id, ias.url, ias.document_role, ias.account_name, ias.fetch_failures,
-           ias.last_source_document_id, latest.content_hash AS last_hash, inst.website_url
+           ias.last_source_document_id, latest.content_hash AS last_hash, inst.website_url, ias.found_by_strategy
       FROM institution_additional_sources ias
       JOIN institution_sources inst ON inst.id = ias.institution_id
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
@@ -179,7 +188,11 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
      ORDER BY inst.asset_size DESC NULLS LAST, ias.id ASC
      LIMIT ${limit * 4}
   `;
-  return rows.filter((row) => row.website_url && onBankDomain(row.url.trim(), row.website_url)).slice(0, limit);
+  // A schedule given by hand was checked by a person, so a sister brand's site counts: Zions'
+  // consumer schedule is on amegybank.com (8 Oct 2026), not zionsbancorporation.com.
+  return rows
+    .filter((row) => row.found_by_strategy === OPERATOR_SCHEDULE_STRATEGY.strategy || (row.website_url && onBankDomain(row.url.trim(), row.website_url)))
+    .slice(0, limit);
 }
 
 function decodeBase64(data: string): ArrayBuffer {
@@ -268,9 +281,9 @@ export async function runBlockedFetch(options: {
   const result: BlockedFetchResult = { selected: 0, processed: 0, stored: 0, failed: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [] };
   if (!(await learningSchemaReady(db))) return result;
   const limit = Math.max(0, Math.min(options.limit ?? BLOCKED_FETCH_PER_RUN, BLOCKED_FETCH_PER_RUN));
-  // One slot is kept for a companion page (57 main links were due on 7 Oct, which would
+  // Slots are kept for companion pages (57 main links were due on 7 Oct, which would
   // hold every companion back for weeks); companions also fill any slot main links leave.
-  const reserved = await selectBlockedCompanions(db, limit > 1 ? 1 : 0);
+  const reserved = await selectBlockedCompanions(db, limit > COMPANION_SLOTS ? COMPANION_SLOTS : limit > 1 ? 1 : 0);
   const rows = await selectBlockedLinks(db, limit - reserved.length);
   const companions = rows.length + reserved.length < limit
     ? await selectBlockedCompanions(db, limit - rows.length)
