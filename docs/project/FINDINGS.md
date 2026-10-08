@@ -29,6 +29,23 @@ The 403 sites and Ohio's URL are not fixed.
 **Lesson:** a generic reader for many sites is a first draft; its first prod run's per-site detail is
 the test. Filter search results on the headline, with the publisher removed.
 
+## 2026-10-08: A deploy broke every Hamilton publish and the failure alert stayed quiet
+**What happened:** after PR 560 merged at 12:01 UTC, every Hamilton `publish` step failed with
+`column "fee_category" can only be updated to DEFAULT` (IA, AL, MS, KS, LA, MO, NM from 12:06 to
+12:27; agent_run_steps read 12:27 UTC). James saw "Hamilton is blocked" before any alert did: the
+two-hour failure share was 5 of 43 (12%), under the 50% bar, because 38 publishes from before the
+deploy were still in the window. One MO publish with nothing to publish "completed" at 12:25 in the
+middle of the break, so a step success is not proof a break is fixed.
+**Cause:** the taxonomy fold writes a generated column (owned and fixed by the Top 50 thread, PR
+569). The alert only measured a rate, so a fresh break hid behind older successes, and each failed
+lane waited an hour for its retry after the fix.
+**Fix:** this PR. `getFailureAlerts` also raises a step type whose last 3 finished steps all
+failed (the 12:06 break would have shown on Today at the third failure). Step failures record the
+deploy (`VERCEL_GIT_COMMIT_SHA`); each tick, a lane whose last run failed on a failure shared by 3+
+runs, which the current deploy has not repeated, reruns at once with a `run.recovery_rerun` event.
+**Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
+deploy, not one success.
+
 ## 2026-10-08: The taxonomy fold wrote a generated column and stopped every Hamilton publish
 **What happened:** after PR 560 merged at 12:01 UTC, Hamilton's publish step failed on every
 state run (IA and AL at 12:06, MS at 12:08, KS at 12:15, atlas job #2877) with `column
