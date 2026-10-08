@@ -38,7 +38,13 @@ function List({ title, note, rows, empty }: { title: string; note: string; rows:
   return (
     <section className="min-w-0">
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <h2 className="text-[13px] font-semibold text-warm-900">{title}</h2>
+        {/* The shell sets h2 in the serif; these list labels match the federal view's sans labels. */}
+        <h2
+          className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-600"
+          style={{ fontFamily: "var(--hamilton-font-sans)" }}
+        >
+          {title}
+        </h2>
         <span className="text-[11px] [font-variant-numeric:tabular-nums] text-warm-600">{rows.length}</span>
       </div>
       <p className="mb-2 text-[11px] leading-relaxed text-warm-600">{note}</p>
