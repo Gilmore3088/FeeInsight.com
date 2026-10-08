@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { RegArticle } from "@/lib/data-store/news";
 import { wireHref, type PageWindow, type WireParams } from "@/lib/regulatory/wire";
 import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import type { FeeDataStrip } from "@/lib/regulatory/wire-fee-links";
 import { researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
 import { ResearchPanel } from "./research-panel";
 import { FeeChips, LABEL, SANS, WireDate, WirePager, WireSummary } from "./wire-controls";
@@ -32,6 +33,10 @@ interface NewsFeedProps {
   exampleNotes?: boolean;
   /** Preview only: guids whose panel renders open. */
   openPanels?: string[];
+  /** "In the fee data" strips (national figures), keyed by guid. */
+  feeData?: Map<string, FeeDataStrip>;
+  /** Preview only: fee figures labelled EXAMPLE. */
+  exampleFees?: boolean;
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -95,6 +100,8 @@ export function NewsFeed({
   related,
   exampleNotes = false,
   openPanels = [],
+  feeData,
+  exampleFees = false,
 }: NewsFeedProps) {
   const filtered = Boolean(params.source || params.topic || params.q || params.fee);
   const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
@@ -167,6 +174,8 @@ export function NewsFeed({
                       example={exampleNotes}
                       open={openPanels.includes(article.guid)}
                       now={now}
+                      feeData={feeData?.get(article.guid) ?? null}
+                      exampleFees={exampleFees}
                     />
                   </div>
                 </li>

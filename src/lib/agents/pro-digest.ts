@@ -17,6 +17,9 @@ import {
 } from "@/lib/email/subscription-token";
 import { isProEmailSendingEnabled, PRO_EMAILS_OFF_REASON } from "@/lib/email/pro-email-flag";
 import { maskEmail, type EmailPreview } from "@/lib/agents/fee-alerts";
+import { getWatchedStatesForUsers } from "@/lib/data-store/wire-watch";
+import { loadWireDigestInputs } from "@/lib/data-store/wire-digest";
+import { buildWireDigest, wireDigestHasItems, wireDigestLines, type WireDigest } from "@/lib/regulatory/wire-digest";
 
 /**
  * Atlas's Monday digest for Pro readers: one email per reader covering the week.
@@ -27,6 +30,11 @@ import { maskEmail, type EmailPreview } from "@/lib/agents/fee-alerts";
  *      peers charge less, against last Monday's snapshot.
  *   3. Their watched competitors: headline fees that changed or were first published
  *      since last Monday's snapshot.
+ *
+ * A reader who watches states on the Regulatory Wire also gets a Wire section (their states
+ * and the federal agencies, last 7 days) in the email they would get anyway. The section
+ * never makes an email on its own: a reader with nothing in the three sections above is
+ * still skipped. Its summaries were written earlier by stage 2's step; this run calls no model.
  *
  * Deterministic (no model). Dollar fees only: rates live in published_fee_rate_catalog
  * and are never pooled with these amounts. A reader with nothing in any section gets no
@@ -108,6 +116,8 @@ export interface ProDigest {
   districtMoves: MarketMove[];
   positionChanges: PositionChange[];
   competitorChanges: CompetitorChange[];
+  /** The reader's Regulatory Wire week, when they watch states. Rides along; never news by itself. */
+  wire?: WireDigest | null;
 }
 
 const HEADLINE: ReadonlySet<string> = new Set(HEADLINE_FEE_KEYS);
@@ -369,6 +379,10 @@ export function buildProDigestEmail(
     for (const move of largestFirst(digest.districtMoves).slice(0, MAX_MOVES_LISTED)) lines.push(moveLine(move));
     lines.push("");
   }
+  if (digest.wire && wireDigestHasItems(digest.wire)) {
+    lines.push(...wireDigestLines(digest.wire, site));
+    lines.push("");
+  }
   lines.push(
     "Figures are published dollar fees from each institution's own fee schedule; percentage fees are left out.",
   );
@@ -491,6 +505,27 @@ async function saveSnapshot(userId: number, weekStart: string, snapshot: DigestS
   `;
 }
 
+/**
+ * Adds each reader's Regulatory Wire section (watched states plus federal, last 7 days) to
+ * digests that already have news. One read for every reader's states together. A failed
+ * read leaves the sections out; the digest itself goes on.
+ */
+async function attachWireSections(digests: ProDigest[], now: Date): Promise<void> {
+  if (digests.length === 0) return;
+  try {
+    const watched = await getWatchedStatesForUsers(digests.map((d) => d.reader.userId));
+    if (watched.size === 0) return;
+    const states = [...new Set([...watched.values()].flat())].sort();
+    const inputs = await loadWireDigestInputs(states, now);
+    for (const digest of digests) {
+      const mine = watched.get(digest.reader.userId);
+      if (mine && mine.length > 0) digest.wire = buildWireDigest({ states: mine, ...inputs, now });
+    }
+  } catch (error) {
+    console.error("[pro-digest] Regulatory Wire section skipped", error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
@@ -580,6 +615,7 @@ export async function runProDigest({
   }
 
   const withNews = digests.filter(digestHasNews);
+  await attachWireSections(withNews, now);
   const sending = isProEmailSendingEnabled();
   const result: ProDigestResult = {
     dryRun,

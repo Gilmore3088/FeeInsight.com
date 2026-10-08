@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { formatWireDate } from "@/lib/regulatory/wire";
+import type { FeeDataStrip as FeeDataStripModel } from "@/lib/regulatory/wire-fee-links";
 import {
   ACTION_TYPE_LABELS,
   type RelatedItem,
   type ResearchNote,
   type TimelineEntry,
 } from "@/lib/regulatory/wire-research";
+import { FeeDataStrip } from "./fee-data-strip";
 
 /**
  * The research panel under a wire item: a native <details>, so it opens without client
@@ -101,6 +103,8 @@ export function ResearchPanel({
   example = false,
   now,
   open = false,
+  feeData = null,
+  exampleFees = false,
 }: {
   note: ResearchNote | null;
   related: RelatedItem[];
@@ -113,10 +117,14 @@ export function ResearchPanel({
   now: Date;
   /** Preview only: render the panel open. */
   open?: boolean;
+  /** "In the fee data": figures for the item's fee type in its state (or nationally). */
+  feeData?: FeeDataStripModel | null;
+  /** Preview only: the fee figures are labelled EXAMPLE. Never set from data. */
+  exampleFees?: boolean;
 }) {
   const hasTimeline = Boolean(timeline && timeline.length > 0);
-  if (press && related.length === 0) return null;
-  if (!note && related.length === 0 && !hasTimeline) return null;
+  if (press && related.length === 0 && !feeData) return null;
+  if (!note && related.length === 0 && !hasTimeline && !feeData) return null;
 
   const ok = note?.status === "ok" && Boolean(note.summary);
   const deadline = ok ? day(note!.commentDeadline, now) : null;
@@ -130,6 +138,7 @@ export function ResearchPanel({
   else if (effective) teaser.push(`Effective ${effective}`);
   if (related.length > 0) teaser.push(`${related.length} related`);
   if (hasTimeline && !ok) teaser.push("Timeline");
+  if (feeData) teaser.push("In the fee data");
 
   return (
     <details open={open || undefined} className="group mt-0.5 border-t border-dashed border-warm-200">
@@ -195,6 +204,8 @@ export function ResearchPanel({
             <p className="mt-1 text-[13px] italic leading-relaxed text-warm-700">{note!.whyItMatters}</p>
           </section>
         ) : null}
+
+        {feeData ? <FeeDataStrip strip={feeData} example={exampleFees} now={now} /> : null}
 
         {hasTimeline ? (
           <section aria-label="Bill timeline">

@@ -258,10 +258,14 @@ export interface StateWirePage {
   failed: WireKind[];
   /** Parts that reached STATE_WIRE_READ_CAP: their counts are at least the number shown. */
   capped: WireKind[];
+  /** With `newSince`: items per state dated after the reader's last visit. */
+  newByState?: Record<string, number>;
 }
 
 export interface StateWireOptions {
   stateCode?: string | null;
+  /** Several states at once (the reader's My states); used when stateCode is not set. */
+  stateCodes?: string[] | null;
   kind?: WireKind | null;
   /** ISO timestamp or day; bills use their latest action date (or introduction date). */
   since?: string | null;
@@ -271,6 +275,11 @@ export interface StateWireOptions {
   fee?: FeeType | null;
   limit?: number;
   offset?: number;
+  /**
+   * Per state, the reader's last visit (ISO). When given, the page counts each state's items
+   * dated after it (all kinds, after the search and fee filters) in `newByState`.
+   */
+  newSince?: Record<string, string | null> | null;
 }
 
 export interface StateWireParts {
@@ -330,18 +339,56 @@ export function filterStateWireByFee(parts: StateWireParts, fee: FeeType | null)
   };
 }
 
+/**
+ * Items per state dated after the reader's last visit to that state. A bill counts by its
+ * latest action day (or introduction), a post or story by its publication time; a bare day
+ * is midnight UTC, so an action on the day of the visit is not counted. A state never
+ * visited (null) counts nothing: everything would be "new".
+ */
+export function countNewByState(parts: StateWireParts, since: Record<string, string | null>): Record<string, number> {
+  const out: Record<string, number> = {};
+  const cutoff = new Map<string, number>();
+  for (const [code, when] of Object.entries(since)) {
+    out[code] = 0;
+    const t = when ? new Date(when).getTime() : NaN;
+    if (Number.isFinite(t)) cutoff.set(code, t);
+  }
+  const at = (value: string | null) => {
+    if (!value) return NaN;
+    return new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value).getTime();
+  };
+  const add = (state: string, date: string | null) => {
+    const code = state.toUpperCase();
+    const limit = cutoff.get(code);
+    if (limit === undefined) return;
+    if (at(date) > limit) out[code] = (out[code] ?? 0) + 1;
+  };
+  for (const b of parts.bills) add(b.state_code, b.stage_on ?? b.introduced_on);
+  for (const p of parts.regulators) add(p.state_code, p.published_at);
+  for (const s of parts.press) add(s.state_code, s.published_at);
+  return out;
+}
+
 export interface WireBillRow extends BillRow {
   published_on: string | Date | null;
 }
 
+/** The states a wire read covers: one, several (My states), or every state (null). */
+export function wireStates(options: Pick<StateWireOptions, "stateCode" | "stateCodes">): string[] | null {
+  if (options.stateCode) return [options.stateCode.toUpperCase()];
+  if (options.stateCodes && options.stateCodes.length > 0) return [...new Set(options.stateCodes.map((c) => c.toUpperCase()))].sort();
+  return null;
+}
+
 async function readWireArticles(prefix: "state" | "news", options: StateWireOptions, cap: number): Promise<ArticleRow[]> {
-  const pattern = options.stateCode ? `${prefix}:${options.stateCode.toUpperCase()}` : `${prefix}:%`;
+  const states = wireStates(options);
+  const patterns = states ? states.map((code) => `${prefix}:${code}`) : [`${prefix}:%`];
   const since = options.since ?? null;
   const q = likePattern(options.q);
   return (await sql`
     SELECT guid, source, title, link, published_at
       FROM reg_articles
-     WHERE source LIKE ${pattern}
+     WHERE source LIKE ANY(${patterns}::text[])
        AND (${since}::text IS NULL OR published_at >= ${since})
        AND (${q}::text IS NULL OR title ILIKE ${q})
      ORDER BY published_at DESC NULLS LAST, created_at DESC
@@ -350,7 +397,7 @@ async function readWireArticles(prefix: "state" | "news", options: StateWireOpti
 }
 
 async function readWireBills(options: StateWireOptions, cap: number): Promise<WireBillRow[]> {
-  const state = options.stateCode ? options.stateCode.toUpperCase() : null;
+  const states = wireStates(options) ?? [];
   const since = options.since ?? null;
   const q = likePattern(options.q);
   return (await sql`
@@ -358,7 +405,7 @@ async function readWireBills(options: StateWireOptions, cap: number): Promise<Wi
       FROM reg_tracker_items
      WHERE source = 'open_states'
        AND cardinality(topics) > 0
-       AND (${state}::text IS NULL OR jurisdiction = ${state})
+       AND (cardinality(${states}::text[]) = 0 OR jurisdiction = ANY(${states}::text[]))
        AND (${since}::date IS NULL OR COALESCE(stage_on, published_on) >= ${since}::date)
        AND (${q}::text IS NULL OR title ILIKE ${q} OR identifier ILIKE ${q})
      ORDER BY COALESCE(stage_on, published_on) DESC NULLS LAST
@@ -409,5 +456,10 @@ export async function getStateWire(options: StateWireOptions = {}): Promise<Stat
   );
   const order: WireKind[] = ["bills", "regulators", "press"];
   const inOrder = (list: WireKind[]) => order.filter((k) => list.includes(k));
-  return { ...page, failed: inOrder(failed), capped: inOrder(capped) };
+  return {
+    ...page,
+    failed: inOrder(failed),
+    capped: inOrder(capped),
+    ...(options.newSince ? { newByState: countNewByState(parts, options.newSince) } : {}),
+  };
 }
