@@ -60,6 +60,8 @@ not on itself.
 **Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
 **Follow-up (19:17 UTC):** CA was re-read under version 2 at 18:17 and AB 1520 still matched, because its digest words groundwater overdraft some other way and the abstract isn't stored. Version 3 drops every "overdraft" from a bill that never mentions banking when the bill is about water or names no fee or charge. A guess at one wording isn't enough: when the source text can't be read, make the rule contextual.
 
+**Follow-up (20:50 UTC):** The 20:27 re-read under version 3 still kept AB 1520 tagged overdraft_nsf with no "fees" topic, so a banking or fee word somewhere else in the digest was vouching for the whole text (or the hit was budget wording such as "insufficient funds"). Version 4 judges each sentence on its own: overdraft and insufficient funds terms count only in a sentence that names banking, or names a fee or charge without being about water. Each state read now also stores the matched words per bill (`detail.matches`), so the next false positive can be diagnosed from the partition row instead of guessed at.
+
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
 **Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
@@ -3598,3 +3600,16 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** The 7 read-now runs and their overdraft fees going live. Hatboro Federal
   Savings' Feb 2026 schedule lists no overdraft fee (only a $25 NSF return fee and a $5
   transfer protection fee).
+
+## 2026-10-08: A held line renamed onto a row of the same page failed Knox's extract step
+
+- **Problem.** Two Knox extract steps failed with `duplicate key value violates unique
+  constraint "raw_fee_observations_knox_agentic_dedup_idx"`: Guaranty Bank and Trust's
+  read-now run (19:55 UTC) and a state lane run (20:00 UTC). The step left no rows for
+  Guaranty's new page. The held-line re-check gives a promoted row today's name for the fee.
+  It did that with no check that the same page already had a row with that name and price,
+  which the dedupe index forbids. The rate re-check in the same file already had that check.
+- **Fix.** A promotion now skips a held line whose new name and price already exist on the
+  same page and keeps it on hold, since that fee is already read.
+- **Watch.** No `knox_agentic_dedup_idx` failures in extract steps, and Guaranty's next
+  read-now run completing.
