@@ -253,8 +253,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
   // names the card. A rate's name is often a sentence ("you will be charged a foreign
   // transaction fee of"), so sentences are checked only on dollar amounts (below).
+  // Since v44 it is International ATM & Card: an ATM used outside the U.S. ("Non–Wells Fargo
+  // ATMs outside the U.S.") is this fee too.
   card_foreign_txn: {
-    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b)/i,
+    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b|outside (the )?u\.?s|abroad|overseas)/i,
     exclude:
       /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
   },

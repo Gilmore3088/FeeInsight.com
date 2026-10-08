@@ -56,7 +56,16 @@ describe("top-50 fold", () => {
     expect(to("nsf_daily_cap", "Insufficient Funds Charge - maximum charge per day")).toBe("od_daily_cap");
     expect(to("nsf_daily_cap", "NSF/OD Fees Daily Cap")).toBe("od_daily_cap");
     expect(to("nsf_daily_cap", "Wire Transfer (over daily limit)")).toBeNull();
-    expect(to("atm_international", "International ATM Withdrawal Fee")).toBeUndefined();
+  });
+
+  test("international ATM fees are International ATM & Card; a line that rules them out has no home", () => {
+    expect(to("atm_international", "International ATM Withdrawal Fee")).toBe("card_foreign_txn");
+    expect(to("atm_international", "Non–Wells Fargo ATMs outside the U.S.")).toBe("card_foreign_txn");
+    expect(to("atm_international", "Non-IBC ATM locations (outside the U.S.): Withdrawal")).toBe("card_foreign_txn");
+    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBeNull();
+    expect(to("atm_international", "ATMs inside United States & internationally")).toBeNull();
+    expect(to("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)")).toBeNull();
+    expect(to("card_foreign_txn", "Foreign Transaction Fee")).toBeUndefined();
   });
 
   test("card disputes are account research", () => {

@@ -1,6 +1,6 @@
 /**
  * The top-50 fold (James, Oct 8 2026: "do the top 50 and try to fit everything there";
- * "Use extensive and comprehensive text matching"). Fifteen categories left the taxonomy
+ * "Use extensive and comprehensive text matching"). Sixteen categories left the taxonomy
  * (`FEE_FAMILIES`) and each of their fees is re-filed under one of the 50 by its own
  * wording, and for a bare name ("Balance Inquiry $1.00") by the section of the schedule it
  * sits in. A fee no rule can place has no home in the 50: Hamilton's fold step archives it
@@ -129,6 +129,15 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   refinance_fee: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
   duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
+  // Using an ATM abroad and using a card abroad are one type, International ATM & Card (James,
+  // Oct 8: Foreign Transaction gave up its spot). The survivor keeps the card_foreign_txn key,
+  // which holds the rates and the spotlight guide; a line that excludes international ATMs, or
+  // names them only beside domestic ones, is not this fee.
+  atm_international: {
+    family: "ATM & Card",
+    rules: [{ to: null, name: /\bnon[- ]?international\b|outside (?:the )?u\.?s\.?a?\.? excluded|\binside (?:the )?united states\b/i }],
+    otherwise: "card_foreign_txn",
+  },
   // A distribution closes out (part of) the IRA.
   ira_distribution: { family: "Retirement & IRA", rules: [], otherwise: "ira_termination" },
 };
@@ -172,7 +181,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 2;
+export const FOLD_RULES_VERSION = 3;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

@@ -755,7 +755,9 @@ describe("checkFeeCategory", () => {
       expect(refileCategory("check_cashing", name), name).toBe("account_research");
     }
     expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
-    expect(checkFeeCategory("check_cashing", "Collection Item (Incoming)")).toEqual({ ok: true });
+    // Since v44 an incoming collection item is its own type, Collection Items.
+    expect(checkFeeCategory("collection_item", "Collection Item (Incoming)")).toEqual({ ok: true });
+    expect(refileCategory("check_cashing", "Collection Item (Incoming)")).toBe("collection_item");
   });
 
   it("v43 fails a name cut from the end of another fee's note (Darwin audit, Oct 8)", () => {

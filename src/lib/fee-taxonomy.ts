@@ -26,7 +26,6 @@ export const FEE_FAMILIES: Record<string, string[]> = {
   ],
   "ATM & Card": [
     "atm_non_network",
-    "atm_international",
     "card_replacement",
     "rush_card",
     "card_foreign_txn",
@@ -107,7 +106,9 @@ export const DISPLAY_NAMES: Record<string, string> = {
   atm_international: "International ATM",
   card_replacement: "Debit Card Replacement",
   rush_card: "Rush Card Delivery",
-  card_foreign_txn: "Foreign Transaction",
+  // International ATM folded in (James, Oct 8: "Foreign Card" gave up its spot; one type for
+  // using an ATM or a card abroad).
+  card_foreign_txn: "International ATM & Card",
   // Wire Transfers
   wire_domestic_outgoing: "Wire Transfer (Domestic Out)",
   wire_domestic_incoming: "Wire Transfer (Domestic In)",

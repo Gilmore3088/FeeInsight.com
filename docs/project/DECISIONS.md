@@ -55,6 +55,11 @@ are archived, so Hamilton's fold step flags them but keeps them live
 (`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. At 15:42 UTC, after seeing the list
 of 248, he said "drop them -- the 248", so the switch is on: they are archived (rolled back with
 reason `taxonomy_fold:`, logged) once their 12-hour second look passes. Nothing is deleted.
+Around 16:00 UTC he gave collection items their own type ("Own type": about 1,000 check
+cashing fees with a $20 median beside check cashing's $5 move to `collection_item`), and picked
+Foreign Card to give up a spot for it. Foreign Transaction and International ATM became one type,
+International ATM & Card. It keeps the `card_foreign_txn` key, which holds the 277 rate fees,
+the spotlight and the consumer guide, and the 59 International ATM fees fold into it.
 
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
