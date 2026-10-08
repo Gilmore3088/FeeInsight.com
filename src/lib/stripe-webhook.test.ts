@@ -67,6 +67,17 @@ describe("applyStripeEvent", () => {
     expect(tx.mock.calls[0]).toContain(7);
   });
 
+  it("activates a $0 checkout paid with a 100%-off code", async () => {
+    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: null }]);
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "subscription", payment_status: "no_payment_required", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    const [sql] = issued();
+    expect(sql).toContain("role = 'premium'");
+    expect(tx.mock.calls[0]).toContain(7);
+  });
+
   it("asks for one welcome email per newly activated subscriber", async () => {
     tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
     const effects = await applyStripeEvent(

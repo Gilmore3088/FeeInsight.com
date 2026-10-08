@@ -705,7 +705,7 @@ function accountRowLineup(label: string, after: string): AccountLineup {
 }
 
 /** "average balances below $1,000", "balance falls below $7,500": the condition of a low-balance fee. */
-const BALANCE_BELOW_CLAUSE =
+export const BALANCE_BELOW_CLAUSE =
   /\b(?:(?:average|avg\.?|minimum|min\.?|daily|monthly|ledger|collected|account|share)\s+){0,3}balances?\s+(?:(?:falls?|drops?|goes|is)\s+)?(?:below|under|less than)\s+\$\s?[\d,]+(?:\.\d{2})?/i;
 
 /**
