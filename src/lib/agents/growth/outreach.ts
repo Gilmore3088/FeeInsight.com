@@ -3,18 +3,17 @@ import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, setContentDraftStatus } from "@/lib/data-store/content-drafts";
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
 import { contactConfidence, contactsSchemaReady, isSharedMailbox, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
-import { getDisplayName } from "@/lib/fee-taxonomy";
-import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
+import { STATE_NAMES } from "@/lib/us-states";
+import { loadMarketSnapshot, loadStateComparison, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotFee, type SnapshotValue, type StateComparison } from "./market-snapshot";
 
 /**
- * CARNEGIE's first-email drafts (GTM plan, James 15:25-15:39 UTC Oct 8; reshaped by his
- * feedback at 22:23 UTC Oct 8). One draft per prospect with a published decision-maker contact
- * and at least OUTREACH_MIN_FINDINGS fees where its own value and at least SNAPSHOT_MIN_PEERS named
- * local competitors' values all verify (`checkFeeAgainstSource` on every row behind them, via the
- * market snapshot). The email names those competitors and links to the prospect's snapshot page,
- * which shows the same figures with a link to each schedule; a draft is written only after that
- * page is fetched and found to show them. Comparisons are local only, because the page is local
- * (the 21:31 "Statewide" fallback can't be delivered by the page, so it no longer drafts).
+ * CARNEGIE's first-email drafts (GTM plan, James 15:25-15:39 UTC Oct 8). One draft per
+ * prospect with a published decision-maker contact, in James's own template, linking to the
+ * prospect's free market snapshot. Every number in the email is a verified overdraft value
+ * (`checkFeeAgainstSource` on every row behind it, via the market snapshot). A prospect whose
+ * own overdraft fee doesn't verify gets no draft. With fewer than SNAPSHOT_MIN_PEERS verified local
+ * competitors the email compares with the state instead (James, "Statewide", 21:31 UTC Oct 8),
+ * and a prospect with too few verified institutions statewide as well gets no draft.
  *
  * Nothing sends. James, 15:14: "agents DRAFT, never send these"; 15:39: "DONT SEND THE EMAIL".
  * The draft lands in the /admin/growth queue with an audit block under the email: the
@@ -74,38 +73,19 @@ export function snapshotLink(institutionId: number): string {
   return `https://${SITE_DOMAIN}/institution/${institutionId}/market?utm_source=email&utm_medium=outreach&utm_campaign=${OUTREACH_CAMPAIGN}&utm_content=inst-${institutionId}`;
 }
 
-/** One fee the email reports: the prospect's verified value beside its verified local competitors. */
-export interface OutreachFinding {
-  category: string;
-  label: string;
-  own: SnapshotValue;
-  peers: SnapshotValue[];
-  median: number;
-  low: SnapshotValue;
-  high: SnapshotValue;
-}
-
 export interface OutreachDraft {
   subject: string;
   title: string;
   caption: string;
   primary: OutreachContact & { confidence: ContactConfidence };
   backup: (OutreachContact & { confidence: ContactConfidence }) | null;
-  /** Every fee that qualified, in the order the email lists them (the email shows the first OUTREACH_EMAIL_FINDINGS). */
-  findings: OutreachFinding[];
-  /** Distinct named competitors with a verified value in any finding. */
-  competitorCount: number;
+  own: SnapshotValue;
+  median: number;
+  verifiedPeers: number;
+  /** "local" compares with the institution's CBSA; "state" with its state when the CBSA is too thin. */
+  scope: "local" | "state";
   link: string;
 }
-
-/**
- * A draft needs this many fees where the prospect's own value and at least SNAPSHOT_MIN_PEERS
- * named local competitors' values all trace to their schedules (James, 22:23 UTC Oct 8: "stop
- * building outreach around isolated above/below-median overdraft comparisons").
- */
-export const OUTREACH_MIN_FINDINGS = 3;
-/** The email lists this many; the snapshot page shows them all. */
-export const OUTREACH_EMAIL_FINDINGS = 4;
 
 /**
  * A first email goes only to a person whose printed title is a buying role (marketing, retail
@@ -116,7 +96,12 @@ export function isDecisionMaker(contact: Pick<OutreachContact, "kind" | "role" |
   return contact.kind === "person" && contact.role !== "other" && !isSharedMailbox(contact.email);
 }
 
-export type OutreachSkip = "no_contact" | "no_market" | "too_few_findings" | "destination_not_live";
+export type OutreachSkip =
+  | "no_contact"
+  | "no_market"
+  | "own_fee_missing"
+  | "own_fee_unverified"
+  | "too_few_verified_peers";
 
 function contactLine(contact: OutreachContact & { confidence: ContactConfidence }): string {
   const who = [contact.name, contact.title].filter(Boolean).join(", ") || "No name printed";
@@ -130,60 +115,51 @@ function valueLine(name: string, value: SnapshotValue): string {
   return `- ${name}: ${money(value.value)} (${value.documentUrl ?? "no document link"}${read}).${line}${notes}`;
 }
 
-/** The fees that qualify, overdraft and NSF first (they lead most schedules), then by competitor count. */
-export function outreachFindings(snapshot: MarketSnapshot): OutreachFinding[] {
-  const findings: OutreachFinding[] = [];
-  for (const fee of snapshot.fees) {
-    const own = fee.subject;
-    if (!own?.verified || fee.verifiedMedian === null || fee.verifiedPeerCount < SNAPSHOT_MIN_PEERS) continue;
-    const peers = fee.peers.filter((peer) => peer.verified);
-    findings.push({ category: fee.category, label: getDisplayName(fee.category), own, peers, median: fee.verifiedMedian, low: peers[0], high: peers[peers.length - 1] });
-  }
-  const lead = (category: string) => (category === "overdraft" ? 0 : category === "nsf" ? 1 : 2);
-  return findings.sort((a, b) => lead(a.category) - lead(b.category) || b.peers.length - a.peers.length || a.category.localeCompare(b.category));
-}
-
 /**
- * The draft for one prospect, or why it gets none. Every figure and name in the email is a
- * verified value from the snapshot the link opens, so the page shows exactly what the email
- * promises. The email reports what the schedules say and makes no recommendation on pricing
- * (James, 22:23 UTC Oct 8: "We are not advising financial institutions to change their fees").
+ * The draft for one prospect, or why it gets none. The email is James's template word for
+ * word (15:39 Oct 8); every figure in it comes from the snapshot's verified values.
  */
-export function buildOutreachDraft(snapshot: MarketSnapshot, contacts: OutreachContact[]): { draft: OutreachDraft } | { skip: OutreachSkip } {
+export function buildOutreachDraft(
+  snapshot: MarketSnapshot,
+  contacts: OutreachContact[],
+  state: StateComparison | null = null,
+): { draft: OutreachDraft } | { skip: OutreachSkip } {
   const ranked = rankContacts(contacts).filter(isDecisionMaker);
   if (ranked.length === 0) return { skip: "no_contact" };
   if (!snapshot.subject.cbsaCode) return { skip: "no_market" };
-  const findings = outreachFindings(snapshot);
-  if (findings.length < OUTREACH_MIN_FINDINGS) return { skip: "too_few_findings" };
+  const local = snapshot.fees.find((fee) => fee.category === "overdraft");
+  if (!local?.subject) return { skip: "own_fee_missing" };
+  if (!local.subject.verified) return { skip: "own_fee_unverified" };
+  const hasMedian = (fee: SnapshotFee | undefined) => fee !== undefined && fee.verifiedMedian !== null && fee.verifiedPeerCount >= SNAPSHOT_MIN_PEERS;
+  const scope = hasMedian(local) ? "local" : hasMedian(state?.fee) ? "state" : null;
+  if (scope === null) return { skip: "too_few_verified_peers" };
+  const overdraft = scope === "local" ? local : state!.fee;
 
   const [primaryContact, backupContact] = ranked;
   const primary = { ...primaryContact, confidence: contactConfidence(primaryContact) };
   const backup = backupContact ? { ...backupContact, confidence: contactConfidence(backupContact) } : null;
   const institution = snapshot.subject.name;
   const market = marketLabel(snapshot.subject);
-  const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
-  const peerName = (id: number) => names.get(id) ?? `Institution ${id}`;
-  const competitorCount = new Set(findings.flatMap((finding) => finding.peers.map((peer) => peer.institutionId))).size;
-  const shown = findings.slice(0, OUTREACH_EMAIL_FINDINGS);
+  const stateName = state ? (STATE_NAMES[state.stateCode] ?? state.stateCode) : "";
+  const own = local.subject;
+  const median = overdraft.verifiedMedian!;
+  const count = overdraft.verifiedPeerCount;
   const link = snapshotLink(snapshot.subject.id);
-  const subject = `${institution}'s published fees beside ${competitorCount} ${market} institutions`;
+  const subject = scope === "local" ? `How your overdraft fee compares in ${market}` : `How your overdraft fee compares across ${stateName}`;
+  const comparedWith = scope === "local" ? `${count} verified local competitors` : `${count} verified banks and credit unions across ${stateName}`;
   const greetingName = firstName(primary.name);
-  const findingLine = (finding: OutreachFinding) =>
-    `- ${finding.label}: ${institution} ${money(finding.own.value)}. ${finding.peers.length} local schedules range from ${money(finding.low.value)} (${peerName(finding.low.institutionId)}) to ${money(finding.high.value)} (${peerName(finding.high.institutionId)}), median ${money(finding.median)}.`;
 
   const email = [
     `Subject: ${subject}`,
     "",
     greetingName ? `Hi ${greetingName},` : "Hello,",
     "",
-    `Fee Insight compiled ${institution}'s published fee schedule beside the schedules of ${competitorCount} banks and credit unions in ${market}. ${findings.length} of ${institution}'s fees can each be compared with at least ${SNAPSHOT_MIN_PEERS} local institutions' own published figures. A few of them:`,
+    `I was reviewing published banking fees in ${scope === "local" ? market : stateName} and noticed that ${institution}'s overdraft fee is ${money(own.value)}, compared with a median of ${money(median)} among ${comparedWith}.`,
     "",
-    ...shown.map(findingLine),
-    "",
-    "Every figure, each competitor's included, links to the schedule it came from:",
+    "We put together a free, source-backed snapshot of your competitive market:",
     link,
     "",
-    "This is independent research for your team's own review, not a recommendation on pricing. I'm curious: does your team handle competitive fee reviews internally, or do you use an outside research provider?",
+    "I'm curious: does your team handle competitive fee reviews internally, or do you use an outside research provider?",
     "",
     "Best,",
     "James",
@@ -194,63 +170,42 @@ export function buildOutreachDraft(snapshot: MarketSnapshot, contacts: OutreachC
     `If you'd rather not hear from me again, reply "no thanks" and I won't follow up.`,
   ];
 
+  const names = scope === "local" ? new Map(snapshot.peers.map((peer) => [peer.id, peer.name])) : state!.names;
+  const peerName = (id: number) => names.get(id) ?? `Institution ${id}`;
+  const verifiedPeers = overdraft.peers.filter((peer) => peer.verified);
+  const unverified = overdraft.peers.filter((peer) => !peer.verified);
   const audit = [
     "--- For your audit. Not part of the email; delete before sending. ---",
     `To: ${contactLine(primary)}`,
     backup ? `Backup: ${contactLine(backup)}` : "Backup: none published",
-    `Link checked live before drafting: ${link}`,
     "",
-    ...findings.flatMap((finding, index) => {
-      const unverified = snapshot.fees.find((fee) => fee.category === finding.category)?.peers.filter((peer) => !peer.verified) ?? [];
-      return [
-        `${index + 1}. ${finding.label}${index < OUTREACH_EMAIL_FINDINGS ? "" : " (on the page, not in the email)"}`,
-        valueLine(institution, finding.own),
-        ...finding.peers.map((peer) => valueLine(peerName(peer.institutionId), peer)),
-        ...(unverified.length ? [`  Left out as unverified: ${unverified.map((peer) => `${peerName(peer.institutionId)} ${money(peer.value)}`).join(", ")}`] : []),
-        "",
-      ];
-    }),
-    "Before sending, check each quoted line is the same consumer charge as the fee named (same account type, current schedule, no condition that makes it a different charge).",
+    `${institution}'s overdraft fee, as quoted:`,
+    valueLine(institution, own),
+    "",
+    ...(scope === "state" ? [`Compared statewide: ${market} has ${local.verifiedPeerCount} verified local competitor${local.verifiedPeerCount === 1 ? "" : "s"}, fewer than the ${SNAPSHOT_MIN_PEERS} a local median needs.`, ""] : []),
+    `The ${comparedWith} behind the ${money(median)} median:`,
+    ...verifiedPeers.map((peer) => valueLine(peerName(peer.institutionId), peer)),
+    ...(unverified.length
+      ? ["", "Left out as unverified (the amount didn't trace to its own schedule):", ...unverified.map((peer) => `- ${peerName(peer.institutionId)}: ${money(peer.value)}`)]
+      : []),
+    "",
+    "Before sending, check that each fee is the standard consumer overdraft fee: same account type, the schedule is current, and no condition makes it a different charge.",
   ];
 
   return {
     draft: {
       subject,
-      title: `${institution}: ${findings.length} fees beside ${competitorCount} ${market} institutions`,
+      title: `${institution}: ${subject}`,
       caption: [...email, "", ...audit].join("\n"),
       primary,
       backup,
-      findings,
-      competitorCount,
+      own,
+      median,
+      verifiedPeers: count,
+      scope,
       link,
     },
   };
-}
-
-const HTML_ENTITIES: Record<string, string> = { "&amp;": "&", "&#x27;": "'", "&#39;": "'", "&quot;": "\"", "&apos;": "'", "&lt;": "<", "&gt;": ">", "&nbsp;": " " };
-
-/**
- * The link works and delivers what the email promises: it answers 200 and the page shows the
- * institution, every competitor the email names and every amount it quotes (James, 22:23 UTC
- * Oct 8: "Every outreach email must have a verified, working destination").
- */
-export async function checkOutreachDestination(
-  link: string,
-  expected: { names: string[]; amounts: number[] },
-  fetcher: (url: string) => Promise<{ ok: boolean; text: () => Promise<string> }> = (url) => fetch(url, { redirect: "follow", cache: "no-store" }),
-): Promise<boolean> {
-  try {
-    const response = await fetcher(link);
-    if (!response.ok) return false;
-    const page = (await response.text()).replace(/&(?:amp|#x27|#39|quot|apos|lt|gt|nbsp);/g, (entity) => HTML_ENTITIES[entity]);
-    const amountShown = (value: number) => {
-      const [whole, fraction] = value.toFixed(2).split(".");
-      return new RegExp(`\\$${whole}${fraction === "00" ? "(?:\\.00)?" : `\\.${fraction}`}(?![\\d.])`).test(page);
-    };
-    return expected.names.every((name) => page.includes(name)) && expected.amounts.every(amountShown);
-  } catch {
-    return false;
-  }
 }
 
 /** Prospects with saved contacts, $500M-$2B first, then $100M-$500M, biggest first. */
@@ -293,7 +248,7 @@ export interface OutreachRunResult {
   drafted: number;
   draftIds: number[];
   skipped: Partial<Record<OutreachSkip | "drafted_recently", number>>;
-  /** Unreviewed drafts taken back (not a decision-maker, an older email format, or a quoted fee no longer live). */
+  /** Unreviewed drafts taken back because their addressee is not a decision-maker. */
   withdrawn?: number;
   reason: string | null;
 }
@@ -301,32 +256,15 @@ export interface OutreachRunResult {
 /** Who withdrew a draft, and why, as the skip shows it on /admin/growth. */
 export const OUTREACH_WITHDRAWN_BY = "carnegie";
 export const OUTREACH_WITHDRAWN_REASON = "Withdrawn by CARNEGIE: the addressee is not a decision-maker (lender, branch, committee or shared mailbox).";
-export const OUTREACH_STALE_QUOTE_REASON = "Withdrawn by CARNEGIE: an older single-fee email; the institution is drafted again in the multi-fee format if its fees qualify.";
-export const OUTREACH_NOT_LIVE_REASON = "Withdrawn by CARNEGIE: a fee the email quotes is no longer live or is waiting on a takedown second look; the institution is drafted again if its fees still qualify.";
-/**
- * Drafts carry the rule they were written under; anything older is withdrawn. 2 = the catalog row's
- * own excerpt, consumer tier first; 3 = several verified fees with named local competitors and a
- * destination checked live (James, 22:23 UTC Oct 8).
- */
-export const OUTREACH_QUOTE_RULE = 3;
-
-/** Published rows a draft quotes that are gone from the catalog or have a pending takedown. */
-async function notLiveCount(db: SqlTag, publishedIds: number[]): Promise<number> {
-  if (publishedIds.length === 0) return 0;
-  const [row] = await db`
-    SELECT count(*)::int AS n FROM unnest(${publishedIds}::bigint[]) AS q(id)
-     WHERE NOT EXISTS (SELECT 1 FROM published_fee_catalog c WHERE c.fee_published_id = q.id)
-        OR EXISTS (SELECT 1 FROM pipeline_feedback f WHERE f.fee_published_id = q.id AND f.kind = 'takedown_pending')
-  `;
-  return Number(row?.n ?? 0);
-}
+export const OUTREACH_STALE_QUOTE_REASON = "Withdrawn by CARNEGIE: drafted before the quoted line came from the fee's own catalog row; the institution is drafted again.";
+/** Drafts carry the rule they were quoted under; 2 = the catalog row's own excerpt, consumer tier first. */
+export const OUTREACH_QUOTE_RULE = 2;
 
 /**
  * Takes back first emails still waiting for review whose addressee no longer passes
- * `isDecisionMaker`, that were written under an older `OUTREACH_QUOTE_RULE`, or that quote a
- * published row (the prospect's or a named competitor's) no longer live or marked
- * `takedown_pending`. Only unreviewed drafts: anything James approved, marked sent or skipped
- * himself stays as he left it. Returns how many.
+ * `isDecisionMaker`, or that were quoted before `OUTREACH_QUOTE_RULE` (a neighbouring line with the
+ * same price could stand in for the fee's own): drafts made before either rule. Only unreviewed drafts: anything James
+ * approved, marked sent or skipped himself stays as he left it. Returns how many.
  */
 export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
   const rows = await db`
@@ -335,20 +273,14 @@ export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
   `;
   let withdrawn = 0;
   for (const row of rows) {
-    const facts = (typeof row.facts === "string" ? JSON.parse(row.facts) : row.facts) as {
-      to?: { email?: string; name?: string | null; title?: string | null; role?: ContactRole };
-      quote_rule?: number;
-      published_ids?: number[];
-    } | null;
+    const facts = (typeof row.facts === "string" ? JSON.parse(row.facts) : row.facts) as { to?: { email?: string; name?: string | null; title?: string | null; role?: ContactRole }; quote_rule?: number } | null;
     const to = facts?.to;
     if (!to?.email) continue;
     const contact = normalizeContact({ name: to.name ?? null, title: to.title ?? null, role: to.role ?? "other", kind: "person" as ContactKind });
-    let reason: string | null = null;
-    if (!isDecisionMaker({ ...contact, email: to.email })) reason = OUTREACH_WITHDRAWN_REASON;
-    else if (Number(facts?.quote_rule ?? 1) < OUTREACH_QUOTE_RULE) reason = OUTREACH_STALE_QUOTE_REASON;
-    else if ((await notLiveCount(db, (facts?.published_ids ?? []).map(Number))) > 0) reason = OUTREACH_NOT_LIVE_REASON;
-    if (!reason) continue;
-    await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, reason);
+    const buyer = isDecisionMaker({ ...contact, email: to.email });
+    const staleQuote = Number(facts?.quote_rule ?? 1) < OUTREACH_QUOTE_RULE;
+    if (buyer && !staleQuote) continue;
+    await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, buyer ? OUTREACH_STALE_QUOTE_REASON : OUTREACH_WITHDRAWN_REASON);
     withdrawn++;
   }
   return withdrawn;
@@ -371,10 +303,7 @@ export async function runOutreachDrafts(input: {
   limit?: number;
   dryRun?: boolean;
   now?: Date;
-  /** The live-destination check; tests pass their own. */
-  checkDestination?: typeof checkOutreachDestination;
 }): Promise<OutreachRunResult> {
-  const checkDestination = input.checkDestination ?? checkOutreachDestination;
   const db = input.db ?? sql;
   const now = input.now ?? new Date();
   const limit = Math.max(1, Math.min(input.limit ?? OUTREACH_DEFAULT_LIMIT, OUTREACH_MAX_LIMIT));
@@ -399,24 +328,17 @@ export async function runOutreachDrafts(input: {
       continue;
     }
     result.considered++;
-    const snapshot = await loadMarketSnapshot(candidate.institutionId, { db });
+    const snapshot = await loadMarketSnapshot(candidate.institutionId, { db, categories: ["overdraft"] });
     if (!snapshot) {
       skip("no_market");
       continue;
     }
-    const built = buildOutreachDraft(snapshot, candidate.contacts);
+    const local = snapshot.fees.find((fee) => fee.category === "overdraft");
+    const needsState = local?.subject?.verified === true && (local.verifiedMedian === null || local.verifiedPeerCount < SNAPSHOT_MIN_PEERS);
+    const state = needsState ? await loadStateComparison(db, snapshot.subject, "overdraft") : null;
+    const built = buildOutreachDraft(snapshot, candidate.contacts, state);
     if ("skip" in built) {
       skip(built.skip);
-      continue;
-    }
-    const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
-    const shown = built.draft.findings.slice(0, OUTREACH_EMAIL_FINDINGS);
-    const live = await checkDestination(built.draft.link, {
-      names: [snapshot.subject.name, ...shown.flatMap((finding) => [finding.low, finding.high].map((peer) => names.get(peer.institutionId) ?? ""))].filter(Boolean),
-      amounts: shown.flatMap((finding) => [finding.own.value, finding.low.value, finding.high.value]),
-    });
-    if (!live) {
-      skip("destination_not_live");
       continue;
     }
     result.drafted++;
@@ -437,23 +359,17 @@ export async function runOutreachDrafts(input: {
           market: marketLabel(snapshot.subject),
           to: { email: draft.primary.email, name: draft.primary.name, title: draft.primary.title, role: draft.primary.role, confidence: draft.primary.confidence, source_url: draft.primary.source_url },
           backup: draft.backup ? { email: draft.backup.email, name: draft.backup.name, title: draft.backup.title, confidence: draft.backup.confidence } : null,
-          subject: draft.subject,
+          overdraft: draft.own.value,
+          overdraft_source: draft.own.documentUrl,
+          overdraft_line: draft.own.sourceLine,
+          overdraft_row: draft.own.feeName,
           quote_rule: OUTREACH_QUOTE_RULE,
-          findings: draft.findings.map((finding) => ({
-            category: finding.category,
-            own: finding.own.value,
-            own_line: finding.own.sourceLine,
-            own_source: finding.own.documentUrl,
-            local_median: finding.median,
-            verified_peers: finding.peers.length,
-            low: { institution_id: finding.low.institutionId, amount: finding.low.value },
-            high: { institution_id: finding.high.institutionId, amount: finding.high.value },
-          })),
-          competitors: draft.competitorCount,
-          published_ids: [...new Set(draft.findings.flatMap((finding) => [finding.own, ...finding.peers].flatMap((value) => value.publishedIds)))],
-          destination_checked_at: now.toISOString(),
+          comparison: draft.scope,
+          local_median: draft.scope === "local" ? draft.median : null,
+          state_median: draft.scope === "state" ? draft.median : null,
+          verified_peers: draft.verifiedPeers,
           link: draft.link,
-          method: "published_fee_catalog, sourced rows only; one value per institution (overdraft at its highest tier), consumer tier, never a non-customer price; every value in the email traced to its own schedule text; peers are open institutions in the same CBSA; the link was fetched and showed every name and amount the email quotes",
+          method: "published_fee_catalog, sourced rows only; one value per institution (overdraft at its highest tier); every value in the email traced to its own schedule text; peers are open institutions in the same CBSA, or in the same state when the CBSA has too few verified",
         },
         asOf: now,
         agentRunId: input.runId,
@@ -462,7 +378,7 @@ export async function runOutreachDrafts(input: {
     );
     result.draftIds.push(draftId);
   }
-  if (result.drafted === 0) result.reason = `no prospect had a decision-maker contact, ${OUTREACH_MIN_FINDINGS} fees with ${SNAPSHOT_MIN_PEERS} verified local competitors each, and a live snapshot page`;
+  if (result.drafted === 0) result.reason = "no prospect had a decision-maker contact, a verified overdraft fee and enough verified competitors locally or statewide";
   return result;
 }
 
@@ -470,8 +386,9 @@ const SKIP_LABELS: Record<OutreachSkip | "drafted_recently", string> = {
   drafted_recently: "drafted in the last 60 days",
   no_contact: "no decision-maker contact",
   no_market: "no local market",
-  too_few_findings: `fewer than ${OUTREACH_MIN_FINDINGS} fees with ${SNAPSHOT_MIN_PEERS} verified local competitors`,
-  destination_not_live: "snapshot page not live or not showing the quoted figures",
+  own_fee_missing: "no overdraft fee",
+  own_fee_unverified: "own overdraft fee didn't verify",
+  too_few_verified_peers: `fewer than ${SNAPSHOT_MIN_PEERS} verified competitors locally or statewide`,
 };
 
 export function summarizeOutreach(result: OutreachRunResult): string {
@@ -480,7 +397,7 @@ export function summarizeOutreach(result: OutreachRunResult): string {
     .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently"]}`)
     .join(", ");
   const head = `${result.dryRun ? "Would draft" : "Drafted"} ${result.drafted} first emails for James to audit and send himself (${result.considered} prospects read).`;
-  const withdrawn = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts (not a decision-maker, the older single-fee format, or a quoted fee no longer live).` : "";
+  const withdrawn = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts addressed to someone who isn't a decision-maker or quoted before the catalog-row rule (those are drafted again).` : "";
   return (skipped ? `${head} Passed over: ${skipped}.` : head) + withdrawn;
 }
 
@@ -490,8 +407,6 @@ export const FOLLOW_UP_WORKFLOW = "outreach-followup";
 
 export interface FollowUpSource {
   draftId: number;
-  /** The first email's subject, so the follow-up threads under it. */
-  subject?: string | null;
   institutionId: number;
   institutionName: string;
   market: string;
@@ -501,14 +416,14 @@ export interface FollowUpSource {
 
 /** The follow-up email: short, the same link, no new figures, an easy way to redirect it. */
 export function buildFollowUpDraft(source: FollowUpSource): { subject: string; title: string; caption: string } {
-  const subject = `Re: ${source.subject ?? `How your overdraft fee compares in ${source.market}`}`;
+  const subject = `Re: How your overdraft fee compares in ${source.market}`;
   const greetingName = firstName(source.to?.name ?? null);
   const email = [
     `Subject: ${subject}`,
     "",
     greetingName ? `Hi ${greetingName},` : "Hello,",
     "",
-    `Following up once on the free, source-linked comparison of ${source.market} fee schedules I sent last week:`,
+    `Following up once on the free snapshot of ${source.market} fees I sent last week:`,
     source.link,
     "",
     "If competitive fee reviews sit with someone else on your team, I'd be glad to send it to them instead.",
@@ -570,7 +485,6 @@ export async function runOutreachFollowUps(input: { db?: SqlTag; runId: number |
     const to = facts.to && typeof facts.to === "object" ? (facts.to as Record<string, unknown>) : null;
     const source: FollowUpSource = {
       draftId: Number(row.id),
-      subject: typeof facts.subject === "string" ? facts.subject : null,
       institutionId,
       institutionName: String(facts.institution_name ?? `Institution ${institutionId}`),
       market: String(facts.market ?? "your market"),

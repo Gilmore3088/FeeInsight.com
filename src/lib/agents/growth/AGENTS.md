@@ -34,20 +34,16 @@ retail, executive, finance); the CSV marks the first as primary and the second a
 
 ### First-email drafts (`outreach.ts`, `market-snapshot.ts`)
 
-One draft per prospect ($500M to $2B first, then $100M to $500M), linking to the prospect's free
-market snapshot at `/institution/<id>/market`. The snapshot compares the institution's everyday
-consumer fees (`SNAPSHOT_FEE_KEYS`; no wire fees, never a non-customer price) with the open
-institutions in its CBSA. A value counts as verified only when every catalog row behind it passes
-`checkFeeAgainstSource`; anything else is labeled unverified and left out of the local median,
-which needs `MIN_INSTITUTIONS_FOR_MEDIAN` verified institutions. Since James's feedback (22:23 UTC
-Oct 8) a draft needs `OUTREACH_MIN_FINDINGS` (3) fees where the prospect's own value and at least
-5 local competitors' values all verify. The email lists up to 4 of them with the local range,
-naming the competitors at each end, and the median. It reports what the schedules say and makes
-no pricing recommendation. Before drafting, the step fetches the link and drafts only when the
-page answers and shows the institution, every named competitor and every quoted amount
-(`checkOutreachDestination`). Comparisons are local only, because the page is local; the 21:31
-"Statewide" fallback no longer drafts. No draft is made when the prospect has no decision-maker
-(`isDecisionMaker`: a person's own address, not a shared mailbox, under a buying-role title). Under the email
+One draft per prospect ($500M to $2B first, then $100M to $500M) in James's template (15:39 UTC
+Oct 8), linking to the prospect's free market snapshot at `/institution/<id>/market`. The
+snapshot compares the institution's fees with the open institutions in its CBSA. A value counts
+as verified only when every catalog row behind it passes `checkFeeAgainstSource`; anything else
+is labeled unverified and left out of the local median, which needs `MIN_INSTITUTIONS_FOR_MEDIAN`
+verified institutions. No draft is made when the prospect has no decision-maker (`isDecisionMaker`:
+a person's own address, not a shared mailbox, under a buying-role title), its own overdraft fee doesn't verify, or too few competitors verify both locally and statewide.
+When the CBSA has too few verified competitors, the email compares with the open institutions in
+the prospect's state instead (`loadStateComparison`; James chose "Statewide", 21:31 UTC Oct 8) and
+says so. Under the email
 each draft carries an audit block (the schedule line and link behind every figure, the rows'
 conditions, the peers left out) so James checks each comparison before he sends it himself.
 Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the
@@ -56,10 +52,8 @@ day-7 follow-up (`runOutreachFollowUps`) for each first email marked sent at lea
 with nothing recorded since: same link, no new figures, once per institution. Contacts are
 re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
 rank are not buyers, and labels printed where a name would be are not names. Each run first
-withdraws unreviewed drafts whose addressee fails that test, that were written under an older
-`OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
-longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
-institutions can be drafted again. Nothing sends.
+withdraws unreviewed drafts whose addressee fails that test (skipped by `carnegie` with the
+reason), and those institutions can be drafted again. Nothing sends.
 
 ### The outreach journey (`src/lib/outreach-journey.ts`)
 
