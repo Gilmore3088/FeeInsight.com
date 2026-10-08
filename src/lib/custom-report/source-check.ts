@@ -598,9 +598,21 @@ function columnLines(text: string): string[][] {
 /** Fees charged per item, never per day of a lasting overdraft. */
 const PER_ITEM_CATEGORIES: ReadonlySet<string> = new Set(["overdraft", "nsf"]);
 
-/** "$5.00 per day after 10 business days", "$5.00/day after 7th day": a sustained overdraft charge. */
+/**
+ * "$5.00 per day after 10 business days", "$5.00/day after 7th day": a sustained overdraft charge.
+ * So is "an overdrawn account fee of $10.00 on the 5th consecutive business day your account is
+ * overdrawn ... an additional $10.00 per week" (Origin, Oct 8), named before its price when the
+ * line breaks right after it.
+ */
 const SUSTAINED_AFTER =
-  /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b)/i;
+  /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b|on the \d+(?:st|nd|rd|th) (?:consecutive )?(?:business |calendar )?day\b)/i;
+/** "an additional $10.00 per week": a weekly charge on top of the overdraft fee. A weekly price alone
+ * ("Overdraft Fee | $30.00 each week overdrawn" / "$30.00 per item paid") may be the item fee too. */
+const ADDITIONAL_BEFORE = /\badditional\s*$/i;
+const WEEKLY_AFTER = /^\s*(?:per|a|each|\/)\s*week\b/i;
+
+/** "we will charge you an overdrawn account fee of $10.00": the sustained charge names itself. */
+const SUSTAINED_BEFORE = /\b(?:overdrawn account|sustained overdraft|extended overdraft|continuous overdraft|overdrawn balance) (?:fee|charge)s? (?:of )?$/i;
 
 /**
  * A page that glues footnote marks onto its prices ("Debit Card Payment Fee … $4.951", a third
@@ -621,10 +633,16 @@ function gluedFootnotePrice(text: string, amount: number): boolean {
  * ("Overdraft Fee .... $5.00 per day after 10 business day", Oct 8): a sustained overdraft
  * charge, not the per-item overdraft or NSF fee. Every mention of the price on the row must say so.
  */
-function chargedOnceOverdrawnDays(row: string, amount: number): boolean {
+function chargedOnceOverdrawnDays(row: string, amount: number, nextLine?: string): boolean {
   const prices = moneyTokens(row).filter((token) => Math.abs(token.value - amount) < 0.005);
-  return prices.length > 0 && prices.every((token) => SUSTAINED_AFTER.test(row.slice(token.end, token.end + 60)));
+  return prices.length > 0 && prices.every((token) => {
+    // A price that ends its line reads on into the next ("an additional $10.00" / "per week").
+    const after = row.slice(token.end).trim() === "" && nextLine ? ` ${nextLine}` : row.slice(token.end);
+    const before = row.slice(Math.max(0, token.start - 50), token.start);
+    return SUSTAINED_AFTER.test(after.slice(0, 60)) || SUSTAINED_BEFORE.test(before) || (ADDITIONAL_BEFORE.test(before) && WEEKLY_AFTER.test(after));
+  });
 }
+
 
 export function checkFeeAgainstSource(
   text: string | null | undefined,
@@ -727,7 +745,7 @@ function checkAgainstLines(
       amountProblem = null;
     }
     if (!amountProblem && !dailyCap && pricedPerAmount(row, rounded)) amountProblem = "priced_per_amount";
-    if (!amountProblem && perItem && chargedOnceOverdrawnDays(row, rounded)) amountProblem = "amount_not_the_fee";
+    if (!amountProblem && perItem && chargedOnceOverdrawnDays(row, rounded, row === line ? lines[i + 1] : undefined)) amountProblem = "amount_not_the_fee";
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;

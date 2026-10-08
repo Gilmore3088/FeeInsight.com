@@ -55,7 +55,9 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // another (PR 678), a whole price ending in a glued footnote mark fails (PR 679), and a balance
 // or check-size limit ("$1,000.01 + | $10.00", "&lt;$250", "balance of $250") is a threshold
 // (Darwin's audit, Oct 8). Without the bump, institutions already checked at 13 never re-read.
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 14 } as const;
+// Version 15: an overdraft or NSF price charged "on the 5th consecutive business day" or "per
+// week" is a sustained overdraft charge too (Origin's $10 rows, Oct 8).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 15 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
