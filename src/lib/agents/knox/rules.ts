@@ -165,7 +165,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   {
     key: "continuous_od",
     // v33: "Consecutive Overdraft Daily Fee" (Wilson Bank & Trust).
-    // v37: the "OD" abbreviation too ("Continued OD Charge", "Consecutive Day OD Fee").
+    // v38: the "OD" abbreviation too ("Continued OD Charge", "Consecutive Day OD Fee").
     pattern: /\b(continuous|continued|sustained|extended|consecutive|daily).{0,30}\b(?:overdrafts?|OD|O\/D)\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
   },
   {
@@ -180,7 +180,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // v19: "Overdrafts Paid", "Overdrafts (OD)": the plural names the fee when it opens the
   // name or the fee follows it. Elsewhere ("transfer to cover overdrafts", "overdrafts up
   // to a total of $500") it describes another fee or a limit.
-  // v37: "OD Privilege", "OD Item Fee": the abbreviation followed by the fee's own word
+  // v38: "OD Privilege", "OD Item Fee": the abbreviation followed by the fee's own word
   // (GreenState's schedule; the line read as no fee at all).
   {
     key: "overdraft",
@@ -784,7 +784,9 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 // v33: "We will charge you a fee of up to $35.00 each time we pay an overdraft" (the Reg E
 // overdraft notice) states the fee.
 // v34: "You still pay a fee of $35 per item for overdrawing your account" (Park National).
-const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+// v37: "We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed
+// $180 per day" (Guaranty): a "one-time" or "per-item" fee, and a cap after the clause.
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:(?:one[-\s]time|per[-\s]item|flat)\s+)?(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -797,7 +799,7 @@ const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s
 export function sentenceFee(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
   if (!CHARGE_A_FEE_OF.test(segment.slice(0, firstAmount.start))) return null;
   const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "")
-    .replace(/,\s+(?:but|and|so)\b[\s\S]*$/i, "")
+    .replace(/,\s+(?:but|and|so|not to exceed|up to a (?:maximum|total) of)\b[\s\S]*$/i, "")
     .replace(/^[\s*†‡]+/, "")
     .trim();
   const words = clause.split(/\s+/).filter(Boolean);

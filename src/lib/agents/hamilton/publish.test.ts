@@ -671,4 +671,9 @@ describe("publishedFeeName", () => {
     expect(publishedFeeName(" Overdraft Fee", "overdraft")).toBe("Overdraft Fee");
     expect(publishedFeeName("Early Account Closure (by customer)", "early_closure")).toBe("Early Account Closure (by customer)");
   });
+
+  it("drops a footnote number from a read made before the Knox tidy stripped it", () => {
+    expect(publishedFeeName("ATM Inquiry1", "atm_non_network")).toBe("ATM Inquiry");
+    expect(publishedFeeName("Safe Deposit Box 10x10", "safe_deposit_box")).toBe("Safe Deposit Box 10x10");
+  });
 });

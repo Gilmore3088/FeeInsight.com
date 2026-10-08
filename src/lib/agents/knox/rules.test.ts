@@ -592,6 +592,12 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("v37 reads a one-time fee sentence with a daily cap after it (Guaranty)", () => {
+    expect(fees("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft)", 36, "overdraft"],
+    ]);
+  });
+
   it("v19 names a dot-leader row's second price by the title before it, not the first price's terms", () => {
     const line = "Overdraft Fee.......... $30.00 - fee assessed for each item paid1 Continuous Overdraft Fee.......... $5.00 per day";
     expect(fees(line)).toEqual([
@@ -781,7 +787,7 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
-  it("v37 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
+  it("v38 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
     // GreenState's schedule: the line was read as no fee at all.
     expect(fees("OD Privilege* (Overdrafts - Created by check, | $29.00/Item**")).toEqual([
       ["OD Privilege (Overdrafts - Created by check", 29, "overdraft"],

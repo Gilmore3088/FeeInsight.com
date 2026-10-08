@@ -69,6 +69,8 @@ import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
+import { runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
@@ -1663,6 +1665,21 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
       });
       return { status: "completed", summary: summarizeContactFinder(result), detail: { ...result } };
+    }
+    case "growth-outreach": {
+      const followUps = await runOutreachFollowUps({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runOutreachDrafts({
+        db: tx,
+        runId: run.id,
+        limit: numericRunParam(params, ["limit"]),
+        dryRun: run.runKind === "dry_run",
+      });
+      const followUpLine = followUps.due ? ` ${followUps.drafted} day-7 follow-ups drafted.` : "";
+      return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
+    }
+    case "growth-learning": {
+      const result = await runLearningReport({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeLearning(result), detail: { ...result } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });

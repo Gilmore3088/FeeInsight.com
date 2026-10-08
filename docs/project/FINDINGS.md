@@ -16,7 +16,7 @@ Template:
 ## 2026-10-08: PDFs set in prose columns were read across the page
 **What happened:** Origin Bank's deposit agreement went live with seven overdraft rows: the right $35 overdraft item charge under sentence-fragment names, and $10 rows that are really its overdrawn-account fee. On prod, 251 of 1,981 PDF texts (23 at $10B+ banks) show the same pattern, at least 25 joins of running prose with a " | " cell break (Origin's text has 687).
 **Cause:** `read.pdf_layout` builds one line per baseline across the whole page. On a page in three prose columns each line joined its neighbour columns' lines, and lines whose baselines sat a little apart interleaved, so a sentence took its price from another column's sentence.
-**Fix:** layout version 2 reads a page set in prose columns column by column (fee tables keep the row reading), and texts an older layout read across their columns are read once more. Separately, Knox missed "OD Privilege" lines entirely (Knox v37, same PR).
+**Fix:** layout version 2 reads a page set in prose columns column by column (fee tables keep the row reading), and texts an older layout read across their columns are read once more. Separately, Knox missed "OD Privilege" lines entirely (Knox v38, same PR).
 **Lesson:** a reader change needs a re-read rule for the texts it would have read differently; the version bump alone re-reads only texts with under 5 Knox fees.
 
 ## 2026-10-08: Pro header search did nothing and the page covered the account menu
@@ -3448,6 +3448,21 @@ and quarter were already stored, without looking at the periods of the data behi
   Download PDF as soon as the Ask has saved it, whatever happens to the memo.
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
+
+## 2026-10-08: The source check passes some overdraft lines that are another figure
+
+- **Problem.** Running the first outreach drafts against live overdraft fees in the New
+  York-Newark metro, the shared source check (`checkFeeAgainstSource`) accepted two New Jersey
+  fees whose matched line is not an overdraft price: Provident Bank $40 (a debit purchase amount
+  in a worked example; the real fee is $35) and OceanFirst $50 (a "2 x 10" safe deposit box size;
+  the real fee is $30). The Accuracy thread confirmed both and is archiving them after the 12-hour
+  look. NewBank $25 and Haven Savings $30, flagged at the same time, are correct. The catalog's
+  `conditions` field also carries Knox's provenance ("Knox deterministic extraction from Rosetta
+  artifact #...; text_hash=..."), not conditions.
+- **Fix so far.** The market snapshot and the outreach audit leave pipeline provenance out of a
+  fee's notes, and every outreach draft lists each peer's schedule line so James audits it
+  before sending.
+- **Watch.** Peer lines in outreach audit blocks that read as a worked example or a box size.
 
 ## 2026-10-08: Fee names that wrap onto a second line lost their price
 
