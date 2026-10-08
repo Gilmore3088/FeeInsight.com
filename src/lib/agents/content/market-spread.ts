@@ -218,7 +218,7 @@ export async function loadMarketRows(fees: string[], db: SqlTag = sql): Promise<
   return rows as unknown as MarketRow[];
 }
 
-export async function runMarketSpread(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean }): Promise<MarketSpreadResult> {
+export async function runMarketSpread(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean; avoidSubjects?: Iterable<string> }): Promise<MarketSpreadResult> {
   const db = input.db ?? sql;
   const now = input.now ?? new Date();
   const fees = themeFees(now);
@@ -238,7 +238,9 @@ export async function runMarketSpread(input: { db?: SqlTag; runId: number | null
 
   const marketRows = await loadMarketRows(fees, db);
   const spreads = summarizeMarkets(marketRows);
+  // Featured lately, or skipped by James with a reason (a lesson): neither is drafted again.
   const recent = await recentSubjects(MARKET_SPREAD_WORKFLOW, REPEAT_WINDOW_DAYS, db);
+  for (const subject of input.avoidSubjects ?? []) recent.add(subject);
   const postable = spreads.filter((spread) => refusal(spread) === null);
   const result: MarketSpreadResult = {
     ...base,

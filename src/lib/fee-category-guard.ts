@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { foldRetiredCategory } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
@@ -255,18 +255,25 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
   // names the card. A rate's name is often a sentence ("you will be charged a foreign
   // transaction fee of"), so sentences are checked only on dollar amounts (below).
+  // Since v45 it is International ATM & Card: an ATM used outside the U.S. ("Non–Wells Fargo
+  // ATMs outside the U.S.") is this fee too.
   card_foreign_txn: {
-    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b)/i,
+    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b|outside (the )?u\.?s|abroad|overseas)/i,
     exclude:
       /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
-  // 2026). A collection fee on a charged-off or past-due account, or a collection phone
-  // call, is debt collection; every other name passes. v41 also catches "Charge off deposit
-  // collection fee" without the d.
+  // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
+  // for collection or a foreign check handled for deposit is a collection item. A collection
+  // fee on a charged-off or past-due account, or a collection phone call, is debt collection;
+  // every other name passes. v41 also catches "Charge off deposit collection fee" without the d.
   check_cashing: {
     include: /\S/,
-    exclude: /(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)/i,
+    exclude: new RegExp(String.raw`(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)|${COLLECTION_ITEM.source}`, "i"),
+  },
+  collection_item: {
+    include: COLLECTION_ITEM,
+    exclude: /(?!)/,
   },
   // A credit report pulled to open a deposit account or membership is not a loan fee.
   loan_origination: {
@@ -303,6 +310,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(check|draft|order|print|book|style|box|design|cheque)/i,
     exclude: /\btemporar/i,
   },
+  // v46: a fee printed under a "closed within 90 days" heading is that heading's own fee only
+  // when the row names no other: Koin's "Accounts closed within 90 days: International Wire" $45
+  // (closure is $30), a rush card shipment, a reinstatement. A club's early withdrawal is filed
+  // here on purpose (fee-taxonomy.ts).
+  early_closure: {
+    include: /\S/,
+    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat)/i,
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -317,7 +332,11 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v43: PR 682's rules ship after Magellan's v42 (PR 684): v40 cheap overdraft protection, v41
 // charge-off fees, and names cut from another fee's note plus a reload fee filed as bill pay.
 // v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
-export const CATEGORY_GUARD_VERSION = 44;
+// v45: collection items leave check cashing for their own type; ATMs abroad are International
+// ATM & Card (Top 50, PR 701).
+// v46: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
+// reinstatement fee filed as early closure under a "closed within 90 days" heading.
+export const CATEGORY_GUARD_VERSION = 46;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -370,6 +389,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
+  { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },
@@ -559,17 +579,32 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
   if (first === second || Math.abs(amount - first) >= 0.005) return null;
   const words = excerpt.replace(prices[0], " ");
   const keyValues = [canonicalFeeKey.includes("_intl_") ? "intl" : "domestic", canonicalFeeKey.endsWith("_outgoing") ? "out" : "in"];
-  for (const pair of words.matchAll(SLASH_PAIR)) {
-    const left = WIRE_SIDES.find((side) => side.pattern.test(pair[1]))?.value ?? null;
-    const right = WIRE_SIDES.find((side) => side.pattern.test(pair[2]))?.value ?? null;
-    for (const values of Object.values(WIRE_DIMENSIONS)) {
-      const l = left && values.includes(left) ? left : null;
-      const r = right && values.includes(right) ? right : null;
-      if (l === r || (l == null && r == null)) continue;
-      const own = keyValues.find((value) => values.includes(value))!;
-      const slot = l === own || (l == null && r !== own) ? 1 : 2;
-      return slot === 2 ? `"${pair[0]}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
-    }
+  // v46: a spaced slash between two named wires ("Wire Out / Wire Out Foreign | $25.00 /
+  // $45.00") names each slot by its whole phrase; the word next to the slash ("Out") is shared.
+  const phrasePairs = words
+    .split(/[|:–—]/)
+    .map((cell) => cell.split(/\s\/\s/))
+    .filter((sides) => sides.length === 2 && sides.every((side) => /[A-Za-z]/.test(side)))
+    .map((sides) => ({ text: sides.join(" / ").trim(), sides: sides.map((side) => side.match(/[A-Za-z'’]+/g) ?? []) }));
+  const pairs = phrasePairs.length > 0
+    ? phrasePairs
+    : [...words.matchAll(SLASH_PAIR)].map((pair) => ({ text: pair[0], sides: [[pair[1]], [pair[2]]] }));
+  for (const pair of pairs) {
+    const named = pair.sides.map((side) => side.map((word) => WIRE_SIDES.find((wire) => wire.pattern.test(word))?.value).filter(Boolean) as string[]);
+    const dimensions = Object.values(WIRE_DIMENSIONS)
+      .map((values) => named.map((found) => {
+        const hits = [...new Set(found.filter((value) => values.includes(value)))];
+        return hits.length === 1 ? hits[0] : null;
+      }))
+      .map(([l, r], index) => ({ l, r, values: Object.values(WIRE_DIMENSIONS)[index] }))
+      .filter(({ l, r }) => l !== r)
+      // A dimension both sides name decides before one only a side names.
+      .sort((a, b) => Number(b.l != null && b.r != null) - Number(a.l != null && a.r != null));
+    const decider = dimensions[0];
+    if (!decider) continue;
+    const own = keyValues.find((value) => decider.values.includes(value))!;
+    const slot = decider.l === own || (decider.l == null && decider.r !== own) ? 1 : 2;
+    return slot === 2 ? `"${pair.text}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
   }
   return null;
 }

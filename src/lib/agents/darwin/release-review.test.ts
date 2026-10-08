@@ -9,6 +9,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release-held";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
+  frequencyFromLine,
   lessonsFor,
   lineRefilesTo,
   loadReviewLessons,
@@ -303,6 +304,43 @@ describe("Darwin held-fee release review", () => {
     expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 per month"))).toBe("frequency_contradicts_line");
     expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 each"))).toBeNull();
     expect(releaseHoldReason(held(null, "Excess activity charge | $5.00 each"))).toBeNull();
+  });
+
+  it("v16 holds the name shapes the 200-fee eval found and reads a blank frequency from the line", () => {
+    const held = (fee_name: string, key = "stop_payment") => ({
+      row: row({ fee_name, held_canonical_fee_key: key, amount: "5.00" }) as unknown as HeldFeeRow,
+      sourceContext: null,
+    });
+    const fragments: Array<[string, string]> = [
+      ["Express Chip Debit Card Replacement ……………………", "card_replacement"],
+      ["Below minimum balance . . . . . . . . . . . .", "minimum_balance"],
+      ["00/item Counter Checks (per book of 8)", "counter_check"],
+      ["charge for each one-time debit overdraft", "overdraft"],
+      ["per month Stop Payment via Digital Banking", "stop_payment"],
+      ["Fees: o A Minimum Balance Fee", "minimum_balance"],
+      ["(for each overdraft item paid)", "overdraft"],
+      ["Garnishment / Levy: Fee", "garnishment_levy"],
+    ];
+    for (const [name, key] of fragments) {
+      expect(releaseHoldReason(held(name, key)), name).toBe("name_fragment");
+    }
+    const names: Array<[string, string]> = [
+      ["Stop Payment", "stop_payment"],
+      ["eStatement Fee", "estatement_fee"],
+      ["Stop Payment (per item)", "stop_payment"],
+      ["Levy/Garnishment", "garnishment_levy"],
+      ["Replacement Debit Card", "card_replacement"],
+    ];
+    for (const [name, key] of names) {
+      expect(releaseHoldReason(held(name, key)), name).toBeNull();
+    }
+    expect(frequencyFromLine("Stop Payment | $5.00 each", 5)).toBe("per_item");
+    expect(frequencyFromLine("Paper statement $5.00 per month", 5)).toBe("monthly");
+    expect(frequencyFromLine("Safe deposit box 3x5 $5.00 per year", 5)).toBe("annual");
+    expect(frequencyFromLine("Dormant fee $5.00 quarterly", 5)).toBe("quarterly");
+    expect(frequencyFromLine("Monthly fee | $5.00 per month or $1.00 each", 5)).toBeNull();
+    expect(frequencyFromLine("Stop Payment | $5.00", 5)).toBeNull();
+    expect(frequencyFromLine("6 included per month; Excess activity charge - $5.00 each after 6", 5)).toBe("per_item");
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {
