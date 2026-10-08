@@ -273,7 +273,9 @@ describe("Darwin held-fee release review", () => {
       sourceLine,
       sourceContext,
     });
-    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("charged_to_merchant");
+    // Guard v39 (PR 679) rejects a merchant's NSF check outright, before the merchant hold.
+    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("category_guard");
+    expect(releaseHoldReason(held("Merchant Overdraft Fee", "overdraft", "25.00"))).toBe("charged_to_merchant");
     expect(releaseHoldReason(held("Charge Back (Merchant Returned Check) per item", "deposited_item_return", "10.00"))).toBeNull();
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("small_overdraft_protection");
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "30.00"))).toBeNull();
