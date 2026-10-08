@@ -16,7 +16,7 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 }
 
 /**
- * Hamilton's answer eval on live data (cron, daily): the quality bar's consultant questions
+ * Hamilton's answer eval on live data (cron, every two hours, a fresh sample each day): the quality bar's consultant questions
  * asked of a spread of real banks and credit unions, scored, as one visible run step.
  * `?per_group=3` asks more institutions per charter and asset tier. Read-only; no model calls.
  */
