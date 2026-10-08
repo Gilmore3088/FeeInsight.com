@@ -3326,3 +3326,15 @@ and quarter were already stored, without looking at the periods of the data behi
 **Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
 (`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
 **Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
+
+## 2026-10-08: Top-10 banks without an overdraft fee waited for their state's lane
+
+- **Problem.** 349 of 510 top-10-by-deposits slots had a live overdraft fee. Of the 80 banks
+  under $10B without one, 40 had no stored document that priced an overdraft, and 20 of those
+  had never had a second-document search. The companion finder takes six banks per step from
+  the discover step's own state, and tops up only banks the catalog hides, so a live leader in a
+  state the lane had not reached waited.
+- **Fix.** Each step's companion finder gives two slots to state top-10 banks from any state
+  with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
+- **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
+  count of top-10 slots with a live overdraft fee.
