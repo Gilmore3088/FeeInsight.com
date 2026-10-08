@@ -38,9 +38,26 @@ const BANK_FEE_PATTERN =
 const WATER_OVERDRAFT =
   /\b(critically\s+)?overdraft(ed)?\s+(groundwater\s+)?(sub)?basins?\b|\b(groundwater|aquifer|basin)\s+overdraft\b|\boverdraft\s+(of|in)\s+(the\s+)?(groundwater|aquifers?|(sub)?basins?)\b|\boverdraft\s+conditions?\b/gi;
 
-/** The bill's text with groundwater "overdraft" phrases taken out. */
+/** Words that place a bill in water law. */
+const WATER_CONTEXT = /\b(groundwater|aquifers?|water years?|water code|sustainability agenc(y|ies)|(sub)?basins?)\b/i;
+/** Words that place a bill in consumer banking. */
+const BANKING_CONTEXT =
+  /\b(banks?|banking|credit unions?|financial institutions?|depository|checking|deposit accounts?|debit cards?|account ?holders?|consumers?)\b/i;
+
+const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies))\b/i;
+
+/**
+ * The bill's text with non-banking "overdraft" taken out. Known water phrases always go. When the
+ * text never mentions banking, every "overdraft" also goes if the text is about water or names no
+ * fee or charge: the digests word groundwater overdraft many ways, and CA AB 1520 got past the
+ * phrase list on its 2026-10-08 re-read (its abstract is not stored, so its exact wording is unknown).
+ */
 export function withoutWaterOverdraft(text: string): string {
-  return text.replace(WATER_OVERDRAFT, " ");
+  const stripped = text.replace(WATER_OVERDRAFT, " ");
+  if (!BANKING_CONTEXT.test(stripped) && (WATER_CONTEXT.test(stripped) || !FEE_WORDS.test(stripped))) {
+    return stripped.replace(/\boverdraft\w*/gi, " ");
+  }
+  return stripped;
 }
 
 export type BillStage = "introduced" | "in_committee" | "passed_chamber" | "passed_legislature" | "signed" | "vetoed" | "failed";
