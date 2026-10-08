@@ -712,6 +712,15 @@ describe("Knox extract.rules", () => {
     ]);
     expect(fees("Overdraft fees will increase from $30 to $35 effective March 1.")).toEqual([]);
     expect(extractFromSegment("Wire fee $15 to $25").held[0]?.shape).toBe("range");
+    // Park National (raw text 17640): "you pay a fee of" a sentence names, cut at ", but".
+    expect(
+      fees("You still pay a fee of $35 per item for overdrawing your account, but your transaction will go through, and you'll avoid the merchant's fee."),
+    ).toEqual([["Overdraft fee (per item for overdrawing your account)", 35, "overdraft"]]);
+    // WaFd: the paid insufficient-funds charge is the overdraft fee; the returned one is NSF.
+    expect(fees("Insufficient Funds Charge (Paid) | $30 Per Presentment\nInsufficient Funds Charge (Returned) | $30 Per Presentment")).toEqual([
+      ["Insufficient Funds Charge (Paid)", 30, "overdraft"],
+      ["Insufficient Funds Charge (Returned)", 30, "nsf"],
+    ]);
     // Banc of California (raw 307714): "Per transaction" is the fee's unit, not its name.
     expect(fees("Overdraft Fee - Items Paid3 | Per transaction | $20.00")).toEqual([
       ["Overdraft Fee - Items Paid3 | Per transaction", 20, "overdraft"],

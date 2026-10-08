@@ -523,6 +523,13 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
   });
 
+  it("v27 files an insufficient-funds charge the bank paid as the overdraft fee (WaFd, Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Paid)").ok).toBe(true);
+    expect(refileCategory("nsf", "Insufficient Funds Charge (Paid)")).toBe("overdraft");
+    expect(refileCategory("nsf", "Insufficient Funds Charge (Returned)")).toBe("nsf");
+    expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Returned)").ok).toBe(false);
+  });
+
   it("v27 accepts a per-item overdraft fee whose note states the daily count, never the cap itself (First Financial, Oct 8)", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Fee-Paid Item (Maximum of 2 Items/Day)")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day On Consumer Accounts)")).toEqual({ ok: true });

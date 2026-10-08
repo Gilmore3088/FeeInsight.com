@@ -6,6 +6,7 @@ import {
   heldConditions,
   heldRecheckFlag,
   promotedConditions,
+  promotedName,
   promotionCheckedFlag,
   promotionWithdrawnFlag,
   recategorizeHeld,
@@ -75,6 +76,18 @@ describe("Knox held-line re-check", () => {
     expect(recategorizeHeld(lowered)?.canonicalHint).toBe("overdraft");
     expect(promotedConditions(lowered.conditions, recategorizeHeld(lowered)!)).toMatch(/^Knox extract\.rules v\d+ categorized a line held for review/);
     expect(recategorizeHeld(raised)).toBeNull();
+  });
+
+  it("v34 names a promoted line from today's read when its held name does not say the category", () => {
+    const park = {
+      fee_raw_id: 1,
+      amount: "35.00",
+      fee_name: "You still pay",
+      conditions: conditions("You still pay a fee of $35 per item for overdrawing your account, but your transaction will go through."),
+    };
+    const candidate = recategorizeHeld(park)!;
+    expect(promotedName(park, candidate)).toBe("Overdraft fee (per item for overdrawing your account)");
+    expect(promotedName({ ...courtesyPay, fee_name: "Courtesy Pay Fee" }, recategorizeHeld(courtesyPay)!)).toBe("Courtesy Pay Fee");
   });
 
   it("rewrites the audit text with the category", () => {

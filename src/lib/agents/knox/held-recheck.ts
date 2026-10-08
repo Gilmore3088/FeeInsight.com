@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
+import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
@@ -154,6 +154,16 @@ export function promotedConditions(conditions: string, candidate: ExtractedFeeCa
     .replace(/canonical_hint=none;/, `canonical_hint=${candidate.canonicalHint};`);
 }
 
+/**
+ * v34: the held row keeps its name when that name already says the category; a name
+ * that does not ("You still pay", Park National) takes the one today's rules read from
+ * the same excerpt, so Darwin's category guard can check it.
+ */
+export function promotedName(row: HeldRow, candidate: ExtractedFeeCandidate): string {
+  const name = row.fee_name?.trim();
+  return name && classifyFeeText(name) === candidate.canonicalHint ? name : candidate.feeName;
+}
+
 export async function recheckHeldRows(
   db: SqlTag,
   options: {
@@ -218,7 +228,8 @@ export async function recheckHeldRows(
                                || ${JSON.stringify(flags)}::jsonb,
                conditions = ${promotedConditions(row.conditions ?? "", candidate)},
                extraction_confidence = ${candidate.confidence},
-               frequency = COALESCE(fr.frequency, ${candidate.frequency})
+               frequency = COALESCE(fr.frequency, ${candidate.frequency}),
+               fee_name = ${promotedName(row, candidate)}
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
            AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:range')
            AND NOT fr.outlier_flags ? 'needs_darwin_verification'

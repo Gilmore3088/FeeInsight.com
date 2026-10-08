@@ -180,7 +180,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // to a total of $500") it describes another fee or a limit.
   {
     key: "overdraft",
-    pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
+    pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
   },
   {
     key: "nsf",
@@ -469,7 +469,8 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
-  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
+  // v34: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd).
+  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b|\(\s*paid\s*\)/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
     return "overdraft";
   }
   // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
@@ -778,7 +779,8 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 /** "We (will) charge a fee of", "you will be charged a fee of": the price's name comes after it. */
 // v33: "We will charge you a fee of up to $35.00 each time we pay an overdraft" (the Reg E
 // overdraft notice) states the fee.
-const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+// v34: "You still pay a fee of $35 per item for overdrawing your account" (Park National).
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -790,7 +792,10 @@ const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s
  */
 export function sentenceFee(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
   if (!CHARGE_A_FEE_OF.test(segment.slice(0, firstAmount.start))) return null;
-  const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "").replace(/^[\s*†‡]+/, "").trim();
+  const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "")
+    .replace(/,\s+(?:but|and|so)\b[\s\S]*$/i, "")
+    .replace(/^[\s*†‡]+/, "")
+    .trim();
   const words = clause.split(/\s+/).filter(Boolean);
   if (words.length < 2 || words.length > 14 || /\$\s?\d/.test(clause)) return null;
   const patternKey = classifyPatternKey(clause);
@@ -799,7 +804,9 @@ export function sentenceFee(segment: string, firstAmount: AmountMatch): Extracte
   const subject = FEE_PATTERNS.find((entry) => entry.key === patternKey)?.pattern.exec(clause.replace(/[‘’ʼ`]/g, "'"))?.[0];
   if (!subject) return null;
   const limit = segment.slice(firstAmount.end).match(ONE_PER_DAY) ? "; one per day" : "";
-  const feeName = `${subject.charAt(0).toUpperCase()}${subject.slice(1).toLowerCase()} fee (${clause}${limit})`;
+  // "... for overdrawing your account" is the overdraft fee.
+  const title = /^overdrawing$/i.test(subject) ? "Overdraft" : `${subject.charAt(0).toUpperCase()}${subject.slice(1).toLowerCase()}`;
+  const feeName = `${title} fee (${clause}${limit})`;
   if (!usableName(feeName) || !passesDarwinChecks(hint, feeName, firstAmount.value)) return null;
   return {
     feeName,
