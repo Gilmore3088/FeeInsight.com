@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Seven of the "192 $10B+ banks" are closed charters
+**What happened:** the large-bank overdraft count (106 of 192 at 23:25 UTC) counts every `institution_sources` row at $10B+ in assets. Seven are marked closed by the FDIC or NCUA registry sync (`regulatory_status = 'inactive'`): Webster Bank (closed 2026-08-20), Comerica Bank and Cadence Bank (2026-02-01), FirstBank of Colorado (2026-06-18), First Foundation Bank (2026-04-01), Stellar Bank (2026-07-01) and First Technology FCU (no closed date; NCUA's list no longer has its charter). Six of the seven have no live overdraft fee, and companion fetch skips inactive banks, so their hand-found schedules never fetched. Stock Yards ($10B) is `dormant`, which companion fetch also skipped.
+**Cause:** the count's denominator was never filtered on registry status; the merged banks' fees now belong to the acquirers' charters.
+**Fix:** count open charters only: 105 of 185 at 23:25 UTC. Hand-found schedules now fetch for a dormant bank, never for a closed one (this PR). First Tech's NCUA status is unconfirmed: the cloud cannot reach NCUA, so it waits for the registry's next sync.
+**Lesson:** any coverage count over `institution_sources` excludes `regulatory_status = 'inactive'`.
+
 ## 2026-10-08: Hand-found schedules waited hours for their state's lane
 **What happened:** the schedules added at 17:03 UTC for Comerica, Cadence, FirstBank (CO), Stock Yards and First Tech were still unfetched at 22:50 (`institution_additional_sources.last_fetched_at` null). ConnectOne's listed fee page was never added at all.
 **Cause:** companion fetch only takes pages in the running lane's state, and the TX, MS, CO, KY and CA lanes did not come round. ConnectOne's page counted as already held because a copy was stored in March 2026, though the bank has no current link.
