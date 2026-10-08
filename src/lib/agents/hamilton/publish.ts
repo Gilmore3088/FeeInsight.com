@@ -649,14 +649,14 @@ export function feeValue(row: RateFields & { amount: number | string | null }): 
   return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
-interface ListedFeeLine {
+export interface ListedFeeLine {
   source_document_id: number | string | null;
   fee_name: string | null;
   amount: number | string | null;
 }
 
 /** Every line Knox read from these documents, for the same-name price check below. */
-async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
   const ids = documentIds.filter((id) => id != null).map(Number);
   if (ids.length === 0) return [];
   try {
@@ -676,7 +676,9 @@ async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | stri
  * fee name twice ("Returned Deposit Fee $10" and "Returned Deposit Fee $3" for two
  * accounts) has two lines, not a price change, whichever document is newer.
  */
-export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+export type ListedPrice = RateFields & Pick<VerifiedFeeRow, "fee_name" | "amount" | "source_document_id">;
+
+export function listsBothPrices(lines: ListedFeeLine[], row: ListedPrice, prior: ListedPrice): boolean {
   // Knox's listed lines carry no rate here, so two rates are never read as two lines.
   if (isPercentFee(row) || isPercentFee(prior)) return false;
   const name = normalizedFeeName(row.fee_name);
@@ -735,7 +737,10 @@ async function supersedePriorFee(
         new_amount,
         change_type,
         detected_at,
-        changed_at
+        changed_at,
+        previous_fee_published_id,
+        new_fee_published_id,
+        like_for_like
       )
       VALUES (
         ${Number(options.row.institution_id)},
@@ -746,7 +751,10 @@ async function supersedePriorFee(
         ${newAmount},
         ${changeType},
         NOW(),
-        NOW()
+        NOW(),
+        ${priorId},
+        ${options.feePublishedId},
+        ${samePage(options.row, options.prior)}
       )
     `;
     return true;

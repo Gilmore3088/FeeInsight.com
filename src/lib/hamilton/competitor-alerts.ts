@@ -238,6 +238,8 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
        AND COALESCE(c.canonical_fee_key, c.fee_category) = ANY(${categories}::text[])
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
        AND c.detected_at <= ${agedBefore}::timestamptz
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f
