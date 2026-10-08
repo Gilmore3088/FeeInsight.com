@@ -496,6 +496,19 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url,
     givenBy: "web search for state top-10 banks under $10B with no live overdraft fee, 2026-10-08 15:50",
   })),
+  // Second search pass for the same banks. Each link is on the bank's own stored domain or its
+  // own file host; links on a domain that may be a different bank (Bankwell Direct, 1stnorthern)
+  // were left out (2026-10-08 16:05).
+  ...([
+    [404, "First Dakota National Bank", "https://com-firstdakota-cdn.s3.amazonaws.com/general-uploads/Customer-Overdraft-Disclosure.pdf"],
+    [453, "Cornerstone Bank", "https://www.cornerstoneconnect.com/gallery/Services%20and%20Costs.pdf"],
+    [8397, "Greater Nevada Federal Credit Union", "https://www.gncu.org/wp-content/uploads/2025/05/20250519-GNCU-Personal-Accounts-Fee-Schedule-FINAL.pdf"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "second web search for state top-10 banks with no live overdraft fee, 2026-10-08 16:05",
+  })),
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");

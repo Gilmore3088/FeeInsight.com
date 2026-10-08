@@ -2,6 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -164,7 +165,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   {
     key: "continuous_od",
     // v33: "Consecutive Overdraft Daily Fee" (Wilson Bank & Trust).
-    // v36: the "OD" abbreviation too ("Continued OD Charge", "Consecutive Day OD Fee").
+    // v37: the "OD" abbreviation too ("Continued OD Charge", "Consecutive Day OD Fee").
     pattern: /\b(continuous|continued|sustained|extended|consecutive|daily).{0,30}\b(?:overdrafts?|OD|O\/D)\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
   },
   {
@@ -179,7 +180,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // v19: "Overdrafts Paid", "Overdrafts (OD)": the plural names the fee when it opens the
   // name or the fee follows it. Elsewhere ("transfer to cover overdrafts", "overdrafts up
   // to a total of $500") it describes another fee or a limit.
-  // v36: "OD Privilege", "OD Item Fee": the abbreviation followed by the fee's own word
+  // v37: "OD Privilege", "OD Item Fee": the abbreviation followed by the fee's own word
   // (GreenState's schedule; the line read as no fee at all).
   {
     key: "overdraft",
@@ -1227,10 +1228,36 @@ export function wrappedNamePrices(text: string): string[] {
   return joined;
 }
 
-export function extractCandidatesFromText(text: string): ExtractionRulesResult {
+/**
+ * v36: a two-line name cell with its price printed level with the gap between the lines
+ * ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money
+ * Markets)", Starion). The line above the price must name a fee and the line below must only
+ * finish its note: open a parenthesis the name line left closed, or close the one it opened.
+ */
+export function centeredNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 1; index < lines.length - 1; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    const name = lines[index - 1];
+    const tail = lines[index + 1];
+    if (amountsIn(name).length > 0 || amountsIn(tail).length > 0 || name.includes(CELL_SEPARATOR)) continue;
+    if (!/^[A-Z]/.test(name) || classifyPatternKey(name) === null) continue;
+    const opens = /\([^()]*$/.test(name);
+    const finishes = opens ? /^[^()]*\)\s*\.?$/.test(tail) : /^\([^()]*\)\s*\.?$/.test(tail);
+    if (!finishes) continue;
+    const title = name.replace(/\s*\([^)]*$/, "").replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, "").trim();
+    joined.push(`${title} ${lines[index]}`);
+  }
+  return joined;
+}
+
+export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+  const text = stripPriceFootnoteMarks(raw);
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  const continued = [...columnContinuations(text), ...wrappedNamePrices(text)].flatMap((line) => extractFromSegment(line).candidates);
+  const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
+  const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;

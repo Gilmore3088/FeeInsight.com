@@ -457,7 +457,11 @@ v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
 v35 (rules 35, from the state top-10 banks with no live overdraft fee, Oct 8):
 - A fee name that opens a note and wraps onto the next line or two, with its price alone below ("Overdraft Fee (per item, ... in person withdrawal," / "ATM withdrawal, ... per day.)" / "$36.00"), is that fee at that price, named by its first line (`wrappedNamePrices`, MVB). The shared source check reads the run-on note as a qualifier between the name and the price.
 
-v36 (rules 36, from the $10B+ banks with no live overdraft fee, Oct 8):
+v36 (rules 36, same lane, Oct 8):
+- A price printed between a two-line name's lines ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money Markets)") is that fee at that price, when the line below only finishes the name's note (`centeredNamePrices`, Starion).
+- Footnote marks read onto a price alone on its line ("$334, 5" for "$33⁴,⁵") are dropped when they count up from the price's last digit and each is printed as a numbered footnote (`stripPriceFootnoteMarks` in `source-check.ts`, which Knox and the shared source check both apply). A single mark ("$331") stays: nothing tells it from a price.
+
+v37 (rules 37, from the $10B+ banks with no live overdraft fee, Oct 8):
 - "OD" and "O/D" followed by the fee's own word ("OD Privilege", "OD Fee-Item Paid", "Paid Item O/D Fee") name the overdraft fee. Before, such a line was read as no fee at all, not even held (GreenState's "OD Privilege* ... | $29.00/Item"). 29 banks' texts have such a line, 10 of them with no live overdraft fee.
 - "Continued OD Charge", "Consecutive Day OD Fee" and "Daily OD Fee" are the continuous overdraft charge, as the spelled-out names already were.
 - "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).

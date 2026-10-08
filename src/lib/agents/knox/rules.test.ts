@@ -720,6 +720,33 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
   });
 
+  it("v36 reads a price printed between a name's two lines, and drops footnote marks glued to it", () => {
+    // Starion's schedule of charges (text 16159): superscript marks "4, 5" read onto the price.
+    const starion = [
+      "Loan Extension Fee $50",
+      "NSF Fee³ - All Checking and Savings Accounts (Including",
+      "$334, 5",
+      "Money Markets)",
+      "Overdraft Fee³ - All Checking and Savings Accounts",
+      "$334, 5",
+      "(Including Money Markets)",
+      "Continuous Overdrawn Fee $331",
+      "4. Please be aware that an item may be presented multiple times.",
+      "5. Maximum of six (6) Overdraft Fees and/or NSF Fees combined may be charged per day.",
+    ].join("\n");
+    expect(fees(starion)).toEqual(
+      expect.arrayContaining([
+        ["NSF Fee - All Checking and Savings Accounts", 33, "nsf"],
+        ["Overdraft Fee - All Checking and Savings Accounts", 33, "overdraft"],
+      ]),
+    );
+    expect(fees(starion).some(([, amount]) => amount === 334)).toBe(false);
+    // Marks with no printed footnotes stay part of the price, and a line below that is not a
+    // note leaves the price unjoined.
+    expect(fees("Overdraft Fee - All Accounts\n$334, 5\n(Including Money Markets)")).not.toContainEqual(["Overdraft Fee - All Accounts", 33, "overdraft"]);
+    expect(fees("Overdraft Fee - All Accounts\n$33\nStop Payment")).toEqual([]);
+  });
+
   it("v35 reads a fee name that wraps onto a second line, with its price alone below", () => {
     // MVB's fee schedule (text 18808): the note opened on the name's line closes above the price.
     expect(fees(MVB_WRAPPED)).toEqual(
@@ -754,7 +781,7 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
-  it("v36 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
+  it("v37 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
     // GreenState's schedule: the line was read as no fee at all.
     expect(fees("OD Privilege* (Overdrafts - Created by check, | $29.00/Item**")).toEqual([
       ["OD Privilege (Overdrafts - Created by check", 29, "overdraft"],
