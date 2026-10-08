@@ -124,6 +124,14 @@ describe("runCompetitorAlerts", () => {
     mocks.getLocalMarketCompetitors.mockResolvedValue({ competitors: [{ institution_id: 9 }, { institution_id: 10 }] });
   });
 
+  it("counts a Pro reader's saved bank as well as paid seats", async () => {
+    install({ banks: [] });
+    await runCompetitorAlerts({ now: new Date("2026-10-07T12:00:00Z") });
+    const query = (mocks.sql.mock.calls[0][0] as TemplateStringsArray).join("?");
+    expect(query).toContain("FROM institution_workspace_memberships");
+    expect(query).toContain("FROM hamilton_workspace_contexts");
+  });
+
   it("raises one Monitor signal per change and an alert for every workspace member", async () => {
     install();
     mocks.recordHamiltonMonitorSignal.mockResolvedValue("00000000-0000-0000-0000-000000000001");
