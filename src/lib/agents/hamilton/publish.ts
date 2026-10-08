@@ -649,14 +649,14 @@ export function feeValue(row: RateFields & { amount: number | string | null }): 
   return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
-interface ListedFeeLine {
+export interface ListedFeeLine {
   source_document_id: number | string | null;
   fee_name: string | null;
   amount: number | string | null;
 }
 
 /** Every line Knox read from these documents, for the same-name price check below. */
-async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
   const ids = documentIds.filter((id) => id != null).map(Number);
   if (ids.length === 0) return [];
   try {
@@ -676,7 +676,9 @@ async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | stri
  * fee name twice ("Returned Deposit Fee $10" and "Returned Deposit Fee $3" for two
  * accounts) has two lines, not a price change, whichever document is newer.
  */
-export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+export type ListedPrice = RateFields & Pick<VerifiedFeeRow, "fee_name" | "amount" | "source_document_id">;
+
+export function listsBothPrices(lines: ListedFeeLine[], row: ListedPrice, prior: ListedPrice): boolean {
   // Knox's listed lines carry no rate here, so two rates are never read as two lines.
   if (isPercentFee(row) || isPercentFee(prior)) return false;
   const name = normalizedFeeName(row.fee_name);
@@ -735,7 +737,10 @@ async function supersedePriorFee(
         new_amount,
         change_type,
         detected_at,
-        changed_at
+        changed_at,
+        previous_fee_published_id,
+        new_fee_published_id,
+        like_for_like
       )
       VALUES (
         ${Number(options.row.institution_id)},
@@ -746,7 +751,10 @@ async function supersedePriorFee(
         ${newAmount},
         ${changeType},
         NOW(),
-        NOW()
+        NOW(),
+        ${priorId},
+        ${options.feePublishedId},
+        ${samePage(options.row, options.prior)}
       )
     `;
     return true;
@@ -1103,6 +1111,15 @@ export async function runHamiltonPublish(
     options.institutionId,
     options.stateCode,
   );
+  // Publish runs only inside state lanes and single-bank reads, so a verified row used to wait
+  // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
+  // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
+  // rest with the oldest eligible rows from any state, as the release review does.
+  if (options.stateCode && !options.institutionId && selected.length < limit) {
+    const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
+    const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);
+    selected.push(...others.filter((row) => !taken.has(Number(row.fee_verified_id))));
+  }
   const depthByInstitution = minInstitutionFees > 1
     ? await institutionFeeDepth(
         db,

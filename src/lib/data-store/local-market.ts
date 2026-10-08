@@ -195,6 +195,8 @@ export async function getLocalFeeMoves(params: {
      WHERE c.institution_id = ANY(${params.institutionIds}::int[])
        AND c.fee_category = ANY(${params.categories}::text[])
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
        AND COALESCE(c.previous_amount, c.old_amount) IS NOT NULL
        AND c.new_amount IS NOT NULL
      ORDER BY c.detected_at DESC
