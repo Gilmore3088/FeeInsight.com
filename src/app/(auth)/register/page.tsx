@@ -26,7 +26,7 @@ const FREE_ACCOUNT_BENEFITS = [
 const PRO_ACCOUNT_BENEFITS = [
   "Hamilton workspace: This month, My fees, Try a price and Reports",
   "Unlimited peer sets and CSV exports (API access on request)",
-  "Cancel monthly seats at the end of any billing period",
+  "One plan for up to 5 people; monthly plans cancel at the end of any billing period",
 ];
 
 export default async function RegisterPage({
@@ -157,7 +157,7 @@ export default async function RegisterPage({
                     : `Save your institution and peer group; upgrade to ${SITE_NAME} Pro whenever you need benchmarks.`}
               </p>
             </div>
-            <RegisterForm redirectTo={destination} variant={variant} />
+            <RegisterForm redirectTo={destination} variant={variant} checkout={plan !== null} />
             <p className="mt-4 text-center text-sm text-[#6B6255]">
               Already have an account?{" "}
               <Link href={loginHref} className="text-[#1A1815] font-medium hover:underline">

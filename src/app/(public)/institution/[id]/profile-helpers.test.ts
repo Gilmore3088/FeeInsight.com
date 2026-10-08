@@ -8,7 +8,7 @@ import {
   normalizeFinancial,
   selectFinancialsByQuarter,
 } from "./financial-units";
-import { buildProfileTitle, pickHeadlineFees } from "./profile-data";
+import { buildLocationParts, buildProfileTitle, pickHeadlineFees } from "./profile-data";
 import type { ExtractedFee } from "@/lib/data-store/types";
 
 const ncuaRecord = {
@@ -219,5 +219,33 @@ describe("fee schedule grouping", () => {
     const overdraft = groups.find((group) => group.family === "Overdraft & NSF");
     expect(overdraft?.rows).toHaveLength(2);
     expect(groups.find((group) => group.family === "Other fees")?.provisionalCount).toBe(1);
+  });
+
+  it("lists a family's most looked-up fees first, not alphabetically", () => {
+    const groups = groupFeesByFamily([
+      fee({ feeName: "Account Research", feeCategory: "account_research", amount: 25 }),
+      fee({ feeName: "Early Account Closure", feeCategory: "early_closure", amount: 20 }),
+      fee({ feeName: "Monthly Service Charge", feeCategory: "monthly_maintenance", amount: 12 }),
+    ]);
+    expect(groups[0].rows.map((row) => row.feeName)).toEqual([
+      "Monthly Service Charge",
+      "Early Account Closure",
+      "Account Research",
+    ]);
+  });
+});
+
+describe("buildLocationParts", () => {
+  it("links the city and state fee pages", () => {
+    expect(buildLocationParts({ city: "San Antonio", stateCode: "TX", stateName: "Texas", hasApprovedFees: true })).toEqual([
+      { label: "San Antonio", href: "/fees/city/tx/san%20antonio" },
+      { label: "Texas", href: "/research/state/TX" },
+    ]);
+  });
+
+  it("leaves the city unlinked when its page would not list this institution or can't be reached", () => {
+    expect(buildLocationParts({ city: "Austin", stateCode: "TX", stateName: "Texas", hasApprovedFees: false })[0].href).toBeNull();
+    expect(buildLocationParts({ city: "Winston-Salem", stateCode: "NC", stateName: "North Carolina", hasApprovedFees: true })[0].href).toBeNull();
+    expect(buildLocationParts({ city: null, stateCode: null, stateName: null, hasApprovedFees: true })).toEqual([]);
   });
 });

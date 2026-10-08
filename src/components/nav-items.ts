@@ -31,11 +31,11 @@ export interface NavItem {
 
 /**
  * Which items the chrome shows. Signed-out and free users see the public items (plus
- * Pricing while signed out); Pro users see the Hamilton workspace items.
+ * Pricing); Pro users see the Hamilton workspace items.
  */
 export function navItemsFor(session: { signedIn: boolean; isPro?: boolean } | null): NavItem[] {
   if (session?.isPro) return [...PRO_NAV_ITEMS];
-  return [...PUBLIC_NAV_ITEMS, ...(session?.signedIn ? [] : [PRICING_NAV])];
+  return [...PUBLIC_NAV_ITEMS, PRICING_NAV];
 }
 
 /** True for the section a path belongs to (`/guides` for `/guides/overdraft-fees`). */

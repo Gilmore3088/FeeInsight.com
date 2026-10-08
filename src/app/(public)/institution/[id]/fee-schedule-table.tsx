@@ -183,6 +183,15 @@ function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
 
 const FAMILY_ORDER = [...Object.keys(FEE_FAMILIES), OTHER_FAMILY];
 
+// Within a family, the taxonomy lists the fees people look up most first (monthly
+// maintenance before account research, overdraft before daily caps). Alphabetical order
+// put "Account Research" at the top of every bank page.
+const CATEGORY_RANK = new Map(Object.values(FEE_FAMILIES).flatMap((cats) => cats.map((cat, i) => [cat, i] as const)));
+
+function categoryRank(fee: DisplayFee): number {
+  return (fee.feeCategory ? CATEGORY_RANK.get(fee.feeCategory) : undefined) ?? Number.MAX_SAFE_INTEGER;
+}
+
 function familyFor(fee: DisplayFee): string {
   return (fee.feeCategory ? getFeeFamily(fee.feeCategory) : null) ?? OTHER_FAMILY;
 }
@@ -191,7 +200,7 @@ function dedupeKey(fee: DisplayFee): string {
   return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
 }
 
-/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order. */
+/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order for families and rows. */
 export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   const groups = new Map<string, FeeGroup>();
   const seen = new Set<string>();
@@ -213,7 +222,7 @@ export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
     const group = groups.get(family) as FeeGroup;
     return {
       ...group,
-      rows: [...group.rows].sort((a, b) => a.feeName.localeCompare(b.feeName)),
+      rows: [...group.rows].sort((a, b) => categoryRank(a) - categoryRank(b) || a.feeName.localeCompare(b.feeName)),
     };
   });
 }

@@ -48,7 +48,9 @@ describe("buildPublicInstitutionProfileLinks", () => {
       "/for-institutions?institution=1391&name=First+Bank+%26+Trust&src=profile#report",
     );
     expect(links.correctSourceHref).toBe("/submit-fees?institution=1391");
-    expect(links.briefHref).toBe("/subscribe?from=%2Finstitution%2F1391");
+    expect(links.briefHref).toBe(
+      "/subscribe?from=%2Fpro%2Freports%3FinstId%3D1391%26intent%3Dcompetitive-brief#pro",
+    );
   });
 
   it("keeps direct Pro routes for signed-in viewers", () => {

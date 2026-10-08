@@ -199,6 +199,17 @@
   }
 }
 
+/* iOS Safari zooms the page when a field under 16px gets focus (sign-in, pricing picker,
+   report form), and the page stays zoomed. Phones get 16px fields; desktop keeps the
+   per-form size. Unlayered so it wins over the text-sm utility. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* ─── Shadow depth system ─── */
 :root {
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
