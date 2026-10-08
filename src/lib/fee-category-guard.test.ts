@@ -584,5 +584,7 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft fee (each time we pay an overdraft)")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "NSF Paid Item(s) Charge (Uncollected / Insufficient Funds) 2")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee – from Checking, Money Market, or Statement Savings accounts (per pre-authorized automatic tran").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Courtesy Overdraft Protection Fee (per item)")).toEqual({ ok: true });
   });
 });
