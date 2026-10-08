@@ -3200,3 +3200,30 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
   what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
   230 s at a time).
+
+## 2026-10-08: Bot walls keep big banks' overdraft fees off the board
+
+- **Problem.** At 13:20 UTC Oct 8, 90 active $10B+ banks had no live overdraft fee. About 30 of them
+  are trust, card or wholesale banks that publish no consumer overdraft fee. Of the retail rest, many
+  have no readable page on file because the site refuses the server:
+  - Zions answers 403.
+  - Mountain America serves an Incapsula block page.
+  - VyStar redirects to a ShieldSquare check.
+  - Arvest's and Mountain America's pages are built by JavaScript and wait for the paid finder.
+  - Golden 1, PenFed and Morgan Stanley time out.
+  - Sunflower's and BancFirst's PDFs answer 404.
+
+  In the schedules that were read, Knox missed four overdraft lines:
+  - Banc of California's "Per transaction" cell.
+  - Pinnacle's "lowered ... from $38 to $30".
+  - Park National's "You still pay a fee of $35 per item for overdrawing your account".
+  - WaFd's "Insufficient Funds Charge (Paid)".
+
+  Darwin rejected First Financial's per-item fees, which note a daily count ("Maximum of 2 Items/Day").
+- **Fix.** Guard v27 and Knox v34 (PR 580) read and accept those lines. The held re-check also
+  re-reads changed-price ranges, and renames a promoted line whose held name says nothing. New
+  operator links on other hosts or pages go to Zions, Sunflower, Golden 1, DCU, Mountain America,
+  VyStar, Popular and TowneBank.
+- **Watch.** Most of the remaining retail gap is fetch-blocked, not misread. Each new link either reads
+  or fails the same way. A bank behind a bot wall needs the paid finder or a copy fetched from
+  James's computer.
