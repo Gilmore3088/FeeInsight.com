@@ -6,7 +6,7 @@ import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
 
 const INQUIRY_TYPES = [
-  { value: "report", label: "Competitive Fee Position Report (priced on request)" },
+  { value: "report", label: "Competitive Fee Position Report (from $300)" },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },

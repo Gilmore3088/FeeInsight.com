@@ -475,3 +475,12 @@ tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton
 to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The site sets up its own Stripe prices by lookup key (James 12:53: "you can do
 everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
 (`src/lib/pro-tiers.ts`).
+
+**The paid report shows "From $300"; banks with no asset size pick their own Pro band.** James,
+15:24 to 15:25 UTC 8 Oct, UAT thread, agreeing with the executive and marketing teams' picks on
+calls A to E and choosing $300 on the card. Each report is still quoted per institution
+(`REPORT_OFFER.fromPriceUsd`). "Free" no longer describes the paid report. For a bank with no
+asset size on file, the buyer picks the size band at checkout; the subscription carries
+`tier_picked_by_buyer` and the Customers room's "Plans to check" lists it. Assets on file always
+set the tier when they exist. Also agreed: a pay-by-invoice option for the report, and the Pro
+price picker first on phones (design, waits for James's review).

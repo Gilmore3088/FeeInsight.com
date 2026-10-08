@@ -212,6 +212,27 @@ describe("institution report payments", () => {
     expect(effects.reportDuplicate).toEqual([]);
   });
 
+  it("marks the request paid from a paid report invoice", async () => {
+    tx.mockResolvedValueOnce([{ id: "18", name: "Pat Lee", email: "pat@example.com", quote_institution_id: "201" }]);
+    const effects = await applyStripeEvent(
+      tx as never,
+      event("invoice.paid", { id: "in_1", status: "paid", amount_paid: 30000, metadata: { kind: "institution_report", lead_id: "18" } }),
+    );
+    expect(issued()[0]).toContain("SET paid_at = NOW(), status = 'paid'");
+    expect(effects.reportPaid).toEqual([
+      { leadId: 18, name: "Pat Lee", email: "pat@example.com", institutionId: 201, cents: 30000, checkoutSessionId: "in_1" },
+    ]);
+  });
+
+  it("ignores subscription invoices and never marks Pro past due for a failed report invoice", async () => {
+    await applyStripeEvent(tx as never, event("invoice.paid", { id: "in_2", status: "paid", amount_paid: 15000, metadata: {} }));
+    await applyStripeEvent(
+      tx as never,
+      event("invoice.payment_failed", { id: "in_3", customer: "cus_1", metadata: { kind: "institution_report", lead_id: "18" } }),
+    );
+    expect(tx).not.toHaveBeenCalled();
+  });
+
   it("flags a second paid session for an already-paid request so James refunds it", async () => {
     tx.mockResolvedValueOnce([]).mockResolvedValueOnce([{ stripe_checkout_session_id: "cs_first" }]);
     const effects = await applyStripeEvent(tx as never, paidSession());

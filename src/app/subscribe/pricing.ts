@@ -17,7 +17,7 @@ const WHOLE_DOLLARS = new Intl.NumberFormat("en-US", {
 export const PLAN_DISPLAY_NAME: Record<ProPlan, string> = { monthly: "Monthly", annual: "Annual" };
 /** One subscription covers the whole team (James, 8 Oct 2026): "for up to 5 people". */
 export const PLAN_TEAM_LABEL = `for up to ${WORKSPACE_SEAT_LIMIT} people`;
-/** "Priced on request" while the report has no list price. */
+/** "From $300" while the report is quoted per institution. */
 export const REPORT_PRICE_LABEL = REPORT_PRICE_USD === 0 ? REPORT_OFFER.priceLabel : WHOLE_DOLLARS.format(REPORT_PRICE_USD);
 
 /** Feature list shared by every Pro tier and plan: the tiers differ by price, not features. */
