@@ -107,6 +107,15 @@ type SqlTag = typeof sql;
  * Every institution's totals for a fee step, so the live board's counts are the step's real
  * numbers rather than whatever fell into the ten sample rows. Capped to keep events small.
  */
+/**
+ * The deploy (git commit) this code runs from, or null outside Vercel. Recorded on every
+ * step failure so a failure from an old deploy can be told apart from one the current
+ * code still has (wakeLanesAfterRecovery).
+ */
+export function currentDeploy(): string | null {
+  return process.env.VERCEL_GIT_COMMIT_SHA || null;
+}
+
 function institutionResults(stepKey: string, rows: Sample[]) {
   return tallyByInstitution(stepKey, rows).slice(0, 50);
 }
@@ -2093,7 +2102,7 @@ async function failAgenticStep(
       VALUES
         (${runId}, ${step.id}, 'step.failed', 'failed',
          ${message},
-         ${JSON.stringify({ step_key: step.stepKey, agent: step.agent })}::jsonb)
+         ${JSON.stringify({ step_key: step.stepKey, agent: step.agent, deploy: currentDeploy() })}::jsonb)
     `;
     await tx`
       UPDATE agent_runs
