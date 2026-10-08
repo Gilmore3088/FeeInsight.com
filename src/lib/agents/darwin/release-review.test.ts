@@ -264,6 +264,27 @@ describe("Darwin held-fee release review", () => {
     expect(releaseHoldReason(held("Undeliverable Mail / Locator fee", "account_research"))).toBeNull();
   });
 
+  it("v14 keeps merchant fees, small overdraft protection fees and footnoted prices held (hand check, Oct 8)", () => {
+    const held = (fee_name: string, key: string, amount: string, sourceLine = "", sourceContext: string | null = null) => ({
+      row: row({ fee_name, held_canonical_fee_key: key, amount }) as unknown as HeldFeeRow,
+      sourceLine,
+      sourceContext,
+    });
+    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("charged_to_merchant");
+    expect(releaseHoldReason(held("Charge Back (Merchant Returned Check) per item", "deposited_item_return", "10.00"))).toBeNull();
+    expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("small_overdraft_protection");
+    expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "30.00"))).toBeNull();
+    expect(releaseHoldReason(held("Courtesy Pay Overdraft Protection (Paid Item, per presentment)", "overdraft", "14.00"))).toBeNull();
+    expect(releaseHoldReason(held("Early Account Closure", "early_closure", "251.00", "(Closed Within 180 Days of Opening) ....$251 | 1"))).toBe(
+      "footnote_in_price",
+    );
+    expect(
+      releaseHoldReason(held("IRA Direct Transfer Fee", "ira_termination", "251.00", "IRA Direct Transfer Fee ....$251 | 2", "Returned Deposit Item ....$7.501 | 1")),
+    ).toBe("footnote_in_price");
+    expect(releaseHoldReason(held("Wire Transfer", "wire_domestic_outgoing", "21.00", "Wire Transfer | $21", "Stop Payment | $30.00"))).toBeNull();
+    expect(releaseHoldReason(held("Stop Payment", "stop_payment", "35.00", "Stop Payment | $35 | 1"))).toBeNull();
+  });
+
   it("fills a state lane's short list with held fees from other states", async () => {
     const db = createDbMock([]);
     db.unsafe = vi.fn((_query: string, params: unknown[]) =>
