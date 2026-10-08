@@ -733,7 +733,7 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
     expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
     expect(checkFeeCategory("legal_process", "Legal Process Fee")).toEqual({ ok: true });
-    // Since v46 a subordination is another lending fee.
+    // Since v47 a subordination is another lending fee.
     for (const name of ["Subordination Request", "Mortgage Subordination Fee"]) {
       expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
       expect(refileCategory("legal_process", name), name).toBe("other_lending_fee");
@@ -817,5 +817,33 @@ describe("checkFeeCategory", () => {
     expect(wire("wire_domestic_outgoing", "Wire Transfer – Outgoing (domestic/int’l)", "25.00", "ATM Deposit Adjustment $20 Wire Transfer – Outgoing (domestic/int’l) $25/$50")).toBe(true);
     expect(wire("wire_intl_outgoing", "Wire International In/Out", "35.00", "Wire International In/Out | $10/$35")).toBe(true);
     expect(wire("wire_intl_outgoing", "International Outbound Wires (Online/Manual)", "35.00", "International Outbound Wires (Online/Manual) | $35/$75 | $35/$75")).toBe(true);
+  });
+
+  it("v46 reads spaced wire labels by phrase and keeps other fees out of early closure (Darwin eval, Oct 8)", () => {
+    const wire = (key: string, name: string, amount: string, excerpt: string) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    expect(wire("wire_intl_outgoing", "Wire Out / Wire Out Foreign", "25.00", "Wire Out / Wire Out Foreign | $25.00 / $45.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Wire Out / Wire Out Foreign", "45.00", "Wire Out / Wire Out Foreign | $25.00 / $45.00")).toBe(true);
+    expect(wire("wire_intl_outgoing", "Outgoing Domestic / International Wire", "30.00", "Outgoing Domestic / International Wire $30 / $50 per wire")).toBe(false);
+    expect(wire("wire_domestic_incoming", "Domestic Wire Transfer", "30.00", "Domestic Wire Transfer: $30.00 / $10.00 per transfer – Outgoing / Incoming")).toBe(false);
+
+    for (const name of [
+      "Accounts closed within 90 days: International Wire",
+      "Accounts closed within 90 days: Domestic Wire Transfer",
+      "Rush Request for New/Reissued Card: Express shipping cost: New Accounts Closed within 90 Days",
+      "Reinstate Closed Checking",
+      "Charge Membership Reinstatement Fee (For memberships closed within the last 12 months)",
+    ]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      "Wire Transfers: Early Account Closure Fee",
+      "Checking & Savings Early Closing (Within 90 days of opening account)",
+      "Card Account Closure",
+      "Christmas Club Early Withdrawal/Transfer",
+      "Early closing of share draft VISA debit card",
+    ]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
+    }
   });
 });
