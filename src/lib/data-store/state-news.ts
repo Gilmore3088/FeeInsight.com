@@ -90,8 +90,10 @@ function stateOf(source: string): string {
 
 const BANKING_WORDS =
   /\bbank|credit union|deposit|\blend|\bloan|mortgage|financ|money|\bfees?\b|overdraft|scam|fraud|payment|crypto|virtual currency|stablecoin|settle|consent order|cease and desist|commissioner|consumer alert|licens|servicer|savings|ombuds|bulletin/i;
+const AGENCY_NAMES =
+  /(department|division|office) of (financial services|financial institutions|banking)/gi;
 const OTHER_DEPARTMENT_WORDS =
-  /(?<!deposit )insurance|cannabis|construction|hiring|job service|jobs in|apprenticeship|workforce|layoff|emissions|solar|health|medical|weather|holiday schedule|holidays-for-year/i;
+  /(?<!deposit )insurance|nysif|injured workers|cannabis|construction|hiring|job service|jobs in|apprenticeship|workforce|layoff|emissions|solar|health|medical|weather|holiday schedule|holidays-for-year/i;
 
 /**
  * Several states publish one feed for a whole department (labor, commerce, insurance and
@@ -99,7 +101,10 @@ const OTHER_DEPARTMENT_WORDS =
  * lending, money or consumer finance and not another division's business.
  */
 export function isBankingPost(title: string): boolean {
-  return BANKING_WORDS.test(title) && !OTHER_DEPARTMENT_WORDS.test(title);
+  // The agency's own name ("Department of Financial Services Announces ...") says nothing
+  // about the post, so it is taken out before looking for banking words.
+  const topic = title.replace(AGENCY_NAMES, " ");
+  return BANKING_WORDS.test(topic) && !OTHER_DEPARTMENT_WORDS.test(title);
 }
 
 /** Banking posts only, fee headlines first, then newest first. */
