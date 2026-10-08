@@ -112,7 +112,7 @@ describe("percentage fees", () => {
       fee_verified_id: 1,
       fee_raw_id: 1,
       institution_id: 7,
-      source_url: "u",
+      source_url: "https://cu.example/fees",
       document_r2_key: null,
       extraction_confidence: 0.9,
       canonical_fee_key: "card_foreign_txn",
@@ -125,7 +125,7 @@ describe("percentage fees", () => {
       source_document_id: 2,
       document_crawled_at: "2026-10-02",
     };
-    const priorFlat = { fee_published_id: 9, amount: "1.00", fee_name: "Foreign Transaction Fee", published_at: "2026-10-01", source_document_id: 1, document_crawled_at: "2026-10-01" };
+    const priorFlat = { fee_published_id: 9, amount: "1.00", fee_name: "Foreign Transaction Fee", published_at: "2026-10-01", source_url: "https://cu.example/fees", source_document_id: 1, document_crawled_at: "2026-10-01" };
     expect(decidePriorFee({ ...base, amount: null, amount_kind: "percent", rate_percent: 1 }, [priorFlat])).toEqual({ kind: "additional_line" });
     const priorRate = { ...priorFlat, amount: null, amount_kind: "percent", rate_percent: "1.0000" };
     expect(decidePriorFee({ ...base, amount: null, amount_kind: "percent", rate_percent: 1 }, [priorRate]).kind).toBe("identical");
