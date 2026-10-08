@@ -11,6 +11,7 @@ import {
   recordBillingResolved,
   recordEmergencyStopOutcome,
   resumeAutomation,
+  setMarketingEnabled,
   setPipelineEnabled,
 } from "@/lib/automation-control";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
@@ -145,6 +146,21 @@ export async function setPipelinePaused(paused: boolean, reason: string): Promis
   const user = await requireAuth(paused ? "cancel_jobs" : "trigger_jobs");
   try {
     await setPipelineEnabled(user.username, !paused, reason);
+    refreshAtlasDashboard();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Pause or resume growth's marketing steps without touching the pipeline or provider stop. */
+export async function setMarketingPaused(paused: boolean, reason: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  const user = await requireAuth(paused ? "cancel_jobs" : "trigger_jobs");
+  try {
+    await setMarketingEnabled(user.username, !paused, reason);
     refreshAtlasDashboard();
     return { success: true };
   } catch (error) {

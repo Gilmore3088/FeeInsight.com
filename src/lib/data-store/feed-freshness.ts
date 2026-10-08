@@ -55,6 +55,9 @@ export const SCHEDULED_REPORT_TRIGGERS = [
   "atlas.fee_alerts",
   "atlas.lead_watch",
   "atlas.scoreboard",
+  // Growth's marketing runs keep the triggered_by they had under Hamilton.
+  "hamilton.content",
+  "hamilton.marketing",
 ] as const;
 
 export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[]> {
