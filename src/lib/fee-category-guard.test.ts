@@ -578,4 +578,11 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Transfer Fee (maximum of 3 per day)").ok).toBe(false);
     expect(checkFeeCategory("overdraft", "Overdraft (maximum 5 per day)").ok).toBe(false);
   });
+  it("v30 keeps worked examples and cut-off headers out of the overdraft fee (Provident, OceanFirst, Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "the transaction, the Bank will honor that final payment request and not charge an Overdraft Fee that otherwise would be").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Via").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft fee (each time we pay an overdraft)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "NSF Paid Item(s) Charge (Uncollected / Insufficient Funds) 2")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
+  });
 });

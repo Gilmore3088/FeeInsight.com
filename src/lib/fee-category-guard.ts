@@ -82,11 +82,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
+  // A worked example ("the Bank will honor that final payment request and not charge an Overdraft
+  // Fee that otherwise would be" $40, Provident) and a column header cut before its options
+  // ("Overdraft Protection Via" beside a $50 safe deposit box, OceanFirst) are not the fee (v30).
   overdraft: {
     // v29: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd) is the paid item.
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\))/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|^.{0,20}\bfee on$)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$)/i,
     // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
     // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
     excludeUnless: { pattern: /return/i, unless: OVERDRAFT_AND_RETURNED, outsideNotes: true },
@@ -252,7 +255,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 29;
+export const CATEGORY_GUARD_VERSION = 30;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
