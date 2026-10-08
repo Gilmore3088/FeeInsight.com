@@ -35,6 +35,18 @@ const SENTENCE_BREAK = /[a-z]\.\s+[A-Z]/;
 
 /** The tidy name a live fee should show, or null to keep its name. */
 export function retidiedFeeName(name: string, canonicalKey: string): string | null {
+  const tidy = fullyTidiedName(name, canonicalKey);
+  if (tidy) return tidy;
+  // v3: only a footnote number to drop. The words stay as they were read, so the run-on
+  // limits don't apply ("Overdraft Protection Transfer Fee4 (from Line of Credit ...)").
+  const current = name.trim();
+  const unfooted = stripFootnoteMarks(current);
+  if (!unfooted || unfooted === current) return null;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, unfooted).ok) return null;
+  return unfooted;
+}
+
+function fullyTidiedName(name: string, canonicalKey: string): string | null {
   const current = name.trim();
   let tidy = tidyFeeName(current);
   // Joined cells: the cell nearest the price is the fee when it names one on its own
@@ -70,8 +82,11 @@ export function retidiedFeeName(name: string, canonicalKey: string): string | nu
   return tidy;
 }
 
-/** v2: a footnote number glued to the name ("Check Cashing Fee1") is messy too. */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 2 } as const;
+/**
+ * v2: a footnote number glued to the name ("Check Cashing Fee1") is messy too.
+ * v3: a long name loses its footnote number even when the full tidy would leave it as is.
+ */
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 3 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 export const NAME_RETIDY_INSTITUTION_LIMIT = 40;
