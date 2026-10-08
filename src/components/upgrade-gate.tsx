@@ -57,7 +57,7 @@ export async function UpgradeGate({
 }: UpgradeGateProps) {
   const summary = await getPublicStatsSummary();
   const returnPath = gateReturnPath(from ?? (await currentPath()));
-  const pricingHref = returnPath ? `/subscribe?from=${encodeURIComponent(returnPath)}` : "/subscribe";
+  const pricingHref = returnPath ? `/subscribe?from=${encodeURIComponent(returnPath)}#pro` : "/subscribe#pro";
   const eventProps = { from: returnPath ?? "unknown", audience, compact };
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
   if (compact) {
