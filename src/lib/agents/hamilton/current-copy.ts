@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { secondLook, secondLookDedupeKey, SECOND_LOOK_MIN_MINUTES } from "@/lib/agents/hamilton/second-look";
 import {
   NEWER_COPY_MIN_SHARED_FEES,
@@ -84,6 +85,51 @@ export interface CurrentCopyDocument {
 }
 
 /** Pure: one older copy's live fees judged against its current copy. */
+const squashText = (value: string) => value.toLowerCase().replace(/\s+/g, " ");
+
+/** A price in page text: "$5", "$ 5.00", "5.00". */
+const PAGE_PRICE = /\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\b\d{1,3}(?:,\d{3})*\.\d{2}\b/g;
+
+/**
+ * True when the current page names a piece of the fee's name and the first price after it,
+ * within 120 characters, is the fee's price, however the row is laid out: a name over its
+ * price ("Stop Payment\n(each item ...)\n$30 each"), or one price of several on a row
+ * ("Domestic wire | Outgoing = $20 Incoming = $10" anchors "Incoming" to $10). Each piece of
+ * the name between separators (":", "|", parentheses, " - ") of 5 or more characters can
+ * anchor ("each" cannot). Pure.
+ */
+export function priceFollowsName(feeName: string, amount: number, currentText: string): boolean {
+  const current = squashText(currentText);
+  const anchors = feeName
+    .split(/[:|()\u2013\u2014]| - /)
+    .map((part) => squashText(part).trim())
+    .filter((part) => part.length >= 5);
+  for (const anchor of anchors) {
+    for (let at = current.indexOf(anchor); at >= 0; at = current.indexOf(anchor, at + 1)) {
+      const after = current.slice(at + anchor.length, at + anchor.length + 120);
+      const first = after.match(PAGE_PRICE)?.[0];
+      if (first && Math.abs(Number(first.replace(/[$,\s]/g, "")) - amount) < 0.005) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The newer-copy verdict, with two guards from the first hand check (7 Oct, 19:00 UTC: 14 of
+ * 20 first looks were still stated on the current page): a fee whose name the current page
+ * still follows with its price is stated (`priceFollowsName`), and a
+ * $0 row is never judged, since "FREE" carries no price to match.
+ */
+export function currentCopyVerdict(fee: CurrentCopyFeeRow, currentText: string, olderText: string): NewerCopyVerdict {
+  const amount = fee.amount == null ? null : Number(fee.amount);
+  if (amount != null && !(amount > 0)) return "unproven";
+  const verdict = newerCopyVerdict(fee, currentText, olderText);
+  if (verdict === "still_stated" || verdict === "unproven" || verdict === "no_amount" || amount == null) return verdict;
+  if (priceFollowsName(fee.fee_name, amount, currentText)) return "still_stated";
+  const traced = checkFeeAgainstSource(currentText, fee.fee_name, amount, ".", fee.canonical_fee_key);
+  return traced.ok || traced.reason === "tiered_fee" ? "still_stated" : verdict;
+}
+
 export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: string, olderText: string): CurrentCopyDocument {
   const first = fees[0];
   const doc: CurrentCopyDocument = {
@@ -101,7 +147,7 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
   const suspect: CurrentCopyCandidate[] = [];
   for (const fee of fees) {
     // A verified current-copy row at the same category and amount restates it (refresh-copy moves it).
-    const verdict: NewerCopyVerdict = fee.restated_row ? "still_stated" : newerCopyVerdict(fee, currentText, olderText);
+    const verdict: NewerCopyVerdict = fee.restated_row ? "still_stated" : currentCopyVerdict(fee, currentText, olderText);
     if (verdict === "still_stated") {
       doc.stated += 1;
       if (!fee.restated_row) doc.passing.push(Number(fee.fee_published_id));
