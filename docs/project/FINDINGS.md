@@ -27,6 +27,19 @@ and widens both checks. Not applied yet.
 **Lesson:** before adding an agent name, control key or audit action, grep `supabase/migrations`
 for the table's CHECK and FOREIGN KEY constraints, and widen them in the same PR.
 
+## 2026-10-08: Credit union charter numbers matched banks' FDIC certs in the market loader
+**What happened:** the custom report market loader (`loadMarketCounties` in
+`src/lib/data-store/custom-report-market.ts`) matched `institution_sources.cert_number` against
+SOD `cert` for every institution. All 4,433 credit unions store their NCUA charter there, and 307
+of them equal a bank's FDIC cert in the 2026 SOD (07:27 UTC on prod). Those credit unions got the
+bank's branch counties instead of their headquarters city: U S Employees FCU (Fairmont, WV,
+charter 6672) got Fifth Third Bank's 1,513 branches, Alliance Niagara FCU got TD Bank's 1,050.
+No credit union legitimately matches its own SOD rows (0 of 4,433), and every bank cert match
+already points at the same institution (0 mismatches of 4,249).
+**Cause:** one column holds two numbering schemes (FDIC cert for banks, NCUA charter for credit unions).
+**Fix:** the loader skips the cert match when `charter_type = 'credit_union'`, with a test. Not merged yet.
+**Lesson:** never join `cert_number` to FDIC data without checking `charter_type` first.
+
 ## 2026-10-08: No search data: GA4 and Search Console are not wired in the code
 **Owner:** the GrowthOS thread.
 **What happened:** checking analytics for the marketing team, the code has Vercel Analytics only
