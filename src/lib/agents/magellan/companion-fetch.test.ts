@@ -60,6 +60,9 @@ describe("Magellan companion fetch", () => {
     expect(templateText(select?.[0]).replace(/\s+/g, " ")).toContain(
       "OR (ias.found_by_strategy = 'discover.operator_schedule' AND ias.last_fetched_at IS NULL)",
     );
+    expect(templateText(select?.[0]).replace(/\s+/g, " ")).toContain(
+      "OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')",
+    );
   });
 
   it("reuses a stored document with the same bytes instead of inserting a duplicate", async () => {

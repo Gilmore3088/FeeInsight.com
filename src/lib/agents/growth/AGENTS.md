@@ -66,7 +66,7 @@ no figures or link, once per institution; then outreach to that institution stop
 re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
 rank are not buyers, labels and headings printed where a name would be ("Mailing Address") are
 not names, and a name that can't own the personal address beside it (`nameFitsEmail`) is dropped
-with its title. `?dry_run=1` counts the drafts and withdrawals a run would make and writes nothing. Each run first
+with its title. `?dry_run=1` counts the drafts and withdrawals a run would make and writes nothing. A real run drafts only the pilot campaigns James chose in `OUTREACH_CAMPAIGNS` (letters, e.g. `A,B`); while it is unset the run drafts nothing and only withdraws drafts that no longer qualify, including the Monday cron. Each run first
 withdraws unreviewed drafts whose addressee fails that test, that were written under an older
 `OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
