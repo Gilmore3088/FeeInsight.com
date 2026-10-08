@@ -10,7 +10,7 @@ export const LEGAL_ENTITY_NAME = "Fee Insight LLC";
 export const LEGAL_ENTITY_STATE = "Washington";
 export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} limited liability company`;
 // Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
-export const TRADEMARK_NOTICE = `${SITE_NAME}™, The ${PRODUCT_NAME}™ and Hamilton™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
+export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
