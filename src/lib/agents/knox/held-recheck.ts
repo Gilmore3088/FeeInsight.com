@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
-import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
+import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
@@ -199,7 +199,9 @@ export async function recheckHeldRows(
             AND adt.text_hash IS NOT NULL
             AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
        )
-     ORDER BY fr.fee_raw_id
+     -- $10B+ banks first, as Knox's re-reads go: a full pass over every held line takes
+     -- about 12 hours at 300 a step, and the largest banks' gaps show most.
+     ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, fr.fee_raw_id
      LIMIT ${limit}
   `;
 

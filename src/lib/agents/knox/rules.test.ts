@@ -592,6 +592,18 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("v38 keeps a threshold cell in the name, and reads Privilege Pay as an overdraft", () => {
+    // Lighthouse FCU (text 15165): "Over $5" is the smallest item charged, not a tier.
+    expect(fees("Courtesy Pay | Over $5 | Per occurrence | $32 | Courtesy Pay fee")).toEqual([
+      ["Courtesy Pay (over $5)", 32, "overdraft"],
+    ]);
+    // Arkansas FCU (text 1736): one price for NSF and the paid item names an overdraft too.
+    expect(fees("NSF, Privilege Pay, & Uncollected Funds Fee | $ 35.00")).toEqual([
+      ["NSF, Privilege Pay, & Uncollected Funds Fee", 35, "overdraft"],
+    ]);
+    expect(classifyFeeText("Privilege Pay Fee")).toBe("overdraft");
+  });
+
   it("v37 reads a one-time fee sentence with a daily cap after it (Guaranty)", () => {
     expect(fees("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day.")).toEqual([
       ["Overdraft fee (each time we pay an overdraft)", 36, "overdraft"],
@@ -785,5 +797,17 @@ describe("Knox extract.rules", () => {
     expect(fees("Overdraft Fee - Items Paid3 | Per transaction | $20.00")).toEqual([
       ["Overdraft Fee - Items Paid3 | Per transaction", 20, "overdraft"],
     ]);
+  });
+
+  it("v39 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
+    // GreenState's schedule: the line was read as no fee at all.
+    expect(fees("OD Privilege* (Overdrafts - Created by check, | $29.00/Item**")).toEqual([
+      ["OD Privilege (Overdrafts - Created by check", 29, "overdraft"],
+    ]);
+    expect(fees("Paid Item O/D Fee | $28.00")).toEqual([["Paid Item O/D Fee", 28, "overdraft"]]);
+    expect(fees("Continued OD Charge | $7.50/day")).toEqual([["Continued OD Charge", 7.5, "continuous_od"]]);
+    expect(fees("Consecutive Day OD Fee(3) | $35.00")).toEqual([["Consecutive Day OD Fee(3)", 35, "continuous_od"]]);
+    expect(fees("OD Protection Transfer | $10.00")).toEqual([["OD Protection Transfer", 10, "od_protection_transfer"]]);
+    expect(runFreeSpecialists("NSF/OD Charges* | $30.00").candidates.map((fee) => fee.canonicalHint).sort()).toEqual(["nsf", "overdraft"]);
   });
 });
