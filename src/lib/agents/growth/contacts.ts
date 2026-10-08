@@ -57,7 +57,7 @@ const PAGE_HINTS: Array<{ pattern: RegExp; rank: number }> = [
 /** A role from a title or a mailbox name; the first match wins, so "SVP Marketing" is marketing. */
 const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
   { role: "marketing", pattern: /\bmarketing\b|brand|communications|\bcmo\b/i },
-  { role: "retail", pattern: /retail|deposit|product|consumer bank|member experience|member services/i },
+  { role: "retail", pattern: /retail|deposit|product|consumer bank/i },
   { role: "finance", pattern: /\bcfo\b|chief financial|finance|treasurer|controller/i },
   { role: "executive", pattern: /\bceo\b|chief executive|president/i },
   { role: "operations", pattern: /\bcoo\b|chief operating|operations/i },
@@ -155,12 +155,20 @@ const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|market
  * business development, relationship and cash management, wealth and trust, branch staff.
  */
 const NOT_BUYER_TITLE =
-  /loan|lend|mortgage|underwrit|business banker|business banking|business development|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|business services|business product|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+
+/**
+ * Member services and member experience are retail only at a decision maker's rank (PR 652's
+ * decision-maker rule): "VP of Member Experience" buys a fee study, a "Member Services Manager" doesn't.
+ */
+const MEMBER_ROLE = /member (?:experience|services?)/i;
+const DECISION_MAKER_RANK = /\b(?:vp|svp|evp|vice[\s-]+president|director|chief|head)\b/i;
 
 export function roleFor(text: string): ContactRole {
   const title = text.replace(VICE_PRESIDENT, " ");
   if (!BUYER_TITLE.test(title) && NOT_BUYER_TITLE.test(title)) return "other";
-  return ROLE_PATTERNS.find(({ pattern }) => pattern.test(title))?.role ?? "other";
+  const seniorMember = MEMBER_ROLE.test(title) && DECISION_MAKER_RANK.test(text);
+  return ROLE_PATTERNS.find(({ role, pattern }) => pattern.test(title) || (role === "retail" && seniorMember))?.role ?? "other";
 }
 
 /** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...", a line quoting an address). */

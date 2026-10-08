@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
+import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
 import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
@@ -69,6 +69,25 @@ describe("market snapshot", () => {
     expect(fee.peers.find((peer) => peer.institutionId === 99)).toMatchObject({ verified: false, sourceLine: null });
   });
 
+  it("quotes the row's own line, not a neighbouring one with the same price", () => {
+    const text = "Insufficient Funds Fee (item $10.01 or greater) $25\nOverdraft Fee (item $10.01 or greater) $25";
+    const row = { ...odRow(1, 25, text), fee_name: "Overdraft Fee (item or greater)", conditions: `Knox deterministic extraction from Rosetta artifact #6107. canonical_hint=overdraft; excerpt="Overdraft Fee (item $10.01 or greater) $25"` };
+    const fee = buildSnapshotFee("overdraft", 1, [row]);
+    expect(fee.subject).toMatchObject({ value: 25, verified: true, feeName: "Overdraft Fee (item or greater)", sourceLine: "Overdraft Fee (item $10.01 or greater) $25" });
+    expect(fee.subject?.notes).toEqual([]);
+  });
+
+  it("compares the consumer tier when a business tier is also printed", () => {
+    const text = "Paid nonsufficient funds (NSF)*\nConsumer account | $25.00\nBusiness account | $35.00";
+    const consumer = { ...odRow(1, 25, text), fee_name: "Paid nonsufficient funds (NSF)*: Consumer account", conditions: `excerpt="Consumer account | $25.00"` };
+    const business = { ...odRow(1, 35, text), fee_name: "Paid nonsufficient funds (NSF)*: Business account", conditions: `excerpt="Business account | $35.00"` };
+    expect(buildSnapshotFee("overdraft", 1, [consumer, business]).subject).toMatchObject({ value: 25, sourceLine: "Consumer account | $25.00" });
+    expect(buildSnapshotFee("overdraft", 1, [business]).subject).toMatchObject({ value: 35 });
+    const perDay = { ...odRow(1, 30, "Overdraft Fee $30 per item, up to 4 per business day"), conditions: `excerpt="Overdraft Fee $30 per item, up to 4 per business day"` };
+    const extended = { ...odRow(1, 20, "Extended Overdraft Fee $20"), fee_name: "Extended Overdraft Fee", conditions: `excerpt="Extended Overdraft Fee $20"` };
+    expect(buildSnapshotFee("overdraft", 1, [perDay, extended]).subject).toMatchObject({ value: 30 });
+  });
+
   it("gives no median below the site's minimum of verified institutions", () => {
     const fee = buildSnapshotFee("overdraft", 1, rows.slice(0, 4));
     expect(fee.verifiedMedian).toBeNull();
@@ -116,6 +135,36 @@ describe("buildOutreachDraft", () => {
 
   it("needs enough verified competitors for a median", () => {
     expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane])).toEqual({ skip: "too_few_verified_peers" });
+  });
+
+  it("compares with the state when the local market is too thin", () => {
+    const stateRows = [odRow(1, 30), ...[20, 25, 25, 35, 35, 40].map((amount, index) => odRow(50 + index, amount)), odRow(70, 15, "No overdraft wording here")];
+    const state: StateComparison = {
+      stateCode: "TX",
+      fee: buildSnapshotFee("overdraft", 1, stateRows),
+      names: new Map([50, 51, 52, 53, 54, 55, 70].map((id) => [id, `State Peer ${id}`])),
+    };
+    const built = buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane], state);
+    if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
+    const { draft } = built;
+    expect(draft.scope).toBe("state");
+    expect(draft.median).toBe(30);
+    expect(draft.verifiedPeers).toBe(6);
+    expect(draft.caption).toContain("Subject: How your overdraft fee compares across Texas");
+    expect(draft.caption).toContain(
+      "reviewing published banking fees in Texas and noticed that First Bank's overdraft fee is $30, compared with a median of $30 among 6 verified banks and credit unions across Texas.",
+    );
+    const [, audit] = draft.caption.split("--- For your audit");
+    expect(audit).toContain("Compared statewide: Waco, TX has 3 verified local competitors, fewer than the 5 a local median needs.");
+    expect(audit).toContain("- State Peer 55: $40");
+    expect(audit).toContain("- State Peer 70: $15");
+  });
+
+  it("keeps the local comparison when the local market has enough, and skips when the state is thin too", () => {
+    const thinState: StateComparison = { stateCode: "TX", fee: buildSnapshotFee("overdraft", 1, rows.slice(0, 3)), names: new Map() };
+    const built = buildOutreachDraft(snapshot(), [jane], thinState);
+    expect("draft" in built && built.draft.scope).toBe("local");
+    expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane], thinState)).toEqual({ skip: "too_few_verified_peers" });
   });
 
   it("never addresses a lender, a committee or a name with no title", () => {
@@ -167,15 +216,17 @@ describe("withdrawing drafts made before the decision-maker rule", () => {
       if (query.includes("SELECT id, facts")) {
         return Promise.resolve([
           { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" } } },
-          { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" } }) },
+          { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" }, quote_rule: 2 }) },
           { id: 13, facts: { to: { email: "supervisorycommittee@x.org", name: "Ivan Shefrin", title: null, role: "other" } } },
+          { id: 37, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" } } },
+          { id: 23, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, quote_rule: 2 } },
         ]);
       }
       updates.push(values);
       return Promise.resolve([]);
     }) as never;
-    expect(await withdrawNonBuyerDrafts(db)).toBe(2);
-    expect(updates.map((values) => values.at(-1))).toEqual([7, 13]);
+    expect(await withdrawNonBuyerDrafts(db)).toBe(3);
+    expect(updates.map((values) => values.at(-1))).toEqual([7, 13, 37]);
   });
 });
 
