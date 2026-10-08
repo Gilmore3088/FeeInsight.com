@@ -45,6 +45,29 @@ function tableHtml(lines: string[], base: string): string {
   return `<table><thead><tr>${cells(head ?? [], "th")}</tr></thead><tbody>${body.map((row) => `<tr>${cells(row, "td")}</tr>`).join("")}</tbody></table>`;
 }
 
+/**
+ * A bar chart block: "```bars Title", then one "Label | value | shown value" line per bar,
+ * then "```". Bars are scaled to the largest value; the shown value prints beside each bar.
+ */
+function barsHtml(lines: string[], base: string): string {
+  const title = lines[0].replace(/^```bars\s*/, "");
+  const rows = lines
+    .slice(1, -1)
+    .map((line) => line.split("|").map((cell) => cell.trim()))
+    .filter((cells) => cells.length === 3 && Number.isFinite(Number(cells[1])));
+  const max = Math.max(...rows.map((cells) => Number(cells[1])), 0);
+  const bar = ([label, value, shown]: string[]) => {
+    const width = max > 0 ? Math.max(2, Math.round((Number(value) / max) * 100)) : 0;
+    return (
+      `<div style="display:grid;grid-template-columns:minmax(7rem,38%) 1fr auto;gap:0.6rem;align-items:center;margin:0.35rem 0">` +
+      `<span style="font-size:13px;line-height:1.25">${inline(label, base)}</span>` +
+      `<span style="display:block;height:14px;border-radius:3px;background:#EFE8DC"><span style="display:block;height:14px;border-radius:3px;width:${width}%;background:#C44B2E"></span></span>` +
+      `<span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">${inline(shown, base)}</span></div>`
+    );
+  };
+  return `<figure style="margin:1.25rem 0">${title ? `<figcaption style="font-size:13px;font-weight:600;margin-bottom:0.5rem">${inline(title, base)}</figcaption>` : ""}${rows.map(bar).join("")}</figure>`;
+}
+
 export function renderArticleMarkdown(content: string, base: string = SITE_URL): string {
   const blocks = escapeHtml(content.replace(/\r\n/g, "\n")).split(/\n{2,}/);
   return blocks
@@ -57,6 +80,7 @@ export function renderArticleMarkdown(content: string, base: string = SITE_URL):
         const level = heading[1].length;
         return `<h${level}>${inline(heading[2], base)}</h${level}>`;
       }
+      if (lines[0].startsWith("```bars") && lines[lines.length - 1] === "```") return barsHtml(lines, base);
       if (lines.every((line) => line.startsWith("- "))) {
         return `<ul>${lines.map((line) => `<li>${inline(line.slice(2), base)}</li>`).join("")}</ul>`;
       }
