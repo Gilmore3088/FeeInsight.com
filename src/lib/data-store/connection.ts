@@ -73,7 +73,17 @@ export const JSON_TEXT_PASSTHROUGH = {
   parse: (value: string) => JSON.parse(value) as unknown,
 };
 
+/** Supabase's transaction pooler listens on 6543; a direct connection on 5432. */
+export function usesTransactionPooler(databaseUrl: string): boolean {
+  try {
+    return new URL(databaseUrl).port === "6543";
+  } catch {
+    return false;
+  }
+}
+
 function connect(databaseUrl: string) {
+  const pooled = usesTransactionPooler(databaseUrl);
   return postgres(databaseUrl, {
     ssl: "require",
     // Keep serverless instances below the shared Supabase/Supavisor ceiling.
@@ -84,7 +94,9 @@ function connect(databaseUrl: string) {
     // A frozen serverless instance never runs the client-side idle timer above, so its
     // sockets stayed open on the server for its whole lifetime and filled every slot
     // (Oct 5: 105 idle sessions from 31 instances). The server closes them instead.
-    connection: { idle_session_timeout: 60_000 },
+    // The pooler owns server sessions and rejects this startup parameter outright
+    // (Oct 8: "unsupported startup parameter: idle_session_timeout"), so send it only direct.
+    ...(pooled ? {} : { connection: { idle_session_timeout: 60_000 } }),
     prepare: false,  // Required for Supabase transaction mode pooler (port 6543)
     types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL },
   });
