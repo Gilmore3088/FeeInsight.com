@@ -5,7 +5,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
-import { MONTHLY_PRICE_LABEL } from "@/app/subscribe/pricing";
+import { MONTHLY_PRICE_LABEL, PLAN_TEAM_LABEL } from "@/app/subscribe/pricing";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
 const API_ACCESS_HREF = `mailto:${CONTACT_EMAIL}?subject=API%20access`;
@@ -260,7 +260,7 @@ export default async function ApiDocsPage() {
             below. The free tier returns the 6 spotlight categories and allows 100 requests a month.
           </li>
           <li>
-            <span className="font-semibold text-[#1A1815]">{PRO_LABEL}, {MONTHLY_PRICE_LABEL} a month per seat.</span>{" "}
+            <span className="font-semibold text-[#1A1815]">{PRO_LABEL}, {MONTHLY_PRICE_LABEL} a month {PLAN_TEAM_LABEL}.</span>{" "}
             <Link href="/subscribe" className="font-medium text-[#A93D25] underline underline-offset-2">
               Subscribe
             </Link>{" "}
@@ -648,7 +648,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       <div className="grid gap-4 sm:grid-cols-2">
         <TierCard
           name={PRO_LABEL}
-          price={`${MONTHLY_PRICE_LABEL}/mo per seat`}
+          price={`${MONTHLY_PRICE_LABEL}/mo ${PLAN_TEAM_LABEL}`}
           highlighted
           features={[
             `Signed-in ${PRO_LABEL} exports`,
