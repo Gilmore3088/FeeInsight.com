@@ -8,6 +8,18 @@
 export const GROWTH_AGENTS = ["carnegie", "draper", "edison", "ernest", "murrow", "nielsen", "norman", "sherlock"] as const;
 export type GrowthAgent = (typeof GROWTH_AGENTS)[number];
 
+/** Each agent's job, as the team table in `growth-os/README.md` states it. */
+export const GROWTH_AGENT_ROLES: Record<GrowthAgent, string> = {
+  carnegie: "B2B outreach drafts",
+  draper: "Chief marketing officer: priorities, assignments, review",
+  edison: "Product-led growth tools",
+  ernest: "SEO and content",
+  murrow: "Social: LinkedIn through the content workflow",
+  nielsen: "Growth analytics",
+  norman: "Conversion and UX",
+  sherlock: "Market intelligence",
+};
+
 /**
  * What a queue item is. Fixed so the approval page and the weekly scoring know how to read
  * each one; add a kind here (and to `channelForKind` and the scoring) before an agent files it.

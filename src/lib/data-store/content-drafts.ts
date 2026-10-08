@@ -239,6 +239,27 @@ export async function markContentDraftUnmeasured(id: number, db: SqlTag = sql): 
   await db`UPDATE content_drafts SET scored_at = now() WHERE id = ${id} AND score IS NULL AND scored_at IS NULL`;
 }
 
+/** Longest title kept (the intake limit). */
+export const DRAFT_TITLE_MAX_LENGTH = 200;
+
+/**
+ * Edits a draft's title and text from the growth approval page. Only items still waiting for
+ * review (`draft`) change; an approved, posted or skipped item keeps what James decided on.
+ */
+export async function updateContentDraftText(
+  id: number,
+  title: string,
+  caption: string,
+  reviewer: string,
+  db: SqlTag = sql,
+): Promise<void> {
+  await db`
+    UPDATE content_drafts
+       SET title = ${title.trim().slice(0, DRAFT_TITLE_MAX_LENGTH)}, caption = ${caption}, reviewed_by = ${reviewer}, reviewed_at = now()
+     WHERE id = ${id} AND status = 'draft'
+  `;
+}
+
 export async function updateContentDraftCaption(id: number, caption: string, reviewer: string, db: SqlTag = sql): Promise<void> {
   await db`
     UPDATE content_drafts SET caption = ${caption}, reviewed_by = ${reviewer}, reviewed_at = now()
