@@ -446,6 +446,20 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps savings withdrawal limits and lobby ATMs out of out-of-network ATM fees (seven-state misses, Oct 8)", () => {
+    for (const name of [
+      "ATM Savings Withdrawal",
+      "ATM Share Savings Withdrawal (over 3x per month)",
+      "Reg-D Savings Withdrawal Fee (In excess of six per month, excluding ATM or in-person)",
+      "Lobby ATM",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    for (const name of ["ATM Surcharge", "Non-Network ATM Withdrawal", "Foreign ATM Fee"]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
     for (const name of [
       "Deposits/Withdrawals at an ATM we do not own or operate",
