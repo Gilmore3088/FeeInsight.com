@@ -76,7 +76,7 @@ describe("studyObservations", () => {
     const [o] = studyObservations([priceRow]);
     expect(o.feeCategory).toBe("monthly_maintenance");
     expect(o.headline).toBe(
-      "Your Monthly Maintenance of $15 is higher than the $8.50 median of 177 institutions whose markets have similar household income.",
+      "Your monthly maintenance fee of $15 is higher than the $8.50 median of 177 institutions whose markets have similar household income.",
     );
     expect(o.facts.map((f) => f.text)).toEqual([
       "Median household income across your markets: $90,890, higher than 84% of the 3,006 institutions in the study.",

@@ -2,10 +2,11 @@
  * Charts for the "at a glance" page of an exported Hamilton answer, drawn with react-pdf's SVG
  * primitives. Server-side only (react-pdf). Every mark is placed with one scale per chart.
  */
-import { Circle, Line, Polyline, Rect, Svg, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Circle, Line, Path, Polyline, Rect, Svg, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import type { LocalCompetitorFee } from "@/lib/hamilton/answer-brief";
 import type { MarketShare, RatePoint } from "@/lib/hamilton/brief-context";
+import type { DependenceChart } from "@/lib/hamilton/workspace/studies";
 import type { InstitutionFinancials, SchedulePosition } from "@/lib/hamilton/workspace/types";
 import { RD_PDF_CHART } from "@/lib/report-design/tokens";
 
@@ -239,6 +240,62 @@ export function IncomeCompareBars({ counties, state }: { counties: { name: strin
           <Text style={s.barValue}>{`$${Math.round(r.income / 1000)}k`}</Text>
         </View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * Fee dependence since 2010: every bank's (or credit union's) median share of revenue from fees as
+ * a line over the middle half, with the institution's own share marked in its first and latest years.
+ */
+export function DependenceTrendChart({ chart }: { chart: DependenceChart }) {
+  const { series, own } = chart;
+  const values = [...series.flatMap((p) => [p.p25, p.p75]), ...own.map((o) => o.value)];
+  const lo = Math.max(0, Math.floor(Math.min(...values)));
+  const hi = Math.ceil(Math.max(...values));
+  const first = series[0].year;
+  const last = series[series.length - 1].year;
+  const plotW = LW - 40;
+  const x = (year: number) => 6 + ((year - first) / Math.max(1, last - first)) * (plotW - 52);
+  const y = (v: number) => LH - ((v - lo) / Math.max(1, hi - lo)) * LH;
+  const band = `M ${series.map((p) => `${x(p.year)} ${y(p.p75)}`).join(" L ")} L ${[...series].reverse().map((p) => `${x(p.year)} ${y(p.p25)}`).join(" L ")} Z`;
+  const step = Math.max(1, Math.ceil((hi - lo) / 5));
+  const ticks = Array.from({ length: Math.floor((hi - lo) / step) + 1 }, (_, i) => lo + i * step);
+  return (
+    <View wrap={false}>
+      <Text style={s.chartTitle}>Fees as a share of revenue, {first} to {last}</Text>
+      <Legend items={[{ label: "You", mark: "dot" }, { label: `All ${chart.groupLabel}: median`, mark: "line" }, { label: "Middle half", mark: "band" }]} />
+      <View style={{ flexDirection: "row" }}>
+        <View style={{ width: 28, height: LH + 4, position: "relative" }}>
+          {ticks.map((v) => (
+            <Text key={v} style={[s.axisText, { position: "absolute", top: y(v) - 4, right: 4 }]}>
+              {`${v}%`}
+            </Text>
+          ))}
+        </View>
+        <Svg width={plotW} height={LH + 4}>
+          {ticks.map((v) => (
+            <Line key={v} x1={0} y1={y(v)} x2={plotW} y2={y(v)} stroke={C.rule} strokeWidth={0.5} />
+          ))}
+          <Path d={band} fill={C.band} />
+          <Polyline points={series.map((p) => `${x(p.year)},${y(p.median)}`).join(" ")} stroke={C.ink} strokeWidth={1.2} fill="none" />
+          {own.length > 1 ? (
+            <Line x1={x(own[0].year)} y1={y(own[0].value)} x2={x(own[own.length - 1].year)} y2={y(own[own.length - 1].value)} stroke={C.accent} strokeWidth={0.8} strokeDasharray="2 2" />
+          ) : null}
+          {own.map((o) => (
+            <Circle key={o.year} cx={x(o.year)} cy={y(o.value)} r={3.5} fill={C.accent} />
+          ))}
+        </Svg>
+        {own.map((o) => (
+          <Text key={o.year} style={[s.axisText, { position: "absolute", left: 28 + x(o.year) + 6, top: y(o.value) - 4, color: C.accent }]}>
+            {`${o.value.toFixed(2)}%`}
+          </Text>
+        ))}
+      </View>
+      <View style={[s.axisRow, { width: plotW, marginLeft: 28 }]}>
+        <Text style={s.axisText}>{String(first)}</Text>
+        <Text style={s.axisText}>{String(last)}</Text>
+      </View>
     </View>
   );
 }
