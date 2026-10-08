@@ -464,6 +464,10 @@ v36 (rules 36, same lane, Oct 8):
 v37 (rules 37, same lane, Oct 8):
 - A sentence fee may say "a one-time fee of", "a per-item fee of" or "a flat fee of", and a cap after its clause (", not to exceed $180 per day") is cut from the name, not read as a second price in it ("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day", Guaranty).
 
+v38 (rules 38, same lane, Oct 8):
+- A threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse) no longer hides the fee's name from the classifier, and stays in the name with its figure ("Courtesy Pay (over $5)"), which is how the shared source check tells it from a tier.
+- "Privilege Pay" is an overdraft name, so one price for "NSF, Privilege Pay, & Uncollected Funds Fee" (Arkansas FCU) files as the overdraft fee, like "NSF/Overdraft".
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own

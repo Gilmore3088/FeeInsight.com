@@ -592,6 +592,18 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("v38 keeps a threshold cell in the name, and reads Privilege Pay as an overdraft", () => {
+    // Lighthouse FCU (text 15165): "Over $5" is the smallest item charged, not a tier.
+    expect(fees("Courtesy Pay | Over $5 | Per occurrence | $32 | Courtesy Pay fee")).toEqual([
+      ["Courtesy Pay (over $5)", 32, "overdraft"],
+    ]);
+    // Arkansas FCU (text 1736): one price for NSF and the paid item names an overdraft too.
+    expect(fees("NSF, Privilege Pay, & Uncollected Funds Fee | $ 35.00")).toEqual([
+      ["NSF, Privilege Pay, & Uncollected Funds Fee", 35, "overdraft"],
+    ]);
+    expect(classifyFeeText("Privilege Pay Fee")).toBe("overdraft");
+  });
+
   it("v37 reads a one-time fee sentence with a daily cap after it (Guaranty)", () => {
     expect(fees("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day.")).toEqual([
       ["Overdraft fee (each time we pay an overdraft)", 36, "overdraft"],
