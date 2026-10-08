@@ -8,6 +8,7 @@ import {
   contactConfidence,
   contactsCsv,
   extractContacts,
+  isSharedMailbox,
   normalizeContact,
   rankContacts,
   roleFor,
@@ -204,6 +205,22 @@ describe("contact confidence", () => {
       "rlee@firstbank.com",
       "info@firstbank.com",
     ]);
+  });
+});
+
+describe("shared mailboxes and phone lines", () => {
+  it("reads committee, service and distribution-list addresses as shared", () => {
+    for (const email of ["member_serv@x.org", "treasurysupport@x.com", "web-executive-dl@x.com", "supervisorycommittee@x.org", "e-statements@x.com", "cmadmin@x.bank", "smart_insurance@x.org", "info@x.com"]) {
+      expect(isSharedMailbox(email)).toBe(true);
+    }
+    for (const email of ["kday@sbw.bank", "mark.rieger@ffbkc.com", "cpouliot@hrcu.org", "jadmiral@x.com"]) {
+      expect(isSharedMailbox(email)).toBe(false);
+    }
+  });
+
+  it("drops a phone line printed where a title would be", () => {
+    expect(normalizeContact({ name: null, title: "Member Services: 800.742.5582 or", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
+    expect(normalizeContact({ name: null, title: "Main Branch Line: (360) 685-8477", role: "other", kind: "person" }).title).toBeNull();
   });
 });
 
