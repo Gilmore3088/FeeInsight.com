@@ -457,4 +457,13 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(fab, "Monthly Statement – Electronic", 0, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(fab, "Withdrawals at Allpoint & Presto! ATMs", 0, ".").ok).toBe(true);
   });
+
+  it("reads an add-on rate as the fee's price only when the row prints no other (Oct 8)", () => {
+    const reprints = "Account statement reprints (5 page max/$1 each additional page | $4.00";
+    expect(checkFeeAgainstSource(reprints, "Account statement reprints (5 page max", 4, "statement").ok).toBe(true);
+    expect(checkFeeAgainstSource(reprints, "Account statement reprints (5 page max", 1, "statement").ok).toBe(false);
+    expect(checkFeeAgainstSource("ATM Withdrawals (non-LFCU owned ATMs) | 5 free each month, $2.00 each additional", "ATM Withdrawals", 2, "atm").ok).toBe(true);
+    expect(checkFeeAgainstSource("Account Research | $25 first hour/$15 each additional hour", "Account Research", 25, "research").ok).toBe(true);
+    expect(checkFeeAgainstSource("Gift Cards (per card) | $3.00 Each additional bag $35.00", "Gift Cards (per card)", 3, "gift").ok).toBe(true);
+  });
 });

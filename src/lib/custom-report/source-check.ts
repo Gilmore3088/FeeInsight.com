@@ -27,6 +27,8 @@ export type SourceCheckResult = { ok: true; sourceLine: string } | { ok: false; 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
 const PRICE_FIRST_MAX_LENGTH = 120;
+/** Words after a figure that make it the rate for each extra unit, not the fee's own price. */
+const ADD_ON_RATE = /^\s*(?:each|per|for each|\/)\s*(?:additional|add'?l|extra)\s+(?:½\s*|half\s+)?(?:pages?|hours?|signatures?|items?|checks?|cop(?:y|ies)|withdrawals?|minutes?|statements?|sheets?)\b/i;
 /**
  * A line that is a price ("$10.00", "Free", "Per Item | $25.00", "- $5 each"), not another
  * fee's row ("Incoming | $10.00").
@@ -336,7 +338,11 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   // when the row prints one outside it; a row whose only figure is in parentheses keeps it.
   const unlimited = tokens.filter((t) => !isThreshold(line, t));
   const outside = unlimited.filter((t) => !inNote(line, t));
-  const prices = outside.length > 0 ? outside : unlimited;
+  const noted = outside.length > 0 ? outside : unlimited;
+  // An add-on rate ("Account statement reprints (5 page max/$1 each additional page | $4.00") is
+  // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
+  const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
+  const prices = base.length > 0 ? base : noted;
   const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
   const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
