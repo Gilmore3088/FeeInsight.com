@@ -64,6 +64,7 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
@@ -1596,6 +1597,11 @@ async function executeAgenticStep(
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "content-od-by-state": {
+      const lessons = await recentLessons(tx, "ernest");
+      const result = await runOdByState({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: [summarizeOdByStateResult(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
