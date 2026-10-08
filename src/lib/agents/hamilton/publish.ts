@@ -14,7 +14,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -487,7 +487,7 @@ export async function insertPublishedFee(
       ${options.row.raw_agent_event_id}::uuid,
       ${options.row.verified_by_agent_event_id}::uuid,
       ${publishEventId}::uuid,
-      ${options.row.fee_name},
+      ${publishedFeeName(options.row.fee_name, options.row.canonical_fee_key)},
       ${amount},
       ${options.row.frequency},
       ${options.row.variant_type},
@@ -558,7 +558,21 @@ function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
 
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 export function normalizedFeeName(name: string | null | undefined): string {
-  return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return (name ? repairNameShape(tidyFeeName(name)) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * The name a published fee shows: the verified name with a cut-off parenthesis or a doubled
+ * word repaired (`repairNameShape`). Knox and Darwin keep the name as read, since its words
+ * are the category evidence; the repair applies only when the category guard still accepts
+ * the shorter name.
+ */
+export function publishedFeeName(name: string, canonicalKey: string): string {
+  const current = name.trim();
+  const repaired = repairNameShape(current);
+  if (repaired === current) return current;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return current;
+  return repaired;
 }
 
 function documentTime(value: string | Date | null | undefined): number | null {
