@@ -144,6 +144,22 @@ Darwin owns verification and classification.
   v7 (2026-10-07): a hand check of 20 v6 passes had 17 right (a "Smart Safe" cash device passed
   as safe deposit box rent, a $65 box read with its footnote as $651, a bare "overdrafts $5.00"
   from jumbled rows). The prompt names all three.
+  v8 (2026-10-07): a hand check of 20 v7 passes had 17 right (an incoming wire priced "$2.95 (FEE
+  WAIVED)", an NSF check re-clear filed as NSF, an online-wire monthly fee filed as monthly maintenance).
+  The prompt names all three. `scheduleContext` no longer anchors on a bare price row ("$5.00"),
+  which had shown one item the rows around a different fee.
+  v9 (2026-10-07): a hand check of 20 v8 passes had 18 right (an "Emergency Card Replacement" passed
+  as card replacement, and a $10 rush card read from "Debit Card Replacement Rush Order | $10 $75").
+  The prompt names emergency service and two prices in one row.
+  v10 (2026-10-07): a hand check of 20 v9 passes had 18 sure right (an "Overnight Fee (Business Bill
+  Pay)" passed as bill pay; a $2.75 "Return Check Item" beside a $30 returned-check fee is unclear).
+  A fee whose name says it is the expedited, rush, overnight, emergency or same/next/second-day
+  version of a service now never passes outside a premium category such as `rush_card`
+  (`premiumServiceMisfiled`, attempt detail `premium_service`).
+  v11 (2026-10-08): releases on (`DARWIN_RELEASE_ACTS`, James, "Turn on" at 02:16 UTC) after a
+  hand check of 20 v10 passes had 19 right and 1 arguable. A passing fee becomes a verified row
+  flagged `darwin_released_hold`, so the whole release can be found and rolled back. The bump
+  has every held fee judged again with release on.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
