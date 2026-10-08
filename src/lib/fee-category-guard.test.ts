@@ -795,7 +795,7 @@ describe("checkFeeCategory", () => {
     expect(wire("wire_intl_outgoing", "International Outbound Wires (Online/Manual)", "35.00", "International Outbound Wires (Online/Manual) | $35/$75 | $35/$75")).toBe(true);
   });
 
-  it("v45 reads spaced wire labels by phrase and keeps other fees out of early closure (Darwin eval, Oct 8)", () => {
+  it("v46 reads spaced wire labels by phrase and keeps other fees out of early closure (Darwin eval, Oct 8)", () => {
     const wire = (key: string, name: string, amount: string, excerpt: string) =>
       checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
     expect(wire("wire_intl_outgoing", "Wire Out / Wire Out Foreign", "25.00", "Wire Out / Wire Out Foreign | $25.00 / $45.00")).toBe(false);

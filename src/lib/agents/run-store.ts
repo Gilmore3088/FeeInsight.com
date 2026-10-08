@@ -985,7 +985,8 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
-      // A live fee with no frequency whose own schedule line states one ("$6.00 each") gets it.
+      // A live fee's frequency follows its own schedule row: a blank gets the one the row states
+      // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
       const frequencyFill = await fillBlankFrequencies(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
@@ -1200,7 +1201,7 @@ async function executeAgenticStep(
           : "";
       const frequencyNote =
         frequencyFill.filled.length > 0
-          ? ` ${published.dryRun ? "Would fill" : "Filled"} the frequency of ${frequencyFill.filled.length.toLocaleString()} live fee(s) from their schedule line.`
+          ? ` ${published.dryRun ? "Would set" : "Set"} the frequency of ${frequencyFill.filled.length.toLocaleString()} live fee(s) from their own schedule row (${frequencyFill.filled.filter((row) => row.from == null).length.toLocaleString()} blank).`
           : "";
       return {
         status: "completed",
@@ -1372,6 +1373,7 @@ async function executeAgenticStep(
           frequency_fill_scanned: frequencyFill.scanned,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
+            from: row.from,
             frequency: row.frequency,
             source_line: row.sourceLine.slice(0, 120),
           })),

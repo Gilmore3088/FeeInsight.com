@@ -303,7 +303,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(check|draft|order|print|book|style|box|design|cheque)/i,
     exclude: /\btemporar/i,
   },
-  // v45: a fee printed under a "closed within 90 days" heading is that heading's own fee only
+  // v46: a fee printed under a "closed within 90 days" heading is that heading's own fee only
   // when the row names no other: Koin's "Accounts closed within 90 days: International Wire" $45
   // (closure is $30), a rush card shipment, a reinstatement. A club's early withdrawal is filed
   // here on purpose (fee-taxonomy.ts).
@@ -325,9 +325,10 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v43: PR 682's rules ship after Magellan's v42 (PR 684): v40 cheap overdraft protection, v41
 // charge-off fees, and names cut from another fee's note plus a reload fee filed as bill pay.
 // v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
-// v45: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
+// v45 is Top 50's (PR 701).
+// v46: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
 // reinstatement fee filed as early closure under a "closed within 90 days" heading.
-export const CATEGORY_GUARD_VERSION = 45;
+export const CATEGORY_GUARD_VERSION = 46;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -569,7 +570,7 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
   if (first === second || Math.abs(amount - first) >= 0.005) return null;
   const words = excerpt.replace(prices[0], " ");
   const keyValues = [canonicalFeeKey.includes("_intl_") ? "intl" : "domestic", canonicalFeeKey.endsWith("_outgoing") ? "out" : "in"];
-  // v45: a spaced slash between two named wires ("Wire Out / Wire Out Foreign | $25.00 /
+  // v46: a spaced slash between two named wires ("Wire Out / Wire Out Foreign | $25.00 /
   // $45.00") names each slot by its whole phrase; the word next to the slash ("Out") is shared.
   const phrasePairs = words
     .split(/[|:–—]/)
