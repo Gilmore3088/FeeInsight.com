@@ -211,6 +211,35 @@ export async function upsertIdentityLinks(
   `;
 }
 
+/** Registry source whose past partitions must re-run when a link of this type is accepted by hand. */
+const BACKFILL_SOURCE: Record<IdentityLinkType, string> = { cfpb_company: "cfpb", sec_cik: "sec-filings" };
+
+/**
+ * A person accepts or rejects a link waiting for review. verified_by keeps matcher runs from
+ * changing it later. Accepting makes that source's loaded partitions due again, so the next
+ * ticks backfill the company's history (past CFPB years are otherwise not re-pulled for months).
+ */
+export async function decideIdentityLink(
+  db: RegistryDb,
+  input: { linkType: IdentityLinkType; externalKey: string; decision: "accepted" | "rejected"; verifiedBy: string },
+): Promise<boolean> {
+  const updated = await db`
+    UPDATE institution_identity_links
+       SET status = ${input.decision}, verified_by = ${input.verifiedBy}, updated_at = NOW()
+     WHERE link_type = ${input.linkType} AND external_key = ${input.externalKey} AND status = 'needs_review'
+    RETURNING id
+  `;
+  if ([...updated].length === 0) return false;
+  if (input.decision === "accepted") {
+    await db`
+      UPDATE registry_ingest_partitions
+         SET next_attempt_after = NOW(), updated_at = NOW()
+       WHERE source = ${BACKFILL_SOURCE[input.linkType]} AND status IN ('succeeded', 'empty')
+    `;
+  }
+  return true;
+}
+
 /** external_key -> institution_id for links that may be used for data. */
 export async function loadAcceptedLinks(db: RegistryDb, linkType: IdentityLinkType): Promise<Map<string, number>> {
   const rows = await db<Array<{ external_key: string; institution_id: number }>>`

@@ -8,6 +8,7 @@ import {
   type IdentityReviewItem,
   type RegistryPartitionStats,
 } from "@/lib/data-store/registry-profile";
+import { decideIdentityLinkAction } from "./actions";
 import { QueueRegistryButton } from "./queue-button";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +98,7 @@ export default async function RegistryPage() {
                 <th className="px-3 py-2">External name</th>
                 <th className="px-3 py-2">Best candidate</th>
                 <th className="px-3 py-2">Method</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -108,6 +110,18 @@ export default async function RegistryPage() {
                     {item.institution_id ? <a className="underline" href={`/admin/institution/${item.institution_id}`}>{item.institution_name ?? `#${item.institution_id}`}</a> : "None"}
                   </td>
                   <td className="px-3 py-2 text-xs">{item.method} ({Math.round(item.confidence * 100)}%)</td>
+                  <td className="px-3 py-2">
+                    <form action={decideIdentityLinkAction} className="flex gap-2">
+                      <input type="hidden" name="link_type" value={item.link_type} />
+                      <input type="hidden" name="external_key" value={item.external_key} />
+                      <button type="submit" name="decision" value="accepted" className="rounded-md border border-[var(--admin-border,#E0D7C9)] px-2 py-1 text-xs font-medium hover:bg-black/5">
+                        Same bank
+                      </button>
+                      <button type="submit" name="decision" value="rejected" className="rounded-md border border-[var(--admin-border,#E0D7C9)] px-2 py-1 text-xs font-medium hover:bg-black/5">
+                        Not a match
+                      </button>
+                    </form>
+                  </td>
                 </tr>
               ))}
             </tbody>

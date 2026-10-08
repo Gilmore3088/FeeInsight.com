@@ -5,7 +5,7 @@ import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
 import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
 import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
-import { matchCompany, type IdentityIndex } from "./identity";
+import { decideIdentityLink, matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
@@ -115,6 +115,22 @@ describe("identity matching", () => {
     expect(matchCompany("BANK OF THE WEST", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
     // A firm whose name is not a bank's full name never matches this way.
     expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
+  });
+
+  it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
+    const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
+    await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
+    expect(accept.statements[0].values).toEqual(["accepted", "james", "cfpb_company", "COMMERCE BANK"]);
+    expect(accept.statements[1]).toMatchObject({ text: expect.stringContaining("UPDATE registry_ingest_partitions"), values: ["cfpb"] });
+
+    const reject = createDb([["UPDATE institution_identity_links", () => [{ id: 2 }]]]);
+    await decideIdentityLink(reject.db, { linkType: "sec_cik", externalKey: "0000123", decision: "rejected", verifiedBy: "james" });
+    expect(reject.statements).toHaveLength(1);
+
+    // Already decided (no needs_review row): nothing else happens.
+    const stale = createDb([]);
+    await expect(decideIdentityLink(stale.db, { linkType: "cfpb_company", externalKey: "X", decision: "accepted", verifiedBy: "james" })).resolves.toBe(false);
+    expect(stale.statements).toHaveLength(1);
   });
 });
 
