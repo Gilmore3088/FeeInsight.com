@@ -726,4 +726,16 @@ describe("Knox extract.rules", () => {
       ["Overdraft Fee - Items Paid3 | Per transaction", 20, "overdraft"],
     ]);
   });
+
+  it("v35 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
+    // GreenState's schedule: the line was read as no fee at all.
+    expect(fees("OD Privilege* (Overdrafts - Created by check, | $29.00/Item**")).toEqual([
+      ["OD Privilege (Overdrafts - Created by check", 29, "overdraft"],
+    ]);
+    expect(fees("Paid Item O/D Fee | $28.00")).toEqual([["Paid Item O/D Fee", 28, "overdraft"]]);
+    expect(fees("Continued OD Charge | $7.50/day")).toEqual([["Continued OD Charge", 7.5, "continuous_od"]]);
+    expect(fees("Consecutive Day OD Fee(3) | $35.00")).toEqual([["Consecutive Day OD Fee(3)", 35, "continuous_od"]]);
+    expect(fees("OD Protection Transfer | $10.00")).toEqual([["OD Protection Transfer", 10, "od_protection_transfer"]]);
+    expect(runFreeSpecialists("NSF/OD Charges* | $30.00").candidates.map((fee) => fee.canonicalHint).sort()).toEqual(["nsf", "overdraft"]);
+  });
 });
