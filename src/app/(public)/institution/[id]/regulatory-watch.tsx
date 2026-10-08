@@ -7,7 +7,7 @@
 import { Exhibit, ReportDesign, ReportHeader, type RdLegendItem } from "@/components/report-design";
 import { formatCompactDollars } from "@/lib/format";
 import { RD } from "@/lib/report-design/tokens";
-import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
+import { enforcementAgencyLabel, enforcementAgencyList, isStateAgency } from "@/lib/regulatory/state-enforcement";
 import type { ActionTheme, RegulatoryWatch, WatchFeeTie, WatchPeerAction, WatchRuleChange, WatchState } from "@/lib/data-store/regulatory-watch";
 import { WATCH_ACTION_YEARS } from "@/lib/data-store/regulatory-watch";
 
@@ -370,14 +370,16 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
   const city = firstCity(watch.market?.places ?? []);
   const span = timelineWindow(watch.as_of, actions);
   const since = monthYear(new Date(span.start).toISOString());
+  // State banking-department orders join the timeline once a state's list is loaded.
+  const scope = actions.some((a) => isStateAgency(a.agency)) ? "federal or state" : "federal";
   const asOf = watch.as_of ? ` Data as of ${fullDate(watch.as_of)}.` : "";
   const deposits = `FDIC Summary of Deposits (largest by deposits in ${watch.market?.places.slice(0, 2).join("; ") ?? "the local market"})`;
   const headline =
     peersChecked === 0
       ? "No local market is on file for this institution yet."
       : actions.length === 0
-        ? `None of your ${peersChecked} largest ${city ? `${city} ` : ""}competitors has a federal enforcement action since ${since}.`
-        : `${peersWithActions} of your ${peersChecked} largest ${city ? `${city} ` : ""}competitors drew federal enforcement since ${since}${
+        ? `None of your ${peersChecked} largest ${city ? `${city} ` : ""}competitors has a ${scope} enforcement action since ${since}.`
+        : `${peersWithActions} of your ${peersChecked} largest ${city ? `${city} ` : ""}competitors drew ${scope} enforcement since ${since}${
             consumer > 0 ? `; ${plural(consumer, "action")} concerned consumer law.` : ", none of it about consumer law."
           }`;
   let n = 0;
@@ -401,7 +403,7 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
           exhibit={{
             key: "enforcement",
             label: `Exhibit ${++n} · Enforcement`,
-            title: `Federal enforcement against your largest local competitors, ${since} to now`,
+            title: `${scope === "federal" ? "Federal" : "Federal and state"} enforcement against your largest local competitors, ${since} to now`,
             sub: "Each mark is one public action, placed on the date it began. Hover or tap a mark for the agency's subject and a link to the order. FDIC and NCUA orders are not included.",
             legend: timelineLegend(actions),
             source: `Source: ${agencies} enforcement action lists; ${deposits}.${asOf}`,
