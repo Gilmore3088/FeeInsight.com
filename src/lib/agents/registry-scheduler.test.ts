@@ -10,6 +10,7 @@ vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 
 import {
   backfillStart,
+  isKeylessSkipNowKeyed,
   isParserStale,
   pickDueCandidate,
   registryCandidates,
@@ -81,6 +82,13 @@ describe("registry scheduler", () => {
     expect(backfillStart(undefined)).toEqual({ year: 2010, quarter: 1 });
     expect(backfillStart("2005Q3")).toEqual({ year: 2005, quarter: 3 });
     expect(backfillStart("garbage")).toEqual({ year: 2010, quarter: 1 });
+  });
+
+  it("makes a vintage skipped for a missing Census key due once a key is set", () => {
+    expect(isKeylessSkipNowKeyed(true, "abc123")).toBe(true);
+    expect(isKeylessSkipNowKeyed(true, undefined)).toBe(false);
+    expect(isKeylessSkipNowKeyed(true, "  ")).toBe(false);
+    expect(isKeylessSkipNowKeyed(false, "abc123")).toBe(false);
   });
 
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
