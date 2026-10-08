@@ -33,6 +33,12 @@ export default async function MagellanPage() {
           </a>{" "}
           — FDIC, NCUA, CFPB, SEC, and Federal Reserve data loads.
         </p>
+        <p className="mt-1 text-sm">
+          <a href="/admin/magellan/hit-list" className="font-medium underline">
+            Hit list
+          </a>{" "}
+          — the largest institutions with no live fees; paste a schedule link to run one next.
+        </p>
       </header>
       <AgentHandoffStrip
         steps={[

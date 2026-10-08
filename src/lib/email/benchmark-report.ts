@@ -40,6 +40,7 @@ export async function sendBenchmarkReportNotifications(
         `Here is your ${title}: the median and typical range for the 15 headline fees, from each institution's own published fee schedule.`,
         "",
         "Want to see where your own institution stands against its competitors? That is the institution report, linked at the end of this one.",
+        "To track competitors every month with up to 5 people on your team, see Fee Insight Pro at the end of the report.",
         ...emailOptInLines(input.email),
       ],
       cta: { label: "Open your report", href: url },

@@ -137,4 +137,15 @@ describe("inferred volume", () => {
     expect(built.record.findings.label).toBe("inferred");
     expect(built.record.asOf).toBe("2024-12-31");
   });
+
+  it("keeps only banks whose income window ends at the newest bank quarter", () => {
+    const bank = (id: number, period: string): IncomeFeeRow => ({ institutionId: id, charter: "bank", assetsThousands: 2_000_000, period, feeCategory: "overdraft_nsf", incomeDollars: 1_000_000, feeLow: 25, feeHigh: 35 });
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 2_000_000, period: "2024-12-31", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const built = buildInferredVolume([bank(1, "2026-06-30"), bank(2, "2026-06-30"), bank(3, "2019-06-30"), cu]);
+    expect(built.rows.map((r) => r.institutionId)).toEqual([1, 2, 9]);
+    expect(built.rows[0].peerN).toBe(2);
+    expect(built.record.asOf).toBe("2026-06-30");
+    expect(String(built.record.findings.headline)).toContain("$1B+ bank");
+    expect(String(built.record.findings.headline)).toContain("credit union");
+  });
 });

@@ -163,6 +163,10 @@ describe("StructuredAsk", () => {
       competitors: [{ institutionId: 2, name: "Test Bank A", charterType: "bank", branches: 4, deposits: null, fees: {} }],
       categories: ["overdraft"],
       sources: [],
+      map: null,
+      colours: {},
+      network: null,
+      unmapped: 0,
     };
     const calls = mockFetch(market as never, {});
     const onNoStoryline = vi.fn();

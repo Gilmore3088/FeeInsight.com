@@ -2707,6 +2707,12 @@ export interface GoldStandardCandidate {
   asset_size_tier: string | null;
   asset_size: number | null;
   fee_schedule_url: string | null;
+  /**
+   * A consumer schedule given by hand (OPERATOR_SCHEDULES or the hit list). It is stored as a
+   * companion in institution_additional_sources, not as the bank's main link, so it is read
+   * separately and shown beside the main link.
+   */
+  hand_schedule_url: string | null;
   fee_count: number;
 }
 
@@ -2721,13 +2727,23 @@ export async function getGoldStandardCandidates(
              ct.asset_size_tier,
              ct.asset_size,
              ct.fee_schedule_url,
+             hand.url AS hand_schedule_url,
              COUNT(ef.id) as fee_count
       FROM institution_sources ct
       JOIN published_fee_catalog ef
         ON ef.institution_id = ct.id
        AND ef.review_status = 'approved'
+      LEFT JOIN LATERAL (
+        SELECT ias.url
+        FROM institution_additional_sources ias
+        WHERE ias.institution_id = ct.id
+          AND ias.document_role = 'consumer_supplement'
+          AND ias.status <> 'rejected'
+        ORDER BY (ias.status = 'fetched') DESC, ias.found_at DESC
+        LIMIT 1
+      ) hand ON true
       GROUP BY ct.id, ct.institution_name, ct.state_code,
-               ct.asset_size_tier, ct.asset_size, ct.fee_schedule_url
+               ct.asset_size_tier, ct.asset_size, ct.fee_schedule_url, hand.url
       ORDER BY ct.asset_size DESC NULLS LAST
       LIMIT ${limit}
     `;
@@ -2738,6 +2754,7 @@ export async function getGoldStandardCandidates(
       asset_size_tier: r.asset_size_tier ? String(r.asset_size_tier) : null,
       asset_size: r.asset_size != null ? Number(r.asset_size) : null,
       fee_schedule_url: r.fee_schedule_url ? String(r.fee_schedule_url) : null,
+      hand_schedule_url: r.hand_schedule_url ? String(r.hand_schedule_url) : null,
       fee_count: Number(r.fee_count),
     }));
   } catch (e) {
@@ -2757,14 +2774,24 @@ export async function getGoldStandardCandidate(
              ct.asset_size_tier,
              ct.asset_size,
              ct.fee_schedule_url,
+             hand.url AS hand_schedule_url,
              COUNT(ef.id) as fee_count
       FROM institution_sources ct
       JOIN published_fee_catalog ef
         ON ef.institution_id = ct.id
        AND ef.review_status = 'approved'
+      LEFT JOIN LATERAL (
+        SELECT ias.url
+        FROM institution_additional_sources ias
+        WHERE ias.institution_id = ct.id
+          AND ias.document_role = 'consumer_supplement'
+          AND ias.status <> 'rejected'
+        ORDER BY (ias.status = 'fetched') DESC, ias.found_at DESC
+        LIMIT 1
+      ) hand ON true
       WHERE ct.id = ${id}
       GROUP BY ct.id, ct.institution_name, ct.state_code,
-               ct.asset_size_tier, ct.asset_size, ct.fee_schedule_url
+               ct.asset_size_tier, ct.asset_size, ct.fee_schedule_url, hand.url
     `;
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -2775,6 +2802,7 @@ export async function getGoldStandardCandidate(
       asset_size_tier: r.asset_size_tier ? String(r.asset_size_tier) : null,
       asset_size: r.asset_size != null ? Number(r.asset_size) : null,
       fee_schedule_url: r.fee_schedule_url ? String(r.fee_schedule_url) : null,
+      hand_schedule_url: r.hand_schedule_url ? String(r.hand_schedule_url) : null,
       fee_count: Number(r.fee_count),
     };
   } catch (e) {

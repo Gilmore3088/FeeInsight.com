@@ -1,5 +1,5 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
-import { startAgentRun, type StartAgentRunResult } from "@/lib/agents/run-store";
+import { currentDeploy, startAgentRun, type StartAgentRunResult } from "@/lib/agents/run-store";
 import type {
   AgentRunStepDefinition,
   AgentRunTriggerSource,
@@ -180,11 +180,15 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
  * hourly too (James, 2026-10-06: close the 297 dense schedules the free team can't
  * read): it picks only dense texts the current free version read poorly and that no paid
  * attempt has read, at most PAID_PASS_ITEMS_PER_RUN a run, so it spends nothing once they
- * are read, and the Knox and global budget caps still stop it. A re-read downloads a
+ * are read, and the Knox and global budget caps still stop it. Darwin's paid pass runs
+ * hourly for the same reason (2026-10-07: with it on the full pass only, held fees went
+ * unreviewed from 14:24 UTC once the last full passes drained): it reviews only held fees
+ * and disagreements no attempt of the current version has read, so it too spends nothing
+ * once they are done, and the Darwin and global budget caps still stop it. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "verify-paid", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));
@@ -228,6 +232,8 @@ export interface DueStateLaneScheduleResult {
   reused: number;
   /** Lanes with no full pass due and no backlog: put to sleep until next month. */
   idle: number;
+  /** States whose failed lane was woken because the step that broke it works again. */
+  recovered?: string[];
   failed: Array<{ stateCode: string; error: string }>;
   results: Array<{
     stateCode: string;
@@ -484,6 +490,70 @@ export async function stateHasUncheckedLiveFees(stateCode: string): Promise<bool
   } catch (error) {
     console.error("stateHasUncheckedLiveFees failed:", error);
     return false;
+  }
+}
+
+/** A failure shared by at least this many runs is a break in our code, not one bank's problem. */
+export const RECOVERY_SHARED_FAILURE_RUNS = 3;
+
+/**
+ * Automatic rerun after a break is fixed. When a step type breaks for many states (a bad
+ * deploy, 2026-10-08: every Hamilton publish failed on a generated column), each failed
+ * lane would otherwise wait an hour for its retry. A shared failure recorded under an
+ * older deploy, with no failure of that step and reason since the current deploy went
+ * live, is presumed fixed: wake those lanes now and log a `run.recovery_rerun` event on
+ * each failed run so the rerun is visible. Each failed lane is rerun at most once per
+ * deploy (a rerun that fails again records the current deploy). A step success alone is
+ * not proof: a publish with nothing to publish succeeds while the break is still live.
+ * A failure seen in fewer than RECOVERY_SHARED_FAILURE_RUNS runs is left to the normal
+ * retry, so one bank's bad document never loops a lane.
+ */
+export async function wakeLanesAfterRecovery(deploy: string | null = currentDeploy()): Promise<string[]> {
+  if (!deploy) return [];
+  try {
+    const rows = await sql<{ state_code: string; run_id: number; step_key: string; error: string; failed_deploy: string | null }[]>`
+      WITH failures AS (
+        SELECT step.agent_run_id, step.step_key, step.error_summary, event.detail->>'deploy' AS deploy
+          FROM public.agent_run_steps step
+          LEFT JOIN LATERAL (
+            SELECT e.detail FROM public.agent_run_events e
+             WHERE e.step_id = step.id AND e.event_type = 'step.failed'
+             ORDER BY e.id DESC LIMIT 1
+          ) event ON true
+         WHERE step.status = 'failed'
+           AND step.completed_at > NOW() - INTERVAL '24 hours'
+           AND step.error_summary IS NOT NULL
+      ), fixed AS (
+        SELECT step_key, error_summary
+          FROM failures
+         GROUP BY step_key, error_summary
+        HAVING COUNT(DISTINCT agent_run_id) >= ${RECOVERY_SHARED_FAILURE_RUNS}
+           AND COUNT(*) FILTER (WHERE deploy = ${deploy}) = 0
+      )
+      UPDATE public.agent_state_lanes lane
+         SET next_run_after = NOW(),
+             updated_at = NOW()
+        FROM public.agent_runs run
+        JOIN failures ON failures.agent_run_id = run.id
+        JOIN fixed ON fixed.step_key = failures.step_key AND fixed.error_summary = failures.error_summary
+       WHERE run.id = lane.last_agent_run_id
+         AND run.status = 'failed'
+         AND lane.next_run_after > NOW()
+      RETURNING lane.state_code, run.id AS run_id, failures.step_key, failures.error_summary AS error,
+                failures.deploy AS failed_deploy
+    `;
+    for (const row of rows) {
+      const message = `The "${row.step_key}" failure that stopped ${row.state_code} came from an earlier deploy and has not happened since the current one went live, so the lane reruns now instead of waiting for its retry.`;
+      await sql`
+        INSERT INTO public.agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (${Number(row.run_id)}, 'run.recovery_rerun', 'queued', ${message},
+                ${JSON.stringify({ state_code: row.state_code, step_key: row.step_key, error: row.error, failed_deploy: row.failed_deploy, deploy })}::jsonb)
+      `;
+    }
+    return rows.map((row) => String(row.state_code));
+  } catch (error) {
+    console.error("wakeLanesAfterRecovery failed:", error);
+    return [];
   }
 }
 
@@ -1011,6 +1081,8 @@ export async function scheduleDueStateLaneRuns({
     await wakeLanesWithUncheckedLiveFees();
     await refreshLanePriorities();
   }
+  // Every tick: a fixed break should rerun its failed lanes within minutes, not an hour.
+  const recovered = await wakeLanesAfterRecovery();
 
   const emptyResult: DueStateLaneScheduleResult = {
     selected: 0,
@@ -1019,6 +1091,7 @@ export async function scheduleDueStateLaneRuns({
     idle: 0,
     failed: [],
     results: [],
+    recovered,
   };
   let dueRows: Array<{ state_code: string }>;
   try {
@@ -1042,8 +1115,13 @@ export async function scheduleDueStateLaneRuns({
               WHERE active.id = agent_state_lanes.last_agent_run_id
                 AND active.status IN ('queued', 'running', 'cancel_requested')
            )
-         -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all.
+         -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all,
+         -- longest overdue first. Busy lanes come back due every hour and wait past the cut-off
+         -- too, so ranking overdue lanes by score kept GA, KY, CT, PR, VI, DC and GU waiting
+         -- since Oct 7 (2026-10-08).
          ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
+                  CASE WHEN next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour'
+                       THEN next_run_after END ASC NULLS LAST,
                   priority_score DESC, next_run_after ASC, state_code ASC
          LIMIT ${slots}
          FOR UPDATE SKIP LOCKED
@@ -1068,6 +1146,7 @@ export async function scheduleDueStateLaneRuns({
     idle: 0,
     failed: [],
     results: [],
+    recovered,
   };
 
   for (const row of dueRows) {

@@ -217,7 +217,13 @@ with its verified row rejected. A fee the older copy's own text does not state i
 judged, and neither is a current copy that restates fewer than half (or fewer than two) of the
 older copy's fees. The feedback sync records no lesson against Knox or Darwin for these.
 `CURRENT_COPY_CONFIRM_LIVE` stays false (first looks only) until a hand check of 20 flags
-finds at least 18 really stale. `refresh-copy.ts` moves up to 1,000 fees a step.
+finds at least 18 really stale. The first hand check (7 Oct, 19:00 UTC) found 14 of 20 first
+looks still stated on the current page, in layouts the verdict missed (a name over its price,
+one price of several on a row) or at $0 ("FREE"). The verdict (`currentCopyVerdict`) now
+counts a fee as stated when the current page follows a piece of its name with its price
+(`priceFollowsName`) or the shared source check traces it, and never judges a $0 row.
+Confirmations stay off until a new hand check passes. `refresh-copy.ts` moves up to 1,000
+fees a step.
 
 ## Outlier Rollback
 
@@ -336,6 +342,22 @@ version 3, 2026-10-07). Before that, a fee Darwin re-filed from Knox's hint, suc
 National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)" (hint overdraft,
 filed as an overdraft protection transfer), was read under the hint, failed the category
 guard there, and was taken down as unreproduced: 140 fees at 128 banks on 2026-10-07.
+
+## Taxonomy Fold (top 50, James 2026-10-08)
+
+`taxonomy-fold.ts` runs in the publish step after the off-taxonomy restore. It reads live
+and verified fees still filed under one of the 15 categories retired from `FEE_FAMILIES`
+(`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`) and re-files each by its name, and for a
+bare name by the 200 characters of schedule text before it. A move happens only when the
+category guard and amount envelope accept the fee in its new category
+(`passesDarwinChecks`); it updates the verified and published rows and writes a
+`category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
+not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
+first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
+the flag is 12 hours old, but only while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. It is off
+until James decides on the list of no-home fees (Oct 8), so they stay live and are counted
+as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
+keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 ## Source Check
 

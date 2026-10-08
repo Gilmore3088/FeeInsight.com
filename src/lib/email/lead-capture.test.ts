@@ -39,7 +39,7 @@ describe("lead capture emails", () => {
     );
     const text = content.lines.join("\n");
     expect(text).toContain("/reports/sample-competitive-fee-position.pdf");
-    expect(text).toContain("National and Fed district fee reports — free, and ready in a minute");
+    expect(text).toContain("National and Fed district fee reports — free and instant");
     expect(text).not.toContain("48 hours");
     expect(text).toContain("/for-institutions#report");
     expect(text).toContain("Unsubscribe: https://x/unsub");

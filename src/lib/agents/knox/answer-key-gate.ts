@@ -1,5 +1,6 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
 import { foldedCategory } from "@/lib/agents/knox/rules";
+import { foldContext, foldRetiredCategory, isRetiredCategory } from "@/lib/fee-fold";
 
 /**
  * Knox's rule-change gate: scores today's free extractor team (plus Darwin's rule checks,
@@ -43,6 +44,13 @@ const EQUIVALENT: Record<string, string> = { minimum_balance: "monthly_maintenan
 
 const cents = (amount: number) => Math.round(amount * 100);
 
+/** A hand-keyed fee under a category folded into the top 50 counts where the fold rules put it. */
+function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string {
+  if (!isRetiredCategory(fee.key)) return fee.key;
+  const line = fee.source_line ?? "";
+  return foldRetiredCategory(fee.key, line, foldContext(text, line))?.to ?? fee.key;
+}
+
 export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
   const score: GateScore = {
     documents: documents.length,
@@ -59,7 +67,8 @@ export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
   for (const document of documents) {
     const priced = document.fees
       .map((fee) => (fee.key === "unmapped" ? { ...fee, key: foldedCategory(fee.source_line ?? "") ?? "unmapped" } : fee))
-      .filter((fee) => fee.key !== "unmapped" && fee.amount != null);
+      .filter((fee) => fee.key !== "unmapped" && fee.amount != null)
+      .map((fee) => ({ ...fee, key: keyCategory(fee, document.text) }));
     const expected = new Set(priced.map((fee) => `${EQUIVALENT[fee.key] ?? fee.key}:${cents(Number(fee.amount))}`));
     const keyAmounts = new Set(document.fees.filter((fee) => fee.amount != null).map((fee) => cents(Number(fee.amount))));
     const found = new Set<string>();

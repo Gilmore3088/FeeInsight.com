@@ -21,6 +21,14 @@ export const FAILURE_ALERT_MIN_FAILURES = 3;
  * (a 404 or a wrong document is the bank's problem and is expected at some rate).
  */
 export const BROKEN_ATTEMPT_OUTCOMES = ["parse_error", "error"] as const;
+/**
+ * A step type whose last this-many finished steps all failed is broken, whatever its
+ * share. On 2026-10-08 a deploy broke every Hamilton publish from 12:06, but 38 publishes
+ * from before the deploy kept the two-hour share at 12% and no alert fired.
+ */
+export const FAILURE_STREAK_MIN_FAILURES = 3;
+/** How far back a failure streak is looked for. */
+export const FAILURE_STREAK_WINDOW_HOURS = 24;
 
 export interface FailureAlert {
   /** Stable key, e.g. `step:read` or `attempt:read.ocr_tesseract`. */
@@ -39,6 +47,15 @@ interface StepRateRow {
   total: number;
   latest_error: string | null;
   latest_at: Date | string | null;
+}
+
+interface StepStreakRow {
+  step_key: string;
+  /** Finished steps of this type that failed since its last success. */
+  failed: number;
+  latest_error: string | null;
+  latest_at: Date | string | null;
+  since: Date | string | null;
 }
 
 interface AttemptRateRow {
@@ -76,6 +93,26 @@ export function stepAlerts(rows: StepRateRow[]): FailureAlert[] {
       total: row.total,
       latestAt: iso(row.latest_at),
     }));
+}
+
+/** Step types whose most recent finished steps have all failed (a break, not bad luck). */
+export function stepStreakAlerts(rows: StepStreakRow[]): FailureAlert[] {
+  return rows
+    .filter((row) => row.failed >= FAILURE_STREAK_MIN_FAILURES)
+    .map((row) => ({
+      key: `step:${row.step_key}`,
+      title: `"${row.step_key}" steps are failing`,
+      message: `The last ${row.failed} "${row.step_key}" steps all failed${row.since ? ` (since ${iso(row.since)?.slice(11, 16)} UTC)` : ""}, with none succeeding since. Latest reason: ${reason(row.latest_error)}`,
+      failures: row.failed,
+      total: row.failed,
+      latestAt: iso(row.latest_at),
+    }));
+}
+
+/** A streak alert and a rate alert on the same step type say one thing: keep the streak. */
+export function mergeStepAlerts(streaks: FailureAlert[], rates: FailureAlert[]): FailureAlert[] {
+  const keys = new Set(streaks.map((alert) => alert.key));
+  return [...streaks, ...rates.filter((alert) => !keys.has(alert.key))];
 }
 
 export function attemptAlerts(rows: AttemptRateRow[]): FailureAlert[] {
@@ -125,7 +162,28 @@ export function sourceCheckCoverageAlert(rows: UncheckedStateRow[]): FailureAler
 export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]> {
   try {
     const window = `${FAILURE_ALERT_WINDOW_MINUTES} minutes`;
-    const [steps, attempts, unchecked] = await Promise.all([
+    const [streaks, steps, attempts, unchecked] = await Promise.all([
+      db<StepStreakRow[]>`
+        WITH finished AS (
+          SELECT step_key, status, error_summary, updated_at,
+                 ROW_NUMBER() OVER (PARTITION BY step_key ORDER BY updated_at DESC) AS rn
+            FROM agent_run_steps
+           WHERE status IN ('completed', 'failed')
+             AND updated_at > NOW() - ${`${FAILURE_STREAK_WINDOW_HOURS} hours`}::interval
+        ), marked AS (
+          SELECT finished.*,
+                 MIN(rn) FILTER (WHERE status = 'completed') OVER (PARTITION BY step_key) AS first_ok
+            FROM finished
+        )
+        SELECT step_key,
+               COUNT(*)::int AS failed,
+               (ARRAY_AGG(error_summary ORDER BY updated_at DESC))[1] AS latest_error,
+               MAX(updated_at) AS latest_at,
+               MIN(updated_at) AS since
+          FROM marked
+         WHERE status = 'failed' AND (first_ok IS NULL OR rn < first_ok)
+         GROUP BY step_key
+      `,
       db<StepRateRow[]>`
         SELECT step_key,
                COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
@@ -171,7 +229,11 @@ export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]
          ORDER BY 2 DESC, 1
       `,
     ]);
-    return [...sourceCheckCoverageAlert(unchecked), ...attemptAlerts(attempts), ...stepAlerts(steps)];
+    return [
+      ...sourceCheckCoverageAlert(unchecked),
+      ...attemptAlerts(attempts),
+      ...mergeStepAlerts(stepStreakAlerts(streaks), stepAlerts(steps)),
+    ];
   } catch (error) {
     console.error("getFailureAlerts failed:", error);
     return [];
