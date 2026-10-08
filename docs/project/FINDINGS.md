@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
+**What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
+is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
+returned, and kept it if the fetch failed (the RC's minimized Chrome showed exactly that). On phones
+the Account menu is hidden (`hidden lg:block`) and the drawer offered only "Account", so My bank
+and data, All changes and the Reference pages had no way in.
+**Cause:** the header was built for static public pages and never took the session from a server
+layout that already had it; the phone drawer was written before the Pro account menu existed.
+**Fix:** `sessionChromeFor` (`src/lib/session-chrome.ts`) builds the header's session for both
+/api/session and the Hamilton layout, which seeds it through `SessionChromeProvider`; a failed fetch
+no longer overwrites a known session. The phone drawer lists the account menu's items for Pro readers.
+**Lesson:** a server layout that knows the user should hand it to client chrome rather than let the
+chrome guess.
+
 ## 2026-10-08: Pro header search did nothing and the page covered the account menu
 **What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
 nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
