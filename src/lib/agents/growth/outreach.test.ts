@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
-import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
+import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
+import { buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -100,73 +100,79 @@ describe("market snapshot", () => {
   });
 });
 
+function feeRow(category: string, label: string, institutionId: number, amount: number, text: string | null = `${label} $${amount.toFixed(2)}`): SnapshotFeeRow {
+  return { ...odRow(institutionId, amount, text), fee_category: category, fee_name: label, canonical_fee_key: category, fee_published_id: institutionId * 100 + label.length };
+}
+
+/** Overdraft, stop payment and cashier's check, each with the subject and five verified peers. */
+function multiSnapshot(categories: [string, string, number[]][] = [
+  ["overdraft", "Overdraft Fee", [30, 25, 28, 30, 32, 35]],
+  ["stop_payment", "Stop Payment", [30, 20, 25, 30, 32, 35]],
+  ["cashiers_check", "Cashier's Check", [8, 5, 6, 8, 10, 10]],
+]): MarketSnapshot {
+  const base = snapshot();
+  const ids = [1, 10, 11, 12, 13, 14];
+  const feeRows = categories.flatMap(([category, label, amounts]) => amounts.map((amount, index) => feeRow(category, label, ids[index], amount)));
+  feeRows.push(feeRow("overdraft", "Overdraft Fee", 99, 40, "Checking accounts have no fee for this."));
+  return { ...base, fees: categories.map(([category]) => buildSnapshotFee(category, 1, feeRows)) };
+}
+
 describe("buildOutreachDraft", () => {
-  it("writes James's template with verified figures, then the audit block", () => {
-    const built = buildOutreachDraft(snapshot(), [info, jane]);
+  it("writes campaign C only when allowed: one tier-A fact, named competitors, a link, and the evidence", () => {
+    const built = buildOutreachDraft(multiSnapshot(), [info, jane], { allowInsight: true });
     if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
     const { draft } = built;
+    expect(draft.campaign).toBe("market_insight");
     expect(draft.primary.email).toBe("jsmith@firstbank.com");
-    expect(draft.primary.confidence).toBe("high");
-    expect(draft.caption).toContain("Subject: How your overdraft fee compares in Waco, TX");
+    expect(draft.findings.map((finding) => finding.category)).toEqual(["overdraft", "cashiers_check", "stop_payment"]);
+    expect(draft.caption).toContain("Subject: Waco, TX fee schedules, side by side");
     expect(draft.caption).toContain("Hi Jane,");
-    expect(draft.caption).toContain(
-      "noticed that First Bank's overdraft fee is $30, compared with a median of $30 among 5 verified local competitors.",
-    );
+    expect(draft.caption).toContain("In the Waco, TX schedules we hold, overdraft (od) fees run from $25 at Peer 10 to $35 at Peer 14. First Bank's published figure is $30.");
     expect(draft.caption).toContain("https://feeinsight.com/institution/1/market?utm_source=email&utm_medium=outreach&utm_campaign=outreach-launch&utm_content=inst-1");
-    expect(draft.caption).toContain("does your team handle competitive fee reviews internally, or do you use an outside research provider?");
     const [email, audit] = draft.caption.split("--- For your audit");
+    expect(email).toContain("James\nFounder, Fee Insight");
+    expect(email).not.toMatch(/\b(?:median|should|consider|lower|higher|raise)\b/i);
     expect(email).not.toContain("Peer 99");
     // CAN-SPAM: a postal address James fills in, and a way to opt out.
     expect(email).toContain("Fee Insight LLC · [postal address: James to add before sending]");
     expect(email).toContain("reply \"no thanks\" and I won't follow up.");
-    expect(audit).toContain("Left out as unverified");
-    expect(audit).toContain("- Peer 99: $40");
-    expect(audit).toContain('Schedule line: "Overdraft Fee $30.00 per item"');
+    expect(audit).toContain("Campaign C");
+    expect(audit).toContain("Left out as unverified: Peer 99 $40");
+    expect(audit).toContain('Schedule line: "Overdraft Fee $30.00"');
   });
 
-  it("waits when the prospect's own fee doesn't verify", () => {
-    const unverified = [odRow(1, 30, "No overdraft wording here"), ...rows.slice(1)];
-    expect(buildOutreachDraft(snapshot(unverified), [jane])).toEqual({ skip: "own_fee_unverified" });
+  it("writes campaign B without figures or a link when the page can't be used", () => {
+    const built = buildOutreachDraft(multiSnapshot(), [jane]);
+    if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
+    const { draft } = built;
+    expect(draft.campaign).toBe("personalized_research");
+    expect(draft.link).toBeNull();
+    const [email, audit] = draft.caption.split("--- For your audit");
+    expect(email).toContain("Subject: Competitive fee research for First Bank");
+    expect(email).toContain("First Bank's schedule is in our research, along with those of 5 other institutions in the Waco, TX area, including Peer 10 and Peer 11. Between them, 3 fee types can be compared line by line.");
+    expect(email).not.toMatch(/\$\d|https?:/);
+    expect(audit).toContain("Campaign B");
+  });
+
+  it("writes campaign A, the research-efficiency question, when the data is thin", () => {
+    const built = buildOutreachDraft(snapshot(), [jane], { allowInsight: true });
+    if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
+    expect(built.draft.campaign).toBe("research_efficiency");
+    const [email] = built.draft.caption.split("--- For your audit");
+    expect(email).toContain("Subject: Quick question about competitor fee research");
+    expect(email).toContain("do you compile that research yourselves, or do you already have a tool or consultant for it?");
+    expect(email).not.toMatch(/\$\d|https?:|Peer/);
   });
 
   it("needs a named contact, never a shared mailbox alone", () => {
-    expect(buildOutreachDraft(snapshot(), [info])).toEqual({ skip: "no_contact" });
+    expect(buildOutreachDraft(multiSnapshot(), [info])).toEqual({ skip: "no_contact" });
   });
 
-  it("needs enough verified competitors for a median", () => {
-    expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane])).toEqual({ skip: "too_few_verified_peers" });
+  it("never uses a price for non-customers", () => {
+    const fee = buildSnapshotFee("cashiers_check", 1, [feeRow("cashiers_check", "Cashier's Check - Non-Customer", 1, 15), feeRow("cashiers_check", "Cashier's Check", 10, 8)]);
+    expect(fee.subject).toBeNull();
+    expect(fee.peers.map((peer) => peer.value)).toEqual([8]);
   });
-
-  it("compares with the state when the local market is too thin", () => {
-    const stateRows = [odRow(1, 30), ...[20, 25, 25, 35, 35, 40].map((amount, index) => odRow(50 + index, amount)), odRow(70, 15, "No overdraft wording here")];
-    const state: StateComparison = {
-      stateCode: "TX",
-      fee: buildSnapshotFee("overdraft", 1, stateRows),
-      names: new Map([50, 51, 52, 53, 54, 55, 70].map((id) => [id, `State Peer ${id}`])),
-    };
-    const built = buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane], state);
-    if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
-    const { draft } = built;
-    expect(draft.scope).toBe("state");
-    expect(draft.median).toBe(30);
-    expect(draft.verifiedPeers).toBe(6);
-    expect(draft.caption).toContain("Subject: How your overdraft fee compares across Texas");
-    expect(draft.caption).toContain(
-      "reviewing published banking fees in Texas and noticed that First Bank's overdraft fee is $30, compared with a median of $30 among 6 verified banks and credit unions across Texas.",
-    );
-    const [, audit] = draft.caption.split("--- For your audit");
-    expect(audit).toContain("Compared statewide: Waco, TX has 3 verified local competitors, fewer than the 5 a local median needs.");
-    expect(audit).toContain("- State Peer 55: $40");
-    expect(audit).toContain("- State Peer 70: $15");
-  });
-
-  it("keeps the local comparison when the local market has enough, and skips when the state is thin too", () => {
-    const thinState: StateComparison = { stateCode: "TX", fee: buildSnapshotFee("overdraft", 1, rows.slice(0, 3)), names: new Map() };
-    const built = buildOutreachDraft(snapshot(), [jane], thinState);
-    expect("draft" in built && built.draft.scope).toBe("local");
-    expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane], thinState)).toEqual({ skip: "too_few_verified_peers" });
-  });
-
   it("never addresses a lender, a committee or a name with no title", () => {
     const lender: OutreachContact = { ...jane, email: "eroche@firstbank.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" };
     const committee: OutreachContact = { ...jane, email: "supervisory@firstbank.com", name: "Ivan Shefrin", title: null, role: "other" };
@@ -188,8 +194,18 @@ describe("the outreach step", () => {
     expect(isMarketingStep("growth-outreach")).toBe(true);
     expect(isProviderStep("growth-outreach")).toBe(false);
     expect(
-      summarizeOutreach({ schemaReady: true, dryRun: false, considered: 9, drafted: 2, draftIds: [4, 5], skipped: { own_fee_unverified: 3 }, reason: null }),
-    ).toBe("Drafted 2 first emails for James to audit and send himself (9 prospects read). Passed over: 3 own overdraft fee didn't verify.");
+      summarizeOutreach({ schemaReady: true, dryRun: false, considered: 9, drafted: 2, draftIds: [4, 5], skipped: { no_contact: 3 }, campaigns: { research_efficiency: 1, personalized_research: 1 }, insightPageNotLive: 1, reason: null }),
+    ).toBe("Drafted 2 first emails for James to audit and send himself (9 prospects read); by campaign: A 1, B 1. Passed over: 3 no decision-maker contact. 1 could have had campaign C but the snapshot page didn't show their figures, so they got B.");
+  });
+
+  it("drafts only when the link opens a page showing every name and amount the email quotes", async () => {
+    const page = (status: number, body: string) => () => Promise.resolve({ ok: status === 200, text: () => Promise.resolve(body) });
+    const expected = { names: ["Fee Insight's Bank & Trust", "Peer 10"], amounts: [30, 2.5] };
+    const html = "<h1>Fee Insight&#x27;s Bank &amp; Trust</h1><td>Peer 10</td><td>$30.00</td><td>$2.50</td>";
+    expect(await checkOutreachDestination("https://x", expected, page(200, html))).toBe(true);
+    expect(await checkOutreachDestination("https://x", expected, page(404, html))).toBe(false);
+    expect(await checkOutreachDestination("https://x", { ...expected, amounts: [3] }, page(200, html.replace("$30.00", "$300")))).toBe(false);
+    expect(await checkOutreachDestination("https://x", expected, () => Promise.reject(new Error("offline")))).toBe(false);
   });
 });
 
@@ -208,42 +224,49 @@ describe("loadOutreachCandidates", () => {
   });
 });
 
-describe("withdrawing drafts made before the decision-maker rule", () => {
-  it("skips unreviewed drafts whose addressee is not a buyer, and leaves buyers alone", async () => {
+describe("withdrawing unreviewed drafts", () => {
+  it("takes back non-buyers, older single-fee drafts and drafts quoting a fee no longer live", async () => {
     const updates: unknown[][] = [];
+    const ceo = { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" };
     const db = ((strings: TemplateStringsArray, ...values: unknown[]) => {
       const query = strings.join("?");
       if (query.includes("SELECT id, facts")) {
         return Promise.resolve([
-          { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" } } },
-          { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" }, quote_rule: 2 }) },
-          { id: 13, facts: { to: { email: "supervisorycommittee@x.org", name: "Ivan Shefrin", title: null, role: "other" } } },
-          { id: 37, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" } } },
-          { id: 23, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, quote_rule: 2 } },
+          { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" }, quote_rule: 3 } },
+          { id: 16, facts: JSON.stringify({ to: ceo, quote_rule: 2 }) },
+          { id: 40, facts: { to: ceo, quote_rule: 3, published_ids: [501, 502] } },
+          { id: 41, facts: { to: ceo, quote_rule: 3, published_ids: [601] } },
         ]);
+      }
+      if (query.includes("takedown_pending")) {
+        const ids = values[0] as number[];
+        return Promise.resolve([{ n: ids.includes(502) ? 1 : 0 }]);
       }
       updates.push(values);
       return Promise.resolve([]);
     }) as never;
     expect(await withdrawNonBuyerDrafts(db)).toBe(3);
-    expect(updates.map((values) => values.at(-1))).toEqual([7, 13, 37]);
+    expect(updates.map((values) => values.at(-1))).toEqual([7, 16, 40]);
   });
 });
 
 describe("day-7 follow-up", () => {
-  it("is short, carries the same link and no new figures, and keeps the CAN-SPAM lines", () => {
-    const draft = buildFollowUpDraft({
+  it("is short, threads under the first subject, carries no figures or link, and keeps the CAN-SPAM lines", () => {
+    const source = {
       draftId: 41,
       institutionId: 1,
       institutionName: "First Bank",
       market: "Waco, TX",
       link: "https://feeinsight.com/institution/1/market?utm_source=email",
       to: { email: "jsmith@firstbank.com", name: "Jane Q. Smith", title: "SVP Marketing" },
-    });
+    };
+    const draft = buildFollowUpDraft(source);
     expect(draft.subject).toBe("Re: How your overdraft fee compares in Waco, TX");
     const [email, audit] = draft.caption.split("--- For your audit");
     expect(email).toContain("Hi Jane,");
-    expect(email).toContain("https://feeinsight.com/institution/1/market?utm_source=email");
+    expect(email).not.toContain("https://");
+    expect(email).toContain("a short, source-linked example comparing First Bank with a few Waco, TX institutions");
+    expect(buildFollowUpDraft({ ...source, subject: "Quick question about competitor fee research" }).subject).toBe("Re: Quick question about competitor fee research");
     expect(email).not.toMatch(/\$\d/);
     expect(email).toContain("[postal address: James to add before sending]");
     expect(audit).toContain("queue item 41");
