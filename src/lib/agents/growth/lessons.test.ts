@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ContentDraft } from "@/lib/data-store/content-drafts";
-import { lessonsBrief, lessonsLine, recentLessons, recordSkipLesson, skipLessonKey, withdrawSkipLesson } from "./lessons";
+import { lessonsBrief, lessonsLine, recentLessons, recordSkipLesson, skipLessonKey, skippedSubjects, withdrawSkipLesson } from "./lessons";
 
 type Db = Parameters<typeof recentLessons>[0];
 
@@ -93,12 +93,14 @@ describe("skip reasons become lessons", () => {
 
   it("reads an agent's standing lessons for its next brief", async () => {
     const { db, queries } = fakeDb([
-      { evidence: { draft_id: 12, agent: "murrow", kind: "linkedin_post", workflow: "w1-market-spread", title: "Overdraft in Tampa", reason: "Metro too small" }, updated_at: new Date("2026-10-05T09:00:00Z") },
+      { evidence: { draft_id: 12, agent: "murrow", kind: "linkedin_post", workflow: "w1-market-spread", subject_key: "overdraft:Tampa", title: "Overdraft in Tampa", reason: "Metro too small" }, updated_at: new Date("2026-10-05T09:00:00Z") },
     ]);
     const lessons = await recentLessons(db, "murrow");
     expect(lessons).toEqual([
-      { draftId: 12, agent: "murrow", kind: "linkedin_post", workflow: "w1-market-spread", title: "Overdraft in Tampa", reason: "Metro too small", at: "2026-10-05T09:00:00.000Z" },
+      { draftId: 12, agent: "murrow", kind: "linkedin_post", workflow: "w1-market-spread", subjectKey: "overdraft:Tampa", title: "Overdraft in Tampa", reason: "Metro too small", at: "2026-10-05T09:00:00.000Z" },
     ]);
+    expect([...skippedSubjects(lessons, "w1-market-spread")]).toEqual(["overdraft:Tampa"]);
+    expect(skippedSubjects(lessons, "w3-fee-depth").size).toBe(0);
     const read = queries.find((entry) => entry.query.includes("SELECT evidence, updated_at"))!;
     expect(read.query).toContain("signal = 'wrong'");
     expect(read.values).toEqual(["murrow", "skipped_by_james", 90, 10]);

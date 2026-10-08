@@ -68,8 +68,8 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
-import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
-import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
@@ -78,7 +78,7 @@ import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learni
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
-import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
+import { lessonsLine, recentLessons, skippedSubjects } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
@@ -1727,14 +1727,15 @@ async function executeAgenticStep(
       };
     }
     case "content-market-spread": {
-      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts.
+      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts; a
+      // subject James skipped stays out of the next drafts.
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
-      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, MARKET_SPREAD_WORKFLOW) });
       return { status: "completed", summary: [summarizeMarketSpread(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-fee-depth": {
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
-      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, FEE_DEPTH_WORKFLOW) });
       return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-od-by-state": {
