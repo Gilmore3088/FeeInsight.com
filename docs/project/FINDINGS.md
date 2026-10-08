@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
+**What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
+**Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
+**Fix:** Knox now takes the $10B+ banks with no live overdraft fee first, then the page its rules read longest ago (this PR).
+**Lesson:** a queue that restarts on each version needs a stalest-first order, or the tail starves whenever versions move faster than one pass.
+
 ## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
 **What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
 is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
