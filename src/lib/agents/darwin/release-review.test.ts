@@ -273,7 +273,9 @@ describe("Darwin held-fee release review", () => {
       sourceLine,
       sourceContext,
     });
-    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("charged_to_merchant");
+    // Since guard v39 the category guard catches this hand-check row first; it stays held either way.
+    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("category_guard");
+    expect(releaseHoldReason(held("Overdraft fee charged to merchant", "overdraft", "5.00"))).toBe("charged_to_merchant");
     expect(releaseHoldReason(held("Charge Back (Merchant Returned Check) per item", "deposited_item_return", "10.00"))).toBeNull();
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("small_overdraft_protection");
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "30.00"))).toBeNull();
