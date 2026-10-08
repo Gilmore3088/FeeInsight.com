@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { CrewFeedItem, CrewMemberStatus, CrewState } from "@/lib/agents/crew";
 import type { AdminAgent } from "@/lib/agents/types";
 
@@ -32,9 +32,12 @@ function clock(iso: string): string {
 export function CrewLive({
   initialCrew,
   initialFeed,
+  children,
 }: {
   initialCrew: CrewMemberStatus[];
   initialFeed: CrewFeedItem[];
+  /** Shown between the crew cards and the activity log (the marketing team). */
+  children?: ReactNode;
 }) {
   const [crew, setCrew] = useState(initialCrew);
   const [feed, setFeed] = useState(initialFeed);
@@ -64,6 +67,8 @@ export function CrewLive({
   }, [filter]);
 
   const visibleFeed = filter ? feed.filter((item) => item.agent === filter) : feed;
+  // Growth is the ledger name the marketing team runs under; the team has its own cards (children).
+  const pipelineCrew = crew.filter((member) => member.agent !== "growth");
   const nameOf = (agent: AdminAgent) => crew.find((member) => member.agent === agent)?.name ?? agent;
 
   return (
@@ -71,7 +76,7 @@ export function CrewLive({
       <section aria-label="The crew">
         <p className="admin-section-title">The crew</p>
         <ul className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {crew.map((member) => {
+          {pipelineCrew.map((member) => {
             const style = STATE_STYLE[member.state];
             return (
               <li key={member.agent}>
@@ -104,6 +109,8 @@ export function CrewLive({
           })}
         </ul>
       </section>
+
+      {children}
 
       <section aria-label="Activity log">
         <div className="flex items-baseline justify-between">

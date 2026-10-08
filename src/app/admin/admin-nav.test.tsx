@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminBackLink, AdminNav, AdminRoomScreens, AdminRoomTabs } from "./admin-nav";
+import { AdminNav, AdminRoomMenu, AdminRoomScreens, AdminRoomTabs } from "./admin-nav";
 
 const navigationState = vi.hoisted(() => ({
   pathname: "/admin/states",
@@ -69,16 +69,25 @@ describe("AdminNav", () => {
   });
 });
 
-describe("AdminBackLink", () => {
-  it("leads back to the room on a phone", () => {
-    render(<AdminBackLink />);
-    expect(screen.getByRole("link", { name: /Agents/ })).toHaveAttribute("href", "/admin/agents");
+describe("AdminRoomMenu", () => {
+  it("names the room and opens the list of rooms on a room's own page", () => {
+    navigationState.pathname = "/admin/agents";
+    render(<AdminRoomMenu badges={{ knoxPending: 2 }} />);
+    expect(screen.queryByRole("navigation", { name: "Choose a room" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Agents/ }));
+    const list = screen.getByRole("navigation", { name: "Choose a room" });
+    expect(within(list).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/admin", "/admin/agents", "/admin/data", "/admin/customers", "/admin/publishing", "/admin/controls",
+    ]);
+    expect(within(list).getByRole("link", { name: /Agents/ })).toHaveAttribute("aria-current", "page");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("navigation", { name: "Choose a room" })).not.toBeInTheDocument();
   });
 
-  it("is absent on the room's own page", () => {
-    navigationState.pathname = "/admin/agents";
-    const { container } = render(<AdminBackLink />);
-    expect(container).toBeEmptyDOMElement();
+  it("is the way back to the room on a screen inside it", () => {
+    render(<AdminRoomMenu />);
+    expect(screen.getByRole("link", { name: /Agents/ })).toHaveAttribute("href", "/admin/agents");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
 

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { BarChart3, ExternalLink } from "lucide-react";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
-import { AdminBackLink, AdminRoomScreens, AdminRoomTabs, AdminSidebar } from "./admin-nav";
+import { AdminRoomMenu, AdminRoomTabs, AdminSidebar } from "./admin-nav";
 import { getSourceSubmissionCounts } from "@/lib/admin-queries";
 import { getKnoxReviewCounts } from "@/lib/data-store/knox-reviews";
 import {
@@ -99,6 +99,7 @@ async function AdminLayoutInner({
                 {SITE_NAME}
               </span>
             </Link>
+            <AdminRoomMenu badges={{ knoxPending, trustPending }} />
             <AdminRoomTabs badges={{ knoxPending, trustPending }} />
           </div>
 
@@ -147,9 +148,7 @@ async function AdminLayoutInner({
         {/* Main content */}
         <main id="main-content" className="admin-content flex-1 min-w-0 px-5 py-5 lg:px-7">
           <div className="mx-auto max-w-[1600px]">
-            <AdminBackLink />
             {children}
-            <AdminRoomScreens badges={{ knoxPending, trustPending }} />
             <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-black/[0.06] pt-3 text-xs text-gray-500 md:hidden dark:border-white/[0.06]">
               <span>
                 Signed in as {user.display_name} ({user.role})

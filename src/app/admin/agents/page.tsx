@@ -10,12 +10,14 @@ import {
 import { getAtlasCommandCenter } from "@/lib/admin-command-center";
 import { getCrewFeed, getCrewStatus } from "@/lib/agents/crew";
 import { getSpendSummary } from "@/lib/data-store/console-spend";
+import { getMarketingTeam } from "@/lib/data-store/marketing-team";
 import { EMPTY_PIPELINE_FUNNEL, getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import { pipelineHealthProblems } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
 import { AtlasOverview } from "../atlas-overview";
 import { CrewCommandBar } from "../crew-command-bar";
 import { CrewLive } from "../crew-live";
+import { MarketingTeam } from "../marketing-team";
 import { RoomHeader, Unreadable } from "../room-hub";
 import { SpendPanel } from "../spend-panel";
 
@@ -33,7 +35,7 @@ const getCachedPipelineFunnel = unstable_cache(getPipelineFunnel, ["admin", "atl
 /** The Agents room: pipeline health, the run buttons, the six agents live, and what each costs. */
 export default async function AgentsRoomPage() {
   await requireAuth("view");
-  const [center, health, funnel, crew, feed, spend] = await Promise.all([
+  const [center, health, funnel, crew, feed, spend, marketing] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {
       console.error("Agents room pipeline health failed", error);
@@ -53,6 +55,10 @@ export default async function AgentsRoomPage() {
     }),
     getSpendSummary().catch((error) => {
       console.error("Agents room spend failed", error);
+      return null;
+    }),
+    getMarketingTeam().catch((error) => {
+      console.error("Agents room marketing team failed", error);
       return null;
     }),
   ]);
@@ -76,7 +82,9 @@ export default async function AgentsRoomPage() {
         <Unreadable what="Pipeline health" />
       )}
       <CrewCommandBar />
-      <CrewLive initialCrew={crew} initialFeed={feed} />
+      <CrewLive initialCrew={crew} initialFeed={feed}>
+        {marketing ? <MarketingTeam team={marketing} /> : <Unreadable what="The marketing team" />}
+      </CrewLive>
       {spend ? <SpendPanel spend={spend} title="What each agent is spending" /> : <Unreadable what="Agent spend" />}
     </div>
   );
