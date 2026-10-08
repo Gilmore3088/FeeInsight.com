@@ -68,8 +68,8 @@ const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
 const GENERAL_MAILBOX =
   /^(info|contact|contactus|customerservice|customer\.?service|service|services|support|help|hello|questions|webmaster|web|mail|online|onlinebanking|ebanking|loans?|lending|mortgages?|cards?|fraud|security|careers|jobs|hr|humanresources|privacy|deposits?|accounting|bsa|compliance|memberservices?|members?|marketing|media|press|news|investor|investors|ir|noreply|no-reply|donotreply)$/i;
 
-/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees. */
-const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|^members?[._-]/i;
+/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees, the board, card lines. */
+const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|boardof|directors|^members?[._-]|^(?:visa|debit|mastercard|board)$/i;
 
 /** True when an address is a shared mailbox, not one person's. */
 export function isSharedMailbox(email: string): boolean {
@@ -163,11 +163,11 @@ export function roleFor(text: string): ContactRole {
   return ROLE_PATTERNS.find(({ pattern }) => pattern.test(title))?.role ?? "other";
 }
 
-/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ..."). */
-const NOT_A_TITLE = /message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...", a line quoting an address). */
+const NOT_A_TITLE = /@|\be-?mail:|message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
 /** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
 const NOT_A_NAME =
-  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general)\b/i;
+  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual)\b/i;
 
 /** A printed name we can greet, or null for a label that sits where a name would. */
 export function cleanContactName(name: string | null): string | null {

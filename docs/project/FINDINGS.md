@@ -3554,6 +3554,10 @@ and quarter were already stored, without looking at the periods of the data behi
   Checked against the 24 prod drafts: 7 stay (First Federal KC, Quaint Oak, Holy Rosary,
   BankGloucester, Gateway, State Bank, Drake) and 17 are withdrawn.
 - **Watch.** The outreach step's "Withdrew N" line, and To: lines on new drafts.
+- **Second miss (run 3102).** 2 of 4 new drafts went to boardofdirectors@ (name "Annual Meeting",
+  title a sentence quoting another address) and visa@ (title "Member Services: ...@TheQ.org").
+  A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
+  board and card-line mailboxes are shared. The next run withdraws both.
 
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
