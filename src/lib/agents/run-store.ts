@@ -51,6 +51,7 @@ import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -750,6 +751,14 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // A "returned check" Hamilton took off NSF beside the schedule's own NSF fee is filed as an RDI.
+      const scheduleRefile = await runDarwinScheduleRefile({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        db: tx,
+      });
       return {
         status: "completed",
         summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
@@ -770,6 +779,7 @@ async function executeAgenticStep(
             released: release.released,
             feedback_written: release.feedbackWritten,
           },
+          schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,

@@ -3058,6 +3058,11 @@ Rows already on file gain the fields only when Knox reads their document again.
   least $15 and twice its price, fails. Hamilton's guard reads that price from both raw readers'
   rows for the same document, logs each to `pipeline_feedback`, and takes it down after the second look.
 - **Watch.** `hamilton.category_guard` byCode `schedule_contradicts`; Knox still misses split NSF rows.
+- **Follow-up (v23, same day).** James: a returned check fee is a return deposited item (RDI),
+  not NSF. Of 382 live plain "Returned check/item" fees filed as NSF, 130 sat beside a separate,
+  higher NSF fee on the same schedule; 72 had the NSF fee's own price; 154 had no NSF line. Guard
+  v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
+  `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
 
 
 ## 2026-10-08: Every Stripe webhook failed

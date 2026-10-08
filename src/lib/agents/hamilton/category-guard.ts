@@ -3,7 +3,7 @@ import {
   checkFeeCategory,
   CATEGORY_GUARD_VERSION,
   GUARDED_CATEGORIES,
-  SMALL_RETURNED_ITEM_MAX,
+  PLAIN_RETURNED_ITEM,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
@@ -89,7 +89,7 @@ function normalizedAmount(value: number | string | null): number | null {
  */
 function documentNsfAmount(db: SqlTag) {
   // Literal sources, so each subquery can use that source's partial document index.
-  return db`(CASE WHEN fp.canonical_fee_key = 'nsf' AND fp.amount < ${SMALL_RETURNED_ITEM_MAX} THEN GREATEST(
+  return db`(CASE WHEN fp.canonical_fee_key = 'nsf' AND fp.fee_name ~* ${PLAIN_RETURNED_ITEM.source} THEN GREATEST(
       (SELECT MAX(o.amount) FROM raw_fee_observations o
         WHERE o.source = 'knox' AND o.source_document_id = fr.source_document_id AND o.fee_raw_id <> fr.fee_raw_id
           AND o.fee_name ~* '(insufficient|\\mnsf\\M|non[- ]?sufficient)'),

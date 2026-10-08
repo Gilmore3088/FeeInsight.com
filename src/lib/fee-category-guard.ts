@@ -161,7 +161,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(charge-?back (on )?(loan|deposit)|charge-?back (items?|message)\b|return\/charge-?back)/i,
   },
   deposited_item_return: {
-    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you)/i,
+    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/i,
     exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
@@ -207,7 +207,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 22;
+export const CATEGORY_GUARD_VERSION = 23;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -287,23 +287,25 @@ export function refileCategory(
   return rule ? rule.to : canonicalFeeKey;
 }
 
-const PLAIN_RETURNED_ITEM = /^\s*return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?\s*:?\s*$/i;
-/** A returned check or item under this, filed as NSF, is checked against the schedule's own NSF fee. */
-export const SMALL_RETURNED_ITEM_MAX = 10;
+export const PLAIN_RETURNED_ITEM = /^\s*return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?\s*:?\s*$/i;
+/** The schedule's NSF fee must be at least this, and above the returned check's own price. */
+const SCHEDULE_NSF_MIN = 15;
 
 /**
- * A plain "Returned Check Fee" of a few dollars filed as NSF, on a schedule whose NSF or
- * insufficient-funds fee is a separate, much higher price, is the fee for a deposited check
- * coming back (Dean Co-operative Bank: "Returned Check Fee $7" beside "Insufficient Funds Fee
- * (Paid or Returned) $35.00", Oct 8). Without the schedule's NSF price the fee is left alone.
+ * A plain "Returned Check Fee" filed as NSF, on a schedule whose NSF or insufficient-funds fee is
+ * a separate, higher price, is the return deposited item (RDI) fee: Dean Co-operative Bank's
+ * "Returned Check Fee $7" beside "Insufficient Funds Fee (Paid or Returned) $35.00" (v22, Oct 8).
+ * v23 drops v22's $10 ceiling: 130 live "returned check" NSF fees sat beside a higher NSF fee, 115
+ * of them at $10 or more. One at the NSF fee's own price is that fee under another name, and one
+ * on a schedule with no NSF line is left alone.
  */
-function smallReturnBesideNsf(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+function returnBesideNsf(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
   if (canonicalFeeKey !== "nsf" || !context || !PLAIN_RETURNED_ITEM.test(name)) return null;
   const amount = Number(context.amount);
   const nsf = Number(context.document_nsf_amount);
   if (context.amount == null || context.document_nsf_amount == null || !Number.isFinite(amount) || !Number.isFinite(nsf)) return null;
-  if (amount <= 0 || amount >= SMALL_RETURNED_ITEM_MAX || nsf < 2 * amount || nsf < 15) return null;
-  return `"${name}" at $${amount.toFixed(2)} sits on a schedule whose NSF fee is $${nsf.toFixed(2)}, so it is a deposited check coming back`;
+  if (amount <= 0 || nsf < SCHEDULE_NSF_MIN || nsf <= amount) return null;
+  return `"${name}" at $${amount.toFixed(2)} sits on a schedule whose NSF fee is $${nsf.toFixed(2)}, so it is the return deposited item fee`;
 }
 
 export function checkFeeCategory(
@@ -341,7 +343,7 @@ export function checkFeeCategory(
       reason: `"${name}" does not name a ${canonicalFeeKey} fee`,
     };
   }
-  const scheduleReason = smallReturnBesideNsf(canonicalFeeKey, name, context);
+  const scheduleReason = returnBesideNsf(canonicalFeeKey, name, context);
   if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
   return { ok: true };
 }
