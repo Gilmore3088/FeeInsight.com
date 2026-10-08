@@ -145,7 +145,7 @@ export function tidyFeeName(raw: string): string {
     .replace(/[\s:;,\-–|/]+$/, "")
     .trim();
   name = trimEnd(name);
-  // v45: "Normal bank fees and charges, including returned item charge/overdraft item charge of"
+  // v46: "Normal bank fees and charges, including returned item charge/overdraft item charge of"
   // (Origin Bank): the fee is what the sentence lists after "including".
   const listed = name.match(/,\s+including\s+(.+)$/i)?.[1];
   // A name at the 120-character cap may end mid-word, so it keeps its words.

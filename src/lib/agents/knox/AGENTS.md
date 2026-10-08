@@ -495,7 +495,7 @@ v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 5
 v43 (rules 43, Oct 8):
 - One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
 
-v45 (rules 45, from Origin Bank's overdraft rows, Oct 8):
+v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
 - A paragraph wrapped across lines is read as its sentences: a line joins the one above when neither is a table row, the one above is at least 40 characters and ends mid-sentence, and the line starts in lower case. Read line by line, "we will charge you an overdrawn account fee of $10.00 on the 5th consecutive" was named by the line above it and filed as a $10 overdraft fee, and "overdrawn $5 / or less" lost the words that make $5 a threshold (Origin Bank, whose fragment-named overdraft rows were live).
 - "Normal bank fees and charges, including returned item charge/overdraft item charge of $35.00" is named by what follows "including": "Returned item charge/overdraft item charge".
 

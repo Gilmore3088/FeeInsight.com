@@ -405,7 +405,7 @@ function longLineParts(line: string): string[] {
 }
 
 /**
- * v45: a paragraph wrapped across lines is read as its sentences. Read line by line, "we will
+ * v46: a paragraph wrapped across lines is read as its sentences. Read line by line, "we will
  * charge you an overdrawn account fee of $10.00 on the 5th consecutive" named the $10 by the
  * line above it ("overdrafts created by check, in-person withdrawal ...", Origin Bank) and
  * "overdrawn $5 / or less" lost the words that make $5 a threshold. A line joins the one above

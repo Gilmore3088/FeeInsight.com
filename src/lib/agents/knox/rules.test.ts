@@ -891,7 +891,7 @@ describe("Knox extract.rules", () => {
   });
 });
 
-describe("v45 wrapped paragraphs", () => {
+describe("v46 wrapped paragraphs", () => {
   const ORIGIN = [
     "charges. We will generally not pay items which will create in excess of a $500",
     "overdraft (negative) balance in your account. Normal bank fees and charges,",
