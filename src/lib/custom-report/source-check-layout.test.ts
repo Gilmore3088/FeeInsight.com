@@ -466,4 +466,17 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Account Research | $25 first hour/$15 each additional hour", "Account Research", 25, "research").ok).toBe(true);
     expect(checkFeeAgainstSource("Gift Cards (per card) | $3.00 Each additional bag $35.00", "Gift Cards (per card)", 3, "gift").ok).toBe(true);
   });
+
+  it("fails a whole price ending in a footnote mark on a page that glues marks onto prices (Oct 8)", () => {
+    const page = [
+      "Debit Card Payment Fee … $4.951",
+      "Returned Mail Fee … $5",
+      "Early Account Closure",
+      "(Closed Within 180 Days of Opening) …$251 | 1",
+      "Stop Payment Order Fee …$28",
+    ].join("\n");
+    expect(checkFeeAgainstSource(page, "(Closed Within 180 Days of Opening)", 251, "clos").ok).toBe(false);
+    expect(checkFeeAgainstSource(page, "Stop Payment Order Fee", 28, "stop").ok).toBe(true);
+    expect(checkFeeAgainstSource("Early Account Closure | $251\nWire Fee | $25.00", "Early Account Closure", 251, "clos").ok).toBe(true);
+  });
 });
