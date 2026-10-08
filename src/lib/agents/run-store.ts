@@ -73,7 +73,7 @@ import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
-import { runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
@@ -1759,6 +1759,7 @@ async function executeAgenticStep(
         runId: run.id,
         limit: numericRunParam(params, ["limit"]),
         dryRun: run.runKind === "dry_run",
+        campaigns: outreachCampaignsFromEnv(process.env.OUTREACH_CAMPAIGNS),
       });
       const followUpLine = followUps.due ? ` ${followUps.drafted} follow-ups drafted (day 6 and final day 13).` : "";
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };

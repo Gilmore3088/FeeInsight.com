@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
-import { buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
+import { OUTREACH_HELD_REASON, outreachCampaignsFromEnv, runOutreachDrafts, buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -308,5 +308,29 @@ describe("follow-ups", () => {
     expect(email).not.toMatch(/\$\d/);
     expect(email).toContain("[postal address: James to add before sending]");
     expect(audit).toContain("queue item 41");
+  });
+});
+
+describe("pilot campaign gate", () => {
+  it("reads James's chosen campaigns from letters", () => {
+    expect(outreachCampaignsFromEnv("A,B")).toEqual(["research_efficiency", "personalized_research"]);
+    expect(outreachCampaignsFromEnv(" c ")).toEqual(["market_insight"]);
+    expect(outreachCampaignsFromEnv(undefined)).toEqual([]);
+  });
+
+  it("drafts nothing in a real run until a campaign is chosen, but still withdraws", async () => {
+    const queries: string[] = [];
+    const db = ((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      queries.push(query);
+      if (query.includes("information_schema") || query.includes("to_regclass")) return Promise.resolve([{ ready: true, exists: true, ok: true, n: 1 }]);
+      return Promise.resolve([]);
+    }) as never;
+    const result = await runOutreachDrafts({ db, runId: 1, campaigns: [] });
+    expect(result.reason).toBe(OUTREACH_HELD_REASON);
+    expect(result.drafted).toBe(0);
+    expect(queries.some((query) => query.includes("SELECT id, facts FROM content_drafts"))).toBe(true);
+    expect(queries.some((query) => query.includes("prospect_contacts c") || query.includes("FROM prospect_contacts"))).toBe(false);
+    expect(summarizeOutreach(result)).toContain("No first emails drafted: held");
   });
 });
