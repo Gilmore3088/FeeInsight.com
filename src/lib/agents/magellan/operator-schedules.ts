@@ -215,11 +215,12 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // consumer schedule of fees, effective 2025-09-15.
+    // consumer schedule of fees, effective 2025-09-15, on Zions' investor-relations file
+    // host: the amegybank.com copy answered 403 (2026-10-08 11:08).
     institutionId: 35,
     institutionName: "Zions Bancorporation, N.A.",
-    url: "https://www.amegybank.com/content/dam/zbna/disclosures/localized/zfnb/rate-sheets/scheduleoffeesconsut.pdf",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://s203.q4cdn.com/215756951/files/doc_downloads/2026/03/ZFNB-Consumer-Schedule-of-Fees.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   },
   {
     // other account services, September 2025.
@@ -306,11 +307,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // personal deposit product fee schedule.
+    // overdraft privilege terms: the personal fee schedule PDF answered 404 (2026-10-08 08:53).
     institutionId: 186,
     institutionName: "Sunflower Bank, National Association",
-    url: "https://sunflowerbank.com/getmedia/e45c00b0-ab7b-4e5c-9b5e-5e7053989b75/Deposit-Product-Fee-Schedule-Personal.pdf",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://www.sunflowerbank.com/terms-and-agreements/overdraft-privilege",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   },
   {
     // 2026 service fees.
@@ -334,11 +335,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // consumer services fee schedule (C-14), 2025-07-05.
+    // Courtesy Pay disclosure (SD-84): the C-14 fee schedule timed out twice (2026-10-08 07:14).
     institutionId: 7313,
     institutionName: "The Golden 1 Federal Credit Union",
-    url: "https://www.golden1.com/-/media/Golden1/Site%20Documents/Disclosures/C-14",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://www.golden1.com/-/media/golden1/site-documents/misc-pdfs/sd-84.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   },
   {
     // fee schedule, updated January 2026.
@@ -417,6 +418,20 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName,
     url,
     givenBy: "web search for each state's top 10 by deposits, 2026-10-08 02:45",
+  })),
+  // $10B+ banks with no live overdraft fee and no readable page on file (bot walls, pages
+  // built by JavaScript). Links from search results only, so Rosetta's read is the check.
+  ...([
+    [6671, "Digital Federal Credit Union", "https://www.dcu.org/content/dam/dcu/pdfs/overdraft-payment-service-disclosure.pdf"],
+    [6881, "Mountain America Federal Credit Union", "https://macu.com/about/disclosures/overdraft-privilege"],
+    [8507, "Vystar Federal Credit Union", "https://vystarcu.org/personal/bank/checking-accounts/overdraft-protection"],
+    [46, "Banco Popular de Puerto Rico", "https://www.popular.com/assets/pdf/caracteristicas-e-account-en.pdf"],
+    [102, "TowneBank", "https://www.townebank.com/member-support/overdraft-protection/"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   })),
 ];
 

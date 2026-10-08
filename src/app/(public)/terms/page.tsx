@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, LEGAL_ENTITY_STATE, REPORT_OFFER } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_NAME, LEGAL_ENTITY_LINE, LEGAL_ENTITY_STATE, REPORT_OFFER } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -90,6 +90,15 @@ export default function TermsPage() {
               Monthly plans are not refunded. You may cancel at any time; access
               continues until the end of the current billing period. Other fees
               are non-refundable except where required by law.
+            </li>
+            <li>
+              Pro pricing tier: {SITE_NAME} Pro is priced by the total assets of
+              the bank or credit union the plan covers, or at the consultant rate
+              for organizations that are not a bank or credit union. If the plan
+              is used for a different or larger organization than the one chosen
+              at checkout, we may move the subscription to the correct tier.
+              We&apos;ll tell you by email first, and the new price starts at the
+              next billing period.
             </li>
             <li>
               We reserve the right to change subscription pricing with 30 days
