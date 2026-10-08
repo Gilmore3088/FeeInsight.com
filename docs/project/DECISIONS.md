@@ -5,6 +5,24 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-07
 
+**Hamilton gets the new market study and the merger screen.** James, 07:24 UTC ("Go on market",
+"Go on merger") after the previews. The Improving Hamilton thread builds both; open PRs 441 and
+447 carry them.
+
+**The 13,215 bad FFIEC rows leave the live call-report table.** James, 07:18 UTC, typed "Archive
+the 13,215 FFIEC financial rows." Written by an old loader on Aug 10, their service charges were
+about a million times too large and most duplicated good FDIC and NCUA rows. They move to a
+restorable archive table; readers use only `fdic` and `ncua` rows (#440). Bank overdraft income now
+comes from the FFIEC bulk call report step instead (#369, #386).
+
+**Every state report gets the Tennessee-style map and detail.** James, 07:11 UTC ("I love the state
+map... Need that for every state"). Open PR 436 carries it.
+
+**Each state's 10 to 15 largest institutions come first.** James, 03:07 UTC: find all fees for the
+largest institutions in every state, which likely hold over half the deposits and have pricing
+power. A shared ranking of each state's top 15 (#355) now goes first in Magellan's search (#356)
+and Atlas's state order (#359).
+
 **Taking a fee down is a last resort: a second look, a decision log, and a way back.** James,
 01:20 UTC (Live board cleanup thread): "we need to constantly learn from fees we pass or scrap...
 It needs to be last case decision, picked over multiple times, decision log. And it's never
