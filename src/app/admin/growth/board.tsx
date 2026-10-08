@@ -5,6 +5,7 @@ import type { ContentDraft, ContentDraftStatus } from "@/lib/data-store/content-
 import type { GrowthBudgetState, GrowthStep } from "@/lib/data-store/growth-board";
 import type { ContactCounts } from "@/lib/agents/growth/contacts";
 import type { GrowthLesson } from "@/lib/agents/growth/lessons";
+import { scoreLabel } from "@/lib/agents/growth/score-label";
 import { GROWTH_AGENT_ROLES, GROWTH_AGENTS, QUEUE_KINDS, type GrowthAgent } from "@/lib/agents/growth/roster";
 import { recordOutcomeAction } from "@/app/admin/customers/content/actions";
 import {
@@ -57,7 +58,7 @@ function QueueItem({ item }: { item: ContentDraft }) {
       {item.status === "posted" ? (
         <p className="mt-2 text-xs text-gray-500">
           Done {formatAdminDateTime(item.postedAt ?? item.reviewedAt)}
-          {item.score !== null ? ` · Score: ${item.score} tracked visits in the week after` : item.scoredAt ? " · Checked, no measure for this kind" : " · Not scored yet"}
+          {item.score !== null ? ` · Score: ${scoreLabel(item.kind, item.score)}` : item.scoredAt ? " · Checked, no measure for this kind" : " · Not scored yet"}
         </p>
       ) : null}
 
