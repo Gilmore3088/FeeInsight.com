@@ -27,9 +27,9 @@ interface WelcomeStepsProps {
   activationPending?: boolean;
   pendingWorkspaceInvitations: InstitutionWorkspaceInvitation[];
   workspaceMemberships: InstitutionWorkspaceMembership[];
-  /** The bank chosen at checkout, already saved; step 1 starts with it picked. */
-  checkoutInstitution?: { id: number; name: string } | null;
-  /** This page again, keeping the post-checkout return path and bank. */
+  /** The Pro member's saved workspace bank; step 1 starts with it picked. */
+  workspaceInstitution?: { id: number; name: string } | null;
+  /** This page again, keeping the post-checkout return path. */
   refreshHref?: string;
 }
 
@@ -90,7 +90,7 @@ export function WelcomeSteps({
   activationPending = false,
   pendingWorkspaceInvitations,
   workspaceMemberships,
-  checkoutInstitution = null,
+  workspaceInstitution = null,
   refreshHref = "/account/welcome?success=true",
 }: WelcomeStepsProps) {
   // Someone who already told us their organization skips that step, except Pro members:
@@ -99,7 +99,7 @@ export function WelcomeSteps({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedInstitution, setSavedInstitution] = useState<string | null>(null);
-  const [pickedInstitution, setPickedInstitution] = useState(checkoutInstitution !== null);
+  const [pickedInstitution, setPickedInstitution] = useState(workspaceInstitution !== null);
   const [notAnInstitution, setNotAnInstitution] = useState(
     !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
   );
@@ -225,8 +225,8 @@ export function WelcomeSteps({
                 inputId="welcome_institution"
                 label="Your bank or credit union"
                 help="Choose your institution from the list."
-                initialName={checkoutInstitution?.name ?? null}
-                initialId={checkoutInstitution?.id ?? null}
+                initialName={workspaceInstitution?.name ?? null}
+                initialId={workspaceInstitution?.id ?? null}
                 onSelect={(result) => setPickedInstitution(result !== null)}
                 labelClassName="block text-xs font-medium text-[#1A1815] mb-1"
                 labelStyle={{}}

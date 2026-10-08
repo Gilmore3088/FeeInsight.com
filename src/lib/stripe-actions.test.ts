@@ -156,7 +156,7 @@ describe("createCheckoutSession", () => {
     expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         success_url:
-          "https://feeinsight.com/account/welcome?success=true&from=%2Fpro%2Freports%3FinstId%3D2945%26intent%3Dcompetitive-brief&inst=2945",
+          "https://feeinsight.com/account/welcome?success=true&from=%2Fpro%2Freports%3FinstId%3D2945%26intent%3Dcompetitive-brief",
         cancel_url:
           "https://feeinsight.com/subscribe?from=%2Fpro%2Freports%3FinstId%3D2945%26intent%3Dcompetitive-brief&inst=2945&canceled=1",
         metadata: expect.objectContaining({
@@ -180,7 +180,7 @@ describe("createCheckoutSession", () => {
     await createCheckoutSession({ plan: "annual", institutionId: 2945, returnTo: "https://evil.example/pro" });
     expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        success_url: "https://feeinsight.com/account/welcome?success=true&inst=2945",
+        success_url: "https://feeinsight.com/account/welcome?success=true",
         cancel_url: "https://feeinsight.com/subscribe?inst=2945&canceled=1",
         metadata: expect.not.objectContaining({ return_to: expect.any(String) }),
       }),

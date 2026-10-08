@@ -75,8 +75,6 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   const hasReturnTo = sanitizedReturnTo !== "/account/welcome";
   const successParams = new URLSearchParams({ success: "true" });
   if (hasReturnTo) successParams.set("from", sanitizedReturnTo);
-  // The welcome page anchors Hamilton to this bank, so the buyer doesn't pick it twice.
-  if (institutionId) successParams.set("inst", String(institutionId));
   const cancelParams = new URLSearchParams();
   if (hasReturnTo) cancelParams.set("from", sanitizedReturnTo);
   if (institutionId) cancelParams.set("inst", String(institutionId));
