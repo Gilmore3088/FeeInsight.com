@@ -146,9 +146,22 @@ describe("growth-intel step", () => {
     expect(summarizeMarketIntel(result)).toContain("nothing new worth a brief");
 
     const dry = fakeDb({ articles: [article("NY DFS warns banks on overdraft fee disclosures", "state:NY", "https://dfs.ny.gov/a")] });
-    const dryResult = await runMarketIntel({ db: dry.db, runId: 1, dryRun: true, fetcher: fetcher({}), index });
+    const dryResult = await runMarketIntel({ db: dry.db, runId: 1, dryRun: true, fetcher: fetcher({}), index, now: new Date("2026-10-09T12:00:00Z") });
     expect(dryResult.findings).toHaveLength(1);
     expect(dry.inserts).toHaveLength(0);
+  });
+
+  it("treats an old or undated release first read today as old, not news", async () => {
+    const { db, inserts } = fakeDb({
+      articles: [
+        { ...article("NY DFS warns banks on overdraft fee disclosures", "state:NY", "https://dfs.ny.gov/old"), published_at: "2025-12-01" },
+        { ...article("CFPB report on overdraft fees", "CFPB", "https://cfpb.gov/undated"), published_at: null },
+      ],
+    });
+    const result = await runMarketIntel({ db, runId: 1, dryRun: false, fetcher: fetcher({}), index, now: new Date("2026-10-09T12:00:00Z") });
+    expect(result.findings).toHaveLength(0);
+    expect(result.skipped.map((item) => item.reason)).toEqual(["released 2025-12-01, not news", "no release date"]);
+    expect(inserts).toHaveLength(0);
   });
 
   it("writes a brief that says where every number comes from", () => {

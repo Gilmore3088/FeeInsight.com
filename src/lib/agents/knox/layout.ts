@@ -181,6 +181,18 @@ export function repairNameShape(raw: string): string {
     const cut = open[0];
     name = cut === 0 ? name.slice(1).trim() : name.slice(0, cut).replace(/[\s,;:\-–—]+$/u, "").trim();
   }
+  // The other cut: a ")" whose "(" was on the line above ("Bill Payment Service)").
+  let depth = 0;
+  let unmatched = "";
+  for (const char of name) {
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      if (depth === 0) continue;
+      depth -= 1;
+    }
+    unmatched += char;
+  }
+  if (unmatched !== name) name = unmatched.replace(/[\s,;:\-–—]+$/u, "").trim();
   const doubled = name.match(/\b([A-Za-z][A-Za-z'’]{2,})\s+(\1)\b/i);
   if (doubled && doubled.index !== undefined) {
     const [whole, first, second] = doubled;
