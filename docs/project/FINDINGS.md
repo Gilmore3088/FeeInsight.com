@@ -3425,8 +3425,8 @@ and quarter were already stored, without looking at the periods of the data behi
 
 ## 2026-10-08: A new API route without a policy entry fails only the Vercel build
 - **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
-  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc`, vitest and the guards all
-  passed locally; the Vercel build failed, because `getApiRoutePolicy` throws "Missing API route
-  policy" when Next loads the route to collect page data.
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
+  full vitest run (`policies.test.ts`, which was not run before the push) and the Vercel build
+  catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
 - **Fix.** Add the policy entry in the same commit as the route.
-- **Watch.** Any new `withApiRoutePolicy("…")` id: grep `policies.ts` for it before pushing.
+- **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
