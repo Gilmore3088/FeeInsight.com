@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**A second agent team for marketing: GrowthOS.** James, 02:26 UTC, proposed a marketing team built
+from the Marketing Skills library (MIT, copied into `.agents/skills/`). Week 1 is in `growth-os/`:
+the manager is OGILVY (Atlas is already the pipeline orchestrator), SCOUT does market
+intelligence, GitHub issues labeled `growth` are the work queue, and nothing is scheduled until
+James says go. The team runs as Claude Code routines because its output is GitHub issues and PRs;
+any app-side paid step gets its own `ANTHROPIC_API_KEY_GROWTH` slot and `agent:growth` budget.
+Every public number passes `growth-os/context/editorial-policy.md`.
+
 **Darwin releases held fees that pass Claude's review.** James, 02:16 UTC, tapped "Turn on" on the
 held-fees card. The bar he set was his own word plus at least 19 of 20 passes right in a hand
 check; review v10 met it (19 right, 1 arguable; earlier rounds 17, 18, 18). Released fees carry the

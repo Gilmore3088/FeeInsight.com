@@ -13,6 +13,12 @@ This repository uses one agentic experience for data trust, validation, publishi
 - The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued.
 - `/api/admin/job-health` is the external alerting endpoint: it returns 503 with plain-language problems when ticks stop succeeding, ticks are blocked, steps are stuck, lanes are overdue, or nothing has been published for a week.
 
+## Marketing Team
+
+GrowthOS, the marketing team (OGILVY, SCOUT and five more), is separate from the pipeline roster
+below: it never writes fee data. Its definitions, rules and work queue are in
+`growth-os/README.md`; its skills are in `.agents/skills/`.
+
 ## Agent Roster
 
 ### Atlas
