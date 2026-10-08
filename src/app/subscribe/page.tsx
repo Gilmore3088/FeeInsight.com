@@ -136,8 +136,11 @@ export default async function SubscribePage({
     const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
     return `/register?plan=${plan}&from=${encodeURIComponent(back)}`;
   };
+  // A returning subscriber who already picked a plan goes straight on to Stripe after
+  // signing in, the same hand-off a new signup gets.
+  const loginBack = buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection });
   const loginHref = `/login?from=${encodeURIComponent(
-    buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection }),
+    requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
   return (

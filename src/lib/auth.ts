@@ -9,7 +9,8 @@ export const SESSION_COOKIE = "fsh_session";
 /** Keep in step with the `interval '30 days'` renewal in `getCurrentUser`. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_RENEW_BELOW_MS = 15 * 24 * 60 * 60 * 1000;
-function getCookieSecret(): string {
+/** The secret that signs session cookies and password-reset links. */
+export function getCookieSecret(): string {
   const secret = process.env.BFI_COOKIE_SECRET;
   if (!secret && process.env.NODE_ENV === "production") {
     throw new Error("BFI_COOKIE_SECRET must be set in production");
