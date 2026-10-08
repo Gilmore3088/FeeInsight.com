@@ -732,8 +732,11 @@ describe("checkFeeCategory", () => {
     }
     expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
     expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
-    for (const name of ["Subordination Request", "Mortgage Subordination Fee", "Legal Process Fee"]) {
-      expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
+    expect(checkFeeCategory("legal_process", "Legal Process Fee")).toEqual({ ok: true });
+    // Since v46 a subordination is another lending fee.
+    for (const name of ["Subordination Request", "Mortgage Subordination Fee"]) {
+      expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
+      expect(refileCategory("legal_process", name), name).toBe("other_lending_fee");
     }
   });
 
