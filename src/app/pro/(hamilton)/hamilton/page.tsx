@@ -150,7 +150,10 @@ export default async function HamiltonHomePage({
         <WorthYourAttention observations={items} institutionId={selectedInstitutionId} trail={trail} />
       ) : unavailable ? (
         <p role="status" className="text-sm text-terra-text">
-          Your briefing couldn&apos;t load just now. <Link href="/pro/hamilton" className="underline">Try again</Link>
+          Your briefing couldn&apos;t load just now.{" "}
+          <Link href={hrefWithInstitutionContext("/pro/hamilton", selectedInstitutionId)} className="underline">
+            Try again
+          </Link>
         </p>
       ) : briefing && trail && briefing.feesReviewed > 0 ? (
         <div className="flex flex-col gap-4">

@@ -24,7 +24,11 @@ Rosetta owns source text normalization.
   row is one line with cells joined by ` | `, definition lists pair term and
   description, layout tables read as blocks. PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
-  line. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
+  line. A page set in columns of running prose (a deposit agreement in three columns) is
+  read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
+  sentence took its price from the next column's sentence. Fee tables, and fee lists set
+  side by side, keep the row-by-row reading. A PDF text an older layout read across its
+  columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.

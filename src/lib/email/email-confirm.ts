@@ -24,6 +24,15 @@ function normalize(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * users.id is a bigint, which the database driver returns as a string, so a session user's
+ * id arrives as "17" despite the User type. Accept both; null unless a positive integer.
+ */
+function toUserId(userId: number | string): number | null {
+  const id = typeof userId === "string" && /^\d+$/.test(userId) ? Number(userId) : userId;
+  return typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
 function ymd(date: Date): string {
   return date.toISOString().slice(0, 10).replace(/-/g, "");
 }
@@ -33,31 +42,38 @@ function sign(secret: string, userId: number, email: string, issued: string): st
 }
 
 /** `<yyyymmdd>.<signature>` binding the user id, the address and the issue date. Null without a secret. */
-export function createEmailConfirmToken(userId: number, email: string, now: Date = new Date(), secret = getSubscriptionTokenSecret()): string | null {
-  if (!secret || !Number.isSafeInteger(userId) || userId <= 0 || !email.trim()) return null;
+export function createEmailConfirmToken(
+  userId: number | string,
+  email: string,
+  now: Date = new Date(),
+  secret = getSubscriptionTokenSecret(),
+): string | null {
+  const id = toUserId(userId);
+  if (!secret || id === null || !email.trim()) return null;
   const issued = ymd(now);
-  return `${issued}.${sign(secret, userId, email, issued)}`;
+  return `${issued}.${sign(secret, id, email, issued)}`;
 }
 
 export function verifyEmailConfirmToken(
-  userId: number,
+  userId: number | string,
   email: string,
   token: string,
   now: Date = new Date(),
   secret = getSubscriptionTokenSecret(),
 ): boolean {
   const match = typeof token === "string" ? TOKEN_PATTERN.exec(token) : null;
-  if (!secret || !match || !Number.isSafeInteger(userId) || userId <= 0) return false;
+  const id = toUserId(userId);
+  if (!secret || !match || id === null) return false;
   const issued = match[1];
   const issuedAt = Date.parse(`${issued.slice(0, 4)}-${issued.slice(4, 6)}-${issued.slice(6, 8)}T00:00:00Z`);
   if (Number.isNaN(issuedAt) || issuedAt > now.getTime() + DAY_MS) return false;
   if (now.getTime() > issuedAt + EMAIL_CONFIRM_LIFETIME_DAYS * DAY_MS) return false;
-  const expected = Buffer.from(sign(secret, userId, email, issued));
+  const expected = Buffer.from(sign(secret, id, email, issued));
   const given = Buffer.from(match[2]);
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
 
-export function emailConfirmUrl(userId: number, email: string, token: string): string {
+export function emailConfirmUrl(userId: number | string, email: string, token: string): string {
   const params = new URLSearchParams({ uid: String(userId), email: normalize(email), t: token });
   return `${SITE_URL.replace(/\/$/, "")}${EMAIL_CONFIRM_PATH}?${params.toString()}`;
 }
@@ -79,10 +95,10 @@ export function buildEmailConfirmEmail(url: string): LeadEmailContent {
 }
 
 /** Sends the confirmation link. Never throws; a failed send is logged and reported. */
-export async function sendEmailConfirmation(userId: number, email: string): Promise<EmailDeliveryResult> {
+export async function sendEmailConfirmation(userId: number | string, email: string): Promise<EmailDeliveryResult> {
   try {
     const token = createEmailConfirmToken(userId, email);
-    if (!token) return { status: "not_configured", reason: "no email token secret" };
+    if (!token) return { status: "not_configured", reason: getSubscriptionTokenSecret() ? "no valid user id or email" : "no email token secret" };
     const content = buildEmailConfirmEmail(emailConfirmUrl(userId, email, token));
     const result = await sendResendEmail(
       {

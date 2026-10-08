@@ -6,7 +6,17 @@ import type { GrowthBudgetState, GrowthStep } from "@/lib/data-store/growth-boar
 import type { ContactCounts } from "@/lib/agents/growth/contacts";
 import type { GrowthLesson } from "@/lib/agents/growth/lessons";
 import { GROWTH_AGENT_ROLES, GROWTH_AGENTS, QUEUE_KINDS, type GrowthAgent } from "@/lib/agents/growth/roster";
+import { recordOutcomeAction } from "@/app/admin/customers/content/actions";
+import {
+  BUYER_LOG_ANSWER_MAX_LENGTH,
+  BUYER_LOG_FIELDS,
+  OUTREACH_OUTCOME_LABELS,
+  OUTREACH_OUTCOMES,
+  type JourneyStage,
+} from "@/lib/outreach-journey";
 import { CardActions } from "./card-actions";
+
+export type OutreachFunnel = Array<{ key: JourneyStage; label: string; count: number }>;
 import {
   filterHref,
   filterQueue,
@@ -75,8 +85,75 @@ function QueueItem({ item }: { item: ContentDraft }) {
         </div>
       </details>
 
+      {item.kind === "outreach_email" && item.status === "posted" ? <OutcomeForm id={item.id} /> : null}
+
       <CardActions id={item.id} status={item.status} title={item.title} caption={item.caption} />
     </li>
+  );
+}
+
+/** What happened after James sent an outreach email: the journey's commercial stages. */
+function OutcomeForm({ id }: { id: number }) {
+  return (
+    <form action={recordOutcomeAction} className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+      <input type="hidden" name="id" value={id} />
+      <label className="sr-only" htmlFor={`outcome-${id}`}>
+        What happened
+      </label>
+      <select id={`outcome-${id}`} name="outcome" className="rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-transparent">
+        {OUTREACH_OUTCOMES.filter((outcome) => outcome !== "sent").map((outcome) => (
+          <option key={outcome} value={outcome}>
+            {OUTREACH_OUTCOME_LABELS[outcome]}
+          </option>
+        ))}
+      </select>
+      <input
+        name="note"
+        placeholder="Note or decline reason, in their words"
+        maxLength={500}
+        className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-transparent"
+      />
+      <button type="submit" className="rounded-md border border-gray-300 px-3 py-1 font-medium text-gray-700 dark:border-gray-600 dark:text-gray-300">
+        Record
+      </button>
+      <details className="w-full">
+        <summary className="cursor-pointer text-gray-600 dark:text-gray-400">Call notes (buyer log)</summary>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {BUYER_LOG_FIELDS.map((field) => (
+            <label key={field.key} className="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-400">
+              <span title={field.question}>{field.label}</span>
+              {field.options ? (
+                <select name={`log_${field.key}`} defaultValue="" className="rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-transparent">
+                  <option value="">Not asked</option>
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  name={`log_${field.key}`}
+                  maxLength={BUYER_LOG_ANSWER_MAX_LENGTH}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-transparent"
+                />
+              )}
+            </label>
+          ))}
+        </div>
+      </details>
+    </form>
+  );
+}
+
+/** The outreach journey, five stages, counted by institution. Absent until its tables exist. */
+function FunnelLine({ funnel }: { funnel: OutreachFunnel | null | undefined }) {
+  if (funnel === undefined) return null;
+  return (
+    <p className="text-sm text-gray-700 dark:text-gray-300">
+      Outreach journey:{" "}
+      {funnel === null ? "not set up yet." : funnel.map((stage) => `${stage.label} ${stage.count.toLocaleString("en-US")}`).join(" · ")}
+    </p>
   );
 }
 
@@ -320,7 +397,7 @@ function ContactsLine({ contacts }: { contacts: ContactCounts | null | undefined
   );
 }
 
-function TeamView({ steps, lessons, contacts }: { steps: GrowthStep[] | null; lessons: Map<GrowthAgent, GrowthLesson[] | null>; contacts?: ContactCounts | null }) {
+function TeamView({ steps, lessons, contacts, funnel }: { steps: GrowthStep[] | null; lessons: Map<GrowthAgent, GrowthLesson[] | null>; contacts?: ContactCounts | null; funnel?: OutreachFunnel | null }) {
   const stepsFor = (agent: GrowthAgent | null) => (steps ? steps.filter((step) => step.agent === agent) : null);
   const quiet: string[] = [];
   const active: GrowthAgent[] = [];
@@ -338,6 +415,7 @@ function TeamView({ steps, lessons, contacts }: { steps: GrowthStep[] | null; le
     <section className="space-y-4">
       <p className={MUTED}>Each agent&apos;s newest steps on the run ledger (agent growth) and the standing lessons from your skip reasons.</p>
       <ContactsLine contacts={contacts} />
+      <FunnelLine funnel={funnel} />
       {active.length || !teamQuiet ? (
         <div className="grid gap-4 md:grid-cols-2">
           {active.map((agent) => (
@@ -365,10 +443,12 @@ export interface GrowthBoardData {
   lessons: Map<GrowthAgent, GrowthLesson[] | null>;
   /** Contact finder counts for the team view: `null` before its tables exist, absent when not read. */
   contacts?: ContactCounts | null;
+  /** The outreach journey for the team view: `null` before its tables exist, absent when not read. */
+  funnel?: OutreachFunnel | null;
 }
 
 /** The approval page's body, drawn from what `page.tsx` read. Only the chosen view renders. */
-export function GrowthBoard({ view, filter, ready, items, control, budget, steps, lessons, contacts }: GrowthBoardData) {
+export function GrowthBoard({ view, filter, ready, items, control, budget, steps, lessons, contacts, funnel }: GrowthBoardData) {
   const state: GrowthPageState = { view, filter };
   const shown = items ? filterQueue(items, filter) : null;
   const count = (status: ContentDraftStatus) => (shown ? shown.filter((item) => item.status === status).length : null);
@@ -415,7 +495,7 @@ export function GrowthBoard({ view, filter, ready, items, control, budget, steps
           {items && items.length >= QUEUE_LIMIT ? <p className="text-xs text-gray-500">Showing the newest {QUEUE_LIMIT} items.</p> : null}
         </section>
       ) : (
-        <TeamView steps={steps} lessons={lessons} contacts={contacts} />
+        <TeamView steps={steps} lessons={lessons} contacts={contacts} funnel={funnel} />
       )}
     </div>
   );
