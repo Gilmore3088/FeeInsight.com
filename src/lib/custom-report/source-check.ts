@@ -447,6 +447,15 @@ function feeRow(lines: string[], index: number): string {
   // An "Area | Per | Fee" table flattened one cell per line prints the unit between the name
   // and its price ("Wire Fees - Domestic Outgoing" / "Wire" / "$20.00").
   const perColumn = hasPerColumn(lines, index);
+  // A note the name line leaves open runs on until it closes ("Overdraft Fee (per item, ...
+  // in person withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per
+  // day.)" / "$36.00"); it carries no price of its own.
+  const openNote =
+    /\([^()]*$/.test(line) &&
+    between.length > 0 &&
+    /\)\s*\.?\s*$/.test(between.at(-1) ?? "") &&
+    between.every((next) => moneyTokens(next).length === 0 && !ZERO_WORDS.test(next));
+  if (openNote) return `${line} | ${price}`;
   return between.every(
     (next) =>
       /^\s*(\/|per\b)/i.test(next) ||

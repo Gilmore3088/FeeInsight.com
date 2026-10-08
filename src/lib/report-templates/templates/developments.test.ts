@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { developmentsContent, feeChangesContent, stateDevelopmentsContent } from "./developments";
 import type { DevelopmentsBlock, FeeChangesBlock } from "@/lib/report-assemblers/developments";
+import type { StateNews } from "@/lib/data-store/state-news";
 
 const block: DevelopmentsBlock = {
   window_start: "2026-07-08",
@@ -48,6 +49,32 @@ describe("stateDevelopmentsContent", () => {
     expect(html).toContain("None of the 2 federal agency releases");
     expect(html).toContain("Tennessee Department of Financial Institutions");
     expect(html).toContain("do not yet collect state regulator bulletins");
+  });
+
+  const regulator = { agency_name: "New York State Department of Financial Services", website_url: null, credit_union_agency_name: null, credit_union_website_url: null };
+  const news: StateNews = {
+    regulator_posts: [{ state_code: "NY", title: "DFS proposes overdraft fee rule for banks", link: "https://www.dfs.ny.gov/a", published_at: "2026-09-20", fee_related: true }],
+    bills: [{ state_code: "NY", identifier: "A 3428", title: "Limits overdraft fees", stage: "in_committee", stage_on: "2026-03-02", url: "https://openstates.org/ny/a3428" }],
+    press: [{ state_code: "NY", headline: "Albany weighs cap on bank overdraft fees", publisher: "Times Union", link: "https://news.google.com/x", published_at: "2026-09-25" }],
+  };
+
+  it("lists the state's regulator posts, fee bills and press stories, each labelled", () => {
+    const html = stateDevelopmentsContent(block, "New York", regulator, "2026-10-06", news);
+    expect(html).not.toContain("do not yet collect");
+    expect(html).toContain("New York regulator posts (1)");
+    expect(html).toContain("New York fee bills (1)");
+    expect(html).toContain("A 3428: Limits overdraft fees");
+    expect(html).toContain("In committee");
+    expect(html).toContain("In the news (1)");
+    expect(html).toContain("Times Union");
+    expect(html).toContain("not the regulator's");
+  });
+
+  it("says so when the state has nothing stored or the read failed", () => {
+    expect(stateDevelopmentsContent(block, "New York", regulator, "2026-10-06", { regulator_posts: [], bills: [], press: [] })).toContain(
+      "No New York regulator posts or press stories",
+    );
+    expect(stateDevelopmentsContent(block, "New York", null, "2026-10-06", null)).toContain("were not read for this report");
   });
 });
 

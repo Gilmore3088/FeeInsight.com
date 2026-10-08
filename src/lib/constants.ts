@@ -27,13 +27,15 @@ export function pageTitle(section: string): string {
 }
 
 // The one commissioned product, described the same way everywhere. It is built for one
-// institution against named competitors, so it is priced on request and never promises a
+// institution against named competitors, so each one is quoted (from $300, James 2026-10-08) and never promises a
 // delivery time. The free offer is the instant national and Fed district reports, which
 // need no one's time (James, 2026-10-05: "never reference 48 hours with a free report").
 export const REPORT_OFFER = {
   name: "Competitive Fee Position Report",
   priceUsd: 0,
-  priceLabel: "Priced on request",
+  priceLabel: "From $300",
+  /** The lowest quote (James, 2026-10-08: "from $300"); each report is still quoted. */
+  fromPriceUsd: 300,
   ctaLabel: "Get a free fee report",
   /** Label for links that open the request form on the paid institution report. */
   institutionCtaLabel: "Request your institution report",

@@ -33,6 +33,13 @@ describe("planWatchReasons", () => {
     ]);
   });
 
+  it("flags a size band the buyer picked", () => {
+    const unknown = { ...small, assetsThousands: null };
+    expect(
+      planWatchReasons({ ...base, paidInstitution: unknown, tierPickedByBuyer: true, email: "jane@smalltownbank.com", requestedInstitutions: [] }),
+    ).toEqual(['No asset size on file for Small Town Bank; the buyer picked "Under $500M in assets"']);
+  });
+
   it("never flags the consultant plan, which may cover any bank", () => {
     expect(
       planWatchReasons({ ...base, otherOrganization: true, email: "a@gmail.com", requestedInstitutions: [big] }),

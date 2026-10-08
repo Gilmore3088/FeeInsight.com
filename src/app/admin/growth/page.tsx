@@ -5,6 +5,7 @@ import { getMarketingControl } from "@/lib/automation-control";
 import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, listContentDrafts } from "@/lib/data-store/content-drafts";
 import { listGrowthSteps, readGrowthBudget } from "@/lib/data-store/growth-board";
+import { contactCounts } from "@/lib/agents/growth/contacts";
 import { recentLessons } from "@/lib/agents/growth/lessons";
 import { GROWTH_AGENTS } from "@/lib/agents/growth/roster";
 import { GrowthBoard, QUEUE_LIMIT } from "./board";
@@ -35,16 +36,17 @@ export default async function GrowthPage({ searchParams }: { searchParams: Promi
   const team = view === "team";
 
   const ready = await attempt(() => contentSchemaReady());
-  const [items, control, budget, steps, lessonList] = await Promise.all([
+  const [items, control, budget, steps, lessonList, contacts] = await Promise.all([
     ready ? attempt(() => listContentDrafts(QUEUE_LIMIT)) : Promise.resolve(ready === false ? [] : null),
     attempt(() => getMarketingControl()),
     attempt(() => readGrowthBudget()),
     team ? attempt(() => listGrowthSteps(STEP_LIMIT)) : Promise.resolve(null),
     team ? Promise.all(GROWTH_AGENTS.map((agent) => attempt(() => recentLessons(sql, agent)))) : Promise.resolve(GROWTH_AGENTS.map(() => null)),
+    team ? attempt(() => contactCounts()) : Promise.resolve(undefined),
   ]);
   const lessons = new Map(GROWTH_AGENTS.map((agent, index) => [agent, lessonList[index]]));
 
   return (
-    <GrowthBoard view={view} filter={filter} ready={ready} items={items} control={control} budget={budget} steps={steps} lessons={lessons} />
+    <GrowthBoard view={view} filter={filter} ready={ready} items={items} control={control} budget={budget} steps={steps} lessons={lessons} contacts={contacts} />
   );
 }

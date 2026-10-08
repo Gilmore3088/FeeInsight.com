@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro header search did nothing and the page covered the account menu
+**What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
+nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
+**Cause:** the Search button only dispatches an open event; `SearchModal` handles it, and only the
+public layout and a few standalone pages mounted it, never `HamiltonShell`. The menu: `.hamilton-shell > *`
+runs a reveal animation with `fill-mode: both`, which leaves a transform on every shell child and
+so a stacking context each. The header's `z-40` was trapped inside its wrapper, and `<main>`, later
+in the page, painted over the menu.
+**Fix:** `HamiltonShell` (and the 404 page) mount `SearchModal`; the header wrapper carries
+`sticky top-0 z-40`. `src/components/search-trigger.test.ts` fails if a screen renders
+`<ConsumerNav />` without `<SearchModal />`.
+**Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
+not on itself.
+
+## 2026-10-08: State fee bills stayed unstored for a week after going live
+**What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
+**Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
+**Fix:** a live batch now treats states last read in shadow mode as due (`runRegistryStateBillsBatch`, state-bills.ts). Merged in the PR that adds this entry.
+**Lesson:** when a shadow flag flips to live, the stored "fresh until" dates from shadow runs must not hold back the first live read. Check any other `*_TRACKER_LIVE` source for the same pattern.
+
 ## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
 **What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
 "Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
@@ -3356,3 +3376,91 @@ and quarter were already stored, without looking at the periods of the data behi
 **Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
 (`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
 **Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
+
+## 2026-10-08: Bot walls keep big banks' overdraft fees off the board
+
+- **Problem.** At 13:20 UTC Oct 8, 90 active $10B+ banks had no live overdraft fee. About 30 of them
+  are trust, card or wholesale banks that publish no consumer overdraft fee. Of the retail rest, many
+  have no readable page on file because the site refuses the server:
+  - Zions answers 403.
+  - Mountain America serves an Incapsula block page.
+  - VyStar redirects to a ShieldSquare check.
+  - Arvest's and Mountain America's pages are built by JavaScript and wait for the paid finder.
+  - Golden 1, PenFed and Morgan Stanley time out.
+  - Sunflower's and BancFirst's PDFs answer 404.
+
+  In the schedules that were read, Knox missed four overdraft lines:
+  - Banc of California's "Per transaction" cell.
+  - Pinnacle's "lowered ... from $38 to $30".
+  - Park National's "You still pay a fee of $35 per item for overdrawing your account".
+  - WaFd's "Insufficient Funds Charge (Paid)".
+
+  Darwin rejected First Financial's per-item fees, which note a daily count ("Maximum of 2 Items/Day").
+- **Fix.** Guard v29 and Knox v34 (PR 580) read and accept those lines. The held re-check also
+  re-reads changed-price ranges, and renames a promoted line whose held name says nothing. New
+  operator links on other hosts or pages go to Zions, Sunflower, Golden 1, DCU, Mountain America,
+  VyStar, Popular and TowneBank.
+- **Watch.** Most of the remaining retail gap is fetch-blocked, not misread. Each new link either reads
+  or fails the same way. A bank behind a bot wall needs the paid finder or a copy fetched from
+  James's computer.
+
+## 2026-10-08: Top-10 banks without an overdraft fee waited for their state's lane
+
+- **Problem.** 349 of 510 top-10-by-deposits slots had a live overdraft fee. Of the 80 banks
+  under $10B without one, 40 had no stored document that priced an overdraft, and 20 of those
+  had never had a second-document search. The companion finder takes six banks per step from
+  the discover step's own state, and tops up only banks the catalog hides, so a live leader in a
+  state the lane had not reached waited.
+- **Fix.** Each step's companion finder gives two slots to state top-10 banks from any state
+  with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
+- **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
+  count of top-10 slots with a live overdraft fee.
+
+## 2026-10-08: Old PDF texts ran a whole schedule onto one line
+
+- **Problem.** 168 PDF texts (164 banks, read Aug 23 to Oct 4 by the first PDF reader) have no
+  line breaks. Knox's rules split a line only at wide gaps and sentence ends and drop any piece
+  over 280 characters, so these schedules gave the rules nothing; only the family specialists
+  read them. Lake City Bank's "Overdraft fee $35.00/transaction" and West Bank's "Overdraft Fee
+  (per item) ... $35.00" were lost this way. 63 of those banks have no live overdraft fee; 166
+  of the texts were never read by `read.pdf_layout`, which keeps lines (0 one-line texts of 1,964).
+- **Fix.** Rosetta treats such a text like a lost text: one read with the current PDF reader,
+  replacing the flat text only when the new one lists at least as many fees.
+- **Watch.** `read.pdf_layout` attempts on these documents, one-line legacy texts left, and new
+  Knox rows from them.
+
+## 2026-10-08: Hamilton's memo was cut off at its token cap and withheld
+
+- **Problem.** A live overdraft Ask for Space Coast (15:13 UTC) showed the storyline but no
+  memo. Both memo attempts (`ai_api_usage_events` 4898, 4899) stopped at exactly 1,800 output
+  tokens, the cap, so the JSON was cut off, neither draft parsed, and the memo was withheld as if
+  it had failed the figure checks. The withheld result recorded no reason. Separately, the Ask's
+  storyline answer had no Download PDF button, though the answer was already saved
+  (`hamilton_saved_analyses` 890dc628 at 15:12:56).
+- **Fix.** The memo cap is 4,000 tokens, a cut-off reply is named as such in the retry, and the
+  run ledger's `ask_memo` detail records `withheld_problems`. The storyline answer offers
+  Download PDF as soon as the Ask has saved it, whatever happens to the memo.
+- **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
+  with `memo_status = 'withheld'`.
+
+## 2026-10-08: Fee names that wrap onto a second line lost their price
+
+- **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
+  a second line and print the price alone below it: "Overdraft Fee (per item, both returned
+  or paid created by check, in person withdrawal," / "ATM withdrawal, ... Maximum of 6 fees per
+  day.)" / "$36.00". Knox reads a price beside its name or under a one-line name, so neither
+  MVB's overdraft nor its NSF fee was found. The shared source check would also have rejected
+  them: the run-on note sat between the name and the price. 13 stored texts have a priced
+  overdraft line in this shape, 6 of them at banks with no live overdraft fee.
+- **Fix.** Knox v35 joins a name line that opens a note to the lines that close it and the
+  price below (`wrappedNamePrices`), and names the fee by its first line. The source check
+  reads such a run-on note as a qualifier between the name and its price.
+- **Watch.** MVB's overdraft and NSF fees, and Knox v35 rows from the other 12 texts.
+
+## 2026-10-08: A new API route without a policy entry fails only the Vercel build
+- **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
+  full vitest run (`policies.test.ts`, which was not run before the push) and the Vercel build
+  catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
+- **Fix.** Add the policy entry in the same commit as the route.
+- **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.

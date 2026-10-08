@@ -52,7 +52,7 @@ import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordSearchMisses } from "./search-misses";
-import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
+import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
 
@@ -1705,6 +1705,10 @@ export async function runMagellanDiscovery(
         deadline: stepDeadline,
         dryRun,
         learning,
+        leaderIds: await loadMarketLeaderIds(db, { perState: LEADER_RANK }).catch((error) => {
+          console.error("loadMarketLeaderIds failed:", error);
+          return [];
+        }),
       })
     : null;
 

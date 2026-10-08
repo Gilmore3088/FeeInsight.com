@@ -446,6 +446,17 @@ v32 (rules 32, from Space Coast CU's page, Oct 7):
 - Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
 - Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").
 
+v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
+- "You still pay a fee of $35 per item for overdrawing your account, but ..." is the overdraft fee; a sentence fee's clause ends at ", but" / ", and" (Park National).
+- "Insufficient Funds Charge (Paid)" beside "(Returned)" is the overdraft fee (WaFd; guard v29 refiles it the same way).
+- A promoted held line whose stored name does not say its category ("You still pay") takes the name today's rules read.
+- "Per transaction" (and "transactions") is a unit cell, so "Overdraft Fee - Items Paid3 | Per transaction | $20.00" is the overdraft fee, not an unnamed price (Banc of California).
+- A change the bank says it already made ("We've lowered Overdraft Paid Item fees from $38 to $30") is today's price at the later figure. A change still to come ("will", "effective", "beginning") stays a held range (Pinnacle).
+- The held re-check also re-reads range lines that say a price was changed, and promotes one only at its stored amount (the lower end), so a raised price stays held.
+
+v35 (rules 35, from the state top-10 banks with no live overdraft fee, Oct 8):
+- A fee name that opens a note and wraps onto the next line or two, with its price alone below ("Overdraft Fee (per item, ... in person withdrawal," / "ATM withdrawal, ... per day.)" / "$36.00"), is that fee at that price, named by its first line (`wrappedNamePrices`, MVB). The shared source check reads the run-on note as a qualifier between the name and the price.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own

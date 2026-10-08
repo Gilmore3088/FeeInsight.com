@@ -59,6 +59,19 @@ export interface ExtractionRulesResult {
   held: HeldFeeCandidate[];
 }
 
+/** v34: a price change the bank says it made ("We've lowered ... fees from", "... were reduced from"). */
+const FEE_CHANGED_FROM = /\b(?:lowered|reduced|decreased|raised|increased|changed)\s+(?:[\w-]+\s+){0,8}?from\s*$|\b(?:lowered|reduced|decreased|raised|increased|changed)\s+from\s*$/i;
+const FUTURE_CHANGE = /\b(?:will|effective|beginning|starting|as of|going forward)\b/i;
+
+/** "We've lowered Overdraft Paid Item fees from" -> "Overdraft Paid Item fees". */
+export function changedFeeName(name: string): string {
+  return name
+    .replace(/^(?:we(?:'ve|\u2019ve| have)?|[a-z]+ bank has)\s+(?:lowered|reduced|decreased|raised|increased|changed)\s+/i, "")
+    .replace(/\s+(?:(?:were|was|have been|has been)\s+)?(?:lowered|reduced|decreased|raised|increased|changed)?\s*from\s*$/i, "")
+    .replace(/^([a-z])/, (first) => first.toUpperCase())
+    .trim();
+}
+
 const BALANCE_REQUIREMENT = /\bbalance (?:requirement|required)\b|\brequired (?:minimum |daily |average )*balance\b/i;
 
 interface FeePattern {
@@ -167,7 +180,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // to a total of $500") it describes another fee or a limit.
   {
     key: "overdraft",
-    pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
+    pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
   },
   {
     key: "nsf",
@@ -456,7 +469,8 @@ export function classifyPatternKey(value: string): string | null {
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
-  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
+  // v34: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd).
+  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b|\(\s*paid\s*\)/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
     return "overdraft";
   }
   // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
@@ -765,7 +779,8 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 /** "We (will) charge a fee of", "you will be charged a fee of": the price's name comes after it. */
 // v33: "We will charge you a fee of up to $35.00 each time we pay an overdraft" (the Reg E
 // overdraft notice) states the fee.
-const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+// v34: "You still pay a fee of $35 per item for overdrawing your account" (Park National).
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -777,7 +792,10 @@ const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s
  */
 export function sentenceFee(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
   if (!CHARGE_A_FEE_OF.test(segment.slice(0, firstAmount.start))) return null;
-  const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "").replace(/^[\s*†‡]+/, "").trim();
+  const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "")
+    .replace(/,\s+(?:but|and|so)\b[\s\S]*$/i, "")
+    .replace(/^[\s*†‡]+/, "")
+    .trim();
   const words = clause.split(/\s+/).filter(Boolean);
   if (words.length < 2 || words.length > 14 || /\$\s?\d/.test(clause)) return null;
   const patternKey = classifyPatternKey(clause);
@@ -786,7 +804,9 @@ export function sentenceFee(segment: string, firstAmount: AmountMatch): Extracte
   const subject = FEE_PATTERNS.find((entry) => entry.key === patternKey)?.pattern.exec(clause.replace(/[‘’ʼ`]/g, "'"))?.[0];
   if (!subject) return null;
   const limit = segment.slice(firstAmount.end).match(ONE_PER_DAY) ? "; one per day" : "";
-  const feeName = `${subject.charAt(0).toUpperCase()}${subject.slice(1).toLowerCase()} fee (${clause}${limit})`;
+  // "... for overdrawing your account" is the overdraft fee.
+  const title = /^overdrawing$/i.test(subject) ? "Overdraft" : `${subject.charAt(0).toUpperCase()}${subject.slice(1).toLowerCase()}`;
+  const feeName = `${title} fee (${clause}${limit})`;
   if (!usableName(feeName) || !passesDarwinChecks(hint, feeName, firstAmount.value)) return null;
   return {
     feeName,
@@ -1003,6 +1023,23 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     }
   }
 
+  // v34: "We've lowered Overdraft Paid Item fees from $38 to $30" (Pinnacle): a change the
+  // bank has already made, so the later figure is today's price, not a range's top. A
+  // change still to come ("will increase", "effective") stays held as a range.
+  if (
+    feeAmounts[1] &&
+    FEE_CHANGED_FROM.test(feeName) &&
+    /^\s*to\s*$/i.test(segment.slice(feeAmounts[0].end, feeAmounts[1].start)) &&
+    !FUTURE_CHANGE.test(segment)
+  ) {
+    const changedName = changedFeeName(feeName);
+    if (usableName(changedName)) {
+      feeAmounts.shift();
+      feeName = changedName;
+      hint = hint ?? classifyFeeText(feeName);
+    }
+  }
+
   // A range ("$5 - $15"): kept for review with both ends.
   const second = feeAmounts[1];
   if (second && RANGE_JOINER.test(segment.slice(feeAmounts[0].end, second.start))) {
@@ -1156,10 +1193,41 @@ export function columnContinuations(text: string): string[] {
   return joined;
 }
 
+/**
+ * v35: a fee name that wraps onto a second or third line, with its price alone on the line
+ * after ("Overdraft Fee (per item, both returned or paid created by check, in person
+ * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
+ * "$36.00", MVB). The name's first line must name a fee and open a note that the line above
+ * the price closes; no line before the price may hold an amount. The fee is named by its
+ * first line without the open note. Only these lines are returned: a price beside its name
+ * is read by the line rules.
+ */
+export function wrappedNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    // The earliest line that names a fee and opens a note the last line before the price
+    // closes, with no amount from it to the price.
+    for (let start = Math.max(0, index - 3); start < index - 1; start += 1) {
+      const name = lines.slice(start, index);
+      if (name.some((line) => amountsIn(line).length > 0 || !/[a-z]{3,}/i.test(line))) continue;
+      if (!/^[A-Z]/.test(lines[start]) || classifyPatternKey(lines[start]) === null) continue;
+      if (!/\([^()]*$/.test(lines[start]) || !/\)\s*\.?\s*$/.test(name.at(-1) ?? "")) continue;
+      // The name is its first line; a note that runs on past it ("(per item, both ...") is
+      // dropped, as a price beside a one-line name would read.
+      const title = lines[start].replace(/\s*\([^)]*$/, "").trim();
+      joined.push(`${title || name.join(" ")} ${lines[index]}`);
+      break;
+    }
+  }
+  return joined;
+}
+
 export function extractCandidatesFromText(text: string): ExtractionRulesResult {
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  const continued = columnContinuations(text).flatMap((line) => extractFromSegment(line).candidates);
+  const continued = [...columnContinuations(text), ...wrappedNamePrices(text)].flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
