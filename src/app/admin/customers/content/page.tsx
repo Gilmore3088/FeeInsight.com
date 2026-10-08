@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { contentSchemaReady, listContentDrafts, type ContentDraft, type ContentDraftStatus } from "@/lib/data-store/content-drafts";
 import { money } from "@/lib/agents/content/market-spread";
+import { scoreLabel } from "@/lib/agents/growth/score-label";
 import { saveCaptionAction, setDraftStatusAction } from "./actions";
 
 const SECTIONS: { status: ContentDraftStatus; title: string; note: string }[] = [
@@ -112,7 +113,7 @@ function DraftCard({ draft }: { draft: ContentDraft }) {
               </a>
             ) : null}
             {draft.score !== null ? (
-              <p className="text-xs text-gray-500">Score: {draft.score} tracked visits in the week after posting</p>
+              <p className="text-xs text-gray-500">Score: {scoreLabel(draft.kind, draft.score)}</p>
             ) : null}
           </div>
           <Facts draft={draft} />

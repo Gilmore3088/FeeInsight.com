@@ -155,6 +155,27 @@ export const PUBLICATIONS: Publication[] = [
     freshnessKey: "run:growth.learning",
     next: nextWeekly(1, 14, 37),
   },
+  {
+    // SHERLOCK's brief from new regulator items and competitors' public pages; filed only on
+    // days with something new. Read by James and DRAPER only.
+    key: "market_brief",
+    name: "Market brief",
+    audience: "You",
+    cadence: "Daily, when there is something new",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.intel",
+    next: nextDaily(14, 17),
+  },
+  {
+    // NORMAN checks every buying page and unsent outreach link loads, and counts the funnel.
+    key: "conversion_check",
+    name: "Conversion check",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.conversion",
+    next: nextWeekly(1, 13, 47),
+  },
 ];
 
 export interface CalendarRow {
