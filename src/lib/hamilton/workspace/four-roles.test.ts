@@ -171,4 +171,11 @@ describe("answer edge cases", () => {
       "Prices rose 2.1%.",
     ]);
   });
+
+  it("keeps an initial such as U.S. inside its sentence", () => {
+    expect(sentences("12 of 14 charge less than your $17.50; the lowest is U.S. Bank ($5). Prices rose.")).toEqual([
+      "12 of 14 charge less than your $17.50; the lowest is U.S. Bank ($5).",
+      "Prices rose.",
+    ]);
+  });
 });

@@ -41,6 +41,17 @@ export interface EvalResult {
   failures: string[];
 }
 
+/** Every line of the storyline the reader sees: its framing, both lenses, the exhibits and what to watch. */
+function storylineText(response: AskResponse): string[] {
+  const story = response.answer?.storyline;
+  if (!story) return [];
+  return [
+    story.governingThought,
+    ...[...story.situation, ...story.complication, ...story.lenses.finance, ...story.lenses.market, ...story.watch].map((f) => f.text),
+    ...story.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]),
+  ];
+}
+
 /** Every reader-facing line of a response, facts included. */
 function answerText(response: AskResponse): string {
   return [
@@ -48,7 +59,7 @@ function answerText(response: AskResponse): string {
     response.answer?.headline ?? "",
     ...(response.answer?.claims ?? []).map((c) => c.text),
     ...(response.facts ?? []).map((f) => f.text),
-    ...(response.answer?.storyline?.exhibits ?? []).map((e) => `${e.actionTitle} ${e.takeaway?.text ?? ""}`),
+    ...storylineText(response),
   ].join("\n");
 }
 
