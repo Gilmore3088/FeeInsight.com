@@ -100,6 +100,13 @@ export function repairWebsiteUrl(value: string | null | undefined): WebsiteRepai
     text = `https://${text.replace(/^\/+/, "")}`;
   }
 
+  // A scheme stored twice ("https://HTTP://WWW.BANKWITHCHOICE.COM", Choice Financial, 8 Oct 2026).
+  const doubled = /^(https?:\/\/)https?:?\/\/+/i.exec(text);
+  if (doubled) {
+    text = `${doubled[1]}${text.slice(doubled[0].length)}`;
+    changes.push("removed_doubled_scheme");
+  }
+
   const rawHost = /^https?:\/\/([^/?#]*)/i.exec(text)?.[1] ?? "";
   if (rawHost.includes("@")) return unparseable("Address carries a user name");
   let host = rawHost.replace(/:\d+$/, "");
