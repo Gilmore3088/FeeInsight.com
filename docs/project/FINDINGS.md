@@ -3063,6 +3063,10 @@ Rows already on file gain the fields only when Knox reads their document again.
   higher NSF fee on the same schedule; 72 had the NSF fee's own price; 154 had no NSF line. Guard
   v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
   `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
+- **Follow-up (v24, same day).** WCU's $5 "Statement Copy Fee" was live as overdraft because Knox
+  kept the section heading in its name ("OVERDRAFT & NSF FEES: Statement Copy Fee"), and a
+  $5 "Returned Item Photocopy" was live as NSF. Guard v24 rejects statement copies, photocopies,
+  "copy fee" and "copy of" names under overdraft and NSF; these 2 are the only live matches.
 
 
 ## 2026-10-08: Every Stripe webhook failed
