@@ -3217,3 +3217,13 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** `discover.keep_refused_answer` attempts (`ok` vs `unchanged`) and, after the paid
   fetch, live fees for the banks kept.
 
+## 2026-10-08: The paid fetch for blocked pages fell behind
+
+- **Problem.** About nine paid Magellan steps ran a day on 8 Oct, each fetching 3 blocked pages,
+  while 24 blocked pages waited (PenFed's schedule among them, never tried) and the refused
+  paid answers above were adding 72 more. Zions' hand-given schedule sits on amegybank.com,
+  which the companion selection's own-site check threw out, so it was never fetched at all.
+- **Fix.** Six pages per paid step, two kept for companions. A companion given by hand
+  (`discover.operator_schedule`) passes the own-site check.
+- **Watch.** `fetch.paid_web_fetch%` attempts a day, and Zions (35) and PenFed (4382) documents.
+

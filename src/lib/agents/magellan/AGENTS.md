@@ -289,7 +289,7 @@ A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refu
 403), or timed out with at least `BLOCKED_TIMEOUT_MIN_FAILURES` (2) failures in a row (First
 Horizon), gets one paid server-side fetch in the `discover-paid` step:
 Anthropic's `web_fetch` tool, `max_uses` 1, `allowed_domains` the link's host. Up to
-`BLOCKED_FETCH_PER_RUN` (3) banks a step, largest first, each at most once per
+`BLOCKED_FETCH_PER_RUN` (6) pages a step, largest first, each at most once per
 `BLOCKED_FETCH_RETRY_DAYS` (7). The page text or PDF it returns goes through the same
 fetch path as any fetch (`fetchAndRecordLink`: document row, vault copy, attempt with
 strategy `fetch.paid_web_fetch` and its cost), and Rosetta reads it next. A refused link on
@@ -301,7 +301,8 @@ The paid fetch runs first in `discover-paid`, before the paid searches: run last
 what the run's provider call cap left. Companion pages blocked the same way get it too
 (strategy `fetch.paid_web_fetch_companion`, stored through `fetchAndRecordCompanion`): a page
 whose last companion fetch was refused, timed out twice, or was a PDF link answered with a web
-page. One of the three slots is kept for a companion. The companion fetch no longer stores a
+page. Two of the six slots are kept for companions. A companion given by hand
+(`discover.operator_schedule`) counts on a sister brand's site (Zions' schedule on amegybank.com). The companion fetch no longer stores a
 PDF link answered with a web page (outcome `blocked_bot`): 53.com served Fifth Third's fee PDFs
 as a "page doesn't exist" page, which Rosetta then set aside as a blank read. Copies stored that
 way before the check (a set-aside PDF link whose copy is a web page) are picked as well, and a
