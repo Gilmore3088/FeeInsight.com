@@ -307,6 +307,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
 
 export function StructuredAsk({
   question,
+  nonce = 0,
   institutionId,
   modelHrefFor,
   researchHrefFor,
@@ -314,6 +315,8 @@ export function StructuredAsk({
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
+  /** Bumped on every ask, so the same question asked again (or Try again) runs again. */
+  nonce?: number;
   institutionId: string | null;
   modelHrefFor: (feeCategory: string, tested: number) => string;
   /** My fees for a fee, where the full market picture lives. */
@@ -328,6 +331,7 @@ export function StructuredAsk({
   const [busy, setBusy] = useState(false);
   const decisionId = useRef<string | undefined>(undefined);
   const lastQuestion = useRef<string | null>(null);
+  const lastNonce = useRef<number | null>(null);
   const [memo, setMemo] = useState<MemoState | undefined>(undefined);
   // An answer Hamilton could not use: it asks again, and the card says why.
   const [notFound, setNotFound] = useState<string | null>(null);
@@ -369,14 +373,17 @@ export function StructuredAsk({
       if (res?.question && res.question.fieldKey !== "ask.fee_category") return;
       // The engine's own answer stands; a second, model-written answer would bury it.
       if (res && !res.question && engineAnswered(res)) return;
+      // The written answer takes over, so a failed engine call is not shown above it as an error.
+      setError(null);
       onNoStoryline?.(asked);
     },
     [institutionId, onNoStoryline],
   );
 
   useEffect(() => {
-    if (!question || question === lastQuestion.current) return;
+    if (!question || (question === lastQuestion.current && nonce === lastNonce.current)) return;
     lastQuestion.current = question;
+    lastNonce.current = nonce;
     memoFor.current = null;
     setMemo(undefined);
     setResponse(null);
@@ -399,7 +406,7 @@ export function StructuredAsk({
       if (res) setResponse(res);
       follow(asked, res);
     })();
-  }, [question, run, follow, institutionId]);
+  }, [question, nonce, run, follow, institutionId]);
 
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
     setNotFound(null);

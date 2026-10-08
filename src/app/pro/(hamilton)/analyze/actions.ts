@@ -11,6 +11,8 @@ export interface LoadedAnalysisRecord {
   responseJson: AnalyzeResponse;
   institutionId: string | null;
   analysisFocus: string | null;
+  /** The question the answer was asked with. */
+  prompt: string | null;
 }
 
 /**
@@ -110,8 +112,8 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
   if (!user) return null;
 
   try {
-    const rows = await sql<Array<{ id: string; response_json: string; institution_id: string | null; analysis_focus: string | null }>>`
-      SELECT id::text, response_json::text, institution_id, analysis_focus
+    const rows = await sql<Array<{ id: string; response_json: string; institution_id: string | null; analysis_focus: string | null; prompt: string | null }>>`
+      SELECT id::text, response_json::text, institution_id, analysis_focus, prompt
       FROM hamilton_saved_analyses
       WHERE id = ${id}::uuid
         AND user_id = ${user.id}
@@ -124,6 +126,7 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
       responseJson: JSON.parse(rows[0].response_json) as AnalyzeResponse,
       institutionId: normalizeCanonicalInstitutionId(rows[0].institution_id),
       analysisFocus: rows[0].analysis_focus,
+      prompt: rows[0].prompt,
     };
   } catch {
     return null;

@@ -3443,6 +3443,21 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
 
+## 2026-10-08: The source check passes some overdraft lines that are another figure
+
+- **Problem.** Running the first outreach drafts against live overdraft fees in the New
+  York-Newark metro, the shared source check (`checkFeeAgainstSource`) accepted two New Jersey
+  fees whose matched line is not an overdraft price: Provident Bank $40 (a debit purchase amount
+  in a worked example; the real fee is $35) and OceanFirst $50 (a "2 x 10" safe deposit box size;
+  the real fee is $30). The Accuracy thread confirmed both and is archiving them after the 12-hour
+  look. NewBank $25 and Haven Savings $30, flagged at the same time, are correct. The catalog's
+  `conditions` field also carries Knox's provenance ("Knox deterministic extraction from Rosetta
+  artifact #...; text_hash=..."), not conditions.
+- **Fix so far.** The market snapshot and the outreach audit leave pipeline provenance out of a
+  fee's notes, and every outreach draft lists each peer's schedule line so James audits it
+  before sending.
+- **Watch.** Peer lines in outreach audit blocks that read as a worked example or a box size.
+
 ## 2026-10-08: Fee names that wrap onto a second line lost their price
 
 - **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
@@ -3464,6 +3479,21 @@ and quarter were already stored, without looking at the periods of the data behi
   catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
 - **Fix.** Add the policy entry in the same commit as the route.
 - **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
+
+## 2026-10-08: Footnote marks read onto a price made it a different price
+
+- **Problem.** Starion's schedule prints its overdraft and NSF price as "$33" with superscript
+  footnote marks 4 and 5, and the PDF reader puts them on the baseline: "$334, 5". The price
+  also sits between the two lines of the fee's name ("Overdraft Fee³ - All Checking and
+  Savings Accounts" / "$334, 5" / "(Including Money Markets)"), a shape Knox never joined. So
+  Starion, a North Dakota top-10 bank, had no live overdraft fee.
+- **Fix.** Knox v36 joins a name line, a price alone below it and a line that only finishes
+  the name's note (`centeredNamePrices`). `stripPriceFootnoteMarks` drops marks glued to a
+  price-only line when they count up from its last digit and each is a printed numbered
+  footnote; Knox and the shared source check both apply it. A single mark ("$331") is left as
+  written, since it can't be told from a price.
+- **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
+  name in the centered shape.
 
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
