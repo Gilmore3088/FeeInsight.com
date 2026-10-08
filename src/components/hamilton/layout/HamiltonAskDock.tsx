@@ -34,9 +34,8 @@ export function HamiltonAskDock({ selectedInstitutionId }: { selectedInstitution
   const fee = searchParams.get("fee") ?? searchParams.get("category");
   const instId = searchParams.get("instId") ?? selectedInstitutionId ?? null;
   const topic = fee ? getDisplayName(fee).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
-  const placeholder = topic
-    ? `Ask Hamilton about ${topic}: what changes if we match the market?`
-    : "Ask Hamilton: how does our overdraft fee compare in our counties?";
+  // Short enough to read whole on a phone.
+  const placeholder = topic ? `Ask about ${topic}…` : "Ask Hamilton a question…";
 
   if (!open) {
     return (
