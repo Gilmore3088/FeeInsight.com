@@ -60,6 +60,14 @@ Rosetta owns source text normalization.
     a page that still reads poorly is probed at the other quarter turns and read in the
     one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
     version rejected or found empty gets one read with the current version.
+  - A PDF whose embedded text is noise (its font maps letters to control codes or shifted
+    letters, "7KH UDWHV" for "The rates") is read like a scan: `hasReadableWords` in
+    `learning/format.ts` finds under 2% common English or Spanish words among at least 60.
+    Free OCR finds no page images in such a PDF, so it lands `needs_ocr` for pass 3.
+    Texts stored before this check (17 PDF texts with control codes near the top, 5 of
+    them noise, TruStone's fee schedule among them) are reopened once each
+    (`reopenUnreadablePdfTexts`, step detail `reopened_unreadable_pdfs`); a readable one
+    is logged `rejected` and never checked again.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,

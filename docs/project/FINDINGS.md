@@ -3555,3 +3555,17 @@ and quarter were already stored, without looking at the periods of the data behi
   "Email me the link" (and the signup send) returned "The email didn't send" without calling Resend.
 - **Fix.** `src/lib/email/email-confirm.ts` accepts a numeric string or a number (`toUserId`).
 - **Watch.** Any new check on `user.id` must not assume a number (`Number(user.id)` first).
+
+## 2026-10-08: Some fee schedule PDFs read as noise and were kept as text
+
+- **Problem.** TruStone Financial (a Minnesota top-10 credit union) has a live overdraft fee
+  verified, but it is held by the 3-fee rule because its fee schedule PDF reads as noise.
+  The PDF's font maps letters to control codes, and Hfs FCU's maps them to letters shifted
+  by three ("7KH UDWHV" for "The rates"). The embedded text was long enough to pass the
+  scan check, so Rosetta stored it as a text (completed, or judged not a fee page) and
+  never tried another reader. 17 stored PDF texts have control codes near the top; 5 of
+  them are noise.
+- **Fix.** A PDF whose text has under 2% common English or Spanish words (at least 60
+  words) is read like a scan, and the stored ones are reopened once each. Free OCR reads
+  only page images, so these PDFs go on to the paid transcription pass under its budget.
+- **Watch.** TruStone's fee schedule read into words, and TruStone's fees going live.
