@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Knox's lesson reader took 53 seconds on every extract step
+**What happened:** `pg_stat_statements` on prod showed Knox's lesson query (`loadKnoxLessons`) run 538 times at a 53 s average and a 97 s worst case, against a 120 s statement timeout. Each run held a database connection for that long, during the same evening the database hit "too many clients" (22:07 UTC, 28 refusals right after a deploy).
+**Cause:** the query paired each name's wrong and right categories by joining two CTEs to themselves. Postgres estimated a few rows per CTE (there were 27,467 and 50,112), so it chose a nested loop that rescanned them.
+**Fix:** each name's categories are grouped into arrays and paired with `unnest`, which has no join to misjudge (this PR). The same prod data gives the same 107 global and 867 per-bank lessons (row hashes match), in 4.1 s.
+**Lesson:** a self-join of a CTE gets a guessed row count; when one runs slowly, check `pg_stat_statements` for its mean time and prefer grouping over a self-join.
+
 ## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
 **What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
 **Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
