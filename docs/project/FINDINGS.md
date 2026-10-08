@@ -30,6 +30,21 @@ runs, which the current deploy has not repeated, reruns at once with a `run.reco
 **Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
 deploy, not one success.
 
+## 2026-10-08: Hand-given schedules were invisible on the Gold standard queue
+**What happened:** James gave Chase's and Citi's fee schedule links, but the Knox Gold standard
+queue (`/admin/knox?queue=gold`) showed both as "No URL". A read-only query on prod (12:55 UTC)
+found both links stored and fetched: Chase `ABSF-en.pdf` and Citi `CDAA.pdf`. Fifth Third was the
+same. U.S. Bank's main link is an investing-fees page while its hand-found link is the right
+overdraft disclosure.
+**Cause:** `OPERATOR_SCHEDULES` and hit-list links are stored as `consumer_supplement` rows in
+`institution_additional_sources`, never on `institution_sources.fee_schedule_url`. The Gold
+standard queries (`getGoldStandardCandidates` / `getGoldStandardCandidate`) read only the main link.
+**Fix:** this PR reads the newest non-rejected consumer companion (fetched first) as
+`hand_schedule_url` and shows it beside the main link on the queue and the verify page.
+**Lesson:** a bank's schedule can live in three places (`institution_sources.fee_schedule_url`,
+`source_documents`, `institution_additional_sources`). Any admin view that says "No URL" must
+check all of them. The institution page (`/admin/institution/[id]`) still reads only the main link.
+
 ## 2026-10-08: The taxonomy fold wrote a generated column and stopped every Hamilton publish
 **What happened:** after PR 560 merged at 12:01 UTC, Hamilton's publish step failed on every
 state run (IA and AL at 12:06, MS at 12:08, KS at 12:15, atlas job #2877) with `column
