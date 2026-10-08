@@ -45,8 +45,9 @@ const BATCH_IDLE_RETRY_HOURS = 24;
  * read under an older version is due again, so a tagging fix reaches bills already stored.
  * 2: groundwater "overdraft" is no longer an overdraft fee (2026-10-08).
  * 3: any "overdraft" in a water bill that never mentions banking is dropped (2026-10-08).
+ * 4: overdraft and insufficient funds count only in a sentence about banking or fees (2026-10-08).
  */
-export const STATE_BILLS_TAGGING_VERSION = 3;
+export const STATE_BILLS_TAGGING_VERSION = 4;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.STATE_BILLS_TRACKER_LIVE === "true";
@@ -194,6 +195,7 @@ export async function runRegistryStateBills(
       tagging_version: STATE_BILLS_TAGGING_VERSION,
       untagged: result.untagged,
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
+      matches: Object.fromEntries(items.slice(0, 25).map((item) => [item.identifier, item.match])),
     },
   });
   return result;
