@@ -101,7 +101,8 @@ export function ProPlanCards({
           <TierTable highlighted={selection?.tier ?? null} />
         </div>
 
-        <div className="grid content-start gap-4">
+        {/* Phones show the picker and price first (James, 8 Oct 2026); desktop keeps it on the right. */}
+        <div className="order-first grid content-start gap-4 lg:order-none">
           {chooser}
           {selection ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
