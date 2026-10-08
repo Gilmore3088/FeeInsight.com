@@ -646,7 +646,7 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("nsf", "You will be charged an NSF fee of")).toEqual({ ok: true });
   });
 
-  it("v34 files express and priority replacement cards as the rush card fee (Oct 8)", () => {
+  it("v35 files express and priority replacement cards as the rush card fee (Oct 8)", () => {
     for (const name of ["Replacement Card - Express Mail", "Debit Card Replacement Priority Delivery", "Replacement Debit Card Two Day Delivery"]) {
       expect(checkFeeCategory("card_replacement", name).ok, name).toBe(false);
       expect(refileCategory("card_replacement", name), name).toBe("rush_card");

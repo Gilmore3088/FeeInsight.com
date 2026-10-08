@@ -178,7 +178,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
     // A "check card" is a debit card; checks, checkbooks and checking accounts are not. A PIN
     // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
-    // v34: express, priority or two-day delivery of a replacement card is the rush card fee
+    // v35: express, priority or two-day delivery of a replacement card is the rush card fee
     // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
     exclude: new RegExp(
       `(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\bcards?\\b[^|]{0,20}replace)(?!.*replace[^|]{0,20}\\bcards?\\b).*\\bpins?\\b|liabilit|closed account)`,
@@ -273,7 +273,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 34;
+export const CATEGORY_GUARD_VERSION = 35;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
