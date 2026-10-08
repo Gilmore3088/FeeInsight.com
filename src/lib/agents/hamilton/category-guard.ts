@@ -3,6 +3,7 @@ import {
   checkFeeCategory,
   CATEGORY_GUARD_VERSION,
   GUARDED_CATEGORIES,
+  SMALL_RETURNED_ITEM_MAX,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
@@ -26,6 +27,7 @@ interface LivePublishedRow {
   fee_name: string;
   amount: number | string | null;
   conditions: string | null;
+  document_nsf_amount: number | string | null;
 }
 
 export interface CategoryGuardFailure {
@@ -79,13 +81,31 @@ function normalizedAmount(value: number | string | null): number | null {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 }
 
+/**
+ * The highest NSF or insufficient-funds price read elsewhere on the fee's schedule, for a small
+ * returned check filed as NSF only (`checkFeeCategory`'s schedule check); null otherwise. Older
+ * reads count too: Knox missed Dean's "Insufficient Funds Fee (Paid or Returned) $35.00", split
+ * over two lines, which the earlier reader caught. Each source has its own document index.
+ */
+function documentNsfAmount(db: SqlTag) {
+  // Literal sources, so each subquery can use that source's partial document index.
+  return db`(CASE WHEN fp.canonical_fee_key = 'nsf' AND fp.amount < ${SMALL_RETURNED_ITEM_MAX} THEN GREATEST(
+      (SELECT MAX(o.amount) FROM raw_fee_observations o
+        WHERE o.source = 'knox' AND o.source_document_id = fr.source_document_id AND o.fee_raw_id <> fr.fee_raw_id
+          AND o.fee_name ~* '(insufficient|\\mnsf\\M|non[- ]?sufficient)'),
+      (SELECT MAX(o.amount) FROM raw_fee_observations o
+        WHERE o.source = 'migration_v10' AND o.source_document_id = fr.source_document_id
+          AND o.fee_name ~* '(insufficient|\\mnsf\\M|non[- ]?sufficient)')
+    ) END) AS document_nsf_amount`;
+}
+
 async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promise<LivePublishedRow[]> {
   const keys = [...GUARDED_CATEGORIES];
   // The raw row's conditions carry a rate the name leaves out ("2.00% of transaction").
   if (institutionId) {
     return db<LivePublishedRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
-             fp.amount, fr.conditions
+             fp.amount, fr.conditions, ${documentNsfAmount(db)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -97,7 +117,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   }
   return db<LivePublishedRow[]>`
     SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
-           fp.amount, fr.conditions
+           fp.amount, fr.conditions, ${documentNsfAmount(db)}
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -239,6 +259,7 @@ interface TakenDownRow {
   fee_name: string;
   amount: number | string | null;
   conditions: string | null;
+  document_nsf_amount: number | string | null;
 }
 
 /**
@@ -250,7 +271,7 @@ async function restorePassingTakedowns(db: SqlTag, options: { dryRun: boolean; i
   let rows: TakenDownRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope<TakenDownRow[]>`
-      SELECT fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions
+      SELECT fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions, ${documentNsfAmount(scope)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
