@@ -30,6 +30,67 @@ the last two days). Learning now shows worked / nothing there / failed. Waiting 
 **Lesson:** an admin screen that reads a rollup table must show where the rollup's newest row is.
 Count "nothing to do" apart from failures wherever a success rate is shown.
 
+## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
+**What happened:** the first `registry-state-reg-news` run (12:27 UTC, PR 568) read 31 of 55 regulator
+sites and 311 items, but many were menu links ("Public Meetings and Notices"), links named by their own
+path, and Delaware's statewide feed (news.delaware.gov) instead of the Bank Commissioner. Nine sites
+answered HTTP 403 to the crawler (AK, AZ, CO, KS credit unions, MA, MI, NH, RI) and Ohio's listed URL
+answered 404. The first `registry-state-bill-news` run (12:32) kept 52 stories; most bill searches
+returned other states' bills or sports scores ("SB 79" is also a California housing law, "A 117" a box score).
+**Cause:** the readers were written without reaching any of these sites from the cloud sandbox, so the
+first prod run was their first test. Search engines match words anywhere in a story, not in the headline.
+**Fix:** the follow-up PR keeps feeds on the agency's own host (read from the redirected URL), drops
+nav/header/footer links and path-named links, prefers links under the news page's path, decodes entities,
+and keeps a story only when its headline names the state (or bill) and is about bank fees or banking.
+The 403 sites and Ohio's URL are not fixed.
+**Lesson:** a generic reader for many sites is a first draft; its first prod run's per-site detail is
+the test. Filter search results on the headline, with the publisher removed.
+
+## 2026-10-08: A deploy broke every Hamilton publish and the failure alert stayed quiet
+**What happened:** after PR 560 merged at 12:01 UTC, every Hamilton `publish` step failed with
+`column "fee_category" can only be updated to DEFAULT` (IA, AL, MS, KS, LA, MO, NM from 12:06 to
+12:27; agent_run_steps read 12:27 UTC). James saw "Hamilton is blocked" before any alert did: the
+two-hour failure share was 5 of 43 (12%), under the 50% bar, because 38 publishes from before the
+deploy were still in the window. One MO publish with nothing to publish "completed" at 12:25 in the
+middle of the break, so a step success is not proof a break is fixed.
+**Cause:** the taxonomy fold writes a generated column (owned and fixed by the Top 50 thread, PR
+569). The alert only measured a rate, so a fresh break hid behind older successes, and each failed
+lane waited an hour for its retry after the fix.
+**Fix:** this PR. `getFailureAlerts` also raises a step type whose last 3 finished steps all
+failed (the 12:06 break would have shown on Today at the third failure). Step failures record the
+deploy (`VERCEL_GIT_COMMIT_SHA`); each tick, a lane whose last run failed on a failure shared by 3+
+runs, which the current deploy has not repeated, reruns at once with a `run.recovery_rerun` event.
+**Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
+deploy, not one success.
+
+## 2026-10-08: Hand-given schedules were invisible on the Gold standard queue
+**What happened:** James gave Chase's and Citi's fee schedule links, but the Knox Gold standard
+queue (`/admin/knox?queue=gold`) showed both as "No URL". A read-only query on prod (12:55 UTC)
+found both links stored and fetched: Chase `ABSF-en.pdf` and Citi `CDAA.pdf`. Fifth Third was the
+same. U.S. Bank's main link is an investing-fees page while its hand-found link is the right
+overdraft disclosure.
+**Cause:** `OPERATOR_SCHEDULES` and hit-list links are stored as `consumer_supplement` rows in
+`institution_additional_sources`, never on `institution_sources.fee_schedule_url`. The Gold
+standard queries (`getGoldStandardCandidates` / `getGoldStandardCandidate`) read only the main link.
+**Fix:** this PR reads the newest non-rejected consumer companion (fetched first) as
+`hand_schedule_url` and shows it beside the main link on the queue and the verify page.
+**Lesson:** a bank's schedule can live in three places (`institution_sources.fee_schedule_url`,
+`source_documents`, `institution_additional_sources`). Any admin view that says "No URL" must
+check all of them. The institution page (`/admin/institution/[id]`) still reads only the main link.
+
+## 2026-10-08: The taxonomy fold wrote a generated column and stopped every Hamilton publish
+**What happened:** after PR 560 merged at 12:01 UTC, Hamilton's publish step failed on every
+state run (IA and AL at 12:06, MS at 12:08, KS at 12:15, atlas job #2877) with `column
+"fee_category" can only be updated to DEFAULT`.
+**Cause:** the fold's `applyMoves` set `verified_fee_observations.fee_category` as well as
+`canonical_fee_key`. On prod `fee_category` is `GENERATED ALWAYS AS (canonical_fee_key) STORED`
+(`20260406_report_jobs.sql`), so the UPDATE is refused, and the publish transaction rolls back.
+Unit tests use a fake database and never ran the SQL.
+**Fix:** this PR drops the `fee_category` assignment; the column follows `canonical_fee_key`.
+**Lesson:** before writing a column on a tier table, check `information_schema.columns.is_generated`
+on prod. New SQL inside the publish transaction can stop all publishing, so read the first
+publish step on prod right after such a merge.
+
 ## 2026-10-08: CFPB refuses bursts with 429, then 403, and one refusal killed a whole year
 **What happened:** `registry-cfpb` failed 10 of 39 steps from Oct 3 to Oct 8 (agent_run_steps,
 read 09:10 UTC Oct 8): six HTTP 403, three HTTP 429, one older timeout. They came while the parser
@@ -420,6 +481,16 @@ tick, so a lane's first step never fit. Direct runs now go ahead of lanes only w
 lane has started a step in the last ten minutes; otherwise the waiting lane goes first.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
+
+## 2026-10-08: Seven state lanes waited since Oct 7 although overdue lanes go first
+**What happened:** at 12:17 UTC Oct 8 Admin Today showed 7 lanes more than 6 hours overdue:
+GA (due since 03:57 Oct 7), PR, CT, KY, VI, DC and GU. The scheduler puts any lane overdue
+3 hours ahead of the rest, but busy lanes come back due every hour and, with three lane runs
+at a time, also wait past 3 hours. Inside the overdue group lanes were still ranked by
+priority score, so the busy ones (scores around 700) kept winning and these seven (scores
+102 to 352) never ran.
+**Fix:** overdue lanes now run longest overdue first; score orders only the rest.
+**Lesson:** an anti-starvation rule must order by age, not by the score it overrides.
 
 ## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
 **What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
@@ -3132,3 +3203,17 @@ Rows already on file gain the fields only when Knox reads their document again.
   current key can't find (test-mode customers after the switch to live keys, or one deleted
   in the dashboard), which failed checkout with "No such customer".
 - **Watch.** `stripe_events` gains a row for each delivery; Stripe's webhook page shows 200s.
+
+## 2026-10-08: The local competitors answer scanned every SOD branch row twice
+
+- **Problem.** "Who are my local competitors" took about a minute for James at 12:17 UTC Oct 8.
+  `institution_branch_deposits` (1.5M rows) had no index on `institution_id`. So the bank's own
+  branches (2.6 s) and its latest-year branches for the county map (1.6 s, figures from
+  `pg_stat_statements`) were full scans. They ran one after the other, because the map waited for
+  the branch list. The market footprint compared `county_fips::text`, which skipped the county
+  index.
+- **Fix.** Migration `20270110000026` adds `(institution_id, year)`. `getLocalMarketAnswer` starts
+  every read at once. The footprint compares integers.
+- **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
+  what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
+  230 s at a time).

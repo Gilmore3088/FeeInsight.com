@@ -28,6 +28,12 @@ import { mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./
 
 export const STATE_REG_NEWS_SOURCE = "state-reg-news";
 export const STATE_REG_NEWS_PARTITION = "current";
+/**
+ * Bumped when either state news reader changes, so the scheduler re-reads at once
+ * (REGISTRY_PARSER_VERSIONS). 2: own-host feeds only, menus left out of news pages,
+ * entities decoded, news kept only when the headline names the state and is on topic.
+ */
+export const STATE_NEWS_PARSER_VERSION = 2;
 const REFRESH_HOURS = 24;
 const CONCURRENCY = 8;
 /** No new agency starts after this long, so the run ends inside its expected time. */
@@ -82,10 +88,20 @@ export function stateAgencySites(regulators: readonly StateRegulator[] = STATE_R
   return sites;
 }
 
-type TextFetcher = (url: string) => Promise<string>;
+/** A fetched page and the URL it was served from after redirects. */
+export interface FetchedPage {
+  body: string;
+  url: string;
+}
 
-/** Read one agency: its advertised feed first, then its news page. */
-export async function readAgencyNews(site: StateAgencySite, fetchText: TextFetcher): Promise<{ result: StateRegNewsAgencyResult; articles: FeedArticle[] }> {
+type PageFetcher = (url: string) => Promise<FetchedPage>;
+
+/**
+ * Read one agency: its advertised feed first, then its news page. Links are read against
+ * the URL each page was served from, since several agencies redirect to a new domain
+ * (osbckansas.org to osbckansas.gov).
+ */
+export async function readAgencyNews(site: StateAgencySite, fetchPage: PageFetcher): Promise<{ result: StateRegNewsAgencyResult; articles: FeedArticle[] }> {
   const base: StateRegNewsAgencyResult = { state: site.state, agency: site.agency, mode: "none", url: null, items: 0, feeItems: 0, sample: [] };
   if (!site.website) return { result: { ...base, mode: "no_website" }, articles: [] };
   const source = `state:${site.state}`;
@@ -97,47 +113,47 @@ export async function readAgencyNews(site: StateAgencySite, fetchText: TextFetch
     };
   };
 
-  let home: string;
+  let home: FetchedPage;
   try {
-    home = await fetchText(site.website);
+    home = await fetchPage(site.website);
   } catch (error) {
     return { result: { ...base, mode: "failed", error: (error instanceof Error ? error.message : String(error)).slice(0, 200) }, articles: [] };
   }
   // A home page that is itself a feed (rare) counts as the feed.
-  if (isFeedXml(home)) {
-    const articles = parseStateFeed(home, source);
-    if (articles.length > 0) return finish("feed", site.website, articles);
+  if (isFeedXml(home.body)) {
+    const articles = parseStateFeed(home.body, source);
+    if (articles.length > 0) return finish("feed", home.url, articles);
   }
-  for (const feedUrl of discoverFeedLinks(home, site.website).slice(0, 2)) {
+  for (const feedUrl of discoverFeedLinks(home.body, home.url).slice(0, 2)) {
     try {
-      const body = await fetchText(feedUrl);
-      if (!isFeedXml(body)) continue;
-      const articles = parseStateFeed(body, source);
-      if (articles.length > 0) return finish("feed", feedUrl, articles);
+      const feed = await fetchPage(feedUrl);
+      if (!isFeedXml(feed.body)) continue;
+      const articles = parseStateFeed(feed.body, source);
+      if (articles.length > 0) return finish("feed", feed.url, articles);
     } catch {
       // Try the next candidate; the news page is the fallback.
     }
   }
-  for (const pageUrl of discoverNewsPage(home, site.website).slice(0, 2)) {
+  for (const pageUrl of discoverNewsPage(home.body, home.url).slice(0, 2)) {
     try {
-      const body = await fetchText(pageUrl);
+      const page = await fetchPage(pageUrl);
       // A news page often advertises its own feed even when the home page does not.
-      if (isFeedXml(body)) {
-        const articles = parseStateFeed(body, source);
-        if (articles.length > 0) return finish("feed", pageUrl, articles);
+      if (isFeedXml(page.body)) {
+        const articles = parseStateFeed(page.body, source);
+        if (articles.length > 0) return finish("feed", page.url, articles);
         continue;
       }
-      for (const feedUrl of discoverFeedLinks(body, pageUrl).slice(0, 1)) {
+      for (const feedUrl of discoverFeedLinks(page.body, page.url).slice(0, 1)) {
         try {
-          const feed = await fetchText(feedUrl);
-          const articles = isFeedXml(feed) ? parseStateFeed(feed, source) : [];
-          if (articles.length > 0) return finish("feed", feedUrl, articles);
+          const feed = await fetchPage(feedUrl);
+          const articles = isFeedXml(feed.body) ? parseStateFeed(feed.body, source) : [];
+          if (articles.length > 0) return finish("feed", feed.url, articles);
         } catch {
           // Fall through to the page's own links.
         }
       }
-      const articles = parseNewsPage(body, pageUrl, source);
-      if (articles.length > 0) return finish("page", pageUrl, articles);
+      const articles = parseNewsPage(page.body, page.url, source);
+      if (articles.length > 0) return finish("page", page.url, articles);
     } catch {
       // Try the next candidate page.
     }
@@ -145,11 +161,10 @@ export async function readAgencyNews(site: StateAgencySite, fetchText: TextFetch
   return { result: base, articles: [] };
 }
 
-const defaultFetchText: TextFetcher = async (url) => {
+const defaultFetchPage: PageFetcher = async (url) => {
   const response = await registryFetch(url, FETCH_OPTIONS);
-  return response.text();
+  return { body: await response.text(), url: response.url || url };
 };
-
 export async function runRegistryStateRegNews(
   options: {
     runId?: number | null;
@@ -157,14 +172,14 @@ export async function runRegistryStateRegNews(
     db?: RegistryDb;
     live?: boolean;
     sites?: readonly StateAgencySite[];
-    fetchText?: TextFetcher;
+    fetchPage?: PageFetcher;
     startCutoffMs?: number;
     clock?: () => number;
   } = {},
 ): Promise<RegistryStateRegNewsResult> {
   const db = options.db ?? sql;
   const sites = [...(options.sites ?? stateAgencySites())];
-  const fetchText = options.fetchText ?? defaultFetchText;
+  const fetchPage = options.fetchPage ?? defaultFetchPage;
   const clock = options.clock ?? Date.now;
   const cutoff = options.startCutoffMs ?? STATE_REG_NEWS_START_CUTOFF_MS;
   const startedAt = clock();
@@ -174,7 +189,7 @@ export async function runRegistryStateRegNews(
     if (clock() - startedAt >= cutoff) {
       return { result: { state: site.state, agency: site.agency, mode: "not_reached" as const, url: null, items: 0, feeItems: 0, sample: [] }, articles: [] };
     }
-    return readAgencyNews(site, fetchText);
+    return readAgencyNews(site, fetchPage);
   });
   const agencies = reads.map((r) => r.result);
   const articles = reads.flatMap((r) => r.articles);
@@ -217,6 +232,7 @@ export async function runRegistryStateRegNews(
     runId: options.runId ?? null,
     nextAttemptAfterHours: REFRESH_HOURS,
     detail: {
+      parser_version: STATE_NEWS_PARSER_VERSION,
       shadow,
       modes: { feed: count("feed"), page: count("page"), none: count("none"), failed: count("failed"), no_website: count("no_website"), not_reached: count("not_reached") },
       fee_related: result.feeRelated,
