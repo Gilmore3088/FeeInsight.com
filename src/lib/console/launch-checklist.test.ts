@@ -45,6 +45,6 @@ describe("buildLaunchChecklist", () => {
     });
     const keys = state("agent-keys", checks);
     expect(keys.state).toBe("partial");
-    expect(keys.detail).toBe("Using the shared key: Magellan, Rosetta, Hamilton.");
+    expect(keys.detail).toBe("Using the shared key: Magellan, Rosetta, Hamilton, Growth.");
   });
 });
