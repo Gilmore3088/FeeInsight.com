@@ -30,6 +30,8 @@ function row(id: number, overrides: Record<string, unknown> = {}) {
     replacement_id: id + 500,
     replacement_url: CREDIT_UNION_DISCLOSURE,
     replacement_live: true,
+    closed_read_at: "2026-10-05T00:00:00.000Z",
+    replacement_read_at: "2026-10-06T00:00:00.000Z",
     newest_text: "Notary Fee | $2.00\nAccount Research | $25.00 per hour",
     ...overrides,
   };
@@ -72,14 +74,16 @@ describe("restoreCrossPageSupersedes", () => {
     row(3, { closed_url: "https://cu.example/files/Business-Fee-Schedule.pdf" }),
     // No longer on its own page: fails the restore bar.
     row(4, { canonical_fee_key: "cashiers_check", fee_name: "Cashier's Check", amount: "8.00" }),
+    // A page last read months before its replacement may be gone: stays down.
+    row(5, { closed_read_at: "2026-02-17T00:00:00.000Z" }),
   ];
 
   it("dry run reports what would come back and writes nothing", async () => {
     const db = createDb(rows);
     const result = await restoreCrossPageSupersedes(db, { runId: 9, dryRun: true, categoryModel });
-    expect(result).toMatchObject({ superseded: 4, crossPage: 3, businessLeftDown: 1 });
+    expect(result).toMatchObject({ superseded: 5, crossPage: 4, businessLeftDown: 1 });
     expect(result.restored.map((fee) => fee.feePublishedId)).toEqual([1]);
-    expect(result.failing.map((fee) => fee.feePublishedId)).toEqual([4]);
+    expect(result.failing.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[4, expect.any(String)], [5, "stale_page"]]);
     expect(db).not.toHaveBeenCalled();
   });
 

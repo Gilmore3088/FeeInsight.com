@@ -22,7 +22,8 @@ type SqlTag = typeof sql;
  * text, and comes back only if it clears it and no live row already shows that price for the
  * fee. A restored fee is queued for the source check like every restore. A business-only
  * schedule's fee whose consumer replacement is live stays down: the business-schedule rule
- * (`business-schedule.ts`) would take it down anyway. Nothing is deleted.
+ * (`business-schedule.ts`) would take it down anyway, and a page last read more than
+ * `CROSS_PAGE_READ_WINDOW_DAYS` before its replacement stays down (it may be gone). Nothing is deleted.
  */
 export const CROSS_PAGE_RESTORE_FLAG = "cross_page_supersede_restored";
 export const CROSS_PAGE_RESTORE_LIMIT = 500;
@@ -42,7 +43,25 @@ interface SupersededRow {
   replacement_id: number | string;
   replacement_url: string | null;
   replacement_live: boolean;
+  closed_read_at: string | Date | null;
+  replacement_read_at: string | Date | null;
   newest_text: string | null;
+}
+
+/** Days between the two pages' reads within which both count as the bank's current pages. */
+export const CROSS_PAGE_READ_WINDOW_DAYS = 30;
+
+/**
+ * Pure: the closed row's page was read about when its replacement was, so both are pages the
+ * bank shows now. A page last read months earlier (Tyndall's and Hoosier Hills' February
+ * imports) may be gone or moved, so its price does not come back.
+ */
+export function readTogether(closedReadAt: string | Date | null, replacementReadAt: string | Date | null): boolean {
+  if (closedReadAt == null || replacementReadAt == null) return false;
+  const closed = new Date(closedReadAt).getTime();
+  const replacement = new Date(replacementReadAt).getTime();
+  if (!Number.isFinite(closed) || !Number.isFinite(replacement)) return false;
+  return replacement - closed <= CROSS_PAGE_READ_WINDOW_DAYS * 86_400_000;
 }
 
 export interface CrossPageFee {
@@ -112,6 +131,8 @@ export async function restoreCrossPageSupersedes(
               closed.replacement_id,
               COALESCE(nsd.document_url, n.source_url) AS replacement_url,
               (n.rolled_back_at IS NULL) AS replacement_live,
+              sd.crawled_at AS closed_read_at,
+              nsd.crawled_at AS replacement_read_at,
               newest.normalized_text AS newest_text
          FROM closed
          JOIN published_fee_records n ON n.fee_published_id = closed.replacement_id
@@ -173,7 +194,9 @@ export async function restoreCrossPageSupersedes(
         ? "no_text"
         : amount == null
           ? "no_amount"
-          : null;
+          : !readTogether(row.closed_read_at, row.replacement_read_at)
+            ? "stale_page"
+            : null;
     if (reason) {
       result.failing.push({ ...fee, reason });
       continue;
