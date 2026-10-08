@@ -3443,6 +3443,21 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
 
+## 2026-10-08: The source check passes some overdraft lines that are another figure
+
+- **Problem.** Running the first outreach drafts against live overdraft fees in the New
+  York-Newark metro, the shared source check (`checkFeeAgainstSource`) accepted two New Jersey
+  fees whose matched line is not an overdraft price: Provident Bank $40 (a debit purchase amount
+  in a worked example; the real fee is $35) and OceanFirst $50 (a "2 x 10" safe deposit box size;
+  the real fee is $30). The Accuracy thread confirmed both and is archiving them after the 12-hour
+  look. NewBank $25 and Haven Savings $30, flagged at the same time, are correct. The catalog's
+  `conditions` field also carries Knox's provenance ("Knox deterministic extraction from Rosetta
+  artifact #...; text_hash=..."), not conditions.
+- **Fix so far.** The market snapshot and the outreach audit leave pipeline provenance out of a
+  fee's notes, and every outreach draft lists each peer's schedule line so James audits it
+  before sending.
+- **Watch.** Peer lines in outreach audit blocks that read as a worked example or a box size.
+
 ## 2026-10-08: Fee names that wrap onto a second line lost their price
 
 - **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
