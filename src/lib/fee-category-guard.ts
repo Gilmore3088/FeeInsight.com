@@ -68,6 +68,8 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
+/** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
+const EXPRESS_CARD = String.raw`\bexpress\b(?!\s*chip)|\bpriority\s+(deliver|ship|mail)|\bpriority\s*$|\b(two|2)[- ]day deliver|\bnext[- ]day\b`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -176,7 +178,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
     // A "check card" is a debit card; checks, checkbooks and checking accounts are not. A PIN
     // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
-    exclude: /(check(?!\s?card)|statement|key|book|expedit|rush|overnight|gift|^(?!.*\bcards?\b[^|]{0,20}replace)(?!.*replace[^|]{0,20}\bcards?\b).*\bpins?\b|liabilit|closed account)/i,
+    // v34: express, priority or two-day delivery of a replacement card is the rush card fee
+    // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
+    exclude: new RegExp(
+      `(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\bcards?\\b[^|]{0,20}replace)(?!.*replace[^|]{0,20}\\bcards?\\b).*\\bpins?\\b|liabilit|closed account)`,
+      "i",
+    ),
   },
   // The fee charged when a balance falls below the minimum, not the minimum itself. "Minimum
   // balance to open", "to earn APY" and "to avoid the fee" lines state a balance, so their
@@ -266,7 +273,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 33;
+export const CATEGORY_GUARD_VERSION = 34;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -316,6 +323,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
+  { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
