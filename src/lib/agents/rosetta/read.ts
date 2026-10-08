@@ -65,7 +65,7 @@ import {
   ROSETTA_OCR_VERSION,
   type ScannedPdfReader,
 } from "@/lib/agents/rosetta/ocr";
-import { layoutPageText, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { layoutPageText, PDF_LAYOUT_VERSION, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
 import {
   ROSETTA_TABLE_ROWS_VERSION,
   rosettaTextColumnsReady,
@@ -417,6 +417,15 @@ const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
  * flattened and most rows were lost.
  */
 export const REREAD_MAX_KNOX_FEES = 5;
+/**
+ * A PDF text an older layout read across prose columns joins each line with its
+ * neighbour columns' lines as " | " cells of running prose. This many such joins (a
+ * lowercase word or comma, a cell break, a lowercase word) mark a page read across its
+ * columns; on prod (8 Oct) 251 of 1,981 PDF texts had at least 25, Origin Bank's 687,
+ * and the layout-version-2 reader reads each of them once more.
+ */
+export const INTERLEAVED_PROSE_CELLS = 25;
+export const INTERLEAVED_PROSE_CELL_PATTERN = String.raw`[a-z,;] \| [a-z]`;
 /** Scans OCR'd per read step by default; each takes seconds, and the step has minutes. */
 export const OCR_DOCUMENTS_PER_RUN = 4;
 const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
@@ -1000,6 +1009,16 @@ async function selectCandidates(
     // read with the current reader; Knox then re-extracts it if the text changed.
     params.push(REREAD_MAX_KNOX_FEES);
     const rereadMaxParam = `$${params.length}`;
+    // A PDF text an older layout read across its prose columns gets one read with the
+    // column-aware layout (pdf-layout.ts, layout version 2).
+    params.push(PRIMARY_READERS.pdf);
+    const pdfLayoutParam = `$${params.length}`;
+    params.push(PDF_LAYOUT_VERSION);
+    const pdfLayoutVersionParam = `$${params.length}`;
+    params.push(INTERLEAVED_PROSE_CELL_PATTERN);
+    const interleavedPatternParam = `$${params.length}`;
+    params.push(INTERLEAVED_PROSE_CELLS);
+    const interleavedMinParam = `$${params.length}`;
     // Page checks, table rows, OCR, fallbacks and the paid pass never settle a read.
     params.push(AUXILIARY_READ_STRATEGIES);
     const auxiliaryParam = `$${params.length}`;
@@ -1173,6 +1192,23 @@ async function selectCandidates(
               OR (
                 adt.status IN ('needs_ocr', 'empty')
                 AND ${notSettledByCurrentReader}
+              )
+              OR (
+                adt.status = 'completed'
+                AND adt.reader = ${pdfLayoutParam}
+                -- CASE keeps the text scan behind the cheap checks.
+                AND CASE
+                  WHEN position(' | ' in adt.normalized_text) = 0 THEN FALSE
+                  WHEN EXISTS (
+                    SELECT 1 FROM pipeline_attempts columns_read
+                     WHERE columns_read.stage = 'read'
+                       AND columns_read.strategy = ${pdfLayoutParam}
+                       AND columns_read.institution_id = adt.institution_id
+                       AND columns_read.input_fingerprint = adt.source_hash
+                       AND COALESCE((columns_read.detail->>'pdf_layout')::int, 1) >= ${pdfLayoutVersionParam}
+                  ) THEN FALSE
+                  ELSE (SELECT COUNT(*) FROM regexp_matches(adt.normalized_text, ${interleavedPatternParam}, 'g')) >= ${interleavedMinParam}
+                END
               )
               OR (
                 adt.status = 'completed'
@@ -1950,6 +1986,7 @@ export async function runRosettaRead(
             from_vault: result.fromVault,
             table_rows: result.tableRows,
             reader: result.reader,
+            pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
             reread: result.reread,
             escalation: result.escalation ?? null,
             page_check: result.pageCheck,
