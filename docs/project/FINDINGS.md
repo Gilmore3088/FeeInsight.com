@@ -3580,7 +3580,7 @@ and quarter were already stored, without looking at the periods of the data behi
   channels filed Los Angeles FCU's courtesy pay as an ATM fee, and a threshold row under a
   priceless fee line had no name (NIH FCU). Even after a fix, a requested institution's
   read-now run did not read its unchanged page again, so the fix never reached it.
-- **Fix.** Knox v42 and category guard v31 read all six lines. A run for one institution reads
+- **Fix.** Knox v42 and category guard v34 read all six lines. A run for one institution reads
   its current page again once per rules version while it has no live overdraft fee. The
   batch is first on Atlas's request list, and Quantum's personal fee schedule is a hand link
   (Magellan held only its business schedule).
