@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
-import { buildOutreachDraft, firstName, summarizeOutreach, type OutreachContact } from "./outreach";
+import { buildFollowUpDraft, buildOutreachDraft, firstName, summarizeOutreach, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -131,5 +131,25 @@ describe("the outreach step", () => {
     expect(
       summarizeOutreach({ schemaReady: true, dryRun: false, considered: 9, drafted: 2, draftIds: [4, 5], skipped: { own_fee_unverified: 3 }, reason: null }),
     ).toBe("Drafted 2 first emails for James to audit and send himself (9 prospects read). Passed over: 3 own overdraft fee didn't verify.");
+  });
+});
+
+describe("day-7 follow-up", () => {
+  it("is short, carries the same link and no new figures, and keeps the CAN-SPAM lines", () => {
+    const draft = buildFollowUpDraft({
+      draftId: 41,
+      institutionId: 1,
+      institutionName: "First Bank",
+      market: "Waco, TX",
+      link: "https://feeinsight.com/institution/1/market?utm_source=email",
+      to: { email: "jsmith@firstbank.com", name: "Jane Q. Smith", title: "SVP Marketing" },
+    });
+    expect(draft.subject).toBe("Re: How your overdraft fee compares in Waco, TX");
+    const [email, audit] = draft.caption.split("--- For your audit");
+    expect(email).toContain("Hi Jane,");
+    expect(email).toContain("https://feeinsight.com/institution/1/market?utm_source=email");
+    expect(email).not.toMatch(/\$\d/);
+    expect(email).toContain("[postal address: James to add before sending]");
+    expect(audit).toContain("queue item 41");
   });
 });

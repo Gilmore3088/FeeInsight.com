@@ -43,7 +43,12 @@ verified institutions. No draft is made when the prospect has no medium- or high
 contact, its own overdraft fee doesn't verify, or too few competitors verify. Under the email
 each draft carries an audit block (the schedule line and link behind every figure, the rows'
 conditions, the peers left out) so James checks each comparison before he sends it himself.
-Nothing sends.
+Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the
+site's mailing address stays blank) and an opt-out line. The same step drafts the plan's one
+day-7 follow-up (`runOutreachFollowUps`) for each first email marked sent at least 7 days ago
+with nothing recorded since: same link, no new figures, once per institution. Contacts are
+re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
+rank are not buyers, and labels printed where a name would be are not names. Nothing sends.
 
 ### The outreach journey (`src/lib/outreach-journey.ts`)
 

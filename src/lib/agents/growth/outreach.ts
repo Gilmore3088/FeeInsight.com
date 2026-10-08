@@ -1,6 +1,7 @@
 import { SITE_DOMAIN } from "@/lib/constants";
 import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
+import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
 import { contactConfidence, contactsSchemaReady, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
 
@@ -320,4 +321,117 @@ export function summarizeOutreach(result: OutreachRunResult): string {
     .join(", ");
   const head = `${result.dryRun ? "Would draft" : "Drafted"} ${result.drafted} first emails for James to audit and send himself (${result.considered} prospects read).`;
   return skipped ? `${head} Passed over: ${skipped}.` : head;
+}
+
+/** The plan's one follow-up (GTM timeline, day 7): a week after "sent" with nothing heard back. */
+export const FOLLOW_UP_AFTER_DAYS = 7;
+export const FOLLOW_UP_WORKFLOW = "outreach-followup";
+
+export interface FollowUpSource {
+  draftId: number;
+  institutionId: number;
+  institutionName: string;
+  market: string;
+  link: string;
+  to: { email: string; name: string | null; title: string | null } | null;
+}
+
+/** The follow-up email: short, the same link, no new figures, an easy way to redirect it. */
+export function buildFollowUpDraft(source: FollowUpSource): { subject: string; title: string; caption: string } {
+  const subject = `Re: How your overdraft fee compares in ${source.market}`;
+  const greetingName = firstName(source.to?.name ?? null);
+  const email = [
+    `Subject: ${subject}`,
+    "",
+    greetingName ? `Hi ${greetingName},` : "Hello,",
+    "",
+    `Following up once on the free snapshot of ${source.market} fees I sent last week:`,
+    source.link,
+    "",
+    "If competitive fee reviews sit with someone else on your team, I'd be glad to send it to them instead.",
+    "",
+    "Best,",
+    "James",
+    "Fee Insight",
+    "",
+    "--",
+    `Fee Insight LLC · ${OUTREACH_POSTAL_ADDRESS}`,
+    `If you'd rather not hear from me again, reply "no thanks" and I won't follow up.`,
+  ];
+  const audit = [
+    "--- For your audit. Not part of the email; delete before sending. ---",
+    source.to ? `To: ${[source.to.name, source.to.title].filter(Boolean).join(", ") || "No name printed"} <${source.to.email}>` : "To: as the first email",
+    `Reply to the first email (queue item ${source.draftId}) so it threads. This is the only follow-up; after it, stop.`,
+  ];
+  return { subject, title: `${source.institutionName}: follow-up`, caption: [...email, "", ...audit].join("\n") };
+}
+
+export interface FollowUpRunResult {
+  due: number;
+  drafted: number;
+  draftIds: number[];
+}
+
+/**
+ * Follow-ups for first emails marked sent at least FOLLOW_UP_AFTER_DAYS ago where James has
+ * recorded nothing since (no reply, call, request or decline). One per institution, ever.
+ */
+export async function runOutreachFollowUps(input: { db?: SqlTag; runId: number | null; dryRun?: boolean; now?: Date }): Promise<FollowUpRunResult> {
+  const db = input.db ?? sql;
+  const now = input.now ?? new Date();
+  const result: FollowUpRunResult = { due: 0, drafted: 0, draftIds: [] };
+  if (!(await contentSchemaReady(db)) || !(await journeySchemaReady(db))) return result;
+  const cutoff = new Date(now.getTime() - FOLLOW_UP_AFTER_DAYS * 86_400_000).toISOString();
+  const rows = await db`
+    SELECT d.id, d.facts
+      FROM content_drafts d
+      JOIN outreach_outcomes sent ON sent.draft_id = d.id AND sent.outcome = 'sent'
+     WHERE d.workflow = ${OUTREACH_WORKFLOW} AND d.kind = 'outreach_email' AND sent.created_at <= ${cutoff}
+       AND NOT EXISTS (
+         SELECT 1 FROM outreach_outcomes later
+          WHERE later.institution_id = sent.institution_id AND later.outcome <> 'sent'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM content_drafts f
+          WHERE f.workflow = ${FOLLOW_UP_WORKFLOW} AND f.subject_key = 'institution:' || sent.institution_id::text
+       )
+     ORDER BY sent.created_at
+  `;
+  const seen = new Set<number>();
+  for (const row of rows) {
+    const facts = (row.facts ?? {}) as Record<string, unknown>;
+    const institutionId = Number(facts.institution_id);
+    if (!Number.isInteger(institutionId) || seen.has(institutionId)) continue;
+    seen.add(institutionId);
+    result.due++;
+    const to = facts.to && typeof facts.to === "object" ? (facts.to as Record<string, unknown>) : null;
+    const source: FollowUpSource = {
+      draftId: Number(row.id),
+      institutionId,
+      institutionName: String(facts.institution_name ?? `Institution ${institutionId}`),
+      market: String(facts.market ?? "your market"),
+      link: String(facts.link ?? snapshotLink(institutionId)),
+      to: to && typeof to.email === "string" ? { email: to.email, name: typeof to.name === "string" ? to.name : null, title: typeof to.title === "string" ? to.title : null } : null,
+    };
+    if (input.dryRun) continue;
+    const draft = buildFollowUpDraft(source);
+    const draftId = await insertContentDraft(
+      {
+        agent: "carnegie",
+        kind: "outreach_email",
+        workflow: FOLLOW_UP_WORKFLOW,
+        channel: "email",
+        subjectKey: `institution:${institutionId}`,
+        title: draft.title,
+        caption: draft.caption,
+        facts: { institution_id: institutionId, institution_name: source.institutionName, market: source.market, to: source.to, link: source.link, follows_draft: source.draftId },
+        asOf: now,
+        agentRunId: input.runId,
+      },
+      db,
+    );
+    result.drafted++;
+    result.draftIds.push(draftId);
+  }
+  return result;
 }
