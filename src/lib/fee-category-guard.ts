@@ -54,8 +54,8 @@ interface CategoryRule {
   capInNotes?: { cap: RegExp; item: RegExp };
 }
 
-const RETURNED_ITEM = String.raw`return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?`;
-const OVERDRAFT_ITEM = String.raw`(?:paid\s+)?(?:overdraft|\bod\b)(?:\s+(?:fee|charge|item)s?)?`;
+const RETURNED_ITEM = String.raw`(?:nsf\s+)?return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?`;
+const OVERDRAFT_ITEM = String.raw`(?:(?:paid\s+)?(?:overdraft|\bod\b)(?:\s+(?:fee|charge|item)s?)?|(?:nsf\s+)?paid\s+items?(?:\s+(?:fee|charge)s?)?)`;
 const JOINED = String.raw`\s*(?:\/|\bor\b|\band\b|&)\s*(?:an?\s+)?`;
 // An insufficient or uncollected funds fee "Returned item/overdraft" is that fee, and "Other fees
 // such as overdraft or returned item fees may apply" names no price.
@@ -68,6 +68,12 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
+/** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
+const EXPRESS_CARD = String.raw`\bexpress\b(?!\s*chip)|\bpriority\s+(deliver|ship|mail)|\bpriority\s*$|\b(two|2)[- ]day deliver|\bnext[- ]day\b`;
+/** Closing an account soon after opening it: the early closure fee, not a balance fee. */
+const EARLY_CLOSE = String.raw`\bearly (account )?(clos|terminat)|\bclos(e|ed|ing|ure)( of)? account|\baccount (clos|terminat)`;
+/** A fee for an account with no activity: the dormant account fee, not a balance fee. */
+const INACTIVE = String.raw`inactiv|no activity|dorman`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -77,8 +83,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // A per-transaction charge or an earnings-credit note is not the account's monthly fee, nor a
     // business service's own monthly charge (remote deposit scanners, IntraFi/ICS sweeps, a fee per
     // location) or a sentence about waiving it ("Waiving the Monthly Service Fee") (v21).
+    // v38: an "Overdraft Privilege Service Charge" ($20) is the overdraft fee; a paper statement
+    // fee ("Maintenance Fee – Paper Stmt Fee"), a transfer service charge, a wire module's
+    // monthly fee, an ATM card's monthly fee and table or waiver fragments are not it either.
     exclude:
-      /(location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -89,9 +98,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // (per pre-authorized automatic transfer)" $5 (BankGloucester) is the transfer fee (v30).
   overdraft: {
     // v29: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd) is the paid item.
-    include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\))/i,
+    // v34: "Paid nonsufficient funds (NSF)" (Saco & Biddeford) and "NSF Share Draft (Honored)"
+    // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
+    // v33: a worked example ("a $29 Overdraft Fee will be charged for Wednesday's Overdraft Item
+    // (the $50 check paid)", "...because your Available Balance was not sufficient"), a waiver
+    // threshold ("unless the total overdraft is $50 or less"), page navigation, an account name
+    // and a credit card or savings account "as overdraft protection" are not the fee.
+    include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|paid (?:non[-\s]?|in)sufficient|paid (?:[\w&]+ ){1,3}nsf items?|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\)|\(\s*honou?red\s*\))/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|from (your |eligible |an? |linked )?(checking|money market|statement savings)|pre-?authori[sz]ed automatic tran|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|from (your |eligible |an? |linked )?(checking|money market|statement savings)|pre-?authori[sz]ed automatic tran|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$|because your (available |current |ledger )?balance|\b(mon|tues|wednes|thurs|fri|satur|sun)day['’]s\b|unless the total|contact us|online statements|\bno overdraft checking\b|\bas overdraft protection\b)/i,
     // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
     // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
     excludeUnless: { pattern: /return/i, unless: OVERDRAFT_AND_RETURNED, outsideNotes: true },
@@ -106,7 +121,13 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
     exclude:
-      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route)/i,
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|\b\d+ ?x ?\d+\b)/i, // v33: "03 x 10" is a worked sum
+    // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
+    // of Rosemount) is the per-item fee; its note states the daily cap.
+    capInNotes: {
+      cap: /^(daily max|maximum|\bcap\b)$/i,
+      item: /\b(nsf|insufficient|non[- ]?sufficient|returned item)/i,
+    },
   },
   // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
   // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
@@ -127,8 +148,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // monthly or annual fee in 14 of 16 live rows, not an ATM network fee (v27).
     // A savings withdrawal over the monthly limit ("ATM Share Savings Withdrawal (over 3x per
     // month)", "Reg-D Savings Withdrawal Fee") and a branch "Lobby ATM" are not network fees (v26).
+    // v31: a lone "ATM Card" ($10 "New and Replacement", $3 "per month", $10 "per card per
+    // year"; 9 of 9 live rows checked) prices the card itself, as do its order, issue,
+    // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
     exclude:
-      /(replace|statement|card fee|annual|\bpin\b|denied|declin|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
+      /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
   },
   wire_domestic_outgoing: {
     include: /wire/i,
@@ -167,15 +191,26 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
     // A "check card" is a debit card; checks, checkbooks and checking accounts are not. A PIN
     // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
-    exclude: /(check(?!\s?card)|statement|key|book|expedit|rush|overnight|gift|^(?!.*\bcards?\b[^|]{0,20}replace)(?!.*replace[^|]{0,20}\bcards?\b).*\bpins?\b|liabilit|closed account)/i,
+    // v35: express, priority or two-day delivery of a replacement card is the rush card fee
+    // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
+    exclude: new RegExp(
+      `(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\bcards?\\b[^|]{0,20}replace)(?!.*replace[^|]{0,20}\\bcards?\\b).*\\bpins?\\b|liabilit|closed account)`,
+      "i",
+    ),
   },
   // The fee charged when a balance falls below the minimum, not the minimum itself. "Minimum
   // balance to open", "to earn APY" and "to avoid the fee" lines state a balance, so their
   // amount is not a fee; "...required to avoid a minimum balance fee of" ends on the fee.
   minimum_balance: {
     include: /(minimum|min\.?\b|low balance|below|falls|drops|less than|under)/i,
-    exclude:
-      /^(?!.*\b(fee|charge) of\s*$).*(to open|to obtain|to earn|\bapy\b|annual percentage yield|requirements?\b(?! fee)|balance required|required to|you must deposit|to avoid)/i,
+    // v37: closing an account within months of opening it ("Closed Account (less than 6 months)",
+    // 9 live rows) is the early closure fee and an inactive-account fee is the dormant fee;
+    // "No minimum balance... Monthly service charge is", "You must maintain a minimum balance
+    // of", "Membership requires... a minimum balance of" and "Minimum Balance Transfer" are not it.
+    exclude: new RegExp(
+      `^(?!.*\\b(fee|charge) of\\s*$).*(to open|to obtain|to earn|\\bapy\\b|annual percentage yield|requirements?\\b(?! fee)|balance required|required to|you must deposit|to avoid)|${EARLY_CLOSE}|${INACTIVE}|\\bno minimum balance\\b|\\bmust maintain a minimum balance of( at least)?\\s*$|^membership requires|\\btransfer\\s*$`,
+      "i",
+    ),
   },
   // Buying or loading a gift, prepaid or travel card (v25: reloads folded in from the retired
   // prepaid-reload category). Its replacement and inactivity fees are other fees.
@@ -257,7 +292,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 30;
+// v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
+export const CATEGORY_GUARD_VERSION = 38;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -299,7 +335,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
     when: /(transfer|xfe?r\b|sweep|from (your |a |linked |eligible )?(savings|shares?|account|loan|line)|\blink(ed)? overdraft protection|account link)/i,
   },
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
-  { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid|items? paid|\(\s*paid\s*\))/i },
+  { from: "nsf", to: "overdraft", when: /(paid nsf|paid (?:[\w&]+ ){1,3}nsf items?|nsf[- ]paid|items? paid|\(\s*paid\s*\)|paid (?:non[-\s]?|in)sufficient|\(\s*honou?red\s*\))/i },
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
   { from: "nsf", to: "deposited_item_return", when: /(deposit|written to you)/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
@@ -307,6 +343,10 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
+  { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
+  { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
+  { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },
+  { from: "monthly_maintenance", to: "overdraft", when: /\boverdraft (privilege|courtesy)/i },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
@@ -378,7 +418,7 @@ function returnBesideNsf(canonicalFeeKey: string, name: string, context: Categor
 const COUNT_IN_NOTE = /(\b\d{1,2}\b|\b(one|two|three|four|five|six|seven|eight|nine|ten)\b)/i;
 
 /** True when every `exclude` word in the name is a daily-count cap inside a per-item fee's note. */
-function capOnlyInNotes(rule: CategoryRule, name: string): boolean {
+function capOnlyInNotes(rule: CategoryRule, name: string, context: CategoryGuardContext | undefined): boolean {
   const capped = rule.capInNotes;
   if (!capped) return false;
   const notes = name.match(/\([^()]*(?:\)|$)/g);
@@ -387,8 +427,12 @@ function capOnlyInNotes(rule: CategoryRule, name: string): boolean {
   if (rule.exclude.test(outside) || !capped.item.test(outside)) return false;
   const noteText = notes.join(" ");
   // The note must count the items ("Maximum of 5", "4 per day"); "(maximum charge per day)"
-  // prices the cap itself. A dollar figure in the note may be the cap's amount.
-  if (/\$\s?\d/.test(noteText) || !COUNT_IN_NOTE.test(noteText)) return false;
+  // prices the cap itself. A dollar figure in the note may be the cap's amount, unless the row's
+  // own price is known and below it: "(maximum of $100 per day)" beside $25 is the item's cap (v35).
+  const dollars = [...noteText.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((m) => Number(m[1].replace(/,/g, "")));
+  const amount = context?.amount == null ? NaN : Number(context.amount);
+  const capAboveItem = dollars.length > 0 && amount > 0 && dollars.every((cap) => cap > amount);
+  if (dollars.length > 0 ? !capAboveItem : !COUNT_IN_NOTE.test(noteText)) return false;
   const words = noteText.match(new RegExp(rule.exclude.source, "gi")) ?? [];
   return words.length > 0 && words.every((word) => capped.cap.test(word));
 }
@@ -412,8 +456,11 @@ export function checkFeeCategory(
   const soft = rule.excludeUnless;
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
   const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
-  const softExcluded = soft && !soft.unless.test(softName) ? name.match(soft.pattern) : null;
-  const excluded = (capOnlyInNotes(rule, name) ? null : name.match(rule.exclude)) ?? softExcluded;
+  const capOnly = capOnlyInNotes(rule, name, context);
+  // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
+  // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
+  const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
+  const excluded = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded;
   if (excluded) {
     return {
       ok: false,

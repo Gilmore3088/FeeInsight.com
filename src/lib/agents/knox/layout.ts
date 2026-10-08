@@ -32,6 +32,13 @@ export function cleanFeeName(raw: string): string | null {
     .replace(/[=*+†‡¹²³⁴⁵⁶⁷⁸⁹]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  // v42: a long name that ends in a note keeps its title, not the note's last clause
+  // ("Overdraft Fee - each debit or check presentment paid (Consumer Accts: 5 max total OD
+  // or Returned Item fees daily)", BankIowa).
+  const noteless = name.replace(/\s*\([^()]*\)?$/, "").trim();
+  if (name.split(" ").length > MAX_NAME_WORDS && noteless !== name && noteless.split(" ").length <= MAX_NAME_WORDS && usableName(noteless)) {
+    name = noteless;
+  }
   if (name.split(" ").length > MAX_NAME_WORDS) {
     const tail = name.split(/[.;:!?]\s+/).pop() ?? name;
     name = tail.trim();

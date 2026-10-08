@@ -735,6 +735,7 @@ export async function getFeeResearch(
         charterType: base.charterType,
         regulators,
         complaints,
+        readOn: now.toISOString().slice(0, 10),
       }),
       ...feeRules(feeCategory, base.charterType),
       ...feeRegulatoryNews(articles, feeCategory),
