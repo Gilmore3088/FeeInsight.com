@@ -14,7 +14,7 @@ const CHECK = "✓";
 const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
-const WALKTHROUGH_HREF = "/contact?source=enterprise";
+const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
@@ -165,13 +165,17 @@ export function PricingFaq({ summary }: { summary: PublicStatsSummary }) {
       <p className="mt-4 text-sm text-[#5A5347]">
         Prefer to talk it through?{" "}
         <TrackLink
-          event="book_walkthrough"
+          event="contact_sales"
           eventProps={{ placement: "pricing_faq" }}
-          href={WALKTHROUGH_HREF}
+          href={CONTACT_SALES_HREF}
           className="font-medium text-[#1A1815] underline underline-offset-2"
         >
-          Book a 20-minute walkthrough
-        </TrackLink>
+          Send us a message
+        </TrackLink>{" "}
+        or email{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#1A1815] underline underline-offset-2">
+          {CONTACT_EMAIL}
+        </a>
         .
       </p>
     </section>
