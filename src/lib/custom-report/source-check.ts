@@ -600,6 +600,20 @@ const SUSTAINED_AFTER =
   /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b)/i;
 
 /**
+ * A page that glues footnote marks onto its prices ("Debit Card Payment Fee … $4.951", a third
+ * decimal no price has) prints whole prices the same way ("Early Account Closure … $251 | 1" for
+ * $25 with note 1). On such a page a whole price ending in that mark is not a price it states.
+ */
+const GLUED_MARK_PRICE = /\$\s?\d+\.\d{2}([1-3])(?!\d)/g;
+
+function gluedFootnotePrice(text: string, amount: number): boolean {
+  if (!Number.isInteger(amount) || amount < 10) return false;
+  const marks = new Set(Array.from(text.matchAll(GLUED_MARK_PRICE), (match) => Number(match[1])));
+  if (!marks.has(amount % 10)) return false;
+  return new RegExp(`\\$\\s?${amount}(?![\\d.,])`).test(text);
+}
+
+/**
  * The fee's price on its own row is charged by the day once an account stays overdrawn
  * ("Overdraft Fee .... $5.00 per day after 10 business day", Oct 8): a sustained overdraft
  * charge, not the per-item overdraft or NSF fee. Every mention of the price on the row must say so.
@@ -617,6 +631,7 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
   const pages = [cachedSourceLines(text), ...lastColumns];
   const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
   const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);

@@ -5,6 +5,7 @@
  */
 import Link from "next/link";
 import { LinkPending } from "./LinkPending";
+import { TabSelect } from "./TabSelect";
 import type { ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
@@ -20,9 +21,12 @@ export function MemoHeader({
   title,
   dek,
   actions,
+  compact = false,
 }: {
   kicker: string;
   title: string;
+  /** A long title (a long question) set smaller so it never fills the screen. */
+  compact?: boolean;
   dek?: ReactNode;
   actions?: ReactNode;
 }) {
@@ -30,7 +34,7 @@ export function MemoHeader({
     <header className="flex flex-wrap items-end justify-between gap-4 border-b border-warm-300 pb-5">
       <div className="min-w-0 max-w-3xl">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">{kicker}</p>
-        <h1 className="mt-1.5 text-3xl leading-tight text-warm-900 sm:text-4xl" style={SERIF}>
+        <h1 className={`mt-1.5 leading-tight text-warm-900 ${compact ? "text-xl sm:text-2xl" : "text-3xl sm:text-4xl"}`} style={SERIF}>
           {title}
         </h1>
         {dek ? <p className="mt-2 text-pretty text-base leading-relaxed text-warm-700">{dek}</p> : null}
@@ -103,8 +107,8 @@ export function LinkButton({
       href={href}
       className={
         primary
-          ? "rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white no-underline hover:bg-terra-dark"
-          : "rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 no-underline hover:border-warm-500"
+          ? "inline-flex min-h-11 items-center rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white no-underline hover:bg-terra-dark sm:min-h-9"
+          : "inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 no-underline hover:border-warm-500 sm:min-h-9"
       }
     >
       {children}
@@ -121,15 +125,19 @@ export interface TabItem {
 }
 
 export function Tabs({ items, label }: { items: TabItem[]; label: string }) {
+  // More than four pills wrap into a wall on a phone; there they become one menu.
+  const asMenu = items.length > 4;
   return (
-    <nav aria-label={label} className="flex flex-wrap gap-1.5">
+    <>
+    {asMenu ? <TabSelect items={items} label={label} /> : null}
+    <nav aria-label={label} className={asMenu ? "hidden flex-wrap gap-1.5 sm:flex" : "flex flex-wrap gap-1.5"}>
       {items.map((t) => (
         <Link
           key={t.href}
           href={t.href}
           aria-current={t.active ? "page" : undefined}
           className={
-            "rounded-md border px-3 py-1.5 text-sm no-underline " +
+            "inline-flex min-h-11 items-center rounded-md border px-3 py-1.5 text-sm no-underline sm:min-h-9 " +
             (t.active
               ? "border-warm-900 bg-warm-900 text-warm-ink-50"
               : "border-warm-300 bg-warm-50 text-warm-700 hover:border-warm-500")
@@ -141,6 +149,7 @@ export function Tabs({ items, label }: { items: TabItem[]; label: string }) {
         </Link>
       ))}
     </nav>
+    </>
   );
 }
 
@@ -542,7 +551,7 @@ export function QuarterLines({
 export function More({ label, children }: { label: string; children: ReactNode }) {
   return (
     <details className="group text-sm text-warm-800">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-terra-text hover:underline">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-terra-text hover:underline sm:min-h-0">
         <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span>
         {label}
       </summary>

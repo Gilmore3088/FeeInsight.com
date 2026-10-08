@@ -514,3 +514,8 @@ about 200 labelled fees across fee types, scored separately for amount, category
 frequency, plus critical errors per 1,000 newly published fees. The 20-fee check is a smoke test,
 not the bar. `DARWIN_RELEASE_ACTS` stays false until then. Immediate takedown of a demonstrably
 corrupted amount, without the 12-hour second look, still needs his explicit yes.
+
+**Small-metro banks are compared with their state.** James, 21:31 UTC 8 Oct, Marketing thread card:
+when a prospect's metro has fewer than 5 verified competitors with an overdraft fee, the first
+email compares it with the verified institutions across its state and says so ("across Nebraska").
+The same source check and 5-institution minimum apply statewide. Local stays first whenever it has enough.
