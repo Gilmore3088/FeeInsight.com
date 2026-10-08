@@ -156,6 +156,10 @@ Darwin owns verification and classification.
   A fee whose name says it is the expedited, rush, overnight, emergency or same/next/second-day
   version of a service now never passes outside a premium category such as `rush_card`
   (`premiumServiceMisfiled`, attempt detail `premium_service`).
+  v11 (2026-10-08): releases on (`DARWIN_RELEASE_ACTS`, James, "Turn on" at 02:16 UTC) after a
+  hand check of 20 v10 passes had 19 right and 1 arguable. A passing fee becomes a verified row
+  flagged `darwin_released_hold`, so the whole release can be found and rolled back. The bump
+  has every held fee judged again with release on.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

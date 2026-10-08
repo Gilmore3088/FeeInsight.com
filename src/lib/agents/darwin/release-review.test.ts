@@ -182,7 +182,6 @@ describe("Darwin held-fee release review", () => {
   });
 
   it("records a review per fee and publishes nothing while release is off", async () => {
-    expect(DARWIN_RELEASE_ACTS).toBe(false);
     const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
     const create = vi.fn(async () => reply({
       verdicts: [
@@ -191,7 +190,7 @@ describe("Darwin held-fee release review", () => {
       ],
     }));
 
-    const result = await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+    const result = await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2, acts: false });
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(trackAnthropicRequest.mock.calls.at(-1)?.[0]).toMatchObject({ agent: "darwin", operation: "release_review" });
@@ -203,6 +202,23 @@ describe("Darwin held-fee release review", () => {
     expect(attempts(db).every((attempt) => attempt.detail.lessons === 0)).toBe(true);
     const statements = db.mock.calls.map(([strings]) => templateText(strings));
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
+  });
+
+  it("publishes only the fees that pass once release is on", async () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(true);
+    const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
+    const create = vi.fn(async () => reply({
+      verdicts: [
+        { id: 1, is_fee: true, category_fits: true, amount_is_price: true, reason: "stop payment price" },
+        { id: 2, is_fee: true, category_fits: true, amount_is_price: false, reason: "amount is the cap" },
+      ],
+    }));
+
+    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+
+    const inserts = db.mock.calls.filter(([strings]) => templateText(strings).includes("INSERT INTO verified_fee_observations"));
+    expect(inserts).toHaveLength(1);
+    expect(attempts(db).map((attempt) => attempt.detail.acted)).toEqual([true, true]);
   });
 
   it("spends nothing on a dry run or with no calls left", async () => {
