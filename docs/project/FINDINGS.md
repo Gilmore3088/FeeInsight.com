@@ -13,6 +13,16 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro checkout's own error messages never reached the buyer
+**What happened:** the buyer-path audit (overnight Oct 8) found `createCheckoutSession` threw
+"Pick your bank or credit union first", the "we don't have its asset size, email us" line and
+"Not authenticated". Production builds replace a thrown server-action message with a generic one,
+so the buyer saw "Something went wrong" and a signed-out click never reached the register hand-off.
+No count of affected buyers is known (0 paid so far).
+**Cause:** server actions that throw for expected, buyer-facing outcomes.
+**Fix:** the buyer-path audit PR on branch `claude/ux-audit-9d9mdr` returns `{ url, error, needsSignIn }` instead.
+**Lesson:** a server action returns expected problems as data; throw only for real faults.
+
 ## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
 **What happened:** the first `registry-state-reg-news` run (12:27 UTC, PR 568) read 31 of 55 regulator
 sites and 311 items, but many were menu links ("Public Meetings and Notices"), links named by their own

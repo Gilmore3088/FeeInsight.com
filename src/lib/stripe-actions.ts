@@ -26,31 +26,43 @@ export interface ProCheckoutInput {
   returnTo?: string;
 }
 
+export type ProCheckoutResult =
+  | { url: string | null; error?: undefined; needsSignIn?: undefined }
+  | { url: null; error: string; needsSignIn?: boolean };
+
 /**
  * Starts Pro checkout. The tier is worked out here from the institution's assets on file,
  * never taken from the browser, so a buyer can't pick a cheaper tier than their size.
+ *
+ * Buyer-facing problems come back as `{ error }` rather than a throw: production builds
+ * replace a thrown server-action message with a generic one, so the buyer would never
+ * see "pick your bank" or the email-us line, and a signed-out click would not reach
+ * the register hand-off.
  */
-export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ url: string | null }> {
+export async function createCheckoutSession(input: ProCheckoutInput): Promise<ProCheckoutResult> {
   const user = await getCurrentUser();
-  if (!user) throw new Error("Not authenticated");
+  if (!user) return { url: null, error: "Sign in to start checkout", needsSignIn: true };
 
   const plan = input.plan;
-  if (!isProPlan(plan)) throw new Error("Unknown plan");
+  if (!isProPlan(plan)) return { url: null, error: "Unknown plan" };
 
   let tier: ProTier | null = null;
   let institutionId: number | null = null;
   if (input.institutionId) {
     const institution = await getProPricingInstitution(Number(input.institutionId));
-    if (!institution) throw new Error("Pick your bank or credit union from the list");
+    if (!institution) return { url: null, error: "Pick your bank or credit union from the list" };
     tier = tierForAssets(institution.assetsThousands);
     if (!tier) {
-      throw new Error(`We don't have ${institution.name}'s asset size yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`);
+      return {
+        url: null,
+        error: `We don't have ${institution.name}'s asset size yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`,
+      };
     }
     institutionId = institution.id;
   } else if (input.otherOrganization) {
     tier = NON_INSTITUTION_TIER;
   } else {
-    throw new Error("Pick your bank or credit union first");
+    return { url: null, error: "Pick your bank or credit union first" };
   }
 
   const stripe = getStripe();
@@ -63,10 +75,13 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
   const hasReturnTo = sanitizedReturnTo !== "/account/welcome";
   const successParams = new URLSearchParams({ success: "true" });
   if (hasReturnTo) successParams.set("from", sanitizedReturnTo);
+  // The welcome page anchors Hamilton to this bank, so the buyer doesn't pick it twice.
+  if (institutionId) successParams.set("inst", String(institutionId));
   const cancelParams = new URLSearchParams();
   if (hasReturnTo) cancelParams.set("from", sanitizedReturnTo);
   if (institutionId) cancelParams.set("inst", String(institutionId));
   else cancelParams.set("org", "other");
+  cancelParams.set("canceled", "1");
   const cancelPath = `/subscribe?${cancelParams.toString()}`;
 
   // Created here, not at registration, so a free signup never depends on Stripe.

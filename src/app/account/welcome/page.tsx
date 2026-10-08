@@ -12,6 +12,8 @@ import {
   getUserInstitutionMemberships,
 } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { adoptInstitution } from "@/lib/hamilton/adopt-institution";
+import { getHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 import { WelcomeSteps } from "./welcome-steps";
 import type { Metadata } from "next";
 import { SITE_NAME } from "@/lib/constants";
@@ -39,10 +41,36 @@ async function getSpotlightMedians(): Promise<{ category: string; displayName: s
   }
 }
 
+/**
+ * The bank a buyer chose on /subscribe comes back on the success URL. Anchor Hamilton to it
+ * unless they already have a bank there, so they don't search for it a second time. Any
+ * signed-in Pro user can pick any bank in step 1 anyway, so the URL grants nothing new.
+ */
+async function anchorCheckoutInstitution(
+  userId: number,
+  rawInst: string | undefined,
+): Promise<{ id: number; name: string } | null> {
+  const institutionId = Number(rawInst);
+  if (!Number.isSafeInteger(institutionId) || institutionId <= 0) return null;
+  try {
+    const existing = await getHamiltonWorkspaceContext(userId);
+    if (existing?.selectedInstitutionId) return null;
+    return await adoptInstitution({
+      userId,
+      institutionId,
+      setWorkspace: true,
+      source: "profile",
+      intent: "checkout",
+    });
+  } catch {
+    return null;
+  }
+}
+
 export default async function WelcomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; from?: string }>;
+  searchParams: Promise<{ success?: string; from?: string; inst?: string }>;
 }) {
   const params = await searchParams;
   const returnTo = params.from
@@ -61,6 +89,8 @@ export default async function WelcomePage({
   const district = user.state_code ? STATE_TO_DISTRICT[user.state_code] : null;
   const districtName = district ? DISTRICT_NAMES[district] : null;
   const isPro = canAccessPremium(user);
+  const checkoutInstitution =
+    params.success === "true" && isPro ? await anchorCheckoutInstitution(user.id, params.inst) : null;
   if (params.success === "true" && isPro && shouldResumeAfterCheckout(returnTo)) {
     redirect(returnTo);
   }
@@ -100,6 +130,12 @@ export default async function WelcomePage({
           districtId={district}
           isPro={isPro}
           activationPending={params.success === "true" && !isPro}
+          checkoutInstitution={checkoutInstitution}
+          refreshHref={`/account/welcome?${new URLSearchParams({
+            success: "true",
+            ...(returnTo && returnTo !== "/account/welcome" ? { from: returnTo } : {}),
+            ...(params.inst ? { inst: params.inst } : {}),
+          }).toString()}`}
           pendingWorkspaceInvitations={pendingWorkspaceInvitations}
           workspaceMemberships={workspaceMemberships}
         />

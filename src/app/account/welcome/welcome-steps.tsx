@@ -27,6 +27,10 @@ interface WelcomeStepsProps {
   activationPending?: boolean;
   pendingWorkspaceInvitations: InstitutionWorkspaceInvitation[];
   workspaceMemberships: InstitutionWorkspaceMembership[];
+  /** The bank chosen at checkout, already saved; step 1 starts with it picked. */
+  checkoutInstitution?: { id: number; name: string } | null;
+  /** This page again, keeping the post-checkout return path and bank. */
+  refreshHref?: string;
 }
 
 const ORGANIZATION_TYPES = [
@@ -72,7 +76,7 @@ const TOOLS = [
   },
   {
     name: "API and Exports",
-    description: "Review public REST docs; Seat License users can export verified-only CSV data.",
+    description: "Review public REST docs; Pro members can export verified-only CSV data.",
     icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
     href: "/api-docs",
   },
@@ -86,6 +90,8 @@ export function WelcomeSteps({
   activationPending = false,
   pendingWorkspaceInvitations,
   workspaceMemberships,
+  checkoutInstitution = null,
+  refreshHref = "/account/welcome?success=true",
 }: WelcomeStepsProps) {
   // Someone who already told us their organization skips that step, except Pro members:
   // Hamilton needs a real institution picked from the list, not a typed name.
@@ -93,7 +99,7 @@ export function WelcomeSteps({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedInstitution, setSavedInstitution] = useState<string | null>(null);
-  const [pickedInstitution, setPickedInstitution] = useState(false);
+  const [pickedInstitution, setPickedInstitution] = useState(checkoutInstitution !== null);
   const [notAnInstitution, setNotAnInstitution] = useState(
     !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
   );
@@ -122,7 +128,7 @@ export function WelcomeSteps({
         <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Payment received. Activating your Pro access.</p>
           <p className="mt-1">
-            Stripe usually confirms within a minute. <Link href="/account/welcome?success=true" className="font-semibold underline">Refresh this page</Link>{" "}
+            Stripe usually confirms within a minute. <Link href={refreshHref} className="font-semibold underline">Refresh this page</Link>{" "}
             to check; you won&apos;t be charged again. If it still isn&apos;t active after a few minutes, write to {CONTACT_EMAIL}.
           </p>
         </div>
@@ -202,7 +208,7 @@ export function WelcomeSteps({
 
           <form onSubmit={handleProfileSave} className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-6 space-y-4">
             {notAnInstitution ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label htmlFor="welcome_organization" className="block text-xs font-medium text-[#1A1815] mb-1">Organization</label>
                   <input id="welcome_organization" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="Your company" />
@@ -219,7 +225,8 @@ export function WelcomeSteps({
                 inputId="welcome_institution"
                 label="Your bank or credit union"
                 help="Choose your institution from the list."
-                initialName={null}
+                initialName={checkoutInstitution?.name ?? null}
+                initialId={checkoutInstitution?.id ?? null}
                 onSelect={(result) => setPickedInstitution(result !== null)}
                 labelClassName="block text-xs font-medium text-[#1A1815] mb-1"
                 labelStyle={{}}
@@ -230,7 +237,7 @@ export function WelcomeSteps({
             <button
               type="button"
               onClick={() => setNotAnInstitution((value) => !value)}
-              className="text-xs font-medium text-[#C44B2E] underline-offset-2 hover:underline"
+              className="inline-flex min-h-11 items-center text-xs font-medium text-[#C44B2E] underline-offset-2 hover:underline"
             >
               {notAnInstitution ? "I work at a bank or credit union" : "I don't work at a bank or credit union"}
             </button>
@@ -254,7 +261,7 @@ export function WelcomeSteps({
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="w-full text-center text-xs font-medium text-[#6B6255] hover:text-[#1A1815]"
+                className="min-h-11 w-full text-center text-xs font-medium text-[#6B6255] hover:text-[#1A1815]"
               >
                 Can&apos;t find it? Skip for now; you can choose it later in Settings.
               </button>
@@ -329,7 +336,7 @@ export function WelcomeSteps({
           <div className="grid grid-cols-2 gap-3 mb-6">
             {TOOLS.map((tool) => {
               const href = tool.requiresPro && !isPro
-                ? activationPending ? "/account/welcome?success=true" : "/subscribe"
+                ? activationPending ? refreshHref : "/subscribe"
                 : tool.href;
 
               return (
@@ -379,16 +386,16 @@ export function WelcomeSteps({
           <p className="text-sm text-[#6B6255] mb-8">
             Your account is ready. Start exploring fee intelligence data.
           </p>
-          <div className="flex gap-3 justify-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link
               href={isPro ? "/pro/hamilton" : "/account"}
-              className="rounded-md bg-[#C44B2E] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] transition-colors"
+              className="rounded-md bg-[#C44B2E] px-6 py-2.5 text-center text-sm font-medium text-white hover:bg-[#A83D25] transition-colors"
             >
               {isPro ? "Open Hamilton" : "Go to Account"}
             </Link>
             <Link
               href="/fees"
-              className="rounded-md border border-[#D5CBBF] px-6 py-2.5 text-sm font-medium text-[#1A1815] hover:border-[#1A1815] transition-colors"
+              className="rounded-md border border-[#D5CBBF] px-6 py-2.5 text-center text-sm font-medium text-[#1A1815] hover:border-[#1A1815] transition-colors"
             >
               Browse the Bank Fee Index
             </Link>
