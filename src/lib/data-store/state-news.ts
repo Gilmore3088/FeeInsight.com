@@ -1,4 +1,4 @@
-import { isFeeHeadline, splitPublisher } from "@/lib/regulatory/state-news";
+import { emptyHeadlineLabel, isFeeHeadline, readableHeadline, splitPublisher } from "@/lib/regulatory/state-news";
 import { sql } from "./connection";
 
 /**
@@ -107,24 +107,52 @@ export function isBankingPost(title: string): boolean {
   return BANKING_WORDS.test(topic) && !OTHER_DEPARTMENT_WORDS.test(title);
 }
 
-/** Banking posts only, fee headlines first, then newest first. */
+/**
+ * Banking posts only: fee headlines first, then posts whose headline says something, newest
+ * first. A headline that is only a publication and a date ("2026-09-17 Electronic Bulletin")
+ * goes last, under its plain name, and only the newest of each per state is kept.
+ */
 export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
+  const seenEmpty = new Set<string>();
   return rows
     .filter((r) => isBankingPost(r.title))
-    .map((r) => ({
-      state_code: stateOf(r.source),
-      title: r.title,
-      link: r.link,
-      published_at: isoDay(r.published_at),
-      fee_related: isFeeHeadline(r.title),
-    }))
-    .sort((a, b) => Number(b.fee_related) - Number(a.fee_related) || (b.published_at ?? "").localeCompare(a.published_at ?? ""));
+    .map((r) => {
+      const label = emptyHeadlineLabel(r.title);
+      return {
+        state_code: stateOf(r.source),
+        title: label ?? readableHeadline(r.title),
+        link: r.link,
+        published_at: isoDay(r.published_at),
+        fee_related: isFeeHeadline(r.title),
+        empty: label !== null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.fee_related) - Number(a.fee_related) ||
+        Number(a.empty) - Number(b.empty) ||
+        (b.published_at ?? "").localeCompare(a.published_at ?? ""),
+    )
+    .filter((p) => {
+      if (!p.empty) return true;
+      const key = `${p.state_code}:${p.title}`;
+      if (seenEmpty.has(key)) return false;
+      seenEmpty.add(key);
+      return true;
+    })
+    .map((p) => ({
+      state_code: p.state_code,
+      title: p.title,
+      link: p.link,
+      published_at: p.published_at,
+      fee_related: p.fee_related,
+    }));
 }
 
 export function toPressStories(rows: ArticleRow[]): StatePressStory[] {
   return rows.map((r) => {
     const { headline, publisher } = splitPublisher(r.title);
-    return { state_code: stateOf(r.source), headline, publisher, link: r.link, published_at: isoDay(r.published_at) };
+    return { state_code: stateOf(r.source), headline: readableHeadline(headline), publisher, link: r.link, published_at: isoDay(r.published_at) };
   });
 }
 
@@ -132,7 +160,7 @@ export function toFeeBills(rows: BillRow[]): StateFeeBill[] {
   return rows.map((r) => ({
     state_code: String(r.jurisdiction).toUpperCase(),
     identifier: r.identifier ?? null,
-    title: r.title,
+    title: readableHeadline(r.title),
     stage: r.stage ?? null,
     stage_on: isoDay(r.stage_on),
     url: r.url ?? null,
