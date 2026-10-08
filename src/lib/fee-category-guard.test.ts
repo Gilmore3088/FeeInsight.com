@@ -700,4 +700,21 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("monthly_maintenance", name), name).toEqual({ ok: true });
     }
   });
+
+  it("v39 keeps NSF, overdraft and wire rows out of the overdraft transfer and legal process fees (Oct 8)", () => {
+    for (const name of ["Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/Uncollected Funds includes Electronic Funds Transfer Debits", "Check-Overdraft/NSF/Return Fees", "Overdraft Fee-Exceeded Reg D Transfers"]) {
+      expect(checkFeeCategory("od_protection_transfer", name).ok, name).toBe(false);
+    }
+    for (const name of ["Manual Overdraft Transfer(Reg D Exceeded)", "Overdraft Transfer from Savings (Reg D may apply)", "Insufficient Funds Transfer (Savings Overdraft"]) {
+      expect(checkFeeCategory("od_protection_transfer", name), name).toEqual({ ok: true });
+    }
+    for (const name of ["SUBORDINATION REQUEST: Incoming", "SUBORDINATION REQUEST: Outgoing Domestic", "SUBORDINATION REQUEST: Outgoing Foreign"]) {
+      expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
+    for (const name of ["Subordination Request", "Mortgage Subordination Fee", "Legal Process Fee"]) {
+      expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
+    }
+  });
 });
