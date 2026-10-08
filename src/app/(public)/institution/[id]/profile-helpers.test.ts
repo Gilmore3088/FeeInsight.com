@@ -220,6 +220,19 @@ describe("fee schedule grouping", () => {
     expect(overdraft?.rows).toHaveLength(2);
     expect(groups.find((group) => group.family === "Other fees")?.provisionalCount).toBe(1);
   });
+
+  it("lists a family's most looked-up fees first, not alphabetically", () => {
+    const groups = groupFeesByFamily([
+      fee({ feeName: "Account Research", feeCategory: "account_research", amount: 25 }),
+      fee({ feeName: "Early Account Closure", feeCategory: "early_closure", amount: 20 }),
+      fee({ feeName: "Monthly Service Charge", feeCategory: "monthly_maintenance", amount: 12 }),
+    ]);
+    expect(groups[0].rows.map((row) => row.feeName)).toEqual([
+      "Monthly Service Charge",
+      "Early Account Closure",
+      "Account Research",
+    ]);
+  });
 });
 
 describe("buildLocationParts", () => {

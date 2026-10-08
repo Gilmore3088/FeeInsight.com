@@ -214,6 +214,8 @@ describe("Magellan agentic discovery", () => {
     expect(sqlText).toContain("institution_source_profiles");
     expect(sqlText).toContain("COALESCE(profile.read_strategy, '') <> 'manual_review'");
     expect(sqlText).toContain("COALESCE(profile.source_kind, 'unknown') <> 'offline'");
+    // A bank the old crawler marked offline is searched once per discovery method version.
+    expect(sqlText).toMatch(/AND COALESCE\(profile\.read_strategy, ''\) <> 'manual_review'\)\s*--[^]*?OR \(/);
   });
 
   it("uses a locked corrected source URL before crawling the homepage", async () => {
