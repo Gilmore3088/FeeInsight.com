@@ -8,7 +8,7 @@ import { listGrowthSteps, readGrowthBudget } from "@/lib/data-store/growth-board
 import { recentLessons } from "@/lib/agents/growth/lessons";
 import { GROWTH_AGENTS } from "@/lib/agents/growth/roster";
 import { GrowthBoard, QUEUE_LIMIT } from "./board";
-import { parseQueueFilter } from "./queue-view";
+import { parseGrowthPage } from "./queue-view";
 
 /** How many of growth's ledger steps the page reads. */
 const STEP_LIMIT = 120;
@@ -30,17 +30,21 @@ async function attempt<T>(read: () => Promise<T>): Promise<T | null> {
  */
 export default async function GrowthPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireAuth("view");
-  const filter = parseQueueFilter(await searchParams);
+  const { view, filter } = parseGrowthPage(await searchParams);
+  // The run ledger and lessons are drawn only on the team view, so only that view reads them.
+  const team = view === "team";
 
   const ready = await attempt(() => contentSchemaReady());
   const [items, control, budget, steps, lessonList] = await Promise.all([
     ready ? attempt(() => listContentDrafts(QUEUE_LIMIT)) : Promise.resolve(ready === false ? [] : null),
     attempt(() => getMarketingControl()),
     attempt(() => readGrowthBudget()),
-    attempt(() => listGrowthSteps(STEP_LIMIT)),
-    Promise.all(GROWTH_AGENTS.map((agent) => attempt(() => recentLessons(sql, agent)))),
+    team ? attempt(() => listGrowthSteps(STEP_LIMIT)) : Promise.resolve(null),
+    team ? Promise.all(GROWTH_AGENTS.map((agent) => attempt(() => recentLessons(sql, agent)))) : Promise.resolve(GROWTH_AGENTS.map(() => null)),
   ]);
   const lessons = new Map(GROWTH_AGENTS.map((agent, index) => [agent, lessonList[index]]));
 
-  return <GrowthBoard filter={filter} ready={ready} items={items} control={control} budget={budget} steps={steps} lessons={lessons} />;
+  return (
+    <GrowthBoard view={view} filter={filter} ready={ready} items={items} control={control} budget={budget} steps={steps} lessons={lessons} />
+  );
 }
