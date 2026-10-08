@@ -302,6 +302,28 @@ async function selectTextArtifacts(
              )
            )`;
     }
+    // A priority bank or market leader with no live overdraft fee has its current page read
+    // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
+    // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
+    // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
+    if (currentCopy && priorityIds.length > 0) {
+      const leaderParam = `$${params.push(`{${priorityIds.join(",")}}`)}`;
+      thinTextReextract += `
+           OR (
+             adt.institution_id = ANY(${leaderParam}::bigint[])
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records live_overdraft
+                WHERE live_overdraft.institution_id = adt.institution_id
+                  AND live_overdraft.canonical_fee_key = 'overdraft'
+                  AND live_overdraft.rolled_back_at IS NULL
+             )
+           )`;
+    }
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
