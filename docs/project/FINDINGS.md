@@ -3613,3 +3613,18 @@ and quarter were already stored, without looking at the periods of the data behi
   same page and keeps it on hold, since that fee is already read.
 - **Watch.** No `knox_agentic_dedup_idx` failures in extract steps, and Guaranty's next
   read-now run completing.
+
+## 2026-10-08: Returned-check fees Darwin re-filed as RDI never went live again
+- **What happened.** Hamilton's second look took 116 "Returned Check" fees off NSF between
+  19:58 and 20:52 UTC, and Darwin's `verify.schedule_refile` re-filed all 116 verified rows as
+  `deposited_item_return` by 20:58. None of them was live again at 21:20, though publish steps
+  kept running.
+- **Why.** Publish skips any verified row that already has a `publish.rules` v2 attempt, so a
+  row it never needs to see twice can't fill every batch. 105 of the 116 had that attempt from
+  when they were published as NSF, so the new filing was never looked at.
+- **Fix.** For a row flagged `darwin_schedule_refiled`, an attempt made under a different
+  `canonical_fee_key` no longer counts. Read-only count on prod: 110 rows become eligible. The
+  other 6 are legacy rows without `agentic_darwin_verified`, which publish never selects; they
+  stay recorded but not live.
+- **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
+  publish steps.
