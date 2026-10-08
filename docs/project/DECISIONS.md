@@ -413,3 +413,10 @@ Already-live thin institutions stay live but stay queued for re-review.
 
 **Crawl each state monthly with a quarterly re-check, with a state expert agent per state.** James.
 Built in PR 75 (state experts, monthly full pass, quarterly re-check).
+
+## 2026-10-08
+
+**Pro is described as one plan for up to 5 people, not per seat.** James, 08:19 UTC, Stripe
+thread. One checkout ($499.99 a month or $5,000 a year) already gives an institution account 5
+logins (`WORKSPACE_SEAT_LIMIT`), so the site now says "for up to 5 people" instead of "per
+seat". Prices and Stripe are unchanged. Answers build-plan task 0.11.

@@ -253,6 +253,17 @@ describe("Darwin held-fee release review", () => {
     expect(releaseHoldReason(held("IntraFi Network-ICS Monthly Fee (Consumer)", "monthly_maintenance", "25.00"))).toBe("category_guard");
   });
 
+  it("v13 keeps names cut from the middle of a line held (hand check, Oct 8)", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string) => ({
+      row: row({ fee_name, held_canonical_fee_key, amount: "5.00" }) as unknown as HeldFeeRow,
+      sourceContext: null,
+    });
+    expect(releaseHoldReason(held("/hr incl. reproduction", "document_reproduction"))).toBe("name_fragment");
+    expect(releaseHoldReason(held("account research fee may apply)", "account_research"))).toBe("name_fragment");
+    expect(releaseHoldReason(held("Account Research (per 15 minutes)", "account_research"))).toBeNull();
+    expect(releaseHoldReason(held("Undeliverable Mail / Locator fee", "account_research"))).toBeNull();
+  });
+
   it("fills a state lane's short list with held fees from other states", async () => {
     const db = createDbMock([]);
     db.unsafe = vi.fn((_query: string, params: unknown[]) =>
