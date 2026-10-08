@@ -3289,3 +3289,13 @@ alert has been raised from these records.
   host is the bank's own website, and never keeps it as a companion.
 - **Watch.** Upgrade `discover` attempts for those 11 and their new links.
 
+
+## 2026-10-08: Hamilton's studies kept old Census income after a new year landed
+**What happened:** Census ACS 2024 loaded on prod at 13:37 UTC on Oct 8. The current local income study
+(`hamilton_studies`, as of 2026-Q4) still named ACS 2022 as its income source, and the daily studies
+run would have reported it "already current" until the quarter changed.
+**Cause:** `store` in `src/lib/agents/hamilton/studies/index.ts` skipped any study whose key, method
+and quarter were already stored, without looking at the periods of the data behind it.
+**Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
+(`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
+**Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
