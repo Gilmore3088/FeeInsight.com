@@ -39,6 +39,8 @@ import { WorkspaceAccessManager } from "./WorkspaceAccessManager";
 import { buildWorkspaceInvitePath, inviteLinksConfigured } from "@/lib/hamilton/workspace-invite-link";
 import { LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 import { FeeFiguresUpload } from "@/components/hamilton/settings/FeeFiguresUpload";
+import { isCappedConsultant } from "@/lib/hamilton/report-cap";
+import { CONSULTANT_MONTHLY_REPORTS } from "@/lib/pro-tiers";
 
 export const metadata: Metadata = {
   title: "My bank and data",
@@ -79,9 +81,10 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [peerSetWorkspace, snapshot] = await Promise.all([
+  const [peerSetWorkspace, snapshot, cappedConsultant] = await Promise.all([
     getPeerSetWorkspace(String(user.id)).catch(() => null),
     getIntelligenceSnapshot(),
+    isCappedConsultant(user).catch(() => false),
   ]);
   const peerSets: SavedPeerSet[] = await getSavedPeerSets(
     String(user.id),
@@ -303,7 +306,9 @@ export default async function SettingsPage({
               </div>
             </dl>
             <p className="mt-4 text-sm text-warm-700">
-              Research questions, report exports, saved analyses and saved scenarios have no monthly limit on your plan.
+              {cappedConsultant
+                ? `Your plan includes ${CONSULTANT_MONTHLY_REPORTS} Hamilton reports a month. Research questions, saved analyses and saved scenarios have no monthly limit.`
+                : "Research questions, report exports, saved analyses and saved scenarios have no monthly limit on your plan."}
             </p>
             <Link
               href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/pro/analyze"}
