@@ -12,6 +12,7 @@ import { resolveProPriceId } from "@/lib/stripe-prices";
 import {
   NON_INSTITUTION_TIER,
   isProPlan,
+  isProTier,
   tierForAssets,
   type ProPlan,
   type ProTier,
@@ -23,6 +24,11 @@ export interface ProCheckoutInput {
   institutionId?: number | null;
   /** A consultant or other organization with no assets of its own. */
   otherOrganization?: boolean;
+  /**
+   * The size band the buyer picked, used only when the institution has no asset size on file
+   * (James, 8 Oct 2026). The subscription is marked so "Plans to check" lists it.
+   */
+  pickedTier?: ProTier | null;
   returnTo?: string;
 }
 
@@ -48,14 +54,20 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
 
   let tier: ProTier | null = null;
   let institutionId: number | null = null;
+  let tierPicked = false;
   if (input.institutionId) {
     const institution = await getProPricingInstitution(Number(input.institutionId));
     if (!institution) return { url: null, error: "Pick your bank or credit union from the list" };
     tier = tierForAssets(institution.assetsThousands);
+    // Assets on file always win; the buyer's band only fills a gap.
+    if (!tier && isProTier(input.pickedTier)) {
+      tier = input.pickedTier;
+      tierPicked = true;
+    }
     if (!tier) {
       return {
         url: null,
-        error: `We don't have ${institution.name}'s asset size yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`,
+        error: `We don't have ${institution.name}'s asset size yet. Pick its size above, or email ${CONTACT_EMAIL}.`,
       };
     }
     institutionId = institution.id;
@@ -79,6 +91,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   if (hasReturnTo) cancelParams.set("from", sanitizedReturnTo);
   if (institutionId) cancelParams.set("inst", String(institutionId));
   else cancelParams.set("org", "other");
+  if (tierPicked) cancelParams.set("band", tier);
   cancelParams.set("canceled", "1");
   const cancelPath = `/subscribe?${cancelParams.toString()}`;
 
@@ -101,6 +114,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
       pro_tier: tier,
       pro_plan: plan,
       ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
+      ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
       ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
     },
     // Kept on the subscription itself so the consultant report cap can tell who it covers.
@@ -108,6 +122,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
       metadata: {
         pro_tier: tier,
         ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
+        ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
       },
     },
   });

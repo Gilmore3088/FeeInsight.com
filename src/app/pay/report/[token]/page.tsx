@@ -16,7 +16,7 @@ import { isExpiredPayToken, verifyPayToken } from "@/lib/leads/pay-link";
 import { privateReportUrl } from "@/lib/leads/report-paid";
 import { REPORT_PAYMENT_KIND, formatUsd } from "@/lib/leads/report-payment";
 import { getStripe } from "@/lib/stripe";
-import { startReportCheckoutAction } from "./actions";
+import { startReportCheckoutAction, startReportInvoiceAction } from "./actions";
 import { PayButton } from "./pay-button";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +33,8 @@ interface PageProps {
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 const CARD = "rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6";
+const SECONDARY_BUTTON =
+  "inline-flex items-center justify-center rounded-md border border-[#D5CBBF] bg-white px-5 py-3 text-[15px] font-semibold text-[#1A1815] transition-colors hover:border-[#1A1815] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1815]";
 const BUTTON =
   "inline-flex items-center justify-center rounded-md bg-[#C44B2E] px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[#A93D25] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1815]";
 
@@ -155,7 +157,8 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
             )}
             {query.error && (
               <p className="mt-6 rounded-md border border-[#E7B8AA] bg-[#FBE9E4] px-4 py-3 text-sm text-[#A93D25]" role="alert">
-                The card payment page could not be opened. Nothing was charged. Try again, or write to{" "}
+                {query.error === "invoice" ? "The invoice could not be opened." : "The card payment page could not be opened."} Nothing
+                was charged. Try again, or write to{" "}
                 <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
                   {CONTACT_EMAIL}
                 </a>
@@ -192,10 +195,20 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
                   </li>
                 ))}
               </ul>
-              <form action={startReportCheckoutAction} className="mt-6">
-                <input type="hidden" name="token" value={token} />
-                <PayButton label={`Pay ${price} by card`} className={`w-full sm:w-auto ${BUTTON}`} />
-              </form>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <form action={startReportCheckoutAction}>
+                  <input type="hidden" name="token" value={token} />
+                  <PayButton label={`Pay ${price} by card`} className={`w-full sm:w-auto ${BUTTON}`} />
+                </form>
+                <form action={startReportInvoiceAction}>
+                  <input type="hidden" name="token" value={token} />
+                  <PayButton label="Get an invoice" pendingLabel="Opening your invoice…" className={`w-full sm:w-auto ${SECONDARY_BUTTON}`} />
+                </form>
+              </div>
+              <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+                The invoice opens on Stripe as a PDF your finance team can download and pay within 30 days.
+                Your report opens once it&apos;s paid.
+              </p>
               <p className="mt-3 text-[13px] leading-relaxed text-[#6B6255]">
                 You pay on Stripe&apos;s secure checkout page; we never see your card number. Your private report link opens
                 as soon as the payment goes through. By paying you agree to the{" "}
