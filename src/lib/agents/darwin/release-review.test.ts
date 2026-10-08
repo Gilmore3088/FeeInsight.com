@@ -205,8 +205,11 @@ describe("Darwin held-fee release review", () => {
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
   });
 
+  it("is paused: James chose Pause at 21:30 UTC Oct 8 after the v13 hand check scored 17 of 20", () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(false);
+  });
+
   it("publishes only the fees that pass once release is on", async () => {
-    expect(DARWIN_RELEASE_ACTS).toBe(true);
     const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
     const create = vi.fn(async () => reply({
       verdicts: [
@@ -215,7 +218,7 @@ describe("Darwin held-fee release review", () => {
       ],
     }));
 
-    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2, acts: true });
 
     const inserts = db.mock.calls.filter(([strings]) => templateText(strings).includes("INSERT INTO verified_fee_observations"));
     expect(inserts).toHaveLength(1);
