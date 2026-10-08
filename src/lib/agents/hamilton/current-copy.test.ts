@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { judgeAgainstCurrentCopy, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
+import { currentCopyVerdict, judgeAgainstCurrentCopy, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -117,5 +117,29 @@ describe("secondLookFeesNotOnCurrentCopy", () => {
     const result = await secondLookFeesNotOnCurrentCopy(db, { ...options, dryRun: true, confirmLive: true });
     expect(result.takenDown).toHaveLength(2);
     expect(writes(db).some((text) => /UPDATE|INSERT/.test(text))).toBe(false);
+  });
+});
+
+describe("currentCopyVerdict (first hand check, 7 Oct)", () => {
+  // Current-page lines that still state first-look fees (prod, 7 Oct 19:00 UTC).
+  const cases: Array<[string, string, string, string]> = [
+    ["wire_domestic_outgoing", "Wire transfer fee - domestic", "15.00", "Wire transfer fee\n$15.00 domestic$35.00 international\n"],
+    ["wire_intl_outgoing", "Wire Transfer (Outgoing): International", "50.00", "Wire Transfer (Outgoing) | Domestic - $20.00/Transfer, International - $50.00/Transfer\n"],
+    ["wire_domestic_incoming", "Domestic wire: Incoming", "10.00", "Domestic wire | Outgoing = $20 Incoming = $10\n"],
+    ["stop_payment", "Stop Payment (each item, whether check or ACH)", "30.00", "Stop Payment\n(each item, whether check or ACH)\n$30 each\n"],
+    ["wire_intl_outgoing", "Outgoing Business Foreign Wire Transfer fee", "50.00", "Outgoing Business Domestic Wire Transfer fee $15.00 Outgoing Business Foreign Wire Transfer fee $50.00 Outgoing Consumer Foreign\n"],
+  ];
+  // The older copy stated each on a row of its own; the current page lays it out differently.
+  it.each(cases)("still states %s on the current page", (key, name, amount, text) => {
+    const verdict = currentCopyVerdict(fee(1, name, amount, { canonical_fee_key: key }), text, `Fee Schedule\n${name} $${amount}`);
+    expect(verdict).toBe("still_stated");
+  });
+
+  it("never judges a $0 row", () => {
+    expect(currentCopyVerdict(fee(1, "Notary (customers only)", "0.00"), "Notary\n(customers only)\nFREE", "Notary $0.00")).toBe("unproven");
+  });
+
+  it("still suspects a fee the current page prices differently", () => {
+    expect(currentCopyVerdict(fee(2, "Stop Payment", "30.00", { canonical_fee_key: "stop_payment" }), CURRENT, OLDER)).toBe("still_named");
   });
 });

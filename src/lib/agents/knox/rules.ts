@@ -150,7 +150,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+overdraft\b/i },
   {
     key: "continuous_od",
-    pattern: /\b(continuous|sustained|extended|daily).{0,30}\boverdrafts?\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
+    // v33: "Consecutive Overdraft Daily Fee" (Wilson Bank & Trust).
+    pattern: /\b(continuous|sustained|extended|consecutive|daily).{0,30}\boverdrafts?\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
   },
   {
     key: "od_protection_transfer",
@@ -762,7 +763,9 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 
 /** A table cell holding only a price and how often it is charged: "$20.00", "$5 per hour". */
 /** "We (will) charge a fee of", "you will be charged a fee of": the price's name comes after it. */
-const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of\s*$/i;
+// v33: "We will charge you a fee of up to $35.00 each time we pay an overdraft" (the Reg E
+// overdraft notice) states the fee.
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -787,6 +790,28 @@ export function sentenceFee(segment: string, firstAmount: AmountMatch): Extracte
   if (!usableName(feeName) || !passesDarwinChecks(hint, feeName, firstAmount.value)) return null;
   return {
     feeName,
+    amount: firstAmount.value,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: WAIVER_LANGUAGE.test(segment),
+  };
+}
+
+/** "... we will charge an additional $5.00 Consecutive Overdraft Daily Fee per business day". */
+const TITLE_AFTER_PRICE = /^\s*((?:[A-Z][\w'’&/-]*\s+){1,5}(?:Fee|Charge))\b/;
+
+/**
+ * v33: a line no words before its price name, whose price is followed by a capitalized fee
+ * title, is named by that title.
+ */
+export function titledAfterPrice(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
+  const title = segment.slice(firstAmount.end).match(TITLE_AFTER_PRICE)?.[1];
+  const hint = title ? classifyFeeText(title) : null;
+  if (!title || !hint || !passesDarwinChecks(hint, title, firstAmount.value)) return null;
+  return {
+    feeName: title,
     amount: firstAmount.value,
     frequency: detectFrequency(segment),
     canonicalHint: hint,
@@ -906,7 +931,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     const maintenance =
       sentenceFee(segment, firstAmount) ??
       maintenanceFromProse(segment, cells) ?? maintenanceFromAccountRow(segment, firstAmount) ?? lowBalanceFeeFromProse(segment) ??
-      avoidFeeFromProse(segment) ?? qualifiedByClause(segment, firstAmount, nameFrom(prefix));
+      avoidFeeFromProse(segment) ?? qualifiedByClause(segment, firstAmount, nameFrom(prefix)) ??
+      titledAfterPrice(segment, firstAmount);
     if (maintenance) {
       result.candidates.push(maintenance);
       return result;

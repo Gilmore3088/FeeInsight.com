@@ -8,16 +8,9 @@ import type { AnswerBrief } from "@/lib/hamilton/answer-brief";
 import type { IncomeSplit } from "@/lib/hamilton/workspace/why";
 import { splitSentences } from "@/components/hamilton/analyze/parse-response";
 import { CompetitorBars, FeeRangeChart, IncomeCompareBars, IncomeTrendChart, MarketShareBars, UnemploymentChart } from "./BriefCharts";
+import { RD_PDF } from "@/lib/report-design/tokens";
 
-const COLORS = {
-  textPrimary: "#1c1917",
-  textSecondary: "#78716c",
-  textTertiary: "#a8a29e",
-  accent: "#b45309",
-  surface: "#fbf9f4",
-  surfaceElevated: "#f5f1e8",
-  borderDark: "#d6d0c5",
-};
+const COLORS = RD_PDF;
 
 const styles = StyleSheet.create({
   reportTypeBadge: {
@@ -52,8 +45,8 @@ const styles = StyleSheet.create({
     borderBottomStyle: "solid",
   },
   briefTitle: {
-    fontSize: 18,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 19,
+    fontFamily: "Times-Bold",
     color: COLORS.textPrimary,
     marginBottom: 14,
   },
@@ -107,8 +100,8 @@ const styles = StyleSheet.create({
     lineHeight: 1.3,
   },
   tileFigure: {
-    fontSize: 18,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 20,
+    fontFamily: "Times-Roman",
     color: COLORS.textPrimary,
     marginBottom: 4,
   },

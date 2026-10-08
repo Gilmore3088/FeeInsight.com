@@ -1,5 +1,13 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
-import { streamText, generateText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
+import {
+  streamText,
+  generateText,
+  convertToModelMessages,
+  stepCountIs,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+} from "ai";
 import {
   guardProviderCall,
   ProviderBudgetBlockedError,
@@ -37,6 +45,9 @@ import {
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
+import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
+import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 
 export const maxDuration = 300;
 
@@ -189,9 +200,10 @@ async function handlePOST(request: Request) {
 
   // Analyze mode: override output structure with structured analysis sections (ARCH-05)
   // VALID_FOCUS guards against prompt injection — only known tab values reach the system prompt.
+  let focus = "Pricing";
   if (mode === "analyze") {
     const VALID_FOCUS = new Set(["Pricing", "Risk", "Peer Position", "Trend"]);
-    const focus = VALID_FOCUS.has(analysisFocus ?? "") ? (analysisFocus as string) : "Pricing";
+    focus = VALID_FOCUS.has(analysisFocus ?? "") ? (analysisFocus as string) : "Pricing";
     systemPrompt += buildAnalyzeModeSuffix(focus);
   }
 
@@ -293,6 +305,8 @@ async function handlePOST(request: Request) {
     }
 
     providerStartedAt = await guardProviderCall(providerContext);
+    let resolveSaved: (id: string | null) => void = () => {};
+    const savedId = new Promise<string | null>((resolve) => { resolveSaved = resolve; });
     const result = streamText({
       model: getAnthropicLanguageModel(agent.model, "hamilton"),
       // Tools and system are identical on every step, and each step re-sends the earlier
@@ -303,7 +317,31 @@ async function handlePOST(request: Request) {
       tools: agent.tools,
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
-      onFinish: async ({ totalUsage }) => {
+      onFinish: async ({ totalUsage, text, steps }) => {
+        // The Analyze screen's answer is saved here, not only from the browser, so a closed
+        // tab or a failed browser call never loses it.
+        if (mode === "analyze" && text.trim()) {
+          const response = writtenAnswerResponse(
+            text,
+            steps.flatMap((step) => step.toolResults.map((result) => result.output)),
+          );
+          const prompt = questionOnly(lastUserText);
+          try {
+            resolveSaved(await insertSavedAnalysis({
+              userId: user.id,
+              institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
+              title: response.title || prompt.slice(0, 60).trim(),
+              analysisFocus: focus,
+              prompt,
+              response,
+            }));
+          } catch (error) {
+            console.error("[hamilton] saving the written answer failed", error);
+            resolveSaved(null);
+          }
+        } else {
+          resolveSaved(null);
+        }
         try {
           // totalUsage spans every tool step; usage is only the last step.
           const usage = ledgerUsage(totalUsage);
@@ -331,7 +369,9 @@ async function handlePOST(request: Request) {
           // Non-critical — don't fail the response
         }
       },
+      onAbort: () => resolveSaved(null),
       onError: async ({ error }) => {
+        resolveSaved(null);
         providerFailed = true;
         await recordProviderUsage(providerContext, "failed", {}, {
           latencyMs: providerStartedAt === null ? undefined : Date.now() - providerStartedAt,
@@ -340,7 +380,19 @@ async function handlePOST(request: Request) {
       },
     });
 
-    return result.toUIMessageStreamResponse();
+    // Run to the end even if the reader's browser drops the stream, so onFinish saves the answer.
+    void result.consumeStream();
+
+    // The saved row's id follows the answer as message metadata, after the text has streamed.
+    return createUIMessageStreamResponse({
+      stream: createUIMessageStream({
+        execute: async ({ writer }) => {
+          writer.merge(result.toUIMessageStream());
+          const id = await savedId;
+          if (id) writer.write({ type: "message-metadata", messageMetadata: { [SAVED_ANALYSIS_ID_KEY]: id } });
+        },
+      }),
+    });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "An unexpected error occurred";

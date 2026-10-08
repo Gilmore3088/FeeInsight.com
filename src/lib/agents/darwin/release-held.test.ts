@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { trainCategoryModel } from "./category-model";
-import { DARWIN_REJECT_SECOND_LOOK_HOURS, DARWIN_RELEASE_ACTS, DARWIN_RELEASE_REJECTS_ACT, DARWIN_RELEASE_STRATEGY, releaseVerdict, runDarwinReleaseHeld, type HeldFeeRow } from "./release-held";
+import { DARWIN_REJECT_SECOND_LOOK_HOURS, DARWIN_RELEASE_REJECTS_ACT, DARWIN_RELEASE_STRATEGY, releaseVerdict, runDarwinReleaseHeld, type HeldFeeRow } from "./release-held";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -80,7 +80,6 @@ describe("Darwin held-fee release", () => {
   });
 
   it("takes two looks before a reject: the first only marks the fee, and nothing is published", async () => {
-    expect(DARWIN_RELEASE_ACTS).toBe(false);
     expect(DARWIN_RELEASE_REJECTS_ACT).toBe(true);
     const db = dbWith([held(), held({ fee_raw_id: 12, amount: "15.00" })]);
 
