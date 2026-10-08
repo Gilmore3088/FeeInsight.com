@@ -50,7 +50,7 @@ export const REPORT_INCLUDES = [
   "A source for every figure: the document, the page, the date",
 ] as const;
 
-export const REPORT_OFFER_LINE = "National and Fed district fee reports — free, and ready in a minute";
+export const REPORT_OFFER_LINE = "National and Fed district fee reports — free and instant";
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =
