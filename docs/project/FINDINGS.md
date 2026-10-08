@@ -3428,3 +3428,17 @@ and quarter were already stored, without looking at the periods of the data behi
   Download PDF as soon as the Ask has saved it, whatever happens to the memo.
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
+
+## 2026-10-08: Fee names that wrap onto a second line lost their price
+
+- **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
+  a second line and print the price alone below it: "Overdraft Fee (per item, both returned
+  or paid created by check, in person withdrawal," / "ATM withdrawal, ... Maximum of 6 fees per
+  day.)" / "$36.00". Knox reads a price beside its name or under a one-line name, so neither
+  MVB's overdraft nor its NSF fee was found. The shared source check would also have rejected
+  them: the run-on note sat between the name and the price. 13 stored texts have a priced
+  overdraft line in this shape, 6 of them at banks with no live overdraft fee.
+- **Fix.** Knox v35 joins a name line that opens a note to the lines that close it and the
+  price below (`wrappedNamePrices`), and names the fee by its first line. The source check
+  reads such a run-on note as a qualifier between the name and its price.
+- **Watch.** MVB's overdraft and NSF fees, and Knox v35 rows from the other 12 texts.
