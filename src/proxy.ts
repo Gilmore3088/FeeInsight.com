@@ -19,6 +19,8 @@ const LEGACY_PATH_REDIRECTS: Record<string, string> = {
   "/check": "/institutions",
   "/districts": "/research#districts",
   "/waitlist": "/for-institutions#report",
+  // Typed and drafted often; the site's own links go to /subscribe.
+  "/pricing": "/subscribe",
 };
 
 function permanentRedirectStatus(method: string) {

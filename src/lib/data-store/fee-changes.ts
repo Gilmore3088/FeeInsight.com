@@ -46,7 +46,8 @@ export async function getFeeChangeEvents(
 ): Promise<FeeChangeEvent[]> {
   const sql = getSql();
 
-  const conditions: string[] = [];
+  // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts).
+  const conditions: string[] = ["fce.like_for_like IS TRUE"];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 

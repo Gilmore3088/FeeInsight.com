@@ -1,6 +1,6 @@
 # SHERLOCK: market intelligence
 
-Status: defined, dry run only. Not scheduled until James says go.
+Status: built and scheduled, not yet proven on prod. The daily market brief runs as the `growth-intel` step (`src/lib/agents/growth/sherlock.ts`); competitor profiles are still to do.
 
 ## Objective
 

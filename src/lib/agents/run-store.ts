@@ -14,6 +14,7 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
+import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
@@ -73,6 +74,8 @@ import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
 import { runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
+import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
+import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
@@ -386,7 +389,7 @@ async function executeAgenticStep(
     const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 2 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} institutions; ${result.passed} met the bar.${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }
@@ -1062,6 +1065,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Recorded fee changes name their two rows and whether they compare one page with
+      // itself, before the restore below reopens any superseded row.
+      const changePairing = await pairFeeChangeRecords(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Live fees another page's price superseded come back through the restore bar.
       const crossPageRestore = await restoreCrossPageSupersedes(tx, {
         runId: run.id,
@@ -1266,6 +1276,14 @@ async function executeAgenticStep(
             restored: crossPageRestore.restored.length,
             failing: crossPageRestore.failing.length,
             business_left_down: crossPageRestore.businessLeftDown,
+          },
+          change_pairing: {
+            unpaired: changePairing.unpaired,
+            like_for_like: changePairing.likeForLike,
+            cross_page: changePairing.crossPage,
+            lists_both: changePairing.listsBoth,
+            no_pair: changePairing.noPair,
+            written: changePairing.written,
           },
           restore_recheck: {
             unchecked: restoreRecheck.unchecked,
@@ -1715,12 +1733,20 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["limit"]),
         dryRun: run.runKind === "dry_run",
       });
-      const followUpLine = followUps.due ? ` ${followUps.drafted} day-7 follow-ups drafted.` : "";
+      const followUpLine = followUps.due ? ` ${followUps.drafted} follow-ups drafted (day 6 and final day 13).` : "";
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
     }
     case "growth-learning": {
       const result = await runLearningReport({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeLearning(result), detail: { ...result } };
+    }
+    case "growth-intel": {
+      const result = await runMarketIntel({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketIntel(result), detail: { ...result } };
+    }
+    case "growth-conversion": {
+      const result = await runConversionCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeConversionCheck(result), detail: { ...result } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });

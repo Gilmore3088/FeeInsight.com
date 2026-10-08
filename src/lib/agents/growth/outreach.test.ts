@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
-import { buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
+import { buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -247,6 +247,7 @@ describe("withdrawing unreviewed drafts", () => {
           { id: 16, facts: JSON.stringify({ to: ceo, quote_rule: 2 }) },
           { id: 40, facts: { to: ceo, quote_rule: 3, published_ids: [501, 502] } },
           { id: 41, facts: { to: ceo, quote_rule: 3, published_ids: [601] } },
+          { id: 42, facts: { to: { email: "ceo@x.org", name: "Mailing Address", title: "CEO For questions or concerns not resolved by staff", role: "executive" }, quote_rule: 3 } },
         ]);
       }
       if (query.includes("takedown_pending")) {
@@ -256,12 +257,38 @@ describe("withdrawing unreviewed drafts", () => {
       updates.push(values);
       return Promise.resolve([]);
     }) as never;
-    expect(await withdrawNonBuyerDrafts(db)).toBe(3);
-    expect(updates.map((values) => values.at(-1))).toEqual([7, 16, 40]);
+    expect(await withdrawNonBuyerDrafts(db)).toBe(4);
+    expect(updates.map((values) => values.at(-1))).toEqual([7, 16, 40, 42]);
+    updates.length = 0;
+    expect(await withdrawNonBuyerDrafts(db, true)).toBe(4);
+    expect(updates).toEqual([]);
   });
 });
 
-describe("day-7 follow-up", () => {
+describe("follow-ups", () => {
+  it("drafts the final follow-up only after the first follow-up was marked sent, and says it is the last", async () => {
+    const queries: string[] = [];
+    const db = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      queries.push(query);
+      if (query.includes("information_schema") || query.includes("to_regclass")) return Promise.resolve([{ ready: true, exists: true, ok: true, n: 1 }]);
+      if (query.includes("JOIN outreach_outcomes sent")) {
+        const finalStage = values.includes("outreach-followup-final");
+        return Promise.resolve(finalStage ? [{ id: 9, facts: { institution_id: 1, institution_name: "First Bank", market: "Waco, TX", subject: "Quick question about competitor fee research", to: { email: "j@x.com", name: "Jane Smith" } } }] : []);
+      }
+      return Promise.resolve([{ id: 77 }]);
+    }) as never;
+    const result = await runOutreachFollowUps({ db, runId: 1, dryRun: true });
+    expect(result.due).toBe(1);
+    const finalQuery = queries.filter((query) => query.includes("JOIN outreach_outcomes sent")).at(-1)!;
+    expect(finalQuery).toContain("JOIN outreach_outcomes fs ON fs.draft_id = f.id AND fs.outcome = 'sent'");
+    const final = buildFollowUpDraft({ draftId: 9, institutionId: 1, institutionName: "First Bank", market: "Waco, TX", link: "", subject: "Quick question about competitor fee research", to: null }, 2);
+    expect(final.subject).toBe("Re: Quick question about competitor fee research");
+    expect(final.caption).toContain("One last note, and then I'll stop.");
+    expect(final.caption).toContain("This is the last email to this institution");
+    expect(final.caption).not.toMatch(/\$\d|https?:/);
+  });
+
   it("is short, threads under the first subject, carries no figures or link, and keeps the CAN-SPAM lines", () => {
     const source = {
       draftId: 41,
