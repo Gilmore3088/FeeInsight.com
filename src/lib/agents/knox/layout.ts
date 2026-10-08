@@ -146,8 +146,9 @@ export function tidyFeeName(raw: string): string {
     .trim();
   name = trimEnd(name);
   // v46: "Normal bank fees and charges, including returned item charge/overdraft item charge of"
-  // (Origin Bank): the fee is what the sentence lists after "including".
-  const listed = name.match(/,\s+including\s+(.+)$/i)?.[1];
+  // (Origin Bank): after a general "fees and charges", the fee is what the sentence lists after
+  // "including". "NSF for each presentment, including if the same item is presented" keeps its name.
+  const listed = name.match(/\b(?:fees|charges)(?:\s+and\s+(?:fees|charges))?,\s+including\s+(.+)$/i)?.[1];
   // A name at the 120-character cap may end mid-word, so it keeps its words.
   if (listed && raw.trim().length < 120 && listed.split(" ").length <= MAX_TITLE_WORDS) name = `${listed.charAt(0).toUpperCase()}${listed.slice(1)}`;
   // The words that led into the price ("Replacement Card Fee of", "ATM Fee for",

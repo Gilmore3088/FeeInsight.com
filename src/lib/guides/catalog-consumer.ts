@@ -335,7 +335,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "Why one ATM withdrawal can carry two separate fees, what banks and credit unions charge, and how to stop paying to reach your own money.",
     primaryCategory: "atm_non_network",
-    relatedCategories: ["atm_international"],
+    relatedCategories: ["card_foreign_txn"],
     family: "ATM & Card",
     featured: true,
     relatedSlugs: ["foreign-transaction-fees", "monthly-maintenance-fees", "overdraft-fees"],
@@ -371,7 +371,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Using an ATM abroad adds another layer: the median international ATM fee is {{atm_international.median}}, and that is before any currency conversion charge on the same transaction.",
+            text: "Using an ATM abroad adds another layer: the median flat charge for using an ATM or a card abroad is {{card_foreign_txn.median}}, and that is before any currency conversion charge on the same transaction.",
           },
           {
             type: "callout",
@@ -777,7 +777,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "What your card charges when you spend abroad, the conversion trick that costs more than the fee, and how to pay nothing at all.",
     primaryCategory: "card_foreign_txn",
-    relatedCategories: ["atm_international"],
+    relatedCategories: [],
     family: "International",
     featured: false,
     relatedSlugs: ["atm-fees", "wire-transfer-fees", "digital-banking-fees"],
@@ -807,11 +807,11 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Across the institutions we track, the median foreign transaction charge is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing.",
+            text: "Across the institutions we track, the median flat charge for using a card or an ATM abroad is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing. Most cards charge a percentage instead, which these flat figures leave out.",
           },
           {
             type: "paragraph",
-            text: "Withdrawing cash abroad stacks charges. The median international ATM fee is {{atm_international.median}}, and the foreign transaction percentage frequently applies on top of it, alongside the machine owner's own surcharge. Three charges, one withdrawal.",
+            text: "Withdrawing cash abroad stacks charges: your bank's international ATM fee, the foreign transaction percentage that frequently applies on top of it, and the machine owner's own surcharge. Three charges, one withdrawal.",
           },
           {
             type: "paragraph",

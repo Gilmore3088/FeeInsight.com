@@ -279,6 +279,17 @@ feedback sync writes no Knox or Darwin lesson for these. A takedown whose consum
 longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
 banks, 61 beside a consumer fee.
 
+## Other Bank's Document
+Each publish step, `other-bank-document.ts` looks at live fees read from a document on another
+institution's own website (its host is another bank's `website_url` host and not this bank's,
+`magellan/other-bank-host.ts`). Such a fee comes down on the first run that sees it, its first
+look logged (check `hamilton.other_bank_document`; James, Oct 8: no 12-hour wait), unless the document's text names this bank's own website or
+city: `rolled_back_reason = 'other_bank_document: <host>'`, the verified row rejected with the
+`other_bank_document` flag, the link added to the bank's rejected sources and cleared from its
+fee link (unless a correction locked it), and one Magellan `wrong_document` lesson per document.
+First dry run (8 Oct, prod): 323 live fees at 16 banks; 308 at 15 banks fail (Peoples Bank of
+Rock Valley IA showed Peoples Bank of Bellingham WA's 22 fees).
+
 ## Article Page
 
 `article-page.ts`: a page whose address has an article segment (articles, blog, stories,

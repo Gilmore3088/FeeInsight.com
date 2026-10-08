@@ -3647,3 +3647,22 @@ and quarter were already stored, without looking at the periods of the data behi
   stay recorded but not live.
 - **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
   publish steps.
+
+## 2026-10-08: Banks published another bank's fee schedule
+- **What happened.** Peoples Bank of Rock Valley, Iowa showed 22 live fees read from Peoples
+  Bank of Bellingham, Washington's PDF on peoplesbank-wa.com (James found it). On prod, 62 stored
+  documents at 44 institutions sit on another institution's own website. 16 of those
+  institutions had 323 live fees from them; 15 of the 16 (308 fees) have no sign the document
+  is theirs. Most are same-name banks: Peoples Bank IN and IA, First Bank VA and First United OK
+  (first.bank), Cornerstone ND, Farmers State IA, First Community SC, Central Bank UT, and
+  River Bank WI (Charles River Bank).
+- **Why.** Discovery accepted any off-site PDF a search returned for the bank's name, and
+  nothing compared the document's host with the bank's own website.
+- **Fix.** Discovery refuses a link on another institution's website (`other-bank-host.ts`).
+  Hamilton takes down live fees from such a document on the first run (no 12-hour wait, James
+  Oct 8), unless the text names
+  the bank's own website or city, and sends the link back to discovery
+  (`hamilton/other-bank-document.ts`).
+- **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
+  them live from another bank's host after that.
+
