@@ -20,7 +20,8 @@ async function caller(request: NextRequest): Promise<"schedule" | "admin" | null
 /**
  * CARNEGIE's first-email drafts (src/lib/agents/growth/outreach.ts): up to `?limit=` drafts in
  * James's template, each with an audit block, into the /admin/growth queue. Free, no model
- * calls, and nothing sends: James audits each draft and sends it himself.
+ * calls, and nothing sends: James audits each draft and sends it himself. `?dry_run=1` counts
+ * what would be drafted and writes nothing: no drafts, no withdrawals.
  */
 async function handleGET(request: NextRequest) {
   const triggerSource = await caller(request);
@@ -29,16 +30,17 @@ async function handleGET(request: NextRequest) {
   }
   const requested = Number(request.nextUrl.searchParams.get("limit"));
   const limit = Number.isFinite(requested) && requested > 0 ? Math.min(Math.floor(requested), OUTREACH_MAX_LIMIT) : OUTREACH_DEFAULT_LIMIT;
+  const dryRun = request.nextUrl.searchParams.get("dry_run") === "1";
   const hour = new Date().toISOString().slice(0, 13);
   const started = await startAgentRun({
     agent: "growth",
-    kind: "workflow",
-    title: `Outreach drafts ${hour.replace("T", " ")}:00`,
-    params: { source: "growth.outreach", agent: "carnegie", limit },
+    kind: dryRun ? "dry_run" : "workflow",
+    title: `Outreach drafts ${hour.replace("T", " ")}:00${dryRun ? " (dry run)" : ""}`,
+    params: { source: "growth.outreach", agent: "carnegie", limit, dry_run: dryRun },
     triggeredBy: "growth.outreach",
     triggerSource,
     // One run an hour, so a repeated call doesn't draft the same prospects twice.
-    idempotencyKey: `growth:outreach:${hour}`,
+    idempotencyKey: dryRun ? undefined : `growth:outreach:${hour}`,
     steps: [{ key: "growth-outreach", agent: "growth", title: "Draft first emails with verified local overdraft comparisons" }],
   });
   const result = started.reused

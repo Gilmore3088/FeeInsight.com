@@ -45,6 +45,13 @@ describe("runBriefingRefresh", () => {
     expect(summarizeBriefingRefresh(result)).toContain("stored 1");
   });
 
+  it("counts a Pro reader's saved bank as well as paid seats", async () => {
+    install({ workspaces: [] });
+    await runBriefingRefresh({ now });
+    const query = (mocks.sql.mock.calls[0][0] as TemplateStringsArray).join("?");
+    expect(query).toContain("FROM hamilton_workspace_contexts");
+  });
+
   it("skips a workspace that already has this quarter's copy", async () => {
     install({ stored: [{ institution_id: 1, quarter: "2026-Q4" }] });
     const result = await runBriefingRefresh({ now });

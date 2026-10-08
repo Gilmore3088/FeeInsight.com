@@ -30,6 +30,7 @@ import {
   type TrailEntry,
 } from "./finders";
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
+import { OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import {
@@ -286,6 +287,8 @@ export type DiscoveryCode =
   | "js_homepage"
   | "no_fee_links"
   | "candidates_failed"
+  /** The found link is on another institution's own website (`other-bank-host.ts`). */
+  | typeof OTHER_BANK_HOST_CODE
   | "out_of_time";
 
 /** One specialist's part of a bank's search. */
@@ -1285,11 +1288,35 @@ async function keepBusinessScheduleAsCompanion(
   `;
 }
 
+/**
+ * A found link on another institution's own website is that bank's schedule (Peoples Bank of
+ * Iowa read Peoples Bank of Washington's PDF, Oct 8). It is not saved: the search is recorded
+ * as a miss to retry, and the link joins the bank's rejected sources so search skips it.
+ */
+async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult): Promise<CandidateDiscoveryResult> {
+  if (result.outcome !== "discovered" || !result.url) return result;
+  const other = await otherInstitutionAtHost(db, result.institutionId, result.url);
+  if (!other) return result;
+  const reason = `${result.url} is on ${other.host}, the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+  await db`
+    UPDATE institution_source_profiles
+       SET rejected_source_urls = (
+             SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+              WHERE entry->>'url' IS DISTINCT FROM ${result.url}
+           ) || ${JSON.stringify([{ url: result.url, reason: OTHER_BANK_HOST_CODE, at: new Date().toISOString() }])}::jsonb,
+           updated_at = NOW()
+     WHERE institution_id = ${result.institutionId}
+  `;
+  return { ...result, outcome: "retry_after", code: OTHER_BANK_HOST_CODE, url: null, documentType: null, confidence: null, reason };
+}
+
 /** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
 export async function recordDiscoveryResult(
   db: SqlTag,
-  result: CandidateDiscoveryResult,
+  found: CandidateDiscoveryResult,
 ): Promise<void> {
+  const result = await refuseOtherBankLink(db, found);
   const rescueStatus =
     result.outcome === "discovered"
       ? "rescued"
