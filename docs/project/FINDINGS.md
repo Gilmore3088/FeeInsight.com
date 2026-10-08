@@ -13,6 +13,33 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: A new agent or pause needs database rows, not only a code list
+**Owner:** the GrowthOS thread (growth agent, build-plan phase 1).
+**What happened:** adding agent `growth` and a `marketing` pause looked like code-only changes
+(`AdminAgent`, `automation-control.ts`). The schema says otherwise: `agent_runs.agent_name` and
+`agent_run_steps.agent_name` reference `agent_registry(agent_name)` (in
+`20260406_report_jobs.sql`), `automation_control.control_key` is checked against
+`('global', 'pipeline')`, and `automation_control_audit.action` against a fixed list. A growth run
+or a marketing pause would have failed on insert in prod.
+**Cause:** these lists live only in the database; no test compares them with the code.
+**Fix:** migration `20270110000023_growth_agent.sql` (this PR) inserts the `growth` registry row
+and widens both checks. Not applied yet.
+**Lesson:** before adding an agent name, control key or audit action, grep `supabase/migrations`
+for the table's CHECK and FOREIGN KEY constraints, and widen them in the same PR.
+
+## 2026-10-08: Credit union charter numbers matched banks' FDIC certs in the market loader
+**What happened:** the custom report market loader (`loadMarketCounties` in
+`src/lib/data-store/custom-report-market.ts`) matched `institution_sources.cert_number` against
+SOD `cert` for every institution. All 4,433 credit unions store their NCUA charter there, and 307
+of them equal a bank's FDIC cert in the 2026 SOD (07:27 UTC on prod). Those credit unions got the
+bank's branch counties instead of their headquarters city: U S Employees FCU (Fairmont, WV,
+charter 6672) got Fifth Third Bank's 1,513 branches, Alliance Niagara FCU got TD Bank's 1,050.
+No credit union legitimately matches its own SOD rows (0 of 4,433), and every bank cert match
+already points at the same institution (0 mismatches of 4,249).
+**Cause:** one column holds two numbering schemes (FDIC cert for banks, NCUA charter for credit unions).
+**Fix:** the loader skips the cert match when `charter_type = 'credit_union'`, with a test. Not merged yet.
+**Lesson:** never join `cert_number` to FDIC data without checking `charter_type` first.
+
 ## 2026-10-08: No search data: GA4 and Search Console are not wired in the code
 **Owner:** the GrowthOS thread.
 **What happened:** checking analytics for the marketing team, the code has Vercel Analytics only
@@ -3018,3 +3045,17 @@ Rows already on file gain the fields only when Knox reads their document again.
   the priority path. The rest wait on the paid schedule search or a link found by hand.
 - **Watch.** `/mnt/project-files/coverage/gaps-2026-10-08.md` lists all 82; re-count live
   coverage for the same 510 slots after the hand-found runs.
+
+## 2026-10-08: Small returned-check fees published as NSF
+
+- **Problem.** Dean Co-operative Bank's "Returned Check Fee $7" (a deposited check coming back)
+  was live as its NSF fee. Its real NSF fee, "Insufficient Funds Fee (Paid or Returned) $35.00",
+  is split over two lines, and Knox missed it; the earlier reader caught it. The fee name alone
+  says nothing wrong, so no guard caught it. 15 live NSF fees under $10 named only "Returned
+  check/item" sit on a schedule that prices NSF at $20-35.
+- **Fix.** Category guard v22 adds a schedule check (`schedule_contradicts`): a plain returned
+  check or item under $10 filed as NSF, on a schedule whose NSF or insufficient-funds fee is at
+  least $15 and twice its price, fails. Hamilton's guard reads that price from both raw readers'
+  rows for the same document, logs each to `pipeline_feedback`, and takes it down after the second look.
+- **Watch.** `hamilton.category_guard` byCode `schedule_contradicts`; Knox still misses split NSF rows.
+

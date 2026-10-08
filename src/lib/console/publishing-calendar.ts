@@ -29,6 +29,16 @@ function nextDaily(hourUtc: number, minute: number) {
   };
 }
 
+/** `weekday` 0 = Sunday, as in cron. */
+function nextWeekly(weekday: number, hourUtc: number, minute: number) {
+  return (now: Date) => {
+    const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, minute));
+    at.setUTCDate(at.getUTCDate() + ((weekday - at.getUTCDay() + 7) % 7));
+    if (at.getTime() <= now.getTime()) at.setUTCDate(at.getUTCDate() + 7);
+    return at;
+  };
+}
+
 function nextMonthly(day: number, hourUtc: number, minute: number, months?: number[]) {
   return (now: Date) => {
     for (let offset = 0; offset < 13; offset += 1) {
@@ -77,6 +87,26 @@ export const PUBLICATIONS: Publication[] = [
     href: "/admin/atlas/details",
     freshnessKey: "run:atlas.fee_alerts",
     next: nextDaily(13, 23),
+  },
+  {
+    // Growth drafts; James approves each and posts it on the company page himself.
+    key: "linkedin_posts",
+    name: "LinkedIn post drafts",
+    audience: "Public",
+    cadence: "Weekly, Sundays (drafts for your approval)",
+    href: "/admin/customers/content",
+    freshnessKey: "run:hamilton.content",
+    next: nextWeekly(0, 13, 37),
+  },
+  {
+    // Growth drafts on the 1st; nothing sends until James approves the month.
+    key: "marketing_email",
+    name: "Monthly marketing email",
+    audience: "Public",
+    cadence: "Monthly, drafted on the 1st, sent when you approve",
+    href: "/admin/customers/marketing",
+    freshnessKey: "run:hamilton.marketing",
+    next: nextMonthly(1, 14, 7),
   },
 ];
 

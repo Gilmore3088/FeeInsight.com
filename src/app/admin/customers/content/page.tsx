@@ -16,11 +16,34 @@ const SECTIONS: { status: ContentDraftStatus; title: string; note: string }[] = 
 
 const WORKFLOW_LABELS: Record<string, string> = { "w1-market-spread": "Market spread", "w3-fee-depth": "Fee depth at work" };
 
-function StatusButton({ id, status, label, primary }: { id: number; status: ContentDraftStatus; label: string; primary?: boolean }) {
+function StatusButton({
+  id,
+  status,
+  label,
+  primary,
+  withReason,
+}: {
+  id: number;
+  status: ContentDraftStatus;
+  label: string;
+  primary?: boolean;
+  /** Adds an optional reason field (the Skip form); the reason teaches the agent what not to draft. */
+  withReason?: boolean;
+}) {
   return (
-    <form action={setDraftStatusAction}>
+    <form action={setDraftStatusAction} className={withReason ? "flex items-center gap-2" : undefined}>
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="status" value={status} />
+      {withReason ? (
+        <input
+          type="text"
+          name="reason"
+          maxLength={500}
+          placeholder="Reason (optional)"
+          aria-label="Reason for skipping (optional)"
+          className="w-44 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+        />
+      ) : null}
       <button
         type="submit"
         className={`rounded-md px-3 py-1.5 text-sm font-medium ${
@@ -100,7 +123,7 @@ function DraftCard({ draft }: { draft: ContentDraft }) {
           <div className="flex flex-wrap gap-2">
             {draft.status === "draft" ? <StatusButton id={draft.id} status="approved" label="Approve" primary /> : null}
             {draft.status === "approved" ? <StatusButton id={draft.id} status="posted" label="Mark posted" primary /> : null}
-            {draft.status === "draft" || draft.status === "approved" ? <StatusButton id={draft.id} status="skipped" label="Skip" /> : null}
+            {draft.status === "draft" || draft.status === "approved" ? <StatusButton id={draft.id} status="skipped" label="Skip" withReason /> : null}
             {draft.status === "skipped" ? <StatusButton id={draft.id} status="draft" label="Back to review" /> : null}
             <a href={card} download={`fee-insight-${draft.id}.png`} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
               Download card

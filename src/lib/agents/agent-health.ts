@@ -17,7 +17,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY
 
 type SqlTag = typeof sql;
 
-export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton"] as const;
+export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth"] as const;
 export type HealthAgent = (typeof HEALTH_AGENTS)[number];
 
 /** A number that moved more than this share (and by at least 2) since yesterday is flagged. */
@@ -554,6 +554,36 @@ export function hamiltonRules(n: HealthNumbers): HealthRule[] {
   ];
 }
 
+// ---------------------------------------------------------------- Growth
+
+/** Growth (marketing): its steps and its spend against the `agent:growth` daily cap. */
+export async function readGrowthNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const common = await readCommon(db, "growth");
+  const [row] = await db`
+    SELECT MIN(hard_daily_microusd) AS daily_cap_microusd
+      FROM api_budget_policies
+     WHERE policy_key = 'agent:growth' AND enabled
+  `;
+  return {
+    ...common,
+    dailyCapUsd: row?.daily_cap_microusd == null ? null : dollars(row.daily_cap_microusd),
+  };
+}
+
+export function growthRules(n: HealthNumbers): HealthRule[] {
+  const spend = num(n.spendUsd);
+  const cap = n.dailyCapUsd;
+  return [
+    noFailedSteps(n),
+    {
+      key: "within_daily_cap",
+      label: "Growth's spend stays inside its daily cap",
+      ok: cap == null || spend <= cap,
+      detail: `$${spend.toFixed(2)} of ${cap == null ? "no cap" : `$${cap.toFixed(2)}`}`,
+    },
+  ];
+}
+
 // ---------------------------------------------------------------- report
 
 const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
@@ -563,6 +593,7 @@ const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
   knox: readKnoxNumbers,
   darwin: readDarwinNumbers,
   hamilton: readHamiltonNumbers,
+  growth: readGrowthNumbers,
 };
 
 const RULES: Record<HealthAgent, (numbers: HealthNumbers) => HealthRule[]> = {
@@ -572,6 +603,7 @@ const RULES: Record<HealthAgent, (numbers: HealthNumbers) => HealthRule[]> = {
   knox: knoxRules,
   darwin: darwinRules,
   hamilton: hamiltonRules,
+  growth: growthRules,
 };
 
 /** Numbers that moved more than HEALTH_CHANGE_SHARE (and by at least 2) since yesterday. */

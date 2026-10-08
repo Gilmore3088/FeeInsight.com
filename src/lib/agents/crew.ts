@@ -23,6 +23,7 @@ export const CREW: CrewMemberMeta[] = [
   { agent: "knox", name: "Knox", role: "Pulls fees out of documents", href: "/admin/knox" },
   { agent: "darwin", name: "Darwin", role: "Checks every fee before it counts", href: "/admin/darwin" },
   { agent: "hamilton", name: "Hamilton", role: "Publishes fees and runs the index", href: "/admin/hamilton" },
+  { agent: "growth", name: "Growth", role: "Drafts marketing posts and emails for James to approve", href: "/admin/customers/content" },
 ];
 
 export function crewMember(agent: string): CrewMemberMeta | undefined {

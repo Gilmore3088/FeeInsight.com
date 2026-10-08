@@ -26,17 +26,19 @@ async function handleGET(request: NextRequest) {
   }
   const month = currentMonth();
   const started = await startAgentRun({
-    agent: "hamilton",
+    agent: "growth",
     kind: "workflow",
     title: `Hamilton marketing ${month}`,
     params: { source: "hamilton.marketing", month },
     triggeredBy: "hamilton.marketing",
     triggerSource: "schedule",
+    // Runs moved from Hamilton to growth on 2026-10-08; the key keeps its old prefix so a
+    // month already run under Hamilton is not run twice.
     idempotencyKey: `hamilton:marketing:${month}`,
     steps: [
-      { key: "marketing-score", agent: "hamilton", title: "Score last month's campaigns and store the market snapshot" },
-      { key: "marketing-write", agent: "hamilton", title: "Plan, write and draft this month's campaigns" },
-      { key: "marketing-states", agent: "hamilton", title: "Draft this month's state editions for readers who picked a state" },
+      { key: "marketing-score", agent: "growth", title: "Score last month's campaigns and store the market snapshot" },
+      { key: "marketing-write", agent: "growth", title: "Plan, write and draft this month's campaigns" },
+      { key: "marketing-states", agent: "growth", title: "Draft this month's state editions for readers who picked a state" },
     ],
   });
   const result = started.reused

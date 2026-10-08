@@ -33,13 +33,13 @@ const WATCH: RegulatoryWatch = {
 describe("RegulatoryWatchSection", () => {
   it("leads with the headline and figures, then the timeline, fee and rule exhibits", () => {
     const { container } = render(<RegulatoryWatchSection watch={WATCH} exportHref="/api/v1/institutions?id=12&view=benchmark&format=csv" />);
-    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe(
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "2 of your 20 largest Austin competitors drew federal enforcement since Oct 2023; 1 action concerned consumer law.",
     );
     expect(screen.getByText("2 of 20")).toBeInTheDocument();
     expect(screen.getAllByText(/^\$20(\.0)?M$/).length).toBe(2);
-    expect(screen.getByText("Exhibit 1")).toBeInTheDocument();
-    expect(screen.getByText("Exhibit 3")).toBeInTheDocument();
+    expect(screen.getByText(/^Exhibit 1 · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Exhibit 3 · /)).toBeInTheDocument();
     // Short names on the timeline; the order link and holding company sit in the mark's label.
     expect(screen.getByText("Big Bank")).toBeInTheDocument();
     expect(container.querySelector('a[href="https://www.occ.gov/x.pdf"]')?.getAttribute("aria-label")).toContain("Consumer Law");
@@ -53,7 +53,7 @@ describe("RegulatoryWatchSection", () => {
 
   it("drops empty exhibits and says when no competitor has an action", () => {
     render(<RegulatoryWatchSection watch={{ ...WATCH, peer_actions: [], rule_changes: [], fee_focus: [] }} />);
-    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe("None of your 20 largest Austin competitors has a federal enforcement action since Oct 2023.");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("None of your 20 largest Austin competitors has a federal enforcement action since Oct 2023.");
     expect(screen.queryByText(/Exhibit/)).toBeNull();
   });
 });

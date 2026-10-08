@@ -485,4 +485,13 @@ describe("checkFeeCategory", () => {
     expect(refileCategory("nsf", "Returned Item fee (written to you)")).toBe("deposited_item_return");
     expect(checkFeeCategory("nsf", "Returned Check Fee")).toEqual({ ok: true });
   });
+
+  it("v22 reads a small returned check as a deposited return when the schedule prices NSF separately (Dean, Oct 8)", () => {
+    const context = (amount: string, document_nsf_amount: string | null) => ({ amount, document_nsf_amount });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", null))).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "NSF Fee", context("7.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "10.00"))).toEqual({ ok: true });
+  });
 });
