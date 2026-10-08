@@ -54,6 +54,7 @@ export function growthAgentForStep(stepKey: string, runParams: unknown, stepInpu
   if (isGrowthAgent(params.agent)) return params.agent;
   const item = record(record(stepInput).item);
   if (isGrowthAgent(item.agent)) return item.agent;
+  if (stepKey === "content-od-by-state") return "ernest";
   if (stepKey.startsWith("content-")) return "murrow";
   return null;
 }
