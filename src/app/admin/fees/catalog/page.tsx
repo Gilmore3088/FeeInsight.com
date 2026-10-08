@@ -190,7 +190,7 @@ export default async function FeeCatalogPage({
       key: "fee_category",
       label: "Fee Type",
       sortable: true,
-      className: "sticky left-0 bg-gray-50/80 dark:bg-[oklch(0.17_0_0)] z-10 min-w-[220px]",
+      className: "sticky left-0 bg-gray-50/80 dark:bg-[oklch(0.17_0_0)] z-10 min-w-[150px] sm:min-w-[220px]",
       render: (item) => {
         const family = getFeeFamily(item.fee_category);
         const colors = family ? getFamilyColor(family) : null;
@@ -211,7 +211,7 @@ export default async function FeeCatalogPage({
                 {getDisplayName(item.fee_category)}
               </Link>
               {!isFeatured && (
-                <span className="ml-1.5 text-[9px] font-semibold text-gray-300 dark:text-gray-600 uppercase tracking-wider">
+                <span className="ml-1.5 hidden text-[9px] sm:inline font-semibold text-gray-300 dark:text-gray-600 uppercase tracking-wider">
                   {tier}
                 </span>
               )}
@@ -224,6 +224,7 @@ export default async function FeeCatalogPage({
       key: "family",
       label: "Family",
       sortable: false,
+      className: "hidden sm:table-cell",
       render: (item) => {
         const family = getFeeFamily(item.fee_category);
         const colors = family ? getFamilyColor(family) : null;
@@ -362,10 +363,12 @@ export default async function FeeCatalogPage({
   ];
 
   if (segment) {
-    const medianAt = catalogColumns.findIndex((col) => col.key === "median_amount");
+    // Median, segment and gap sit right after the fee name, so a phone sees the comparison first.
+    const [median] = catalogColumns.splice(catalogColumns.findIndex((col) => col.key === "median_amount"), 1);
     catalogColumns.splice(
-      medianAt + 1,
+      1,
       0,
+      median,
       {
         key: "segment_median",
         label: "Segment",
