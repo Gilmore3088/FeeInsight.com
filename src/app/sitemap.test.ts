@@ -3,6 +3,7 @@ import { getInstitutionIdsWithFeeDates, getStatesWithFeeData } from "@/lib/data-
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { SITE_URL } from "@/lib/constants";
+import { getSql } from "@/lib/data-store/connection";
 import sitemap from "./sitemap";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
 
@@ -78,7 +79,7 @@ describe("sitemap thin-page floor", () => {
     vi.mocked(getPublicSnapshot).mockRejectedValue(new Error("db down"));
     vi.mocked(getStatesWithFeeData).mockRejectedValue(new Error("db down"));
     const paths = await urls();
-    expect(paths).toContain("/fees/dmv_filing");
+    expect(paths).toContain("/fees/appraisal_fee");
     expect(paths).toContain("/research/state/AK");
   });
 
@@ -99,5 +100,21 @@ describe("sitemap thin-page floor", () => {
       { id: 4, last_fee_at: null, verified_fee_count: null },
     ]);
     expect(await urls()).toContain("/institution/4");
+  });
+});
+
+describe("sitemap research articles", () => {
+  it("lists published research articles", async () => {
+    vi.mocked(getPublicSnapshot).mockResolvedValue({ summary: {} as never, categories: [] as never });
+    vi.mocked(getStatesWithFeeData).mockResolvedValue([]);
+    const tag = (strings: TemplateStringsArray) =>
+      Promise.resolve(
+        strings.join("").includes("research_articles")
+          ? [{ slug: "overdraft-fees-by-state-2026-10", published_at: "2026-10-12T00:00:00Z", updated_at: null }]
+          : [],
+      );
+    vi.mocked(getSql).mockImplementation((() => tag) as never);
+    const paths = await urls();
+    expect(paths).toContain("/research/articles/overdraft-fees-by-state-2026-10");
   });
 });

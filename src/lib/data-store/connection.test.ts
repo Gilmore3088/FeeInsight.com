@@ -5,7 +5,17 @@ import {
   serializeJsonParam,
   stripNulChars,
   TEXT_WITHOUT_NUL,
+  usesTransactionPooler,
 } from "./connection";
+
+describe("usesTransactionPooler", () => {
+  it("is true only for the 6543 pooler port, so idle_session_timeout is sent only direct", () => {
+    expect(usesTransactionPooler("postgresql://postgres:pw@db.ref.supabase.co:6543/postgres")).toBe(true);
+    expect(usesTransactionPooler("postgresql://postgres.ref:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres")).toBe(true);
+    expect(usesTransactionPooler("postgresql://postgres:pw@db.ref.supabase.co:5432/postgres")).toBe(false);
+    expect(usesTransactionPooler("not a url")).toBe(false);
+  });
+});
 
 describe("NUMERIC_AS_NUMBER", () => {
   it("parses postgres NUMERIC (oid 1700) text into numbers", () => {

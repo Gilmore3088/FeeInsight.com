@@ -51,6 +51,25 @@ describe("retidiedFeeName", () => {
     expect(retidiedFeeName("Overdraft – paid per day per account11", "overdraft")).toBe("Overdraft – paid per day per account");
   });
 
+  it("drops the footnote number from a long name the full tidy leaves alone (v3)", () => {
+    expect(
+      retidiedFeeName(
+        "Overdraft Protection Transfer Fee4 (from Line of Credit Advance in Increments of $100.00)",
+        "od_protection_transfer",
+      ),
+    ).toBe("Overdraft Protection Transfer Fee (from Line of Credit Advance in Increments of $100.00)");
+  });
+
+  it("repairs a cut-off parenthesis and a doubled word (v4)", () => {
+    expect(retidiedFeeName("Account Research Research", "account_research")).toBe("Account Research");
+    expect(retidiedFeeName("Consumer, Inactivity Fee (Notification sent at 10", "dormant_account")).toBe(
+      "Consumer, Inactivity Fee",
+    );
+    expect(retidiedFeeName(" Overdraft Protection Sweep Fee (per sweep)", "od_protection_transfer")).toBe(
+      "Overdraft Protection Sweep Fee (per sweep)",
+    );
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
   });
@@ -63,6 +82,10 @@ describe("isMessyName", () => {
     expect(isMessyName("x".repeat(81))).toBe(true);
     expect(isMessyName("Stop Payment")).toBe(false);
     expect(isMessyName("Paid NSF Item1")).toBe(true);
+    expect(isMessyName("Account Research Research")).toBe(true);
+    expect(isMessyName("Early Account Closure (by Extraco – no")).toBe(true);
+    expect(isMessyName(" Overdraft Protection Sweep Fee (per sweep)")).toBe(true);
+    expect(isMessyName("Early Account Closure (by customer)")).toBe(false);
     expect(isMessyName("Safe deposit box 10x10")).toBe(false);
     expect(isMessyName("W2 copy")).toBe(false);
   });

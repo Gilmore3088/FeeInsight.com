@@ -78,15 +78,29 @@ export async function GoldStandardView({ embedded = false }: { embedded?: boolea
                   {c.fee_count}
                 </td>
                 <td className="px-4 py-2.5 text-center">
-                  {c.fee_schedule_url ? (
-                    <a
-                      href={c.fee_schedule_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 text-xs underline"
-                    >
-                      Fee Schedule
-                    </a>
+                  {c.fee_schedule_url || c.hand_schedule_url ? (
+                    <div className="flex flex-col items-center gap-0.5">
+                      {c.fee_schedule_url && (
+                        <a
+                          href={c.fee_schedule_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 text-xs underline"
+                        >
+                          Fee Schedule
+                        </a>
+                      )}
+                      {c.hand_schedule_url && c.hand_schedule_url !== c.fee_schedule_url && (
+                        <a
+                          href={c.hand_schedule_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 text-xs underline"
+                        >
+                          Hand-found schedule
+                        </a>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-gray-300 text-xs">No URL</span>
                   )}

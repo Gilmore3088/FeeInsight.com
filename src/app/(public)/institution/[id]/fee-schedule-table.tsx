@@ -110,15 +110,25 @@ export interface MedianDelta {
  * How a verified amount sits against the national median, in words. Null when either
  * side is missing: no comparison is better than a misleading one.
  */
-export function describeMedianDelta(amount: number | null, median: number | null | undefined): MedianDelta | null {
+export function describeMedianDelta(
+  amount: number | null,
+  median: number | null | undefined,
+  place = "national",
+): MedianDelta | null {
   if (amount === null || median === null || median === undefined) return null;
   if (!Number.isFinite(amount) || !Number.isFinite(median)) return null;
   const diff = Math.round((amount - median) * 100) / 100;
-  if (Math.abs(diff) < 0.01) return { text: "At the national median", tone: "at" };
+  if (Math.abs(diff) < 0.01) return { text: `At the ${place} median`, tone: "at" };
   const money = formatFeeAmount(Math.abs(diff)) ?? `$${Math.abs(diff).toFixed(2)}`;
   return diff > 0
-    ? { text: `${money} above the national median`, tone: "above" }
-    : { text: `${money} below the national median`, tone: "below" };
+    ? { text: `${money} above the ${place} median`, tone: "above" }
+    : { text: `${money} below the ${place} median`, tone: "below" };
+}
+
+/** Home-state medians by fee category, with the state's name for the sentence. */
+export interface StateMedians {
+  place: string;
+  medians: Map<string, number | null>;
 }
 
 const DELTA_TONE: Record<MedianDelta["tone"], string> = {
@@ -128,17 +138,35 @@ const DELTA_TONE: Record<MedianDelta["tone"], string> = {
 };
 
 /** Verified rows with a known category link to the national picture for that fee. */
-function MedianCell({ fee, medians }: { fee: DisplayFee; medians: Map<string, number | null> }) {
+function MedianCell({
+  fee,
+  medians,
+  stateMedians,
+}: {
+  fee: DisplayFee;
+  medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
+}) {
   if (fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
-  if (!delta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  const stateDelta = stateMedians
+    ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
+    : null;
+  if (!delta && !stateDelta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   return (
-    <Link
-      href={`/fees/${fee.feeCategory}`}
-      className={`text-xs font-medium underline-offset-2 hover:underline ${DELTA_TONE[delta.tone]}`}
-    >
-      {delta.text}
-    </Link>
+    <>
+      {delta && (
+        <Link
+          href={`/fees/${fee.feeCategory}`}
+          className={`text-xs font-medium underline-offset-2 hover:underline ${DELTA_TONE[delta.tone]}`}
+        >
+          {delta.text}
+        </Link>
+      )}
+      {stateDelta && (
+        <span className={`block text-xs ${DELTA_TONE[stateDelta.tone]}`}>{stateDelta.text}</span>
+      )}
+    </>
   );
 }
 /** A rate in the amount column, with what it is a share of beneath it. */
@@ -155,6 +183,15 @@ function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
 
 const FAMILY_ORDER = [...Object.keys(FEE_FAMILIES), OTHER_FAMILY];
 
+// Within a family, the taxonomy lists the fees people look up most first (monthly
+// maintenance before account research, overdraft before daily caps). Alphabetical order
+// put "Account Research" at the top of every bank page.
+const CATEGORY_RANK = new Map(Object.values(FEE_FAMILIES).flatMap((cats) => cats.map((cat, i) => [cat, i] as const)));
+
+function categoryRank(fee: DisplayFee): number {
+  return (fee.feeCategory ? CATEGORY_RANK.get(fee.feeCategory) : undefined) ?? Number.MAX_SAFE_INTEGER;
+}
+
 function familyFor(fee: DisplayFee): string {
   return (fee.feeCategory ? getFeeFamily(fee.feeCategory) : null) ?? OTHER_FAMILY;
 }
@@ -163,7 +200,7 @@ function dedupeKey(fee: DisplayFee): string {
   return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
 }
 
-/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order. */
+/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order for families and rows. */
 export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   const groups = new Map<string, FeeGroup>();
   const seen = new Set<string>();
@@ -185,7 +222,7 @@ export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
     const group = groups.get(family) as FeeGroup;
     return {
       ...group,
-      rows: [...group.rows].sort((a, b) => a.feeName.localeCompare(b.feeName)),
+      rows: [...group.rows].sort((a, b) => categoryRank(a) - categoryRank(b) || a.feeName.localeCompare(b.feeName)),
     };
   });
 }
@@ -221,6 +258,7 @@ export function FeeScheduleTable({
   disclosureUrl,
   focusCategory = null,
   medians = new Map(),
+  stateMedians,
   benchmarks,
 }: {
   fees: DisplayFee[];
@@ -228,6 +266,8 @@ export function FeeScheduleTable({
   focusCategory?: string | null;
   /** National medians by fee category, for the "vs national median" column. */
   medians?: Map<string, number | null>;
+  /** The institution's home-state medians, shown as a second line under the national one. */
+  stateMedians?: StateMedians;
   /** National percentiles by fee category; verified fees with a match get a position bar. */
   benchmarks?: FeeBenchmarks;
 }) {
@@ -243,6 +283,7 @@ export function FeeScheduleTable({
         disclosureUrl={disclosureUrl}
         isFocused={isFocused}
         medians={medians}
+        stateMedians={stateMedians}
         benchmarks={benchmarks}
       />
       <div className="hidden sm:block">
@@ -255,7 +296,7 @@ export function FeeScheduleTable({
               <tr className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
                 <th scope="col" className={HEADER_CELL}>Fee</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Amount</th>
-                <th scope="col" className={HEADER_CELL}>vs national median</th>
+                <th scope="col" className={HEADER_CELL}>{stateMedians ? "vs medians" : "vs national median"}</th>
                 <th scope="col" className={HEADER_CELL}>Basis</th>
                 <th scope="col" className={HEADER_CELL}>Note</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Source</th>
@@ -279,6 +320,7 @@ export function FeeScheduleTable({
                     mixedGroup={group.verifiedCount > 0}
                     focused={isFocused(fee)}
                     medians={medians}
+                    stateMedians={stateMedians}
                     benchmark={benchmarkFor(fee, benchmarks)}
                   />
                 ))}
@@ -324,6 +366,7 @@ function FeeRow({
   mixedGroup,
   focused = false,
   medians,
+  stateMedians,
   benchmark,
 }: {
   fee: DisplayFee;
@@ -331,6 +374,7 @@ function FeeRow({
   mixedGroup: boolean;
   focused?: boolean;
   medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
   benchmark: FeeBenchmark | null;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
@@ -357,7 +401,7 @@ function FeeRow({
         )}
       </td>
       <td className="px-4 py-2.5 align-top">
-        <MedianCell fee={fee} medians={medians} />
+        <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 align-top text-[#5A5347]">{basis || "\u2014"}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-[#6B6255]">
@@ -376,12 +420,14 @@ function FeeScheduleStack({
   disclosureUrl,
   isFocused,
   medians,
+  stateMedians,
   benchmarks,
 }: {
   groups: FeeGroup[];
   disclosureUrl: string | null;
   isFocused: (fee: DisplayFee) => boolean;
   medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
   benchmarks?: FeeBenchmarks;
 }) {
   return (
@@ -419,9 +465,9 @@ function FeeScheduleStack({
                       )}
                     </span>
                   </div>
-                  {fee.status === "verified" && fee.feeCategory && medians.has(fee.feeCategory) && (
+                  {fee.status === "verified" && fee.feeCategory && (medians.has(fee.feeCategory) || stateMedians?.medians.has(fee.feeCategory)) && (
                     <p className="mt-0.5">
-                      <MedianCell fee={fee} medians={medians} />
+                      <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
                     </p>
                   )}
                   <p className="mt-1 text-xs leading-relaxed text-[#6B6255]">

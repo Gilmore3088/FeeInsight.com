@@ -12,16 +12,17 @@ import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
 import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
 import { HAMILTON_CANONICAL, PRO_SECTION_TITLE, PRO_SUBHEAD } from "@/app/for-institutions/hamilton-copy";
-import { ProPlanCards } from "./pro-plan-cards";
+import { ProPlanCards, type ProTierSelection } from "./pro-plan-cards";
+import { ProTierChooser } from "./pro-tier-chooser";
+import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
+import { NON_INSTITUTION_TIER, PRO_ANNUAL_RANGE_LABEL, PRO_TIERS, isProTier, proTier, tierForAssets } from "@/lib/pro-tiers";
 import { AdvisoryCard, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import {
-  ANNUAL_PRICE_LABEL,
-  MONTHLY_PRICE_LABEL,
   PLAN_TEAM_LABEL,
   isProPlan,
   proFeatureList,
@@ -31,11 +32,9 @@ import {
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro (monthly or annual, for up to 5 people), and the Competitive Fee Position Report.",
+    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro priced by institution size (monthly or annual, for up to 5 people), and the Competitive Fee Position Report.",
 };
 
-const MONTHLY_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || "";
-const ANNUAL_PRICE_ID = process.env.STRIPE_ANNUAL_PRICE_ID || "";
 const WELCOME_PATH = "/account/welcome";
 
 interface SubscribeSearchParams {
@@ -47,17 +46,29 @@ interface SubscribeSearchParams {
   checkout?: string;
   /** Why /pro sent the reader here (src/lib/subscribe-reason.ts). */
   reason?: string;
+  /** The bank or credit union the plan covers; its assets set the price tier. */
+  inst?: string;
+  /** "other": a consultant or other organization (NON_INSTITUTION_TIER). */
+  org?: string;
+  /** The size band the buyer picked when the institution has no asset size on file. */
+  band?: string;
+  /** "1" when the buyer backed out of Stripe Checkout. */
+  canceled?: string;
 }
 
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
   plan: ProPlan | null;
+  selection: ProTierSelection | null;
 }): string {
   const params = new URLSearchParams();
   if (options.inviteMode) params.set("invite", "workspace");
   if (options.returnTo && options.returnTo !== WELCOME_PATH) params.set("from", options.returnTo);
   if (options.plan) params.set("plan", options.plan);
+  if (options.selection?.institutionId) params.set("inst", String(options.selection.institutionId));
+  if (options.selection?.tierPicked) params.set("band", options.selection.tier);
+  else if (options.selection?.otherOrganization) params.set("org", "other");
   const query = params.toString();
   return query ? `/subscribe?${query}` : "/subscribe";
 }
@@ -85,7 +96,13 @@ export default async function SubscribePage({
   }
 
   const isLoggedIn = !!user;
-  const reasonLine = subscribeReasonLine(params.reason, SITE_NAME);
+  // /pro says "activating" for anyone with a Stripe customer, and that customer is now made
+  // when checkout opens. activateIfPaid just asked Stripe and found no live subscription, so
+  // "if you've just paid" would only tell someone who backed out of checkout to wait.
+  const reasonLine =
+    params.canceled === "1"
+      ? "Checkout was canceled. Nothing was charged."
+      : subscribeReasonLine(params.reason === "activating" && user ? "pro_required" : params.reason, SITE_NAME);
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
   const autoStartPlan = isLoggedIn && checkoutRequested ? requestedPlan : null;
   const pendingInvitations =
@@ -94,12 +111,46 @@ export default async function SubscribePage({
       : [];
   const inviteMode = params.invite === "workspace" || pendingInvitations.length > 0;
 
+  // Who the plan covers sets the tier; checkout works it out again from the same id.
+  const institutionId = Number(params.inst);
+  const pricingInstitution =
+    Number.isSafeInteger(institutionId) && institutionId > 0
+      ? await getProPricingInstitution(institutionId).catch(() => null)
+      : null;
+  let selection: ProTierSelection | null = null;
+  let chosenLabel: string | null = null;
+  let chooserProblem: string | null = null;
+  // No asset size on file: the buyer picks the band (James, 8 Oct 2026); "Plans to check" lists it.
+  let needsBand = false;
+  if (pricingInstitution) {
+    const tier = tierForAssets(pricingInstitution.assetsThousands);
+    const place = [pricingInstitution.city, pricingInstitution.stateCode].filter(Boolean).join(", ");
+    chosenLabel = [pricingInstitution.name, place].filter(Boolean).join(", ");
+    if (tier) {
+      selection = { tier, institutionId: pricingInstitution.id, otherOrganization: false };
+      chosenLabel = `${chosenLabel} · ${proTier(tier).assetsLabel}`;
+    } else if (isProTier(params.band)) {
+      selection = { tier: params.band, institutionId: pricingInstitution.id, otherOrganization: false, tierPicked: true };
+      chosenLabel = `${chosenLabel} · ${proTier(params.band).assetsLabel} (your pick)`;
+      needsBand = true;
+    } else {
+      chooserProblem = `We don't have its asset size on file yet. Pick its size, or email ${CONTACT_EMAIL}.`;
+      needsBand = true;
+    }
+  } else if (params.org === "other") {
+    selection = { tier: NON_INSTITUTION_TIER, institutionId: null, otherOrganization: true };
+    chosenLabel = "A consultant or another organization";
+  }
+
   const registerHrefFor = (plan: ProPlan) => {
-    const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan });
+    const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
     return `/register?plan=${plan}&from=${encodeURIComponent(back)}`;
   };
+  // A returning subscriber who already picked a plan goes straight on to Stripe after
+  // signing in, the same hand-off a new signup gets.
+  const loginBack = buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection });
   const loginHref = `/login?from=${encodeURIComponent(
-    buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan }),
+    requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
   return (
@@ -145,8 +196,9 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
-            or {ANNUAL_PRICE_LABEL}/yr, {PLAN_TEAM_LABEL}) → {SITE_NAME} Advisory (custom)
+            Fee lookup and the national reports are free, and an institution report starts at $300.{" "}
+            {SITE_NAME} Pro is {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}, and{" "}
+            {SITE_NAME} Advisory is custom work.
           </p>
         </div>
 
@@ -173,12 +225,19 @@ export default async function SubscribePage({
             <ProPlanCards
               features={features}
               isLoggedIn={isLoggedIn}
-              monthlyPriceId={MONTHLY_PRICE_ID}
-              annualPriceId={ANNUAL_PRICE_ID}
+              chooser={
+                <ProTierChooser
+                  chosenLabel={chosenLabel}
+                  problem={chooserProblem}
+                  bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
+                  pickedBand={selection?.tierPicked ? selection.tier : null}
+                />
+              }
+              selection={selection}
               returnTo={returnTo ?? undefined}
               registerHrefFor={registerHrefFor}
               highlightedPlan={requestedPlan}
-              autoStartPlan={autoStartPlan}
+              autoStartPlan={selection ? autoStartPlan : null}
             />
           </section>
 

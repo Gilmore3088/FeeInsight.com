@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
+import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
@@ -18,8 +18,15 @@ type SqlTag = typeof sql;
  * category and goes to Darwin; the rest are marked with the rules version so they are not
  * re-read until the rules change again. Only lines from the document's current text are
  * re-read; lines from a replaced text stay held.
+ *
+ * v34: a line held as a range that says the bank changed a price ("We've lowered Overdraft
+ * Paid Item fees from $38 to $30", Pinnacle) is re-read too, since today's rules read the
+ * later figure as the price. It is promoted only when that price is the row's stored
+ * amount (the range's lower end), so a raised price ("increased from $4 to $5") stays held.
  */
 export const HELD_RECHECK_DEFAULT_LIMIT = 300;
+/** Range lines worth re-reading: those that say a price was changed (see `FEE_CHANGED_FROM` in rules.ts). */
+export const CHANGED_PRICE_RANGE_SQL = String.raw`\m(lowered|reduced|decreased|raised|increased|changed)\M[^$]{0,120}\mfrom\s*\$`;
 export const HELD_RECHECK_PROMOTED_FLAG = "knox_promoted_from_held";
 /**
  * A line still uncategorized after this many rules versions is set aside: flagged
@@ -141,10 +148,20 @@ export function recategorizeHeld(row: HeldRow): ExtractedFeeCandidate | null {
 export function promotedConditions(conditions: string, candidate: ExtractedFeeCandidate): string {
   return conditions
     .replace(
-      /^Knox held for review \(unclassified\)/,
+      /^Knox held for review \((?:unclassified|range)\)/,
       `Knox ${KNOX_RULES_STRATEGY.strategy} v${KNOX_RULES_STRATEGY.version} categorized a line held for review`,
     )
     .replace(/canonical_hint=none;/, `canonical_hint=${candidate.canonicalHint};`);
+}
+
+/**
+ * v34: the held row keeps its name when that name already says the category; a name
+ * that does not ("You still pay", Park National) takes the one today's rules read from
+ * the same excerpt, so Darwin's category guard can check it.
+ */
+export function promotedName(row: HeldRow, candidate: ExtractedFeeCandidate): string {
+  const name = row.fee_name?.trim();
+  return name && classifyFeeText(name) === candidate.canonicalHint ? name : candidate.feeName;
 }
 
 export async function recheckHeldRows(
@@ -168,7 +185,8 @@ export async function recheckHeldRows(
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
-       AND fr.outlier_flags ? 'knox_review:unclassified'
+       AND (fr.outlier_flags ? 'knox_review:unclassified'
+            OR (fr.outlier_flags ? 'knox_review:range' AND fr.conditions ~* ${CHANGED_PRICE_RANGE_SQL}))
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT fr.outlier_flags ? ${recheckFlag}
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
@@ -206,13 +224,14 @@ export async function recheckHeldRows(
       if (candidate.waivable) flags.push("waivable");
       const updated = await db`
         UPDATE raw_fee_observations fr
-           SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
+           SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:range')
                                || ${JSON.stringify(flags)}::jsonb,
                conditions = ${promotedConditions(row.conditions ?? "", candidate)},
                extraction_confidence = ${candidate.confidence},
-               frequency = COALESCE(fr.frequency, ${candidate.frequency})
+               frequency = COALESCE(fr.frequency, ${candidate.frequency}),
+               fee_name = ${promotedName(row, candidate)}
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
-           AND fr.outlier_flags ? 'knox_review:unclassified'
+           AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:range')
            AND NOT fr.outlier_flags ? 'needs_darwin_verification'
         RETURNING fr.fee_raw_id
       `;

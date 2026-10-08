@@ -185,6 +185,8 @@ export function narrateStepFinished(
     case "registry-federal-bills":
     case "registry-state-bills":
     case "registry-state-regulators":
+    case "registry-state-reg-news":
+    case "registry-state-bill-news":
     case "registry-enforcement":
     case "registry-state-enforcement":
       return narrateRegistryStep(stepKey, detail);
@@ -217,6 +219,16 @@ export function narrateStepFinished(
       const picked = (detail.picked ?? null) as Detail | null;
       if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a fee-depth post for ${String(picked.metro)} for James to approve.`;
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
+    }
+    case "content-od-by-state": {
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
+      return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+    }
+    case "growth-contacts": {
+      if (detail.schemaReady === false) return "Read no websites; the contacts tables are not there yet.";
+      const checked = n(detail, "checked");
+      if (!checked) return "No prospect was due a contact check.";
+      return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
@@ -253,6 +265,13 @@ export function narrateStepFinished(
       return detail.alert === "sent"
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
+    }
+    case "indexnow-ping": {
+      const submitted = n(detail, "submitted");
+      if (submitted > 0) return `Told Bing about ${count(submitted, "changed page")}.`;
+      return detail.skipped === "no pages changed"
+        ? "No institution pages changed in the last day."
+        : `Did not notify Bing (${String(detail.skipped ?? "unknown")}).`;
     }
     case "briefing-refresh": {
       const stored = n(detail, "stored");
@@ -351,6 +370,14 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
+    case "registry-state-reg-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Read news from ${n(detail, "read")} of ${count(n(detail, "agencies"), "state regulator site")}: ${count(n(detail, "fetched"), "item")}, ${n(detail, "fee_related")} about fees; ${stored}.`;
+    }
+    case "registry-state-bill-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "news story", "news stories")} on state fee bills (${n(detail, "bills_with_news")} of ${n(detail, "bills")} bills covered); ${stored}.`;
+    }
     case "registry-enforcement":
       return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
     case "registry-state-enforcement": {
@@ -405,11 +432,14 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "indexnow-ping": "atlas",
   "pro-digest": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
   "content-fee-depth": "growth",
   "content-market-spread": "growth",
+  "content-od-by-state": "growth",
+  "growth-contacts": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",
@@ -447,6 +477,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-federal-bills": "magellan",
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
+  "registry-state-reg-news": "magellan",
+  "registry-state-bill-news": "magellan",
   "registry-enforcement": "magellan",
   "registry-state-enforcement": "magellan",
   read: "rosetta",

@@ -27,8 +27,13 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 
 export const CFPB_SOURCE = "cfpb";
 const BREAKDOWN_CONCURRENCY = 4;
-/** v2: all issues (no top-15 cut), deposit/card fee issues, whole-year replace, better name matching. */
-export const CFPB_PARSER_VERSION = 2;
+/**
+ * v2: all issues (no top-15 cut), deposit/card fee issues, whole-year replace, better name matching.
+ * v3: a bank's own full name goes to the far-largest bank of that name (issue #54), so every year
+ * re-runs and the newly accepted banks get their complaint history.
+ * v4: a name with no bank word that would wait for review is recorded as not a match.
+ */
+export const CFPB_PARSER_VERSION = 4;
 const CURRENT_YEAR_REFRESH_HOURS = 24 * 7;
 const RECENT_YEAR_REFRESH_HOURS = 24 * 30;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;
@@ -70,7 +75,7 @@ export async function runRegistryCfpb(options: RegistryCfpbOptions): Promise<Reg
   const index = await loadIdentityIndex(db);
   const decisions: IdentityLinkInput[] = [];
   for (const company of companies) {
-    const match = matchCompany(company.key, index);
+    const match = matchCompany(company.key, index, { rejectNonBankNames: true });
     if (match) decisions.push({ externalKey: company.key, externalName: company.key, match, detail: { [`complaints_${year}`]: company.doc_count } });
   }
   const result: RegistryCfpbResult = {

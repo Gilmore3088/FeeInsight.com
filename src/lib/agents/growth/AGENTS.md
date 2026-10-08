@@ -13,7 +13,17 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Monthly marketing email | `/api/admin/crew/marketing`, the 1st at 14:07 UTC | `marketing-score`, `marketing-write` (paid), `marketing-states` | `../marketing/AGENTS.md` |
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
-| Weekly scores | `/api/admin/crew/growth-score`, **not scheduled** (planned Mondays 13:07 UTC) | `growth-score` | below |
+| Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
+
+### Prospect contacts (`contacts.ts`)
+
+The same walk Magellan makes for fee schedules, aimed at people. For each prospect (assets
+$100M to $5B, 10+ live fees, a website; biggest local markets first) it reads robots.txt, the
+homepage, and up to three same-site leadership, about or contact pages, as `FeeInsightBot
+(Growth)`. It keeps only addresses the institution publishes under its own domain, with the name
+and title printed just before each one. Nothing is guessed from a name pattern, and nothing
+sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 days.
 
 ### Queue intake (`intake.ts`)
 
@@ -42,9 +52,8 @@ into the app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
 
-**Not turned on.** The route exists and is on the publishing calendar as "not turned on yet";
-there is no cron for it in `vercel.json`. Nothing runs on a schedule until James says go. An admin
-can start it by hand meanwhile.
+James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
+Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
 
 ### Lessons from skip reasons (`lessons.ts`)
 
@@ -59,6 +68,17 @@ These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
 (`hamilton:content:<day>`, `hamilton:marketing:<month>`, `hamilton:marketing-send:<month>`) and
 `triggered_by` values (`hamilton.content`, `hamilton.marketing`) keep their old names, so a day or
 month already run under Hamilton is not run or sent again.
+
+## The approval page
+
+`/admin/growth` (Customers room) is the one page for the whole queue: items grouped by status
+(to review, approved, done, skipped), filterable by agent and kind, with approve, skip with a
+reason, edit title and text (drafts only), mark done, and the PR link. It reuses the server
+actions in `src/app/admin/customers/content/actions.ts`. Each roster agent has a section with its
+newest growth steps from the run ledger and its standing lessons; a step is credited to an agent
+only when its run or intake item names it, or it is a `content-*` step (MURROW). The monthly
+email and the weekly scoring show under "Team work". The marketing pause and the `agent:growth`
+budget row are shown read-only (`src/lib/data-store/growth-board.ts`).
 
 ## Nothing sends or posts on its own
 
@@ -107,4 +127,6 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `murrow`), `kind` (default `linkedin_post`), and can carry `skip_reason` (from the Skip form),
   `pr_url` and `score` / `scored_at` (migration `20270110000025`). Scheduled sessions file into
   it through the intake route above.
+- Prospect contacts go to `prospect_contacts` and `prospect_contact_checks` (migration
+  `20270110000028`).
 - No other tables for marketing results.

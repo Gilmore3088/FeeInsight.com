@@ -15,6 +15,10 @@ export interface RoomPage {
   exact?: boolean;
   /** Other paths that light this page up in the menu. */
   activePrefixes?: string[];
+  /** Shown under the room menu's "More" instead of in the main list: real screens, used less often. */
+  more?: boolean;
+  /** Reached from its card on the room's landing page (the agent cards), so the phone screen list leaves it out. */
+  card?: boolean;
   /** Key into the layout's badge counts. */
   badgeKey?: string;
 }
@@ -35,35 +39,37 @@ export const ROOMS: Room[] = [
     question: "Is anything broken, and what needs me?",
     href: "/admin",
     pages: [
-      { href: "/admin", label: "Needs you", role: "Inbox, vitals and the crew", exact: true },
+      { href: "/admin", label: "Needs you", role: "What needs you, three numbers", exact: true },
     ],
   },
   {
     key: "agents",
     label: "Agents",
-    question: "Are the six agents doing the right work at the right cost?",
+    question: "Are the agents doing the right work at the right cost?",
     href: "/admin/agents",
     pages: [
-      { href: "/admin/agents", label: "Overview", role: "All six agents", exact: true },
+      { href: "/admin/agents", label: "Overview", role: "Pipeline and marketing agents", exact: true },
       { href: "/admin/live", label: "Live board", role: "Banks moving through" },
-      { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls" },
-      { href: "/admin/states", label: "State lanes", role: "State queues" },
-      { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", activePrefixes: ["/admin/coverage"] },
-      { href: "/admin/rosetta", label: "Rosetta", role: "2 Read" },
+      { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls", card: true },
+      { href: "/admin/states", label: "State lanes", role: "State queues", more: true },
+      { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", activePrefixes: ["/admin/coverage"], card: true },
+      { href: "/admin/rosetta", label: "Rosetta", role: "2 Read", card: true },
       {
         href: "/admin/knox",
         label: "Knox",
         role: "3 Extract",
+        card: true,
         badgeKey: "knoxPending",
         activePrefixes: ["/admin/review", "/admin/agents/knox"],
       },
-      { href: "/admin/darwin", label: "Darwin", role: "4 Verify" },
-      { href: "/admin/agents/learning", label: "Learning", role: "Which methods work" },
-      { href: "/admin/agents/health", label: "Health", role: "Per-agent health tiles" },
-      { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back" },
-      { href: "/admin/agents/replay", label: "Replay", role: "Re-run a past step" },
-      { href: "/admin/agents/messages", label: "Messages", role: "Agent to agent" },
-      { href: "/admin/scoreboard", label: "Scoreboard", role: "Daily score" },
+      { href: "/admin/darwin", label: "Darwin", role: "4 Verify", card: true },
+      { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents", card: true },
+      { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
+      { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
+      { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },
+      { href: "/admin/agents/replay", label: "Replay", role: "Re-run a past step", more: true },
+      { href: "/admin/agents/messages", label: "Messages", role: "Agent to agent", more: true },
+      { href: "/admin/scoreboard", label: "Scoreboard", role: "Daily score", more: true },
     ],
   },
   {
@@ -74,7 +80,8 @@ export const ROOMS: Room[] = [
     pages: [
       { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
       { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
-      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category", activePrefixes: ["/admin/fees"] },
+      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
+      { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
       {
         href: "/admin/quality",
         label: "Trust review",
@@ -84,11 +91,10 @@ export const ROOMS: Room[] = [
       },
       { href: "/admin/verify", label: "Verify", role: "Fees to check by hand" },
       { href: "/admin/answer-key", label: "Answer key", role: "Hand-checked truth" },
-      { href: "/admin/peers", label: "Peers", role: "Peer groups" },
-      { href: "/admin/market", label: "Market", role: "Local markets" },
-      { href: "/admin/districts", label: "Districts", role: "Fed districts" },
-      { href: "/admin/index", label: "Index", role: "National index", activePrefixes: ["/admin/national"] },
-      { href: "/admin/query", label: "Query", role: "Ask the database" },
+      { href: "/admin/peers", label: "Peers", role: "Peer groups", more: true },
+      { href: "/admin/districts", label: "Districts", role: "Fed districts", more: true },
+      { href: "/admin/index", label: "Index", role: "National index", activePrefixes: ["/admin/national"], more: true },
+      { href: "/admin/query", label: "Query", role: "Ask the database", more: true },
     ],
   },
   {
@@ -101,8 +107,9 @@ export const ROOMS: Room[] = [
       { href: "/admin/leads", label: "Leads", role: "Every request", activePrefixes: ["/admin/hamilton/leads"] },
       { href: "/admin/customers/marketing", label: "Marketing", role: "Monthly emails to approve" },
       { href: "/admin/customers/content", label: "Content", role: "Posts to approve" },
-      { href: "/admin/api-keys", label: "API keys", role: "Invited partners" },
-      { href: "/admin/hamilton/research/usage", label: "Hamilton usage", role: "Who asked Hamilton", activePrefixes: ["/admin/research/usage"] },
+      { href: "/admin/growth", label: "Growth", role: "Marketing team approvals" },
+      { href: "/admin/api-keys", label: "API keys", role: "Invited partners", more: true },
+      { href: "/admin/hamilton/research/usage", label: "Hamilton usage", role: "Who asked Hamilton", activePrefixes: ["/admin/research/usage"], more: true },
     ],
   },
   {
@@ -124,6 +131,7 @@ export const ROOMS: Room[] = [
         href: "/admin/hamilton/methodology",
         label: "Methodology",
         role: "How we build it",
+        more: true,
         activePrefixes: ["/admin/methodology"],
       },
       { href: "/admin/hamilton/chat", label: "Hamilton", role: "Ask Hamilton", activePrefixes: ["/admin/hamilton/scout", "/admin/scout"] },
@@ -131,6 +139,7 @@ export const ROOMS: Room[] = [
         href: "/admin/hamilton/research",
         label: "Research agents",
         role: "Research history",
+        more: true,
         activePrefixes: ["/admin/research"],
       },
     ],

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
@@ -106,7 +107,7 @@ export function AdvisoryCard() {
             Custom competitor sets, board decks, multi-institution work
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-[#5A5347]">
-            Prepared by us on the same verified data. Also the path for multi-seat licenses, data
+            Prepared by us on the same verified data. Also the path for teams of more than 5 people, data
             feeds, invoicing and POs, and dedicated support for larger institutions and vendors.
           </p>
         </div>
@@ -129,11 +130,17 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes. Monthly plans cancel at the end of the current billing period; no long-term commitment.",
+      answer: "Yes. Every plan cancels at the end of its current billing period, from your account's billing page. Annual plans cancelled within 14 days of the first annual payment are refunded in full; after that, an annual plan runs to the end of its paid year. Monthly plans aren't refunded.",
     },
     {
       question: "Do you invoice or accept POs?",
       answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+    },
+    {
+      question: "How is the Pro price set?",
+      answer: `By your institution's total assets from its latest call report: ${PRO_TIERS.map(
+        (tier) => `${tier.assetsLabel.toLowerCase()} is ${tierPriceLabel(tier.key, "annual")}`,
+      ).join(", ")}. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price. If we don't have your fee schedule yet, send it there too and we'll add it.`,
     },
     {
       question: "How do seats work?",

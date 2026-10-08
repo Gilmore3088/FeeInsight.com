@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isSingleProductDisclosureLink, isStaleDatedLink, looksForeignSchedule, refersElsewhere } from "./link-coverage";
+import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isOtherSiteLink, OTHER_SITE_LINK_SQL, isSingleProductDisclosureLink, isStaleDatedLink, looksForeignSchedule, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -130,5 +130,28 @@ describe("foreign schedules", () => {
     expect(looksForeignSchedule(us)).toBe(false);
     expect(looksForeignSchedule("Overdraft fee $34. Returned item $34.")).toBe(false);
     expect(looksForeignSchedule(null)).toBe(false);
+  });
+});
+
+describe("isOtherSiteLink", () => {
+  it("flags government, broker and car-price pages", () => {
+    expect(isOtherSiteLink("https://www.cincinnati-oh.gov/sites/finance/assets/File/Risk/HSA.pdf", "https://www.bell.bank")).toBe(true);
+    expect(isOtherSiteLink("https://files.consumerfinance.gov/a/assets/credit-card-agreements/pdf/Barclays.pdf", "https://www.barclaysus.com")).toBe(true);
+    expect(isOtherSiteLink("https://www.lpl.com/content/dam/lpl-www/documents/disclosures/summary.pdf", "http://www.envistacu.com")).toBe(true);
+    expect(isOtherSiteLink("https://www.nadaguides.com/", "http://www.arcadiacu.com")).toBe(true);
+  });
+
+  it("keeps a bank's own site, even on a .gov host", () => {
+    expect(isOtherSiteLink("https://gsafcu.gsa.gov/fee-schedule", "https://gsafcu.gsa.gov")).toBe(false);
+    expect(isOtherSiteLink("https://www.bell.bank/fees.pdf", "https://www.bell.bank")).toBe(false);
+    expect(isOtherSiteLink("https://www.government.com/fees", null)).toBe(false);
+  });
+
+  it("matches the same hosts in SQL form", () => {
+    const re = new RegExp(OTHER_SITE_LINK_SQL);
+    expect(re.test("https://files.consumerfinance.gov/a.pdf")).toBe(true);
+    expect(re.test("https://www.kbb.com/")).toBe(true);
+    expect(re.test("https://www.govbank.com/fees")).toBe(false);
+    expect(re.test("https://www.mylpl.com.bank/fees")).toBe(false);
   });
 });

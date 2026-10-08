@@ -6,6 +6,7 @@ import {
   heldConditions,
   heldRecheckFlag,
   promotedConditions,
+  promotedName,
   promotionCheckedFlag,
   promotionWithdrawnFlag,
   recategorizeHeld,
@@ -65,6 +66,28 @@ describe("Knox held-line re-check", () => {
     expect(recategorizeHeld(returnedMail)?.canonicalHint).toBe("account_research");
     expect(recategorizeHeld(membership)).toBeNull();
     expect(recategorizeHeld({ ...courtesyPay, amount: "35.00" })).toBeNull();
+  });
+
+  it("v34 promotes a held range that says the bank lowered the price, at the stored amount", () => {
+    const rangeConditions = (excerpt: string) =>
+      `Knox held for review (range) from Rosetta artifact #9. canonical_hint=overdraft; text_hash=abc; excerpt="${excerpt}"`;
+    const lowered = { fee_raw_id: 321489, amount: "30.00", conditions: rangeConditions("- We've lowered Overdraft Paid Item fees from $38 to $30 for ***all*** clients.") };
+    const raised = { fee_raw_id: 118307, amount: "4.00", conditions: rangeConditions("The return mail fee increased from $4 to $5.") };
+    expect(recategorizeHeld(lowered)?.canonicalHint).toBe("overdraft");
+    expect(promotedConditions(lowered.conditions, recategorizeHeld(lowered)!)).toMatch(/^Knox extract\.rules v\d+ categorized a line held for review/);
+    expect(recategorizeHeld(raised)).toBeNull();
+  });
+
+  it("v34 names a promoted line from today's read when its held name does not say the category", () => {
+    const park = {
+      fee_raw_id: 1,
+      amount: "35.00",
+      fee_name: "You still pay",
+      conditions: conditions("You still pay a fee of $35 per item for overdrawing your account, but your transaction will go through."),
+    };
+    const candidate = recategorizeHeld(park)!;
+    expect(promotedName(park, candidate)).toBe("Overdraft fee (per item for overdrawing your account)");
+    expect(promotedName({ ...courtesyPay, fee_name: "Courtesy Pay Fee" }, recategorizeHeld(courtesyPay)!)).toBe("Courtesy Pay Fee");
   });
 
   it("rewrites the audit text with the category", () => {

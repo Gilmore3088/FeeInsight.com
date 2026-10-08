@@ -158,6 +158,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   the main fee link with its own earlier copies, each companion page (one account's page,
   a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
   outdates Value Checking's line, or the main schedule's; it publishes beside them.
+- Within a stream, only a newer copy of the same page supersedes or outdates a line
+  (`feePageKey` in `page-key.ts`: host without "www.", path without dates and version
+  words). A consumer schedule's price never replaces the business schedule's. Rows a
+  different page superseded before 8 Oct come back through the restore bar
+  (`cross-page-restore.ts`, each publish step), unless they are business-schedule fees
+  beside a live consumer fee, which the business-schedule rule keeps down.
 - Each publish step rolls back live fees read from companion pages Magellan retired as not
   a consumer fee page (`companion-retire.ts`, reason `companion_page_retired`, up to 500 a
   step) and rejects their verified rows, so they never publish again. Pages retired for a
@@ -342,6 +348,22 @@ version 3, 2026-10-07). Before that, a fee Darwin re-filed from Knox's hint, suc
 National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)" (hint overdraft,
 filed as an overdraft protection transfer), was read under the hint, failed the category
 guard there, and was taken down as unreproduced: 140 fees at 128 banks on 2026-10-07.
+
+## Taxonomy Fold (top 50, James 2026-10-08)
+
+`taxonomy-fold.ts` runs in the publish step after the off-taxonomy restore. It reads live
+and verified fees still filed under one of the 15 categories retired from `FEE_FAMILIES`
+(`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`) and re-files each by its name, and for a
+bare name by the 200 characters of schedule text before it. A move happens only when the
+category guard and amount envelope accept the fee in its new category
+(`passesDarwinChecks`); it updates the verified and published rows and writes a
+`category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
+not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
+first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
+the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James turned it on
+after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
+counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
+keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 ## Source Check
 

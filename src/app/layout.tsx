@@ -38,6 +38,11 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
+  // Search Console ownership: paste Google's HTML-tag code into the
+  // GOOGLE_SITE_VERIFICATION env var in Vercel. Unset renders no tag.
+  ...(process.env.GOOGLE_SITE_VERIFICATION?.trim()
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION.trim() } }
+    : {}),
 };
 
 export default function RootLayout({

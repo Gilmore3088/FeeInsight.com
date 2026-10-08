@@ -5,7 +5,7 @@ import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
 import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
 import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
-import { matchCompany, type IdentityIndex } from "./identity";
+import { decideIdentityLink, matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
@@ -96,6 +96,61 @@ describe("identity matching", () => {
     expect(matchCompany("FIRST CITIZENS BANCSHARES, INC.", idx)).toMatchObject({ institutionId: 17, method: "holding_company_dominant_parent" });
     // Comparable parents: no full-name match, and the loose name has no candidates.
     expect(matchCompany("INDEPENDENT BANK CORP.", idx)).toBeNull();
+  });
+
+  it("accepts a bank's own full name only when that bank dwarfs every other bank of the same name", () => {
+    const bank = (id: number, name: string, hc: string | null, assets: number) => ({ id, name, holdingCompanyRssd: hc, assetSize: assets, via: "institution_name" as const });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["COMMERCE", [bank(70, "Commerce Bank", "1", 35_017_320), bank(71, "Commerce Bank", null, 762_489), bank(72, "Commerce Bank of Texas", null, 2_344_611)]],
+        ["UNITED COMMUNITY", [bank(75, "United Community Bank", "2", 28_987_812), bank(76, "United Community Bank", "3", 4_129_042)]],
+        ["WEST", [bank(80, "Bank of the West", null, 829_755), bank(81, "Bank of the West", null, 192_365), bank(82, "West Bank", "4", 4_029_129)]],
+        ["FMS", [bank(90, "FMS Bank", null, 324_823), bank(91, "FMS Bank", null, 1_000)]],
+      ]),
+    };
+    // Commerce Bank of Texas is a different full name, so only the two "Commerce Bank" charters compete.
+    expect(matchCompany("COMMERCE BANK", idx)).toMatchObject({ institutionId: 70, status: "accepted", method: "exact_bank_name_dominant" });
+    // Comparable banks of the same name, or a bank under $10B, stay for review.
+    expect(matchCompany("UNITED COMMUNITY BANK", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
+    expect(matchCompany("BANK OF THE WEST", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
+    // A firm whose name is not a bank's full name never matches this way.
+    expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
+  });
+
+  it("records a CFPB name with no bank word as not a match instead of waiting for review", () => {
+    const bank = (id: number, name: string, assets: number) => ({ id, name, holdingCompanyRssd: null, assetSize: assets, via: "institution_name" as const });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["FMS", [bank(90, "FMS Bank", 324_823)]],
+        ["FIDELITY", [bank(91, "The Fidelity Bank", 4_662_244), bank(92, "Fidelity Bank", 3_298_672)]],
+        ["WEST", [bank(80, "Bank of the West", 829_755), bank(82, "West Bank", 4_029_129)]],
+        ["STERLING", [bank(93, "Sterling Bank", 1_563_784), bank(94, "Sterling Bank", 461_880)]],
+      ]),
+    };
+    const cfpb = { rejectNonBankNames: true };
+    expect(matchCompany("FMS Inc.", idx, cfpb)).toMatchObject({ status: "rejected", method: "non_bank_name" });
+    expect(matchCompany("Fidelity National Financial, Inc", idx, cfpb)).toMatchObject({ status: "rejected" });
+    // A name with a bank word still waits for a person.
+    expect(matchCompany("BANK OF THE WEST", idx, cfpb)).toMatchObject({ status: "needs_review" });
+    expect(matchCompany("STERLING BANCORP", idx, cfpb)).toMatchObject({ status: "needs_review" });
+    // SEC filers are banks by SIC code, so the SEC matcher never rejects this way.
+    expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
+  });
+
+  it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
+    const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
+    await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
+    expect(accept.statements[0].values).toEqual(["accepted", "james", "cfpb_company", "COMMERCE BANK"]);
+    expect(accept.statements[1]).toMatchObject({ text: expect.stringContaining("UPDATE registry_ingest_partitions"), values: ["cfpb"] });
+
+    const reject = createDb([["UPDATE institution_identity_links", () => [{ id: 2 }]]]);
+    await decideIdentityLink(reject.db, { linkType: "sec_cik", externalKey: "0000123", decision: "rejected", verifiedBy: "james" });
+    expect(reject.statements).toHaveLength(1);
+
+    // Already decided (no needs_review row): nothing else happens.
+    const stale = createDb([]);
+    await expect(decideIdentityLink(stale.db, { linkType: "cfpb_company", externalKey: "X", decision: "accepted", verifiedBy: "james" })).resolves.toBe(false);
+    expect(stale.statements).toHaveLength(1);
   });
 });
 
@@ -615,6 +670,18 @@ describe("registry state bills worker", () => {
     expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
   });
 
+  it("treats states last read in shadow mode as due once the tracker is live", async () => {
+    for (const live of [true, false]) {
+      const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+      const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+      await runRegistryStateBillsBatch({ db, now, apiKey: "k", live, statesPerRun: 1, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+      const dueQuery = statements.find((s) => s.text.includes("FROM registry_ingest_partitions") && s.text.includes("next_attempt_after > NOW()"));
+      expect(dueQuery?.text).toContain("detail->>'shadow'");
+      // The run's own shadow flag decides whether shadow-only reads still count as fresh.
+      expect(dueQuery?.values).toContain(!live);
+    }
+  });
+
   it("stops at a 429 and leaves that state due instead of failing it", async () => {
     const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
     const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
@@ -680,6 +747,8 @@ describe("registry dispatch", () => {
       "federal-register",
       "federal-bills",
       "state-bills",
+      "state-reg-news",
+      "state-bill-news",
       "state-regulators",
       "enforcement",
       "state-enforcement",

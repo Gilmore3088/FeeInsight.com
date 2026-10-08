@@ -319,3 +319,37 @@ describe("companion links that are never fee documents", () => {
     expect(classify("Free Checking", "/checking/free-checking")?.kind).toBe("account_page");
   });
 });
+
+describe("market leaders without a live overdraft fee", () => {
+  it("searches up to two leaders from any state before the state's own banks", async () => {
+    const leader = { ...thinBank, id: 839, institution_name: "The Yellowstone Bank", state_code: "MT" };
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      queries.push({ text, values });
+      if (text.includes("AS companion_ready")) return Promise.resolve([{ companion_ready: true }]);
+      if (text.includes("FROM published_fee_records")) {
+        const leaderOnly = values.some((value) => Array.isArray(value) && value.length === 2 && value.includes(839));
+        return Promise.resolve(leaderOnly ? [leader] : [thinBank]);
+      }
+      return Promise.resolve([]);
+    });
+    const result = await runSecondDocumentFind({
+      db: asDb(db),
+      fetchImpl: vi.fn(async () => notFound()),
+      runId: 5,
+      stateCode: "MS",
+      deadline: Date.now() + 60_000,
+      learning: true,
+      dryRun: true,
+      hiddenTopUp: false,
+      leaderIds: [839, 1],
+    });
+    expect(result.results.map((row) => row.institutionId)).toEqual([839, 5829]);
+    const thinQueries = queries.filter((query) => query.text.includes("FROM published_fee_records"));
+    expect(thinQueries[0].text).toContain("NOT has_overdraft");
+    expect(thinQueries[0].values).toContain(2);
+    // The state's own query leaves out the leader already taken.
+    expect(thinQueries[1].values).toContainEqual([839]);
+  });
+});

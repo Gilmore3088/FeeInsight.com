@@ -98,6 +98,15 @@ export function classify(title: string): string {
 // RSS Feed URLs
 // ---------------------------------------------------------------------------
 
+/**
+ * reg_articles also holds the state news steps' items (registry-state-reg-news, source
+ * "state:XX"; registry-state-bill-news, source "news:XX", press coverage). Every reader
+ * that means federal agency releases keeps to this, so a state bulletin or a newspaper
+ * story is never cited as an agency release. A static clause, safe inside SQL text.
+ */
+export const STATE_NEWS_SOURCE_PATTERNS = ["state:%", "news:%"];
+export const FEDERAL_RELEASES_ONLY = STATE_NEWS_SOURCE_PATTERNS.map((p) => `source NOT LIKE '${p}'`).join(" AND ");
+
 export const FEEDS: Record<string, string> = {
   FED: "https://www.federalreserve.gov/feeds/press_all.xml",
   FDIC: "https://public.govdelivery.com/topics/USFDIC_26/feed.rss",
@@ -125,7 +134,7 @@ export async function getArticles(opts: GetArticlesOptions = {}): Promise<RegArt
     return [];
   }
 
-  const conditions: string[] = [];
+  const conditions: string[] = [FEDERAL_RELEASES_ONLY];
   const params: (string | number)[] = [];
 
   if (opts.source) {
@@ -162,7 +171,7 @@ export async function getArticleCount(opts: { source?: string; topic?: string; s
     return 0;
   }
 
-  const conditions: string[] = [];
+  const conditions: string[] = [FEDERAL_RELEASES_ONLY];
   const params: (string | number | null)[] = [];
 
   if (opts.source) {
@@ -193,7 +202,7 @@ export async function getTopicCounts(since?: string): Promise<Record<string, num
     return {};
   }
 
-  const sinceClause = since ? "WHERE published_at >= $1" : "";
+  const sinceClause = since ? `WHERE ${FEDERAL_RELEASES_ONLY} AND published_at >= $1` : `WHERE ${FEDERAL_RELEASES_ONLY}`;
   const params = since ? [since] : [];
 
   const rows = await sql.unsafe(
@@ -213,7 +222,7 @@ export async function getSourceCounts(since?: string): Promise<Record<string, nu
     return {};
   }
 
-  const sinceClause = since ? "WHERE published_at >= $1" : "";
+  const sinceClause = since ? `WHERE ${FEDERAL_RELEASES_ONLY} AND published_at >= $1` : `WHERE ${FEDERAL_RELEASES_ONLY}`;
   const params = since ? [since] : [];
 
   const rows = await sql.unsafe(

@@ -49,7 +49,7 @@ export function ManageBillingButton({
     setError(null);
     startTransition(async () => {
       try {
-        await createPortalSession();
+        await createPortalSession("/pro/settings");
       } catch {
         setError("Unable to open billing portal. Please try again.");
       }

@@ -152,6 +152,44 @@ export function tidyFeeName(raw: string): string {
   return usableName(name) ? name : raw.trim();
 }
 
+/**
+ * Two shapes a PDF's columns leave in a name, fixed without changing its words otherwise:
+ * - a parenthesis the line break cut off ("Early Account Closure (by Extraco – no",
+ *   "Consumer, Inactivity Fee (Notification sent at 10"): the name ends before the first
+ *   unclosed "(", or loses a lone opening "(" when nothing comes before it;
+ * - a word printed twice where a row label meets its cell ("Account Research Research",
+ *   "MORTGAGE Mortgage Fax Fee", "Monthly Fee Fee is waived if ..."): an ALL-CAPS heading
+ *   word is dropped, a description after the repeat ("is waived ...") is dropped, and
+ *   otherwise the repeat is read once ("Personal Loan Loan Application Fee").
+ * Returns the input when the result would not be a usable name.
+ */
+export function repairNameShape(raw: string): string {
+  let name = raw.replace(/\s+/g, " ").trim();
+  const open: number[] = [];
+  for (let index = 0; index < name.length; index += 1) {
+    if (name[index] === "(") open.push(index);
+    else if (name[index] === ")") open.pop();
+  }
+  if (open.length > 0) {
+    const cut = open[0];
+    name = cut === 0 ? name.slice(1).trim() : name.slice(0, cut).replace(/[\s,;:\-–—]+$/u, "").trim();
+  }
+  const doubled = name.match(/\b([A-Za-z][A-Za-z'’]{2,})\s+(\1)\b/i);
+  if (doubled && doubled.index !== undefined) {
+    const [whole, first, second] = doubled;
+    const start = doubled.index;
+    const after = name.slice(start + whole.length);
+    if (first === first.toUpperCase() && second !== second.toUpperCase()) {
+      name = (name.slice(0, start) + name.slice(start + first.length)).trim();
+    } else if (/^\s+[a-z]/.test(after)) {
+      name = name.slice(0, start + first.length).trim();
+    } else {
+      name = (name.slice(0, start + first.length) + after).trim();
+    }
+  }
+  return usableName(name) ? name : raw.trim();
+}
+
 /** A short title line: a section heading such as "Wire Transfers". */
 export function looksLikeHeading(line: string, maxWords = 6): boolean {
   const words = line.split(/\s+/).filter(Boolean);
@@ -175,7 +213,9 @@ const COMPOSABLE_WORDS = new Set(
     // "Business accounts only" under "Non-Sufficient Funds (NSF)".
     "account accounts only " +
     // "Service assisted" and "Online" under "Stop Payments".
-    "online service assisted branch series"
+    "online service assisted branch series " +
+    // v34: "Per transaction" beside "Overdraft Fee - Items Paid" (Banc of California).
+    "transaction transactions"
   ).split(" "),
 );
 

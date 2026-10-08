@@ -6,7 +6,7 @@ import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory } from "./fee-cate
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
-    expect(checkFeeCategory("coin_counting", "Anything at all")).toEqual({ ok: true });
+    expect(checkFeeCategory("notary_fee", "Anything at all")).toEqual({ ok: true });
     expect(checkFeeCategory(null, "Overdraft")).toEqual({ ok: true });
   });
 
@@ -69,7 +69,6 @@ describe("checkFeeCategory", () => {
     ["stop_payment", "Removal of Stop Payment"],
     ["stop_payment", "Remove Stop Payment"],
     ["stop_payment", "Stop Payment Fee (removal)"],
-    ["atm_non_network", "Foreign ATM Balance Inquiry"],
   ])("flags %s: %s as filed under the wrong category", (key, name) => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_contradicts" });
   });
@@ -171,7 +170,8 @@ describe("checkFeeCategory", () => {
     for (const name of ["VISA Chargeback", "Chargeback for debit card transactions", "Loan Payment Chargeback Fee", "Chargeback on Loan"]) {
       expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
     }
-    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("card_dispute");
+    // card_dispute folded into account_research (top 50, Oct 8).
+    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("account_research");
   });
 
   it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
@@ -296,16 +296,16 @@ describe("checkFeeCategory", () => {
     }
   });
 
-  it("keeps a gift card's reload, replacement and inactivity fees out of its purchase price", () => {
+  // v25: prepaid card reloads folded into gift_card_purchase (top 50, Oct 8).
+  it("keeps a gift card's replacement and inactivity fees out of its purchase price", () => {
     for (const name of [
-      "Visa Gift Card Reload Fee",
       "Gift Card Monthly Inactivity Fee (after 12 mo. non-use)",
       "Monthly Share Account Fee",
       "Card delivery",
     ]) {
       expect(checkFeeCategory("gift_card_purchase", name).ok).toBe(false);
     }
-    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card"]) {
+    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card", "Visa Gift Card Reload Fee"]) {
       expect(checkFeeCategory("gift_card_purchase", name)).toEqual({ ok: true });
     }
     expect(checkFeeCategory("card_replacement", "Replacement VISA® Gift Card Fee").ok).toBe(false);
@@ -446,6 +446,41 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps bare card names, other fees and fragments out of ATM, coin, ACH return and overdraft fees (Oct 8)", () => {
+    for (const name of ["ATM or Debit Card", "ATM/Debit Cards", "Debit/ATM Card", "ATM or Visa Debit Card", "ATM and Debit Card"]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("atm_non_network", "ATM/Debit Card withdrawals at ATMs out of network")).toEqual({ ok: true });
+    expect(checkFeeCategory("coin_counting", "Consumer Negative Balance Fee, per statement cycle").ok).toBe(false);
+    expect(checkFeeCategory("coin_counting", "Coin Counting - Non-Customer")).toEqual({ ok: true });
+    expect(checkFeeCategory("ach_return", "Hold Mail Request, monthly").ok).toBe(false);
+    expect(checkFeeCategory("ach_return", "Redeposited item")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "ADVANTAGE OVERDRAFT: would not apply; however").ok).toBe(false);
+  });
+
+  it("keeps sustained charges and de minimis lines out of the NSF fee (Oct 8)", () => {
+    for (const name of ["Insufficient Funds after 5 consecutive days", "per day. De Minimis--OD/NSF fee amount of"]) {
+      expect(checkFeeCategory("nsf", name).ok, name).toBe(false);
+    }
+    for (const name of ["NSF Fee (Returned Item) ( 5 per day)", "Non-Sufficient Funds (NSF) Items (up to 4 per day)"]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps savings withdrawal limits and lobby ATMs out of out-of-network ATM fees (seven-state misses, Oct 8)", () => {
+    for (const name of [
+      "ATM Savings Withdrawal",
+      "ATM Share Savings Withdrawal (over 3x per month)",
+      "Reg-D Savings Withdrawal Fee (In excess of six per month, excluding ATM or in-person)",
+      "Lobby ATM",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    for (const name of ["ATM Surcharge", "Non-Network ATM Withdrawal", "Foreign ATM Fee"]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
     for (const name of [
       "Deposits/Withdrawals at an ATM we do not own or operate",
@@ -454,17 +489,18 @@ describe("checkFeeCategory", () => {
       "Foreign ATM Inquiry or Transfer Fee",
       "ATM Withdrawal/Inquiry on all other networks",
       "Inquiry or transactions at non-Seacoast ATMs",
+      // v25: a balance inquiry at an ATM is an ATM fee (top 50, Oct 8).
+      "Foreign ATM Balance Inquiry",
+      "ATM Foreign Transaction Fee - Balance Inquiry",
+      "Balance Inquiry at non-Pathfinder ATM",
+      "ATM Balance Inquiry (other bank ATM) per transaction",
     ]) {
       expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
     }
     for (const name of [
-      "Foreign ATM Balance Inquiry",
-      "ATM Foreign Transaction Fee - Balance Inquiry",
       "ATM Foreign Transaction Fee - Deposit",
       "ATM Deposit Correction",
       "Non-Member ATM Deposit/Withdrawal",
-      "Balance Inquiry at non-Pathfinder ATM",
-      "ATM Balance Inquiry (other bank ATM) per transaction",
     ]) {
       expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
     }
@@ -506,5 +542,40 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("nsf", "per copy Nonsufficient funds (NSF) (each debit or check returned)")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Item on Lifeline 18/65 Checking or Statement Savings \"Overdraft Fee\"")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
+  });
+  it("v28 keeps notary, card and payment fees out of cash advance and temporary checks out of check printing (Oct 8)", () => {
+    expect(checkFeeCategory("cash_advance", "Remote Online Notary").ok).toBe(false);
+    expect(checkFeeCategory("cash_advance", "VISA Credit Card Payment by Phone").ok).toBe(false);
+    expect(checkFeeCategory("cash_advance", "Cash Advance Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("cash_advance", "Cargo por adelantos en efectivo con tarjeta de crédito")).toEqual({ ok: true });
+    expect(checkFeeCategory("check_printing", "ACH Payment").ok).toBe(false);
+    expect(checkFeeCategory("check_printing", "Temporary Check Printing").ok).toBe(false);
+    expect(checkFeeCategory("check_printing", "Check Printing (varies by style)")).toEqual({ ok: true });
+    expect(refileCategory("check_printing", "Temporary Share Drafts (4 per page)")).toBe("counter_check");
+  });
+
+  it("v29 files an insufficient-funds charge the bank paid as the overdraft fee (WaFd, Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Paid)").ok).toBe(true);
+    expect(refileCategory("nsf", "Insufficient Funds Charge (Paid)")).toBe("overdraft");
+    expect(refileCategory("nsf", "Insufficient Funds Charge (Returned)")).toBe("nsf");
+    expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Returned)").ok).toBe(false);
+  });
+
+  it("v29 accepts a per-item overdraft fee whose note states the daily count, never the cap itself (First Financial, Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Overdraft Fee-Paid Item (Maximum of 2 Items/Day)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day On Consumer Accounts)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day o")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Courtesy Pay Overdraft Fee (5 maximum per day)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft per item (Consumer limit of 5 per day)")).toEqual({ ok: true });
+    // The cap, a cap named outside the note, a dollar cap in the note, or another excluded word stays out.
+    expect(checkFeeCategory("overdraft", "Overdraft Daily Cap").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Maximum Overdraft Fees (per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (maximum $175 per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (maximum charge per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Charge (Daily Maximum)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft protection savings (limit 6 per month)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (daily, beginning day 5)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Transfer Fee (maximum of 3 per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft (maximum 5 per day)").ok).toBe(false);
   });
 });
