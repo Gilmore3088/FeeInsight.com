@@ -493,3 +493,12 @@ database is not allowed. Founding customers get a two-year price lock; Pro trial
 hand; LinkedIn is 2 posts a week; growth budget $0; free channels only. The weekly growth
 schedules (scores, prospect contacts) are on. Gates: a free snapshot needs the source and
 contact checks; charging also needs checkout, security, legal and data quality.
+
+**The paid report shows "From $300"; banks with no asset size pick their own Pro band.** James,
+15:24 to 15:25 UTC 8 Oct, UAT thread, agreeing with the executive and marketing teams' picks on
+calls A to E and choosing $300 on the card. Each report is still quoted per institution
+(`REPORT_OFFER.fromPriceUsd`). "Free" no longer describes the paid report. For a bank with no
+asset size on file, the buyer picks the size band at checkout; the subscription carries
+`tier_picked_by_buyer` and the Customers room's "Plans to check" lists it. Assets on file always
+set the tier when they exist. Also agreed: a pay-by-invoice option for the report, and the Pro
+price picker first on phones (design, waits for James's review).

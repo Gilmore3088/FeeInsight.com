@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
+import { REPORT_OFFER } from "@/lib/constants";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
@@ -289,7 +290,7 @@ function RequestReportFormInner({
                       (option.paid ? "bg-[#EADFCB] text-[#7A5A1E]" : "bg-[#E3EFE8] text-[#2F6B4F]")
                     }
                   >
-                    {option.paid ? "Paid" : "Free, instant"}
+                    {option.paid ? REPORT_OFFER.priceLabel : "Free, instant"}
                   </span>
                 </span>
                 <span className="mt-0.5 block text-[13px] text-[#6B6255]">{option.detail}</span>
