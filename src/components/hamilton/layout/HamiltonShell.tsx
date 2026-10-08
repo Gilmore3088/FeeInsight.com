@@ -5,6 +5,7 @@ import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonAskDock } from "./HamiltonAskDock";
+import { HamiltonTabStrip } from "./HamiltonTabStrip";
 
 interface HamiltonShellProps {
   isAdmin: boolean;
@@ -78,6 +79,8 @@ export function HamiltonShell({
       <div className="print:hidden">
         <ConsumerNav />
       </div>
+      {/* On a phone the header's links fold into a drawer, so the four tabs sit here instead. */}
+      <HamiltonTabStrip />
 
       {institutionContext.makeDefaultHref ? (
         <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">

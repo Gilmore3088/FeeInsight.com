@@ -10,9 +10,10 @@ import {
   getPublicStats,
 } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { LinkButton, MemoHeader, MemoPage, SERIF } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = {
-  title: "District Intelligence",
+  title: "Fed districts",
 };
 
 export default async function ProDistrictsPage() {
@@ -25,31 +26,21 @@ export default async function ProDistrictsPage() {
   const stats = await getPublicStats();
 
   return (
-    <div>
-    <div className="mx-auto max-w-7xl px-6 py-10">
-      {/* Terracotta label */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-terra/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-terra/60">
-          District Intelligence
-        </span>
-      </div>
+    <MemoPage>
+      <MemoHeader
+        kicker="Reference"
+        title="Fed districts"
+        dek={
+          <>
+            Institutions, published fees and the latest Beige Book reading for each of the 12 Federal Reserve
+            districts: {stats.total_institutions.toLocaleString()} institutions and{" "}
+            {stats.total_observations.toLocaleString()} fees on file in all.
+          </>
+        }
+        actions={<LinkButton href="/pro/research?layer=district">Your district in My fees</LinkButton>}
+      />
 
-      <h1
-        className="text-[2rem] leading-[1.1] tracking-[-0.02em] text-warm-900"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-      >
-        Federal Reserve Districts
-      </h1>
-      <p className="mt-3 max-w-lg text-[14px] leading-relaxed text-warm-600">
-        Fee benchmarks, institutional coverage, and economic commentary across
-        all 12 Federal Reserve districts. Data spans{" "}
-        {stats.total_institutions.toLocaleString()} institutions and{" "}
-        {stats.total_observations.toLocaleString()} fee observations.
-      </p>
-
-      {/* District grid */}
-      <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {metrics.map((m) => {
           const name = DISTRICT_NAMES[m.district] ?? `District ${m.district}`;
           const headline = headlines.get(m.district);
@@ -59,94 +50,57 @@ export default async function ProDistrictsPage() {
               : 0;
 
           return (
-            <Link
-              key={m.district}
-              href={`/research/district/${m.district}`}
-              className="group rounded-xl border border-warm-200/80 bg-white/70 backdrop-blur-sm p-5 hover:shadow-md hover:border-warm-300 transition-all duration-200 no-underline"
-            >
-              {/* District header */}
-              <div className="flex items-center gap-3 mb-4">
-                <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-warm-100 text-[12px] font-bold text-warm-600 [font-variant-numeric:tabular-nums]">
-                  {m.district}
-                </span>
-                <h2
-                  className="text-[15px] font-semibold text-warm-900 group-hover:text-terra transition-colors"
-                  style={{
-                    fontFamily: "var(--font-newsreader), Georgia, serif",
-                  }}
-                >
-                  {name}
-                </h2>
-              </div>
+            <section key={m.district} className="flex flex-col rounded-lg border border-warm-300 bg-warm-50 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text [font-variant-numeric:tabular-nums]">
+                District {m.district}
+              </p>
+              <h2 className="mt-1 text-xl text-warm-900" style={SERIF}>
+                {name}
+              </h2>
 
-              {/* Metrics row */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                    Institutions
-                  </p>
-                  <p
-                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
-                    style={{
-                      fontFamily: "var(--font-newsreader), Georgia, serif",
-                    }}
-                  >
+              <dl className="mt-3 grid grid-cols-3 gap-3">
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Institutions</dt>
+                  <dd className="mt-0.5 text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
                     {m.institution_count.toLocaleString()}
-                  </p>
+                  </dd>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                    Fees
-                  </p>
-                  <p
-                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
-                    style={{
-                      fontFamily: "var(--font-newsreader), Georgia, serif",
-                    }}
-                  >
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Fees on file</dt>
+                  <dd className="mt-0.5 text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
                     {m.total_fees.toLocaleString()}
-                  </p>
+                  </dd>
                 </div>
-                <div>
-                  <p
-                    className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500"
+                <div className="min-w-0">
+                  <dt
+                    className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600"
                     title="Share of institutions in this district with a fee schedule on file"
                   >
-                    Fee schedule on file
-                  </p>
-                  <p
-                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
-                    style={{
-                      fontFamily: "var(--font-newsreader), Georgia, serif",
-                    }}
-                  >
+                    Schedule on file
+                  </dt>
+                  <dd className="mt-0.5 text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
                     {coveragePct}%
-                  </p>
+                  </dd>
                 </div>
+              </dl>
+
+              <div className="mt-4 border-t border-warm-200 pt-3">
+                <p className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Beige Book</p>
+                <p className="mt-1 line-clamp-3 text-sm leading-relaxed text-warm-700">
+                  {headline ? headline.text : "No Beige Book reading on file for this district."}
+                </p>
               </div>
 
-              {/* Beige Book headline */}
-              {headline ? (
-                <div className="pt-3 border-t border-warm-200/40">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500 mb-1">
-                    Beige Book
-                  </p>
-                  <p className="text-[11px] leading-relaxed text-warm-600 line-clamp-2">
-                    {headline.text}
-                  </p>
-                </div>
-              ) : (
-                <div className="pt-3 border-t border-warm-200/40">
-                  <p className="text-[11px] text-warm-500 italic">
-                    No Beige Book data available
-                  </p>
-                </div>
-              )}
-            </Link>
+              <Link
+                href={`/research/district/${m.district}`}
+                className="mt-auto -mb-2 flex min-h-11 items-center pt-3 text-sm font-medium text-terra-text no-underline hover:underline"
+              >
+                Open the public district page<span aria-hidden className="ml-1">→</span>
+              </Link>
+            </section>
           );
         })}
       </div>
-    </div>
-    </div>
+    </MemoPage>
   );
 }

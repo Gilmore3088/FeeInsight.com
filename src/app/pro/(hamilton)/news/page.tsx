@@ -16,6 +16,7 @@ import { getStateNews, getStatesWithNews } from "@/lib/data-store/state-news";
 import { STATE_NAMES } from "@/lib/us-states";
 import { NewsFeed } from "./news-feed";
 import { StateWire } from "./state-wire";
+import { MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = {
   title: "Regulatory Wire",
@@ -64,7 +65,7 @@ export default async function NewsPage({
   const activeState = STATE_NAMES[stateParam] ? stateParam : null;
 
   const viewSwitch = (
-    <nav aria-label="Wire view" className="mt-4 inline-flex overflow-hidden rounded-lg border border-warm-200 bg-white/70 text-[12px]">
+    <nav aria-label="Wire view" className="inline-flex overflow-hidden rounded-md border border-warm-300 bg-warm-50 text-sm">
       {([
         ["federal", "Federal agencies", "/pro/news"],
         ["states", "States", activeState ? `/pro/news?view=states&state=${activeState}` : "/pro/news?view=states"],
@@ -73,14 +74,22 @@ export default async function NewsPage({
           key={key}
           href={href}
           aria-current={view === key ? "page" : undefined}
-          className={`px-3 py-1.5 font-medium no-underline transition-colors ${
-            view === key ? "bg-warm-900 text-white" : "text-warm-600 hover:bg-warm-100 hover:text-warm-900"
+          className={`flex min-h-11 items-center px-4 font-medium no-underline ${
+            view === key ? "bg-warm-900 text-warm-ink-50" : "text-warm-700 hover:bg-warm-150 hover:text-warm-900"
           }`}
         >
           {label}
         </Link>
       ))}
     </nav>
+  );
+
+  // A still dot, not a pulse: the wire is read once a day, so nothing here is live.
+  const updatedDaily = (
+    <span className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-warm-50 px-3 py-1 text-xs font-medium text-warm-700">
+      <span aria-hidden className="h-2 w-2 rounded-full bg-terra" />
+      Updated daily
+    </span>
   );
 
   if (view === "states") {
@@ -94,19 +103,18 @@ export default async function NewsPage({
       getStatesWithNews(),
     ]);
     return (
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <h1
-          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
-          Regulatory Wire
-        </h1>
-        <p className="mt-1 text-[13px] text-[#6B6255]">
-          State regulators&apos; news, state fee bills and the press coverage of them.
-        </p>
-        {viewSwitch}
-        <StateWire news={news} states={states} activeState={activeState} />
-      </div>
+      <MemoPage>
+        <MemoHeader
+          kicker="Regulatory Wire · States"
+          title="Regulatory Wire"
+          dek="State regulators' news, state fee bills and the press coverage of them."
+          actions={updatedDaily}
+        />
+        <div>
+          {viewSwitch}
+          <StateWire news={news} states={states} activeState={activeState} />
+        </div>
+      </MemoPage>
     );
   }
 
@@ -116,43 +124,28 @@ export default async function NewsPage({
   const sourceCounts = await getSourceCounts(since);
 
   return (
-    <div>
-    <div className="mx-auto max-w-7xl px-6 py-10">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-1">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
-          Updated daily
-        </span>
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-        </span>
-      </div>
-      <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-      >
-        Regulatory Wire
-      </h1>
-      <p className="mt-1 text-[13px] text-[#6B6255]">
-        Regulatory releases from the Federal Reserve, FDIC, OCC and CFPB, read once a day.
-      </p>
-      {viewSwitch}
-
-      <NewsFeed
-        articles={articles}
-        totalCount={totalCount}
-        topicCounts={topicCounts}
-        sourceCounts={sourceCounts}
-        topicLabels={TOPIC_LABELS}
-        sourceLabels={SOURCE_LABELS}
-        activeSource={source}
-        activeTopic={topic}
-        activeRange={range}
-        canRefreshFeeds={user?.role === "admin" || user?.role === "analyst"}
+    <MemoPage>
+      <MemoHeader
+        kicker="Regulatory Wire · Federal agencies"
+        title="Regulatory Wire"
+        dek="Releases from the Federal Reserve, FDIC, OCC and CFPB, read once a day."
+        actions={updatedDaily}
       />
-    </div>
-    </div>
+      <div>
+        {viewSwitch}
+        <NewsFeed
+          articles={articles}
+          totalCount={totalCount}
+          topicCounts={topicCounts}
+          sourceCounts={sourceCounts}
+          topicLabels={TOPIC_LABELS}
+          sourceLabels={SOURCE_LABELS}
+          activeSource={source}
+          activeTopic={topic}
+          activeRange={range}
+          canRefreshFeeds={user?.role === "admin" || user?.role === "analyst"}
+        />
+      </div>
+    </MemoPage>
   );
 }
