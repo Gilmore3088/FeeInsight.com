@@ -3200,3 +3200,20 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
   what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
   230 s at a time).
+
+## 2026-10-08: Almost every recorded fee change pairs two different fee schedules
+**What happened:** a read-only check of prod at 13:30 UTC on Oct 8 found 22 `fee_change_records` since
+`FEE_MOVES_TRACKED_SINCE`. All 22 are past the 12-hour second look and have a Darwin-verified live
+new row. In 21 of them the old price was read from a different page than the new price. Examples:
+Tidemark FCU's business rate sheet against its consumer Truth-in-Savings disclosure, and Opportunity
+Bank's business fee schedule against its consumer one. The one same-page pair, Net FCU's stop payment
+($35 to $30), was its February 2026 schedule read twice, with the second read pairing the neighbouring
+price. None was a bank changing a price.
+**Cause:** `supersedePriorFee` in `src/lib/agents/hamilton/publish.ts` closes the live row for the same
+institution and `canonical_fee_key` whatever page it came from, and writes a change record. When a bank
+publishes separate business and consumer schedules, the newer read of one schedule takes the other
+schedule's price off the live catalog and logs the difference as a price change.
+**Fix:** none yet in publish; that rule belongs to the Hamilton publish owners. Competitor alerts (PR 430)
+pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
+alert has been raised from these records.
+**Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
