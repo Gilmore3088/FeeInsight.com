@@ -184,6 +184,7 @@ Darwin owns verification and classification.
 - Guard v29 also files "Insufficient Funds Charge (Paid)" (beside "(Returned)") as the overdraft fee, and re-files it there from NSF (WaFd).
   fees charged a day ("Overdraft Item Fee (Maximum of 5 Charged Per Day)"); a cap priced in the
   note or named outside it ("Overdraft Fee (maximum charge per day)", "Overdraft Daily Cap") stays out.
+- Guard v31 (2026-10-08) files paid and honored NSF items ("Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)", "Paid Consumer & Business NSF Items") as the overdraft fee, and re-files them there from NSF.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

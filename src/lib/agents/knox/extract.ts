@@ -873,9 +873,14 @@ export async function runKnoxExtract(
   const currentCopy = !dryRun && (await currentCopySchemaReady(db));
   // The named priority banks (in list order), then market leaders, are read first while the
   // stale backlog lasts.
-  const priorityIds = learning && currentCopy && !options.institutionId
-    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])]
-    : [];
+  // A run for one institution (Atlas's read-now runs) reads its current page again once per
+  // rules version while it has no live overdraft fee, so a rules fix reaches a requested bank
+  // without waiting for its state lane (2026-10-08: Marketing's outreach batch).
+  const priorityIds = !(learning && currentCopy)
+    ? []
+    : options.institutionId
+      ? [options.institutionId]
+      : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();

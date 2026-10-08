@@ -509,6 +509,14 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url,
     givenBy: "second web search for state top-10 banks with no live overdraft fee, 2026-10-08 16:05",
   })),
+  {
+    // Marketing's outreach batch (2026-10-08 18:20): Magellan holds only Quantum's business
+    // schedule. Its personal Service Fee Schedule lists Courtesy Pay at $30 (web search 18:45).
+    institutionId: 8085,
+    institutionName: "Quantum Federal Credit Union",
+    url: "https://www.theq.org/service-fee-schedule",
+    givenBy: "web search for Marketing's outreach batch, 2026-10-08 18:45",
+  },
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");

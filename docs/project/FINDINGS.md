@@ -3569,3 +3569,21 @@ and quarter were already stored, without looking at the periods of the data behi
   words) is read like a scan, and the stored ones are reopened once each. Free OCR reads
   only page images, so these PDFs go on to the paid transcription pass under its budget.
 - **Watch.** TruStone's fee schedule read into words, and TruStone's fees going live.
+
+## 2026-10-08: Requested banks never got a rules fix, and paid NSF items were filed as NSF
+
+- **Problem.** Marketing's outreach batch had 8 institutions with no live overdraft fee. 6 of
+  their current fee pages print the overdraft line, but Knox misread it: a paid NSF item
+  ("Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)") was filed as NSF or dropped,
+  a long name was cut to the note inside it (BankIowa's overdraft became an NSF row named
+  "5 max total OD or Returned Item fees daily"), a description cell listing debit card
+  channels filed Los Angeles FCU's courtesy pay as an ATM fee, and a threshold row under a
+  priceless fee line had no name (NIH FCU). Even after a fix, a requested institution's
+  read-now run did not read its unchanged page again, so the fix never reached it.
+- **Fix.** Knox v42 and category guard v31 read all six lines. A run for one institution reads
+  its current page again once per rules version while it has no live overdraft fee. The
+  batch is first on Atlas's request list, and Quantum's personal fee schedule is a hand link
+  (Magellan held only its business schedule).
+- **Watch.** The 7 read-now runs and their overdraft fees going live. Hatboro Federal
+  Savings' Feb 2026 schedule lists no overdraft fee (only a $25 NSF return fee and a $5
+  transfer protection fee).
