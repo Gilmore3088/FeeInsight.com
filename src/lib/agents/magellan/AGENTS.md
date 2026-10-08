@@ -130,6 +130,9 @@ and `detail.method_version`).
   sheet, unless the name also says fee schedule) are handled the same way
   (`single_product_disclosure`): they state a rate and an early-withdrawal penalty, not the
   account fees.
+  A link on another kind of site (`isOtherSiteLink`: a government page, a broker's disclosures,
+  a car-price site) is searched the same way and never kept as a companion, unless that host
+  is the bank's own website (GSA FCU on gsafcu.gsa.gov).
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
@@ -139,6 +142,13 @@ and `detail.method_version`).
   once per version (`discover`/`restore_fee_page` attempt, `ok` or `unchanged` with the
   reason kept); the step's `restored_fee_pages` detail lists the swaps. Rosetta's readers
   (embedded data, linked and embedded PDF viewers) decide whether it now reads.
+- Refused paid answers (`refused-answers.ts`, `KEEP_REFUSED_ANSWER_STRATEGY`): a paid web
+  search or paid schedule search answer whose fee-page check got HTTP 403 is kept once, free,
+  up to 25 per discover step in any state: as the main link when the bank has none, else as a
+  `consumer_supplement` companion. Answers off the bank's site, articles, pages it already
+  holds and non-schedule pages (CRA file, About, rates page) are logged `unchanged`. Both paid
+  searches now keep a 403 answer themselves; this pass recovers the ones dropped before. The
+  plain fetch meets the 403 and the paid fetch (`blocked-fetch.ts`) stores the page.
 - Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
   link looks out of date are searched once per version for a newer schedule
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
@@ -282,7 +292,7 @@ A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refu
 403), or timed out with at least `BLOCKED_TIMEOUT_MIN_FAILURES` (2) failures in a row (First
 Horizon), gets one paid server-side fetch in the `discover-paid` step:
 Anthropic's `web_fetch` tool, `max_uses` 1, `allowed_domains` the link's host. Up to
-`BLOCKED_FETCH_PER_RUN` (3) banks a step, largest first, each at most once per
+`BLOCKED_FETCH_PER_RUN` (6) pages a step, largest first, each at most once per
 `BLOCKED_FETCH_RETRY_DAYS` (7). The page text or PDF it returns goes through the same
 fetch path as any fetch (`fetchAndRecordLink`: document row, vault copy, attempt with
 strategy `fetch.paid_web_fetch` and its cost), and Rosetta reads it next. A refused link on
@@ -294,7 +304,8 @@ The paid fetch runs first in `discover-paid`, before the paid searches: run last
 what the run's provider call cap left. Companion pages blocked the same way get it too
 (strategy `fetch.paid_web_fetch_companion`, stored through `fetchAndRecordCompanion`): a page
 whose last companion fetch was refused, timed out twice, or was a PDF link answered with a web
-page. One of the three slots is kept for a companion. The companion fetch no longer stores a
+page. Two of the six slots are kept for companions. A companion given by hand
+(`discover.operator_schedule`) counts on a sister brand's site (Zions' schedule on amegybank.com). The companion fetch no longer stores a
 PDF link answered with a web page (outcome `blocked_bot`): 53.com served Fifth Third's fee PDFs
 as a "page doesn't exist" page, which Rosetta then set aside as a blank read. Copies stored that
 way before the check (a set-aside PDF link whose copy is a web page) are picked as well, and a

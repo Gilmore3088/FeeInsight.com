@@ -153,12 +153,11 @@ export interface MarketSpreadDraft {
 
 export function draftCaption(spread: MarketSpread, asOf: Date): MarketSpreadDraft {
   const fee = getDisplayName(spread.feeCategory);
-  const feeLower = fee.toLowerCase();
   const place = metroLabel(spread.metro);
   const zeros = spread.zeros > 0 ? `, and ${spread.zeros} charge nothing` : "";
   const body = [
     `${fee} fees in the ${place} area run from ${money(spread.low)} to ${money(spread.high)}.`,
-    `${spread.institutions} local banks and credit unions publish a ${feeLower} fee. The middle half charge between ${money(spread.p25)} and ${money(spread.p75)}${zeros}.`,
+    `${spread.institutions} local banks and credit unions publish this fee. The middle half charge between ${money(spread.p25)} and ${money(spread.p75)}${zeros}.`,
     `Same fee, same market, a ${money(cents(spread.high - spread.low))} difference. Where does yours sit? Hamilton shows any institution's fee against its local competitors, its peers, its state and its Fed district.`,
     `Source: the Bank Fee Index, built from each institution's own published fee schedule. As of ${asOfLabel(asOf)}.`,
   ].join("\n\n");

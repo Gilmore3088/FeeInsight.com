@@ -309,7 +309,7 @@ export default async function GuidesIndexPage() {
               For Bankers &amp; Consultants
             </h2>
             <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
-            <span className="text-[11px] text-[#6B6255]">Professional plan</span>
+            <span className="text-[11px] text-[#6B6255]">Pro</span>
           </div>
 
           <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-[#6B6255]">
@@ -336,7 +336,7 @@ export default async function GuidesIndexPage() {
                     stroke="currentColor"
                     strokeWidth="2"
                     role="img"
-                    aria-label="Professional plan required"
+                    aria-label="Pro plan required"
                   >
                     <rect x="3" y="11" width="18" height="11" rx="2" />
                     <path d="M7 11V7a5 5 0 0110 0v4" />
