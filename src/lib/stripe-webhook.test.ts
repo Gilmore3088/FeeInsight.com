@@ -76,7 +76,7 @@ describe("applyStripeEvent", () => {
     expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
   });
 
-  it("anchors the bank chosen at checkout and files its claim, without overwriting a choice", async () => {
+  it("anchors the bank chosen at checkout, files its claim and grants the owner seat, without overwriting a choice", async () => {
     tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
     await applyStripeEvent(
       tx as never,
@@ -91,6 +91,9 @@ describe("applyStripeEvent", () => {
     expect(sql[3]).toContain("NOT EXISTS");
     expect(tx.mock.calls[3]).toContain(8109);
     expect(tx.mock.calls[3]).toContain("Filed at Pro checkout (cs_1).");
+    expect(sql[4]).toContain("INSERT INTO institution_workspace_memberships");
+    expect(sql[4]).toContain("'owner', 'active', 'claim', c.id");
+    expect(sql[4]).toContain("DO NOTHING");
   });
 
   it("anchors nothing when checkout named no institution", async () => {

@@ -27,7 +27,7 @@ buyer from payment to their first answer.
 **Fix:** the PR after 566. The webhook and the activation fallback set the paid institution as the
 workspace bank and profile, but only when none is set, and file the claim for review. An unpaid session
 waits for `checkout.session.async_payment_succeeded`. The research route stops using the display name.
-Granting the owner seat at payment, without review, is James's call and not done.
+James chose (Oct 8, 13:44) to grant the owner seat at payment, tied to the open claim; rejecting the claim revokes it.
 **Lesson:** a paid flow is one path. Trace it from the card to the first useful screen before calling it live.
 
 ## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
