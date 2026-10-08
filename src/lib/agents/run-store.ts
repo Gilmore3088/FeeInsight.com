@@ -1733,7 +1733,7 @@ async function executeAgenticStep(
         limit: numericRunParam(params, ["limit"]),
         dryRun: run.runKind === "dry_run",
       });
-      const followUpLine = followUps.due ? ` ${followUps.drafted} day-7 follow-ups drafted.` : "";
+      const followUpLine = followUps.due ? ` ${followUps.drafted} follow-ups drafted (day 6 and final day 13).` : "";
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
     }
     case "growth-learning": {
