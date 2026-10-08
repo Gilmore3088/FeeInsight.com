@@ -40,4 +40,19 @@ describe("Open States client", () => {
     expect(parseOpenStatesBill({ ...base, title: "Concerning nonsufficient funds fees" }, "co")).toMatchObject({ state_code: "CO", topics: ["fees", "overdraft_nsf"] });
     expect(parseOpenStatesBill({ ...base, title: "Ticket resale junk fees" }, "co")).toBeNull();
   });
+
+  it("does not read groundwater overdraft as an overdraft fee (CA AB 1520, prod 2026-10-08)", () => {
+    const base = { id: "x", identifier: "AB 1520", openstates_url: "https://openstates.org/x" };
+    for (const abstract of [
+      "Requires a groundwater sustainability agency in a critically overdrafted basin to report pumping.",
+      "Addresses overdraft conditions and groundwater overdraft in the subbasin.",
+      "Prevents overdraft of the aquifer.",
+    ]) {
+      expect(parseOpenStatesBill({ ...base, title: "Public resources: conservation.", abstracts: [{ abstract }] }, "ca"), abstract).toBeNull();
+    }
+    // A bill that names both keeps its bank fee reading.
+    expect(
+      parseOpenStatesBill({ ...base, title: "Overdraft fees on checking accounts", abstracts: [{ abstract: "Also funds critically overdrafted basins." }] }, "ca"),
+    ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
+  });
 });

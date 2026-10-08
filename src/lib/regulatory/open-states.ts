@@ -30,6 +30,19 @@ export const STATE_BILL_QUERIES = ["overdraft", "insufficient funds", "deposit a
 const BANK_FEE_PATTERN =
   /\b(overdraft|non-?sufficient funds|insufficient funds|nsf|returned (check|item)|deposit accounts?|checking accounts?|dormant accounts?|bank fees?|banking fees?)\b/i;
 
+/**
+ * Water law uses "overdraft" for pumping more groundwater than a basin recharges (California's
+ * "critically overdrafted basins"). Those phrases are removed before the bank fee tests, so a
+ * groundwater bill is never read as an overdraft fee bill (CA AB 1520, prod 2026-10-08).
+ */
+const WATER_OVERDRAFT =
+  /\b(critically\s+)?overdraft(ed)?\s+(groundwater\s+)?(sub)?basins?\b|\b(groundwater|aquifer|basin)\s+overdraft\b|\boverdraft\s+(of|in)\s+(the\s+)?(groundwater|aquifers?|(sub)?basins?)\b|\boverdraft\s+conditions?\b/gi;
+
+/** The bill's text with groundwater "overdraft" phrases taken out. */
+export function withoutWaterOverdraft(text: string): string {
+  return text.replace(WATER_OVERDRAFT, " ");
+}
+
 export type BillStage = "introduced" | "in_committee" | "passed_chamber" | "passed_legislature" | "signed" | "vetoed" | "failed";
 
 export interface StateBillItem {
@@ -124,7 +137,7 @@ function topicsFor(text: string): string[] {
 export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillItem | null {
   if (!raw.id || !raw.identifier || !raw.title || !raw.openstates_url) return null;
   const abstract = (raw.abstracts ?? []).map((a) => a.abstract ?? "").join(" ");
-  const text = `${raw.title} ${abstract}`;
+  const text = withoutWaterOverdraft(`${raw.title} ${abstract}`);
   if (!BANK_FEE_PATTERN.test(text)) return null;
   const { stage, date } = billStage(raw.actions ?? []);
   return {
@@ -180,8 +193,10 @@ export async function fetchStateFeeBills(
   apiKey: string,
   options: RegistryFetchOptions = {},
   requestIntervalMs = OPEN_STATES_REQUEST_INTERVAL_MS,
-): Promise<{ items: StateBillItem[]; searched: number; requests: number }> {
+): Promise<{ items: StateBillItem[]; rejectedIds: string[]; searched: number; requests: number }> {
   const byId = new Map<string, StateBillItem>();
+  // Search hits that fail the bank fee test, so a bill an earlier rule tagged can be untagged.
+  const rejected = new Set<string>();
   let searched = 0;
   let requests = 0;
   for (const query of STATE_BILL_QUERIES) {
@@ -199,9 +214,10 @@ export async function fetchStateFeeBills(
         searched += 1;
         const item = parseOpenStatesBill(raw, stateCode);
         if (item) byId.set(item.id, item);
+        else if (raw.id) rejected.add(raw.id);
       }
       if ((body.pagination?.max_page ?? 1) <= page) break;
     }
   }
-  return { items: [...byId.values()], searched, requests };
+  return { items: [...byId.values()], rejectedIds: [...rejected].filter((id) => !byId.has(id)), searched, requests };
 }
