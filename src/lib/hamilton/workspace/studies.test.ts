@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { studyObservations, withStudyPlace, type StudyPlacementRow } from "./studies";
+import { dependenceChart, studyObservations, withStudyPlace, type StudyPlacementRow } from "./studies";
 import type { Observation } from "./types";
 
 function row(over: Partial<StudyPlacementRow>): StudyPlacementRow {
@@ -61,7 +61,7 @@ describe("studyObservations", () => {
     expect(o.kind).toBe("study");
     expect(o.headline).toBe("Deposit service charges were 3.83% of your revenue in 2025, higher than the 2.87% median for banks $10B+.");
     expect(o.facts.map((f) => f.text)).toEqual([
-      "banks $10B+: median 2.87% across 151 institutions; you are at the 67th percentile.",
+      "Banks $10B+: median 2.87% across 151 institutions; you are at the 67th percentile.",
       "In 2010 the share was 6.47%.",
     ]);
     expect(o.facts[0].source).toEqual({ label: "Hamilton study: Fee dependence since 2010", table: "hamilton_studies", asOf: "2025" });
@@ -80,7 +80,6 @@ describe("studyObservations", () => {
     );
     expect(o.facts.map((f) => f.text)).toEqual([
       "Median household income across your markets: $90,890, higher than 84% of the 3,006 institutions in the study.",
-      "Across the study: The overdraft fee runs $0.21 lower per $10,000 of local median household income, holding size and charter fixed.",
     ]);
   });
 
@@ -90,7 +89,7 @@ describe("studyObservations", () => {
     expect(o.facts[0].text).toBe(
       "Inferred, not reported: $1.16B of reported overdraft and NSF income (net of waivers and refunds) divided by your published $34 to $60 fee.",
     );
-    expect(o.facts[1].text).toBe("banks $10B+: median about 406,200 items across 75 institutions.");
+    expect(o.facts[1].text).toBe("Banks $10B+: median about 406,200 items across 75 institutions.");
   });
 
   it("drops placements with too few peers or missing figures", () => {
@@ -128,5 +127,40 @@ describe("withStudyPlace", () => {
 
   it("adds the study when the list has room", () => {
     expect(withStudyPlace([obs("a", 0.9)], [obs("s", 0.3, "study")], 5).map((o) => o.id)).toEqual(["a", "s"]);
+  });
+});
+
+describe("price studies cover different fees", () => {
+  it("gives a fee another study showed to the next fee", () => {
+    const fees = {
+      stop_payment: { price: 15, fifth_n: 500, fifth_median: 28.88, price_percentile_in_fifth: 8.6 },
+      atm_non_network: { price: 3.615, fifth_n: 229, fifth_median: 2, price_percentile_in_fifth: 91 },
+    };
+    const out = studyObservations([
+      { ...priceRow, detail: { fees } },
+      { ...priceRow, studyKey: "market_concentration", title: "Market concentration and fee prices", value: 1006.72, percentile: 17, detail: { fees } },
+    ]);
+    expect(out.map((o) => o.feeCategory)).toEqual(["stop_payment", "atm_non_network"]);
+    expect(out[1].headline).toBe("Your non-network ATM fee of $3.62 is higher than the $2 median of 229 institutions in similarly concentrated deposit markets.");
+  });
+});
+
+describe("dependenceChart", () => {
+  const series = { bank: [{ year: 2010, median: 5.88, p25: 3.39, p75: 9.07 }, { year: 2025, median: 2.17, p25: 1.1, p75: 3.9 }] };
+
+  it("marks the bank's first and latest share on its charter's series", () => {
+    expect(dependenceChart([row({})], series)).toEqual({
+      groupLabel: "banks",
+      series: series.bank,
+      own: [{ year: 2010, value: 6.47 }, { year: 2025, value: 3.83 }],
+      peerGroup: "banks $10B+",
+      peerMedian: 2.87,
+      asOf: "2025",
+    });
+  });
+
+  it("needs a placement and a series for the charter", () => {
+    expect(dependenceChart([], series)).toBeNull();
+    expect(dependenceChart([row({ detail: { year: 2025, charter: "credit_union" } })], series)).toBeNull();
   });
 });
