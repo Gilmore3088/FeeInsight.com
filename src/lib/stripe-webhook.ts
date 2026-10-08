@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import type { sql as sqlClient } from "@/lib/data-store/connection";
 import type { User } from "@/lib/auth";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
+import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 
 type Tx = typeof sqlClient;
 export type SubscriptionStatus = User["subscription_status"];
@@ -130,7 +131,9 @@ async function applyReportPayment(tx: Tx, session: Stripe.Checkout.Session, effe
 
 async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffects): Promise<void> {
   switch (event.type) {
-    case "checkout.session.completed": {
+    case "checkout.session.completed":
+    // A delayed payment method (bank debit) completes checkout unpaid, then sends this once the money clears.
+    case "checkout.session.async_payment_succeeded": {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.metadata?.kind === REPORT_PAYMENT_KIND) {
         await applyReportPayment(tx, session, effects);
@@ -142,6 +145,8 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       if (!customerId) return;
       // Pro is a subscription; a completed one-time payment must never grant it.
       if (session.mode !== "subscription") return;
+      // Pro starts when the money does: an unpaid session waits for async_payment_succeeded.
+      if (session.payment_status === "unpaid") return;
 
       // Prefer the user id checkout was started for; fall back to the email for sessions
       // created before user ids were attached.
@@ -160,9 +165,13 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
               RETURNING id, email, display_name
             `
           : [];
+      const institutionId = paidInstitutionId(session.metadata);
       for (const user of activated) {
         const to = user.email ?? email;
         if (to) effects.welcome.push({ email: to, name: user.display_name ?? null });
+        if (institutionId) {
+          await anchorPaidInstitution(tx, { userId: user.id, institutionId, note: `Filed at Pro checkout (${session.id}).` });
+        }
       }
       return;
     }

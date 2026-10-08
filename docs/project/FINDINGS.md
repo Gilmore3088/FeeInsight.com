@@ -13,6 +13,33 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro checkout dropped the buyer's institution
+**What happened:** the six live Pro tiers (PR 566) price checkout from the buyer's institution and send
+it to Stripe as `metadata.institution_id`, but the webhook only set `users.subscription_status`. A new
+subscriber was asked for their bank again on the welcome page (skippable, and skipped entirely when
+checkout started from a Pro page). They could land on a briefing that showed only "Choose your bank".
+Their team seats stayed locked until they found Settings, filed an institution claim by hand, and James
+approved it. With no institution on file, Hamilton's first answer used the person's display name as the
+"Institution". Checkout also granted Pro on an unpaid (delayed-payment) session. Prod had 0 subscriptions
+and 6 `price.created` events when this was found, so no buyer was affected.
+**Cause:** checkout, the webhook and onboarding were built in separate PRs, and no test followed a
+buyer from payment to their first answer.
+**Fix:** the PR after 566. The webhook and the activation fallback set the paid institution as the
+workspace bank and profile, but only when none is set, and file the claim for review. An unpaid session
+waits for `checkout.session.async_payment_succeeded`. The research route stops using the display name.
+James chose (Oct 8, 13:44) to grant the owner seat at payment, tied to the open claim; rejecting the claim revokes it.
+**Lesson:** a paid flow is one path. Trace it from the card to the first useful screen before calling it live.
+
+## 2026-10-08: Pro checkout's own error messages never reached the buyer
+**What happened:** the buyer-path audit (overnight Oct 8) found `createCheckoutSession` threw
+"Pick your bank or credit union first", the "we don't have its asset size, email us" line and
+"Not authenticated". Production builds replace a thrown server-action message with a generic one,
+so the buyer saw "Something went wrong" and a signed-out click never reached the register hand-off.
+No count of affected buyers is known (0 paid so far).
+**Cause:** server actions that throw for expected, buyer-facing outcomes.
+**Fix:** the buyer-path audit PR on branch `claude/ux-audit-9d9mdr` returns `{ url, error, needsSignIn }` instead.
+**Lesson:** a server action returns expected problems as data; throw only for real faults.
+
 ## 2026-10-08: Admin Health and Learning screens read stale or misleading numbers
 **What happened:** James said the Health and Learning tabs looked "weird or not working". Health
 read `agent_health_rollup`, a rollup from the old plan that holds 57 agent names. 51 of them are
@@ -3238,6 +3265,68 @@ pass the old row's page to `confirmFeeChange`, which drops a pair from two diffe
 alert has been raised from these records.
 **Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
 
+## 2026-10-08: Paid search answers dropped because the bank's site refused our check
+
+- **Problem.** The paid web search and the paid schedule search open the model's answer with
+  our own fetcher before keeping it. When the bank's site refused that fetch (HTTP 403), the
+  answer was dropped: the search was paid for and the bank kept no link. A 403 is not a
+  monthly-retry outcome, so the bank was never searched again. On 8 Oct, 72 such answers sat
+  in `pipeline_attempts` (53 banks with no fee link at all), among them Synchrony, Independence
+  Bank of Kentucky, Community National Bank (VT), Aloha Pacific and Alliant, all in their
+  state's top 10 by deposits with no live fee. The web search started keeping 403 answers on
+  7 Oct; the schedule search never did.
+- **Fix.** The schedule search keeps a 403 answer as a companion. `keepRefusedPaidAnswers`
+  (`refused-answers.ts`) stores each answer dropped before, once, at no cost, from the discover
+  step; the paid fetch then reads the page.
+- **Watch.** `discover.keep_refused_answer` attempts (`ok` vs `unchanged`) and, after the paid
+  fetch, live fees for the banks kept.
+
+## 2026-10-08: The paid fetch for blocked pages fell behind
+
+- **Problem.** About nine paid Magellan steps ran a day on 8 Oct, each fetching 3 blocked pages,
+  while 24 blocked pages waited (PenFed's schedule among them, never tried) and the refused
+  paid answers above were adding 72 more. Zions' hand-given schedule sits on amegybank.com,
+  which the companion selection's own-site check threw out, so it was never fetched at all.
+- **Fix.** Six pages per paid step, two kept for companions. A companion given by hand
+  (`discover.operator_schedule`) passes the own-site check.
+- **Watch.** `fetch.paid_web_fetch%` attempts a day, and Zions (35) and PenFed (4382) documents.
+
+## 2026-10-08: Banks the old crawler marked offline were never searched
+
+- **Problem.** 17 active banks (Alaska, Wyoming, Kansas) carried `document_type = 'offline'` from
+  the old crawler, which became `source_kind = 'offline'` / `read_strategy = 'manual_review'`
+  on their profile (4 Oct). Discovery skips both, so none was ever searched, although all but two
+  have a working website. Four are in their state's top 10 by deposits: First Bank, Mt. McKinley
+  Bank and Denali State Bank (AK) and The Converse County Bank (WY). Separately, 11 banks' websites
+  were stored with the scheme twice (`https://HTTP://WWW.BANKWITHCHOICE.COM`); website repair
+  rejected them and they waited a month as `needs_human`.
+- **Fix.** Discovery searches an offline-marked bank once per discovery method version (never
+  one locked by a person's correction). Website repair drops a doubled scheme, and a bank whose
+  website could not be repaired is due again after 12 hours, since that check costs no fetch.
+- **Watch.** `discover` attempts for those 17 and the 11, and their links.
+
+## 2026-10-08: Fee links on government, broker and car-price sites
+
+- **Problem.** 11 banks' fee link was a page on another site: a city's HSA agreement for Bell
+  Bank (ND top 10), CFPB card agreements for Barclays, Charter Oak, Marine FCU and Vantage West,
+  LPL's broker summary, a bankruptcy court fee schedule, the FDIC's overdraft explainer, JD Power
+  and NADA car pages. The upgrade search only looked at product pages, articles and single
+  product disclosures, so these stood as the bank's schedule.
+- **Fix.** The upgrade search also takes a link on such a host (`isOtherSiteLink`), unless the
+  host is the bank's own website, and never keeps it as a companion.
+- **Watch.** Upgrade `discover` attempts for those 11 and their new links.
+
+
+## 2026-10-08: Hamilton's studies kept old Census income after a new year landed
+**What happened:** Census ACS 2024 loaded on prod at 13:37 UTC on Oct 8. The current local income study
+(`hamilton_studies`, as of 2026-Q4) still named ACS 2022 as its income source, and the daily studies
+run would have reported it "already current" until the quarter changed.
+**Cause:** `store` in `src/lib/agents/hamilton/studies/index.ts` skipped any study whose key, method
+and quarter were already stored, without looking at the periods of the data behind it.
+**Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
+(`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
+**Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
+
 ## 2026-10-08: Bot walls keep big banks' overdraft fees off the board
 
 - **Problem.** At 13:20 UTC Oct 8, 90 active $10B+ banks had no live overdraft fee. About 30 of them
@@ -3257,7 +3346,7 @@ alert has been raised from these records.
   - WaFd's "Insufficient Funds Charge (Paid)".
 
   Darwin rejected First Financial's per-item fees, which note a daily count ("Maximum of 2 Items/Day").
-- **Fix.** Guard v27 and Knox v34 (PR 580) read and accept those lines. The held re-check also
+- **Fix.** Guard v29 and Knox v34 (PR 580) read and accept those lines. The held re-check also
   re-reads changed-price ranges, and renames a promoted line whose held name says nothing. New
   operator links on other hosts or pages go to Zions, Sunflower, Golden 1, DCU, Mountain America,
   VyStar, Popular and TowneBank.

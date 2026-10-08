@@ -448,7 +448,7 @@ v32 (rules 32, from Space Coast CU's page, Oct 7):
 
 v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
 - "You still pay a fee of $35 per item for overdrawing your account, but ..." is the overdraft fee; a sentence fee's clause ends at ", but" / ", and" (Park National).
-- "Insufficient Funds Charge (Paid)" beside "(Returned)" is the overdraft fee (WaFd; guard v27 refiles it the same way).
+- "Insufficient Funds Charge (Paid)" beside "(Returned)" is the overdraft fee (WaFd; guard v29 refiles it the same way).
 - A promoted held line whose stored name does not say its category ("You still pay") takes the name today's rules read.
 - "Per transaction" (and "transactions") is a unit cell, so "Overdraft Fee - Items Paid3 | Per transaction | $20.00" is the overdraft fee, not an unnamed price (Banc of California).
 - A change the bank says it already made ("We've lowered Overdraft Paid Item fees from $38 to $30") is today's price at the later figure. A change still to come ("will", "effective", "beginning") stays a held range (Pinnacle).

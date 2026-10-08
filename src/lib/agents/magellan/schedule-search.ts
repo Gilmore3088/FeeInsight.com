@@ -334,6 +334,13 @@ export async function runScheduleSearch(options: {
             documentType = validation.documentType ?? (looksLikePdfUrl(proposed) ? "pdf" : "html");
             overdraftPrice = validation.scoringText ? hasOverdraftPrice(validation.scoringText) : null;
             reason = `Paid schedule search: ${validation.reason}`;
+          } else if (validation.status === 403) {
+            // The bank's site refuses our fetcher: keep the answer for the paid fetch, as the
+            // paid web search does (paid-find.ts). Desert Financial's lost this way, 8 Oct 2026.
+            outcome = "ok";
+            found = proposed;
+            documentType = looksLikePdfUrl(proposed) ? "pdf" : "html";
+            reason = `Paid schedule search; the bank's site refused our check (HTTP 403), kept for the paid fetch: ${proposed}`;
           } else {
             outcome = validation.status != null && validation.status >= 400 ? classifyFetchFailure(validation.status) : "wrong_document";
             reason = `Answer failed the fee-page check (${validation.reason}): ${proposed}`;
