@@ -6,6 +6,7 @@ import { getArticleBySlug, incrementViewCount, getPublishedArticles } from "@/li
 import { ensureResearchTables } from "@/lib/research/history";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME } from "@/lib/constants";
+import { linkPreview } from "@/lib/link-preview";
 
 export async function generateMetadata({
   params,
@@ -18,9 +19,14 @@ export async function generateMetadata({
   if (!article || article.status !== "published") {
     return { title: "Article Not Found" };
   }
+  const title = `${article.title} — Research`;
+  const description = article.subtitle || article.content.substring(0, 160).replace(/[#*_]/g, "");
+  const path = `/research/articles/${article.slug}`;
   return {
-    title: `${article.title} — Research`,
-    description: article.subtitle || article.content.substring(0, 160).replace(/[#*_]/g, ""),
+    title,
+    description,
+    alternates: { canonical: path },
+    ...linkPreview({ title: article.title, description, path }),
   };
 }
 
