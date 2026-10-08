@@ -7,6 +7,21 @@ function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
 }
 
+const MVB_WRAPPED = [
+  "Non-MVB Bank ATM Fee (fee for other bank ATM usage) $2.50",
+  "Non-Sufficient Funds Fee (per item, both returned or paid created by check, in person",
+  "withdrawal, ATM withdrawal, or other electronic means. Maximum of 6 fees per day)",
+  "",
+  "$36.00",
+  "",
+  "Overdraft Fee (per item, both returned or paid created by check, in person withdrawal,",
+  "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)",
+  "",
+  "$36.00",
+  "",
+  "Paper Statement (monthly-in lieu of electronic statement) $4.00",
+].join("\n");
+
 describe("Knox extract.rules", () => {
   it("v12 never reads a limit, threshold or refundable deposit as the fee", () => {
     expect(fees("Money Orders ($1,000 Limit) Non-Customer ........................ $10.00")).toEqual([
@@ -703,6 +718,18 @@ describe("Knox extract.rules", () => {
   it("v32 files a linked-account overdraft protection fee as a transfer, not an overdraft", () => {
     expect(classifyFeeText("Account Link Overdraft Protection")).toBe("od_protection_transfer");
     expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
+  });
+
+  it("v35 reads a fee name that wraps onto a second line, with its price alone below", () => {
+    // MVB's fee schedule (text 18808): the note opened on the name's line closes above the price.
+    expect(fees(MVB_WRAPPED)).toEqual(
+      expect.arrayContaining([
+        ["Non-Sufficient Funds Fee", 36, "nsf"],
+        ["Overdraft Fee", 36, "overdraft"],
+      ]),
+    );
+    // A name line with no open note is not joined to a later line's price.
+    expect(fees(["Dormant Account Fee", "Gift Cards", "$3.50"].join("\n"))).toEqual([]);
   });
 
   it("v34 reads a price change the bank already made as today's price, and a unit cell under the fee's name", () => {
