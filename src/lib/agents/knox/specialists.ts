@@ -36,7 +36,8 @@ import { borrowedFrequency, frequencyFamily, frequencyFromLine } from "@/lib/fee
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 47 } as const;
+// v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 48 } as const;
 
 export interface SpecialistRun {
   strategy: string;

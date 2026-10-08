@@ -13,6 +13,8 @@
  * point to.
  */
 
+import { newestColumnText } from "@/lib/fee-change-columns";
+
 export type SourceCheckFailure =
   | "no_source_text"
   | "name_not_in_text"
@@ -653,7 +655,9 @@ export function checkFeeAgainstSource(
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
   if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
-  const pages = [cachedSourceLines(text), ...lastColumns];
+  // A fee-change notice's earlier column is what the fee was ("Money Orders | $2.00 | $5.00"
+  // under "Fee through | Fee as of"): only the newest column is read as the fee now.
+  const pages = [cachedSourceLines(newestColumnText(text)), ...lastColumns];
   const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
   const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);
   let first: SourceCheckResult | null = null;

@@ -3,6 +3,7 @@ import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -1304,7 +1305,8 @@ export function centeredNamePrices(text: string): string[] {
 }
 
 export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
-  const text = stripPriceFootnoteMarks(raw);
+  // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
+  const text = stripPriceFootnoteMarks(newestColumnText(raw));
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
