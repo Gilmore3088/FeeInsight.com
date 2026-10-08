@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
@@ -134,6 +135,12 @@ function faqItems(summary: PublicStatsSummary) {
     {
       question: "Do you invoice or accept POs?",
       answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+    },
+    {
+      question: "How is the Pro price set?",
+      answer: `By your institution's total assets from its latest call report: ${PRO_TIERS.map(
+        (tier) => `${tier.assetsLabel.toLowerCase()} is ${tierPriceLabel(tier.key, "annual")}`,
+      ).join(", ")}. ${CONSULTANT_PRICE_NOTE} If we don't have your fee schedule yet, send it to ${CONTACT_EMAIL} and we'll add it.`,
     },
     {
       question: "How do seats work?",
