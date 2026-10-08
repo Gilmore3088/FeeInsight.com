@@ -84,8 +84,8 @@ interface FeePattern {
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
  * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
- * excess-activity fees -> account research; collection items and foreign checks -> check
- * cashing; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
+ * excess-activity fees -> account research; collection items and foreign checks -> collection
+ * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
  * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
@@ -104,9 +104,11 @@ export const FOLDED_PATTERNS: FeePattern[] = [
       /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b/i,
   },
   {
-    key: "check_cashing",
-    // A collection fee on a charged-off or past-due account, or a collection phone call,
-    // is debt collection, not a check sent for collection (v30, from prod's first v26 pass).
+    // Collection items got their own type on Oct 8 (James, "Own type"); v26 filed them under
+    // check cashing. A collection fee on a charged-off or past-due account, or a collection
+    // phone call, is debt collection, not a check sent for collection (v30, from prod's first
+    // v26 pass).
+    key: "collection_item",
     pattern:
       /^(?![\s\S]*\b(?:charged[- ]?off|past[- ]due|delinquen\w*|calls?)\b)[\s\S]*?\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
   },

@@ -283,7 +283,12 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     summary: `Answered with ${response.kind.replace(/_/g, " ")}.`,
     userId: user.id,
     institutionId,
+    // The question and Hamilton's short answer are kept (in our own database) so the answer eval
+    // can replay real Pro questions, above all the ones Hamilton asked back on instead of answering.
     detail: {
+      question,
+      short_answer: response.shortAnswer,
+      engine_version: WORKSPACE_ENGINE_VERSION,
       response_kind: response.kind,
       fee_category: intent.feeCategory,
       segment: intent.segment?.label ?? null,

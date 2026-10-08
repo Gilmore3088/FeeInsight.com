@@ -59,11 +59,14 @@ name the research problem that fits the addressee's role. No draft is made when 
 each draft carries an audit block (the schedule line and link behind every figure, the rows'
 conditions, the peers left out) so James checks each comparison before he sends it himself.
 Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the
-site's mailing address stays blank) and an opt-out line. The same step drafts the plan's one
-day-7 follow-up (`runOutreachFollowUps`) for each first email marked sent at least 7 days ago
-with nothing recorded since: same link, no new figures, once per institution. Contacts are
+site's mailing address stays blank) and an opt-out line. The same step drafts the pilot's two
+follow-ups (`runOutreachFollowUps`): one 6 days after a first email marked sent, and a final one
+13 days after it once the first follow-up is marked sent, each only with nothing recorded since,
+no figures or link, once per institution; then outreach to that institution stops. Contacts are
 re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
-rank are not buyers, and labels printed where a name would be are not names. Each run first
+rank are not buyers, labels and headings printed where a name would be ("Mailing Address") are
+not names, and a name that can't own the personal address beside it (`nameFitsEmail`) is dropped
+with its title. `?dry_run=1` counts the drafts and withdrawals a run would make and writes nothing. Each run first
 withdraws unreviewed drafts whose addressee fails that test, that were written under an older
 `OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
