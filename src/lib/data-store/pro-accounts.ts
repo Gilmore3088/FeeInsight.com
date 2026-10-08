@@ -41,3 +41,32 @@ export async function getProAccounts(): Promise<ProAccount[]> {
     isActive: Boolean(row.is_active),
   }));
 }
+
+/** The institution a Pro checkout is priced for: its name and total assets (thousands). */
+export interface ProPricingInstitution {
+  id: number;
+  name: string;
+  city: string | null;
+  stateCode: string | null;
+  assetsThousands: number | null;
+}
+
+export async function getProPricingInstitution(id: number): Promise<ProPricingInstitution | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const [row] = await sql<
+    Array<{ id: number | string; institution_name: string; city: string | null; state_code: string | null; asset_size: number | string | null }>
+  >`
+    SELECT id, institution_name, city, state_code, asset_size
+      FROM institution_sources
+     WHERE id = ${id}
+  `;
+  if (!row) return null;
+  const assets = row.asset_size === null ? null : Number(row.asset_size);
+  return {
+    id: Number(row.id),
+    name: row.institution_name,
+    city: row.city,
+    stateCode: row.state_code,
+    assetsThousands: assets !== null && Number.isFinite(assets) ? assets : null,
+  };
+}

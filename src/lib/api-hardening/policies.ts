@@ -88,6 +88,21 @@ export const API_ROUTE_POLICIES = [
     notes: "Crew roster and plain-English activity log; read-only, no provider calls.",
   },
   {
+    routeId: "api.admin.stripe.pro_prices",
+    routeTemplate: "/api/admin/stripe/pro-prices",
+    file: "src/app/api/admin/stripe/pro-prices/route.ts",
+    surface: "admin",
+    allowedMethods: ["GET"],
+    authRequirement: "admin",
+    rateLimitBucket: "admin-read",
+    costPolicy: "none",
+    telemetryEvent: "api.admin.stripe.pro_prices",
+    failBehavior: "fail_closed",
+    auditPriority: "high",
+    notes:
+      "Sets up the six Pro tier prices in Stripe if missing (idempotent by lookup key) and opens then expires one checkout per price to prove it works; no charge.",
+  },
+  {
     routeId: "api.admin.flow",
     routeTemplate: "/api/admin/flow",
     file: "src/app/api/admin/flow/route.ts",
