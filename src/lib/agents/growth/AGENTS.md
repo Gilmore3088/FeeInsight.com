@@ -13,8 +13,8 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Monthly marketing email | `/api/admin/crew/marketing`, the 1st at 14:07 UTC | `marketing-score`, `marketing-write` (paid), `marketing-states` | `../marketing/AGENTS.md` |
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
-| Weekly scores | `/api/admin/crew/growth-score`, **not scheduled** (planned Mondays 13:07 UTC) | `growth-score` | below |
-| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=30`, **not scheduled**; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
+| Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
 
 ### Prospect contacts (`contacts.ts`)
 
@@ -52,9 +52,8 @@ into the app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
 
-**Not turned on.** The route exists and is on the publishing calendar as "not turned on yet";
-there is no cron for it in `vercel.json`. Nothing runs on a schedule until James says go. An admin
-can start it by hand meanwhile.
+James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
+Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
 
 ### Lessons from skip reasons (`lessons.ts`)
 
