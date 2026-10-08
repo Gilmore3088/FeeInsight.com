@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, REPORT_OFFER } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 
 export const metadata: Metadata = {
@@ -71,6 +71,7 @@ export default async function AboutPage() {
           Fee Index exists because published fee schedules were never collected in one
           verifiable place — every figure here links to the document it came from.
         </p>
+        <p>Fee Insight is operated by {LEGAL_ENTITY_LINE}.</p>
         <p>
           <a
             href={`mailto:${CONTACT_EMAIL}`}

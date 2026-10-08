@@ -13,6 +13,44 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: A new agent or pause needs database rows, not only a code list
+**Owner:** the GrowthOS thread (growth agent, build-plan phase 1).
+**What happened:** adding agent `growth` and a `marketing` pause looked like code-only changes
+(`AdminAgent`, `automation-control.ts`). The schema says otherwise: `agent_runs.agent_name` and
+`agent_run_steps.agent_name` reference `agent_registry(agent_name)` (in
+`20260406_report_jobs.sql`), `automation_control.control_key` is checked against
+`('global', 'pipeline')`, and `automation_control_audit.action` against a fixed list. A growth run
+or a marketing pause would have failed on insert in prod.
+**Cause:** these lists live only in the database; no test compares them with the code.
+**Fix:** migration `20270110000023_growth_agent.sql` (this PR) inserts the `growth` registry row
+and widens both checks. Not applied yet.
+**Lesson:** before adding an agent name, control key or audit action, grep `supabase/migrations`
+for the table's CHECK and FOREIGN KEY constraints, and widen them in the same PR.
+
+## 2026-10-08: Credit union charter numbers matched banks' FDIC certs in the market loader
+**What happened:** the custom report market loader (`loadMarketCounties` in
+`src/lib/data-store/custom-report-market.ts`) matched `institution_sources.cert_number` against
+SOD `cert` for every institution. All 4,433 credit unions store their NCUA charter there, and 307
+of them equal a bank's FDIC cert in the 2026 SOD (07:27 UTC on prod). Those credit unions got the
+bank's branch counties instead of their headquarters city: U S Employees FCU (Fairmont, WV,
+charter 6672) got Fifth Third Bank's 1,513 branches, Alliance Niagara FCU got TD Bank's 1,050.
+No credit union legitimately matches its own SOD rows (0 of 4,433), and every bank cert match
+already points at the same institution (0 mismatches of 4,249).
+**Cause:** one column holds two numbering schemes (FDIC cert for banks, NCUA charter for credit unions).
+**Fix:** the loader skips the cert match when `charter_type = 'credit_union'`, with a test. Not merged yet.
+**Lesson:** never join `cert_number` to FDIC data without checking `charter_type` first.
+
+## 2026-10-08: No search data: GA4 and Search Console are not wired in the code
+**Owner:** the GrowthOS thread.
+**What happened:** checking analytics for the marketing team, the code has Vercel Analytics only
+(24 browser events, 3 server events). There is no GA4 tag and no Search Console verification
+(no meta tag, no verification file). Search Console may still be verified by DNS; not known.
+**Cause:** analytics was built around Vercel's custom events; search data was never set up.
+**Fix:** none yet. `growth-os/metrics/analytics-inventory.md` lists what exists and what NIELSEN
+needs; Search Console waits on James's answer.
+**Lesson:** read funnel counts from our own tables (`leads`, `users`) with the time, and say
+"not measured" for search and visitor numbers until a source exists.
+
 ## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
 **Owner:** the Data inventory thread.
 **What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
@@ -1120,6 +1158,16 @@ flattens into a digit. The table and family specialists (pass 2) already strippe
 **Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
 merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
 **Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+**Follow-up (2026-10-08):** issue 163 was run on Oct 6 (155 to 0), but by 08:40 UTC Oct 8, 22 live
+fees at 14 institutions had the digit again, 19 of them published after the fix. In a dot-leader
+line ("Check Cashing Fee1. . . . $5.00") the digit isn't at the end of the name until the leaders
+are removed, and that happens later, in `tidyFeeName`. Fix: `tidyFeeName` strips the footnote
+number in each cell after the leaders are gone. The live repair now runs in the pipeline: Knox
+name retidy v2 counts a footnoted name as messy and renames it (logged per row in
+`pipeline_feedback`), so no hand SQL is needed. A dry run on the live rows renamed all 22 and
+skipped none.
+**Lesson 2:** a cleanup that keys on "end of the name" has to run after every other step that
+trims the name.
 
 ## 2026-10-05: Public pages showed different counts and medians on the same day
 **What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
@@ -2980,6 +3028,19 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
   `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
 
+## 2026-10-08: Darwin's release review passed service fees the prompt already named
+
+- **Problem.** Review v11 released 1,637 held fees. A hand check of 20 live ones found 18 right.
+  The two misses were cases the prompt already named ("a monthly charge for one service is not the
+  account's monthly maintenance fee", "returning a deposited check is not NSF"), so the model reads
+  the rule and still passes the fee. Fees held at verify were also never re-checked against the
+  category guard's newer versions.
+- **Fix.** Review v12 holds a fee by its own name, amount and rows (`releaseHoldReason`), and
+  category guard v21 adds the name patterns, which also lets Hamilton's guard take live ones down
+  after its second look. A prompt rule that a hand check shows the model ignoring becomes a code check.
+- **Watch.** `pipeline_attempts` `verify.release_review` v12 `detail.hold_reason`, and
+  `hamilton.category_guard` takedowns of `monthly_maintenance` and `nsf` after the merge.
+
 ## 2026-10-08: Many large banks' fee links point at product or rates pages
 
 - **Problem.** Of the 10 largest institutions by in-state deposits in each state (510 slots),
@@ -2994,3 +3055,41 @@ Rows already on file gain the fields only when Knox reads their document again.
   the priority path. The rest wait on the paid schedule search or a link found by hand.
 - **Watch.** `/mnt/project-files/coverage/gaps-2026-10-08.md` lists all 82; re-count live
   coverage for the same 510 slots after the hand-found runs.
+
+## 2026-10-08: Small returned-check fees published as NSF
+
+- **Problem.** Dean Co-operative Bank's "Returned Check Fee $7" (a deposited check coming back)
+  was live as its NSF fee. Its real NSF fee, "Insufficient Funds Fee (Paid or Returned) $35.00",
+  is split over two lines, and Knox missed it; the earlier reader caught it. The fee name alone
+  says nothing wrong, so no guard caught it. 15 live NSF fees under $10 named only "Returned
+  check/item" sit on a schedule that prices NSF at $20-35.
+- **Fix.** Category guard v22 adds a schedule check (`schedule_contradicts`): a plain returned
+  check or item under $10 filed as NSF, on a schedule whose NSF or insufficient-funds fee is at
+  least $15 and twice its price, fails. Hamilton's guard reads that price from both raw readers'
+  rows for the same document, logs each to `pipeline_feedback`, and takes it down after the second look.
+- **Watch.** `hamilton.category_guard` byCode `schedule_contradicts`; Knox still misses split NSF rows.
+- **Follow-up (v23, same day).** James: a returned check fee is a return deposited item (RDI),
+  not NSF. Of 382 live plain "Returned check/item" fees filed as NSF, 130 sat beside a separate,
+  higher NSF fee on the same schedule; 72 had the NSF fee's own price; 154 had no NSF line. Guard
+  v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
+  `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
+- **Follow-up (v24, same day).** WCU's $5 "Statement Copy Fee" was live as overdraft because Knox
+  kept the section heading in its name ("OVERDRAFT & NSF FEES: Statement Copy Fee"), and a
+  $5 "Returned Item Photocopy" was live as NSF. Guard v24 rejects statement copies, photocopies,
+  "copy fee" and "copy of" names under overdraft and NSF; these 2 are the only live matches.
+
+
+## 2026-10-08: Every Stripe webhook failed
+
+- **Problem.** The webhook recorded each event with `INSERT INTO stripe_events (id, event_type,
+  stripe_customer_id, payload_json)`, the shape of the old SQLite schema
+  (`src/lib/data-store/migrations/001-payments.sql`). Prod's `stripe_events` has a bigint `id`,
+  a unique `stripe_event_id`, `event_type` and `processed_at`, so the insert errored and the
+  route answered 500 to every delivery. Prod had 0 rows in `stripe_events` on 8 Oct. A paid Pro
+  checkout only activated through the welcome-page fallback; a paid institution report was
+  never marked Paid and its link never sent; cancellations and failed payments never landed.
+- **Fix.** `recordStripeEvent` writes `stripe_event_id` and `event_type` with
+  `ON CONFLICT (stripe_event_id)`. Checkout also replaces a saved Stripe customer that the
+  current key can't find (test-mode customers after the switch to live keys, or one deleted
+  in the dashboard), which failed checkout with "No such customer".
+- **Watch.** `stripe_events` gains a row for each delivery; Stripe's webhook page shows 200s.

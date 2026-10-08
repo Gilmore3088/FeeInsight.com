@@ -5,6 +5,7 @@ import {
   ANNUAL_PRICE_LABEL,
   ANNUAL_SAVINGS_LABEL,
   MONTHLY_PRICE_LABEL,
+  PLAN_TEAM_LABEL,
   type ProPlan,
 } from "./pricing";
 
@@ -70,7 +71,7 @@ export function ProPlanCards({
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            Included with every seat
+            Included for everyone on the plan
           </p>
           <ul className="mt-3 space-y-2 text-sm text-[#5A5347]">
             {features.map((feature) => (
@@ -87,7 +88,7 @@ export function ProPlanCards({
             plan="monthly"
             eyebrow="Monthly"
             priceLabel={MONTHLY_PRICE_LABEL}
-            priceSuffix="/mo per seat"
+            priceSuffix={`/mo ${PLAN_TEAM_LABEL}`}
             note="Cancel at the end of any billing period"
             highlighted={highlightedPlan === "monthly"}
             cta={ctaFor("monthly", monthlyPriceId, "Start monthly", SECONDARY_BUTTON)}
@@ -96,7 +97,7 @@ export function ProPlanCards({
             plan="annual"
             eyebrow="Annual"
             priceLabel={ANNUAL_PRICE_LABEL}
-            priceSuffix="/yr per seat"
+            priceSuffix={`/yr ${PLAN_TEAM_LABEL}`}
             note={`Save ${ANNUAL_SAVINGS_LABEL} vs monthly`}
             badge="Best value"
             highlighted={highlightedPlan === "annual"}

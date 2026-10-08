@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { LEGAL_ENTITY_LINE } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -22,10 +23,15 @@ export default function PrivacyPage() {
         Privacy Policy
       </h1>
       <p className="mt-2 text-[13px] text-[#6B6255]">
-        Last updated: October 6, 2026
+        Last updated: October 8, 2026
       </p>
 
       <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
+        <p>
+          Fee Insight is operated by {LEGAL_ENTITY_LINE}, which is responsible for
+          the personal information described in this policy.
+        </p>
+
         <section>
           <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>

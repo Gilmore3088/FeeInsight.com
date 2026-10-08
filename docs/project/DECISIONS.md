@@ -5,6 +5,27 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
+automated loop that extends the existing content and email workflows and runs on the same run
+ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on
+GitHub. Free reports are described as "instant". At 07:20 he approved the plan with its
+recommended answers: a new agent, BERNAYS, owns press, events and partners; 3 LinkedIn drafts a
+week; agents that change code run as scheduled Claude Code sessions that open PRs; the growth
+budget is $5 a day and $60 a month; 3 follow-up email drafts after a free report; loop
+infrastructure is built before the agents; and each task is a GitHub issue labeled `growth`.
+Nothing is scheduled until he says go after a two-week dry run. Lesson for Claude: ask him when a
+choice changes scope, rather than picking a default.
+
+**A second agent team for marketing: GrowthOS.** James, 02:26 UTC, proposed a marketing team built
+from the Marketing Skills library (MIT, copied into `.agents/skills/`). Week 1 is in `growth-os/`:
+the manager is DRAPER (Atlas is already the pipeline orchestrator), SHERLOCK does market
+intelligence, GitHub issues labeled `growth` are the work queue, and nothing is scheduled until
+James says go. The team runs as Claude Code routines because its output is GitHub issues and PRs;
+any app-side paid step gets its own `ANTHROPIC_API_KEY_GROWTH` slot and `agent:growth` budget.
+Every public number passes `growth-os/context/editorial-policy.md`. James asked (04:20 UTC) where
+SEO and social were: ERNEST (SEO) moved up to start with the first run, and MURROW (social) was
+added to own LinkedIn through the existing content workflow, not a second pipeline.
+
 **Darwin releases held fees that pass Claude's review.** James, 02:16 UTC, tapped "Turn on" on the
 held-fees card. The bar he set was his own word plus at least 19 of 20 passes right in a hand
 check; review v10 met it (19 right, 1 arguable; earlier rounds 17, 18, 18). Released fees carry the
@@ -384,3 +405,10 @@ Already-live thin institutions stay live but stay queued for re-review.
 
 **Crawl each state monthly with a quarterly re-check, with a state expert agent per state.** James.
 Built in PR 75 (state experts, monthly full pass, quarterly re-check).
+
+## 2026-10-08
+
+**Pro is described as one plan for up to 5 people, not per seat.** James, 08:19 UTC, Stripe
+thread. One checkout ($499.99 a month or $5,000 a year) already gives an institution account 5
+logins (`WORKSPACE_SEAT_LIMIT`), so the site now says "for up to 5 people" instead of "per
+seat". Prices and Stripe are unchanged. Answers build-plan task 0.11.
