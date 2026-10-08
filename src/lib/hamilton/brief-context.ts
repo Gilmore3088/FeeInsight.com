@@ -75,8 +75,8 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 const UNEMPLOYMENT_MONTHS = 36;
 const SHARE_BARS = 8;
 /** The 2023 federal merger guidelines call a market above this HHI highly concentrated. */
-const HHI_HIGH = 1800;
-const HHI_MODERATE = 1000;
+export const HHI_HIGH = 1800;
+export const HHI_MODERATE = 1000;
 
 function monthLabel(iso: string): string {
   return `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
@@ -182,7 +182,7 @@ export function buildEconomy(ctx: StateEconomicContext, place: string, districtN
   return { place, districtName, unemployment: unemploymentPoints(st, us), tiles, commentary, beigeBook, fomc, sources };
 }
 
-function hhiWord(hhi: number): string {
+export function hhiWord(hhi: number): string {
   return hhi > HHI_HIGH ? "highly concentrated" : hhi >= HHI_MODERATE ? "moderately concentrated" : "unconcentrated";
 }
 

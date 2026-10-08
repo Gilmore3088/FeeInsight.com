@@ -3,6 +3,14 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-08
+
+**Darwin releases held fees that pass Claude's review.** James, 02:16 UTC, tapped "Turn on" on the
+held-fees card. The bar he set was his own word plus at least 19 of 20 passes right in a hand
+check; review v10 met it (19 right, 1 arguable; earlier rounds 17, 18, 18). Released fees carry the
+`darwin_released_hold` flag so the release can be found and rolled back; a fee taken down later
+is archived, never deleted.
+
 ## 2026-10-07
 
 **Hamilton gets the new market study and the merger screen.** James, 07:24 UTC ("Go on market",

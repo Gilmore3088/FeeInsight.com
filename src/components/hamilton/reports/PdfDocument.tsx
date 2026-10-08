@@ -16,18 +16,11 @@ import {
 import type { ReportArtifactMetadata, ReportExhibit, ReportSummaryResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import { REPORT_SECTION_HEADINGS, evidencePolicyLabel, reportTypeLabel } from "./report-labels";
+import { RD_PDF } from "@/lib/report-design/tokens";
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const COLORS = {
-  textPrimary: "#1c1917",
-  textSecondary: "#78716c",
-  textTertiary: "#a8a29e",
-  accent: "#b45309",
-  surface: "#fbf9f4",
-  surfaceElevated: "#f5f1e8",
-  borderDark: "#d6d0c5",
-};
+const COLORS = RD_PDF;
 
 const styles = StyleSheet.create({
   page: {
@@ -54,8 +47,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   reportTitle: {
-    fontSize: 24,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 26,
+    fontFamily: "Times-Bold",
     color: COLORS.textPrimary,
     lineHeight: 1.2,
     marginBottom: 8,
@@ -86,7 +79,7 @@ const styles = StyleSheet.create({
   },
   sectionHeading: {
     fontSize: 16,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: "Times-Bold",
     color: COLORS.textPrimary,
     marginBottom: 12,
     lineHeight: 1.3,
@@ -124,8 +117,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statValue: {
-    fontSize: 20,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 22,
+    fontFamily: "Times-Roman",
     color: COLORS.textPrimary,
   },
   statValueAccent: {
@@ -235,8 +228,8 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   exhibitTitle: {
-    fontSize: 11,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 13,
+    fontFamily: "Times-Bold",
     color: COLORS.textPrimary,
     lineHeight: 1.35,
   },

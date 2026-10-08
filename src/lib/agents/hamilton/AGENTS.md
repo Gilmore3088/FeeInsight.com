@@ -217,7 +217,13 @@ with its verified row rejected. A fee the older copy's own text does not state i
 judged, and neither is a current copy that restates fewer than half (or fewer than two) of the
 older copy's fees. The feedback sync records no lesson against Knox or Darwin for these.
 `CURRENT_COPY_CONFIRM_LIVE` stays false (first looks only) until a hand check of 20 flags
-finds at least 18 really stale. `refresh-copy.ts` moves up to 1,000 fees a step.
+finds at least 18 really stale. The first hand check (7 Oct, 19:00 UTC) found 14 of 20 first
+looks still stated on the current page, in layouts the verdict missed (a name over its price,
+one price of several on a row) or at $0 ("FREE"). The verdict (`currentCopyVerdict`) now
+counts a fee as stated when the current page follows a piece of its name with its price
+(`priceFollowsName`) or the shared source check traces it, and never judges a $0 row.
+Confirmations stay off until a new hand check passes. `refresh-copy.ts` moves up to 1,000
+fees a step.
 
 ## Outlier Rollback
 
