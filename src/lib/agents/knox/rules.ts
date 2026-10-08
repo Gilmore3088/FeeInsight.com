@@ -184,9 +184,11 @@ export const FEE_PATTERNS: FeePattern[] = [
   // to a total of $500") it describes another fee or a limit.
   // v39: "OD Privilege", "OD Item Fee": the abbreviation followed by the fee's own word
   // (GreenState's schedule; the line read as no fee at all).
+  // v40: "Paid Item Fee" (Northeast Bank) is the fee for an item paid into overdraft. A
+  // combined "NSF paid item fee/NSF returned item fee" stays with NSF.
   {
     key: "overdraft",
-    pattern: /\b(overdraft|courtesy pay|privilege pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))|\b(?:OD|O\/D)\s+(?:privilege|items?|fees?|paid|charges?)\b/i,
+    pattern: /\b(overdraft|courtesy pay|privilege pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))|\b(?:OD|O\/D)\s+(?:privilege|items?|fees?|paid|charges?)\b|\bpaid items?\s+(?:fees?|charges?)\b(?!\s*\/)/i,
   },
   {
     key: "nsf",
@@ -473,10 +475,19 @@ export function classifyPatternKey(value: string): string | null {
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
+  // v43: one price for the paid and the returned item ("NSF Paid Item Fee/Returned Item Fee
+  // (items over $10)", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft".
+  if (key === "nsf" && PAID_AND_RETURNED_ITEM.test(text)) return "overdraft";
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
   // v34: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd).
-  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b|\(\s*paid\s*\)/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
+  // v42: "Paid nonsufficient funds (NSF)" (Saco & Biddeford) and "NSF Share Draft (Honored)"
+  // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
+  if (
+    key === "nsf" &&
+    /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i.test(text) &&
+    !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)
+  ) {
     return "overdraft";
   }
   // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
@@ -502,6 +513,10 @@ export function nearestFeeText(prefix: string): string {
   // v38: a cell holding only a threshold's comparison word, cut off from its figure
   // ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse), names no fee.
   while (cells.length > 1 && THRESHOLD_WORD_CELL.test(cells.at(-1) ?? "")) cells.pop();
+  // v42: an overdraft row's last text cell that only lists the items it covers ("Courtesy Pay
+  // for paid items | Checks (Share Drafts), Online Payments, & ACH", "Overdrawn/Courtesy Pay |
+  // For Debit Card Transactions including ATM, POS", Los Angeles FCU) does not name the fee.
+  while (cells.length > 1 && COVERAGE_CELL.test(cells.at(-1) ?? "") && classifyFeeText(cells.at(-2) ?? "") === "overdraft") cells.pop();
   for (let start = cells.length - 1; start >= 0; start -= 1) {
     const text = cells.slice(start).join(CELL_SEPARATOR);
     // A cell that names a fee of its own owns the price, even when no rule knows it.
@@ -510,6 +525,8 @@ export function nearestFeeText(prefix: string): string {
   return cells.join(CELL_SEPARATOR);
 }
 
+const PAID_AND_RETURNED_ITEM = /\bpaid items?(?: fees?)?\s*\/\s*(?:nsf\s+)?return(?:ed)? items?\b|\breturn(?:ed)? items?(?: fees?)?\s*\/\s*(?:nsf\s+)?paid items?\b/i;
+const COVERAGE_CELL = /^\s*(?:for|includes?|including)\b|,[^,]*,/i;
 const THRESHOLD_WORD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than|up\s+to)\s*$/i;
 const THRESHOLD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/i;
 
@@ -795,6 +812,8 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 // v37: "We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed
 // $180 per day" (Guaranty): a "one-time" or "per-item" fee, and a cap after the clause.
 const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:(?:one[-\s]time|per[-\s]item|flat)\s+)?(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+/** v40: "We may charge you a Paid Item Fee of", "you will be charged a Return Item Fee of". */
+const CHARGE_A_NAMED_FEE_OF = /\b(?:[Ww]e|[Yy]ou)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+((?:[A-Z][\w'’/-]*\s+){1,4}(?:Fee|Charge))\s+of(?:\s+up\s+to)?\s*$/;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -948,6 +967,22 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     return result;
   }
   if (!firstAmount) return result;
+
+  // v40: "We may charge you a Paid Item Fee of $30.00 if we pay an item ..." is named by
+  // the fee's own title, not by the sentence around it.
+  const namedFee = hint ? prefix.match(CHARGE_A_NAMED_FEE_OF)?.[1]?.trim() : undefined;
+  if (hint && namedFee && classifyFeeText(namedFee) === hint && passesDarwinChecks(hint, namedFee, firstAmount.value)) {
+    result.candidates.push({
+      feeName: namedFee,
+      amount: firstAmount.value,
+      frequency: detectFrequency(segment),
+      canonicalHint: hint,
+      confidence: confidenceFor(segment),
+      excerpt: segment,
+      waivable: WAIVER_LANGUAGE.test(segment),
+    });
+    return result;
+  }
 
   // v22: "Customers are charged a fee of $30 each time an overdraft transaction is paid" is
   // named by what the sentence charges for, even when words earlier on the line name a fee.

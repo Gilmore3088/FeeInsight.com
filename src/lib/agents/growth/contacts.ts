@@ -57,7 +57,7 @@ const PAGE_HINTS: Array<{ pattern: RegExp; rank: number }> = [
 /** A role from a title or a mailbox name; the first match wins, so "SVP Marketing" is marketing. */
 const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
   { role: "marketing", pattern: /\bmarketing\b|brand|communications|\bcmo\b/i },
-  { role: "retail", pattern: /retail|deposit|product|consumer bank|member experience|member services/i },
+  { role: "retail", pattern: /retail|deposit|product|consumer bank/i },
   { role: "finance", pattern: /\bcfo\b|chief financial|finance|treasurer|controller/i },
   { role: "executive", pattern: /\bceo\b|chief executive|president/i },
   { role: "operations", pattern: /\bcoo\b|chief operating|operations/i },
@@ -67,6 +67,15 @@ const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
 /** Shared mailboxes rather than a person. */
 const GENERAL_MAILBOX =
   /^(info|contact|contactus|customerservice|customer\.?service|service|services|support|help|hello|questions|webmaster|web|mail|online|onlinebanking|ebanking|loans?|lending|mortgages?|cards?|fraud|security|careers|jobs|hr|humanresources|privacy|deposits?|accounting|bsa|compliance|memberservices?|members?|marketing|media|press|news|investor|investors|ir|noreply|no-reply|donotreply)$/i;
+
+/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees, the board, card lines. */
+const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|boardof|directors|^members?[._-]|^(?:visa|debit|mastercard|board)$/i;
+
+/** True when an address is a shared mailbox, not one person's. */
+export function isSharedMailbox(email: string): boolean {
+  const local = email.split("@")[0] ?? "";
+  return GENERAL_MAILBOX.test(local) || SHARED_MAILBOX_PART.test(local);
+}
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}/g;
 const NOT_EMAIL_TLD = /\.(png|jpe?g|gif|svg|webp|css|js)$/i;
@@ -146,19 +155,27 @@ const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|market
  * business development, relationship and cash management, wealth and trust, branch staff.
  */
 const NOT_BUYER_TITLE =
-  /loan|lend|mortgage|underwrit|business banker|business banking|business development|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|business services|business product|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+
+/**
+ * Member services and member experience are retail only at a decision maker's rank (PR 652's
+ * decision-maker rule): "VP of Member Experience" buys a fee study, a "Member Services Manager" doesn't.
+ */
+const MEMBER_ROLE = /member (?:experience|services?)/i;
+const DECISION_MAKER_RANK = /\b(?:vp|svp|evp|vice[\s-]+president|director|chief|head)\b/i;
 
 export function roleFor(text: string): ContactRole {
   const title = text.replace(VICE_PRESIDENT, " ");
   if (!BUYER_TITLE.test(title) && NOT_BUYER_TITLE.test(title)) return "other";
-  return ROLE_PATTERNS.find(({ pattern }) => pattern.test(title))?.role ?? "other";
+  const seniorMember = MEMBER_ROLE.test(title) && DECISION_MAKER_RANK.test(text);
+  return ROLE_PATTERNS.find(({ role, pattern }) => pattern.test(title) || (role === "retail" && seniorMember))?.role ?? "other";
 }
 
-/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ..."). */
-const NOT_A_TITLE = /message|branches served|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...", a line quoting an address). */
+const NOT_A_TITLE = /@|\be-?mail:|message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
 /** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
 const NOT_A_NAME =
-  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general)\b/i;
+  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual)\b/i;
 
 /** A printed name we can greet, or null for a label that sits where a name would. */
 export function cleanContactName(name: string | null): string | null {

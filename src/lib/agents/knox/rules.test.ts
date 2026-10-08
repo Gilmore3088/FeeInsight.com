@@ -592,6 +592,85 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("v40 names a sentence fee by its own title and reads Paid Item Fee as an overdraft (Northeast Bank)", () => {
+    // Text 19354: the Paid Item Fee line was held unclassified, and the Return Item Fee kept
+    // the sentence around it as its name.
+    expect(fees([
+      "We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your",
+      "Ledger Balance. We may charge you a Return Item Fee of $30.00 if we return an",
+      "item unpaid due to an insufficient Ledger Balance.",
+    ].join("\n"))).toEqual([
+      ["Paid Item Fee", 30, "overdraft"],
+      ["Return Item Fee", 30, "nsf"],
+    ]);
+    // One price for the paid and the returned NSF item is the overdraft price too (v43).
+    expect(classifyFeeText("NSF Paid Item Fee/NSF Returned Item Fee")).toBe("overdraft");
+  });
+
+  it("v43 reads one price for the paid and the returned NSF item as the overdraft price (Pinnacle Bank Wyoming)", () => {
+    expect(fees("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32.00")).toEqual([
+      ["NSF Paid Item Fee/Returned Item Fee (items over $10)", 32, "overdraft"],
+    ]);
+    expect(classifyFeeText("Returned Item Fee/Paid Item Fee")).toBe("overdraft");
+    expect(classifyFeeText("NSF Returned Item Fee")).toBe("nsf");
+  });
+
+  it("v42 reads the overdraft lines of Marketing's outreach batch", () => {
+    const paidAndReturned = (text: string) =>
+      runFreeSpecialists(text)
+        .candidates.filter((fee) => fee.canonicalHint === "overdraft" || fee.canonicalHint === "nsf")
+        .map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+    // BankIowa (text 13837): a long name ending in a note kept the note's last clause.
+    expect(paidAndReturned([
+      "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)",
+      "$30.00",
+      "",
+      "Returned Item Fee* - each debit or check presentment returned (Consumer Accts: 5 max total OD or Returned Item fees daily)",
+      "$30.00",
+    ].join("\n"))).toEqual([
+      ["Overdraft Fee - each debit or check presentment paid", 30, "overdraft"],
+      ["Returned Item Fee - each debit or check presentment returned", 30, "nsf"],
+    ]);
+    // Saco & Biddeford (text 16363): a paid NSF item is an overdraft.
+    expect(paidAndReturned([
+      "Paid nonsufficient funds (NSF)*", "", "Consumer account | $25.00", "", "Business account | $35.00", "",
+      "Return item*", "", "Consumer account | $15.00", "", "Business account | $25.00",
+    ].join("\n"))).toEqual([
+      ["Paid nonsufficient funds (NSF)*: Consumer account", 25, "overdraft"],
+      ["Paid nonsufficient funds (NSF)*: Business account", 35, "overdraft"],
+      ["Return item*: Consumer account", 15, "nsf"],
+      ["Return item*: Business account", 25, "nsf"],
+    ]);
+    // Bluestone FCU (text 22145): an honored NSF draft is paid.
+    expect(paidAndReturned([
+      "NSF Share Draft (Returned) | $25.00 per item ($100.00 Max per day)",
+      "NSF Share Draft (Honored) | $25.00 per item ($100.00 Max per day)",
+    ].join("\n"))).toEqual([
+      ["NSF Share Draft (Returned)", 25, "nsf"],
+      ["NSF Share Draft (Honored)", 25, "overdraft"],
+    ]);
+    // Los Angeles FCU (text 18523): the cell listing what an overdraft covers does not name it.
+    expect(paidAndReturned([
+      "General Fees | Courtesy Pay for paid items | Checks (Share Drafts), Online Payments, & Automated Clearing House (ACH) | $29 per presentment; $145 daily maximum",
+      "General Fees | Overdrawn/Courtesy Pay | For Debit Card Transactions including ATM, POS, Debit, & Credit | $29 per presentment; $145 daily maximum",
+    ].join("\n")).map(([name, amount, hint]) => [hint, amount, String(name).includes("ATM") ? "debit cell" : "items cell"])).toEqual([
+      ["overdraft", 29, "items cell"],
+      ["overdraft", 29, "debit cell"],
+    ]);
+    // NIH FCU (text 12917): a threshold row under a priceless fee line is that fee's.
+    expect(paidAndReturned([
+      "Non-Sufficient Funds (NSF)",
+      "Paid Consumer & Business NSF Items- active",
+      "enrollment in the Courtesy Pay program is required.",
+      "Per Item less than $10.01 | No Fee",
+      "Per Item greater than $10.01 | $30 per item",
+      "Returned Unpaid NSF Items (consumer) | $30 per item",
+    ].join("\n"))).toEqual([
+      ["Returned Unpaid NSF Items (consumer)", 30, "nsf"],
+      ["Paid Consumer & Business NSF Items", 30, "overdraft"],
+    ]);
+  });
+
   it("v38 keeps a threshold cell in the name, and reads Privilege Pay as an overdraft", () => {
     // Lighthouse FCU (text 15165): "Over $5" is the smallest item charged, not a tier.
     expect(fees("Courtesy Pay | Over $5 | Per occurrence | $32 | Courtesy Pay fee")).toEqual([

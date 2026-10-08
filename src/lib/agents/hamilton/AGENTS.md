@@ -57,7 +57,7 @@ Hamilton supports the decision; it does not make it.
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
 - The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
-  daily cron `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
   of real banks and credit unions (two per charter and asset tier) through the Ask path,
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
   names the institution's own regulator and a state question names its state. Read-only, no
