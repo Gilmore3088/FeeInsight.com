@@ -137,7 +137,11 @@ export default async function MarketSnapshotPage({ params }: PageProps) {
   const { subject } = snapshot;
   const market = marketLabel(subject);
   const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
-  const [lead, ...rest] = snapshot.fees;
+  // Fees with a verified figure for the institution and a verified local median are shown open,
+  // in the snapshot's order: these are the comparisons an outreach email quotes. The rest stay
+  // folded, and a fee nobody in the market publishes is left out.
+  const comparable = snapshot.fees.filter((fee) => fee.subject?.verified && fee.verifiedMedian !== null);
+  const rest = snapshot.fees.filter((fee) => !comparable.includes(fee) && (fee.subject !== null || fee.peers.length > 0));
   const reportHref = `/for-institutions?${new URLSearchParams({ institution: String(subject.id), name: subject.name, src: "snapshot" }).toString()}#report`;
 
   return (
@@ -154,12 +158,17 @@ export default async function MarketSnapshotPage({ params }: PageProps) {
           the local median.
         </p>
 
-        <section className="mt-6 border border-[#E0D7C9] bg-white">
-          <h2 className="border-b border-[#E0D7C9] px-4 py-3 text-lg font-semibold sm:px-5">{getDisplayName(lead.category)}</h2>
-          <FeeSection fee={lead} subjectName={subject.name} names={names} />
-        </section>
+        {comparable.map((fee) => (
+          <section key={fee.category} className="mt-6 border border-[#E0D7C9] bg-white">
+            <h2 className="border-b border-[#E0D7C9] px-4 py-3 text-lg font-semibold sm:px-5">{getDisplayName(fee.category)}</h2>
+            <FeeSection fee={fee} subjectName={subject.name} names={names} />
+          </section>
+        ))}
 
-        <div className="mt-4 space-y-3">
+        {rest.length > 0 && (
+          <h2 className="mt-8 text-base font-semibold">Other published fees</h2>
+        )}
+        <div className="mt-3 space-y-3">
           {rest.map((fee) => (
             <details key={fee.category} className="border border-[#E0D7C9] bg-white">
               <summary
