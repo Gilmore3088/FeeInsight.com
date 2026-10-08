@@ -47,6 +47,12 @@ in the page, painted over the menu.
 **Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
 not on itself.
 
+## 2026-10-08: A California groundwater bill was stored as an overdraft fee bill
+**What happened:** the first live state-bills runs (17:13 UTC Oct 8) stored CA AB 1520, "Public resources: conservation." (signed), with the topic `overdraft_nsf`, so it would list as a fee bill on the California Wire. The text the tagging reads matched on "overdraft", which almost certainly comes from California water law ("critically overdrafted basins"); Open States can't be reached from the cloud to confirm.
+**Cause:** the bank fee test and topic tags matched the bare word "overdraft". Also, a re-read only upserted the bills that still matched, so a tagging fix would never reach a row already stored.
+**Fix:** groundwater overdraft phrases are removed before the tests. A re-read clears the topics of a stored bill that no longer passes (the row is kept, never deleted). States with bills tagged under older rules are due again (`STATE_BILLS_TAGGING_VERSION`). Merged in the PR that adds this entry.
+**Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
+
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
 **Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
