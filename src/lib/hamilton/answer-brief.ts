@@ -102,7 +102,11 @@ export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOp
     income: split ? { split, explained: explainIncome(split) } : null,
     context,
     studies: {
-      items: studyObservations(studyRows).sort((a, b) => b.salience - a.salience || a.id.localeCompare(b.id)),
+      // Fee dependence first, beside its chart; the rest most notable first.
+      items: studyObservations(studyRows).sort(
+        (a, b) =>
+          Number(b.id === "study:fee_dependence") - Number(a.id === "study:fee_dependence") || b.salience - a.salience || a.id.localeCompare(b.id),
+      ),
       dependence: dependenceChart(studyRows, dependenceSeries),
     },
   };
