@@ -124,6 +124,8 @@ interface AnalyzeWorkspaceProps {
   /** Pre-populated analysis loaded from hamilton_saved_analyses via ?analysis= searchParam */
   initialAnalysis?: AnalyzeResponse | null;
   initialAnalysisId?: string | null;
+  /** The question a reopened saved answer was asked with */
+  initialAnalysisPrompt?: string | null;
   /** A question handed over from another page or the Ask bar */
   initialQuestion?: string | null;
   /** True when the question came from the Ask bar, so it is sent on arrival rather than retyped */
@@ -199,13 +201,15 @@ export function WrittenAnswerProgress() {
     return () => clearInterval(timer);
   }, []);
   return (
-    <div role="status" aria-live="polite" className="flex flex-col gap-3 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
-      <p className="flex items-center gap-2 text-sm font-medium text-warm-900">
+    <div className="flex flex-col gap-3 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
+      {/* Only the sentence is announced; a counter in a live region is read out every second. */}
+      <p role="status" className="flex items-center gap-2 text-sm font-medium text-warm-900">
         <Loader2 aria-hidden className="h-4 w-4 animate-spin text-terra" />
         Hamilton is writing this answer from the fee data and filings.
       </p>
       <p className="text-sm text-warm-700">
-        Written answers can take up to a minute. <span className="[font-variant-numeric:tabular-nums]">{seconds}s so far.</span>
+        Written answers can take up to a minute.{" "}
+        <span aria-hidden="true" className="[font-variant-numeric:tabular-nums]">{seconds}s so far.</span>
       </p>
       <div className="space-y-2" aria-hidden="true">
         <div className="skeleton h-5 w-full rounded" />
@@ -223,6 +227,7 @@ export function AnalyzeWorkspace({
   initialIntent,
   initialAnalysis,
   initialAnalysisId = null,
+  initialAnalysisPrompt = null,
   initialQuestion = null,
   autoSend = false,
 }: AnalyzeWorkspaceProps) {
@@ -251,6 +256,8 @@ export function AnalyzeWorkspace({
   const [exportError, setExportError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
+  // Bumped on every ask, so asking the same question again (or Try again) really asks again.
+  const [askSeq, setAskSeq] = useState(0);
   const lastPromptRef = useRef<string>("");
   // The question before this one, so a follow-up's written answer knows what "this" refers to.
   const previousPromptRef = useRef<string>("");
@@ -343,6 +350,7 @@ export function AnalyzeWorkspace({
       setParsedResponse(null);
       setFigureCheck(null);
       setAskedQuestion(trimmed);
+      setAskSeq((n) => n + 1);
       setMessages([]);
       // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
       // question without one is sent on for a written answer (onNoStoryline below), so one
@@ -372,7 +380,8 @@ export function AnalyzeWorkspace({
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Enter that confirms an IME composition (Japanese, Chinese) is not a send.
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       ask(input);
     }
@@ -381,7 +390,11 @@ export function AnalyzeWorkspace({
   const handleExportPdf = useCallback(async () => {
     if (!parsedResponse || isExporting) return;
     if (!savedAnalysisId) {
-      setExportError("This answer is still being saved. Try the download again in a moment.");
+      setExportError(
+        saveError
+          ? "This answer wasn't saved, so it can't be made into a PDF. Ask it again to save it."
+          : "This answer is still being saved. Try the download again in a moment.",
+      );
       return;
     }
     setIsExporting(true);
@@ -410,7 +423,7 @@ export function AnalyzeWorkspace({
     } finally {
       setIsExporting(false);
     }
-  }, [parsedResponse, isExporting, savedAnalysisId]);
+  }, [parsedResponse, isExporting, savedAnalysisId, saveError]);
 
   // Live-parse streaming content for progressive rendering. Only the reply to the question just
   // sent counts; an earlier answer must not stand in for it.
@@ -448,7 +461,7 @@ export function AnalyzeWorkspace({
       {askedQuestion || shown ? (
         <MemoHeader
           kicker={instName ? `You asked · ${instName}` : "You asked"}
-          title={askedQuestion ?? "A saved answer"}
+          title={askedQuestion ?? initialAnalysisPrompt ?? "A saved answer"}
         />
       ) : (
         <>
@@ -482,6 +495,7 @@ export function AnalyzeWorkspace({
       {askedQuestion ? (
         <StructuredAsk
           question={askedQuestion}
+          nonce={askSeq}
           institutionId={instId}
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
@@ -595,7 +609,6 @@ export function AnalyzeWorkspace({
               <AuditPanel
                 trail={answerAuditTrail({ lookups, figureCheck, institutionName: instName, preparedAt: answeredAt })}
               />
-              {savedAnalysisId ? <p className="text-xs text-warm-600">Saved to your workspace.</p> : null}
             </>
           ) : null}
         </>
@@ -631,7 +644,7 @@ export function AnalyzeWorkspace({
             aria-label="Ask"
             className="flex items-center gap-1.5 rounded-lg bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
           >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            {isLoading ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
             Ask
           </button>
         </form>
