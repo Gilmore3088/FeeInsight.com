@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro checkout dropped the buyer's institution
+**What happened:** the six live Pro tiers (PR 566) price checkout from the buyer's institution and send
+it to Stripe as `metadata.institution_id`, but the webhook only set `users.subscription_status`. A new
+subscriber was asked for their bank again on the welcome page (skippable, and skipped entirely when
+checkout started from a Pro page). They could land on a briefing that showed only "Choose your bank".
+Their team seats stayed locked until they found Settings, filed an institution claim by hand, and James
+approved it. With no institution on file, Hamilton's first answer used the person's display name as the
+"Institution". Checkout also granted Pro on an unpaid (delayed-payment) session. Prod had 0 subscriptions
+and 6 `price.created` events when this was found, so no buyer was affected.
+**Cause:** checkout, the webhook and onboarding were built in separate PRs, and no test followed a
+buyer from payment to their first answer.
+**Fix:** the PR after 566. The webhook and the activation fallback set the paid institution as the
+workspace bank and profile, but only when none is set, and file the claim for review. An unpaid session
+waits for `checkout.session.async_payment_succeeded`. The research route stops using the display name.
+James chose (Oct 8, 13:44) to grant the owner seat at payment, tied to the open claim; rejecting the claim revokes it.
+**Lesson:** a paid flow is one path. Trace it from the card to the first useful screen before calling it live.
+
 ## 2026-10-08: Pro checkout's own error messages never reached the buyer
 **What happened:** the buyer-path audit (overnight Oct 8) found `createCheckoutSession` threw
 "Pick your bank or credit union first", the "we don't have its asset size, email us" line and

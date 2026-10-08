@@ -8,6 +8,8 @@ import { LogoutButton } from "./logout-button";
 import { ProfileForm } from "./profile-form";
 import { AlertsPanel } from "./alerts-panel";
 import { SubscriptionStatusNotice } from "./subscription-status-notice";
+import { getBillingSummary } from "@/lib/billing-summary";
+import { CONTACT_EMAIL } from "@/lib/constants";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ConsumerNav } from "@/components/consumer-nav";
@@ -70,6 +72,7 @@ export default async function AccountPage({
   }
 
   const isPro = canAccessPremium(user);
+  const billing = isPro ? await getBillingSummary(user.stripe_customer_id) : null;
   const pendingWorkspaceInvitations = !isPro
     ? await getPendingWorkspaceInvitationsForEmail(user.email ?? user.username, 5).catch(() => [])
     : [];
@@ -242,15 +245,43 @@ export default async function AccountPage({
 
         {isPro && (
           <div className="rounded-xl border border-[#E8DFD1] bg-white/70 backdrop-blur-sm p-5 mb-8">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]">
-                  Plan
-                </span>
-                <span className="text-[14px] font-medium text-[#1A1815]">Fee Insight Pro</span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 uppercase">
-                  Active
-                </span>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]">
+                    Plan
+                  </span>
+                  <span className="text-[14px] font-medium text-[#1A1815]">
+                    {billing ? `Fee Insight Pro · ${billing.cadence}` : "Fee Insight Pro"}
+                  </span>
+                  {billing?.cancelsAtPeriodEnd ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 uppercase">
+                      Cancels at period end
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 uppercase">
+                      Active
+                    </span>
+                  )}
+                </div>
+                {billing && (
+                  <p className="mt-2 text-[13px] text-[#6B6255]">
+                    {[billing.tierLabel, billing.priceLabel].filter(Boolean).join(" · ")}
+                    {billing.periodEnd && (
+                      <>
+                        {billing.tierLabel || billing.priceLabel ? " · " : ""}
+                        {billing.cancelsAtPeriodEnd ? "Access ends " : "Renews "}
+                        {billing.periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}
+                      </>
+                    )}
+                  </p>
+                )}
+                <p className="mt-2 text-[12px] text-[#6B6255]">
+                  Invoices, card and cancellation are on the billing page. Billing question?{" "}
+                  <a href={`mailto:${CONTACT_EMAIL}?subject=Billing`} className="text-[#A93D25] hover:underline">
+                    {CONTACT_EMAIL}
+                  </a>
+                </p>
               </div>
               {user.stripe_customer_id && <ManageBillingButton />}
             </div>

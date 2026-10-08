@@ -84,9 +84,12 @@ export default function TermsPage() {
               account&apos;s billing page at any time.
             </li>
             <li>
-              All fees are non-refundable except where required by law. You may
-              cancel your subscription at any time; access continues until the
-              end of the current billing period.
+              Annual plans: if you cancel within 14 days of your first annual
+              payment, we refund it in full. After that, an annual plan runs to
+              the end of its paid year and the unused part is not refunded.
+              Monthly plans are not refunded. You may cancel at any time; access
+              continues until the end of the current billing period. Other fees
+              are non-refundable except where required by law.
             </li>
             <li>
               We reserve the right to change subscription pricing with 30 days

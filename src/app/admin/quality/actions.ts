@@ -426,6 +426,12 @@ export async function rejectInstitutionClaim(formData: FormData): Promise<void> 
             updated_at = NOW()
         WHERE id = ${id}
       `;
+      // A Pro buyer holds the owner seat from checkout while the claim is open; rejecting it ends that seat.
+      await tx`
+        UPDATE institution_workspace_memberships
+           SET membership_status = 'revoked', revoked_by_user_id = ${user.id}, revoked_at = NOW(), updated_at = NOW()
+         WHERE claim_id = ${id} AND membership_status = 'active'
+      `;
       await tx`
         INSERT INTO institution_claim_events
           (claim_id, actor_user_id, event_type, previous_status, new_status, notes, metadata)
