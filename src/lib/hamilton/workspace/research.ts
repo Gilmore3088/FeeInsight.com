@@ -40,10 +40,12 @@ import {
   competitorMoveObservations,
   feePositionRows,
   marketPositionObservations,
+  MAX_OBSERVATIONS,
   rankObservations,
   revenueShiftObservation,
   type FeeChangeInput,
 } from "./observations";
+import { studyObservations, withStudyPlace, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
 import { buildSegmentResearch } from "./segment";
@@ -304,6 +306,35 @@ async function loadServiceChargeRows(institutionId: number): Promise<ServiceChar
   }));
 }
 
+/** The institution's placements in Hamilton's current studies; none before the first studies run. */
+async function loadStudyPlacements(institutionId: number): Promise<StudyPlacementRow[]> {
+  try {
+    const rows = await sql`
+      SELECT s.study_key, s.title, s.as_of, s.n, s.findings->>'headline' AS study_headline,
+             p.metric, p.value, p.peer_group, p.peer_n, p.peer_median, p.percentile, p.detail
+        FROM hamilton_study_placements p
+        JOIN hamilton_studies s ON s.id = p.study_id AND s.is_current
+       WHERE p.institution_id = ${institutionId}`;
+    return rows.map((r) => ({
+      studyKey: String(r.study_key),
+      title: String(r.title),
+      asOf: String(r.as_of),
+      studyN: Number(r.n),
+      studyHeadline: r.study_headline == null ? null : String(r.study_headline),
+      metric: String(r.metric),
+      value: numOrNull(r.value),
+      peerGroup: String(r.peer_group),
+      peerN: Number(r.peer_n),
+      peerMedian: numOrNull(r.peer_median),
+      percentile: numOrNull(r.percentile),
+      detail: r.detail && typeof r.detail === "object" ? (r.detail as Record<string, unknown>) : {},
+    }));
+  } catch (error) {
+    console.error("[workspace] study placements failed", error);
+    return [];
+  }
+}
+
 /** Regulator releases (FDIC, Fed, OCC, CFPB) published in the window, newest first. */
 async function loadRegArticles(days: number, now = new Date()): Promise<RegArticleRow[]> {
   try {
@@ -408,11 +439,12 @@ export async function getWorkspaceBriefing(
 ): Promise<Briefing | null> {
   const base = await loadBase(institutionId, undefined, options);
   if (!base) return null;
-  const [changes, financialRows, articles, nationalIncomeSeries] = await Promise.all([
+  const [changes, financialRows, articles, nationalIncomeSeries, studyRows] = await Promise.all([
     loadStateChanges(base.stateCode),
     loadServiceChargeRows(institutionId),
     loadRegArticles(RULE_CHANGE_WINDOW_DAYS, now),
     loadNationalIncomeSeries(),
+    loadStudyPlacements(institutionId),
   ]);
   const nationalIncome = nationalIncomeSeries[0] ?? null;
   const positions = [...base.ownValues].map(([feeCategory, current]) => {
@@ -429,12 +461,18 @@ export async function getWorkspaceBriefing(
   const shift = revenueShiftObservation(trend);
   const bankCategories = new Set(base.ownValues.keys());
   const rules = ruleChangeObservations(articles, bankCategories);
-  const observations = rankObservations([
-    ...marketPositionObservations(positions),
-    ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "your state"),
-    ...(shift ? [shift] : []),
-    ...rules,
-  ]);
+  const studies = studyObservations(studyRows);
+  const observations = withStudyPlace(
+    rankObservations([
+      ...marketPositionObservations(positions),
+      ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "your state"),
+      ...(shift ? [shift] : []),
+      ...rules,
+      ...studies,
+    ]),
+    studies,
+    MAX_OBSERVATIONS,
+  );
   return {
     institutionId,
     institutionName: base.institutionName,
@@ -462,6 +500,7 @@ export async function getWorkspaceBriefing(
         ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(nationalIncome ? [nationalIncome.sourceRef] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${RULE_CHANGE_WINDOW_DAYS} days`, table: "reg_articles" },
+        ...(studyRows.length ? [{ label: "Hamilton studies (call reports, branch deposits, household income, published fees)", table: "hamilton_studies" }] : []),
       ],
       assumptions: [
         `Each fee is compared with the narrowest default peer group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish it, widening to national.`,
