@@ -22,14 +22,14 @@ describe("consultant report cap", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("allows the 20th report and blocks the 21st for a consultant on the $3,000 plan", async () => {
+  it("allows the 10th report and blocks the 11th for a consultant on the $3,000 plan", async () => {
     listMock.mockResolvedValue(subscription({ organization: "other", pro_tier: "mid" }, "price_mid_a"));
-    sqlMock.mockResolvedValueOnce([{ used: 19 }]);
-    expect(await checkConsultantReportCap(user)).toMatchObject({ allowed: true, used: 19, limit: 20 });
-    sqlMock.mockResolvedValueOnce([{ used: 20 }]);
+    sqlMock.mockResolvedValueOnce([{ used: 9 }]);
+    expect(await checkConsultantReportCap(user)).toMatchObject({ allowed: true, used: 9, limit: 10 });
+    sqlMock.mockResolvedValueOnce([{ used: 10 }]);
     const blocked = await checkConsultantReportCap(user);
-    expect(blocked).toMatchObject({ allowed: false, limit: 20 });
-    expect(reportCapMessage(blocked)).toContain("20 Hamilton reports a month");
+    expect(blocked).toMatchObject({ allowed: false, limit: 10 });
+    expect(reportCapMessage(blocked)).toContain("10 Hamilton reports a month");
     expect(reportCapMessage(blocked)).toContain("$5,000 a year");
   });
 
