@@ -51,12 +51,15 @@ type SqlTag = typeof sql;
 // Correction Notice" (a business cash device) passed as safe deposit box rent, a box price read
 // with its footnote marker ("$651" among $85 and $100 boxes) passed, and a bare "overdrafts | $5.00"
 // from jumbled rows passed. The prompt now names all three.
+// Version 11 (2026-10-08): releases on (James, "Turn on", 02:16 UTC). Same prompt and checks as
+// v10; the bump has every held fee judged again with release on, since v10's 1,305 passes were
+// recorded as verdicts only and a fee is reviewed once per version.
 // Version 10 (2026-10-07): a hand check of 20 v9 passes found "Overnight Fee (Business Bill Pay)"
 // passed as bill pay, the fourth premium-service miss since v5. A fee whose own name says it is the
 // faster version of a service now never passes outside a premium category (`premiumServiceMisfiled`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 10,
+  version: 11,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -393,7 +396,7 @@ export interface ReleaseReviewResult extends PaidPassResult {
 
 /** Review up to `calls` batches of release candidates; release the ones that pass when acting. */
 export async function runDarwinReleaseReview(
-  options: PaidStepOptions & { create?: PaidMessageCreator; calls: number },
+  options: PaidStepOptions & { create?: PaidMessageCreator; calls: number; acts?: boolean },
 ): Promise<ReleaseReviewResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
@@ -419,7 +422,7 @@ export async function runDarwinReleaseReview(
     return result;
   }
 
-  const acts = DARWIN_RELEASE_ACTS;
+  const acts = options.acts ?? DARWIN_RELEASE_ACTS;
   const model = PAID_PASS_MODELS.verify();
   // Fees judged before the release step stored their schedule's surrounding rows read them now.
   const missing = candidates.filter((candidate) => !candidate.sourceContext && candidate.row.source_document_id != null);
