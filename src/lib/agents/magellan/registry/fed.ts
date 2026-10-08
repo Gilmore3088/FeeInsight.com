@@ -193,6 +193,15 @@ export async function runRegistryFred(options: FedOptions = {}): Promise<Registr
           fetched_at = NOW()
       `;
     }
+    if (BLS_SERIES_TITLES[meta.series_id]) {
+      // Observations older than the 7-year pull keep the label they were stored with; correct them too.
+      await db`
+        UPDATE fed_economic_indicators
+           SET series_title = ${title}, units = ${meta.units}
+         WHERE series_id = ${meta.series_id}
+           AND (series_title IS DISTINCT FROM ${title} OR units IS DISTINCT FROM ${meta.units})
+      `;
+    }
     result.refreshedSeries += 1;
     result.observations += observations.length;
   });

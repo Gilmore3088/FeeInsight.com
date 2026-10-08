@@ -8,6 +8,7 @@ import { trackEvent } from "@/lib/analytics";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { readFirstTouch } from "@/lib/marketing-touch";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
@@ -19,6 +20,7 @@ const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
 const DEFAULT_SRC = "for-institutions";
+const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 const SUCCESS_HEADLINE = "Request received.";
@@ -111,7 +113,10 @@ export function RequestReportForm(props: RequestReportFormProps) {
 
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
-  return <RequestReportFormInner {...props} prefill={readPrefill(params, props.defaultSrc ?? DEFAULT_SRC)} />;
+  const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
+  // Keyed on the report type so a same-page link that changes `?report=` reloads the form
+  // with that option selected (useState reads the prefill only on first render).
+  return <RequestReportFormInner key={prefill.reportType} {...props} prefill={prefill} />;
 }
 
 function RequestReportFormInner({
@@ -171,6 +176,7 @@ function RequestReportFormInner({
       source: REPORT_SOURCE,
       institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
 
@@ -184,7 +190,7 @@ function RequestReportFormInner({
       if (!response.ok) {
         throw new Error(body?.error || GENERIC_ERROR);
       }
-      trackEvent("request_report", { src });
+      trackEvent("request_report", { src, report: "institution" });
       setConfirmation(toConfirmationStatus(body));
       setStatus("success");
     } catch (error) {
@@ -203,6 +209,7 @@ function RequestReportFormInner({
       source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
       district: reportType === "district" ? district : undefined,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
     };
     try {
@@ -542,6 +549,13 @@ function FreeReportSuccess({
       >
         Open your report
       </Link>
+      <p className="mt-4 text-[#5A5347]">
+        Want your own institution against named competitors?{" "}
+        <Link href={INSTITUTION_REPORT_HREF} className="font-medium underline underline-offset-2">
+          Request your institution report
+        </Link>
+        .
+      </p>
     </div>
   );
 }

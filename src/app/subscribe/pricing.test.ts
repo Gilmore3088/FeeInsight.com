@@ -25,8 +25,8 @@ describe("pricing labels", () => {
   });
 
   it("should_build_price_lines_per_plan", () => {
-    expect(planPriceLine("monthly")).toBe("$499.99/mo per seat");
-    expect(planPriceLine("annual")).toBe("$5,000/yr per seat");
+    expect(planPriceLine("monthly")).toBe("$499.99/mo for up to 5 people");
+    expect(planPriceLine("annual")).toBe("$5,000/yr for up to 5 people");
   });
 
   it("should_only_accept_known_plans", () => {

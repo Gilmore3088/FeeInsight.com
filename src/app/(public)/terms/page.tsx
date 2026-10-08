@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, LEGAL_ENTITY_STATE, REPORT_OFFER } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -24,7 +24,7 @@ export default function TermsPage() {
         Terms of Service
       </h1>
       <p className="mt-2 text-[13px] text-[#6B6255]">
-        Last updated: August 2026
+        Last updated: October 8, 2026
       </p>
 
       <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
@@ -34,9 +34,11 @@ export default function TermsPage() {
             1. Acceptance of Terms
           </h2>
           <p>
-            By accessing or using Fee Insight, including the Bank Fee Index and
-            Hamilton (together, &ldquo;the Service&rdquo;),
-            you agree to be bound by these Terms of Service. If you are using
+            Fee Insight is operated by {LEGAL_ENTITY_LINE} (&ldquo;Fee
+            Insight&rdquo;, &ldquo;we&rdquo; or &ldquo;us&rdquo;). By accessing or
+            using Fee Insight, including the Bank Fee Index and Hamilton (together,
+            &ldquo;the Service&rdquo;), you agree to be bound by these Terms of
+            Service. If you are using
             the Service on behalf of an organization, you represent that you
             have authority to bind that organization to these terms.
           </p>
@@ -224,7 +226,20 @@ export default function TermsPage() {
         <section>
           <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-            13. Changes to Terms
+            13. Governing Law
+          </h2>
+          <p>
+            These terms are governed by the laws of the State of {LEGAL_ENTITY_STATE},
+            without regard to its conflict of law rules. Any dispute arising from these
+            terms or the Service will be heard in the state or federal courts located in{" "}
+            {LEGAL_ENTITY_STATE}, and you consent to their jurisdiction.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
+            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+            14. Changes to Terms
           </h2>
           <p>
             We may modify these terms at any time. Material changes will be

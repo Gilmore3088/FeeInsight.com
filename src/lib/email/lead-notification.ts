@@ -12,6 +12,7 @@ import {
   type EmailDeliveryResult,
 } from "./resend";
 import { getSubscriptionTokenSecret, subscriptionPageUrl } from "./subscription-token";
+import { RD } from "@/lib/report-design/tokens";
 
 export interface LeadNotificationOutcome {
   /** Internal heads-up delivered to CONTACT_EMAIL. */
@@ -89,19 +90,20 @@ export function adminLeadsUrl() {
   return `${SITE_URL.replace(/\/$/, "")}/admin/leads`;
 }
 
+/** Email-safe inline colours, from the shared report look (src/lib/report-design/tokens.ts). */
 const C = {
-  ink: "#1A1815",
-  ink2: "#3D3830",
-  text2: "#6E655A",
-  muted: "#9A9082",
-  paper: "#FFFFFF",
-  cream: "#FDFBF8",
-  sand: "#F4EEE4",
-  terra: "#C44B2E",
-  terraSoft: "#FBEDE8",
-  good: "#1F7A4A",
-  goodSoft: "#E8F2EB",
-  line: "#E3DACB",
+  ink: RD.ink,
+  ink2: RD.ink2,
+  text2: RD.inkSoft,
+  muted: RD.muted,
+  paper: RD.paper,
+  cream: RD.cream,
+  sand: RD.sand,
+  terra: RD.terra,
+  terraSoft: RD.terraSoft,
+  good: RD.good,
+  goodSoft: "#EEF2E8",
+  line: RD.rule2,
 };
 const SERIF = "Georgia,'Times New Roman',serif";
 const SANS = "'Helvetica Neue',Helvetica,Arial,sans-serif";

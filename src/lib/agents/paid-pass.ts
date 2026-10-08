@@ -13,7 +13,7 @@ export { WEB_SEARCH_COST_MICROUSD };
  * the step; it never stalls the state run.
  */
 
-export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton";
+export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "growth";
 
 /** Models per paid job; override per environment. */
 export const PAID_PASS_MODELS = {

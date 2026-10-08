@@ -5,6 +5,7 @@ import { CircleStop, Play, ShieldAlert, X } from "lucide-react";
 import {
   markProviderBillingResolved,
   resumeAllAutomation,
+  setMarketingPaused,
   setPipelinePaused,
   stopAllAutomation,
 } from "./atlas-actions";
@@ -19,6 +20,10 @@ interface Props {
   pipelineReason: string | null;
   pipelineChangedBy: string;
   pipelineChangedAtLabel: string;
+  marketingEnabled: boolean;
+  marketingReason: string | null;
+  marketingChangedBy: string;
+  marketingChangedAtLabel: string;
 }
 
 export function AtlasEmergencyControl({
@@ -31,6 +36,10 @@ export function AtlasEmergencyControl({
   pipelineReason,
   pipelineChangedBy,
   pipelineChangedAtLabel,
+  marketingEnabled,
+  marketingReason,
+  marketingChangedBy,
+  marketingChangedAtLabel,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [stopReason, setStopReason] = useState("Potential runaway API activity");
@@ -64,6 +73,20 @@ export function AtlasEmergencyControl({
     });
   }
 
+  function toggleMarketing() {
+    startTransition(async () => {
+      const result = await setMarketingPaused(
+        marketingEnabled,
+        marketingEnabled ? "Operator paused marketing" : "Operator resumed marketing",
+      );
+      setMessage(
+        result.success
+          ? marketingEnabled ? "Marketing paused. Queued marketing runs stay queued; the pipeline keeps going." : "Marketing resumed."
+          : result.error ?? "Marketing control failed",
+      );
+    });
+  }
+
   const pipelineRow = (
     <div className="mt-3 flex flex-col justify-between gap-3 border-t border-black/[0.06] pt-3 sm:flex-row sm:items-center dark:border-white/[0.06]">
       <div>
@@ -85,6 +108,31 @@ export function AtlasEmergencyControl({
       >
         {pipelineEnabled ? <CircleStop className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         {pipelineEnabled ? "Pause pipeline" : "Resume pipeline"}
+      </button>
+    </div>
+  );
+
+  const marketingRow = (
+    <div className="mt-3 flex flex-col justify-between gap-3 border-t border-black/[0.06] pt-3 sm:flex-row sm:items-center dark:border-white/[0.06]">
+      <div>
+        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+          Marketing {marketingEnabled ? "running" : "paused"}
+        </p>
+        <p className="admin-meta mt-1">
+          {marketingEnabled
+            ? "Growth drafts posts and emails for your approval. Pausing it leaves the pipeline running."
+            : `Growth's marketing steps are paused; the pipeline keeps running. ${marketingReason ?? ""}`}
+          {" "}Changed by {marketingChangedBy} · {marketingChangedAtLabel}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={toggleMarketing}
+        disabled={pending}
+        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-gray-300 px-4 text-xs font-bold text-gray-800 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+      >
+        {marketingEnabled ? <CircleStop className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+        {marketingEnabled ? "Pause marketing" : "Resume marketing"}
       </button>
     </div>
   );
@@ -153,6 +201,7 @@ export function AtlasEmergencyControl({
           </div>
         )}
         {pipelineRow}
+        {marketingRow}
         {message && <p className="mt-3 text-xs font-medium text-red-800 dark:text-red-300" role="status">{message}</p>}
       </section>
     );
@@ -214,6 +263,7 @@ export function AtlasEmergencyControl({
         </div>
       )}
       {pipelineRow}
+      {marketingRow}
       {message && <p className="mt-3 text-xs font-medium text-gray-700 dark:text-gray-300" role="status">{message}</p>}
     </section>
   );

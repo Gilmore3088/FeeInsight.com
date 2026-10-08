@@ -469,4 +469,33 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
     }
   });
+
+  it("v21 keeps business services' monthly fees out of monthly maintenance and deposited returns out of NSF (prod, Oct 8)", () => {
+    for (const name of [
+      "Remote Deposit Capture Machine Rental (monthly fee)",
+      "IntraFi Network-ICS Monthly Fee (Consumer)",
+      "Monthly Maintenance Fee Per Location",
+      "Each Additional Scanner Monthly Service Fee",
+      "Waiving the Monthly Fee",
+    ]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly service charge (waived with statement cycle balance)")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Item-Reroute of Return Fee (Business)").ok).toBe(false);
+    expect(refileCategory("nsf", "Returned Item fee (written to you)")).toBe("deposited_item_return");
+    expect(checkFeeCategory("nsf", "Returned Check Fee")).toEqual({ ok: true });
+  });
+
+  it("v22 reads a small returned check as a deposited return when the schedule prices NSF separately (Dean, Oct 8)", () => {
+    const context = (amount: string, document_nsf_amount: string | null) => ({ amount, document_nsf_amount });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", null))).toEqual({ ok: true });
+    // v23: at any price below the schedule's NSF fee; at the NSF fee's own price it is that fee.
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("35.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Check Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Item Charge")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "NSF Fee", context("7.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "10.00"))).toEqual({ ok: true });
+  });
 });

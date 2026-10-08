@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { Newsreader, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SITE_URL } from "@/lib/constants";
+import { MarketingTouchRecorder } from "@/components/public/marketing-touch-recorder";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -59,6 +60,8 @@ export default function RootLayout({
       </head>
       <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         {children}
+        {/* Records a tracked-link visit (utm_ tags) once per session; no personal data. */}
+        <MarketingTouchRecorder />
         {/* Vercel injects /_vercel/insights only on its own platform; elsewhere the script 404s. */}
         {process.env.VERCEL ? <Analytics /> : null}
       </body>

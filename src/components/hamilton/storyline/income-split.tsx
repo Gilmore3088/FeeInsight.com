@@ -4,6 +4,7 @@
  * prices account for and the rest (how often fees are charged and waived). Engine 1.12.1 puts
  * the numbers on the "income-split" exhibit as `incomeSplit`.
  */
+import { RD } from "@/lib/report-design/tokens";
 import type { IncomeSplitData } from "@/lib/hamilton/workspace/storyline-types";
 import { SERIF } from "@/components/hamilton/memo/memo";
 
@@ -40,10 +41,10 @@ function PriceDial({ index }: { index: number }) {
   const arc = (a0: number, a1: number) => `M ${pt(a0)} A ${r} ${r} 0 0 1 ${pt(a1)}`;
   return (
     <svg viewBox="0 0 120 70" className="h-20 w-32 shrink-0" aria-hidden>
-      <path d={arc(Math.PI, 0)} fill="none" stroke="#E0D7C9" strokeWidth={10} strokeLinecap="round" />
-      <path d={arc(Math.PI, angle)} fill="none" stroke="#C44B2E" strokeWidth={10} strokeLinecap="round" />
-      <line x1={cx} y1={cy - r - 7} x2={cx} y2={cy - r + 7} stroke="#1A1815" strokeWidth={1.5} />
-      <circle cx={Number(pt(angle).split(",")[0])} cy={Number(pt(angle).split(",")[1])} r={6} fill="#C44B2E" stroke="#fff" strokeWidth={2.5} />
+      <path d={arc(Math.PI, 0)} fill="none" stroke={RD.rule2} strokeWidth={10} strokeLinecap="round" />
+      <path d={arc(Math.PI, angle)} fill="none" stroke={RD.terra} strokeWidth={10} strokeLinecap="round" />
+      <line x1={cx} y1={cy - r - 7} x2={cx} y2={cy - r + 7} stroke={RD.ink} strokeWidth={1.5} />
+      <circle cx={Number(pt(angle).split(",")[0])} cy={Number(pt(angle).split(",")[1])} r={6} fill={RD.terra} stroke={RD.paper} strokeWidth={2.5} />
     </svg>
   );
 }

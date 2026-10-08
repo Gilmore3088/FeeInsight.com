@@ -13,7 +13,7 @@ import {
 } from "@/lib/agents/paid-pass";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
+import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 import {
@@ -57,9 +57,14 @@ type SqlTag = typeof sql;
 // Version 10 (2026-10-07): a hand check of 20 v9 passes found "Overnight Fee (Business Bill Pay)"
 // passed as bill pay, the fourth premium-service miss since v5. A fee whose own name says it is the
 // faster version of a service now never passes outside a premium category (`premiumServiceMisfiled`).
+// Version 12 (2026-10-08): a hand check of 20 released v11 fees found "Monthly Fee $50.00" above
+// "Night Deposit Bag $10.00" released as the account's monthly fee and a $5 "Returned check fee"
+// released as NSF. A fee now stays held when today's category guard rejects its name, when a bare
+// "Monthly Fee" sits among a business service's rows, or when a plain returned check or item under
+// $10 is filed as NSF (`releaseHoldReason`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 11,
+  version: 12,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -107,6 +112,32 @@ const PREMIUM_SERVICE = /\b(expedit\w*|rush|overnight|emergency|same[- ]day|next
 export function premiumServiceMisfiled({ row }: Pick<ReleaseReviewCandidate, "row">): boolean {
   const key = row.held_canonical_fee_key;
   return !PREMIUM_CATEGORIES.has(key) && PREMIUM_SERVICE.test(row.fee_name ?? "");
+}
+
+const BARE_MONTHLY_NAME = /^\s*(monthly\s+)?(service\s+)?(fee|charge)\s*$/i;
+const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit|scanner|positive pay)/i;
+const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
+/** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
+const SMALL_NSF_AMOUNT = 10;
+
+export type ReleaseHoldReason = "category_guard" | "business_service_monthly" | "small_returned_item";
+
+/**
+ * Why a fee the model passed still stays held, or null. Each is a miss a hand check found after the
+ * prompt already named it, so the fee's own name, amount and rows now decide.
+ */
+export function releaseHoldReason({ row, sourceContext }: Pick<ReleaseReviewCandidate, "row" | "sourceContext">): ReleaseHoldReason | null {
+  const key = row.held_canonical_fee_key;
+  const name = row.fee_name ?? "";
+  if (!checkFeeCategory(key, name, row).ok) return "category_guard";
+  if (key === "monthly_maintenance" && BARE_MONTHLY_NAME.test(name) && BUSINESS_SERVICE_ROWS.test(sourceContext ?? "")) {
+    return "business_service_monthly";
+  }
+  const amount = row.amount == null ? null : Number(row.amount);
+  if (key === "nsf" && PLAIN_RETURNED_ITEM.test(name) && amount != null && amount < SMALL_NSF_AMOUNT) {
+    return "small_returned_item";
+  }
+  return null;
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -521,7 +552,8 @@ export async function runDarwinReleaseReview(
       result.succeeded += 1;
       const refilesTo = lineRefilesTo(candidate);
       const premium = premiumServiceMisfiled(candidate);
-      const passes = reviewPasses(verdict) && refilesTo == null && !premium;
+      const holdReason = releaseHoldReason(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -544,6 +576,7 @@ export async function runDarwinReleaseReview(
           source_context: candidate.sourceContext ?? null,
           refiles_to: refilesTo,
           premium_service: premium,
+          hold_reason: holdReason,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,

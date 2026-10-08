@@ -13,7 +13,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_OFFER, REPORT_OFFER_LINE, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const REQUEST_HREF = "#request";
+const REQUEST_HREF = "/reports?report=institution#request";
 
 const PRIMARY_BUTTON =
   "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:bg-[#A93D25]";
@@ -255,7 +255,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 href={REQUEST_HREF}
                 className={PRIMARY_BUTTON}
               >
-                {REPORT_OFFER.ctaLabel}
+                {REPORT_OFFER.institutionCtaLabel}
               </TrackLink>
               {sampleLive && (
                 <Link href={SAMPLE_REPORT_HREF} className={SECONDARY_BUTTON}>
@@ -440,7 +440,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <p className="text-[24px] leading-snug text-white" style={SERIF}>
               See your own fees against your market.
             </p>
-            <p className="mt-1 text-[13px] text-[#C9BFB1]">{REPORT_OFFER_LINE}.</p>
+            <p className="mt-1 text-[13px] text-[#C9BFB1]">
+              The {REPORT_OFFER.name}: your fees next to named competitors in your market, with a source for every figure.
+            </p>
           </div>
           <div className="flex flex-wrap gap-3">
             <TrackLink
@@ -449,7 +451,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               href={REQUEST_HREF}
               className={PRIMARY_BUTTON}
             >
-              {REPORT_OFFER.ctaLabel}
+              {REPORT_OFFER.institutionCtaLabel}
             </TrackLink>
             {sampleLive && (
               <Link
