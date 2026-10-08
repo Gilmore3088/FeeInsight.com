@@ -479,4 +479,21 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(page, "Stop Payment Order Fee", 28, "stop").ok).toBe(true);
     expect(checkFeeAgainstSource("Early Account Closure | $251\nWire Fee | $25.00", "Early Account Closure", 251, "clos").ok).toBe(true);
   });
+
+  it("reads a balance or check-size limit as a threshold, not the fee (Darwin audit, Oct 8)", () => {
+    const coosa = "Check Cashing Fee (Non-Use of Account) $500.01 - $1,000.00 | $5.00 Each\n\nCheck Cashing Fee (Non-Use of Account) $1,000.01 + | $10.00 Each\n\nCheck Cashing (Non-Use of Account) $1,000.01-Over | $10.00/Each";
+    expect(checkFeeAgainstSource(coosa, "Check Cashing Fee (Non-Use of Account)", 1000.01, ".")).toEqual({ ok: false, reason: "amount_is_a_threshold" });
+    const dest = "Check Cashing Fee - NON DCU Member | $500 or under = $5.00 (Per Item) $500.01 up to $2,500.00 = $ 15.00 (Per Item)";
+    expect(checkFeeAgainstSource(dest, "Check Cashing Fee - NON DCU Member", 500, ".").ok).toBe(false);
+    const metairie = "Check Cashing / Non-Customer / On Us Only &lt;$250\nFree\n\nCheck Cashing / Non-Customer / On Us Only ≥$10.000\n$100";
+    expect(checkFeeAgainstSource(metairie, "Check Cashing / Non-Customer / On Us Only &lt", 250, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(metairie, "Check Cashing / Non-Customer / On Us Only ≥$10.000", 100, ".").ok).toBe(true);
+    const share = "Check Cashing Service fee *Minimum Share account balance of $250.00. *Minimum average monthly checking account balance $500.00.";
+    expect(checkFeeAgainstSource(share, "Check Cashing Service fee Minimum Share account balance of", 250, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Share Savings Below Minimum Balance of $10 | $5", "Share Savings Below Minimum Balance", 10, ".").ok).toBe(false);
+    // A price plus costs, and a price for checks up to a face value, stay the fee.
+    expect(checkFeeAgainstSource("International Wire Out / $50.00 +", "International Wire Out", 50, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Garnishment Fee | $100.00 +", "Garnishment Fee", 100, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Official Checks | Personal Money Orders: $5.00 up to $500 face value.", "Personal Money Orders", 5, ".").ok).toBe(true);
+  });
 });

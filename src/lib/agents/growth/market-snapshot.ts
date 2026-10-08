@@ -60,6 +60,8 @@ export interface SnapshotValue {
   institutionId: number;
   value: number;
   verified: boolean;
+  /** The catalog row's own name for the fee. */
+  feeName: string;
   /** The schedule line the value was traced to, when verified. */
   sourceLine: string | null;
   documentUrl: string | null;
@@ -100,12 +102,32 @@ function notesFor(rows: SnapshotFeeRow[]): string[] {
   return [...notes];
 }
 
+/** The schedule line the pipeline read this row from (`excerpt="..."` in its conditions), if stored. */
+export function rowExcerpt(row: Pick<SnapshotFeeRow, "conditions">): string | null {
+  const match = row.conditions?.match(/excerpt="((?:[^"\\]|\\.)*)"/);
+  return match ? match[1].replace(/\\"/g, "\"").trim() || null : null;
+}
+
+/** A business account tier; "per business day" in a consumer line is not one. */
+const BUSINESS_TIER = /\b(?:business|commercial)\b(?!\s+days?\b)/i;
+const isBusinessRow = (row: SnapshotFeeRow) =>
+  BUSINESS_TIER.test(row.fee_name) || BUSINESS_TIER.test(row.account_product_type ?? "") || BUSINESS_TIER.test(rowExcerpt(row) ?? "");
+
+const checkRow = (row: SnapshotFeeRow) =>
+  checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key);
+
 /**
  * One institution's value for one fee (the catalog's own rule: overdraft at its highest tier,
  * otherwise the median of its amounts), verified only when every row at that value traces to
- * its source text. When the value is a midpoint of two amounts, every row is checked.
+ * its source text. When the value is a midpoint of two amounts, every row is checked. A business
+ * account's tier is left out when the institution also prints a consumer one (the snapshot compares
+ * consumer fees). The line quoted is the row's own excerpt, not the first schedule line that happens
+ * to carry the same price (Accuracy, run 3148: "Insufficient Funds Fee $25" sat next to the $25
+ * overdraft row).
  */
-export function institutionValue(rows: SnapshotFeeRow[]): SnapshotValue | null {
+export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | null {
+  const consumer = allRows.filter((row) => !isBusinessRow(row));
+  const rows = consumer.length > 0 ? consumer : allRows;
   if (rows.length === 0) return null;
   const id = Number(rows[0].institution_id);
   const value = valuePerInstitution(
@@ -114,17 +136,17 @@ export function institutionValue(rows: SnapshotFeeRow[]): SnapshotValue | null {
   if (value === undefined) return null;
   const atValue = rows.filter((row) => cents(Number(row.amount)) === cents(value));
   const checked = atValue.length > 0 ? atValue : rows;
-  const results = checked.map((row) =>
-    checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key),
-  );
+  const results = checked.map(checkRow);
   const verified = results.every((result) => result.ok);
   const firstOk = results.find((result) => result.ok);
   const lead = checked[0];
+  const excerpt = rowExcerpt(lead);
   return {
     institutionId: id,
     value: cents(value),
     verified,
-    sourceLine: verified && firstOk && firstOk.ok ? firstOk.sourceLine : null,
+    feeName: lead.fee_name,
+    sourceLine: verified ? (excerpt ?? (firstOk && firstOk.ok ? firstOk.sourceLine : null)) : null,
     documentUrl: lead.document_url,
     readAt: iso(lead.read_at),
     notes: notesFor(checked),
