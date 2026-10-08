@@ -50,9 +50,21 @@ describe("Open States client", () => {
     ]) {
       expect(parseOpenStatesBill({ ...base, title: "Public resources: conservation.", abstracts: [{ abstract }] }, "ca"), abstract).toBeNull();
     }
+    // Water bills word it many ways; with no banking words, any "overdraft" is the water kind.
+    for (const abstract of [
+      "Redefines the water year for groundwater investigations in basins subject to overdraft.",
+      "Requires the department to report on groundwater overdraft-related subsidence.",
+      // No water words at all, but no bank, account or fee either: not a bank fee bill.
+      "Authorizes surety bonds as security and addresses overdraft in specified regions.",
+    ]) {
+      expect(parseOpenStatesBill({ ...base, title: "Public resources: conservation.", abstracts: [{ abstract }] }, "ca"), abstract).toBeNull();
+    }
     // A bill that names both keeps its bank fee reading.
     expect(
       parseOpenStatesBill({ ...base, title: "Overdraft fees on checking accounts", abstracts: [{ abstract: "Also funds critically overdrafted basins." }] }, "ca"),
+    ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
+    expect(
+      parseOpenStatesBill({ ...base, title: "Bank overdraft fees", abstracts: [{ abstract: "Applies to banks and credit unions; also amends the Water Code." }] }, "ca"),
     ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
   });
 });

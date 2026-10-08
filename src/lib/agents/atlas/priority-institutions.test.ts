@@ -43,10 +43,11 @@ describe("priority institutions", () => {
     }));
   });
 
-  it("lists each requested institution once, the Tennessee report's largest banks first", () => {
+  it("lists each requested institution once, Marketing's outreach batch then the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 10)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
+    expect(ids.slice(0, 14)).toEqual([1223, 767, 4715, 8085, 4522, 3331, 4779, 850, 400, 599, 348, 424, 7034, 5579]);
+    expect(ids.slice(14, 24)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
     expect(ids).toContain(8109);
   });
 

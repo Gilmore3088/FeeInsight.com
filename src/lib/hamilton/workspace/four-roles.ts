@@ -69,7 +69,9 @@ export function sentences(text: string): string[] {
     if (!inQuote && ends && (i === text.length - 1 || /\s/.test(text[i + 1]))) {
       // "$35.50" and "e.g." are not sentence ends: the next character is not a space or is lowercase.
       const next = text.slice(i + 1).trimStart()[0];
-      if (next === undefined || /[A-Z"$0-9]/.test(next)) {
+      // "U.S. Bank": a period after a single capital is an initial, not a sentence end.
+      const initial = c === "." && /(^|[\s.])[A-Z]$/.test(current.slice(0, -1));
+      if (!initial && (next === undefined || /[A-Z"$0-9]/.test(next))) {
         out.push(current.trim());
         current = "";
       }

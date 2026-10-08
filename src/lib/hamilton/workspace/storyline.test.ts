@@ -66,7 +66,7 @@ describe("storyline", () => {
   it("sorts peers into the four pricing groups and places the bank", () => {
     const story = buildFeeAnswer(research()).storyline!;
     const map = story.exhibits.find((e) => e.exhibit.kind === "archetype_map")!;
-    expect(map.actionTitle).toBe("Of 16 peers, 11 charge $15.01 to $30 and 5 charge over $30.");
+    expect(map.actionTitle).toBe("Of 16 peers: 11 at $15.01–$30 and 5 over $30.");
     if (map.exhibit.kind === "archetype_map") {
       expect(map.exhibit.archetypes.map((a) => a.count)).toEqual([0, 0, 11, 5]);
       expect(map.exhibit.ownKey).toBe("premium");

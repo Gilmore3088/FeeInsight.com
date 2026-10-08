@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
+**What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
+**Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
+**Fix:** Knox now takes the $10B+ banks with no live overdraft fee first, then the page its rules read longest ago (this PR).
+**Lesson:** a queue that restarts on each version needs a stalest-first order, or the tail starves whenever versions move faster than one pass.
+
 ## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
 **What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
 is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
@@ -52,6 +58,7 @@ not on itself.
 **Cause:** the bank fee test and topic tags matched the bare word "overdraft". Also, a re-read only upserted the bills that still matched, so a tagging fix would never reach a row already stored.
 **Fix:** groundwater overdraft phrases are removed before the tests. A re-read clears the topics of a stored bill that no longer passes (the row is kept, never deleted). States with bills tagged under older rules are due again (`STATE_BILLS_TAGGING_VERSION`). Merged in the PR that adds this entry.
 **Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
+**Follow-up (19:17 UTC):** CA was re-read under version 2 at 18:17 and AB 1520 still matched, because its digest words groundwater overdraft some other way and the abstract isn't stored. Version 3 drops every "overdraft" from a bill that never mentions banking when the bill is about water or names no fee or charge. A guess at one wording isn't enough: when the source text can't be read, make the rule contextual.
 
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
@@ -3573,3 +3580,21 @@ and quarter were already stored, without looking at the periods of the data behi
   words) is read like a scan, and the stored ones are reopened once each. Free OCR reads
   only page images, so these PDFs go on to the paid transcription pass under its budget.
 - **Watch.** TruStone's fee schedule read into words, and TruStone's fees going live.
+
+## 2026-10-08: Requested banks never got a rules fix, and paid NSF items were filed as NSF
+
+- **Problem.** Marketing's outreach batch had 8 institutions with no live overdraft fee. 6 of
+  their current fee pages print the overdraft line, but Knox misread it: a paid NSF item
+  ("Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)") was filed as NSF or dropped,
+  a long name was cut to the note inside it (BankIowa's overdraft became an NSF row named
+  "5 max total OD or Returned Item fees daily"), a description cell listing debit card
+  channels filed Los Angeles FCU's courtesy pay as an ATM fee, and a threshold row under a
+  priceless fee line had no name (NIH FCU). Even after a fix, a requested institution's
+  read-now run did not read its unchanged page again, so the fix never reached it.
+- **Fix.** Knox v42 and category guard v34 read all six lines. A run for one institution reads
+  its current page again once per rules version while it has no live overdraft fee. The
+  batch is first on Atlas's request list, and Quantum's personal fee schedule is a hand link
+  (Magellan held only its business schedule).
+- **Watch.** The 7 read-now runs and their overdraft fees going live. Hatboro Federal
+  Savings' Feb 2026 schedule lists no overdraft fee (only a $25 NSF return fee and a $5
+  transfer protection fee).

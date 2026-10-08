@@ -561,6 +561,22 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Returned)").ok).toBe(false);
   });
 
+  it("v34 files paid and honored NSF items as the overdraft fee (Saco & Biddeford, Bluestone, NIH, Oct 8)", () => {
+    for (const name of [
+      "Paid nonsufficient funds (NSF)*: Consumer account",
+      "NSF Share Draft (Honored)",
+      "Paid Consumer & Business NSF Items",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(true);
+      expect(refileCategory("nsf", name)).toBe("overdraft");
+    }
+    expect(refileCategory("nsf", "NSF Share Draft (Returned)")).toBe("nsf");
+    // One price for the paid and the returned item (Pinnacle Bank Wyoming).
+    expect(checkFeeCategory("overdraft", "NSF Paid Item Fee/Returned Item Fee (items over $10)").ok).toBe(true);
+    expect(refileCategory("nsf", "NSF Paid Item Fee/NSF Returned Item Fee")).toBe("overdraft");
+    expect(checkFeeCategory("overdraft", "NSF Share Draft (Returned)").ok).toBe(false);
+  });
+
   it("v29 accepts a per-item overdraft fee whose note states the daily count, never the cap itself (First Financial, Oct 8)", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Fee-Paid Item (Maximum of 2 Items/Day)")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day On Consumer Accounts)")).toEqual({ ok: true });
@@ -586,5 +602,47 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Protection Fee – from Checking, Money Market, or Statement Savings accounts (per pre-authorized automatic tran").ok).toBe(false);
     expect(checkFeeCategory("overdraft", "Courtesy Overdraft Protection Fee (per item)")).toEqual({ ok: true });
+  });
+
+  it("v31 keeps the ATM card itself, adjustments and rebates out of the ATM network fee (Oct 8)", () => {
+    for (const name of [
+      "ATM Card",
+      "ATM Cards for Savings",
+      "ATM Card (monthly)",
+      "ATM Card - Re-Order",
+      "ATM Instant Issue",
+      "ATM Reactivation",
+      "ATM Adjustment Fee",
+      "Three ATM Rebates per Month",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      "ATM Card withdrawals at non-network ATMs",
+      "ATM Card used at foreign ATM",
+      "Reject/Denial at an ATM we do not own or operate",
+      "Non-Proprietary ATM Network Fee (per transaction)",
+      "ATM Surcharge",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("v33 keeps worked examples, waiver thresholds and page text out of the overdraft and NSF fees (Oct 8)", () => {
+    for (const name of [
+      "charged for Wednesday’s Overdraft Item",
+      "but you will be charged an Overdraft Fee because your Available Balance was not sufficient at the time of payment to cov",
+      " We may charge you an overdraft fee for your third or subsequent occurrence, unless the total overdraft is",
+      "Account Services Reorder Checks Complete my Overdraft Authorization Form Contact Us View My Benefits Account Minimum ope",
+      "Hometown No Overdraft Checking",
+      "Suncoast Visa credit card as overdraft protection",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("nsf", "Return Item Fee: 03 x 10").ok).toBe(false);
+    for (const name of ["You will be charged the overdraft fee of", "Overdraft Privilege: Wise Checking", "We may charge you an Overdraft Fee"]) {
+      expect(checkFeeCategory("overdraft", name), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("nsf", "You will be charged an NSF fee of")).toEqual({ ok: true });
   });
 });
