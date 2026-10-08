@@ -116,9 +116,9 @@ export function RequestReportForm(props: RequestReportFormProps) {
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
   const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
-  // Keyed on the report type so a same-page link that changes `?report=` reloads the form
-  // with that option selected (useState reads the prefill only on first render).
-  return <RequestReportFormInner key={prefill.reportType} {...props} prefill={prefill} />;
+  // Keyed on the query so a same-page link that changes `?report=` or the bank reloads the
+  // form with that option selected (useState reads the prefill only on first render).
+  return <RequestReportFormInner key={params.toString()} {...props} prefill={prefill} />;
 }
 
 function RequestReportFormInner({
@@ -235,7 +235,7 @@ function RequestReportFormInner({
   }
 
   if (status === "success" && freeReport) {
-    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} />;
+    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} requestHref={institutionReportHref(prefill)} />;
   }
   if (status === "success") {
     return <RequestReportSuccess contactEmail={contactEmail} confirmation={confirmation} />;
@@ -538,12 +538,26 @@ function RequestReportSuccess({
   );
 }
 
+/** The paid-report link after a free report, keeping the bank the reader arrived with. */
+export function institutionReportHref(prefill: Pick<Prefill, "institutionId" | "institutionName" | "src"> | null): string {
+  if (!prefill?.institutionId || !prefill.institutionName) return INSTITUTION_REPORT_HREF;
+  const params = new URLSearchParams({
+    report: "institution",
+    institution: String(prefill.institutionId),
+    name: prefill.institutionName,
+    src: prefill.src,
+  });
+  return `/for-institutions?${params.toString()}#report`;
+}
+
 function FreeReportSuccess({
   scope,
   confirmation,
+  requestHref,
 }: {
   scope: BenchmarkScope;
   confirmation: ConfirmationStatus;
+  requestHref: string;
 }) {
   return (
     <div
@@ -560,7 +574,7 @@ function FreeReportSuccess({
       </Link>
       <p className="mt-4 text-[#5A5347]">
         Want your own institution against named competitors?{" "}
-        <Link href={INSTITUTION_REPORT_HREF} className="font-medium underline underline-offset-2">
+        <Link href={requestHref} className="font-medium underline underline-offset-2">
           Request your institution report
         </Link>
         .

@@ -3395,3 +3395,30 @@ and quarter were already stored, without looking at the periods of the data behi
   with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
 - **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
   count of top-10 slots with a live overdraft fee.
+
+## 2026-10-08: Old PDF texts ran a whole schedule onto one line
+
+- **Problem.** 168 PDF texts (164 banks, read Aug 23 to Oct 4 by the first PDF reader) have no
+  line breaks. Knox's rules split a line only at wide gaps and sentence ends and drop any piece
+  over 280 characters, so these schedules gave the rules nothing; only the family specialists
+  read them. Lake City Bank's "Overdraft fee $35.00/transaction" and West Bank's "Overdraft Fee
+  (per item) ... $35.00" were lost this way. 63 of those banks have no live overdraft fee; 166
+  of the texts were never read by `read.pdf_layout`, which keeps lines (0 one-line texts of 1,964).
+- **Fix.** Rosetta treats such a text like a lost text: one read with the current PDF reader,
+  replacing the flat text only when the new one lists at least as many fees.
+- **Watch.** `read.pdf_layout` attempts on these documents, one-line legacy texts left, and new
+  Knox rows from them.
+
+## 2026-10-08: Hamilton's memo was cut off at its token cap and withheld
+
+- **Problem.** A live overdraft Ask for Space Coast (15:13 UTC) showed the storyline but no
+  memo. Both memo attempts (`ai_api_usage_events` 4898, 4899) stopped at exactly 1,800 output
+  tokens, the cap, so the JSON was cut off, neither draft parsed, and the memo was withheld as if
+  it had failed the figure checks. The withheld result recorded no reason. Separately, the Ask's
+  storyline answer had no Download PDF button, though the answer was already saved
+  (`hamilton_saved_analyses` 890dc628 at 15:12:56).
+- **Fix.** The memo cap is 4,000 tokens, a cut-off reply is named as such in the retry, and the
+  run ledger's `ask_memo` detail records `withheld_problems`. The storyline answer offers
+  Download PDF as soon as the Ask has saved it, whatever happens to the memo.
+- **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
+  with `memo_status = 'withheld'`.
