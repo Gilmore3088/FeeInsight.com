@@ -3494,3 +3494,11 @@ and quarter were already stored, without looking at the periods of the data behi
   written, since it can't be told from a price.
 - **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
   name in the centered shape.
+
+## 2026-10-08: A session user's id is a string, not a number
+- **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
+  `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email
+  confirmation token checked `Number.isSafeInteger(userId)`, made no token, and every
+  "Email me the link" (and the signup send) returned "The email didn't send" without calling Resend.
+- **Fix.** `src/lib/email/email-confirm.ts` accepts a numeric string or a number (`toUserId`).
+- **Watch.** Any new check on `user.id` must not assume a number (`Number(user.id)` first).
