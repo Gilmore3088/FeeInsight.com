@@ -96,6 +96,15 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** "higher than 72%" above the middle, "lower than 83%" below it. */
+function placeAmong(percentile: number): string {
+  return percentile >= 50 ? `higher than ${Math.round(percentile)}%` : `lower than ${Math.round(100 - percentile)}%`;
+}
+
 /** How far from the middle a percentile sits, 0 to 1. */
 function spread(percentile: number | null): number {
   return percentile === null ? 0 : Math.min(1, Math.abs(percentile - 50) / 50);
@@ -109,7 +118,7 @@ function dependenceObservation(row: StudyPlacementRow): Observation | null {
   const source = studySource(row);
   const facts = [
     {
-      text: `${row.peerGroup}: median ${row.peerMedian.toFixed(2)}% across ${row.peerN.toLocaleString("en-US")} institutions${row.percentile !== null ? `; you are at the ${ordinal(Math.round(row.percentile))} percentile` : ""}.`,
+      text: `${capitalize(row.peerGroup)}: median ${row.peerMedian.toFixed(2)}% across ${row.peerN.toLocaleString("en-US")} institutions${row.percentile !== null ? `; you are at the ${ordinal(Math.round(row.percentile))} percentile` : ""}.`,
       source,
     },
   ];
@@ -149,23 +158,24 @@ function fifthPrices(detail: Record<string, unknown>): FifthPrice[] {
   });
 }
 
-function priceStudyObservation(row: StudyPlacementRow): Observation | null {
+function priceStudyObservation(row: StudyPlacementRow, usedFees: Set<string>): Observation | null {
   const driver = PRICE_DRIVERS[row.studyKey];
   if (!driver || row.value === null) return null;
-  // The study fee furthest from the middle of its comparison group, overdraft first on a tie.
-  const pick = fifthPrices(row.detail).sort(
+  // The study fee furthest from the middle of its comparison group, overdraft first on a tie; a fee
+  // another study already showed gives way to the next one, so the studies cover different fees.
+  const ranked = fifthPrices(row.detail).sort(
     (a, b) => spread(b.percentile) - spread(a.percentile) || Number(b.fee === "overdraft") - Number(a.fee === "overdraft"),
-  )[0];
+  );
+  const pick = ranked.find((p) => !usedFees.has(p.fee)) ?? ranked[0];
   if (!pick) return null;
   const name = feeInProse(pick.fee);
   const source = studySource(row);
   const facts = [
     {
-      text: `${driver.driver}: ${driver.format(row.value)}${row.percentile !== null ? `, higher than ${Math.round(row.percentile)}% of the ${row.peerN.toLocaleString("en-US")} institutions in the study` : ""}.`,
+      text: `${driver.driver}: ${driver.format(row.value)}${row.percentile !== null ? `, ${placeAmong(row.percentile)} of the ${row.peerN.toLocaleString("en-US")} institutions in the study` : ""}.`,
       source,
     },
   ];
-  if (row.studyHeadline) facts.push({ text: `Across the study: ${row.studyHeadline}`, source });
   return {
     id: `study:${row.studyKey}`,
     kind: "study",
@@ -200,7 +210,7 @@ function inferredObservation(row: StudyPlacementRow): Observation | null {
     { text: `Inferred, not reported: ${dollars(income)} of reported ${fees} income (net of waivers and refunds) divided by your published ${fee} fee.`, source },
   ];
   if (row.peerMedian !== null && row.peerN >= MIN_STUDY_PEERS) {
-    facts.push({ text: `${row.peerGroup}: median about ${count(row.peerMedian)} items across ${row.peerN.toLocaleString("en-US")} institutions.`, source });
+    facts.push({ text: `${capitalize(row.peerGroup)}: median about ${count(row.peerMedian)} items across ${row.peerN.toLocaleString("en-US")} institutions.`, source });
   }
   return {
     id: "study:inferred_items_paid",
@@ -218,7 +228,11 @@ export function studyObservations(rows: StudyPlacementRow[]): Observation[] {
   const out: Observation[] = [];
   const byStudy = new Map<string, StudyPlacementRow[]>();
   for (const r of rows) byStudy.set(r.studyKey, [...(byStudy.get(r.studyKey) ?? []), r]);
-  for (const [key, list] of byStudy) {
+  const usedFees = new Set<string>();
+  const order = ["fee_dependence", ...Object.keys(PRICE_DRIVERS), "inferred_items_paid"];
+  const keys = [...byStudy.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  for (const key of keys) {
+    const list = byStudy.get(key)!;
     if (key === "fee_dependence") {
       const o = dependenceObservation(list[0]);
       if (o) out.push(o);
@@ -227,8 +241,11 @@ export function studyObservations(rows: StudyPlacementRow[]): Observation[] {
       const o = ordered.map(inferredObservation).find(Boolean);
       if (o) out.push(o);
     } else {
-      const o = priceStudyObservation(list[0]);
-      if (o) out.push(o);
+      const o = priceStudyObservation(list[0], usedFees);
+      if (o) {
+        out.push(o);
+        if (o.feeCategory) usedFees.add(o.feeCategory);
+      }
     }
   }
   return out;
