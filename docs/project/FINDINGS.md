@@ -3092,6 +3092,10 @@ Rows already on file gain the fields only when Knox reads their document again.
   kept the section heading in its name ("OVERDRAFT & NSF FEES: Statement Copy Fee"), and a
   $5 "Returned Item Photocopy" was live as NSF. Guard v24 rejects statement copies, photocopies,
   "copy fee" and "copy of" names under overdraft and NSF; these 2 are the only live matches.
+- **Follow-up (review v13, same day).** The 20-fee check of v12 releases scored 18 right, 1 wrong,
+  1 arguable; both misses had names cut from the middle of a line ("/hr incl. reproduction",
+  "account research fee may apply)"). Release review v13 keeps such names held. 117 live fees carry
+  names of that shape, almost all read by Knox; Knox should take the row's first cell as the name.
 
 
 ## 2026-10-08: Every Stripe webhook failed
