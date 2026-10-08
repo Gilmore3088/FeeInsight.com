@@ -66,9 +66,11 @@ export interface LocalMarketAnswer {
 }
 
 /** The footprint map for the county that holds most of the market, in the report look. */
-async function marketMap(institutionId: number, countyFips: string | undefined, own: BranchPoint[]): Promise<Pick<LocalMarketAnswer, "map" | "colours">> {
-  if (!countyFips) return { map: null, colours: {} };
-  const found = await getMarketStudyData(institutionId, countyFips);
+function marketMap(
+  institutionId: number,
+  found: Awaited<ReturnType<typeof getMarketStudyData>>,
+  own: BranchPoint[],
+): Pick<LocalMarketAnswer, "map" | "colours"> {
   if (!found) return { map: null, colours: {} };
   // Credit unions are not in the SOD; draw their own NCUA branch locations in the county as the bank's rings.
   const county = countyFeature(found.county_fips);
@@ -175,15 +177,20 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
   });
   if (!market) return null;
 
-  const branchesP = getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null);
-  const [footprint, ownBranches, fees, drawn] = await Promise.all([
+  // Every read runs at once; the county map only needs the study data and the bank's own branches.
+  const mainCounty = market.county_fips.map(String)[0];
+  const [footprint, ownBranches, fees, study] = await Promise.all([
     getMarketBranchFootprint(market.county_fips.map(String), market.sod_year).catch(() => null),
-    branchesP,
+    getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null),
     ownFees(institutionId).catch(() => ({})),
-    branchesP
-      .then((b) => marketMap(institutionId, market.county_fips.map(String)[0], b?.rows ?? []))
-      .catch(() => ({ map: null, colours: {} })),
+    mainCounty ? getMarketStudyData(institutionId, mainCounty).catch(() => null) : Promise.resolve(null),
   ]);
+  let drawn: Pick<LocalMarketAnswer, "map" | "colours">;
+  try {
+    drawn = marketMap(institutionId, study, ownBranches?.rows ?? []);
+  } catch {
+    drawn = { map: null, colours: {} };
+  }
   const cities = citiesOf(ownBranches?.rows ?? []);
   const marketCounties = market.county_fips.map((f) => String(f).padStart(5, "0"));
 

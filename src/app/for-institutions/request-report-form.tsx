@@ -19,6 +19,8 @@ const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
+/** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
+const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
 const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
@@ -295,6 +297,13 @@ function RequestReportFormInner({
             </label>
           ))}
         </div>
+        <p className="mt-2 text-[13px] text-[#6B6255]">
+          Want your own bank or credit union right now?{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+            Look it up free
+          </Link>{" "}
+          to see its published fees against state and national medians.
+        </p>
       </fieldset>
 
       {reportType === "district" && (

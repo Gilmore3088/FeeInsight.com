@@ -446,7 +446,10 @@ describe("state lane scheduler", () => {
     withTransactionMock.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(sqlMock));
     await scheduleDueStateLaneRuns({ now: new Date("2026-10-06T13:30:00Z") });
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("FOR UPDATE SKIP LOCKED"));
-    expect(query).toMatch(/ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+priority_score DESC/);
+    // Overdue lanes go first, longest overdue first, then the rest by score.
+    expect(query).toMatch(
+      /ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+CASE WHEN next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\s+THEN next_run_after END ASC NULLS LAST,\s+priority_score DESC/,
+    );
     expect(STATE_LANE_STARVATION_HOURS).toBe(3);
   });
 

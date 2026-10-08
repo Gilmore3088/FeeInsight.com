@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
+import { ProNextStep } from "@/components/public/pro-next-step";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { PRODUCT_NAME } from "@/lib/constants";
@@ -255,6 +256,7 @@ export function LockedInstitutionReport() {
           </table>
         </div>
       </div>
+      <ProNextStep className="mt-4" />
     </section>
   );
 }

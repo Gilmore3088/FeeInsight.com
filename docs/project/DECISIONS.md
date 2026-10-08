@@ -12,6 +12,13 @@ opens a fix PR, merges it on green, proves the failed work reran, and tells Jame
 and alert-only were the other options. What it may and may not do is in `.claude/skills/recover/SKILL.md`.
 It never touches data with SQL, never deletes, and never makes paid calls.
 
+**The institution report stays quoted on request; free instant reports lead to the paid offers.**
+James, 11:55 UTC: "I'm fine with quotes for request" (no published $300, no "from $300" anchor), and
+"I'd like to give a free instant report to upsells". Quotes keep running through /admin/leads and
+/pay/report. Which free report carries the upsell (the existing national and district reports, a new
+own-bank snapshot, or both) is the open choice in the marketing thread. Small banks sit on the $1,500
+Pro tier.
+
 **Pro moves to three tiers; the monthly brief stays free; banks and credit unions get equal weight.**
 James, 11:35 UTC, after the pricing and competitive strategy pages. Pro becomes three tiers at
 $1,500, $3,000 and $5,000 a year ("If we need to bump prices later we can. 5k for an on demand

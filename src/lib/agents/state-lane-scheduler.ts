@@ -1115,8 +1115,13 @@ export async function scheduleDueStateLaneRuns({
               WHERE active.id = agent_state_lanes.last_agent_run_id
                 AND active.status IN ('queued', 'running', 'cancel_requested')
            )
-         -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all.
+         -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all,
+         -- longest overdue first. Busy lanes come back due every hour and wait past the cut-off
+         -- too, so ranking overdue lanes by score kept GA, KY, CT, PR, VI, DC and GU waiting
+         -- since Oct 7 (2026-10-08).
          ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
+                  CASE WHEN next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour'
+                       THEN next_run_after END ASC NULLS LAST,
                   priority_score DESC, next_run_after ASC, state_code ASC
          LIMIT ${slots}
          FOR UPDATE SKIP LOCKED
