@@ -288,6 +288,21 @@ describe("Darwin held-fee release review", () => {
     expect(releaseHoldReason(held("Stop Payment", "stop_payment", "35.00", "Stop Payment | $35 | 1"))).toBeNull();
   });
 
+  it("v15 keeps a fee whose frequency contradicts its schedule line held (James, complete-record bar, Oct 8)", () => {
+    const held = (frequency: string | null, sourceLine: string) => ({
+      row: row({ fee_name: "Excess activity charge", held_canonical_fee_key: "account_research", amount: "5.00", frequency }) as unknown as HeldFeeRow,
+      sourceLine,
+      sourceContext: null,
+    });
+    const excess = "6 Withdrawals/debits included per month; Excess activity charge - $5.00 each after 6";
+    expect(releaseHoldReason(held("monthly", excess))).toBe("frequency_contradicts_line"); // "each" follows the $5.00
+    expect(releaseHoldReason(held("monthly", "Monthly fee | $5.00 per month or $1.00 each"))).toBeNull();
+    expect(releaseHoldReason(held("monthly", "Excess activity charge - $5.00 each after 6"))).toBe("frequency_contradicts_line");
+    expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 per month"))).toBe("frequency_contradicts_line");
+    expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 each"))).toBeNull();
+    expect(releaseHoldReason(held(null, "Excess activity charge | $5.00 each"))).toBeNull();
+  });
+
   it("fills a state lane's short list with held fees from other states", async () => {
     const db = createDbMock([]);
     db.unsafe = vi.fn((_query: string, params: unknown[]) =>
