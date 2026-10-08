@@ -89,7 +89,7 @@ export default async function ReportsPage({
   const params = await searchParams;
   const initialReportId = params.report_id ?? params.report ?? null;
   const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
-    getPublishedReports(),
+    getPublishedReports().catch(() => []),
     getRecentHamiltonReports(user.id).catch(() => []),
     params.scenario_id
       ? getHamiltonScenarioById(params.scenario_id, user.id).catch(() => null)

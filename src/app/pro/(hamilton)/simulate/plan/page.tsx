@@ -274,6 +274,11 @@ export default async function PlanPage({ searchParams }: PageProps) {
           <input type="hidden" name="fee" value={ws.fee} />
           <input type="hidden" name="from" value={from} />
           <input type="hidden" name="to" value={to} />
+          {/* Keep the comparison, the bank's own figures and the format when only the dates change. */}
+          <input type="hidden" name="layer" value={mainLayer.key} />
+          {params.paid ? <input type="hidden" name="paid" value={params.paid} /> : null}
+          {params.waiver ? <input type="hidden" name="waiver" value={params.waiver} /> : null}
+          {format !== "plan" ? <input type="hidden" name="format" value={format} /> : null}
           {instId ? <input type="hidden" name="instId" value={instId} /> : null}
           <label className="flex flex-col gap-1">
             Date notice goes out

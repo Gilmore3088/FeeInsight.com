@@ -592,6 +592,12 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("v37 reads a one-time fee sentence with a daily cap after it (Guaranty)", () => {
+    expect(fees("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft)", 36, "overdraft"],
+    ]);
+  });
+
   it("v19 names a dot-leader row's second price by the title before it, not the first price's terms", () => {
     const line = "Overdraft Fee.......... $30.00 - fee assessed for each item paid1 Continuous Overdraft Fee.......... $5.00 per day";
     expect(fees(line)).toEqual([
@@ -718,6 +724,33 @@ describe("Knox extract.rules", () => {
   it("v32 files a linked-account overdraft protection fee as a transfer, not an overdraft", () => {
     expect(classifyFeeText("Account Link Overdraft Protection")).toBe("od_protection_transfer");
     expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
+  });
+
+  it("v36 reads a price printed between a name's two lines, and drops footnote marks glued to it", () => {
+    // Starion's schedule of charges (text 16159): superscript marks "4, 5" read onto the price.
+    const starion = [
+      "Loan Extension Fee $50",
+      "NSF Fee³ - All Checking and Savings Accounts (Including",
+      "$334, 5",
+      "Money Markets)",
+      "Overdraft Fee³ - All Checking and Savings Accounts",
+      "$334, 5",
+      "(Including Money Markets)",
+      "Continuous Overdrawn Fee $331",
+      "4. Please be aware that an item may be presented multiple times.",
+      "5. Maximum of six (6) Overdraft Fees and/or NSF Fees combined may be charged per day.",
+    ].join("\n");
+    expect(fees(starion)).toEqual(
+      expect.arrayContaining([
+        ["NSF Fee - All Checking and Savings Accounts", 33, "nsf"],
+        ["Overdraft Fee - All Checking and Savings Accounts", 33, "overdraft"],
+      ]),
+    );
+    expect(fees(starion).some(([, amount]) => amount === 334)).toBe(false);
+    // Marks with no printed footnotes stay part of the price, and a line below that is not a
+    // note leaves the price unjoined.
+    expect(fees("Overdraft Fee - All Accounts\n$334, 5\n(Including Money Markets)")).not.toContainEqual(["Overdraft Fee - All Accounts", 33, "overdraft"]);
+    expect(fees("Overdraft Fee - All Accounts\n$33\nStop Payment")).toEqual([]);
   });
 
   it("v35 reads a fee name that wraps onto a second line, with its price alone below", () => {

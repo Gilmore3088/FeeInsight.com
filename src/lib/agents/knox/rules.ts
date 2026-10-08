@@ -2,6 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -780,7 +781,9 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 // v33: "We will charge you a fee of up to $35.00 each time we pay an overdraft" (the Reg E
 // overdraft notice) states the fee.
 // v34: "You still pay a fee of $35 per item for overdrawing your account" (Park National).
-const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+// v37: "We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed
+// $180 per day" (Guaranty): a "one-time" or "per-item" fee, and a cap after the clause.
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:(?:one[-\s]time|per[-\s]item|flat)\s+)?(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -793,7 +796,7 @@ const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s
 export function sentenceFee(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
   if (!CHARGE_A_FEE_OF.test(segment.slice(0, firstAmount.start))) return null;
   const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "")
-    .replace(/,\s+(?:but|and|so)\b[\s\S]*$/i, "")
+    .replace(/,\s+(?:but|and|so|not to exceed|up to a (?:maximum|total) of)\b[\s\S]*$/i, "")
     .replace(/^[\s*†‡]+/, "")
     .trim();
   const words = clause.split(/\s+/).filter(Boolean);
@@ -1224,10 +1227,36 @@ export function wrappedNamePrices(text: string): string[] {
   return joined;
 }
 
-export function extractCandidatesFromText(text: string): ExtractionRulesResult {
+/**
+ * v36: a two-line name cell with its price printed level with the gap between the lines
+ * ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money
+ * Markets)", Starion). The line above the price must name a fee and the line below must only
+ * finish its note: open a parenthesis the name line left closed, or close the one it opened.
+ */
+export function centeredNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 1; index < lines.length - 1; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    const name = lines[index - 1];
+    const tail = lines[index + 1];
+    if (amountsIn(name).length > 0 || amountsIn(tail).length > 0 || name.includes(CELL_SEPARATOR)) continue;
+    if (!/^[A-Z]/.test(name) || classifyPatternKey(name) === null) continue;
+    const opens = /\([^()]*$/.test(name);
+    const finishes = opens ? /^[^()]*\)\s*\.?$/.test(tail) : /^\([^()]*\)\s*\.?$/.test(tail);
+    if (!finishes) continue;
+    const title = name.replace(/\s*\([^)]*$/, "").replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, "").trim();
+    joined.push(`${title} ${lines[index]}`);
+  }
+  return joined;
+}
+
+export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+  const text = stripPriceFootnoteMarks(raw);
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  const continued = [...columnContinuations(text), ...wrappedNamePrices(text)].flatMap((line) => extractFromSegment(line).candidates);
+  const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
+  const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;

@@ -3464,3 +3464,18 @@ and quarter were already stored, without looking at the periods of the data behi
   catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
 - **Fix.** Add the policy entry in the same commit as the route.
 - **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
+
+## 2026-10-08: Footnote marks read onto a price made it a different price
+
+- **Problem.** Starion's schedule prints its overdraft and NSF price as "$33" with superscript
+  footnote marks 4 and 5, and the PDF reader puts them on the baseline: "$334, 5". The price
+  also sits between the two lines of the fee's name ("Overdraft Fee³ - All Checking and
+  Savings Accounts" / "$334, 5" / "(Including Money Markets)"), a shape Knox never joined. So
+  Starion, a North Dakota top-10 bank, had no live overdraft fee.
+- **Fix.** Knox v36 joins a name line, a price alone below it and a line that only finishes
+  the name's note (`centeredNamePrices`). `stripPriceFootnoteMarks` drops marks glued to a
+  price-only line when they count up from its last digit and each is a printed numbered
+  footnote; Knox and the shared source check both apply it. A single mark ("$331") is left as
+  written, since it can't be told from a price.
+- **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
+  name in the centered shape.
