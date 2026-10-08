@@ -44,6 +44,10 @@ export async function resetPassword(formData: FormData): Promise<ResetPasswordRe
       return true;
     });
     if (!changed) return { ok: false, error: EXPIRED };
+    // The link reached this inbox, so the address is proven. Best effort: never blocks the reset.
+    await sql`UPDATE users SET email_confirmed_at = COALESCE(email_confirmed_at, NOW()) WHERE id = ${user.id}`.catch(
+      () => undefined,
+    );
   } catch (error) {
     console.error("[password-reset] reset failed", error instanceof Error ? error.message : String(error));
     return { ok: false, error: "Password reset is unavailable right now. Please try again shortly." };

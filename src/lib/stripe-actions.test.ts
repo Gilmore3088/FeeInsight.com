@@ -131,6 +131,29 @@ describe("createCheckoutSession", () => {
     expect(mocks.stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 
+  it("uses the buyer's band only when no assets are on file, and marks the plan for checking", async () => {
+    mocks.institutionMock.mockResolvedValue({ id: 9, name: "Tiny CU", city: null, stateCode: null, assetsThousands: null });
+    const { createCheckoutSession } = await import("./stripe-actions");
+    await createCheckoutSession({ plan: "monthly", institutionId: 9, pickedTier: "small" });
+    expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [{ price: "price_small_monthly", quantity: 1 }],
+        cancel_url: "https://feeinsight.com/subscribe?inst=9&band=small&canceled=1",
+        metadata: expect.objectContaining({ institution_id: "9", pro_tier: "small", tier_picked_by_buyer: "true" }),
+        subscription_data: { metadata: { pro_tier: "small", institution_id: "9", tier_picked_by_buyer: "true" } },
+      }),
+    );
+  });
+
+  it("ignores a picked band when the assets on file set the tier", async () => {
+    mocks.institutionMock.mockResolvedValue({ id: 7, name: "Big Bank", city: null, stateCode: null, assetsThousands: 3_000_000 });
+    const { createCheckoutSession } = await import("./stripe-actions");
+    await createCheckoutSession({ plan: "monthly", institutionId: 7, pickedTier: "small" });
+    const args = mocks.stripeCheckoutCreateMock.mock.calls[0][0];
+    expect(args.line_items).toEqual([{ price: "price_large_monthly", quantity: 1 }]);
+    expect(args.metadata.tier_picked_by_buyer).toBeUndefined();
+  });
+
   it("sets up a missing tier price in Stripe instead of closing checkout", async () => {
     delete process.env.STRIPE_PRO_SMALL_ANNUAL_PRICE_ID;
     mocks.resolveProPriceIdMock.mockResolvedValueOnce("price_from_lookup");

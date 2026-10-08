@@ -49,9 +49,12 @@ const US_STATES = [
 export function RegisterForm({
   redirectTo = "/account",
   variant = "professional",
+  checkout = false,
 }: {
   redirectTo?: string;
   variant?: RegisterVariant;
+  /** On the way to Pro checkout: the bank is already picked, so skip the organization fields. */
+  checkout?: boolean;
 }) {
   const router = useRouter();
   const isConsumer = variant === "consumer";
@@ -126,7 +129,7 @@ export function RegisterForm({
       </div>
 
       {/* Professional context: only asked of people signing up for professional work. */}
-      {!isConsumer && (
+      {!isConsumer && !checkout && (
       <div className="border-t border-[#E8DFD1] pt-4 mt-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255] mb-3">
           About your organization
@@ -187,7 +190,7 @@ export function RegisterForm({
         disabled={pending}
         className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {pending ? "Creating account..." : isConsumer ? "Create free account" : "Create account"}
+        {pending ? "Creating account..." : isConsumer ? "Create free account" : checkout ? "Continue to checkout" : "Create account"}
       </button>
     </form>
   );

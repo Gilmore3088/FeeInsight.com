@@ -133,5 +133,6 @@ export default async function MarketStudyPage({
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">{children}</div>;
+  // The Hamilton shell's <main> already pads the page.
+  return <div className="mx-auto max-w-5xl">{children}</div>;
 }

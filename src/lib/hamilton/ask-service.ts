@@ -299,7 +299,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 }
 
 /** The whole-schedule overview for a question about every fee, or null for any other question. */
-async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<ScheduleOverview | null> {
+export async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<ScheduleOverview | null> {
   if (!asksWholeSchedule(question)) return null;
   const briefing = await getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
     console.error("[hamilton-ask] briefing failed", error);
@@ -309,8 +309,7 @@ async function scheduleFor(institutionId: number, question: string, peers: Engin
 }
 
 /** The price split of the bank's fee income gap, for a question asking why income is where it is. */
-/** The price split of the bank's fee income gap, for a question asking why income is where it is. */
-async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
+export async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
   if (!asksIncomeWhy(question)) return null;
   const [intensity, briefing, trend] = await Promise.all([
     getServiceChargeIntensity(institutionId).catch((error) => {
@@ -400,7 +399,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       model: result.status === "written" ? result.memo.model : null,
       saved_analysis_id: savedId,
       memo_saved: memoSaved,
+      withheld_problems: result.status === "withheld" ? (result.problems ?? []) : null,
     },
   });
-  return { status: 200, body: result };
+  return { status: 200, body: result.status === "withheld" ? { status: "withheld", reason: result.reason } : result };
 }

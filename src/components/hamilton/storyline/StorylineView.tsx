@@ -177,16 +177,17 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
         <dl className={`grid gap-px overflow-hidden rounded-lg border border-warm-300 bg-warm-300 ${cols}`}>
           {figures.map((f) => (
             <div key={f.label} className="flex flex-col bg-white px-5 py-4">
+              {/* The label comes first for screen readers; the figure still shows on top. */}
+              <dt className="order-2 mt-1 line-clamp-3 text-xs leading-snug text-warm-600" title={f.label}>
+                {f.label}
+                <Note n={notes.noteFor(f.source)} />
+              </dt>
               <dd
-                className={`${f.value.length > 8 ? "text-xl sm:text-2xl" : "text-3xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
+                className={`order-1 ${f.value.length > 8 ? "text-xl sm:text-2xl" : "text-3xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
                 style={SERIF}
               >
                 {f.value}
               </dd>
-              <dt className="mt-1 line-clamp-3 text-xs leading-snug text-warm-600" title={f.label}>
-                {f.label}
-                <Note n={notes.noteFor(f.source)} />
-              </dt>
             </div>
           ))}
         </dl>

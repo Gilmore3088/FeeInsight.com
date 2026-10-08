@@ -14,12 +14,14 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
+import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 
 type SqlTag = typeof sql;
 
@@ -312,15 +314,22 @@ async function selectVerifiedFees(
   }
   if (learning) {
     // A row this rule version already decided on (published, skipped as identical, or
-    // rejected) is never selected again, so skipped rows cannot starve the batch.
+    // rejected) is never selected again, so skipped rows cannot starve the batch. The one
+    // exception is a row Darwin re-filed after a takedown (verify.schedule_refile): a decision
+    // made under its old category does not count, so the new filing goes through publish.
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
+    const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
               AND pa.strategy = ${strategyParam}
               AND pa.strategy_version = ${versionParam}
+              AND NOT (
+                fv.outlier_flags ? ${refiledParam}
+                AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
+              )
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -487,7 +496,7 @@ export async function insertPublishedFee(
       ${options.row.raw_agent_event_id}::uuid,
       ${options.row.verified_by_agent_event_id}::uuid,
       ${publishEventId}::uuid,
-      ${options.row.fee_name},
+      ${publishedFeeName(options.row.fee_name, options.row.canonical_fee_key)},
       ${amount},
       ${options.row.frequency},
       ${options.row.variant_type},
@@ -558,7 +567,22 @@ function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
 
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 export function normalizedFeeName(name: string | null | undefined): string {
-  return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return (name ? repairNameShape(tidyFeeName(name)) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * The name a published fee shows: the verified name with a cut-off parenthesis or a doubled
+ * word repaired (`repairNameShape`). Knox and Darwin keep the name as read, since its words
+ * are the category evidence; the repair applies only when the category guard still accepts
+ * the shorter name.
+ */
+export function publishedFeeName(name: string, canonicalKey: string): string {
+  const current = name.trim();
+  // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
+  const repaired = repairNameShape(stripFootnoteMarks(current));
+  if (!repaired || repaired === current) return current;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return current;
+  return repaired;
 }
 
 function documentTime(value: string | Date | null | undefined): number | null {
