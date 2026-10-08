@@ -5,6 +5,10 @@ export const SITE_URL =
 export const SITE_NAME = "Fee Insight";
 export const PRODUCT_NAME = "Bank Fee Index";
 export const SITE_DOMAIN = "feeinsight.com";
+// The legal entity behind the site: formed in Washington, approved by the state Oct 7 2026.
+export const LEGAL_ENTITY_NAME = "Fee Insight LLC";
+export const LEGAL_ENTITY_STATE = "Washington";
+export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} limited liability company`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";

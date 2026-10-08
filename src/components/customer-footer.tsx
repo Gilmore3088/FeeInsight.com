@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ProLock } from "@/components/public/pro-lock";
 import { EmailSignup } from "./public/email-signup";
-import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 
 const FOOTER_LINK_CLASS = "text-[#6B6255] hover:text-[#1A1815] transition-colors";
 const FOOTER_HEADING_CLASS = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255] mb-3";
@@ -149,7 +149,7 @@ export function CustomerFooter() {
 
         {/* Bottom bar */}
         <div className="mt-8 pt-6 border-t border-[#E8DFD1]/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-[#6B6255]">
-          <span>{SITE_NAME} &copy; {new Date().getFullYear()}</span>
+          <span>&copy; {new Date().getFullYear()} {LEGAL_ENTITY_NAME}</span>
           <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] hover:text-[#1A1815] hover:underline">
             {CONTACT_EMAIL}
           </a>
