@@ -83,6 +83,14 @@
     {
       "path": "/api/admin/crew/learning",
       "schedule": "37 14 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/intel",
+      "schedule": "17 14 * * *"
+    },
+    {
+      "path": "/api/admin/crew/conversion",
+      "schedule": "47 13 * * 1"
     }
   ]
 }

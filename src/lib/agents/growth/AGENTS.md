@@ -17,6 +17,8 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
+| Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
+| Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
 
 ### Prospect contacts (`contacts.ts`)
 
@@ -108,13 +110,36 @@ A scheduled Claude Code session files a draft or a PR it opened with
 The `growth-score` step scores each posted item with no score whose post date is at least 7
 days old, over the 7 days after posting: tracked visits from `marketing_touches` (same
 `utm_campaign` and `utm_content` as its link) and leads whose `first_utm_*` match. The score is
-the visit count; leads sit beside it in the step result. Emails (opens and clicks are not read
-into the app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
+the visit count; leads sit beside it in the step result. A sent outreach email (marked posted,
+which records "sent") is scored by its institution's journey in the same 7 days: snapshot events
+from the outreach link and the outcomes James recorded, as the stage's place on the journey (1
+sent to 5 purchase, `score-label.ts`). MailerLite emails (opens and clicks are not read into the
+app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
 
 James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
 Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
+
+### Market brief (`sherlock.ts`)
+
+SHERLOCK reads, once a day, the regulator releases and tracked bills first seen in the last day
+(`reg_articles`, `reg_tracker_items`) whose title is about consumer deposit fees, and pairs each
+with the live catalog's median for that fee in that state or nationally. It also reads five
+competitors' own public pages (`COMPETITOR_PAGES`, robots.txt respected) and compares their
+fee-related lines with the previous run's, kept in that step's event. At most 3 findings a day;
+a finding with fewer than 10 institutions behind it, or cited in the last 14 days, is skipped.
+Findings go to the queue as one SHERLOCK `brief`; a quiet day files nothing.
+
+### Conversion check (`norman.ts`)
+
+NORMAN, each Monday, loads every buying page (`BUYING_PAGES`) and the link in every outreach
+draft not yet sent. A link that doesn't load, or shows our not-found page, is a broken
+destination: no draft should be sent until its link works. It counts the week's funnel from our
+own tables (tracked visits, snapshot opens and report clicks, report requests, quotes, paid; a
+missing table is "not measured") against the week before and the previous brief's "before", and
+names the week's one fix: broken destinations first, else the first step where everyone stops.
+The brief goes to the queue as NORMAN's `brief`; its fix comes as a pull request or preview.
 
 ### Lessons from skip reasons (`lessons.ts`)
 

@@ -13,7 +13,7 @@ import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signal
  */
 
 type SqlTag = typeof sql;
-type Fetcher = typeof fetch;
+export type Fetcher = typeof fetch;
 
 /** Institutions read per run. */
 export const CONTACTS_DEFAULT_LIMIT = 30;
@@ -275,7 +275,8 @@ export function contactPageLinks(html: string, pageUrl: string, limit: number = 
   return [...ranked.entries()].sort((a, b) => a[1] - b[1]).slice(0, limit).map(([url]) => url);
 }
 
-async function fetchText(url: string, fetcher: Fetcher): Promise<{ ok: boolean; status: number | null; url: string; text: string }> {
+/** One page as text, as `FeeInsightBot (Growth)`; never throws. */
+export async function fetchText(url: string, fetcher: Fetcher): Promise<{ ok: boolean; status: number | null; url: string; text: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
