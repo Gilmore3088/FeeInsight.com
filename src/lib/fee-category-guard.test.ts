@@ -446,6 +446,15 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps sustained charges and de minimis lines out of the NSF fee (Oct 8)", () => {
+    for (const name of ["Insufficient Funds after 5 consecutive days", "per day. De Minimis--OD/NSF fee amount of"]) {
+      expect(checkFeeCategory("nsf", name).ok, name).toBe(false);
+    }
+    for (const name of ["NSF Fee (Returned Item) ( 5 per day)", "Non-Sufficient Funds (NSF) Items (up to 4 per day)"]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("keeps savings withdrawal limits and lobby ATMs out of out-of-network ATM fees (seven-state misses, Oct 8)", () => {
     for (const name of [
       "ATM Savings Withdrawal",
