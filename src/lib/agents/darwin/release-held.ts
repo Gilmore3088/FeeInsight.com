@@ -124,7 +124,9 @@ export function scheduleContext(text: string | null | undefined, line: string): 
   if (!text) return null;
   const lines = text.split(/\r?\n/);
   const target = line.trim();
-  const at = lines.findIndex((candidate) => candidate.includes(target) || (candidate.trim().length > 0 && target.includes(candidate.trim())));
+  // A row holding the whole line first; else a row holding its name, never a bare price ("$5.00").
+  let at = lines.findIndex((candidate) => candidate.includes(target));
+  if (at < 0) at = lines.findIndex((candidate) => /[a-z]{3}/i.test(candidate) && target.includes(candidate.trim()));
   if (at < 0) return null;
   const from = Math.max(0, at - SCHEDULE_CONTEXT_ROWS);
   const context = lines.slice(from, at + SCHEDULE_CONTEXT_ROWS + 1).map((row) => row.trim()).filter(Boolean).join("\n");

@@ -16,6 +16,7 @@ import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
+import { REPORT_REVIEW_STATES } from "./atlas/report-review-states";
 import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES } from "@/lib/data-store/market-readiness";
 
 /**
@@ -179,11 +180,15 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
  * hourly too (James, 2026-10-06: close the 297 dense schedules the free team can't
  * read): it picks only dense texts the current free version read poorly and that no paid
  * attempt has read, at most PAID_PASS_ITEMS_PER_RUN a run, so it spends nothing once they
- * are read, and the Knox and global budget caps still stop it. A re-read downloads a
+ * are read, and the Knox and global budget caps still stop it. Darwin's paid pass runs
+ * hourly for the same reason (2026-10-07: with it on the full pass only, held fees went
+ * unreviewed from 14:24 UTC once the last full passes drained): it reviews only held fees
+ * and disagreements no attempt of the current version has read, so it too spends nothing
+ * once they are done, and the Darwin and global budget caps still stop it. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "verify-paid", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));
@@ -538,7 +543,8 @@ export const STATE_LANE_STARVATION_HOURS = 3;
  * an unpaid institution report request from the last REPORT_REQUEST_DAYS whose institution
  * fails James's report rule gets REPORT_REQUEST_PRIORITY, and a state whose bank market is
  * within NEAR_READY_GAP rich banks of ready gets NEAR_READY_BANK_PRIORITY plus 10 per rich
- * bank, so the closest market runs first. This only moves when a state runs; what the
+ * bank, so the closest market runs first. A state in REPORT_REVIEW_STATES (a report
+ * James is waiting to review) gets REPORT_REQUEST_PRIORITY too. This only moves when a state runs; what the
  * state's steps then work on is unchanged.
  */
 export const REPORT_REQUEST_DAYS = 30;
@@ -666,7 +672,9 @@ export async function refreshLanePriorities(): Promise<number> {
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
                  + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
-                 + CASE WHEN requested.state_code IS NOT NULL THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
+                 + CASE WHEN requested.state_code IS NOT NULL
+                          OR lane.state_code = ANY(${[...REPORT_REVIEW_STATES]}::text[])
+                        THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
                  + CASE WHEN near_ready.state_code IS NOT NULL
                         THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END
                  + ${UNCOVERED_LEADER_PRIORITY}::int * COALESCE(leaders.uncovered, 0) AS priority
