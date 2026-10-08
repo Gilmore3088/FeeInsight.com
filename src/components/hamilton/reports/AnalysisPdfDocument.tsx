@@ -19,6 +19,7 @@ import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
 import type { AnswerBrief } from "@/lib/hamilton/answer-brief";
 import { BriefPages, hasBriefContent } from "./BriefPages";
 import { headFigure, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "@/components/hamilton/analyze/parse-response";
+import { RD_PDF } from "@/lib/report-design/tokens";
 
 // Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
 Font.registerHyphenationCallback((word) => [word]);
@@ -26,15 +27,7 @@ Font.registerHyphenationCallback((word) => [word]);
 // ─── Brand Colors ─────────────────────────────────────────────────────────────
 // Exact copy from PdfDocument.tsx — do not use CSS variables here.
 
-const COLORS = {
-  textPrimary: "#1c1917",
-  textSecondary: "#78716c",
-  textTertiary: "#a8a29e",
-  accent: "#b45309",
-  surface: "#fbf9f4",
-  surfaceElevated: "#f5f1e8",
-  borderDark: "#d6d0c5",
-};
+const COLORS = RD_PDF;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -63,8 +56,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   reportTitle: {
-    fontSize: 24,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 26,
+    fontFamily: "Times-Bold",
     color: COLORS.textPrimary,
     lineHeight: 1.2,
     marginBottom: 8,
