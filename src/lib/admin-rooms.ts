@@ -61,7 +61,7 @@ export const ROOMS: Room[] = [
       },
       { href: "/admin/darwin", label: "Darwin", role: "4 Verify" },
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
-      { href: "/admin/agents/health", label: "Health", role: "Per-agent health tiles", more: true },
+      { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },
       { href: "/admin/agents/replay", label: "Replay", role: "Re-run a past step", more: true },
       { href: "/admin/agents/messages", label: "Messages", role: "Agent to agent", more: true },
