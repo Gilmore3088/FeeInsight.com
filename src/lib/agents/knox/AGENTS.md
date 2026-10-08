@@ -472,7 +472,13 @@ v38 (rules 38, same lane, Oct 8):
 - A threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse) no longer hides the fee's name from the classifier, and stays in the name with its figure ("Courtesy Pay (over $5)"), which is how the shared source check tells it from a tier.
 - "Privilege Pay" is an overdraft name, so one price for "NSF, Privilege Pay, & Uncollected Funds Fee" (Arkansas FCU) files as the overdraft fee, like "NSF/Overdraft".
 
-v39 (rules 39, same lane, Oct 8):
+v39 (rules 39, from the $10B+ banks with no live overdraft fee, Oct 8):
+- "OD" and "O/D" followed by the fee's own word ("OD Privilege", "OD Fee-Item Paid", "Paid Item O/D Fee") name the overdraft fee. Before, such a line was read as no fee at all, not even held (GreenState's "OD Privilege* ... | $29.00/Item"). 29 banks' texts have such a line, 10 of them with no live overdraft fee.
+- "Continued OD Charge", "Consecutive Day OD Fee" and "Daily OD Fee" are the continuous overdraft charge, as the spelled-out names already were.
+- "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).
+- The held re-check takes $10B+ banks' held lines first, as Knox's re-reads do; a full pass over about 19,000 held lines takes about 12 hours at 300 a step.
+
+v40 (rules 40, from the state top-10 banks with no live overdraft fee, Oct 8):
 - "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
 - A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
 

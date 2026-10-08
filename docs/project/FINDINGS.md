@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
+**What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
+is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
+returned, and kept it if the fetch failed (the RC's minimized Chrome showed exactly that). On phones
+the Account menu is hidden (`hidden lg:block`) and the drawer offered only "Account", so My bank
+and data, All changes and the Reference pages had no way in.
+**Cause:** the header was built for static public pages and never took the session from a server
+layout that already had it; the phone drawer was written before the Pro account menu existed.
+**Fix:** `sessionChromeFor` (`src/lib/session-chrome.ts`) builds the header's session for both
+/api/session and the Hamilton layout, which seeds it through `SessionChromeProvider`; a failed fetch
+no longer overwrites a known session. The phone drawer lists the account menu's items for Pro readers.
+**Lesson:** a server layout that knows the user should hand it to client chrome rather than let the
+chrome guess.
+
+## 2026-10-08: PDFs set in prose columns were read across the page
+**What happened:** Origin Bank's deposit agreement went live with seven overdraft rows: the right $35 overdraft item charge under sentence-fragment names, and $10 rows that are really its overdrawn-account fee. On prod, 251 of 1,981 PDF texts (23 at $10B+ banks) show the same pattern, at least 25 joins of running prose with a " | " cell break (Origin's text has 687).
+**Cause:** `read.pdf_layout` builds one line per baseline across the whole page. On a page in three prose columns each line joined its neighbour columns' lines, and lines whose baselines sat a little apart interleaved, so a sentence took its price from another column's sentence.
+**Fix:** layout version 2 reads a page set in prose columns column by column (fee tables keep the row reading), and texts an older layout read across their columns are read once more. Separately, Knox missed "OD Privilege" lines entirely (Knox v39, same PR).
+**Lesson:** a reader change needs a re-read rule for the texts it would have read differently; the version bump alone re-reads only texts with under 5 Knox fees.
+
 ## 2026-10-08: Pro header search did nothing and the page covered the account menu
 **What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
 nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
@@ -3506,3 +3526,26 @@ and quarter were already stored, without looking at the periods of the data behi
   (`published_fee_records`, `canonical_fee_key = 'overdraft'`) has its current page read
   again once per rules version.
 - **Watch.** Live overdraft fees for those six banks after the next Knox passes.
+
+## 2026-10-08: The first outreach run addressed lenders, committees and shared mailboxes
+
+- **Problem.** The first prod run of CARNEGIE (run 3021) drafted 24 first emails. 17 of them were
+  addressed to people who don't buy a fee study: mortgage and loan officers, business
+  development and cash management staff, supervisory committees, and shared mailboxes
+  (member_serv@, treasurysupport@, e-statements@). One had a phone line where the title belongs.
+  The draft rule accepted any "medium" contact (a person's address with a name or a title), and
+  medium never required a buying role.
+- **Fix.** A first email goes only to `isDecisionMaker`: a person's own address (not
+  `isSharedMailbox`) under a buying-role title. A phone number is not a title. Each outreach
+  run withdraws unreviewed drafts that fail the test and lets their institutions be drafted again.
+  Checked against the 24 prod drafts: 7 stay (First Federal KC, Quaint Oak, Holy Rosary,
+  BankGloucester, Gateway, State Bank, Drake) and 17 are withdrawn.
+- **Watch.** The outreach step's "Withdrew N" line, and To: lines on new drafts.
+
+## 2026-10-08: A session user's id is a string, not a number
+- **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
+  `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email
+  confirmation token checked `Number.isSafeInteger(userId)`, made no token, and every
+  "Email me the link" (and the signup send) returned "The email didn't send" without calling Resend.
+- **Fix.** `src/lib/email/email-confirm.ts` accepts a numeric string or a number (`toUserId`).
+- **Watch.** Any new check on `user.id` must not assume a number (`Number(user.id)` first).
