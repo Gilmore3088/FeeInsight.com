@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   headersMock: vi.fn(),
   institutionMock: vi.fn(),
   resolveProPriceIdMock: vi.fn(),
+  portalCreateMock: vi.fn(),
 }));
 
 vi.mock("@/lib/stripe-prices", () => ({
@@ -29,7 +30,7 @@ vi.mock("@/lib/stripe", () => ({
     },
     billingPortal: {
       sessions: {
-        create: vi.fn(),
+        create: mocks.portalCreateMock,
       },
     },
   })),
@@ -196,5 +197,29 @@ describe("createCheckoutSession", () => {
       needsSignIn: true,
     });
     expect(mocks.stripeCheckoutCreateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("createPortalSession", () => {
+  beforeEach(() => {
+    mocks.getCurrentUserMock.mockReset();
+    mocks.portalCreateMock.mockReset();
+    mocks.headersMock.mockResolvedValue(new Map([["origin", "https://feeinsight.com"]]));
+    mocks.getCurrentUserMock.mockResolvedValue(user({ stripe_customer_id: "cus_1" }));
+    mocks.portalCreateMock.mockResolvedValue({ url: "https://billing.stripe.test/p" });
+  });
+
+  it("returns to /account by default", async () => {
+    const { createPortalSession } = await import("./stripe-actions");
+    await expect(createPortalSession()).rejects.toThrow("redirect:https://billing.stripe.test/p");
+    expect(mocks.portalCreateMock).toHaveBeenCalledWith({ customer: "cus_1", return_url: "https://feeinsight.com/account" });
+  });
+
+  it("returns to the internal page it was opened from, never an outside URL", async () => {
+    const { createPortalSession } = await import("./stripe-actions");
+    await expect(createPortalSession("/pro/settings")).rejects.toThrow("redirect:");
+    expect(mocks.portalCreateMock).toHaveBeenLastCalledWith(expect.objectContaining({ return_url: "https://feeinsight.com/pro/settings" }));
+    await expect(createPortalSession("https://evil.example")).rejects.toThrow("redirect:");
+    expect(mocks.portalCreateMock).toHaveBeenLastCalledWith(expect.objectContaining({ return_url: "https://feeinsight.com/account" }));
   });
 });
