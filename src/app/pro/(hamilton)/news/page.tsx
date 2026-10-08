@@ -11,6 +11,7 @@ import {
   TOPIC_LABELS,
   SOURCE_LABELS,
 } from "@/lib/data-store/news";
+import { getFederalRuleTracker } from "@/lib/data-store/federal-rules";
 import { getStateWire, getStatesWithNews } from "@/lib/data-store/state-news";
 import { getFederalRelated, getResearchNotes, getStateRelated } from "@/lib/data-store/wire-research";
 import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
@@ -150,10 +151,11 @@ export default async function NewsPage({
   const win = pageWindow(params.page, total);
   const shown = { ...params, page: win.page };
   const canRefreshFeeds = user?.role === "admin" || user?.role === "analyst";
-  const [articles, topicCounts, sourceCounts] = await Promise.all([
+  const [articles, topicCounts, sourceCounts, tracker] = await Promise.all([
     getArticles({ ...filter, limit: WIRE_PAGE_SIZE, offset: win.offset }),
     getTopicCounts(since, params.q || undefined, params.fee),
     getSourceCounts(since, params.q || undefined, params.fee),
+    getFederalRuleTracker({ now, q: params.q, source: params.source }),
   ]);
   const stripItems: StripItem[] = articles.map((a) => ({ key: a.guid, title: a.title, stateCode: null }));
   const [notes, related, feeIndexes] = await Promise.all([
@@ -172,6 +174,7 @@ export default async function NewsPage({
       <NewsFeed
         params={shown}
         articles={articles}
+        tracker={tracker}
         win={win}
         phrase={phrase}
         topicCounts={topicCounts}
