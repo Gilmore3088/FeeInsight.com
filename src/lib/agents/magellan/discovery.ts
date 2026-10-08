@@ -40,16 +40,19 @@ import {
   FEE_NAMED_LINK_SQL,
   FEE_SCHEDULE_NAME_SQL,
   isArticleLink,
+  isOtherSiteLink,
   isSingleProductDisclosureLink,
+  OTHER_SITE_LINK_SQL,
   PRODUCT_DISCLOSURE_SQL,
   PRODUCT_LINK_SQL,
   SINGLE_PRODUCT_SQL,
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
+import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordSearchMisses } from "./search-misses";
-import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
+import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
 
@@ -393,6 +396,8 @@ export interface RunMagellanDiscoveryResult {
   secondDocuments: RunSecondDocumentFindResult | null;
   /** Fee pages put back as the main link after a blank read had swapped them out. */
   restoredFeePages: RestoreFeePagesResult | null;
+  /** Paid search answers kept although the bank's site refused our check (HTTP 403). */
+  keptRefusedAnswers: KeepRefusedAnswersResult | null;
   /** Search-miss lessons written (`magellan.search_miss`). */
   searchMisses: number;
   limit: number;
@@ -929,8 +934,23 @@ async function selectCandidates(
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
-       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
-       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND (
+         (COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review')
+         -- "Offline" came from the old crawler's document_type (17 banks, all with a working
+         -- website, First Bank and Denali State Bank in Alaska's top 10 among them) and kept
+         -- them out of every search. Each gets one search per discovery method version.
+         OR (
+           ${learning}::boolean
+           AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = inst.id
+                AND pa.stage = 'discover'
+                AND pa.detail @> ${currentMethod}::jsonb
+           )
+         )
+       )
        AND (
          profile.locked_by_correction IS TRUE
          OR inst.last_rescue_attempt_at IS NULL
@@ -941,7 +961,11 @@ async function selectCandidates(
          OR (
            inst.rescue_status IN ('dead', 'needs_human')
            AND (
-             inst.last_rescue_attempt_at < NOW() - CASE
+             -- An address repair can't read costs no fetch, so it is retried as repair
+             -- learns new mistakes (a scheme stored twice: 10 banks, 8 Oct 2026).
+             (COALESCE(inst.failure_reason_note, '') LIKE 'website_unrepairable:%'
+               AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours')
+             OR inst.last_rescue_attempt_at < NOW() - CASE
                WHEN COALESCE(profile.consecutive_failures, 0) >= 2 THEN INTERVAL '90 days'
                ELSE INTERVAL '30 days'
              END
@@ -1028,7 +1052,8 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
 /**
  * Banks whose fee link is an account or product page, an article, blog post or news
  * item (`isArticleLink`), or one deposit product's disclosure such as a CD truth-in-savings
- * sheet (`isSingleProductDisclosureLink`), not yet searched for the real schedule at this upgrade version.
+ * sheet (`isSingleProductDisclosureLink`), or a page on another kind of site (`isOtherSiteLink`: a
+ * government, broker or car-price site), not yet searched for the real schedule at this upgrade version.
  * Their link is kept until a fee schedule is found.
  */
 async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
@@ -1059,6 +1084,11 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
              OR (lower(inst.fee_schedule_url) ~ ${SINGLE_PRODUCT_SQL}
                  AND lower(inst.fee_schedule_url) ~ ${PRODUCT_DISCLOSURE_SQL}
                  AND lower(inst.fee_schedule_url) !~ ${FEE_SCHEDULE_NAME_SQL})
+             -- A page on a government, broker or car-price site is never the bank's schedule,
+             -- unless that site is the bank's own (GSA FCU lives on gsafcu.gsa.gov).
+             OR (lower(inst.fee_schedule_url) ~ ${OTHER_SITE_LINK_SQL}
+                 AND substring(lower(inst.fee_schedule_url) from '^[a-z]+://(?:www\\.)?([^/:?#]+)')
+                     IS DISTINCT FROM substring(lower(btrim(inst.website_url)) from '^(?:[a-z]+://)?(?:www\\.)?([^/:?#]+)'))
            )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
@@ -1625,7 +1655,7 @@ export async function runMagellanDiscovery(
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
     // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
-    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url)) {
+    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url) && !isOtherSiteLink(row.fee_schedule_url, row.website_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {
@@ -1651,6 +1681,19 @@ export async function runMagellanDiscovery(
         return null;
       })
     : null;
+  // Database work only, like the restore. Not limited to the lane's state: the answers were
+  // paid for already and each bank is kept once.
+  const keptRefusedAnswers = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => keepRefusedPaidAnswers({
+        db: scope,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("keepRefusedPaidAnswers failed:", error);
+        return null;
+      })
+    : null;
   const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
   const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
     ? await runSecondDocumentFind({
@@ -1662,6 +1705,10 @@ export async function runMagellanDiscovery(
         deadline: stepDeadline,
         dryRun,
         learning,
+        leaderIds: await loadMarketLeaderIds(db, { perState: LEADER_RANK }).catch((error) => {
+          console.error("loadMarketLeaderIds failed:", error);
+          return [];
+        }),
       })
     : null;
 
@@ -1712,6 +1759,7 @@ export async function runMagellanDiscovery(
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
     restoredFeePages,
+    keptRefusedAnswers,
     searchMisses,
     limit,
     dryRun,

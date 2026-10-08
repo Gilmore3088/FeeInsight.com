@@ -12,6 +12,8 @@ import {
   getUserInstitutionMemberships,
 } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { getInstitutionById } from "@/lib/data-store";
+import { getHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 import { WelcomeSteps } from "./welcome-steps";
 import type { Metadata } from "next";
 import { SITE_NAME } from "@/lib/constants";
@@ -39,6 +41,21 @@ async function getSpotlightMedians(): Promise<{ category: string; displayName: s
   }
 }
 
+/**
+ * The Pro member's workspace bank (set from checkout by the Stripe webhook), so step 1 starts
+ * with it picked instead of an empty search.
+ */
+async function savedWorkspaceInstitution(userId: number): Promise<{ id: number; name: string } | null> {
+  try {
+    const context = await getHamiltonWorkspaceContext(userId);
+    if (!context?.selectedInstitutionId) return null;
+    const institution = await getInstitutionById(context.selectedInstitutionId);
+    return institution ? { id: institution.id, name: institution.institution_name } : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function WelcomePage({
   searchParams,
 }: {
@@ -61,6 +78,7 @@ export default async function WelcomePage({
   const district = user.state_code ? STATE_TO_DISTRICT[user.state_code] : null;
   const districtName = district ? DISTRICT_NAMES[district] : null;
   const isPro = canAccessPremium(user);
+  const workspaceInstitution = isPro ? await savedWorkspaceInstitution(user.id) : null;
   if (params.success === "true" && isPro && shouldResumeAfterCheckout(returnTo)) {
     redirect(returnTo);
   }
@@ -100,6 +118,11 @@ export default async function WelcomePage({
           districtId={district}
           isPro={isPro}
           activationPending={params.success === "true" && !isPro}
+          workspaceInstitution={workspaceInstitution}
+          refreshHref={`/account/welcome?${new URLSearchParams({
+            success: "true",
+            ...(returnTo && returnTo !== "/account/welcome" ? { from: returnTo } : {}),
+          }).toString()}`}
           pendingWorkspaceInvitations={pendingWorkspaceInvitations}
           workspaceMemberships={workspaceMemberships}
         />

@@ -66,6 +66,15 @@ describe("paid schedule search for the largest banks", () => {
     expect(db.mock.calls.some((call) => text(call[0]).includes("UPDATE institution_sources"))).toBe(false);
   });
 
+  it("keeps an answer the bank's site refuses to show us (HTTP 403) for the paid fetch", async () => {
+    const db = createDb([wells]);
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.wellsfargo.com/fee-schedule.pdf" }));
+    const refused = vi.fn(async () => new Response("Forbidden", { status: 403, headers: { "content-type": "text/html" } }));
+    const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl: refused });
+    expect(result.results[0]).toMatchObject({ outcome: "ok", url: "https://www.wellsfargo.com/fee-schedule.pdf" });
+    expect(companions(db)[0]).toContain("pdf");
+  });
+
   it("rejects another domain, a business schedule and a document the bank already has", async () => {
     const offDomain = createDb([wells]);
     await runScheduleSearch({ runId: 4, db: asDb(offDomain), create: vi.fn().mockResolvedValueOnce(answer({ url: "https://www.nerdwallet.com/wells" })) });

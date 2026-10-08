@@ -417,6 +417,13 @@ const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
  * flattened and most rows were lost.
  */
 export const REREAD_MAX_KNOX_FEES = 5;
+/**
+ * The first PDF reader (no `reader` recorded) ran a document's text onto one line. Knox
+ * splits a line only at wide gaps and sentence ends, so a schedule longer than this ran
+ * together and its rules found nothing ("Overdraft fee $35.00/transaction paid up to three
+ * per day ... Postdated Check Fee"). Such a text is read once with the current PDF reader.
+ */
+export const FLAT_TEXT_MIN_CHARS = 280;
 /** Scans OCR'd per read step by default; each takes seconds, and the step has minutes. */
 export const OCR_DOCUMENTS_PER_RUN = 4;
 const READ_STRATEGIES: Record<DocumentFormat, StrategyCandidate[]> = {
@@ -1089,7 +1096,19 @@ async function selectCandidates(
       const htmlPrimaryParam = `$${params.length}`;
       params.push(ALTERNATE_READERS.html ?? JS_FALLBACK_STRATEGY);
       const htmlAlternateParam = `$${params.length}`;
+      // A legacy PDF text run onto one line counts like a lost text: one read with the
+      // current reader, whose text replaces it only when it lists at least as many fees.
+      params.push(FLAT_TEXT_MIN_CHARS);
+      const flatMinParam = `$${params.length}`;
+      const flatLegacyText = (alias: string) => `(
+                ${alias}.status = 'completed'
+                AND ${alias}.reader IS NULL
+                AND ${alias}.char_count > ${flatMinParam}::int
+                AND strpos(${alias}.normalized_text, chr(10)) = 0
+              )`;
       lostTextRereadable = `(
+              (${flatLegacyText("adt")} AND ${notSettledByCurrentReader})
+              OR (
                 adt.status = 'completed'
                 AND EXISTS (
                   SELECT 1 FROM pipeline_feedback lost
@@ -1111,6 +1130,7 @@ async function selectCandidates(
                     )
                   )
                 )
+              )
               )`;
       survivalColumns = `,
              (
@@ -1130,17 +1150,26 @@ async function selectCandidates(
                   AND ${lostLesson("lost")}
                   AND lost.signal = 'wrong'
              ) AS last_text_lost,
-             (
-               SELECT adt.normalized_text FROM agent_source_texts adt
-                 JOIN pipeline_feedback lost
-                   ON lost.source_document_id = adt.source_document_id
-                  AND lost.evidence->>'text_hash' = adt.text_hash
-                WHERE adt.source_document_id = cr.id
-                  AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
-                  AND adt.status = 'completed'
-                  AND ${lostLesson("lost")}
-                  AND lost.signal = 'wrong'
-                LIMIT 1
+             COALESCE(
+               (
+                 SELECT adt.normalized_text FROM agent_source_texts adt
+                   JOIN pipeline_feedback lost
+                     ON lost.source_document_id = adt.source_document_id
+                    AND lost.evidence->>'text_hash' = adt.text_hash
+                  WHERE adt.source_document_id = cr.id
+                    AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                    AND adt.status = 'completed'
+                    AND ${lostLesson("lost")}
+                    AND lost.signal = 'wrong'
+                  LIMIT 1
+               ),
+               (
+                 SELECT adt.normalized_text FROM agent_source_texts adt
+                  WHERE adt.source_document_id = cr.id
+                    AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                    AND ${flatLegacyText("adt")}
+                  LIMIT 1
+               )
              ) AS last_lost_text,
              (
                SELECT jsonb_object_agg(about_strategy, jsonb_build_object('held', held, 'lost', lost))

@@ -19,6 +19,8 @@ const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
+/** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
+const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
 const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
@@ -114,9 +116,9 @@ export function RequestReportForm(props: RequestReportFormProps) {
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
   const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
-  // Keyed on the report type so a same-page link that changes `?report=` reloads the form
-  // with that option selected (useState reads the prefill only on first render).
-  return <RequestReportFormInner key={prefill.reportType} {...props} prefill={prefill} />;
+  // Keyed on the query so a same-page link that changes `?report=` or the bank reloads the
+  // form with that option selected (useState reads the prefill only on first render).
+  return <RequestReportFormInner key={params.toString()} {...props} prefill={prefill} />;
 }
 
 function RequestReportFormInner({
@@ -233,7 +235,7 @@ function RequestReportFormInner({
   }
 
   if (status === "success" && freeReport) {
-    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} />;
+    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} requestHref={institutionReportHref(prefill)} />;
   }
   if (status === "success") {
     return <RequestReportSuccess contactEmail={contactEmail} confirmation={confirmation} />;
@@ -295,6 +297,13 @@ function RequestReportFormInner({
             </label>
           ))}
         </div>
+        <p className="mt-2 text-[13px] text-[#6B6255]">
+          Want your own bank or credit union right now?{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+            Look it up free
+          </Link>{" "}
+          to see its published fees against state and national medians.
+        </p>
       </fieldset>
 
       {reportType === "district" && (
@@ -529,12 +538,26 @@ function RequestReportSuccess({
   );
 }
 
+/** The paid-report link after a free report, keeping the bank the reader arrived with. */
+export function institutionReportHref(prefill: Pick<Prefill, "institutionId" | "institutionName" | "src"> | null): string {
+  if (!prefill?.institutionId || !prefill.institutionName) return INSTITUTION_REPORT_HREF;
+  const params = new URLSearchParams({
+    report: "institution",
+    institution: String(prefill.institutionId),
+    name: prefill.institutionName,
+    src: prefill.src,
+  });
+  return `/for-institutions?${params.toString()}#report`;
+}
+
 function FreeReportSuccess({
   scope,
   confirmation,
+  requestHref,
 }: {
   scope: BenchmarkScope;
   confirmation: ConfirmationStatus;
+  requestHref: string;
 }) {
   return (
     <div
@@ -551,7 +574,7 @@ function FreeReportSuccess({
       </Link>
       <p className="mt-4 text-[#5A5347]">
         Want your own institution against named competitors?{" "}
-        <Link href={INSTITUTION_REPORT_HREF} className="font-medium underline underline-offset-2">
+        <Link href={requestHref} className="font-medium underline underline-offset-2">
           Request your institution report
         </Link>
         .

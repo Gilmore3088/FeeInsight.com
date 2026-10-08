@@ -2,9 +2,9 @@ import { sql } from "./connection";
 
 /**
  * Which methods work: every strategy each agent tried in the last 7 days, read from
- * the learning core's attempt log (`pipeline_attempts`). Success is the share of
- * attempts with outcome `ok`; cost is what paid strategies spent. Nothing is
- * estimated.
+ * the learning core's attempt log (`pipeline_attempts`). Each attempt worked, found
+ * nothing to do (nothing there, or already up to date), or failed. Cost is what paid
+ * strategies spent. Nothing is estimated.
  */
 
 export const STAGE_AGENT: Record<string, { agent: string; name: string; job: string }> = {
@@ -16,6 +16,9 @@ export const STAGE_AGENT: Record<string, { agent: string; name: string; job: str
   publish: { agent: "hamilton", name: "Hamilton", job: "Publishing and re-checking" },
 };
 
+/** Outcomes that mean "nothing to do here", counted apart from failures. */
+export const NOTHING_OUTCOMES = ["no_candidates", "unchanged", "empty"];
+
 export const STAGE_ORDER = ["discover", "fetch", "read", "extract", "verify", "publish"];
 
 export interface MethodRow {
@@ -24,6 +27,8 @@ export interface MethodRow {
   version: number;
   attempts: number;
   ok: number;
+  /** Found nothing to do: no candidates on the page, the copy unchanged, or an empty result. Not a failure. */
+  nothing: number;
   costUsd: number;
 }
 
@@ -59,7 +64,8 @@ export async function getMethodScorecard(days = 7): Promise<{ readAt: string; ro
   const rows = await sql`
     SELECT stage, strategy, strategy_version,
            COUNT(*)::int AS attempts,
-           COUNT(*) FILTER (WHERE outcome = 'ok')::int AS ok,
+           COUNT(*) FILTER (WHERE outcome IN ('ok', 'ok_partial'))::int AS ok,
+           COUNT(*) FILTER (WHERE outcome = ANY(${NOTHING_OUTCOMES}::text[]))::int AS nothing,
            COALESCE(SUM(cost_microusd), 0)::bigint AS cost
       FROM pipeline_attempts
      WHERE created_at >= NOW() - make_interval(days => ${days})
@@ -73,6 +79,7 @@ export async function getMethodScorecard(days = 7): Promise<{ readAt: string; ro
       version: Number(row.strategy_version),
       attempts: Number(row.attempts),
       ok: Number(row.ok),
+      nothing: Number(row.nothing),
       costUsd: Math.round(Number(row.cost) / 10_000) / 100,
     })),
   };

@@ -11,7 +11,11 @@ import {
   TOPIC_LABELS,
   SOURCE_LABELS,
 } from "@/lib/data-store/news";
+import Link from "next/link";
+import { getStateNews, getStatesWithNews } from "@/lib/data-store/state-news";
+import { STATE_NAMES } from "@/lib/us-states";
 import { NewsFeed } from "./news-feed";
+import { StateWire } from "./state-wire";
 
 export const metadata: Metadata = {
   title: "Regulatory Wire",
@@ -55,6 +59,57 @@ export default async function NewsPage({
   }
   // "all" = no since
 
+  const view = params.view === "states" ? "states" : "federal";
+  const stateParam = typeof params.state === "string" ? params.state.toUpperCase() : "";
+  const activeState = STATE_NAMES[stateParam] ? stateParam : null;
+
+  const viewSwitch = (
+    <nav aria-label="Wire view" className="mt-4 inline-flex overflow-hidden rounded-lg border border-warm-200 bg-white/70 text-[12px]">
+      {([
+        ["federal", "Federal agencies", "/pro/news"],
+        ["states", "States", activeState ? `/pro/news?view=states&state=${activeState}` : "/pro/news?view=states"],
+      ] as const).map(([key, label, href]) => (
+        <Link
+          key={key}
+          href={href}
+          aria-current={view === key ? "page" : undefined}
+          className={`px-3 py-1.5 font-medium no-underline transition-colors ${
+            view === key ? "bg-warm-900 text-white" : "text-warm-600 hover:bg-warm-100 hover:text-warm-900"
+          }`}
+        >
+          {label}
+        </Link>
+      ))}
+    </nav>
+  );
+
+  if (view === "states") {
+    const [news, states] = await Promise.all([
+      // Some state news pages list posts going back years; the wire shows the last twelve months.
+      getStateNews({
+        stateCode: activeState,
+        since: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        limit: activeState ? 50 : 30,
+      }),
+      getStatesWithNews(),
+    ]);
+    return (
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <h1
+          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
+          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        >
+          Regulatory Wire
+        </h1>
+        <p className="mt-1 text-[13px] text-[#6B6255]">
+          State regulators&apos; news, state fee bills and the press coverage of them.
+        </p>
+        {viewSwitch}
+        <StateWire news={news} states={states} activeState={activeState} />
+      </div>
+    );
+  }
+
   const articles = await getArticles({ source, topic, since, limit: 100 });
   const totalCount = await getArticleCount({ source, topic, since });
   const topicCounts = await getTopicCounts(since);
@@ -83,6 +138,7 @@ export default async function NewsPage({
       <p className="mt-1 text-[13px] text-[#6B6255]">
         Real-time regulatory updates from the Federal Reserve, FDIC, OCC, and CFPB.
       </p>
+      {viewSwitch}
 
       <NewsFeed
         articles={articles}

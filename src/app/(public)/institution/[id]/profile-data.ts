@@ -149,3 +149,27 @@ export function buildProfileTitle(institutionName: string, headline: HeadlineFee
   if (parts.length === 0) return `${institutionName} Fees and Fee Schedule`;
   return `${institutionName} Fees: ${parts.join(", ")} (${new Date().getFullYear()})`;
 }
+
+/**
+ * The location tag's parts with their fee pages: the city page only when this institution
+ * has approved fees (so the city page lists it and exists) and the city name survives the
+ * city page's slug (no hyphens); the state's fee report whenever the state is known.
+ */
+export function buildLocationParts(input: {
+  city: string | null;
+  stateCode: string | null;
+  stateName: string | null;
+  hasApprovedFees: boolean;
+}): Array<{ label: string; href: string | null }> {
+  const parts: Array<{ label: string; href: string | null }> = [];
+  const code = input.stateCode?.toUpperCase() ?? null;
+  if (input.city) {
+    const linkable = input.hasApprovedFees && code !== null && !input.city.includes("-");
+    parts.push({
+      label: input.city,
+      href: linkable ? `/fees/city/${code.toLowerCase()}/${encodeURIComponent(input.city.toLowerCase())}` : null,
+    });
+  }
+  if (input.stateName) parts.push({ label: input.stateName, href: code ? `/research/state/${code}` : null });
+  return parts;
+}

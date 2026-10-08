@@ -244,6 +244,44 @@ export async function getCitiesInState(stateCode: string): Promise<CitySummary[]
   return rows.map(normalizeCitySummaryRow);
 }
 
+/**
+ * Top cities per state with at least `minWithFees` institutions carrying approved fees,
+ * in one query. Same ranking as getCitiesInState; the sitemap uses it instead of one
+ * query per state.
+ */
+export async function getTopCitiesByState(
+  minWithFees: number,
+  perState: number,
+): Promise<CitySummary[]> {
+  const rows = await sql`
+    WITH fc AS (
+      SELECT institution_id, COUNT(*) as fee_count
+      FROM published_fee_catalog WHERE review_status = 'approved'
+      GROUP BY institution_id
+    ), cities AS (
+      SELECT ct.city, ct.state_code,
+             COUNT(*) as institution_count,
+             COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
+      FROM institution_sources ct
+      LEFT JOIN fc ON ct.id = fc.institution_id
+      WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
+      GROUP BY LOWER(ct.city), ct.city, ct.state_code
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY state_code ORDER BY with_fees DESC, institution_count DESC
+      ) as rn
+      FROM cities
+      WHERE with_fees >= ${minWithFees}
+    )
+    SELECT city, state_code, institution_count, with_fees
+    FROM ranked
+    WHERE rn <= ${perState}
+    ORDER BY state_code, rn
+  ` as RawCitySummaryRow[];
+
+  return rows.map(normalizeCitySummaryRow);
+}
+
 export async function getCityAutocomplete(query: string, limit: number = 10): Promise<{ city: string; state_code: string; count: number }[]> {
   const pattern = `${query}%`;
   return await sql`

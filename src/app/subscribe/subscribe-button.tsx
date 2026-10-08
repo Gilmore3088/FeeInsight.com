@@ -4,10 +4,14 @@ import { createCheckoutSession } from "@/lib/stripe-actions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackEvent } from "@/lib/analytics";
+import type { ProPlan } from "@/lib/pro-tiers";
 
 interface SubscribeButtonProps {
-  priceId: string;
-  mode?: "subscription" | "payment";
+  plan: ProPlan;
+  /** The bank or credit union whose assets set the tier. */
+  institutionId?: number | null;
+  /** A consultant or other organization: the non-institution tier. */
+  otherOrganization?: boolean;
   label: string;
   className?: string;
   returnTo?: string;
@@ -19,8 +23,9 @@ const DEFAULT_CLASS =
   "w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A93D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 export function SubscribeButton({
-  priceId,
-  mode = "subscription",
+  plan,
+  institutionId = null,
+  otherOrganization = false,
   label,
   className,
   returnTo,
@@ -35,40 +40,41 @@ export function SubscribeButton({
   const startCheckout = useCallback(async () => {
     // A signed-out visitor's click was already counted on the register link; the
     // post-signup auto-start continues that same checkout.
-    if (!autoStart) trackEvent("checkout_start", { mode, signed_in: true });
+    if (!autoStart) trackEvent("checkout_start", { plan, signed_in: true });
     setPending(true);
     setError(null);
     try {
-      const { url } = await createCheckoutSession(priceId, mode, returnTo);
-      if (url) {
-        window.location.href = url;
+      const result = await createCheckoutSession({ plan, institutionId, otherOrganization, returnTo });
+      if (result.url) {
+        window.location.href = result.url;
+      } else if (result.needsSignIn) {
+        // Same hand-off as the signed-out link: plan in both places so checkout
+        // starts again by itself once the account exists.
+        const back = new URLSearchParams({ plan });
+        if (institutionId) back.set("inst", String(institutionId));
+        else if (otherOrganization) back.set("org", "other");
+        if (returnTo) back.set("from", returnTo);
+        const registerFrom = `/subscribe?${back.toString()}`;
+        router.push(`/register?plan=${plan}&from=${encodeURIComponent(registerFrom)}`);
       } else {
-        setError("Could not create checkout. Please try again.");
+        setError(result.error ?? "Could not create checkout. Please try again.");
         setPending(false);
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Something went wrong";
-      if (msg.includes("Not authenticated")) {
-        const registerFrom = returnTo
-          ? `/subscribe?from=${encodeURIComponent(returnTo)}`
-          : "/subscribe";
-        router.push(`/register?from=${encodeURIComponent(registerFrom)}`);
-      } else {
-        setError(msg);
-        setPending(false);
-      }
+    } catch {
+      setError("Could not open checkout. Please try again in a moment.");
+      setPending(false);
     }
-  }, [priceId, mode, returnTo, router, autoStart]);
+  }, [plan, institutionId, otherOrganization, returnTo, router, autoStart]);
 
   useEffect(() => {
-    if (!autoStart || autoStarted.current || !priceId) return;
+    if (!autoStart || autoStarted.current) return;
     // Deferred so the hand-off to Stripe happens after mount, not inside the effect body.
     const timer = window.setTimeout(() => {
       autoStarted.current = true;
       void startCheckout();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [autoStart, priceId, startCheckout]);
+  }, [autoStart, startCheckout]);
 
   return (
     <div>

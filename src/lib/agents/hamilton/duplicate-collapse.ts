@@ -7,6 +7,11 @@ type SqlTag = typeof sql;
 /** Live duplicates closed per publish step; later steps pick up the rest. */
 export const DUPLICATE_COLLAPSE_LIMIT = 500;
 export const DUPLICATE_COLLAPSE_REASON_PREFIX = "duplicate of #";
+const FREQUENCY_CLASS = `CASE
+  WHEN fp.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
+  WHEN fp.frequency = 'other' THEN NULL
+  ELSE fp.frequency
+END`;
 
 export interface DuplicateCollapse {
   feePublishedId: number;
@@ -28,7 +33,8 @@ interface DuplicateRow {
 
 /**
  * Close live published rows that repeat another live row exactly: same institution,
- * canonical key, variant, frequency, amount and fee name. Before content-level dedupe,
+ * canonical key, variant, amount and fee name, with frequencies that agree (see
+ * `FREQUENCY_CLASS`). Before content-level dedupe,
  * re-verifying a fee published it again, so the catalog lists some fees two or more
  * times. The newest copy stays live; the others get `rolled_back_at`, the run's batch
  * id and `duplicate of #<kept id>`. Rows that differ in name or amount are separate
@@ -45,27 +51,33 @@ export async function collapsePublishedDuplicates(
     params.push(options.institutionId);
     institutionFilter = `AND fp.institution_id = $${params.length}`;
   }
+  // Frequencies that name the same thing count as one: per item, per occurrence, per
+  // transaction and one-time all mean "each time it happens", and an unstated (or "other")
+  // frequency matches any stated one. Two copies of a line differing only that way are one
+  // fee read from two documents (Extraco's "Early Account Closure (by customer)").
   const duplicates = `
         SELECT ranked.fee_published_id, ranked.kept_fee_published_id
           FROM (
             SELECT fp.fee_published_id,
                    first_value(fp.fee_published_id) OVER line AS kept_fee_published_id,
-                   row_number() OVER line AS copy_rank
+                   row_number() OVER line AS copy_rank,
+                   min(${FREQUENCY_CLASS}) OVER part AS min_class,
+                   max(${FREQUENCY_CLASS}) OVER part AS max_class
               FROM published_fee_records fp
              WHERE fp.rolled_back_at IS NULL
                ${institutionFilter}
-            WINDOW line AS (
+            WINDOW part AS (
               PARTITION BY fp.institution_id,
                            fp.canonical_fee_key,
                            COALESCE(fp.variant_type, ''),
-                           COALESCE(fp.frequency, ''),
                            fp.amount,
                            fp.rate_percent,
                            lower(btrim(fp.fee_name))
-              ORDER BY fp.published_at DESC, fp.fee_published_id DESC
-            )
+            ),
+            line AS (part ORDER BY (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC)
           ) ranked
          WHERE ranked.copy_rank > 1
+           AND (ranked.min_class IS NULL OR ranked.min_class = ranked.max_class)
          ORDER BY ranked.fee_published_id
          LIMIT $1`;
 

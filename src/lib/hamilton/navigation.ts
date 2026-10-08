@@ -17,6 +17,7 @@
  *   - 2026-10-05 James: Briefing | Research | Model | Reports | Watch | Data, with a docked Ask bar.
  *   - 2026-10-06 James: too many tabs, and "a banker doesn't wake up wanting to model or watch".
  *     Four tabs in plain words; Watch folds into This month, Data and Admin into the account menu.
+ *   - 2026-10-08 James: Regulatory Wire becomes a top nav item (HAMILTON_WIRE_NAV).
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -38,13 +39,18 @@ export const HAMILTON_ACCOUNT_NAV = [
 
 export type HamiltonScreen = (typeof HAMILTON_NAV)[number]["label"];
 
+/**
+ * Regulatory Wire sits in the top nav after the four tabs (James, 2026-10-08: "i wish the
+ * regulatory wire was a nav item"), so it left the Reference menu.
+ */
+export const HAMILTON_WIRE_NAV = { label: "Regulatory Wire", href: `${HAMILTON_BASE}/news` } as const;
+
 /** Reference pages: Pro data you look things up in, under one "Reference" menu. */
 export const HAMILTON_REFERENCE_NAV = [
   { label: "Market",       href: `${HAMILTON_BASE}/market`,     description: "Beige Book themes and market reading" },
   { label: "Institutions", href: `${HAMILTON_BASE}/data`,       description: "Find any bank or credit union" },
   { label: "Fee categories", href: `${HAMILTON_BASE}/categories`, description: "Every fee type and its national median" },
   { label: "Fed districts", href: `${HAMILTON_BASE}/districts`, description: "Fees and coverage by Federal Reserve district" },
-  { label: "Regulatory news", href: `${HAMILTON_BASE}/news`,    description: "CFPB, OCC and Fed updates" },
 ] as const;
 
 /** Left rail workspace memory config per screen (per D-17, 02-navigation doc) */
