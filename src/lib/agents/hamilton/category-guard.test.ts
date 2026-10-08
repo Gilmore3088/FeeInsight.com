@@ -107,4 +107,19 @@ describe("Hamilton category guard repair", () => {
 
     expect(result).toMatchObject({ failingFees: 2, rolledBackFees: 1 });
   });
+
+  it("flags a small returned check filed as NSF beside the schedule's own NSF fee", async () => {
+    const dean = { fee_published_id: 5, lineage_ref: 15, institution_id: 9, canonical_fee_key: "nsf", fee_name: "Returned Check Fee", amount: "7.00", document_nsf_amount: "35.00" };
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM published_fee_records") && !text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([dean]);
+      return Promise.resolve([]);
+    });
+
+    const result = await runHamiltonCategoryGuard({ runId: 9, dryRun: true, db: db as unknown as GuardDb });
+
+    // First failure: logged for a second look, still live.
+    expect(result).toMatchObject({ scannedFees: 1, flaggedFees: 1, rolledBackFees: 0, byCode: { schedule_contradicts: 1 } });
+  });
 });

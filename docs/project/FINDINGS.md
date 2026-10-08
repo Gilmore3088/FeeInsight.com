@@ -3031,3 +3031,17 @@ Rows already on file gain the fields only when Knox reads their document again.
   the priority path. The rest wait on the paid schedule search or a link found by hand.
 - **Watch.** `/mnt/project-files/coverage/gaps-2026-10-08.md` lists all 82; re-count live
   coverage for the same 510 slots after the hand-found runs.
+
+## 2026-10-08: Small returned-check fees published as NSF
+
+- **Problem.** Dean Co-operative Bank's "Returned Check Fee $7" (a deposited check coming back)
+  was live as its NSF fee. Its real NSF fee, "Insufficient Funds Fee (Paid or Returned) $35.00",
+  is split over two lines, and Knox missed it; the earlier reader caught it. The fee name alone
+  says nothing wrong, so no guard caught it. 15 live NSF fees under $10 named only "Returned
+  check/item" sit on a schedule that prices NSF at $20-35.
+- **Fix.** Category guard v22 adds a schedule check (`schedule_contradicts`): a plain returned
+  check or item under $10 filed as NSF, on a schedule whose NSF or insufficient-funds fee is at
+  least $15 and twice its price, fails. Hamilton's guard reads that price from both raw readers'
+  rows for the same document, logs each to `pipeline_feedback`, and takes it down after the second look.
+- **Watch.** `hamilton.category_guard` byCode `schedule_contradicts`; Knox still misses split NSF rows.
+

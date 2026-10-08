@@ -18,12 +18,14 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount";
+export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
 /** What a caller knows about the fee besides its name; enables the rate check. */
 export interface CategoryGuardContext {
   amount?: number | string | null;
   conditions?: string | null;
+  /** The highest NSF or insufficient-funds price elsewhere on the same schedule, when known. */
+  document_nsf_amount?: number | string | null;
 }
 
 export type CategoryGuardVerdict =
@@ -205,7 +207,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 21;
+export const CATEGORY_GUARD_VERSION = 22;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -285,6 +287,25 @@ export function refileCategory(
   return rule ? rule.to : canonicalFeeKey;
 }
 
+const PLAIN_RETURNED_ITEM = /^\s*return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?\s*:?\s*$/i;
+/** A returned check or item under this, filed as NSF, is checked against the schedule's own NSF fee. */
+export const SMALL_RETURNED_ITEM_MAX = 10;
+
+/**
+ * A plain "Returned Check Fee" of a few dollars filed as NSF, on a schedule whose NSF or
+ * insufficient-funds fee is a separate, much higher price, is the fee for a deposited check
+ * coming back (Dean Co-operative Bank: "Returned Check Fee $7" beside "Insufficient Funds Fee
+ * (Paid or Returned) $35.00", Oct 8). Without the schedule's NSF price the fee is left alone.
+ */
+function smallReturnBesideNsf(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "nsf" || !context || !PLAIN_RETURNED_ITEM.test(name)) return null;
+  const amount = Number(context.amount);
+  const nsf = Number(context.document_nsf_amount);
+  if (context.amount == null || context.document_nsf_amount == null || !Number.isFinite(amount) || !Number.isFinite(nsf)) return null;
+  if (amount <= 0 || amount >= SMALL_RETURNED_ITEM_MAX || nsf < 2 * amount || nsf < 15) return null;
+  return `"${name}" at $${amount.toFixed(2)} sits on a schedule whose NSF fee is $${nsf.toFixed(2)}, so it is a deposited check coming back`;
+}
+
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
@@ -320,5 +341,7 @@ export function checkFeeCategory(
       reason: `"${name}" does not name a ${canonicalFeeKey} fee`,
     };
   }
+  const scheduleReason = smallReturnBesideNsf(canonicalFeeKey, name, context);
+  if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
   return { ok: true };
 }

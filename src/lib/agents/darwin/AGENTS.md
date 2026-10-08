@@ -168,6 +168,8 @@ Darwin owns verification and classification.
   detail `hold_reason`). Category guard v21 rejects business services' monthly fees (remote
   deposit scanners, IntraFi/ICS, per-location fees) as monthly maintenance and deposited checks
   coming back as NSF, so Hamilton's category guard takes the live ones down after its second look.
+  Guard v22 (2026-10-08) also fails a returned check or item under $10 filed as NSF when the same
+  schedule prices NSF separately at $15 or more (`schedule_contradicts`; Dean Co-operative Bank).
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
