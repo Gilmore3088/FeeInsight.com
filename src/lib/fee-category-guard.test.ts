@@ -140,10 +140,29 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v45 files collection items and foreign checks under their own type; cashing one stays check cashing (James, Oct 8)", () => {
+    for (const name of [
+      "Foreign Item Collection Fee (per item)",
+      "Collection Item",
+      "Items Sent for Collection",
+      "Foreign Check Processing",
+      "Canadian Item Deposit",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name).ok).toBe(false);
+      expect(checkFeeCategory("collection_item", name)).toEqual({ ok: true });
+      expect(refileCategory("check_cashing", name)).toBe("collection_item");
+    }
+    for (const name of ["Foreign Check Cashing", "Returned Canadian Check", "Non-Member Check Cashing"]) {
+      expect(checkFeeCategory("check_cashing", name)).toEqual({ ok: true });
+      expect(checkFeeCategory("collection_item", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("collection_item", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
+    expect(checkFeeCategory("collection_item", "Negative Balance Collection Fee").ok).toBe(false);
+  });
+
   it("v15 keeps debt collection out of check cashing and account opening out of loan fees (prod, Oct 7)", () => {
     expect(checkFeeCategory("check_cashing", "Phone Call Collection Fee").ok).toBe(false);
     expect(checkFeeCategory("check_cashing", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
-    expect(checkFeeCategory("check_cashing", "Foreign Item Collection Fee (per item)")).toEqual({ ok: true });
     expect(checkFeeCategory("check_cashing", "Check Cashing Fee - Non-Member")).toEqual({ ok: true });
     expect(checkFeeCategory("loan_origination", "Credit Report Fee to Open Account").ok).toBe(false);
     expect(checkFeeCategory("loan_origination", "Credit Report Fee")).toEqual({ ok: true });
@@ -736,7 +755,9 @@ describe("checkFeeCategory", () => {
       expect(refileCategory("check_cashing", name), name).toBe("account_research");
     }
     expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
-    expect(checkFeeCategory("check_cashing", "Collection Item (Incoming)")).toEqual({ ok: true });
+    // Since v45 an incoming collection item is its own type, Collection Items.
+    expect(checkFeeCategory("collection_item", "Collection Item (Incoming)")).toEqual({ ok: true });
+    expect(refileCategory("check_cashing", "Collection Item (Incoming)")).toBe("collection_item");
   });
 
   it("v43 fails a name cut from the end of another fee's note (Darwin audit, Oct 8)", () => {
@@ -776,5 +797,22 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
     }
     expect(refileCategory("nsf", "NSF Fee Charge - Returned (per item)")).toBe("nsf");
+  });
+
+  it("v44 fails a paired wire price filed from the wrong slot (Darwin eval, Oct 8)", () => {
+    const wire = (key: string, name: string, amount: string, excerpt: string) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    // Live rows that took the first price for the second wire.
+    expect(wire("wire_intl_outgoing", "Wire International In/Out", "10.00", "Wire International In/Out | $10/$35")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Outgoing Wire Fee: Domestic/Foreign", "15.00", "Outgoing Wire Fee | Domestic/Foreign | $15.00/$30.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Wire OUT Fee/INTERNATIONAL", "15.00", "Wire OUT Fee/INTERNATIONAL / $15.00/$35.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Bank Wire Transfers/International", "20.00", "Bank Wire Transfers/International $20.00/$40.00 | □ Premier Checking")).toBe(false);
+    expect(wire("wire_intl_incoming", "Incoming Domestic / International Wire", "20.00", "Incoming Domestic / International Wire: $20 / $30 per wire")).toBe(false);
+    expect(wire("wire_domestic_outgoing", "Wire Domestic In/Out", "10.00", "Wire Domestic In/Out | $10/$20")).toBe(false);
+    // The first slot's own price, the second slot's price, and a pair with no wire sides stay.
+    expect(wire("wire_domestic_outgoing", "Domestic Wire Transfer", "30.00", "Domestic Wire Transfer: $30.00 / $10.00 per transfer – Outgoing / Incoming")).toBe(true);
+    expect(wire("wire_domestic_outgoing", "Wire Transfer – Outgoing (domestic/int’l)", "25.00", "ATM Deposit Adjustment $20 Wire Transfer – Outgoing (domestic/int’l) $25/$50")).toBe(true);
+    expect(wire("wire_intl_outgoing", "Wire International In/Out", "35.00", "Wire International In/Out | $10/$35")).toBe(true);
+    expect(wire("wire_intl_outgoing", "International Outbound Wires (Online/Manual)", "35.00", "International Outbound Wires (Online/Manual) | $35/$75 | $35/$75")).toBe(true);
   });
 });

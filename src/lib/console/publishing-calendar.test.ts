@@ -52,7 +52,9 @@ describe("publishing calendar", () => {
     expect(schedule("crew/contacts")).toBe("37 12 * * 1");
     expect(schedule("crew/outreach")).toBe("7 14 * * 1");
     expect(schedule("crew/learning")).toBe("37 14 * * 1");
-    expect(PUBLICATIONS).toHaveLength(10);
+    expect(schedule("crew/intel")).toBe("17 14 * * *");
+    expect(schedule("crew/conversion")).toBe("47 13 * * 1");
+    expect(PUBLICATIONS).toHaveLength(12);
   });
 
   it("lists the weekly growth steps James turned on, Mondays", () => {

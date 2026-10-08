@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRegulatoryContext, type StateRule } from "../regulatory-context";
-import { regulatorSentence, regulatoryFacts } from "./regulators";
+import type { ComplaintBenchmark } from "@/lib/data-store/complaints";
+import { complaintBenchmarkFact, regulatorSentence, regulatoryFacts } from "./regulators";
 
 // Invented institutions and counts for tests only; the state rule below is a test fixture, not law.
 const testStateRule: StateRule = {
@@ -51,6 +52,28 @@ describe("regulatory facts for one fee", () => {
     expect(facts[3].text).toBe("The CFPB recorded 42 complaints about Example Bank in 2025, 9 about fees or low funds.");
     for (const f of facts) expect(f.text.split(/\s+/).length).toBeLessThanOrEqual(25);
     expect(facts.map((f) => f.text).join(" ")).not.toMatch(/should|recommend|raise your|lower your/i);
+  });
+
+  it("sets fee complaints beside peers' as a rate per $10B of deposits, only for a confirmed CFPB match", () => {
+    const bench: ComplaintBenchmark = {
+      institution_id: 1, institution_name: "Example Bank", year: "2025", match_status: "matched",
+      total_complaints: 40, fee_complaints: 12, deposits_thousands: 3_500_000, fee_complaints_per_billion: 3.4,
+      peer_level: "state", peer_label: "NH", peer_count: 42, peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
+      peer_median_fee_complaints: 0, peer_fee_complaints_total: 30, sub_issues_loaded: true, summary: "",
+    };
+    const fact = complaintBenchmarkFact(bench)!;
+    expect(fact.text).toBe("Your 12 CFPB fee complaints in 2025 equal 34 per $10B of deposits; 42 New Hampshire peers' median is 8.");
+    expect(fact).toMatchObject({ sampleSize: 42, source: { table: "institution_complaint_records", asOf: "2025-12-31" } });
+    expect(complaintBenchmarkFact({ ...bench, peer_level: "fed_district", peer_label: "Fed District 1" })!.text).toContain("42 District 1 peers' median is 8.");
+    expect(complaintBenchmarkFact({ ...bench, peer_level: "national", peer_label: "nationwide" })!.text).toContain("42 peers' median nationwide is 8.");
+    expect(complaintBenchmarkFact({ ...bench, fee_complaints: 0, fee_complaints_per_billion: 0 })!.text).toBe(
+      "You had no CFPB fee complaints in 2025; 9 of 42 New Hampshire peers had any.",
+    );
+    expect(complaintBenchmarkFact({ ...bench, fee_complaints: 1, fee_complaints_per_billion: 0.04, peer_median_per_billion: 0 })!.text).toBe(
+      "Your 1 CFPB fee complaint in 2025 equals under 1 per $10B of deposits; 42 New Hampshire peers' median is 0.",
+    );
+    expect(complaintBenchmarkFact({ ...bench, match_status: "none" })).toBeNull();
+    expect(complaintBenchmarkFact({ ...bench, match_status: "unconfirmed", fee_complaints: null })).toBeNull();
   });
 
   it("adds the reviewed state rules it is given, and none otherwise", () => {

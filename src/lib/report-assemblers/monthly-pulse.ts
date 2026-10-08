@@ -154,6 +154,8 @@ const CHANGES_SQL = `
       FROM fee_change_records c
      WHERE COALESCE(c.changed_at, c.detected_at) >= $1
        AND c.change_type IN ('increase', 'increased', 'decrease', 'decreased')
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
   )
   SELECT i.institution_name, i.state_code, i.charter_type, ch.fee_key, ch.old_amount, ch.new_amount, ch.changed_at,
          n.fee_name, n.source_url, o.fee_name AS old_fee_name, o.source_url AS old_source_url,
