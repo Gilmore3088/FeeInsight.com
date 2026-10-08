@@ -60,6 +60,15 @@ export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version:
 /** Live banks with fewer published fee categories than this are searched. */
 export const THIN_BANK_CATEGORY_LIMIT = 8;
 export const SECOND_DOCUMENT_BANKS_PER_STEP = 6;
+/**
+ * Slots each step gives a state market leader with no live overdraft fee, from any state:
+ * a top-10 bank whose fee link prices no overdraft otherwise waits for its own state's
+ * lane (8 Oct 2026: 40 of the 80 top-10 banks under $10B without one had no document that
+ * priced it, and 20 of those had never been searched for a second document).
+ */
+export const LEADER_SLOTS = 2;
+/** Leaders here are the top 10 per state, the rank the state reports and the hit list use. */
+export const LEADER_RANK = 10;
 /** Pages kept per bank, account pages and fee documents together. */
 export const MAX_COMPANIONS_PER_BANK = 8;
 const MAX_ACCOUNT_PAGES_CHECKED = 8;
@@ -432,10 +441,12 @@ async function selectThinBanks(
   db: SqlTag,
   stateCode: string | null,
   limit: number,
-  options: { hiddenOnly?: boolean; excludeIds?: number[] } = {},
+  options: { hiddenOnly?: boolean; excludeIds?: number[]; leaderIds?: number[] } = {},
 ): Promise<ThinBankRow[]> {
   const hiddenOnly = options.hiddenOnly ?? false;
   const excludeIds = options.excludeIds ?? [];
+  const leaderOnly = options.leaderIds !== undefined;
+  const leaderIds = options.leaderIds ?? [];
   return db<ThinBankRow[]>`
     WITH thin AS (
       -- Every live row, not the catalog: the catalog hides banks with fewer than 3 fees,
@@ -491,6 +502,7 @@ async function selectThinBanks(
          AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
          AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
          AND inst.id <> ALL(${excludeIds}::bigint[])
+         AND (NOT ${leaderOnly}::boolean OR inst.id = ANY(${leaderIds}::bigint[]))
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
@@ -503,7 +515,8 @@ async function selectThinBanks(
     SELECT id, institution_name, state_code, website_url, fee_schedule_url, categories,
            (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
       FROM scoped
-     WHERE (
+     WHERE (NOT ${leaderOnly}::boolean OR NOT has_overdraft)
+       AND (
              categories < ${THIN_BANK_CATEGORY_LIMIT}
              -- An HTML fee link with no monthly fee: the product-page pattern.
              OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
@@ -785,6 +798,8 @@ export async function runSecondDocumentFind(options: {
   searchRotation?: number;
   /** Fill spare slots with hidden banks from any state (default on). */
   hiddenTopUp?: boolean;
+  /** State market leaders (`loadMarketLeaderIds`); up to LEADER_SLOTS without a live overdraft fee go first. */
+  leaderIds?: number[];
 }): Promise<RunSecondDocumentFindResult> {
   const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, results: [] });
   if (!options.learning) return empty("no_attempt_log");
@@ -794,7 +809,13 @@ export async function runSecondDocumentFind(options: {
   const db = options.db;
   const limit = options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP;
   const stateCode = normalizeStateCode(options.stateCode ?? undefined);
-  const rows = await selectThinBanks(db, stateCode, limit);
+  const leaders = options.leaderIds?.length
+    ? await selectThinBanks(db, null, Math.min(LEADER_SLOTS, limit), { leaderIds: options.leaderIds })
+    : [];
+  const rows = [
+    ...leaders,
+    ...(await selectThinBanks(db, stateCode, limit - leaders.length, { excludeIds: leaders.map((row) => Number(row.id)) })),
+  ];
   if (stateCode && rows.length < limit && options.hiddenTopUp !== false) {
     rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: rows.map((row) => Number(row.id)) })));
   }
