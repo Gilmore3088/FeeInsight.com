@@ -3395,3 +3395,16 @@ and quarter were already stored, without looking at the periods of the data behi
   with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
 - **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
   count of top-10 slots with a live overdraft fee.
+
+## 2026-10-08: Old PDF texts ran a whole schedule onto one line
+
+- **Problem.** 168 PDF texts (164 banks, read Aug 23 to Oct 4 by the first PDF reader) have no
+  line breaks. Knox's rules split a line only at wide gaps and sentence ends and drop any piece
+  over 280 characters, so these schedules gave the rules nothing; only the family specialists
+  read them. Lake City Bank's "Overdraft fee $35.00/transaction" and West Bank's "Overdraft Fee
+  (per item) ... $35.00" were lost this way. 63 of those banks have no live overdraft fee; 166
+  of the texts were never read by `read.pdf_layout`, which keeps lines (0 one-line texts of 1,964).
+- **Fix.** Rosetta treats such a text like a lost text: one read with the current PDF reader,
+  replacing the flat text only when the new one lists at least as many fees.
+- **Watch.** `read.pdf_layout` attempts on these documents, one-line legacy texts left, and new
+  Knox rows from them.
