@@ -6,52 +6,75 @@ import { ensureStripeCustomer } from "@/lib/stripe-customer";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { CONTACT_EMAIL } from "@/lib/constants";
+import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
+import {
+  NON_INSTITUTION_TIER,
+  isProPlan,
+  proPriceId,
+  tierForAssets,
+  type ProPlan,
+  type ProTier,
+} from "@/lib/pro-tiers";
 
-/** The Stripe prices that unlock Pro. Shared with the webhook's grant check. */
-function proPriceIds(): string[] {
-  return [process.env.STRIPE_PRO_PRICE_ID, process.env.STRIPE_ANNUAL_PRICE_ID].filter(
-    (id): id is string => Boolean(id),
-  );
+export interface ProCheckoutInput {
+  plan: ProPlan;
+  /** The bank or credit union the plan covers; its assets set the tier. */
+  institutionId?: number | null;
+  /** A consultant or other organization with no assets of its own. */
+  otherOrganization?: boolean;
+  returnTo?: string;
 }
 
-function isProPriceId(priceId: string): boolean {
-  return proPriceIds().includes(priceId);
-}
-
-export async function createCheckoutSession(
-  priceId: string,
-  mode: "subscription" | "payment" = "subscription",
-  returnTo?: string,
-): Promise<{ url: string | null }> {
+/**
+ * Starts Pro checkout. The tier is worked out here from the institution's assets on file,
+ * never taken from the browser, so a buyer can't pick a cheaper tier than their size.
+ */
+export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ url: string | null }> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not authenticated");
 
-  if (!priceId) throw new Error("Price ID is required");
-  // This is a public server action: only the configured Pro prices, only as a
-  // subscription. Any other price (or a one-time payment) would otherwise reach
-  // the webhook, which grants Pro on checkout completion.
-  if (!isProPriceId(priceId)) throw new Error("Unknown price");
-  if (mode !== "subscription") throw new Error("Pro is sold as a subscription");
+  const plan = input.plan;
+  if (!isProPlan(plan)) throw new Error("Unknown plan");
+
+  let tier: ProTier | null = null;
+  let institutionId: number | null = null;
+  if (input.institutionId) {
+    const institution = await getProPricingInstitution(Number(input.institutionId));
+    if (!institution) throw new Error("Pick your bank or credit union from the list");
+    tier = tierForAssets(institution.assetsThousands);
+    if (!tier) {
+      throw new Error(`We don't have ${institution.name}'s asset size yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`);
+    }
+    institutionId = institution.id;
+  } else if (input.otherOrganization) {
+    tier = NON_INSTITUTION_TIER;
+  } else {
+    throw new Error("Pick your bank or credit union first");
+  }
+
+  const priceId = proPriceId(tier, plan);
+  if (!priceId) throw new Error(`Checkout for this plan isn't open yet. Email ${CONTACT_EMAIL} to sign up.`);
 
   const stripe = getStripe();
   const origin = (await headers()).get("origin") || process.env.NEXT_PUBLIC_SITE_URL;
-  const sanitizedReturnTo = returnTo
-    ? sanitizeInternalRedirect(returnTo, "/account/welcome")
+  const sanitizedReturnTo = input.returnTo
+    ? sanitizeInternalRedirect(input.returnTo, "/account/welcome")
     : "/account/welcome";
   const hasReturnTo = sanitizedReturnTo !== "/account/welcome";
   const successParams = new URLSearchParams({ success: "true" });
   if (hasReturnTo) successParams.set("from", sanitizedReturnTo);
   const cancelParams = new URLSearchParams();
   if (hasReturnTo) cancelParams.set("from", sanitizedReturnTo);
-  const cancelPath = cancelParams.toString()
-    ? `/subscribe?${cancelParams.toString()}`
-    : "/subscribe";
+  if (institutionId) cancelParams.set("inst", String(institutionId));
+  else cancelParams.set("org", "other");
+  const cancelPath = `/subscribe?${cancelParams.toString()}`;
 
   // Created here, not at registration, so a free signup never depends on Stripe.
   const customerId = await ensureStripeCustomer(user);
 
   const session = await stripe.checkout.sessions.create({
-    mode,
+    mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer: customerId,
     success_url: `${origin}/account/welcome?${successParams.toString()}`,
@@ -59,6 +82,9 @@ export async function createCheckoutSession(
     metadata: {
       user_id: String(user.id),
       email: user.email || user.username,
+      pro_tier: tier,
+      pro_plan: plan,
+      ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
       ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
     },
   });
