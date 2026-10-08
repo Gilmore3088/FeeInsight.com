@@ -70,6 +70,19 @@ describe("retidiedFeeName", () => {
     );
   });
 
+  it("drops a price's unit left on the front of the name and a ')' cut from its '(' (v5, 115 live names)", () => {
+    expect(retidiedFeeName("/month service charge", "monthly_maintenance")).toBe("service charge");
+    expect(retidiedFeeName("/ per item Photocopies", "document_reproduction")).toBe("Photocopies");
+    expect(retidiedFeeName("/Money Order", "money_order")).toBe("Money Order");
+    expect(retidiedFeeName("/item Stop Payment - Draft, ACH, NSF Draft", "stop_payment")).toBe("Stop Payment - Draft, ACH, NSF Draft");
+    expect(retidiedFeeName("Bill Payment Service)", "bill_pay")).toBe("Bill Payment Service");
+    // A condition or a cut tail is not a name; it stays as it is for Knox to re-read.
+    expect(retidiedFeeName("/ ea.; Active if Bill Pay or Zelle are used monthly)", "bill_pay")).toBeNull();
+    expect(retidiedFeeName("/Inactive for 1 year)", "dormant_account")).toBeNull();
+    expect(isMessyName("/month service charge")).toBe(true);
+    expect(isMessyName("Bill Payment Service)")).toBe(true);
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
   });

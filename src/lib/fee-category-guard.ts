@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { foldRetiredCategory } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
@@ -255,18 +255,25 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
   // names the card. A rate's name is often a sentence ("you will be charged a foreign
   // transaction fee of"), so sentences are checked only on dollar amounts (below).
+  // Since v45 it is International ATM & Card: an ATM used outside the U.S. ("Non–Wells Fargo
+  // ATMs outside the U.S.") is this fee too.
   card_foreign_txn: {
-    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b)/i,
+    include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b|outside (the )?u\.?s|abroad|overseas)/i,
     exclude:
       /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
-  // 2026). A collection fee on a charged-off or past-due account, or a collection phone
-  // call, is debt collection; every other name passes. v41 also catches "Charge off deposit
-  // collection fee" without the d.
+  // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
+  // for collection or a foreign check handled for deposit is a collection item. A collection
+  // fee on a charged-off or past-due account, or a collection phone call, is debt collection;
+  // every other name passes. v41 also catches "Charge off deposit collection fee" without the d.
   check_cashing: {
     include: /\S/,
-    exclude: /(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)/i,
+    exclude: new RegExp(String.raw`(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)|${COLLECTION_ITEM.source}`, "i"),
+  },
+  collection_item: {
+    include: COLLECTION_ITEM,
+    exclude: /(?!)/,
   },
   // A credit report pulled to open a deposit account or membership is not a loan fee.
   loan_origination: {
@@ -325,7 +332,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v43: PR 682's rules ship after Magellan's v42 (PR 684): v40 cheap overdraft protection, v41
 // charge-off fees, and names cut from another fee's note plus a reload fee filed as bill pay.
 // v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
-// v45 is Top 50's (PR 701).
+// v45: collection items leave check cashing for their own type; ATMs abroad are International
+// ATM & Card (Top 50, PR 701).
 // v46: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
 // reinstatement fee filed as early closure under a "closed within 90 days" heading.
 export const CATEGORY_GUARD_VERSION = 46;
@@ -381,6 +389,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
+  { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },

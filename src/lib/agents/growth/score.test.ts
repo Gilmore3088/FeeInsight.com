@@ -33,15 +33,25 @@ function row(overrides: Record<string, unknown>) {
   };
 }
 
-function fakeDb(rows: Record<string, unknown>[], options: { touches?: boolean; queueColumns?: number } = {}) {
+function fakeDb(
+  rows: Record<string, unknown>[],
+  options: { touches?: boolean; queueColumns?: number; journey?: boolean; events?: Array<{ event: string }>; outcomes?: Array<{ outcome: string }> } = {},
+) {
   const writes: Array<{ query: string; values: unknown[] }> = [];
   const counts: unknown[][] = [];
+  const journeyReads: unknown[][] = [];
   const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join("?");
     if (query.includes("table_name = 'content_drafts'")) return Promise.resolve([{ n: options.queueColumns ?? 5 }]);
     if (query.includes("to_regclass('public.marketing_touches')")) {
       return Promise.resolve([{ touches: options.touches ?? true, lead_columns: options.touches === false ? 0 : 2 }]);
     }
+    if (query.includes("to_regclass('public.snapshot_events')")) return Promise.resolve([{ ready: options.journey ?? true }]);
+    if (query.includes("FROM snapshot_events")) {
+      journeyReads.push(values);
+      return Promise.resolve(options.events ?? []);
+    }
+    if (query.includes("FROM outreach_outcomes")) return Promise.resolve(options.outcomes ?? []);
     if (query.includes("SELECT * FROM content_drafts")) return Promise.resolve(rows);
     if (query.includes("GROUP BY status")) return Promise.resolve([{ status: "draft", n: 3 }, { status: "skipped", n: 2 }]);
     if (query.includes("FROM marketing_touches")) {
@@ -51,7 +61,7 @@ function fakeDb(rows: Record<string, unknown>[], options: { touches?: boolean; q
     if (query.includes("UPDATE content_drafts")) writes.push({ query, values });
     return Promise.resolve([]);
   });
-  return { db: db as unknown as Db, writes, counts };
+  return { db: db as unknown as Db, writes, counts, journeyReads };
 }
 
 describe("what can measure a queue item", () => {
@@ -59,6 +69,11 @@ describe("what can measure a queue item", () => {
     expect(trackedLinkOf({ facts: { link: POST_LINK }, caption: "" })).toEqual({ campaign: "w1-market-spread", content: "overdraft-2026-09-20" });
     expect(trackedLinkOf({ facts: {}, caption: `Read more: ${POST_LINK}\nThanks` })).toEqual({ campaign: "w1-market-spread", content: "overdraft-2026-09-20" });
     expect(trackedLinkOf({ facts: {}, caption: "https://feeinsight.com/reports?utm_campaign=only-campaign" })).toBeNull();
+  });
+
+  it("measures a sent outreach email by its institution's journey", () => {
+    expect(measureFor({ kind: "outreach_email", facts: { institution_id: 4715 }, caption: "" })).toEqual({ kind: "journey", institutionId: 4715 });
+    expect(measureFor({ kind: "outreach_email", facts: {}, caption: "" })).toEqual({ kind: "none", reason: NO_MEASURE_REASONS.no_institution });
   });
 
   it("has no measure for emails, PRs or untagged items, and says why", () => {
@@ -102,6 +117,31 @@ describe("growth-score step", () => {
     expect(summarizeGrowthScore(result)).toBe(
       "Scored 1 of 2 posted items (14 tracked visits, 1 lead); 1 left unscored with no measure; reasons are in the step result.",
     );
+  });
+
+  it("scores a sent outreach email by the furthest journey stage in the week after sending", async () => {
+    const outreach = row({ id: 7, kind: "outreach_email", agent: "carnegie", facts: { institution_id: 4715 } });
+    const { db, writes, journeyReads } = fakeDb([outreach], {
+      events: [{ event: "opened" }, { event: "source_click" }],
+      outcomes: [{ outcome: "sent" }, { outcome: "replied" }],
+    });
+    const result = await runGrowthScore({ db, runId: 5, dryRun: false });
+
+    expect(journeyReads[0]).toEqual([4715, "outreach-launch", "2026-09-21T10:00:00.000Z", "2026-09-28T10:00:00.000Z"]);
+    expect(result.scored).toEqual([expect.objectContaining({ draftId: 7, stage: "interest", score: 4, visits: 1, content: "inst-4715" })]);
+    expect(writes[0].values).toEqual([4, 7]);
+    expect(summarizeGrowthScore(result)).toBe("Scored 1 of 1 posted item (1 outreach email, 1 reaching commercial interest).");
+  });
+
+  it("scores an outreach email with no recorded response as 0, and waits when the journey tables are missing", async () => {
+    const outreach = row({ id: 8, kind: "outreach_email", facts: { institution_id: 12 } });
+    const silent = await runGrowthScore({ db: fakeDb([outreach]).db, runId: 5, dryRun: false });
+    expect(silent.scored).toEqual([expect.objectContaining({ draftId: 8, stage: null, score: 0 })]);
+
+    const missing = fakeDb([outreach], { journey: false });
+    const waiting = await runGrowthScore({ db: missing.db, runId: 5, dryRun: false });
+    expect(waiting.unscored).toEqual([expect.objectContaining({ draftId: 8, reason: NO_MEASURE_REASONS.no_journey_tables })]);
+    expect(missing.writes).toHaveLength(0);
   });
 
   it("writes nothing on a dry run", async () => {
