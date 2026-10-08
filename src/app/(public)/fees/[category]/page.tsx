@@ -22,6 +22,7 @@ import { UpgradeGate } from "@/components/upgrade-gate";
 import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/data-store/public-cached-reads";
 import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -37,9 +38,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { category } = await params;
   const name = getDisplayName(category);
   const family = getFeeFamily(category);
+  // Thin pages (fewer institutions than the median floor) stay out of search; the sitemap
+  // leaves them out too. When the snapshot can't be read, the page stays indexable.
+  const snapshot = await getPublicSnapshot().catch(() => null);
+  const national = snapshot?.categories.find((c) => c.fee_category === category) ?? null;
+  const thin =
+    snapshot !== null &&
+    snapshot.categories.length > 0 &&
+    (national?.institution_count ?? 0) < MIN_INSTITUTIONS_FOR_MEDIAN;
 
   return {
     title: `${name} Fee - National Benchmarks & Analysis`,
+    ...(thin ? { robots: { index: false, follow: true } } : {}),
     description: `National benchmarking data for ${name.toLowerCase()} fees. See median, P25/P75, distribution, and breakdowns by bank vs. credit union, asset tier, Fed district, and state.`,
     openGraph: {
       title: `${name} Fee Benchmarks`,

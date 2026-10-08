@@ -284,7 +284,7 @@ export default async function CityFeePage({ params }: PageProps) {
             More cities in {stateName}
           </Link>
           <Link
-            href={`/research/state/${stateCode.toLowerCase()}`}
+            href={`/research/state/${stateCode}`}
             className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
           >
             {stateName} Fee Report
