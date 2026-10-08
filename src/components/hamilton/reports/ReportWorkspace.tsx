@@ -213,7 +213,9 @@ export function ReportWorkspace({
       .catch((err) => {
         if (cancelled) return;
         setPeerCoveragePreview(null);
-        setPeerCoverageError(err instanceof Error ? err.message : String(err));
+        // A raw server error is no use to a banker; the console keeps it for us.
+        console.error("[reports] coverage check failed:", err);
+        setPeerCoverageError("the coverage check didn't respond. Try again in a moment.");
       })
       .finally(() => {
         if (!cancelled) setIsPeerCoverageLoading(false);

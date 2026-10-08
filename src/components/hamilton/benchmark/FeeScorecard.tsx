@@ -119,7 +119,7 @@ export function FeeScorecard({
               <li key={row.feeCategory}>
                 <Link
                   href={hrefWithInstitutionContext(
-                    `/pro/analyze?q=${encodeURIComponent(`How does our ${proseFeeName(row.feeCategory)} fee compare with peers?`)}`,
+                    `/pro/analyze?q=${encodeURIComponent(`How does our ${proseFeeName(row.feeCategory)} fee compare with peers?`)}&send=1`,
                     institutionId,
                   )}
                   className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-2.5 hover:bg-warm-50 sm:grid-cols-[minmax(0,1.4fr)_5rem_minmax(0,2fr)_10rem]"
