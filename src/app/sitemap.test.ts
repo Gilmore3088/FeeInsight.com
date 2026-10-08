@@ -78,7 +78,7 @@ describe("sitemap thin-page floor", () => {
     vi.mocked(getPublicSnapshot).mockRejectedValue(new Error("db down"));
     vi.mocked(getStatesWithFeeData).mockRejectedValue(new Error("db down"));
     const paths = await urls();
-    expect(paths).toContain("/fees/vehicle_title");
+    expect(paths).toContain("/fees/appraisal_fee");
     expect(paths).toContain("/research/state/AK");
   });
 

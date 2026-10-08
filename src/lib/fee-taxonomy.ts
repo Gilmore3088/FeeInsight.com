@@ -68,6 +68,7 @@ export const FEE_FAMILIES: Record<string, string[]> = {
   "Lending Fees": [
     "late_payment",
     "loan_origination",
+    "appraisal_fee",
   ],
   "Mortgage Servicing": [
     "mortgage_lien_release",
@@ -75,9 +76,6 @@ export const FEE_FAMILIES: Record<string, string[]> = {
   "Retirement & IRA": [
     "ira_administration",
     "ira_termination",
-  ],
-  "Vehicle & Title": [
-    "vehicle_title",
   ],
   "Gift & Prepaid Cards": [
     "gift_card_purchase",
@@ -141,13 +139,12 @@ export const DISPLAY_NAMES: Record<string, string> = {
   // Lending Fees
   late_payment: "Late Payment",
   loan_origination: "Loan Origination",
+  appraisal_fee: "Appraisal",
   // Mortgage Servicing
   mortgage_lien_release: "Mortgage Lien Release",
   // Retirement & IRA
   ira_administration: "IRA Administration",
   ira_termination: "IRA Termination",
-  // Vehicle & Title
-  vehicle_title: "Vehicle Title",
   // Gift & Prepaid Cards
   gift_card_purchase: "Gift & Prepaid Card",
   // Other Fees
@@ -550,7 +547,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   late_payment: "extended",
   atm_international: "extended",
 
-  // Comprehensive (12) — rarely benchmarked, often free, or niche
+  // Comprehensive (13) — rarely benchmarked, often free, or niche
   od_daily_cap: "comprehensive",
   counter_check: "comprehensive",
   check_cashing: "comprehensive",
@@ -563,6 +560,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   legal_process: "comprehensive",
   account_verification: "comprehensive",
   loan_origination: "comprehensive",
+  appraisal_fee: "comprehensive",
 };
 
 const FEATURED_TIERS: Set<FeeTier> = new Set(["spotlight", "core"]);

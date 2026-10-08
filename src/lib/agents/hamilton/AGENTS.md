@@ -353,8 +353,10 @@ category guard and amount envelope accept the fee in its new category
 (`passesDarwinChecks`); it updates the verified and published rows and writes a
 `category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
 not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
-first run, rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once the
-flag is 12 hours old. `refileCategory` applies the same rules to new reads, so Knox can
+first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
+the flag is 12 hours old, but only while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. It is off
+until James decides on the list of no-home fees (Oct 8), so they stay live and are counted
+as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 ## Source Check

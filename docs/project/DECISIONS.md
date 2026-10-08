@@ -10,8 +10,11 @@ into existing", no new categories) and Oct 8 (the About page said 61: "do the to
 try to fit everything there"; "Use extensive and comprehensive text matching"), 09:05 UTC ("Merge
 caps": the NSF daily cap joins the overdraft daily cap, and International ATM stays one of the
 50). Fifteen categories left `FEE_FAMILIES`; `src/lib/fee-fold.ts` re-files each of their fees by
-its own wording, and a bare name by the schedule section above it. A fee with no home among the
-50 is archived by Hamilton's fold step after the 12-hour second look, never deleted.
+its own wording, and a bare name by the schedule section above it. At 09:47 UTC he chose to keep
+Appraisal as its own type (folding it into loan origination would move that median), so Vehicle
+Title folds into Other Lending Fee instead. He also asked to see the fees with no home before any
+are archived, so Hamilton's fold step flags them but keeps them live
+(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
 
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run

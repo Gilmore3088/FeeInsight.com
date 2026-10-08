@@ -28,6 +28,12 @@ export const TAXONOMY_FOLD_KIND = "category_fold";
 export const TAXONOMY_FOLD_REASON_PREFIX = "taxonomy_fold:";
 /** Fees folded per publish step; the fifteen categories held about 1,000 live fees on Oct 8. */
 export const TAXONOMY_FOLD_LIMIT = 2_000;
+/**
+ * Whether a live fee with no home is archived once its second look confirms it. Off until James
+ * decides on the list of no-home fees (Oct 8: "Show me the list"); until then they are only
+ * flagged and stay live.
+ */
+export const TAXONOMY_FOLD_ARCHIVE_NO_HOME = false;
 const WRITE_CHUNK = 500;
 
 interface FoldRow {
@@ -268,6 +274,8 @@ export interface TaxonomyFoldResult {
   noHomeWaiting: number;
   /** Live fees with no home taken down after their second look. */
   noHomeRolledBack: number;
+  /** Past their second look but kept live while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off. */
+  noHomeHeld: number;
   unplacedVerified: number;
   feedbackRows: number;
   dryRun: boolean;
@@ -289,6 +297,7 @@ export async function foldRetiredCategories(
     noHomeFlagged: 0,
     noHomeWaiting: 0,
     noHomeRolledBack: 0,
+    noHomeHeld: 0,
     unplacedVerified: 0,
     feedbackRows: 0,
     dryRun: options.dryRun,
@@ -341,8 +350,9 @@ export async function foldRetiredCategories(
       reason,
     })),
   };
+  if (!TAXONOMY_FOLD_ARCHIVE_NO_HOME) result.noHomeHeld = look.confirmed.length;
   if (options.dryRun) {
-    result.noHomeRolledBack = look.confirmed.length;
+    result.noHomeRolledBack = TAXONOMY_FOLD_ARCHIVE_NO_HOME ? look.confirmed.length : 0;
     return result;
   }
 
@@ -353,9 +363,11 @@ export async function foldRetiredCategories(
       recordFeedback(scope, plan.moves.map((move) => moveFeedback(move, options.runId))),
     );
   }
-  result.noHomeRolledBack = await inSavepoint(db, (scope) =>
-    rollBackNoHome(scope, `taxonomy-fold-run-${options.runId}`, look.confirmed),
-  );
+  if (TAXONOMY_FOLD_ARCHIVE_NO_HOME) {
+    result.noHomeRolledBack = await inSavepoint(db, (scope) =>
+      rollBackNoHome(scope, `taxonomy-fold-run-${options.runId}`, look.confirmed),
+    );
+  }
   if (applied.published > 0 || result.noHomeRolledBack > 0) invalidatePublicReadCache();
   return result;
 }

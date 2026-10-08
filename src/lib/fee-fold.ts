@@ -111,15 +111,6 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
     rules: [{ to: "od_protection_transfer", name: /\btransfers?\b|\badvances?\b/i }],
     otherwise: null,
   },
-  // An appraisal is a cost of making the loan.
-  appraisal_fee: {
-    family: "Lending Fees",
-    rules: [
-      { to: null, name: /\bemployee\b|\bconversion\b|\bncua\b|\bcredit toward\b/i },
-      { to: "loan_origination", name: /\bapprais(?:al|als|e)\b/i },
-    ],
-    otherwise: null,
-  },
   // Changing a loan's terms after it is made is another lending fee.
   mortgage_modification: {
     family: "Mortgage Servicing",
@@ -134,8 +125,11 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   reconveyance: { family: "Mortgage Servicing", rules: [], otherwise: "mortgage_lien_release" },
   mortgage_payoff: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
   refinance_fee: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
-  duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
-  dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
+  // Vehicle title work is done for a car loan (James, Oct 8: Appraisal kept its own type, so
+  // Vehicle Title gave up its spot).
+  vehicle_title: { family: "Vehicle & Title", rules: [], otherwise: "other_lending_fee" },
+  duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "other_lending_fee" },
+  dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "other_lending_fee" },
   // A distribution closes out (part of) the IRA.
   ira_distribution: { family: "Retirement & IRA", rules: [], otherwise: "ira_termination" },
 };
