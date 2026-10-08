@@ -446,6 +446,11 @@ v32 (rules 32, from Space Coast CU's page, Oct 7):
 - Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
 - Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").
 
+v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
+- "Per transaction" (and "transactions") is a unit cell, so "Overdraft Fee - Items Paid3 | Per transaction | $20.00" is the overdraft fee, not an unnamed price (Banc of California).
+- A change the bank says it already made ("We've lowered Overdraft Paid Item fees from $38 to $30") is today's price at the later figure. A change still to come ("will", "effective", "beginning") stays a held range (Pinnacle).
+- The held re-check also re-reads range lines that say a price was changed, and promotes one only at its stored amount (the lower end), so a raised price stays held.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own

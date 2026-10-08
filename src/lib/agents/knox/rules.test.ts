@@ -704,4 +704,17 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("Account Link Overdraft Protection")).toBe("od_protection_transfer");
     expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
   });
+
+  it("v34 reads a price change the bank already made as today's price, and a unit cell under the fee's name", () => {
+    // Pinnacle's fee change notice (raw 321489); a change still to come stays a held range.
+    expect(fees("- We've lowered Overdraft Paid Item fees from $38 to $30 for ***all*** clients.")).toEqual([
+      ["Overdraft Paid Item fees", 30, "overdraft"],
+    ]);
+    expect(fees("Overdraft fees will increase from $30 to $35 effective March 1.")).toEqual([]);
+    expect(extractFromSegment("Wire fee $15 to $25").held[0]?.shape).toBe("range");
+    // Banc of California (raw 307714): "Per transaction" is the fee's unit, not its name.
+    expect(fees("Overdraft Fee - Items Paid3 | Per transaction | $20.00")).toEqual([
+      ["Overdraft Fee - Items Paid3 | Per transaction", 20, "overdraft"],
+    ]);
+  });
 });

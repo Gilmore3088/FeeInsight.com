@@ -59,6 +59,19 @@ export interface ExtractionRulesResult {
   held: HeldFeeCandidate[];
 }
 
+/** v34: a price change the bank says it made ("We've lowered ... fees from", "... were reduced from"). */
+const FEE_CHANGED_FROM = /\b(?:lowered|reduced|decreased|raised|increased|changed)\s+(?:[\w-]+\s+){0,8}?from\s*$|\b(?:lowered|reduced|decreased|raised|increased|changed)\s+from\s*$/i;
+const FUTURE_CHANGE = /\b(?:will|effective|beginning|starting|as of|going forward)\b/i;
+
+/** "We've lowered Overdraft Paid Item fees from" -> "Overdraft Paid Item fees". */
+export function changedFeeName(name: string): string {
+  return name
+    .replace(/^(?:we(?:'ve|\u2019ve| have)?|[a-z]+ bank has)\s+(?:lowered|reduced|decreased|raised|increased|changed)\s+/i, "")
+    .replace(/\s+(?:(?:were|was|have been|has been)\s+)?(?:lowered|reduced|decreased|raised|increased|changed)?\s*from\s*$/i, "")
+    .replace(/^([a-z])/, (first) => first.toUpperCase())
+    .trim();
+}
+
 const BALANCE_REQUIREMENT = /\bbalance (?:requirement|required)\b|\brequired (?:minimum |daily |average )*balance\b/i;
 
 interface FeePattern {
@@ -1000,6 +1013,23 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     if (tailHint) {
       feeName = tail;
       hint = tailHint;
+    }
+  }
+
+  // v34: "We've lowered Overdraft Paid Item fees from $38 to $30" (Pinnacle): a change the
+  // bank has already made, so the later figure is today's price, not a range's top. A
+  // change still to come ("will increase", "effective") stays held as a range.
+  if (
+    feeAmounts[1] &&
+    FEE_CHANGED_FROM.test(feeName) &&
+    /^\s*to\s*$/i.test(segment.slice(feeAmounts[0].end, feeAmounts[1].start)) &&
+    !FUTURE_CHANGE.test(segment)
+  ) {
+    const changedName = changedFeeName(feeName);
+    if (usableName(changedName)) {
+      feeAmounts.shift();
+      feeName = changedName;
+      hint = hint ?? classifyFeeText(feeName);
     }
   }
 
