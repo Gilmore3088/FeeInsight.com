@@ -38,7 +38,7 @@ async function handleGET(request: NextRequest) {
     steps: [
       { key: "content-market-spread", agent: "growth", title: "Draft this week's market-spread post" },
       { key: "content-fee-depth", agent: "growth", title: "Draft the fortnightly fee-depth post" },
-      { key: "content-od-by-state", agent: "growth", title: "Draft the monthly overdraft-by-state article" },
+      { key: "content-od-by-state", agent: "growth", title: "Draft this week's fees-by-state article" },
     ],
   });
   const result = started.reused

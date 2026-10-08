@@ -5,15 +5,14 @@ import { LoginForm } from "./login-form";
 import type { Metadata } from "next";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import Link from "next/link";
-import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 
 export const metadata: Metadata = {
   title: "Sign In",
 };
 
-// No self-service reset flow exists yet; route reset requests to the inbox.
-const FORGOT_PASSWORD_HREF = `mailto:${CONTACT_EMAIL}?subject=Password%20reset`;
+const FORGOT_PASSWORD_HREF = "/forgot-password";
 
 export default async function LoginPage({
   searchParams,
