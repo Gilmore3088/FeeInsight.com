@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { getContentDraft, insertContentDraft, setContentDraftStatus } from "./content-drafts";
+import { getContentDraft, insertContentDraft, setContentDraftStatus, updateContentDraftText } from "./content-drafts";
 
 type Db = NonNullable<Parameters<typeof insertContentDraft>[1]>;
 
@@ -63,5 +63,13 @@ describe("content queue", () => {
       score: null,
       scoredAt: null,
     });
+  });
+
+  it("edits the title and text of an item still waiting for review only", async () => {
+    const { db, calls } = mockDb();
+    await updateContentDraftText(3, `  ${"T".repeat(250)}  `, "New text", "james", db);
+    expect(calls[0].query).toContain("status = 'draft'");
+    expect(calls[0].query).not.toContain("'approved'");
+    expect(calls[0].values).toEqual(["T".repeat(200), "New text", "james", 3]);
   });
 });

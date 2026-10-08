@@ -51,6 +51,15 @@ describe("retidiedFeeName", () => {
     expect(retidiedFeeName("Overdraft – paid per day per account11", "overdraft")).toBe("Overdraft – paid per day per account");
   });
 
+  it("drops the footnote number from a long name the full tidy leaves alone (v3)", () => {
+    expect(
+      retidiedFeeName(
+        "Overdraft Protection Transfer Fee4 (from Line of Credit Advance in Increments of $100.00)",
+        "od_protection_transfer",
+      ),
+    ).toBe("Overdraft Protection Transfer Fee (from Line of Credit Advance in Increments of $100.00)");
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
   });
