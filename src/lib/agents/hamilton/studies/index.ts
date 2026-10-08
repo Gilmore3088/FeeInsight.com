@@ -3,7 +3,7 @@ import { readFeeIncomeShare, readLocalIncome, readMarketConcentration, type Driv
 import { buildFeeDependence, readDependencePanel } from "./fee-dependence";
 import { buildInferredVolume, readIncomeAndFees, saveInferredVolume } from "./inferred-volume";
 import { feeLabel, runPriceStudy, type Driver } from "./price-study";
-import { findStudy, saveStudy, studiesSchemaReady, type Placement, type StudyRecord } from "./store";
+import { findStudy, saveStudy, sourcesChanged, studiesSchemaReady, type Placement, type StudyRecord } from "./store";
 
 /**
  * Hamilton's studies: statistical studies on the joined data, refreshed each quarter and
@@ -98,7 +98,8 @@ async function store(
   if (!opts.schemaReady || opts.dryRun) return { stored: false, alreadyCurrent: false, studyId: null };
   if (!opts.force) {
     const existing = await findStudy(db, record.studyKey, record.methodVersion, record.asOf);
-    if (existing) return { stored: false, alreadyCurrent: true, studyId: existing.id };
+    // Same period, same data: nothing to redo. A source with a newer period (a new Census year) rebuilds it.
+    if (existing && !sourcesChanged(existing.sources, record.sources)) return { stored: false, alreadyCurrent: true, studyId: existing.id };
   }
   const studyId = await saveStudy(db, record, placements, opts.runId);
   if (after) await after(studyId);

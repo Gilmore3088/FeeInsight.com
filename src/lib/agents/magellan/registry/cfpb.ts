@@ -27,8 +27,12 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 
 export const CFPB_SOURCE = "cfpb";
 const BREAKDOWN_CONCURRENCY = 4;
-/** v2: all issues (no top-15 cut), deposit/card fee issues, whole-year replace, better name matching. */
-export const CFPB_PARSER_VERSION = 2;
+/**
+ * v2: all issues (no top-15 cut), deposit/card fee issues, whole-year replace, better name matching.
+ * v3: a bank's own full name goes to the far-largest bank of that name (issue #54), so every year
+ * re-runs and the newly accepted banks get their complaint history.
+ */
+export const CFPB_PARSER_VERSION = 3;
 const CURRENT_YEAR_REFRESH_HOURS = 24 * 7;
 const RECENT_YEAR_REFRESH_HOURS = 24 * 30;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;

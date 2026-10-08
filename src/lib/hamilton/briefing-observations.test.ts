@@ -86,4 +86,17 @@ describe("buildAttentionItems", () => {
     expect(buildAttentionItems(briefing([]), research(null, [30]))).toEqual([]);
     expect(buildAttentionItems(null, null)).toEqual([]);
   });
+
+  it("keeps the last place for a study the cap would drop", () => {
+    const list = [
+      obs("a", "nsf", "market_position", "A"),
+      obs("b", "wire_domestic_outgoing", "market_position", "B"),
+      obs("c", "stop_payment", "market_position", "C"),
+      obs("d", null, "revenue_shift", "D"),
+      obs("study:fee_dependence", null, "study", "Deposit service charges were 3.83% of your revenue in 2025."),
+    ];
+    const items = buildAttentionItems(briefing(list), research(30, [30, 30, 30, 30, 30]));
+    expect(items.map((i) => i.id)).toEqual(["position:overdraft", "a", "b", "study:fee_dependence"]);
+    expect(items[3].headline).toBe("Deposit service charges were 3.83% of your revenue in 2025.");
+  });
 });

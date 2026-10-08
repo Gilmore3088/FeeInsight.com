@@ -54,6 +54,7 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
         outcome: outcomeForStatus(response.status),
         startedAt,
         subjectKey,
+        metadata: requestShape(request),
       }).catch(() => {});
       return response;
     } catch (error) {
@@ -75,4 +76,23 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
   };
 
   return wrapped;
+}
+
+/**
+ * The request's view and format (e.g. view=benchmark&format=csv), so the ledger shows which
+ * export was served. Only these two named, non-identifying parameters are kept.
+ */
+export function requestShape(request: Request | undefined): Record<string, string> {
+  if (!request) return {};
+  try {
+    const params = new URL(request.url).searchParams;
+    const shape: Record<string, string> = {};
+    for (const key of ["view", "format"]) {
+      const value = params.get(key);
+      if (value && /^[a-z_]{1,32}$/.test(value)) shape[key] = value;
+    }
+    return shape;
+  } catch {
+    return {};
+  }
 }
