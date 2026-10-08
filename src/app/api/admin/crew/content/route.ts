@@ -38,11 +38,12 @@ async function handleGET(request: NextRequest) {
     steps: [
       { key: "content-market-spread", agent: "growth", title: "Draft this week's market-spread post" },
       { key: "content-fee-depth", agent: "growth", title: "Draft the fortnightly fee-depth post" },
+      { key: "content-od-by-state", agent: "growth", title: "Draft the monthly overdraft-by-state article" },
     ],
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's content run already exists." }
-    : await executeAgentRun(started.run.id, { maxSteps: 2 });
+    : await executeAgentRun(started.run.id, { maxSteps: 3 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 

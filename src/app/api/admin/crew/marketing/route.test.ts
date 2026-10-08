@@ -49,6 +49,7 @@ describe("growth's marketing workflows", () => {
     expect(input.steps.map((step: { key: string; agent: string }) => [step.key, step.agent])).toEqual([
       ["content-market-spread", "growth"],
       ["content-fee-depth", "growth"],
+      ["content-od-by-state", "growth"],
     ]);
     expect(input.idempotencyKey).toMatch(/^hamilton:content:\d{4}-\d{2}-\d{2}$/);
   });
