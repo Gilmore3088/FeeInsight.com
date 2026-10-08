@@ -6,7 +6,8 @@ import { STATE_BILL_JURISDICTIONS } from "@/lib/regulatory/open-states";
 import {
   billNewsQuery,
   googleNewsSearchUrl,
-  isFeeHeadline,
+  isBillStory,
+  isStateFeeStory,
   parseBillLabel,
   parseStateFeed,
   stateFeeNewsQuery,
@@ -14,7 +15,7 @@ import {
 import { STATE_NAMES } from "@/lib/us-states";
 import { mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "./state-bills";
-import { stateNewsLive } from "./state-reg-news";
+import { STATE_NEWS_PARSER_VERSION, stateNewsLive } from "./state-reg-news";
 
 /**
  * Magellan registry step: news coverage of state bank fee bills, to pair with the Open
@@ -51,6 +52,8 @@ export interface NewsQueryResult {
   bill: string | null;
   stage: string | null;
   items: number;
+  /** Stories the search returned that were off topic or about another state. */
+  dropped?: number;
   sample: string[];
   error?: string;
 }
@@ -130,16 +133,24 @@ export async function runRegistryStateBillNews(
 
   const startedAt = clock();
   let rateLimited = false;
-  const reads = await mapWithConcurrency(plan, CONCURRENCY, async (entry) => {
+  const reads = await mapWithConcurrency(plan, CONCURRENCY, async (entry): Promise<{ result: NewsQueryResult | null; articles: FeedArticle[] }> => {
     const base: NewsQueryResult = { kind: entry.kind, state: entry.state, bill: entry.bill, stage: entry.stage, items: 0, sample: [] };
     if (rateLimited || clock() - startedAt >= cutoff) return { result: null, articles: [] as FeedArticle[] };
     try {
       const xml = await fetchText(googleNewsSearchUrl(entry.query));
       const source = `news:${entry.state}`;
-      let articles = parseStateFeed(xml, source, ITEMS_PER_QUERY);
-      // A state-wide search returns some general banking stories; keep the fee ones.
-      if (entry.kind === "state") articles = articles.filter((a) => isFeeHeadline(a.title));
-      return { result: { ...base, items: articles.length, sample: articles.slice(0, 3).map((a) => a.title) }, articles };
+      const stateName = STATE_NAMES[entry.state] ?? entry.state;
+      const found = parseStateFeed(xml, source, ITEMS_PER_QUERY);
+      // Search matches words anywhere in a story: a bill number also names other states'
+      // bills and box scores, and a state search returns national and non-bank fee stories.
+      // Keep stories whose headline names this state (or bill) and is on topic.
+      const articles = found.filter((a) =>
+        entry.kind === "bill" && entry.bill ? isBillStory(a.title, entry.bill, stateName) : isStateFeeStory(a.title, stateName),
+      );
+      return {
+        result: { ...base, items: articles.length, dropped: found.length - articles.length, sample: articles.slice(0, 3).map((a) => a.title) },
+        articles,
+      };
     } catch (error) {
       if (error instanceof RegistryHttpError && (error.status === 429 || error.status === 503)) rateLimited = true;
       return { result: { ...base, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) }, articles: [] as FeedArticle[] };
@@ -186,6 +197,7 @@ export async function runRegistryStateBillNews(
     runId: options.runId ?? null,
     nextAttemptAfterHours: REFRESH_HOURS,
     detail: {
+      parser_version: STATE_NEWS_PARSER_VERSION,
       shadow,
       bills: bills.length,
       bills_with_news: queries.filter((q) => q.kind === "bill" && q.items > 0).length,

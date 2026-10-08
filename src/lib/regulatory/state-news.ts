@@ -15,17 +15,41 @@ import { parseFeed, type FeedArticle } from "./news";
 
 export const MAX_STATE_NEWS_ITEMS = 20;
 
-const decode = (s: string) =>
-  s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#8217;/g, "'")
-    .replace(/&#821[12];/g, "-");
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  ldquo: "“",
+  rdquo: "”",
+  lsquo: "‘",
+  rsquo: "’",
+  ndash: "–",
+  mdash: "—",
+  hellip: "…",
+};
+
+/** HTML entities, named and numeric. "&amp;#8211;" (double-encoded, common in feeds) decodes too. */
+function decode(s: string): string {
+  let out = s;
+  for (let pass = 0; pass < 2 && out.includes("&"); pass += 1) {
+    out = out.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code: string) => {
+      if (code[0] === "#") {
+        const n = code[1].toLowerCase() === "x" ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+        return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : whole;
+      }
+      return NAMED_ENTITIES[code.toLowerCase()] ?? whole;
+    });
+  }
+  return out;
+}
+
+/** A headline as people read it: entities decoded, whitespace collapsed. */
+export function cleanTitle(title: string): string {
+  return decode(title).replace(/\s+/g, " ").trim();
+}
 
 const stripTags = (s: string) => decode(s.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 
@@ -50,12 +74,19 @@ function siteOf(url: string): string {
   }
 }
 
+/** The same host, or one a subdomain of the other. */
+function sameHost(a: string, b: string): boolean {
+  const ha = siteOf(a);
+  const hb = siteOf(b);
+  return Boolean(ha && hb) && (ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`));
+}
+
 /** Same site, or a subdomain of the same state government site (news.ny.gov for dfs.ny.gov). */
 function sameSite(a: string, b: string): boolean {
   const ha = siteOf(a);
   const hb = siteOf(b);
   if (!ha || !hb) return false;
-  if (ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`)) return true;
+  if (sameHost(a, b)) return true;
   // Agencies on a shared state domain (portal.ct.gov/dob, www.in.gov/dfi): same last two labels.
   const root = (h: string) => h.split(".").slice(-2).join(".");
   return root(ha) === root(hb) && /\.gov$/.test(ha);
@@ -86,13 +117,14 @@ export function isFeedXml(body: string): boolean {
 
 /**
  * Feed URLs a page advertises: <link rel="alternate" type="application/rss+xml"> tags
- * first, then same-site links whose URL or text looks like a feed. Newest-first order
- * is not known, so the page's own order is kept. Comment feeds are skipped.
+ * first, then links whose URL or text looks like a feed. Only feeds on the agency's own
+ * host count: an agency on a shared state domain often links the whole state's news feed
+ * (news.delaware.gov for the Bank Commissioner). Comment feeds are skipped.
  */
 export function discoverFeedLinks(html: string, baseUrl: string, limit = 4): string[] {
   const urls: string[] = [];
   const add = (url: string | null) => {
-    if (url && !urls.includes(url) && !/comments?\/feed|\/comments?\b/i.test(url)) urls.push(url);
+    if (url && sameHost(url, baseUrl) && !urls.includes(url) && !/comments?\/feed|\/comments?\b/i.test(url)) urls.push(url);
   };
   for (const tag of html.matchAll(/<link\b[^>]*>/gi)) {
     const t = tag[0];
@@ -165,12 +197,40 @@ const ARTICLE_PATH = /(news|press|release|announce|bulletin|advisor|notice|alert
  * The date comes from text right after the link when the page prints one there.
  */
 export function parseNewsPage(html: string, pageUrl: string, source: string, limit = MAX_STATE_NEWS_ITEMS): FeedArticle[] {
+  const items = readNewsLinks(html, pageUrl, source);
+  // When the page lists its own articles under its path (/news/press-releases/2026/...),
+  // those are the news; links elsewhere are the site's menus and side panels.
+  const base = (() => {
+    try {
+      return new URL(pageUrl).pathname.replace(/\/[^/]*\.[a-z]+$/i, "/").replace(/\/?$/, "/").toLowerCase();
+    } catch {
+      return "/";
+    }
+  })();
+  const under = items.filter((item) => {
+    try {
+      const path = new URL(item.link).pathname.toLowerCase();
+      return base !== "/" && path.startsWith(base) && path.length > base.length;
+    } catch {
+      return false;
+    }
+  });
+  return (under.length >= 3 ? under : items).slice(0, limit);
+}
+
+/** Page chrome that holds menus, not news. */
+const CHROME = /<(nav|header|footer|aside)\b[\s\S]*?<\/\1>/gi;
+
+function readNewsLinks(html: string, pageUrl: string, source: string): FeedArticle[] {
+  const body = html.replace(/<script\b[\s\S]*?<\/script>/gi, " ").replace(CHROME, " ");
   const out: FeedArticle[] = [];
   const seen = new Set<string>([pageUrl.replace(/\/$/, "")]);
-  for (const match of html.matchAll(/<a\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+  for (const match of body.matchAll(/<a\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
     const url = resolve(match[1], pageUrl);
     if (!url || seen.has(url.replace(/\/$/, ""))) continue;
-    const text = stripTags(match[2]);
+    // A link whose text is its own URL or path names no article ("/Pages/About/...", "https://...").
+    const text = stripTags(match[2]).replace(/\.pdf$/i, "").trim();
+    if (/^(https?:\/\/|\/|www\.)/i.test(text)) continue;
     if (text.length < 25 || text.length > 250 || NAV_TEXT.test(text)) continue;
     if (!sameSite(url, pageUrl) && !/\.pdf(\?|$)/i.test(url)) continue;
     let path = "";
@@ -181,26 +241,28 @@ export function parseNewsPage(html: string, pageUrl: string, source: string, lim
     }
     if (!ARTICLE_PATH.test(path) && !/\.pdf$/i.test(path)) continue;
     seen.add(url.replace(/\/$/, ""));
-    const after = stripTags(html.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 300));
+    const after = stripTags(body.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 300));
     const date = dateInText(text) ?? dateInText(after.slice(0, 120));
     out.push({ guid: url, source, title: text.slice(0, 300), link: url, published_at: date });
-    if (out.length >= limit) break;
+    if (out.length >= 60) break;
   }
   return out;
 }
 
-/** Feed entries, capped: the shared RSS/Atom reader with this module's limit. */
+/** Feed entries, capped, with their titles decoded (feeds often double-encode "&#8211;"). */
 export function parseStateFeed(xml: string, source: string, limit = MAX_STATE_NEWS_ITEMS): FeedArticle[] {
-  return parseFeed(xml, source, limit);
+  return parseFeed(xml, source, limit).map((item) => ({ ...item, title: cleanTitle(item.title) }));
 }
 
-/** Words that make a headline about bank or credit union fees. */
+/** Words that make a headline about fees. */
 const FEE_WORDS =
   /\b(overdraft|nsf|non-?sufficient|insufficient funds|junk fees?|hidden fees?|bank fees?|account fees?|atm fees?|service charges?|maintenance fees?|fee caps?|fees?)\b/i;
+/** Words that put a headline in banking: "junk fee" alone also covers cable bills and rent. */
+const BANK_WORDS = /\b(overdraft|nsf|non-?sufficient|insufficient funds|banks?|banking|credit unions?|checking|atms?|deposits?|debit cards?)\b/i;
 
-/** True when a headline is about fees (any "fee", overdraft, NSF, service charge). */
+/** True when a headline is about bank or credit union fees: a fee word and a banking word. */
 export function isFeeHeadline(title: string): boolean {
-  return FEE_WORDS.test(title);
+  return FEE_WORDS.test(title) && BANK_WORDS.test(title);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,14 +277,55 @@ export function googleNewsSearchUrl(query: string, window = "1y"): string {
   return `${GOOGLE_NEWS_RSS}?${params.toString()}`;
 }
 
-/** Query for one bill: its number in quotes, the state, and "bill". */
+/**
+ * Query for one bill: its number in quotes, the state, and a banking word. A bare bill
+ * number matches other states' bills and box scores ("SB 79", "A 117").
+ */
 export function billNewsQuery(identifier: string, stateName: string): string {
-  return `"${identifier}" ${stateName} bill`;
+  return `"${identifier}" "${stateName}" (bank OR "credit union" OR fee OR overdraft OR loan)`;
 }
 
 /** Query for a state's fee legislation coverage. */
 export function stateFeeNewsQuery(stateName: string): string {
-  return `"${stateName}" (overdraft OR "junk fee" OR "bank fee" OR "NSF fee") (bill OR legislature OR law)`;
+  return `"${stateName}" (overdraft OR "bank fee" OR "bank fees" OR "NSF fee" OR "credit union fee") (bill OR legislature OR law)`;
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The headline names the state (publisher left off: "NBC 4 New York" says nothing). */
+export function headlineNamesState(title: string, stateName: string): boolean {
+  const { headline } = splitPublisher(title);
+  // "Virginia" inside "West Virginia" is another state.
+  return new RegExp(`(?<!West\\s)\\b${escapeRegExp(stateName)}\\b`, "i").test(headline);
+}
+
+/** The headline carries the bill number (AB 1520, A.B. 1520, AB1520). */
+export function headlineNamesBill(title: string, identifier: string): boolean {
+  const { headline } = splitPublisher(title);
+  const parts = identifier.match(/^([A-Za-z.\s]+?)\s*(\d+)$/);
+  if (!parts) return headline.includes(identifier);
+  const letters = parts[1].replace(/[.\s]/g, "").split("").map(escapeRegExp).join("\\.?\\s*");
+  return new RegExp(`\\b${letters}\\.?\\s*-?\\s*${parts[2]}\\b`, "i").test(headline);
+}
+
+const FINANCE_WORDS = /\b(loans?|lend(ers?|ing)?|payday|paycheck|financial|finance|consumers?)\b/i;
+
+/**
+ * A story about this bill: the headline names the state or the bill, and is about banking,
+ * fees or consumer finance (or names the bill outright).
+ */
+export function isBillStory(title: string, identifier: string, stateName: string): boolean {
+  const { headline } = splitPublisher(title);
+  const onTopic = FEE_WORDS.test(headline) || BANK_WORDS.test(headline) || FINANCE_WORDS.test(headline);
+  // A bill number alone is not enough: other states reuse it ("SB 79" is also a California
+  // housing law), so a story naming only the number must also be on topic.
+  if (headlineNamesState(title, stateName)) return onTopic || headlineNamesBill(title, identifier);
+  return onTopic && headlineNamesBill(title, identifier);
+}
+
+/** A story about this state's bank fees: the headline names the state and is about bank fees. */
+export function isStateFeeStory(title: string, stateName: string): boolean {
+  return headlineNamesState(title, stateName) && isFeeHeadline(splitPublisher(title).headline);
 }
 
 /** "AB 1520 (signed)" from a state-bills partition's detail into its number and stage. */

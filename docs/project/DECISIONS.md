@@ -455,3 +455,15 @@ Built in PR 75 (state experts, monthly full pass, quarterly re-check).
 thread. One checkout ($499.99 a month or $5,000 a year) already gives an institution account 5
 logins (`WORKSPACE_SEAT_LIMIT`), so the site now says "for up to 5 people" instead of "per
 seat". Prices and Stripe are unchanged. Answers build-plan task 0.11.
+
+**Pro has three price tiers by institution size, each for up to 5 people.** James, 11:35 and
+11:47 UTC, marketing and Stripe threads. Under $500M in assets $1,500 a year, $500M to $2B
+$3,000, over $2B $5,000. Monthly is offered too; annual equals about 10 monthly payments, so
+monthly is $150 / $300 / $500 (James 12:03: "10 at 150"). A bank's tier comes
+from its own assets (`institution_sources.asset_size`), worked out again at checkout; with no
+asset size on file, the buyer is asked to email. Consultants and other non-banks pay the middle
+tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton reports
+(James chose a report cap 12:04; `CONSULTANT_MONTHLY_REPORTS`, 10 a month, James 12:10); past it they move
+to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The site sets up its own Stripe prices by lookup key (James 12:53: "you can do
+everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
+(`src/lib/pro-tiers.ts`).
