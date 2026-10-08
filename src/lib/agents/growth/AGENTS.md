@@ -19,6 +19,8 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
 | Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
 | Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
+| Price check (EDISON) | in the daily loop below | `growth-tools` | runs `src/lib/price-check.ts` for one state a day, read-only |
+| Daily growth loop | `/api/admin/crew/growth-loop`, daily 00:57 UTC | every step in `loop.ts`, as one `dry_run` run | nothing saved or sent; leaves out `marketing-write` (paid) and `marketing-send` |
 
 ### Prospect contacts (`contacts.ts`)
 

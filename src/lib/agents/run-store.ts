@@ -75,6 +75,7 @@ import { runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/li
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
+import { runToolCheck, summarizeToolCheck } from "@/lib/agents/growth/edison";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
@@ -1731,6 +1732,10 @@ async function executeAgenticStep(
     case "growth-conversion": {
       const result = await runConversionCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeConversionCheck(result), detail: { ...result } };
+    }
+    case "growth-tools": {
+      const result = await runToolCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", state: stringRunParam(params, ["state"]) });
+      return { status: "completed", summary: summarizeToolCheck(result), detail: { ...result } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
