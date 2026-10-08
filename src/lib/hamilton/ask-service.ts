@@ -25,7 +25,7 @@ import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
 import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
-import { asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
+import { asksIncomeLevel, asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
 import { withDepth, type IncomeWhy } from "./workspace/story-extras";
 import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
 import { peerPhrase } from "./answer-brief";
@@ -310,7 +310,8 @@ export async function scheduleFor(institutionId: number, question: string, peers
 
 /** The price split of the bank's fee income gap, for a question asking why income is where it is. */
 export async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
-  if (!asksIncomeWhy(question)) return null;
+  // A why question, or one asking where income stands that names no single fee.
+  if (!asksIncomeWhy(question) && !(asksIncomeLevel(question) && !parseAsk(question).feeCategory)) return null;
   const [intensity, briefing, trend] = await Promise.all([
     getServiceChargeIntensity(institutionId).catch((error) => {
       console.error("[hamilton-ask] income intensity failed", error);
