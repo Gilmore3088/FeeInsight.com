@@ -303,6 +303,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       FROM fee_change_records fce
       JOIN institution_sources ct ON fce.institution_id = ct.id
       WHERE fce.fee_category = ${category}
+        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+        AND fce.like_for_like IS TRUE
         AND EXISTS (
           SELECT 1 FROM published_fee_catalog live
           WHERE live.institution_id = fce.institution_id
@@ -390,7 +392,8 @@ export async function getFeeHistory(institutionId: number, category: string): Pr
 export async function getRecentPriceChanges(days: number = 90, category?: string): Promise<PriceChange[]> {
   try {
     const params: (string | number)[] = [days];
-    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`];
+    // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts).
+    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`, "fce.like_for_like IS TRUE"];
     if (category) {
       conditions.push("fce.fee_category = $2");
       params.push(category);
@@ -422,6 +425,7 @@ export async function getPriceMovementSummary(days: number = 90): Promise<PriceM
               COUNT(*) as total_changes
        FROM fee_change_records
        WHERE detected_at > NOW() - INTERVAL '1 day' * $1
+         AND like_for_like IS TRUE
        GROUP BY fee_category
        ORDER BY total_changes DESC`,
       [days]

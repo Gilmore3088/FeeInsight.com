@@ -3355,6 +3355,15 @@ schedule's price off the live catalog and logs the difference as a price change.
 pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
 alert has been raised from these records.
 **Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
+**Follow-up (8 Oct, 23:00 UTC):** PR 591 stopped publish from superseding across pages, but the 152
+change records already written stayed, and seven readers (local fee moves in Hamilton reports, the
+category page's change list, `/api/v1/fee-changes`, peer reports, the Monthly Pulse, competitor alerts,
+the movement summary) counted them as price changes. The record held no link to the two rows it
+compared, so each reader re-guessed the pair by amount. Migration `20270110000030` gives
+`fee_change_records` the two row ids and `like_for_like`; publish fills them for each new change, and
+`pairFeeChangeRecords` (`hamilton/change-pairing.ts`) fills older records in the publish step with the
+same page rule plus `listsBothPrices`. Every reader now requires `like_for_like IS TRUE`. A new reader
+of `fee_change_records` must do the same.
 
 ## 2026-10-08: Paid search answers dropped because the bank's site refused our check
 
@@ -3647,6 +3656,20 @@ and quarter were already stored, without looking at the periods of the data behi
   stay recorded but not live.
 - **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
   publish steps.
+
+## 2026-10-08: Most real Pro questions were never kept, so nothing learned from them
+
+- **What.** On prod, 10 of the 14 Ask requests since Oct 6 came back as a question from
+  Hamilton rather than an answer, and 11 of the 14 left no saved analysis. The `pro.ask`
+  ledger row kept the response kind and fee, but not the question, so the questions Hamilton
+  could not answer were lost.
+- **Why.** Only storyline answers are filed to `hamilton_saved_analyses`; the ledger detail
+  never carried the question text.
+- **Fix.** The `pro.ask` ledger detail now keeps the question, Hamilton's short answer and the
+  engine version. The 2-hourly answer eval replays the last 90 days of real questions (ledger
+  plus saved analyses, test asks left out) and reports them in `detail.pro`.
+- **Watch.** After the next eval run, `detail.pro.questions` is above 0. After the next real
+  Ask, the newest `pro.ask` row has `params_json ? 'question'`.
 
 ## 2026-10-08: Banks published another bank's fee schedule
 - **What happened.** Peoples Bank of Rock Valley, Iowa showed 22 live fees read from Peoples

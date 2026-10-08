@@ -332,7 +332,7 @@ function ratePiece(research: FeeResearch, name: string): Piece | null {
     actionTitle,
     exhibit: {
       kind: "structure_matrix",
-      title: `${capitalize(name)} fee as a rate: you and the nation`,
+      title: `${capitalize(name)} rate: you and the nation`,
       columns: ["Rate", "Institutions"],
       rows,
       sources: [...(own ? [ownRateSource(rates, own)] : []), rates.source],

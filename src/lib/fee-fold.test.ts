@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
-import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS } from "./fee-fold";
+import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
@@ -56,7 +56,16 @@ describe("top-50 fold", () => {
     expect(to("nsf_daily_cap", "Insufficient Funds Charge - maximum charge per day")).toBe("od_daily_cap");
     expect(to("nsf_daily_cap", "NSF/OD Fees Daily Cap")).toBe("od_daily_cap");
     expect(to("nsf_daily_cap", "Wire Transfer (over daily limit)")).toBeNull();
-    expect(to("atm_international", "International ATM Withdrawal Fee")).toBeUndefined();
+  });
+
+  test("international ATM fees are International ATM & Card; a line that rules them out has no home", () => {
+    expect(to("atm_international", "International ATM Withdrawal Fee")).toBe("card_foreign_txn");
+    expect(to("atm_international", "Non–Wells Fargo ATMs outside the U.S.")).toBe("card_foreign_txn");
+    expect(to("atm_international", "Non-IBC ATM locations (outside the U.S.): Withdrawal")).toBe("card_foreign_txn");
+    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBeNull();
+    expect(to("atm_international", "ATMs inside United States & internationally")).toBeNull();
+    expect(to("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)")).toBeNull();
+    expect(to("card_foreign_txn", "Foreign Transaction Fee")).toBeUndefined();
   });
 
   test("card disputes are account research", () => {
@@ -107,6 +116,35 @@ describe("top-50 fold", () => {
     expect(to("dmv_filing", "DMV Title Changes")).toBe("vehicle_title");
     expect(to("od_line_of_credit", "Overdraft Loan Transfer")).toBe("od_protection_transfer");
     expect(to("od_line_of_credit", "Overdraft Protection (interest rate based on credit score)")).toBeNull();
+  });
+
+  test("collection items and foreign checks leave check cashing; cashing and returns stay (James, Oct 8)", () => {
+    const split = (name: string) => splitLiveCategory("check_cashing", name)?.to ?? null;
+    for (const name of [
+      "Collection Item",
+      "Items Sent for Collection",
+      "Foreign Check Collection Fee",
+      "Collection Items: Incoming",
+      "Foreign Check Processing",
+      "Canadian Item Deposit",
+      "Foreign Item Processing Fee",
+    ]) {
+      expect(split(name)).toBe("collection_item");
+    }
+    for (const name of [
+      "Check Cashing",
+      "Non-Member Check Cashing",
+      "Foreign Check Cashing",
+      "Returned Canadian Check",
+      "Foreign Item Return Fee",
+      "Negative Balance Collection Fee (after 30 days)",
+      "Overdrawn Account Sent for Collection",
+      "Return of Check Due to Hold or Uncollected Funds",
+    ]) {
+      expect(split(name)).toBeNull();
+    }
+    expect(splitLiveCategory("nsf", "Collection Item")).toBeNull();
+    expect(TAXONOMY.has("collection_item")).toBe(true);
   });
 
   test("foldContext returns the text before the fee's line", () => {
