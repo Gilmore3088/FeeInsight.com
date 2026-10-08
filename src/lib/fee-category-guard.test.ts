@@ -700,4 +700,81 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("monthly_maintenance", name), name).toEqual({ ok: true });
     }
   });
+
+  it("v39 keeps NSF, overdraft and wire rows out of the overdraft transfer and legal process fees (Oct 8)", () => {
+    for (const name of ["Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/Uncollected Funds includes Electronic Funds Transfer Debits", "Check-Overdraft/NSF/Return Fees", "Overdraft Fee-Exceeded Reg D Transfers"]) {
+      expect(checkFeeCategory("od_protection_transfer", name).ok, name).toBe(false);
+    }
+    for (const name of ["Manual Overdraft Transfer(Reg D Exceeded)", "Overdraft Transfer from Savings (Reg D may apply)", "Insufficient Funds Transfer (Savings Overdraft"]) {
+      expect(checkFeeCategory("od_protection_transfer", name), name).toEqual({ ok: true });
+    }
+    for (const name of ["SUBORDINATION REQUEST: Incoming", "SUBORDINATION REQUEST: Outgoing Domestic", "SUBORDINATION REQUEST: Outgoing Foreign"]) {
+      expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
+    for (const name of ["Subordination Request", "Mortgage Subordination Fee", "Legal Process Fee"]) {
+      expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("v40 files a cheap overdraft protection fee out of the overdraft fee by its amount (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee", { amount: "5.00" }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection", { amount: 0 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Flat Usage Fee", { amount: 15 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee", { amount: "30.00" })).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Courtesy Pay Overdraft Protection", { amount: 10 })).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Fee", { amount: 10 })).toEqual({ ok: true });
+  });
+
+  it("v41 moves charge-off fees out of overdraft and check cashing (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Overdraft Charge-off negative balance account").ok).toBe(false);
+    expect(refileCategory("overdraft", "Overdraft Charge-off negative balance account")).toBe("account_research");
+    for (const name of ["Charge off deposit collection fee", "Deposit Charge off Collection Fee", "Charge-off collection fee"]) {
+      expect(checkFeeCategory("check_cashing", name).ok, name).toBe(false);
+      expect(refileCategory("check_cashing", name), name).toBe("account_research");
+    }
+    expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("check_cashing", "Collection Item (Incoming)")).toEqual({ ok: true });
+  });
+
+  it("v43 fails a name cut from the end of another fee's note (Darwin audit, Oct 8)", () => {
+    const ctx = (excerpt: string) => ({ amount: "10.00", conditions: `Knox deterministic extraction. excerpt="${excerpt}"` });
+    expect(checkFeeCategory("bill_pay", "ACH, Bill Pay)", ctx("Stop Payment (includes ACH, Bill Pay) | $10.00 Per Item")).ok).toBe(false);
+    expect(checkFeeCategory("bill_pay", "Bill Pay)", ctx("Non-Sufficient Funds4 | Stop Payment Fee (includes Bill Pay) . . . . $30")).ok).toBe(false);
+    expect(checkFeeCategory("bill_pay", "Bill Pay)", ctx("Insufficient funds (Check, ATM, pre-authorized ACH drafts, Bill Pay) | $20.00")).ok).toBe(false);
+    expect(checkFeeCategory("atm_non_network", "ACH or ATM)", ctx("Overdraft protection transfers (to cover check, ACH or ATM) | $5.00")).ok).toBe(false);
+    expect(checkFeeCategory("cashiers_check", "Cashier Checks)", ctx("Stop payment fee (to include Cashier Checks) | $15.00")).ok).toBe(false);
+    expect(checkFeeCategory("ach_origination", "ACH Origination for Loan Payments)", ctx("Non-Sufficient Funds (including ACH Origination for Loan Payments) / $30")).ok).toBe(false);
+    expect(checkFeeCategory("bill_pay", "Reload Fee", ctx("Reload Fee | $4.95")).ok).toBe(false);
+    // The note's own fee, and a note on a fee of the same kind, stay.
+    expect(checkFeeCategory("stop_payment", "place stop payment)", ctx("Stop Payment Request (if presented)($2 place stop payment) | $20")).ok).toBe(true);
+    expect(checkFeeCategory("bill_pay", "Online Bill Pay)", ctx("Express Pay Fee (Expedited Payments in Online Bill Pay) ....... $14.95"))).toEqual({ ok: true });
+    expect(checkFeeCategory("bill_pay", "Bill Pay Monthly Fee")).toEqual({ ok: true });
+  });
+
+  it("v42 files an NSF item marked paid as the overdraft fee, and reads extended coverage as the program (Oct 8)", () => {
+    for (const name of [
+      "NSF Fee Charge - Paid (per item)",
+      "Insufficient Funds Charge - Paid (per item)",
+      "Nonsufficient Funds Fee-Paid +",
+      "Insufficient Funds Charge (Check Paid, Per Item)",
+      "Overdraft Privilege Standard or Extended Coverage",
+    ]) {
+      expect(checkFeeCategory("overdraft", name), name).toEqual({ ok: true });
+    }
+    for (const name of ["NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid +", "Insufficient Funds Charge (Check Paid, Per Item)"]) {
+      expect(refileCategory("nsf", name), name).toBe("overdraft");
+    }
+    for (const name of [
+      "NSF Fee Charge - Returned (per item)",
+      "Insufficient Funds Charge (Check Returned Unpaid, Per Item)",
+      "Insufficient Funds (items paid or returned, per item)",
+      "Extended Overdraft Fee",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
+    expect(refileCategory("nsf", "NSF Fee Charge - Returned (per item)")).toBe("nsf");
+  });
 });

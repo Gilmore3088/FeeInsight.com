@@ -3561,6 +3561,19 @@ and quarter were already stored, without looking at the periods of the data behi
   A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
   board and card-line mailboxes are shared. The next run withdraws both.
 
+## 2026-10-08: Outreach quoted a neighbouring schedule line with the same price
+- **Problem.** Outreach run 3148's drafts quoted, as each bank's overdraft fee, the first schedule
+  line that carried the same amount (`checkFeeAgainstSource` returns the first match). Four drafts
+  showed the wrong line beside a correct fee: First Federal KC ("Insufficient Funds Fee $25" for its
+  $25 overdraft row), NIH FCU ("Returned Unpaid NSF Items" for its paid-NSF row), Bluestone FCU
+  ("Returned" for "Honored") and Saco & Biddeford ("Business account $35", the business tier). Two
+  rows were miscategorised in the catalog (Tri City's $50 charge-off, BankGloucester's $5 transfer)
+  and are taken down by PR 682.
+- **Fix.** The snapshot quotes the catalog row's own excerpt and name, compares the consumer tier when
+  a business tier is also printed, and drafts record `quote_rule`. The outreach run withdraws
+  unreviewed drafts quoted under the old rule, and their institutions are drafted again.
+- **Watch.** The audit block's "Fee:" and "Schedule line:" should name the same charge.
+
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
   `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email
@@ -3613,3 +3626,18 @@ and quarter were already stored, without looking at the periods of the data behi
   same page and keeps it on hold, since that fee is already read.
 - **Watch.** No `knox_agentic_dedup_idx` failures in extract steps, and Guaranty's next
   read-now run completing.
+
+## 2026-10-08: Returned-check fees Darwin re-filed as RDI never went live again
+- **What happened.** Hamilton's second look took 116 "Returned Check" fees off NSF between
+  19:58 and 20:52 UTC, and Darwin's `verify.schedule_refile` re-filed all 116 verified rows as
+  `deposited_item_return` by 20:58. None of them was live again at 21:20, though publish steps
+  kept running.
+- **Why.** Publish skips any verified row that already has a `publish.rules` v2 attempt, so a
+  row it never needs to see twice can't fill every batch. 105 of the 116 had that attempt from
+  when they were published as NSF, so the new filing was never looked at.
+- **Fix.** For a row flagged `darwin_schedule_refiled`, an attempt made under a different
+  `canonical_fee_key` no longer counts. Read-only count on prod: 110 rows become eligible. The
+  other 6 are legacy rows without `agentic_darwin_verified`, which publish never selects; they
+  stay recorded but not live.
+- **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
+  publish steps.

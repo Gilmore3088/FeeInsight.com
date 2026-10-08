@@ -27,6 +27,8 @@ export type SourceCheckResult = { ok: true; sourceLine: string } | { ok: false; 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
 const PRICE_FIRST_MAX_LENGTH = 120;
+/** Words after a figure that make it the rate for each extra unit, not the fee's own price. */
+const ADD_ON_RATE = /^\s*(?:each|per|for each|\/)\s*(?:additional|add'?l|extra)\s+(?:½\s*|half\s+)?(?:pages?|hours?|signatures?|items?|checks?|cop(?:y|ies)|withdrawals?|minutes?|statements?|sheets?)\b/i;
 /**
  * A line that is a price ("$10.00", "Free", "Per Item | $25.00", "- $5 each"), not another
  * fee's row ("Incoming | $10.00").
@@ -77,9 +79,12 @@ const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
-const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|up to|less than|more than|greater than|or equal to|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
+const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance(?: of)?|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|&[lg]t;?|up to|less than|more than|greater than|or equal to|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 // "$200+" (attached) is a threshold; "$100.00 + Locksmith Fee" (spaced) adds a cost to a price.
-const THRESHOLD_AFTER = /^\+|^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+// A spaced "+" whose next cell is a price ("$1,000.01 + | $10.00") is a band's open top, as
+// is "$1,000.01-Over"; "$500 or under = $5.00" is a band too. A spaced "+" alone ("International
+// Wire $50.00 +") is a price plus costs.
+const THRESHOLD_AFTER = /^\+|^\s+\+\s*\|\s*\$|^\s*[-–]\s*(?:over|up|above)\b|^\s*(or more|and more|or less|and over|and above|or greater|or (?:under|below)|and (?:under|below)|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
 const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
@@ -336,7 +341,11 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   // when the row prints one outside it; a row whose only figure is in parentheses keeps it.
   const unlimited = tokens.filter((t) => !isThreshold(line, t));
   const outside = unlimited.filter((t) => !inNote(line, t));
-  const prices = outside.length > 0 ? outside : unlimited;
+  const noted = outside.length > 0 ? outside : unlimited;
+  // An add-on rate ("Account statement reprints (5 page max/$1 each additional page | $4.00") is
+  // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
+  const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
+  const prices = base.length > 0 ? base : noted;
   const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
   const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
@@ -594,6 +603,20 @@ const SUSTAINED_AFTER =
   /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b)/i;
 
 /**
+ * A page that glues footnote marks onto its prices ("Debit Card Payment Fee … $4.951", a third
+ * decimal no price has) prints whole prices the same way ("Early Account Closure … $251 | 1" for
+ * $25 with note 1). On such a page a whole price ending in that mark is not a price it states.
+ */
+const GLUED_MARK_PRICE = /\$\s?\d+\.\d{2}([1-3])(?!\d)/g;
+
+function gluedFootnotePrice(text: string, amount: number): boolean {
+  if (!Number.isInteger(amount) || amount < 10) return false;
+  const marks = new Set(Array.from(text.matchAll(GLUED_MARK_PRICE), (match) => Number(match[1])));
+  if (!marks.has(amount % 10)) return false;
+  return new RegExp(`\\$\\s?${amount}(?![\\d.,])`).test(text);
+}
+
+/**
  * The fee's price on its own row is charged by the day once an account stays overdrawn
  * ("Overdraft Fee .... $5.00 per day after 10 business day", Oct 8): a sustained overdraft
  * charge, not the per-item overdraft or NSF fee. Every mention of the price on the row must say so.
@@ -611,6 +634,7 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
   const pages = [cachedSourceLines(text), ...lastColumns];
   const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
   const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);

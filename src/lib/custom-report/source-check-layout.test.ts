@@ -457,4 +457,43 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(fab, "Monthly Statement – Electronic", 0, ".").ok).toBe(true);
     expect(checkFeeAgainstSource(fab, "Withdrawals at Allpoint & Presto! ATMs", 0, ".").ok).toBe(true);
   });
+
+  it("reads an add-on rate as the fee's price only when the row prints no other (Oct 8)", () => {
+    const reprints = "Account statement reprints (5 page max/$1 each additional page | $4.00";
+    expect(checkFeeAgainstSource(reprints, "Account statement reprints (5 page max", 4, "statement").ok).toBe(true);
+    expect(checkFeeAgainstSource(reprints, "Account statement reprints (5 page max", 1, "statement").ok).toBe(false);
+    expect(checkFeeAgainstSource("ATM Withdrawals (non-LFCU owned ATMs) | 5 free each month, $2.00 each additional", "ATM Withdrawals", 2, "atm").ok).toBe(true);
+    expect(checkFeeAgainstSource("Account Research | $25 first hour/$15 each additional hour", "Account Research", 25, "research").ok).toBe(true);
+    expect(checkFeeAgainstSource("Gift Cards (per card) | $3.00 Each additional bag $35.00", "Gift Cards (per card)", 3, "gift").ok).toBe(true);
+  });
+
+  it("fails a whole price ending in a footnote mark on a page that glues marks onto prices (Oct 8)", () => {
+    const page = [
+      "Debit Card Payment Fee … $4.951",
+      "Returned Mail Fee … $5",
+      "Early Account Closure",
+      "(Closed Within 180 Days of Opening) …$251 | 1",
+      "Stop Payment Order Fee …$28",
+    ].join("\n");
+    expect(checkFeeAgainstSource(page, "(Closed Within 180 Days of Opening)", 251, "clos").ok).toBe(false);
+    expect(checkFeeAgainstSource(page, "Stop Payment Order Fee", 28, "stop").ok).toBe(true);
+    expect(checkFeeAgainstSource("Early Account Closure | $251\nWire Fee | $25.00", "Early Account Closure", 251, "clos").ok).toBe(true);
+  });
+
+  it("reads a balance or check-size limit as a threshold, not the fee (Darwin audit, Oct 8)", () => {
+    const coosa = "Check Cashing Fee (Non-Use of Account) $500.01 - $1,000.00 | $5.00 Each\n\nCheck Cashing Fee (Non-Use of Account) $1,000.01 + | $10.00 Each\n\nCheck Cashing (Non-Use of Account) $1,000.01-Over | $10.00/Each";
+    expect(checkFeeAgainstSource(coosa, "Check Cashing Fee (Non-Use of Account)", 1000.01, ".")).toEqual({ ok: false, reason: "amount_is_a_threshold" });
+    const dest = "Check Cashing Fee - NON DCU Member | $500 or under = $5.00 (Per Item) $500.01 up to $2,500.00 = $ 15.00 (Per Item)";
+    expect(checkFeeAgainstSource(dest, "Check Cashing Fee - NON DCU Member", 500, ".").ok).toBe(false);
+    const metairie = "Check Cashing / Non-Customer / On Us Only &lt;$250\nFree\n\nCheck Cashing / Non-Customer / On Us Only ≥$10.000\n$100";
+    expect(checkFeeAgainstSource(metairie, "Check Cashing / Non-Customer / On Us Only &lt", 250, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(metairie, "Check Cashing / Non-Customer / On Us Only ≥$10.000", 100, ".").ok).toBe(true);
+    const share = "Check Cashing Service fee *Minimum Share account balance of $250.00. *Minimum average monthly checking account balance $500.00.";
+    expect(checkFeeAgainstSource(share, "Check Cashing Service fee Minimum Share account balance of", 250, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Share Savings Below Minimum Balance of $10 | $5", "Share Savings Below Minimum Balance", 10, ".").ok).toBe(false);
+    // A price plus costs, and a price for checks up to a face value, stay the fee.
+    expect(checkFeeAgainstSource("International Wire Out / $50.00 +", "International Wire Out", 50, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Garnishment Fee | $100.00 +", "Garnishment Fee", 100, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Official Checks | Personal Money Orders: $5.00 up to $500 face value.", "Personal Money Orders", 5, ".").ok).toBe(true);
+  });
 });
