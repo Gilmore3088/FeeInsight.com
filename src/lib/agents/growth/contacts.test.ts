@@ -5,8 +5,10 @@ import {
   belongsToSite,
   checkSite,
   contactPageLinks,
+  contactConfidence,
   contactsCsv,
   extractContacts,
+  rankContacts,
   roleFor,
   runContactFinder,
   summarizeContactFinder,
@@ -148,6 +150,27 @@ describe("runContactFinder", () => {
   it("is a free marketing step", () => {
     expect(isMarketingStep("growth-contacts")).toBe(true);
     expect(isProviderStep("growth-contacts")).toBe(false);
+  });
+});
+
+describe("contact confidence", () => {
+  const person = { kind: "person" as const, name: "Jane Smith", title: "SVP Marketing", role: "marketing" as const, email: "jsmith@firstbank.com" };
+
+  it("is high only for a named person with a title in a buying role", () => {
+    expect(contactConfidence(person)).toBe("high");
+    expect(contactConfidence({ ...person, role: "other", title: "Loan Officer" })).toBe("medium");
+    expect(contactConfidence({ ...person, name: null, title: null, role: "other" })).toBe("low");
+    expect(contactConfidence({ ...person, kind: "general" })).toBe("low");
+  });
+
+  it("puts the marketing owner first and a shared mailbox last", () => {
+    const ceo = { ...person, name: "Robert Lee", title: "President & CEO", role: "executive" as const, email: "rlee@firstbank.com" };
+    const info = { kind: "general" as const, name: null, title: null, role: "other" as const, email: "info@firstbank.com" };
+    expect(rankContacts([info, ceo, person]).map((contact) => contact.email)).toEqual([
+      "jsmith@firstbank.com",
+      "rlee@firstbank.com",
+      "info@firstbank.com",
+    ]);
   });
 });
 

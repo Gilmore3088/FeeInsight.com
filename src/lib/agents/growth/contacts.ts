@@ -490,7 +490,56 @@ function csvCell(value: unknown): string {
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
+/**
+ * How sure we are the address reaches a decision-maker (James, 15:39 Oct 8: each prospect
+ * needs a contact, title, source, email and confidence level). High: a named person with a
+ * title in a buying role. Medium: a person's own address with a name or title, but not a
+ * buying role. Low: a person's address with neither, or a shared mailbox.
+ */
+export type ContactConfidence = "high" | "medium" | "low";
+
+export function contactConfidence(contact: Pick<ProspectContactRow, "kind" | "name" | "title" | "role">): ContactConfidence {
+  if (contact.kind !== "person") return "low";
+  if (contact.name && contact.title && contact.role !== "other") return "high";
+  return contact.name || contact.title ? "medium" : "low";
+}
+
+/** Who the first email goes to, best first: marketing and deposit owners before the CEO. */
+const ROLE_PRIORITY: Record<ContactRole, number> = {
+  marketing: 0,
+  retail: 1,
+  executive: 2,
+  finance: 3,
+  operations: 4,
+  compliance: 5,
+  other: 6,
+};
+const CONFIDENCE_PRIORITY: Record<ContactConfidence, number> = { high: 0, medium: 1, low: 2 };
+
+/** One institution's contacts, best first; the first is the primary and the second the backup. */
+export function rankContacts<T extends Pick<ProspectContactRow, "kind" | "name" | "title" | "role" | "email">>(contacts: T[]): T[] {
+  return [...contacts].sort(
+    (a, b) =>
+      CONFIDENCE_PRIORITY[contactConfidence(a)] - CONFIDENCE_PRIORITY[contactConfidence(b)] ||
+      ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role] ||
+      a.email.localeCompare(b.email),
+  );
+}
+
 export function contactsCsv(rows: ProspectContactRow[]): string {
-  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
-  return [header.join(","), ...rows.map((row) => header.map((key) => csvCell(row[key])).join(","))].join("\n") + "\n";
+  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
+  const byInstitution = new Map<number, ProspectContactRow[]>();
+  for (const row of rows) {
+    const list = byInstitution.get(row.institution_id);
+    if (list) list.push(row);
+    else byInstitution.set(row.institution_id, [row]);
+  }
+  const lines: string[] = [];
+  for (const list of byInstitution.values()) {
+    rankContacts(list).forEach((row, index) => {
+      const cells = { ...row, pick: index === 0 ? "primary" : index === 1 ? "backup" : "", confidence: contactConfidence(row) };
+      lines.push(header.map((key) => csvCell(cells[key])).join(","));
+    });
+  }
+  return [header.join(","), ...lines].join("\n") + "\n";
 }

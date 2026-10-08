@@ -3428,3 +3428,18 @@ and quarter were already stored, without looking at the periods of the data behi
   Download PDF as soon as the Ask has saved it, whatever happens to the memo.
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
+
+## 2026-10-08: The source check passes some overdraft lines that are another figure
+
+- **Problem.** Running the first 25 outreach drafts against live New York overdraft fees, the
+  shared source check (`checkFeeAgainstSource`) accepted four peer fees whose matched line is
+  not an overdraft price: Provident Bank $40 (a debit purchase amount in a worked example),
+  OceanFirst $50 (a "2 x 10" safe deposit box size), NewBank $25 (an NSF line) and Haven Savings
+  $30 (another fee's row in a flattened paragraph). Those fees are live in
+  `published_fee_catalog`. The catalog's `conditions` field also carries Knox's provenance
+  ("Knox deterministic extraction from Rosetta artifact #...; text_hash=..."), not conditions.
+- **Fix so far.** The market snapshot and the outreach audit leave pipeline provenance out of a
+  fee's notes, and every outreach draft lists each peer's schedule line so James audits it
+  before sending. The four fees and the check's gaps are for the accuracy work.
+- **Watch.** Peer lines in outreach audit blocks that read as a worked example, a box size or an
+  NSF fee.

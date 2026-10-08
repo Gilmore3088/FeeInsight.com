@@ -135,6 +135,16 @@ export const PUBLICATIONS: Publication[] = [
     freshnessKey: "run:growth.contacts",
     next: nextWeekly(1, 12, 37),
   },
+  {
+    // CARNEGIE's first-email drafts. James audits each one and sends it himself; nothing sends.
+    key: "outreach_drafts",
+    name: "Outreach email drafts",
+    audience: "You",
+    cadence: "Weekly, Mondays (drafts for you to audit and send)",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.outreach",
+    next: nextWeekly(1, 14, 7),
+  },
 ];
 
 export interface CalendarRow {
