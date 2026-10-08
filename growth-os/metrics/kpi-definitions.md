@@ -5,7 +5,7 @@ the report says "not measured". Nothing is estimated.
 
 | KPI | Definition | Source today |
 |---|---|---|
-| Qualified institutional visitors | Visits from a bank or credit union network or that open an institution-facing page and then a report or `/for-institutions` | Not measurable yet (needs SIGNAL, Week 3) |
+| Qualified institutional visitors | Visits from a bank or credit union network or that open an institution-facing page and then a report or `/for-institutions` | Not measurable yet (needs NIELSEN, Week 3) |
 | Free report requests | Free national or district reports opened | `benchmark_report_view` (Vercel Analytics); report leads in `leads` |
 | Qualified report requests | Institution report requests from an institution email domain or a named institution, tests excluded | `leads` (needs a qualified flag) |
 | Quotes sent | Requests James priced | `leads.quote_sent_at` |

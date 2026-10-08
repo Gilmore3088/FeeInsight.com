@@ -19,7 +19,7 @@ Template:
 (24 browser events, 3 server events). There is no GA4 tag and no Search Console verification
 (no meta tag, no verification file). Search Console may still be verified by DNS; not known.
 **Cause:** analytics was built around Vercel's custom events; search data was never set up.
-**Fix:** none yet. `growth-os/metrics/analytics-inventory.md` lists what exists and what SIGNAL
+**Fix:** none yet. `growth-os/metrics/analytics-inventory.md` lists what exists and what NIELSEN
 needs; Search Console waits on James's answer.
 **Lesson:** read funnel counts from our own tables (`leads`, `users`) with the time, and say
 "not measured" for search and visitor numbers until a source exists.

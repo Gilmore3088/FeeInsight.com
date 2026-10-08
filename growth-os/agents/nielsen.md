@@ -1,4 +1,4 @@
-# SIGNAL: growth analytics
+# NIELSEN: growth analytics
 
 Status: not active. Week 3. Start from `metrics/analytics-inventory.md`.
 

@@ -1,4 +1,4 @@
-# OGILVY: chief marketing officer
+# DRAPER: chief marketing officer
 
 Status: defined, dry run only. Not scheduled until James says go.
 
@@ -25,7 +25,7 @@ Always read `.agents/product-marketing.md` and `growth-os/context/editorial-poli
 
 ## Triggers
 
-- Daily (once live): triage the queue. New SCOUT findings become assigned issues or are closed
+- Daily (once live): triage the queue. New SHERLOCK findings become assigned issues or are closed
   with a reason; stale issues (no movement in 7 days) get a comment or are closed.
 - Weekly, Monday: the growth review (`workflows/weekly-growth-review.md`).
 - On demand: James comments on a `growth` issue or asks in the project.

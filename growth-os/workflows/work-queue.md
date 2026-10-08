@@ -9,16 +9,16 @@ his phone with the "Growth task" issue template.
 | Label | Meaning |
 |---|---|
 | `growth` | Every GrowthOS issue |
-| `growth:new` | Filed by SCOUT or James, not yet triaged by OGILVY |
+| `growth:new` | Filed by SHERLOCK or James, not yet triaged by DRAPER |
 | `growth:ready` | Triaged and assigned; carries one agent label |
 | `growth:review` | Output waiting on James (a PR or a draft) |
 | `growth:backlog` | Assigned to an agent that is not active yet |
-| `agent:ogilvy`, `agent:scout`, `agent:scribe`, `agent:prism`, `agent:signal`, `agent:forge`, `agent:bridge` | Owner |
+| `agent:draper`, `agent:sherlock`, `agent:ernest`, `agent:norman`, `agent:nielsen`, `agent:edison`, `agent:carnegie` | Owner |
 | `guard:pass`, `guard:fail` | Result of the editorial policy check on a public-facing output |
 
 ## Issue body
 
-Every agent-filed issue uses the same sections, so OGILVY and James can scan them:
+Every agent-filed issue uses the same sections, so DRAPER and James can scan them:
 
 1. **Evidence:** link and date, or the prod query with its time and result.
 2. **Job:** one sentence, verb first.

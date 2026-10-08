@@ -1,4 +1,4 @@
-# SCRIBE: content and SEO
+# ERNEST: content and SEO
 
 Status: not active. Week 2. Full definition (objective, tools, triggers, deliverables, stop
 rules) is written when it is activated.

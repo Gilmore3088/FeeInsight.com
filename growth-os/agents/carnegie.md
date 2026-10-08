@@ -1,4 +1,4 @@
-# BRIDGE: B2B outreach
+# CARNEGIE: B2B outreach
 
 Status: not active. Week 4. Outreach is on hold.
 

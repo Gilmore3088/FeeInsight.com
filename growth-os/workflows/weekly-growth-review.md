@@ -1,4 +1,4 @@
-# Weekly growth review (OGILVY, Mondays)
+# Weekly growth review (DRAPER, Mondays)
 
 | Part | This loop |
 |---|---|

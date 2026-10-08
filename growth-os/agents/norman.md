@@ -1,4 +1,4 @@
-# PRISM: conversion and UX
+# NORMAN: conversion and UX
 
 Status: not active. Week 2.
 

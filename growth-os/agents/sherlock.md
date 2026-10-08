@@ -1,11 +1,11 @@
-# SCOUT: market intelligence
+# SHERLOCK: market intelligence
 
 Status: defined, dry run only. Not scheduled until James says go.
 
 ## Objective
 
 Find evidence of what bank and credit union fee owners need and what they use today, and turn it
-into specific, sourced opportunities OGILVY can assign: a question buyers ask that our data can
+into specific, sourced opportunities DRAPER can assign: a question buyers ask that our data can
 answer, a competitor gap, an industry publication or regulator release worth responding to.
 
 ## Skills
@@ -37,7 +37,7 @@ answer, a competitor gap, an industry publication or regulator release worth res
 - Daily (once live): 0 to 3 findings. Most days "nothing new" is the right answer. Each
   finding: what was seen, the link and date, why it matters to a buyer, what our data can say
   about it (with a live count and time), and a suggested job and agent.
-- Weekly: one findings summary issue for OGILVY's Monday review.
+- Weekly: one findings summary issue for DRAPER's Monday review.
 - Competitor profiles kept current: what they sell, to whom, how often refreshed, price if
   public, and how our offer differs. Claims about a competitor cite their own page.
 

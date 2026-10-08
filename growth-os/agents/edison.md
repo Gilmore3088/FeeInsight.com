@@ -1,4 +1,4 @@
-# FORGE: product-led growth
+# EDISON: product-led growth
 
 Status: not active. Week 3.
 

@@ -15,13 +15,13 @@ the commit above.
 
 | Agent | Skills |
 |---|---|
-| OGILVY | `product-marketing`, `marketing-ideas`, `launch`, `marketing-psychology`, `marketing-loops` |
-| SCOUT | `competitors`, `competitor-profiling`, `customer-research`, `product-marketing` |
-| SCRIBE | `content-strategy`, `copywriting`, `copy-editing`, `seo-audit`, `ai-seo`, `schema`, `programmatic-seo` |
-| PRISM | `cro`, `signup`, `copywriting`, `ab-testing` |
-| SIGNAL | `analytics`, `attribution`, `ab-testing` |
-| FORGE | `free-tools`, `lead-magnets`, `programmatic-seo`, `onboarding` |
-| BRIDGE | `prospecting`, `cold-email`, `sales-enablement`, `revops` |
+| DRAPER | `product-marketing`, `marketing-ideas`, `launch`, `marketing-psychology`, `marketing-loops` |
+| SHERLOCK | `competitors`, `competitor-profiling`, `customer-research`, `product-marketing` |
+| ERNEST | `content-strategy`, `copywriting`, `copy-editing`, `seo-audit`, `ai-seo`, `schema`, `programmatic-seo` |
+| NORMAN | `cro`, `signup`, `copywriting`, `ab-testing` |
+| NIELSEN | `analytics`, `attribution`, `ab-testing` |
+| EDISON | `free-tools`, `lead-magnets`, `programmatic-seo`, `onboarding` |
+| CARNEGIE | `prospecting`, `cold-email`, `sales-enablement`, `revops` |
 
 Names in James's proposal mapped to the library's directories: `launch-strategy` is `launch`;
 `competitor-analysis` is `competitors`; `competitor-profiles` is `competitor-profiling`; there is

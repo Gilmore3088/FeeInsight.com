@@ -36,7 +36,7 @@ booking offer, which James retired; see the dry run.
 
 ## The same funnel in our own tables (prod, 02:32 UTC)
 
-These are the counts SIGNAL can read without any analytics vendor.
+These are the counts NIELSEN can read without any analytics vendor.
 
 | Measure | Source | Count |
 |---|---|---|
@@ -50,7 +50,7 @@ These are the counts SIGNAL can read without any analytics vendor.
 How many of these are James's own tests is not known; the earlier revenue review judged most
 active Pro accounts to be comp or test accounts. Revenue measured: $0.
 
-## What SIGNAL needs (Week 3)
+## What NIELSEN needs (Week 3)
 
 1. A "qualified" flag on a lead: institution email domain or a named institution, not a test.
 2. A way to read Vercel Analytics events from a run, or a decision to count the funnel from our
