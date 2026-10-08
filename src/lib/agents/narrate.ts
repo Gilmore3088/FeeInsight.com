@@ -218,6 +218,18 @@ export function narrateStepFinished(
       if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a fee-depth post for ${String(picked.metro)} for James to approve.`;
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
+    case "growth-intake": {
+      if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
+      return "Filed nothing into the queue.";
+    }
+    case "growth-score": {
+      const scored = Array.isArray(detail.scored) ? detail.scored.length : 0;
+      const unscored = Array.isArray(detail.unscored) ? detail.unscored.length : 0;
+      if (detail.schemaReady === false) return "Scored nothing; the queue's score columns are not there yet.";
+      if (!scored && !unscored) return "No posted item was due a score this week.";
+      return `Scored ${count(scored, "posted item")} from tracked visits and leads${unscored ? `; ${count(unscored, "item")} had no measure and stays unscored` : ""}.`;
+    }
     case "marketing-score": {
       const scored = n(detail, "scored");
       return scored === 0 ? "Stored this month's market snapshot; no sent campaigns to score yet." : `Scored ${count(scored, "sent campaign")} and stored this month's market snapshot.`;
@@ -398,6 +410,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "briefing-refresh": "hamilton",
   "content-fee-depth": "growth",
   "content-market-spread": "growth",
+  "growth-intake": "growth",
+  "growth-score": "growth",
   "marketing-score": "growth",
   "marketing-write": "growth",
   "marketing-send": "growth",

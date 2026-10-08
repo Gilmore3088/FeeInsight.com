@@ -1122,6 +1122,11 @@ describe("agentic run store", () => {
     expect(heldByPause("discover", on, off)).toBeNull();
     expect(heldByPause("discover", off, on)).toBe("Pipeline is paused: why; run left queued.");
     expect(heldByPause("daily-brief", off, off)).toBeNull();
+    // Growth's queue intake and weekly scoring are marketing steps.
+    for (const key of ["growth-intake", "growth-score"]) {
+      expect(heldByPause(key, off, on)).toBeNull();
+      expect(heldByPause(key, on, off)).toBe("Marketing is paused: why; run left queued.");
+    }
   });
 
   it("skips runs held by a pause when picking queued runs for the tick", async () => {

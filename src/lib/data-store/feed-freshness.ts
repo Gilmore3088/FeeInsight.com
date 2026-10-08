@@ -58,6 +58,7 @@ export const SCHEDULED_REPORT_TRIGGERS = [
   // Growth's marketing runs keep the triggered_by they had under Hamilton.
   "hamilton.content",
   "hamilton.marketing",
+  "growth.score",
 ] as const;
 
 export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[]> {
