@@ -251,6 +251,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
        AND c.detected_at <= ${agedBefore}::timestamptz
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f
