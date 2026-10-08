@@ -36,16 +36,26 @@ retail, executive, finance); the CSV marks the first as primary and the second a
 
 ### First-email drafts (`outreach.ts`, `market-snapshot.ts`)
 
-One draft per prospect ($500M to $2B first, then $100M to $500M) in James's template (15:39 UTC
-Oct 8), linking to the prospect's free market snapshot at `/institution/<id>/market`. The
-snapshot compares the institution's fees with the open institutions in its CBSA. A value counts
-as verified only when every catalog row behind it passes `checkFeeAgainstSource`; anything else
-is labeled unverified and left out of the local median, which needs `MIN_INSTITUTIONS_FOR_MEDIAN`
-verified institutions. No draft is made when the prospect has no decision-maker (`isDecisionMaker`:
-a person's own address, not a shared mailbox, under a buying-role title), its own overdraft fee doesn't verify, or too few competitors verify both locally and statewide.
-When the CBSA has too few verified competitors, the email compares with the open institutions in
-the prospect's state instead (`loadStateComparison`; James chose "Statewide", 21:31 UTC Oct 8) and
-says so. Under the email
+One draft per prospect ($500M to $2B first, then $100M to $500M), in one of the pilot's three
+emails (James's outreach audit, 22:34 UTC Oct 8; plan doc
+https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c). Every email sells easier,
+source-backed competitive fee research; none states the prospect's position against a median or
+suggests a price. A (research efficiency) has no figures and no link and asks how the team does
+the research. B (personalized research) names local institutions whose schedules verify alongside
+the prospect's and offers a comparison; still no figures and no link. C (market insight) states one
+tier-A comparison (the prospect and at least 5 named local competitors all verify) as a range with
+the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
+only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
+otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
+no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, and a
+value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
+Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
+weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
+drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
+verify; B: fewer verified peers; C: the source check fails; D: a row waits on a takedown second
+look), stored on the draft; only tier A is ever quoted and tier D is never used. The A and B emails
+name the research problem that fits the addressee's role. No draft is made when the prospect has no decision-maker
+(`isDecisionMaker`: a person's own address, not a shared mailbox, under a buying-role title). Under the email
 each draft carries an audit block (the schedule line and link behind every figure, the rows'
 conditions, the peers left out) so James checks each comparison before he sends it himself.
 Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the
@@ -54,8 +64,10 @@ day-7 follow-up (`runOutreachFollowUps`) for each first email marked sent at lea
 with nothing recorded since: same link, no new figures, once per institution. Contacts are
 re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
 rank are not buyers, and labels printed where a name would be are not names. Each run first
-withdraws unreviewed drafts whose addressee fails that test (skipped by `carnegie` with the
-reason), and those institutions can be drafted again. Nothing sends.
+withdraws unreviewed drafts whose addressee fails that test, that were written under an older
+`OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
+longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
+institutions can be drafted again. Nothing sends.
 
 ### The outreach journey (`src/lib/outreach-journey.ts`)
 

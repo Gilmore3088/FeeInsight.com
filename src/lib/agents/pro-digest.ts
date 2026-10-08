@@ -108,6 +108,11 @@ export interface ProDigest {
   districtMoves: MarketMove[];
   positionChanges: PositionChange[];
   competitorChanges: CompetitorChange[];
+  /**
+   * The reader's first digest for this institution: where it stands now, since there is no
+   * earlier week to compare against. Without it a new reader's first Mondays are empty.
+   */
+  startingPositions?: Record<string, PositionEntry> | null;
 }
 
 const HEADLINE: ReadonlySet<string> = new Set(HEADLINE_FEE_KEYS);
@@ -303,7 +308,12 @@ export function diffCompetitors(
 
 export function digestHasNews(digest: ProDigest): boolean {
   return (
-    digest.stateMoves.length + digest.districtMoves.length + digest.positionChanges.length + digest.competitorChanges.length > 0
+    digest.stateMoves.length +
+      digest.districtMoves.length +
+      digest.positionChanges.length +
+      digest.competitorChanges.length +
+      Object.keys(digest.startingPositions ?? {}).length >
+    0
   );
 }
 
@@ -352,6 +362,15 @@ export function buildProDigestEmail(
     }
     lines.push("");
   }
+  const starting = Object.entries(digest.startingPositions ?? {});
+  if (starting.length > 0 && digest.reader.own) {
+    lines.push(`Where ${digest.reader.own.name} stands among ${stateName ?? "state"} institutions`);
+    for (const [category, entry] of starting.sort(([a], [b]) => plainLabel(a).localeCompare(plainLabel(b)))) {
+      lines.push(`${plainLabel(category)} ${formatAmount(entry.amount)}: ${entry.lower} of ${entry.of} institutions charge less.`);
+    }
+    lines.push("From next Monday, this section lists the fees where that count changed.");
+    lines.push("");
+  }
   if (digest.competitorChanges.length > 0) {
     lines.push("Your watched institutions");
     for (const change of digest.competitorChanges.slice(0, MAX_MOVES_LISTED * 2)) lines.push(moveLine(change));
@@ -383,6 +402,8 @@ export function buildProDigestEmail(
     subject = `This week: ${digest.reader.own.name}'s position moved on ${digest.positionChanges.length} fee(s)`;
   } else if (digest.competitorChanges.length > 0) {
     subject = `This week: ${digest.competitorChanges.length} fee change(s) at institutions you watch`;
+  } else if (totalMoves === 0 && starting.length > 0 && digest.reader.own) {
+    subject = `This week: where ${digest.reader.own.name} stands on ${starting.length} fee(s) in ${stateName ?? "its state"}`;
   } else {
     subject = `This week: ${totalMoves} published fee change(s) in ${stateName ?? districtName ?? "your market"}`;
   }
@@ -407,8 +428,10 @@ async function loadReaders(): Promise<DigestReader[]> {
            COALESCE(u.subscription_status, 'none') AS subscription_status,
            to_jsonb(u.*) ->> 'past_due_since' AS past_due_since,
            u.state_code, u.fed_district,
-           own.institution_id AS own_institution_id, own.institution_name AS own_institution_name,
-           own.state_code AS own_state_code, own.fed_district AS own_fed_district,
+           COALESCE(seat.institution_id, saved.institution_id) AS own_institution_id,
+           CASE WHEN seat.institution_id IS NOT NULL THEN seat.institution_name ELSE saved.institution_name END AS own_institution_name,
+           CASE WHEN seat.institution_id IS NOT NULL THEN seat.state_code ELSE saved.state_code END AS own_state_code,
+           CASE WHEN seat.institution_id IS NOT NULL THEN seat.fed_district ELSE saved.fed_district END AS own_fed_district,
            w.institution_ids AS watched_ids
     FROM users u
     LEFT JOIN LATERAL (
@@ -418,7 +441,15 @@ async function loadReaders(): Promise<DigestReader[]> {
       WHERE m.user_id = u.id AND m.membership_status = 'active'
       ORDER BY m.granted_at DESC NULLS LAST, m.id DESC
       LIMIT 1
-    ) own ON TRUE
+    ) seat ON TRUE
+    LEFT JOIN LATERAL (
+      -- Without a seat, the bank the reader saved in Hamilton is their institution.
+      SELECT c.selected_institution_id AS institution_id, ct.institution_name, ct.state_code, ct.fed_district
+      FROM hamilton_workspace_contexts c
+      JOIN institution_sources ct ON ct.id = c.selected_institution_id
+      WHERE c.user_id = u.id
+      LIMIT 1
+    ) saved ON TRUE
     LEFT JOIN LATERAL (
       SELECT institution_ids FROM hamilton_watchlists WHERE user_id::text = u.id::text LIMIT 1
     ) w ON TRUE
@@ -576,6 +607,7 @@ export async function runProDigest({
           : [],
       positionChanges: diffPositions(positions, comparable),
       competitorChanges: diffCompetitors(watched, before?.watched ?? null),
+      startingPositions: reader.own && comparable === null && Object.keys(positions).length > 0 ? positions : null,
     });
   }
 
