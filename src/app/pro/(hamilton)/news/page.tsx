@@ -94,7 +94,7 @@ export default async function NewsPage({
       getStatesWithNews(),
     ]);
     return (
-      <div className="mx-auto max-w-7xl px-6 py-10">
+      <div>
         <h1
           className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
           style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
@@ -117,7 +117,7 @@ export default async function NewsPage({
 
   return (
     <div>
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div>
       {/* Header */}
       <div className="flex items-center gap-2 mb-1">
         <span className="h-px w-8 bg-[#C44B2E]/40" />

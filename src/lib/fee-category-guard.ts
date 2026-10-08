@@ -103,13 +103,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v29: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd) is the paid item.
     // v34: "Paid nonsufficient funds (NSF)" (Saco & Biddeford) and "NSF Share Draft (Honored)"
     // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
+    // v41: "Overdraft Charge-off negative balance account $50 per charged off account" (Tri City)
+    // is the charge-off processing fee, not the overdraft fee.
     // v33: a worked example ("a $29 Overdraft Fee will be charged for Wednesday's Overdraft Item
     // (the $50 check paid)", "...because your Available Balance was not sufficient"), a waiver
     // threshold ("unless the total overdraft is $50 or less"), page navigation, an account name
     // and a credit card or savings account "as overdraft protection" are not the fee.
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|paid (?:non[-\s]?|in)sufficient|paid (?:[\w&]+ ){1,3}nsf items?|courtesy pay|bounce protection|privilege|(?:in|non[-\s]?)sufficient funds?\b.{0,25}\(\s*paid\s*\)|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended(?! coverage)|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|\bwill not (charge|assess)|non[- ]?paid|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|from (your |eligible |an? |linked )?(checking|money market|statement savings)|pre-?authori[sz]ed automatic tran|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$|because your (available |current |ledger )?balance|\b(mon|tues|wednes|thurs|fri|satur|sun)day['’]s\b|unless the total|contact us|online statements|\bno overdraft checking\b|\bas overdraft protection\b)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended(?! coverage)|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|\bwill not (charge|assess)|non[- ]?paid|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|would not apply|otherwise would\b|from (your |eligible |an? |linked )?(checking|money market|statement savings)|pre-?authori[sz]ed automatic tran|\bwill honor\b|\bvia\s*:?\s*$|^.{0,20}\bfee on$|because your (available |current |ledger )?balance|\b(mon|tues|wednes|thurs|fri|satur|sun)day['’]s\b|unless the total|contact us|online statements|\bno overdraft checking\b|\bas overdraft protection\b|\bcharge(d)?[- ]?off\b)/i,
     // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
     // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
     excludeUnless: { pattern: /return/i, unless: OVERDRAFT_AND_RETURNED, outsideNotes: true },
@@ -165,6 +167,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /wire/i,
     exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection)`, "i"),
   },
+  // v44: guarded so Hamilton reads it for a paired price ("$20 / $30") in the wrong slot.
+  wire_intl_incoming: { include: /\S/, exclude: /(?!)/ },
   wire_domestic_incoming: {
     include: /wire/i,
     exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
@@ -176,6 +180,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
+  // v43: guarded so Hamilton reads them for names cut from another fee's note (noteTailOfAnotherFee).
+  bill_pay: { include: /\S/, exclude: /\breload fee\b/i },
+  ach_origination: { include: /\S/, exclude: /(?!)/ },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
     exclude: /(cop(y|ies)|stop|replace|lost|research)/i,
@@ -255,10 +262,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
   // 2026). A collection fee on a charged-off or past-due account, or a collection phone
-  // call, is debt collection; every other name passes.
+  // call, is debt collection; every other name passes. v41 also catches "Charge off deposit
+  // collection fee" without the d.
   check_cashing: {
     include: /\S/,
-    exclude: /(charged[- ]?off|past[- ]due|delinquen|\bcalls?\b)/i,
+    exclude: /(charge(d)?[- ]?off|past[- ]due|delinquen|\bcalls?\b)/i,
   },
   // A credit report pulled to open a deposit account or membership is not a loan fee.
   loan_origination: {
@@ -306,7 +314,10 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
 // v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
 // v42: v40 and v41 are Accuracy's (PR 682).
-export const CATEGORY_GUARD_VERSION = 42;
+// v43: PR 682's rules ship after Magellan's v42 (PR 684): v40 cheap overdraft protection, v41
+// charge-off fees, and names cut from another fee's note plus a reload fee filed as bill pay.
+// v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
+export const CATEGORY_GUARD_VERSION = 44;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -353,6 +364,9 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "deposited_item_return", when: /(deposit|written to you)/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
+  // v41: a charge-off processing fee sits with the other charge-off fees under account research.
+  { from: "overdraft", to: "account_research", when: /\bcharge(d)?[- ]?off\b/i },
+  { from: "check_cashing", to: "account_research", when: /\bcharge(d)?[- ]?off\b/i },
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
@@ -410,6 +424,24 @@ function foldedInto(key: string, feeName: string | null | undefined, context?: s
 export const PLAIN_RETURNED_ITEM = /^\s*return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?\s*:?\s*$/i;
 /** The schedule's NSF fee must be at least this, and above the returned check's own price. */
 const SCHEDULE_NSF_MIN = 15;
+
+/**
+ * v40: an "Overdraft Protection Fee" of $15 or less that names no paid item is the linked-account
+ * transfer's fee, not the overdraft fee: First Pioneers' $5 "Overdraft Protection Fee" sits beside
+ * its $25 Courtesy Pay (Darwin hand check, Oct 8). Of 83 live overdraft fees named "overdraft
+ * protection", the 41 at $15 or less are mostly transfers or $0 notes; most at $20 or more are
+ * the overdraft fee itself, so the amount decides.
+ */
+const OVERDRAFT_PROTECTION_MAX = 15;
+const PAID_ITEM_WORDS = /(courtesy|\bpaid\b|opt|privilege|bounce|presentment|honou?r|\bitems?\b|\bnsf\b)/i;
+
+function cheapOverdraftProtection(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "overdraft" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  if (!Number.isFinite(amount) || amount > OVERDRAFT_PROTECTION_MAX) return null;
+  if (!/overdraft protection/i.test(name) || PAID_ITEM_WORDS.test(name)) return null;
+  return `"${name}" at $${amount.toFixed(2)} is an overdraft protection transfer's fee, not the overdraft fee`;
+}
 
 /**
  * A plain "Returned Check Fee" filed as NSF, on a schedule whose NSF or insufficient-funds fee is
@@ -490,5 +522,79 @@ export function checkFeeCategory(
   }
   const scheduleReason = returnBesideNsf(canonicalFeeKey, name, context);
   if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
+  const protectionReason = cheapOverdraftProtection(canonicalFeeKey, name, context);
+  if (protectionReason) return { ok: false, code: "name_contradicts", reason: protectionReason };
+  const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
+  if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
+  const slotReason = pairedPriceSlot(canonicalFeeKey, context);
+  if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
   return { ok: true };
+}
+
+const PAIRED_PRICES = /\$\s?(\d[\d,]*(?:\.\d{2})?)\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/;
+const SLASH_PAIR = /([A-Za-z'’]+)\s*\/\s*([A-Za-z'’]+)/g;
+const WIRE_SIDES: ReadonlyArray<{ pattern: RegExp; value: string }> = [
+  { pattern: /^(international|foreign|intl|int['’]l)$/i, value: "intl" },
+  { pattern: /^domestic$/i, value: "domestic" },
+  { pattern: /^(out|outgoing|outbound)$/i, value: "out" },
+  { pattern: /^(in|incoming|inbound)$/i, value: "in" },
+];
+const WIRE_DIMENSIONS: Record<string, ReadonlyArray<string>> = { geo: ["intl", "domestic"], dir: ["out", "in"] };
+
+/**
+ * v44: a wire row that prints two prices for two named wires ("Wire International In/Out |
+ * $10/$35", "Outgoing Domestic/Foreign | $25.00/$45.00") takes the price in its own slot.
+ * Darwin's eval found the first price filed under the second wire's name; 11 of 15 live paired
+ * wire rows had it. The words either side of a slash in the excerpt name the slots; a side that
+ * names nothing on that dimension is the other value ("Bank Wire Transfers/International").
+ */
+function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext | undefined): string | null {
+  if (!canonicalFeeKey.startsWith("wire_") || context?.amount == null || context.amount === "") return null;
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const prices = excerpt?.match(PAIRED_PRICES);
+  if (!excerpt || !prices) return null;
+  const first = Number(prices[1].replace(/,/g, ""));
+  const second = Number(prices[2].replace(/,/g, ""));
+  const amount = Number(context.amount);
+  if (first === second || Math.abs(amount - first) >= 0.005) return null;
+  const words = excerpt.replace(prices[0], " ");
+  const keyValues = [canonicalFeeKey.includes("_intl_") ? "intl" : "domestic", canonicalFeeKey.endsWith("_outgoing") ? "out" : "in"];
+  for (const pair of words.matchAll(SLASH_PAIR)) {
+    const left = WIRE_SIDES.find((side) => side.pattern.test(pair[1]))?.value ?? null;
+    const right = WIRE_SIDES.find((side) => side.pattern.test(pair[2]))?.value ?? null;
+    for (const values of Object.values(WIRE_DIMENSIONS)) {
+      const l = left && values.includes(left) ? left : null;
+      const r = right && values.includes(right) ? right : null;
+      if (l === r || (l == null && r == null)) continue;
+      const own = keyValues.find((value) => values.includes(value))!;
+      const slot = l === own || (l == null && r !== own) ? 1 : 2;
+      return slot === 2 ? `"${pair[0]}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
+    }
+  }
+  return null;
+}
+
+const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bstop pay/i, "stop_payment"],
+  [/(?:\bin|\bnon[-\s]?)sufficient|\bnsf\b/i, "nsf"],
+  [/\boverdraft (?:protection )?transfers?\b/i, "od_protection_transfer"],
+];
+
+/**
+ * v43: a name cut from the end of another fee's note ("Bill Pay)" from "Stop Payment
+ * (includes ACH, Bill Pay) | $10.00"; "ACH or ATM)" from "Overdraft protection transfers (to
+ * cover check, ACH or ATM) | $5.00") was filed by the note's last word. The row's excerpt
+ * shows the fee the note belongs to.
+ */
+function noteTailOfAnotherFee(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (!/^[^(]*\)\s*$/.test(name)) return null;
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const tail = name.replace(/\)\s*$/, "").trim();
+  if (!excerpt || tail.length < 3) return null;
+  const at = excerpt.toLowerCase().indexOf(tail.toLowerCase());
+  const open = at < 0 ? -1 : excerpt.lastIndexOf("(", at);
+  if (open < 0) return null;
+  const head = excerpt.slice(excerpt.lastIndexOf("|", open) + 1, open).trim();
+  const owner = NOTE_HEAD_FEES.find(([pattern, key]) => key !== canonicalFeeKey && pattern.test(head));
+  return owner ? `"${name}" ends a note on "${head}", a ${owner[1]} fee, not ${canonicalFeeKey}` : null;
 }
