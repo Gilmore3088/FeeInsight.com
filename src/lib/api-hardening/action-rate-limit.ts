@@ -24,6 +24,20 @@ export const REGISTER_ACTION_POLICY: ApiRoutePolicy = {
   auditPriority: "medium",
 };
 
+export const PASSWORD_RESET_ACTION_POLICY: ApiRoutePolicy = {
+  routeId: "action.password_reset",
+  routeTemplate: "/forgot-password",
+  file: "src/app/(auth)/forgot-password/actions.ts",
+  surface: "auth",
+  allowedMethods: ["POST"],
+  authRequirement: "public",
+  rateLimitBucket: "account-password-reset",
+  costPolicy: "none",
+  telemetryEvent: "action.password_reset",
+  failBehavior: "fail_open_audit_only",
+  auditPriority: "medium",
+};
+
 async function clientSubjectKey(): Promise<string | null> {
   const h = await headers();
   const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();

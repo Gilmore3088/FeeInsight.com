@@ -31,7 +31,7 @@ export interface IdentityMatch {
   institutionId: number;
   confidence: number;
   method: string;
-  status: "accepted" | "needs_review";
+  status: "accepted" | "needs_review" | "rejected";
   candidates: number;
 }
 
@@ -109,7 +109,32 @@ function matchHoldingCompany(name: string, index: IdentityIndex): IdentityMatch 
   return null;
 }
 
-export function matchCompany(name: string, index: IdentityIndex): IdentityMatch | null {
+/** Words only a bank, thrift, trust company or credit union (or its holding company) carries in its name. */
+const BANK_NAME_WORDS = /\b(BANK|BANKS|BANKING|BANKSHARES|BANC|BANCORP|BANCORPORATION|BANCSHARES|BANCSHS|BCORP|SAVINGS|TRUST|FSB|SSB|CREDIT UNION|THRIFT)\b/;
+
+export function hasBankWord(name: string): boolean {
+  return BANK_NAME_WORDS.test(name.toUpperCase().replace(/[^A-Z0-9 ]+/g, " "));
+}
+
+export interface MatchOptions {
+  /**
+   * CFPB lists every company with complaints, mostly collectors, servicers and lenders. A name
+   * that would wait for review but carries no bank word ("FMS Inc.", "D&A Services, LLC",
+   * "Fidelity National Financial") is recorded as not a match instead. SEC filers are already
+   * limited to bank SIC codes, so the SEC matcher leaves this off.
+   */
+  rejectNonBankNames?: boolean;
+}
+
+export function matchCompany(name: string, index: IdentityIndex, options: MatchOptions = {}): IdentityMatch | null {
+  const match = matchCompanyName(name, index);
+  if (match?.status === "needs_review" && options.rejectNonBankNames && !hasBankWord(name)) {
+    return { ...match, confidence: 0, method: "non_bank_name", status: "rejected" };
+  }
+  return match;
+}
+
+function matchCompanyName(name: string, index: IdentityIndex): IdentityMatch | null {
   const holding = matchHoldingCompany(name, index);
   if (holding) return holding;
   const key = normalizeCompanyName(name);

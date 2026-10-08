@@ -4,28 +4,26 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
-import { decideIdentityLink } from "@/lib/agents/magellan/registry/identity";
+import { decideIdentityLink, type IdentityLinkType } from "@/lib/agents/magellan/registry/identity";
 
-const decisionSchema = z.object({
-  link_type: z.enum(["cfpb_company", "sec_cik"]),
-  external_key: z.string().min(1).max(500),
-  decision: z.enum(["accepted", "rejected"]),
-});
+const decisionSchema = z.enum(["accepted", "rejected"]);
+const linkSchema = z.string().regex(/^(cfpb_company|sec_cik)\|[^\n]{1,500}$/);
 
-/** Accept or reject one identity match waiting for review on the registry page. */
-export async function decideIdentityLinkAction(formData: FormData): Promise<void> {
+/** Accept or reject the checked identity matches on the registry page in one go. */
+export async function decideIdentityLinksAction(formData: FormData): Promise<void> {
   const user = await requireAuth("approve");
-  const parsed = decisionSchema.safeParse({
-    link_type: formData.get("link_type"),
-    external_key: formData.get("external_key"),
-    decision: formData.get("decision"),
-  });
-  if (!parsed.success) return;
-  await decideIdentityLink(sql, {
-    linkType: parsed.data.link_type,
-    externalKey: parsed.data.external_key,
-    decision: parsed.data.decision,
-    verifiedBy: user.username,
-  });
+  const decision = decisionSchema.safeParse(formData.get("decision"));
+  if (!decision.success) return;
+  for (const value of formData.getAll("link")) {
+    const parsed = linkSchema.safeParse(value);
+    if (!parsed.success) continue;
+    const split = parsed.data.indexOf("|");
+    await decideIdentityLink(sql, {
+      linkType: parsed.data.slice(0, split) as IdentityLinkType,
+      externalKey: parsed.data.slice(split + 1),
+      decision: decision.data,
+      verifiedBy: user.username,
+    });
+  }
   revalidatePath("/admin/magellan/registry");
 }

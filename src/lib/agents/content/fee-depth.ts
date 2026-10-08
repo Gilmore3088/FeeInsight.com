@@ -74,6 +74,12 @@ export const USE_CASES: readonly UseCase[] = [
     hamilton: "Hamilton answers that question in plain language, fee by fee, against the market, peers, state and Fed district.",
   },
   {
+    key: "marketing-claim",
+    label: "Checking a lower-fees claim",
+    opener: "Before a campaign in the {place} area says your fees are lower, marketing and compliance need each competitor's published price for the fees in the ad.",
+    hamilton: "In Hamilton, the team checks each fee in the claim against every local competitor's schedule, with the source for each figure.",
+  },
+  {
     key: "schedule-review",
     label: "Annual fee schedule review",
     opener: "An annual fee schedule review in the {place} area goes faster when every competitor's schedule sits in one place.",

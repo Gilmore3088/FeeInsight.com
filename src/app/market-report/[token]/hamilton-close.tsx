@@ -1,7 +1,10 @@
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
 // The report's last section: the same market, kept current in Hamilton (James, 6 Oct 2026).
-export function HamiltonClose({ competitors }: { competitors: number }) {
+// institutionId is the report's own bank, so /subscribe opens on its tier instead of a search.
+export function HamiltonClose({ competitors, institutionId }: { competitors: number; institutionId?: number | null }) {
+  const params = new URLSearchParams({ from: "/pro/monitor" });
+  if (institutionId) params.set("inst", String(institutionId));
   return (
     <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 sm:p-8 print:hidden" aria-labelledby="hamilton-heading">
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">Keep it current</p>
@@ -13,7 +16,7 @@ export function HamiltonClose({ competitors }: { competitors: number }) {
         and shows each fee change as it is published.
       </p>
       <a
-        href={`/subscribe?${new URLSearchParams({ from: "/pro/monitor" }).toString()}`}
+        href={`/subscribe?${params.toString()}#pro`}
         className="mt-4 inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
       >
         See Hamilton plans

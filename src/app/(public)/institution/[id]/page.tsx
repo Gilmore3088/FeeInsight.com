@@ -48,6 +48,7 @@ import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } fr
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
 import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
+  buildLocationParts,
   buildProfileTitle,
   getPublicInstitutionForPage,
   getRateFeesForPage,
@@ -290,6 +291,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             status={status}
             segmentLabel={segmentLabel}
             locationLabel={locationLabel}
+            location={buildLocationParts({ city, stateCode: inst.state_code, stateName, hasApprovedFees: verifiedFees.length > 0 })}
+            districtHref={inst.fed_district ? `/research/district/${inst.fed_district}` : null}
             charterLabel={charterLabel}
             districtName={districtName}
             websiteUrl={inst.website_url}
@@ -418,6 +421,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   enforcement={enforcement}
                   regulatoryWatch={regulatoryWatch}
                   exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
+                  institutionName={inst.institution_name}
                 />
               )}
             </div>
