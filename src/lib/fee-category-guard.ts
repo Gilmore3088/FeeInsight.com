@@ -219,6 +219,18 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(\bach\b|electronic|e-?check|\beft\b|debit|return|reversal|unauthori|payment|redeposit)/i,
     exclude: /(?!)/, // nothing is excluded; the include decides
   },
+  // A cash advance names the cash or the advance; "Remote Online Notary" $25, "VISA Credit Card
+  // Payment by Phone" and "Express Issuance/Replacement Credit Card" were filed here (v28).
+  cash_advance: {
+    include: /(cash|advance|adelanto|efectivo|withdraw|teller|counter)/i,
+    exclude: /(?!)/, // nothing is excluded; the include decides
+  },
+  // Check printing names the checks or the order. Temporary checks are counter checks, and
+  // "ACH Payment" or "Domestic Transfer Outgoing" are other fees entirely (v28).
+  check_printing: {
+    include: /(check|draft|order|print|book|style|box|design|cheque)/i,
+    exclude: /\btemporar/i,
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -228,7 +240,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 27;
+export const CATEGORY_GUARD_VERSION = 28;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -277,6 +289,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
+  { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
