@@ -180,6 +180,9 @@ Darwin owns verification and classification.
   publishes it as an RDI through its normal checks.
   Guard v24 (2026-10-08) rejects statement-copy and photocopy fees ("Statement Copy Fee",
   "Returned Item Photocopy", "Copy of ...") filed as overdraft or NSF, even under a section heading.
+  Guard v27 (2026-10-08) accepts a per-item overdraft or courtesy pay fee whose own note counts the
+  fees charged a day ("Overdraft Item Fee (Maximum of 5 Charged Per Day)"); a cap priced in the
+  note or named outside it ("Overdraft Fee (maximum charge per day)", "Overdraft Daily Cap") stays out.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

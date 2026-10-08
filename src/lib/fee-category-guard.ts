@@ -45,6 +45,13 @@ interface CategoryRule {
    * overdraft or returned item ...)" is the return item fee, whatever the note joins.
    */
   excludeUnless?: { pattern: RegExp; unless: RegExp; outsideNotes?: boolean };
+  /**
+   * A per-item fee whose own note states how many are charged a day ("Overdraft Item Fee
+   * (Maximum of 5 Charged Per Day)") is that fee, not the daily cap: `exclude` words matching
+   * `cap` are ignored inside a note when the name outside its notes matches `item` and nothing
+   * in `exclude`, and the note counts items and names no dollar amount (v27).
+   */
+  capInNotes?: { cap: RegExp; item: RegExp };
 }
 
 const RETURNED_ITEM = String.raw`return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?`;
@@ -82,6 +89,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
     // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
     excludeUnless: { pattern: /return/i, unless: OVERDRAFT_AND_RETURNED, outsideNotes: true },
+    capInNotes: {
+      cap: /^(daily|maximum|limit|\bcap\b)$/i,
+      item: /(\b(overdraft|od|courtesy pay)\b\W*(paid\s+|per\s+)?(fee|charge|item)s?\b|\bpaid item)/i,
+    },
   },
   nsf: {
     include:
@@ -214,7 +225,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 26;
+export const CATEGORY_GUARD_VERSION = 27;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -331,6 +342,24 @@ function returnBesideNsf(canonicalFeeKey: string, name: string, context: Categor
   return `"${name}" at $${amount.toFixed(2)} sits on a schedule whose NSF fee is $${nsf.toFixed(2)}, so it is the return deposited item fee`;
 }
 
+const COUNT_IN_NOTE = /(\b\d{1,2}\b|\b(one|two|three|four|five|six|seven|eight|nine|ten)\b)/i;
+
+/** True when every `exclude` word in the name is a daily-count cap inside a per-item fee's note. */
+function capOnlyInNotes(rule: CategoryRule, name: string): boolean {
+  const capped = rule.capInNotes;
+  if (!capped) return false;
+  const notes = name.match(/\([^()]*(?:\)|$)/g);
+  if (!notes) return false;
+  const outside = name.replace(/\([^()]*(?:\)|$)/g, " ");
+  if (rule.exclude.test(outside) || !capped.item.test(outside)) return false;
+  const noteText = notes.join(" ");
+  // The note must count the items ("Maximum of 5", "4 per day"); "(maximum charge per day)"
+  // prices the cap itself. A dollar figure in the note may be the cap's amount.
+  if (/\$\s?\d/.test(noteText) || !COUNT_IN_NOTE.test(noteText)) return false;
+  const words = noteText.match(new RegExp(rule.exclude.source, "gi")) ?? [];
+  return words.length > 0 && words.every((word) => capped.cap.test(word));
+}
+
 export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
@@ -351,7 +380,7 @@ export function checkFeeCategory(
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
   const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
   const softExcluded = soft && !soft.unless.test(softName) ? name.match(soft.pattern) : null;
-  const excluded = name.match(rule.exclude) ?? softExcluded;
+  const excluded = (capOnlyInNotes(rule, name) ? null : name.match(rule.exclude)) ?? softExcluded;
   if (excluded) {
     return {
       ok: false,

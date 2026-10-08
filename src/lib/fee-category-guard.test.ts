@@ -522,4 +522,22 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Item on Lifeline 18/65 Checking or Statement Savings \"Overdraft Fee\"")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
   });
+
+  it("v27 accepts a per-item overdraft fee whose note states the daily count, never the cap itself (First Financial, Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Overdraft Fee-Paid Item (Maximum of 2 Items/Day)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day On Consumer Accounts)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day o")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Courtesy Pay Overdraft Fee (5 maximum per day)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft per item (Consumer limit of 5 per day)")).toEqual({ ok: true });
+    // The cap, a cap named outside the note, a dollar cap in the note, or another excluded word stays out.
+    expect(checkFeeCategory("overdraft", "Overdraft Daily Cap").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Maximum Overdraft Fees (per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (maximum $175 per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (maximum charge per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Charge (Daily Maximum)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft protection savings (limit 6 per month)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (daily, beginning day 5)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Transfer Fee (maximum of 3 per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft (maximum 5 per day)").ok).toBe(false);
+  });
 });
