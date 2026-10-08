@@ -38,12 +38,21 @@ export async function findStudy(
   studyKey: string,
   methodVersion: number,
   asOf: string,
-): Promise<{ id: number; n: number } | null> {
+): Promise<{ id: number; n: number; sources: StudySource[] } | null> {
   const [row] = await db`
-    SELECT id, n FROM hamilton_studies
+    SELECT id, n, sources FROM hamilton_studies
      WHERE study_key = ${studyKey} AND method_version = ${methodVersion} AND as_of = ${asOf}
   `;
-  return row ? { id: Number(row.id), n: Number(row.n) } : null;
+  return row ? { id: Number(row.id), n: Number(row.n), sources: Array.isArray(row.sources) ? (row.sources as StudySource[]) : [] } : null;
+}
+
+/**
+ * True when a source's data period moved since the study was stored, such as a new Census
+ * ACS year landing mid-quarter: the stored result no longer reflects the data, so it is rebuilt.
+ */
+export function sourcesChanged(stored: StudySource[], current: StudySource[]): boolean {
+  const periods = new Map(stored.map((s) => [s.name, s.asOf ?? null]));
+  return current.some((s) => !periods.has(s.name) || periods.get(s.name) !== (s.asOf ?? null));
 }
 
 const PLACEMENT_BATCH = 2000;

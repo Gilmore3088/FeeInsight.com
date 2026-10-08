@@ -18,7 +18,7 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 
 /**
  * Hamilton's studies, as one visible run with a step per study (cron, daily). A study
- * is stored only when its data period is new, so most days every step reports
+ * is stored only when its data period is new or a source's period moved (a new Census year), so most days every step reports
  * "already current". `?dry_run=1` computes without storing; `?study=study-local-income`
  * runs one study; `?force=1` re-stores the current period. Deterministic; no model calls.
  */
