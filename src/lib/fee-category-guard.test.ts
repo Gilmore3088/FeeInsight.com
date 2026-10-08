@@ -672,4 +672,49 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("card_replacement", name), name).toEqual({ ok: true });
     }
   });
+
+  it("v37 files early-closure and inactive-account fees out of the minimum balance fee (Oct 8)", () => {
+    for (const name of ["Closed Account (less than 6 months)", "Early Account Closing (under 90 days)", "Early account termination (less than 6 months)", "Close Account (less than 30 days old)"]) {
+      expect(checkFeeCategory("minimum_balance", name).ok, name).toBe(false);
+      expect(refileCategory("minimum_balance", name), name).toBe("early_closure");
+    }
+    for (const name of ["Low Balance Savings Inactivity Fee", "Checking acct – 1 yr. no activity (balance falls below $1,000.00)"]) {
+      expect(checkFeeCategory("minimum_balance", name).ok, name).toBe(false);
+      expect(refileCategory("minimum_balance", name), name).toBe("dormant_account");
+    }
+    for (const name of ["No minimum balance is required. Monthly service charge is", "You must maintain a minimum balance of at least", "Membership requires the opening of a primary savings account with a minimum balance of", "Minimum Balance Transfer"]) {
+      expect(checkFeeCategory("minimum_balance", name).ok, name).toBe(false);
+    }
+    for (const name of ["Below Minimum Balance Fee", "Low Balance Fee (balance falls below $1,000)", "is required to open this account. A minimum balance fee of", "Minimum Balance Fee (Per month if share account balance falls below $5.00)"]) {
+      expect(checkFeeCategory("minimum_balance", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("v38 keeps overdraft, paper statement, transfer and wire module fees out of the monthly fee (Oct 8)", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Overdraft Privilege Service Charge - Wise Checking").ok).toBe(false);
+    expect(refileCategory("monthly_maintenance", "Overdraft Privilege Service Charge - Wise Checking")).toBe("overdraft");
+    for (const name of ["Maintenance Fee – Paper Stmt Fee", "Paper mailed, per account, per month in addition to monthly maintenance charge", "Transfer Service Charge", "Wire Manager Monthly Maintenance Fee", "Wire Module Monthly Maintenance", "ATM/Debit Card Monthly Fee for Share Account Access", "Monthly Fee is waived under any of the following conditions | Outgoing international wire", "Off Service Charge for 12 POS Debit Card Transaction | NA | Yes | No | NA | No | No | No"]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok, name).toBe(false);
+    }
+    for (const name of ["Monthly service charge (Hometown No Overdraft Checking)", "E-Checking account with paper Monthly service charge", "monthly service charge, reduced to if customer goes “paperless”", "monthly maintenance fee (Use your debit card 15 or more times per month and we’ll waive the monthly fee.)"]) {
+      expect(checkFeeCategory("monthly_maintenance", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("v39 keeps NSF, overdraft and wire rows out of the overdraft transfer and legal process fees (Oct 8)", () => {
+    for (const name of ["Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/Uncollected Funds includes Electronic Funds Transfer Debits", "Check-Overdraft/NSF/Return Fees", "Overdraft Fee-Exceeded Reg D Transfers"]) {
+      expect(checkFeeCategory("od_protection_transfer", name).ok, name).toBe(false);
+    }
+    for (const name of ["Manual Overdraft Transfer(Reg D Exceeded)", "Overdraft Transfer from Savings (Reg D may apply)", "Insufficient Funds Transfer (Savings Overdraft"]) {
+      expect(checkFeeCategory("od_protection_transfer", name), name).toEqual({ ok: true });
+    }
+    for (const name of ["SUBORDINATION REQUEST: Incoming", "SUBORDINATION REQUEST: Outgoing Domestic", "SUBORDINATION REQUEST: Outgoing Foreign"]) {
+      expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
+    for (const name of ["Subordination Request", "Mortgage Subordination Fee", "Legal Process Fee"]) {
+      expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
+    }
+  });
 });

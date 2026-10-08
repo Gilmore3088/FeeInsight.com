@@ -538,7 +538,7 @@ function customerGroup(research: FeeResearch): { label: string; members: { name:
   const local = research.localCompetitors ?? [];
   if (local.length > 0) {
     return {
-      label: "competitors in your market",
+      label: "local competitors",
       members: local.map((p) => ({ name: p.institutionName, amount: p.amount })),
       source: research.localMarket?.source ?? feeSource(research),
     };
@@ -627,7 +627,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const own = archetypeOf(current);
     if (free.length > 0 && own !== "zero_od") {
       out.push({
-        text: `${count(free.length)} of them ${free.length === 1 ? "publishes" : "publish"} a $0 ${name} fee (${names(free.map((m) => ({ name: plainName(m.name) })), 1)}), the claim your ${money(current)} competes against.`,
+        text: `${count(free.length)} of them ${free.length === 1 ? "publishes" : "publish"} a $0 ${name} fee (${free.length === 1 ? plainName(free[0].name) : `including ${plainName(free[0].name)}`}), the claim your ${money(current)} faces.`,
         source: group.source,
         sampleSize: group.members.length,
       });

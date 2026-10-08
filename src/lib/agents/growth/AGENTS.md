@@ -40,7 +40,10 @@ snapshot compares the institution's fees with the open institutions in its CBSA.
 as verified only when every catalog row behind it passes `checkFeeAgainstSource`; anything else
 is labeled unverified and left out of the local median, which needs `MIN_INSTITUTIONS_FOR_MEDIAN`
 verified institutions. No draft is made when the prospect has no decision-maker (`isDecisionMaker`:
-a person's own address, not a shared mailbox, under a buying-role title), its own overdraft fee doesn't verify, or too few competitors verify. Under the email
+a person's own address, not a shared mailbox, under a buying-role title), its own overdraft fee doesn't verify, or too few competitors verify both locally and statewide.
+When the CBSA has too few verified competitors, the email compares with the open institutions in
+the prospect's state instead (`loadStateComparison`; James chose "Statewide", 21:31 UTC Oct 8) and
+says so. Under the email
 each draft carries an audit block (the schedule line and link behind every figure, the rows'
 conditions, the peers left out) so James checks each comparison before he sends it himself.
 Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the

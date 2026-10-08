@@ -66,9 +66,13 @@ type SqlTag = typeof sql;
 // (Legal Process Compliance $20/hr) released as document reproduction, and "account research fee
 // may apply)" (a $5 draft copy). A name cut from the middle of a line, starting with "/" or ending
 // in an unopened ")", now stays held (`name_fragment`).
+// Version 14 (2026-10-08): a hand check of 20 released v13 fees found a merchant's fee for a
+// member's NSF check released as NSF, a $5 "Overdraft Protection Fee" beside a $25 Courtesy Pay
+// fee released as overdraft, and an early-closure fee read as "$251 | 1" ($25, footnote 1). Those
+// now stay held (`charged_to_merchant`, `small_overdraft_protection`, `footnote_in_price`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 13,
+  version: 14,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -126,22 +130,74 @@ const SMALL_NSF_AMOUNT = 10;
 /** A name cut from the middle of a line: "/hr incl. reproduction", "account research fee may apply)". */
 const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$/;
 
-export type ReleaseHoldReason = "category_guard" | "business_service_monthly" | "small_returned_item" | "name_fragment";
+/** A fee the merchant or payee pays ("Merchant presenting NSF check from member"), not the member. */
+const CHARGED_TO_MERCHANT = /\bmerchants?\b/i;
+const MEMBER_OVERDRAFT_CATEGORIES = new Set(["nsf", "overdraft"]);
+/**
+ * "Overdraft Protection Fee $5" beside "Courtesy Pay Fee $25" is the transfer from a linked
+ * account; overdraft fees run $25-$35. A name that also says the item is paid stays an overdraft.
+ */
+const OVERDRAFT_PROTECTION_NAME = /overdraft protection/i;
+const PAID_ITEM_NAME = /(courtesy|paid|opt[- ]?in|privilege|bounce|presentment|honou?r)/i;
+const SMALL_OVERDRAFT_AMOUNT = 15;
+/**
+ * A footnote mark printed onto the price: "$7.501" (a third decimal) on the page, or "$251 | 1"
+ * where the mark after the price repeats the price's last digit ($25, footnote 1).
+ */
+const THIRD_DECIMAL_PRICE = /\$\d+\.\d{3}\b/;
+const MARK_REPEATS_LAST_DIGIT = /\$\d*(\d)\s*\|\s*\1\b/;
+const LAST_DIGIT_ONE_PRICE = /^\d+1$/;
+
+export type ReleaseHoldReason =
+  | "category_guard"
+  | "business_service_monthly"
+  | "small_returned_item"
+  | "name_fragment"
+  | "charged_to_merchant"
+  | "small_overdraft_protection"
+  | "footnote_in_price";
+
+/** True when the price was likely read with a footnote mark printed onto its last digit. */
+export function footnoteInPrice(amount: number | null, sourceLine: string, sourceContext: string | null | undefined): boolean {
+  if (THIRD_DECIMAL_PRICE.test(sourceLine) || MARK_REPEATS_LAST_DIGIT.test(sourceLine)) return true;
+  // A page that prints marks onto its prices ("$7.501") makes any whole price ending in 1 suspect.
+  return (
+    amount != null &&
+    Number.isInteger(amount) &&
+    LAST_DIGIT_ONE_PRICE.test(String(amount)) &&
+    THIRD_DECIMAL_PRICE.test(sourceContext ?? "")
+  );
+}
 
 /**
  * Why a fee the model passed still stays held, or null. Each is a miss a hand check found after the
  * prompt already named it, so the fee's own name, amount and rows now decide.
  */
-export function releaseHoldReason({ row, sourceContext }: Pick<ReleaseReviewCandidate, "row" | "sourceContext">): ReleaseHoldReason | null {
+export function releaseHoldReason({
+  row,
+  sourceLine,
+  sourceContext,
+}: Pick<ReleaseReviewCandidate, "row" | "sourceContext"> & { sourceLine?: string }): ReleaseHoldReason | null {
   const key = row.held_canonical_fee_key;
   const name = row.fee_name ?? "";
   if (!checkFeeCategory(key, name, row).ok) return "category_guard";
   if (NAME_FRAGMENT.test(name)) return "name_fragment";
+  const price = row.amount == null ? null : Number(row.amount);
+  if (MEMBER_OVERDRAFT_CATEGORIES.has(key) && CHARGED_TO_MERCHANT.test(name)) return "charged_to_merchant";
+  if (
+    key === "overdraft" &&
+    OVERDRAFT_PROTECTION_NAME.test(name) &&
+    !PAID_ITEM_NAME.test(name) &&
+    price != null &&
+    price < SMALL_OVERDRAFT_AMOUNT
+  ) {
+    return "small_overdraft_protection";
+  }
+  if (footnoteInPrice(price, sourceLine ?? "", sourceContext)) return "footnote_in_price";
   if (key === "monthly_maintenance" && BARE_MONTHLY_NAME.test(name) && BUSINESS_SERVICE_ROWS.test(sourceContext ?? "")) {
     return "business_service_monthly";
   }
-  const amount = row.amount == null ? null : Number(row.amount);
-  if (key === "nsf" && PLAIN_RETURNED_ITEM.test(name) && amount != null && amount < SMALL_NSF_AMOUNT) {
+  if (key === "nsf" && PLAIN_RETURNED_ITEM.test(name) && price != null && price < SMALL_NSF_AMOUNT) {
     return "small_returned_item";
   }
   return null;

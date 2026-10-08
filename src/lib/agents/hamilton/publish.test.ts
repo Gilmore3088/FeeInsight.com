@@ -520,6 +520,16 @@ describe("Hamilton agentic publish", () => {
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });
 
+    it("lets a row Darwin re-filed after a takedown publish again under its new category", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 504, db: asPublishDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key");
+      expect(params).toContain("darwin_schedule_refiled");
+    });
+
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
       const db = learningDb([verifiedFee], [], [{ ...verifiedFee, depth_source: "pending" }]);
 
