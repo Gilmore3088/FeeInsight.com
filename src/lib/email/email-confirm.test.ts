@@ -21,6 +21,13 @@ describe("email confirmation token", () => {
     expect(verifyEmailConfirmToken(7, "pat@bank.com", token, new Date("2026-10-30T00:00:00Z"), SECRET)).toBe(false);
   });
 
+  it("accepts the user id as the database returns it (bigint as a string)", () => {
+    const token = createEmailConfirmToken("7", "pat@bank.com", NOW, SECRET)!;
+    expect(token).not.toBeNull();
+    expect(verifyEmailConfirmToken(7, "pat@bank.com", token, NOW, SECRET)).toBe(true);
+    expect(createEmailConfirmToken("7x", "pat@bank.com", NOW, SECRET)).toBeNull();
+  });
+
   it("makes no token without a secret", () => {
     expect(createEmailConfirmToken(7, "pat@bank.com", NOW, "")).toBeNull();
   });

@@ -20,7 +20,7 @@ async function caller(request: NextRequest): Promise<"schedule" | "admin" | null
 /**
  * NIELSEN's contact finder (src/lib/agents/growth/contacts.ts): reads up to `?limit=` prospect
  * websites for the executive addresses they publish. Free, no model calls, nothing sends.
- * Not in vercel.json: an admin starts it by hand until James says go for a schedule.
+ * Runs Mondays from vercel.json (James turned the weekly schedules on 15:33 UTC Oct 8).
  */
 async function handleGET(request: NextRequest) {
   const triggerSource = await caller(request);

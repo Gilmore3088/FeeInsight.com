@@ -5,8 +5,12 @@ import {
   belongsToSite,
   checkSite,
   contactPageLinks,
+  contactConfidence,
   contactsCsv,
   extractContacts,
+  isSharedMailbox,
+  normalizeContact,
+  rankContacts,
   roleFor,
   runContactFinder,
   summarizeContactFinder,
@@ -62,6 +66,44 @@ describe("reading a page", () => {
     expect(roleFor("Deposit Product Manager")).toBe("retail");
     expect(roleFor("President and CEO")).toBe("executive");
     expect(roleFor("Loan Officer")).toBe("other");
+  });
+
+  it("doesn't take lenders, branch staff or a vice president's rank for a buyer (prod, Oct 8)", () => {
+    expect(roleFor("Vice President, Cash Management")).toBe("other");
+    expect(roleFor("Vice President, Senior Business Banker, Indiana Market")).toBe("other");
+    expect(roleFor("Retail Lending Coordinator")).toBe("other");
+    expect(roleFor("AVP, Branch Manager")).toBe("other");
+    expect(roleFor("Senior Vice President, Chief Lending Officer")).toBe("other");
+    expect(roleFor("SVP, Chief Retail Officer")).toBe("retail");
+    expect(roleFor("VP of Retail & Business Development")).toBe("retail");
+    expect(roleFor("President & CEO*")).toBe("executive");
+    expect(roleFor("Vice President, Chief Financial Officer & Treasurer")).toBe("finance");
+  });
+
+  it("reads member services as retail only at a decision maker's rank", () => {
+    expect(roleFor("Member Services Manager")).toBe("other");
+    expect(roleFor("Member Service Officer")).toBe("other");
+    expect(roleFor("VP of Member Experience")).toBe("retail");
+  });
+
+  it("re-reads saved contacts: labels aren't names and headings aren't titles", () => {
+    const saved = { kind: "person" as const, role: "executive" as const };
+    expect(normalizeContact({ ...saved, name: "Accessibility Statement", title: null })).toMatchObject({ name: null, role: "other" });
+    expect(normalizeContact({ ...saved, name: "Commercial Lender", title: "Vice President" })).toMatchObject({ name: null, role: "other" });
+    expect(normalizeContact({ ...saved, name: "SEND EMAIL", title: null }).name).toBeNull();
+    expect(normalizeContact({ ...saved, name: null, title: "President’s Message March 2026" })).toMatchObject({ title: null, role: "other" });
+    expect(normalizeContact({ ...saved, name: "Patrick B. Thorpe", title: "President & CEO*" })).toMatchObject({
+      name: "Patrick B. Thorpe",
+      title: "President & CEO",
+      role: "executive",
+    });
+  });
+
+  it("drops a name printed beside several addresses", () => {
+    const html = "<p>North Pointe</p><p>SVP, Chief Financial Officer</p><p>ecoop@sbw.bank</p><p>North Pointe</p><p>SVP, Chief Risk Officer</p><p>rrice@sbw.bank</p>";
+    const contacts = extractContacts(html, "https://www.sbw.bank/about/our-people/", "sbw.bank");
+    expect(contacts.map((contact) => contact.name)).toEqual([null, null]);
+    expect(contacts[0]).toMatchObject({ title: "SVP, Chief Financial Officer", role: "finance" });
   });
 
   it("follows same-site leadership pages first, then about, then contact", () => {
@@ -148,6 +190,53 @@ describe("runContactFinder", () => {
   it("is a free marketing step", () => {
     expect(isMarketingStep("growth-contacts")).toBe(true);
     expect(isProviderStep("growth-contacts")).toBe(false);
+  });
+});
+
+describe("contact confidence", () => {
+  const person = { kind: "person" as const, name: "Jane Smith", title: "SVP Marketing", role: "marketing" as const, email: "jsmith@firstbank.com" };
+
+  it("is high only for a named person with a title in a buying role", () => {
+    expect(contactConfidence(person)).toBe("high");
+    expect(contactConfidence({ ...person, role: "other", title: "Loan Officer" })).toBe("medium");
+    expect(contactConfidence({ ...person, name: null, title: null, role: "other" })).toBe("low");
+    expect(contactConfidence({ ...person, kind: "general" })).toBe("low");
+  });
+
+  it("puts the marketing owner first and a shared mailbox last", () => {
+    const ceo = { ...person, name: "Robert Lee", title: "President & CEO", role: "executive" as const, email: "rlee@firstbank.com" };
+    const info = { kind: "general" as const, name: null, title: null, role: "other" as const, email: "info@firstbank.com" };
+    expect(rankContacts([info, ceo, person]).map((contact) => contact.email)).toEqual([
+      "jsmith@firstbank.com",
+      "rlee@firstbank.com",
+      "info@firstbank.com",
+    ]);
+  });
+});
+
+describe("shared mailboxes and phone lines", () => {
+  it("reads committee, service and distribution-list addresses as shared", () => {
+    for (const email of ["member_serv@x.org", "treasurysupport@x.com", "web-executive-dl@x.com", "supervisorycommittee@x.org", "e-statements@x.com", "cmadmin@x.bank", "smart_insurance@x.org", "info@x.com"]) {
+      expect(isSharedMailbox(email)).toBe(true);
+    }
+    for (const email of ["kday@sbw.bank", "mark.rieger@ffbkc.com", "cpouliot@hrcu.org", "jadmiral@x.com"]) {
+      expect(isSharedMailbox(email)).toBe(false);
+    }
+  });
+
+  it("drops a phone line printed where a title would be", () => {
+    expect(normalizeContact({ name: null, title: "Member Services: 800.742.5582 or", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
+    expect(normalizeContact({ name: null, title: "Main Branch Line: (360) 685-8477", role: "other", kind: "person" }).title).toBeNull();
+    expect(normalizeContact({ name: null, title: "By mail to Generations FCU, ATTN: Marketing Dept., P.O. Box 791870", role: "marketing", kind: "person" })).toMatchObject({ title: null, role: "other" });
+  });
+
+  it("drops a line that quotes an address, and the board and card mailboxes", () => {
+    expect(normalizeContact({ name: "Annual Meeting", title: "To contact our leadership directly, Email: President-CEO@lafcu.org or  .", role: "executive", kind: "person" })).toMatchObject({ name: null, title: null, role: "other" });
+    expect(normalizeContact({ name: null, title: "Member Services: MemberServices@TheQ.org", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
+    for (const email of ["boardofdirectors@lafcu.org", "visa@theq.org", "board@x.org"]) expect(isSharedMailbox(email)).toBe(true);
+    expect(isSharedMailbox("ceo@nihfcu.org")).toBe(false);
+    expect(normalizeContact({ name: "Richard Fogl", title: "Business Product Specialist | Business Services", role: "retail", kind: "person" }).role).toBe("other");
+    expect(normalizeContact({ name: "Sarah Gonneville", title: "VP, Retail Branch Administrator", role: "retail", kind: "person" })).toMatchObject({ title: "VP, Retail Branch Administrator", role: "retail" });
   });
 });
 

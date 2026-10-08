@@ -127,7 +127,8 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   const out: Fact[] = [];
   const line = research.revenueLine;
   if (line) {
-    const combined = line.combinedWith ? `, combined with ${line.combinedWith},` : "";
+    // One filing line covers both fees: "NSF / returned item and overdraft income".
+    const combined = line.combinedWith ? ` and ${line.combinedWith}` : "";
     out.push({
       text: `Your filing reports ${formatDollarsInWords(line.annualIncome)} in ${name} income${combined} over the four quarters to ${longDate(line.quarterEnd)}.`,
       source: { ...line.source, asOf: line.quarterEnd },
@@ -327,7 +328,7 @@ function headline(research: FeeResearch, name: string): string {
     return `Your ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
   // No amount on file means the fee is not in the index, never that the bank charges none.
-  if (band) return `Your ${name} fee is not in the index yet; the median across ${count(band.n)} peers is ${money(band.median)}.`;
+  if (band) return `Your ${name} fee is not in the index yet; ${count(band.n)} peers' median is ${money(band.median)}.`;
   return `Your ${name} fee is not in the index yet, and too few peers publish one to compare.`;
 }
 

@@ -33,6 +33,25 @@ afterEach(() => {
 });
 
 describe("StructuredAsk", () => {
+  it("asks again when the same question is sent again (Try again), and hides a failed engine call behind the written answer", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        return new Response("{}", { status: 500 });
+      }),
+    );
+    const onNoStoryline = vi.fn();
+    const { rerender } = render(<StructuredAsk question="what is a call report?" nonce={1} institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    await waitFor(() => expect(onNoStoryline).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/could not answer/i)).toBeNull();
+    rerender(<StructuredAsk question="what is a call report?" nonce={1} institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    rerender(<StructuredAsk question="what is a call report?" nonce={2} institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    await waitFor(() => expect(onNoStoryline).toHaveBeenCalledTimes(2));
+    expect(calls).toHaveLength(2);
+  });
+
   it("asks for Hamilton's memo over a storyline answer, with the same question, and shows it", async () => {
     const memo = {
       status: "written",

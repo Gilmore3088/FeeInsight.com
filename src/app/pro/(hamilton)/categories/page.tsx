@@ -12,41 +12,36 @@ import {
   TAXONOMY_COUNT,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
+import { MemoHeader, MemoPage, SERIF } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = {
-  title: "Fee Categories",
+  title: "Fee categories",
 };
 
+/** Tier badges in the memo palette: terracotta for the spotlight fees, warm neutrals below. */
 const TIER_BADGES: Record<string, { label: string; className: string }> = {
   spotlight: {
     label: "Spotlight",
-    className: "bg-amber-50 text-amber-700 border border-amber-200",
+    className: "border-terra/30 bg-terra-soft text-terra-text",
   },
   core: {
     label: "Core",
-    className: "bg-blue-50 text-blue-700 border border-blue-200",
+    className: "border-warm-400 bg-warm-150 text-warm-800",
   },
   extended: {
     label: "Extended",
-    className: "bg-gray-50 text-gray-500 border border-gray-200",
+    className: "border-warm-300 bg-warm-50 text-warm-700",
   },
   comprehensive: {
-    label: "Comp.",
-    className: "bg-gray-50 text-gray-400 border border-gray-100",
+    label: "Comprehensive",
+    className: "border-warm-200 bg-warm-50 text-warm-600",
   },
 };
 
-const FAMILY_DOT_COLORS: Record<string, string> = {
-  "Account Maintenance": "#3B82F6",
-  "Overdraft & NSF": "#EF4444",
-  "ATM & Card": "#F59E0B",
-  "Wire Transfers": "#8B5CF6",
-  "Check Services": "#64748B",
-  "Digital & Electronic": "#06B6D4",
-  "Cash & Deposit": "#10B981",
-  "Account Services": "#6366F1",
-  "Lending Fees": "#F97316",
-};
+/** My fees for one fee category. */
+function myFeesHref(category: string): string {
+  return `/pro/research?fee=${encodeURIComponent(category)}`;
+}
 
 export default async function ProCategoriesPage() {
   const user = await getCurrentUser();
@@ -58,32 +53,21 @@ export default async function ProCategoriesPage() {
   const familyNames = Object.keys(FEE_FAMILIES);
 
   return (
-    <div>
-    <div className="mx-auto max-w-7xl px-6 py-10">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-terra/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-terra/60">
-          Fee Categories
-        </span>
-      </div>
+    <MemoPage>
+      <MemoHeader
+        kicker="Reference"
+        title="Fee categories"
+        dek={
+          <>
+            All {TAXONOMY_COUNT} fee categories in {familyNames.length} families, each with its national median and
+            how many institutions publish it. Open one to see it in My fees.
+          </>
+        }
+      />
 
-      <h1
-        className="text-[2rem] leading-[1.1] tracking-[-0.02em] text-warm-900"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-      >
-        Complete Fee Taxonomy
-      </h1>
-      <p className="mt-3 max-w-lg text-[14px] leading-relaxed text-warm-600">
-        All {TAXONOMY_COUNT} fee categories across {familyNames.length} families,
-        with statistical distributions and institutional coverage.
-      </p>
-
-      {/* Family grid — matches districts card layout */}
-      <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {familyNames.map((family) => {
           const categories = FEE_FAMILIES[family];
-          const dotColor = FAMILY_DOT_COLORS[family] ?? "#9CA3AF";
           const familyStats = categories
             .map((cat) => summaryMap.get(cat))
             .filter(Boolean);
@@ -96,113 +80,69 @@ export default async function ProCategoriesPage() {
           ).length;
 
           return (
-            <div
-              key={family}
-              className="rounded-xl border border-warm-200/80 bg-white/70 backdrop-blur-sm p-5"
-            >
-              {/* Family header */}
-              <div className="flex items-center gap-3 mb-4">
-                <span
-                  className="flex items-center justify-center h-8 w-8 rounded-lg"
-                  style={{ backgroundColor: `${dotColor}15` }}
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: dotColor }}
-                  />
-                </span>
-                <h2
-                  className="text-[15px] font-semibold text-warm-900"
-                  style={{
-                    fontFamily: "var(--font-newsreader), Georgia, serif",
-                  }}
-                >
-                  {family}
-                </h2>
-              </div>
-
-              {/* Metrics row */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                    Categories
-                  </p>
-                  <p
-                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
-                    style={{
-                      fontFamily: "var(--font-newsreader), Georgia, serif",
-                    }}
-                  >
+            <section key={family} className="flex flex-col rounded-lg border border-warm-300 bg-warm-50 p-5">
+              <h2 className="text-xl text-warm-900" style={SERIF}>
+                {family}
+              </h2>
+              <dl className="mt-3 grid grid-cols-3 gap-3 border-b border-warm-200 pb-4">
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Categories</dt>
+                  <dd className="mt-0.5 text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
                     {categories.length}
-                  </p>
+                  </dd>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                    Observations
-                  </p>
-                  <p
-                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
-                    style={{
-                      fontFamily: "var(--font-newsreader), Georgia, serif",
-                    }}
-                  >
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Fees on file</dt>
+                  <dd className="mt-0.5 text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
                     {familyObservations.toLocaleString()}
-                  </p>
+                  </dd>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                    Coverage
-                  </p>
-                  <p
-                    className="mt-0.5 text-lg font-light text-warm-900 [font-variant-numeric:tabular-nums]"
-                    style={{
-                      fontFamily: "var(--font-newsreader), Georgia, serif",
-                    }}
-                  >
-                    {withData}/{categories.length}
-                  </p>
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">With a median</dt>
+                  <dd className="mt-0.5 text-lg text-warm-900 [font-variant-numeric:tabular-nums]" style={SERIF}>
+                    {withData} of {categories.length}
+                  </dd>
                 </div>
-              </div>
+              </dl>
 
-              {/* Category list */}
-              <div className="pt-3 border-t border-warm-200/40 space-y-1">
+              <ul className="mt-2 flex flex-col">
                 {categories.map((cat) => {
                   const s = summaryMap.get(cat);
-                  const tier = getFeeTier(cat);
-                  const tierInfo = TIER_BADGES[tier];
+                  const tierInfo = TIER_BADGES[getFeeTier(cat)];
 
                   return (
-                    <Link
-                      key={cat}
-                      href={`/pro/simulate?category=${cat}`}
-                      className="flex items-center justify-between rounded-lg px-2.5 py-1.5 -mx-1 hover:bg-warm-100/80 transition-colors no-underline group"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[12px] text-warm-900 group-hover:text-terra transition-colors truncate">
-                          {getDisplayName(cat)}
+                    <li key={cat}>
+                      <Link
+                        href={myFeesHref(cat)}
+                        className="group -mx-2 flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-md px-2 py-2 text-sm no-underline hover:bg-warm-150"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="text-warm-900 group-hover:text-terra-text">{getDisplayName(cat)}</span>
+                          {tierInfo ? (
+                            <span className={`shrink-0 rounded border px-1.5 py-px text-xs ${tierInfo.className}`}>
+                              {tierInfo.label}
+                            </span>
+                          ) : null}
                         </span>
-                        {tierInfo && (
-                          <span
-                            className={`shrink-0 px-1 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${tierInfo.className}`}
-                          >
-                            {tierInfo.label}
-                          </span>
-                        )}
-                      </div>
-                      <span className="shrink-0 ml-2 text-[11px] [font-variant-numeric:tabular-nums] text-warm-500">
-                        {s?.median_amount != null
-                          ? `${formatAmount(s.median_amount)} · n=${s.institution_count}`
-                          : <span title="Fewer than 5 institutions publish this fee">Too few</span>}
-                      </span>
-                    </Link>
+                        <span className="shrink-0 text-xs text-warm-600 [font-variant-numeric:tabular-nums]">
+                          {s?.median_amount != null ? (
+                            <>
+                              <span className="text-sm text-warm-900">{formatAmount(s.median_amount)}</span> ·{" "}
+                              {s.institution_count.toLocaleString()} institutions
+                            </>
+                          ) : (
+                            "Fewer than 5 institutions publish it"
+                          )}
+                        </span>
+                      </Link>
+                    </li>
                   );
                 })}
-              </div>
-            </div>
+              </ul>
+            </section>
           );
         })}
       </div>
-    </div>
-    </div>
+    </MemoPage>
   );
 }

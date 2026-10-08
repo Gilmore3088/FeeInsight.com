@@ -14,6 +14,7 @@ import {
   runRosettaRead,
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
+import { isLikelyScannedPdf } from "../learning/format";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -553,6 +554,7 @@ describe("Rosetta agentic read", () => {
       triageRows: Array<Record<string, unknown>> = [],
       blockedBefore = false,
       reopenRows: Array<Record<string, unknown>> = [],
+      unreadableRows: Array<Record<string, unknown>> = [],
     ): DbMock {
       const db = vi.fn((strings: TemplateStringsArray) => {
         const text = templateText(strings);
@@ -565,6 +567,7 @@ describe("Rosetta agentic read", () => {
         return Promise.resolve([]);
       }) as DbMock;
       db.unsafe = vi.fn((query: string) => {
+        if (query.includes("control codes near the top")) return Promise.resolve(unreadableRows);
         if (query.includes("FROM source_documents")) return Promise.resolve(rows);
         if (query.includes("has_knox_fees")) return Promise.resolve(triageRows);
         if (query.includes("FROM agent_source_texts adt")) return Promise.resolve(reopenRows);
@@ -680,6 +683,26 @@ describe("Rosetta agentic read", () => {
       expect(statusUpdates[0]).toEqual(expect.arrayContaining([1]));
     });
 
+    it("reopens a PDF text whose font read as noise for one more read, and logs a readable one as checked", async () => {
+      // Hfs FCU's disclosure: every letter shifted by three ("7KH" for "The").
+      const shifted = Array.from({ length: 20 }, () => "\u0003 7KH UDWHV IHHV DQG WHUPV DSSOLFDEOH WR \\RXU DFFRXQW").join("\n");
+      const readable = Array.from({ length: 20 }, () => "\u0003 The rates, fees and terms of your account are listed here").join("\n");
+      const db = vaultDb([], [], false, [], [
+        { text_id: 21, source_document_id: 31, institution_id: 45, source_url: "https://hfs.example/tis.pdf", source_hash: "noise", normalized_text: shifted },
+        { text_id: 22, source_document_id: 32, institution_id: 46, source_url: "https://ok.example/tis.pdf", source_hash: "words", normalized_text: readable },
+      ]);
+
+      const result = await runRosettaRead({ runId: 611, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
+
+      expect(result).toMatchObject({ reopenedUnreadablePdfs: 1 });
+      const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts") && call.includes("read.reopen"));
+      expect(attempts.map((call) => call.find((value: unknown) => value === "ok" || value === "rejected"))).toEqual(["ok", "rejected"]);
+      const query = String(db.unsafe.mock.calls.find((call) => String(call[0]).includes("control codes near the top"))?.[0]);
+      expect(query).toContain("adt.document_type = 'pdf'");
+      expect(isLikelyScannedPdf(shifted, 1)).toBe(true);
+      expect(isLikelyScannedPdf(readable, 1)).toBe(false);
+    });
+
     it("reopens a script-loaded fee page rejected as menus: lifts the ban, restores a missing link, logs the reopen", async () => {
       const url = "https://testbank.example/personal/fee-schedule";
       const db = vaultDb([], [], false, [
@@ -705,7 +728,7 @@ describe("Rosetta agentic read", () => {
       await runRosettaRead({ runId: 611, db: asReadDb(db), fetchImpl: vi.fn(), vault: fakeVault(new Uint8Array()) });
 
       const query = String(db.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents"))?.[0]);
-      expect(query).toContain("adt.status = 'wrong_document'");
+      expect(query).toContain("adt.status IN ('wrong_document', 'completed')");
       expect(query).toContain("SELECT MAX(reopen.created_at) FROM pipeline_attempts reopen");
       expect(query).toContain("after_reopen.created_at >");
       expect(query).toContain("AND pa.created_at > COALESCE(");
