@@ -587,4 +587,28 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Protection Fee – from Checking, Money Market, or Statement Savings accounts (per pre-authorized automatic tran").ok).toBe(false);
     expect(checkFeeCategory("overdraft", "Courtesy Overdraft Protection Fee (per item)")).toEqual({ ok: true });
   });
+
+  it("v31 keeps the ATM card itself, adjustments and rebates out of the ATM network fee (Oct 8)", () => {
+    for (const name of [
+      "ATM Card",
+      "ATM Cards for Savings",
+      "ATM Card (monthly)",
+      "ATM Card - Re-Order",
+      "ATM Instant Issue",
+      "ATM Reactivation",
+      "ATM Adjustment Fee",
+      "Three ATM Rebates per Month",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      "ATM Card withdrawals at non-network ATMs",
+      "ATM Card used at foreign ATM",
+      "Reject/Denial at an ATM we do not own or operate",
+      "Non-Proprietary ATM Network Fee (per transaction)",
+      "ATM Surcharge",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
 });
