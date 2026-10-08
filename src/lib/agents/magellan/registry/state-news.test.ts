@@ -20,10 +20,12 @@ const RSS = (titles: string[]) =>
     .map((t, i) => `<item><title>${t}</title><link>https://x.example.gov/n/${i}-${encodeURIComponent(t)}</link><pubDate>Mon, 06 Oct 2026 12:00:00 GMT</pubDate></item>`)
     .join("")}</channel></rss>`;
 
-function fetcher(pages: Record<string, string>) {
+/** Pages by URL; a value of [body, servedFrom] stands for a redirect. */
+function fetcher(pages: Record<string, string | [string, string]>) {
   return vi.fn(async (url: string) => {
-    if (url in pages) return pages[url];
-    throw new RegistryHttpError(`HTTP 404 for ${url}`, url, 404);
+    const page = pages[url];
+    if (page === undefined) throw new RegistryHttpError(`HTTP 404 for ${url}`, url, 404);
+    return Array.isArray(page) ? { body: page[0], url: page[1] } : { body: page, url };
   });
 }
 
@@ -55,6 +57,21 @@ describe("state regulator news", () => {
     expect(failed.result.mode).toBe("failed");
   });
 
+  it("reads links against the redirected home page and skips the whole state's feed", async () => {
+    const fetchText = fetcher({
+      // osbckansas.org serves osbckansas.gov, which links its feed by a relative path.
+      "https://www.bank.example.org": [`<link rel="alternate" type="application/rss+xml" href="/feed/">`, "https://bank.example.gov/"],
+      "https://bank.example.gov/feed/": RSS(["Bank Commissioner to Retire"]),
+      // A shared state domain's own news feed is the state's, not the agency's.
+      "https://banking.state.example.gov": `<link rel="alternate" type="application/rss+xml" href="https://news.state.example.gov/feed/">`,
+      "https://news.state.example.gov/feed/": RSS(["Governor opens a new park"]),
+    });
+    const redirected = await readAgencyNews({ state: "KS", agency: "K", website: "https://www.bank.example.org" }, fetchText);
+    expect(redirected.result).toMatchObject({ mode: "feed", url: "https://bank.example.gov/feed/", items: 1 });
+    const shared = await readAgencyNews({ state: "DE", agency: "D", website: "https://banking.state.example.gov" }, fetchText);
+    expect(shared.result.mode).toBe("none");
+  });
+
   it("stores nothing in shadow mode and records each agency's mode", async () => {
     const { db, statements } = createDb();
     const fetchText = fetcher({
@@ -64,7 +81,7 @@ describe("state regulator news", () => {
     const result = await runRegistryStateRegNews({
       db,
       live: false,
-      fetchText,
+      fetchPage: fetchText,
       sites: [
         { state: "AA", agency: "A", website: "https://a.example.gov" },
         { state: "BB", agency: "B", website: "https://b.example.gov" },
@@ -81,11 +98,11 @@ describe("state regulator news", () => {
   it("stores items live and throws when every site fails", async () => {
     const { db, statements } = createDb([["INSERT INTO reg_articles", () => [{ guid: "x" }]]]);
     const fetchText = fetcher({ "https://a.example.gov": RSS(["Bulletin one"]) });
-    const result = await runRegistryStateRegNews({ db, live: true, fetchText, sites: [{ state: "AA", agency: "A", website: "https://a.example.gov" }] });
+    const result = await runRegistryStateRegNews({ db, live: true, fetchPage: fetchText, sites: [{ state: "AA", agency: "A", website: "https://a.example.gov" }] });
     expect(result.stored).toBe(1);
     expect(statements.some((s) => s.text.includes("INSERT INTO reg_articles"))).toBe(true);
     await expect(
-      runRegistryStateRegNews({ db, live: false, fetchText: fetcher({}), sites: [{ state: "BB", agency: "B", website: "https://b.example.gov" }] }),
+      runRegistryStateRegNews({ db, live: false, fetchPage: fetcher({}), sites: [{ state: "BB", agency: "B", website: "https://b.example.gov" }] }),
     ).rejects.toThrow(/Every state regulator site failed/);
   });
 
@@ -95,12 +112,12 @@ describe("state regulator news", () => {
     const fetchText = vi.fn(async () => {
       await Promise.resolve();
       now += 100_000;
-      return RSS(["Item"]);
+      return { body: RSS(["Item"]), url: "https://x.example.gov" };
     });
     const result = await runRegistryStateRegNews({
       db,
       live: false,
-      fetchText,
+      fetchPage: fetchText,
       clock: () => now,
       sites: [
         { state: "AA", agency: "A", website: "https://a.example.gov" },
@@ -141,9 +158,14 @@ describe("news on state fee bills", () => {
     const { db, statements } = createDb();
     const fetchText = vi.fn(async (url: string) => {
       const q = new URL(url).searchParams.get("q") ?? "";
+      const state = q.match(/^"([^"]+)"/)?.[1] ?? "";
       return q.startsWith(`"AB 1520"`)
-        ? RSS(["Newsom signs AB 1520 - Los Angeles Times"])
-        : RSS(["Lawmakers weigh overdraft fee cap - Local Paper", "Bank opens branch - Local Paper"]);
+        ? RSS(["Newsom signs AB 1520 on overdraft fees - Los Angeles Times", "Bills beat Browns after a 1520-yard season - NBC"])
+        : RSS([
+            `${state} lawmakers weigh bank overdraft fee cap - Local Paper`,
+            `${state} bank opens branch - Local Paper`,
+            "Why some banks still charge overdraft fees - New York Times",
+          ]);
     });
     const result = await runRegistryStateBillNews({
       db,
