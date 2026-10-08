@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**Eleven marketing gaps added; the admin stays simple.** James, 08:57 UTC. After the pricing and
+competitive strategy research, he added tasks 2.25-2.35 to `growth-os/BUILD-PLAN.md`: lead follow-up,
+pricing rollout, Fee Pulse positioning, a method and accuracy page, a live sample report, a first
+case study, comparison pages, a credit union campaign, association partners, email scores and sales
+in the scoreboard. "Just ensure cleanness on the admin side. Simplicity": every admin screen for
+marketing lives inside /admin/growth, which opens on items to review with everything else in tabs.
+No new admin pages for marketing.
+
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
 ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on
