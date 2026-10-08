@@ -38,6 +38,21 @@ export const PASSWORD_RESET_ACTION_POLICY: ApiRoutePolicy = {
   auditPriority: "medium",
 };
 
+/** "Email me the link" on /account. Shares the password-reset limit: 5 per 10 minutes. */
+export const EMAIL_CONFIRM_ACTION_POLICY: ApiRoutePolicy = {
+  routeId: "action.email_confirm",
+  routeTemplate: "/account",
+  file: "src/app/account/email-confirm-actions.ts",
+  surface: "auth",
+  allowedMethods: ["POST"],
+  authRequirement: "session",
+  rateLimitBucket: "account-password-reset",
+  costPolicy: "none",
+  telemetryEvent: "action.email_confirm",
+  failBehavior: "fail_open_audit_only",
+  auditPriority: "medium",
+};
+
 async function clientSubjectKey(): Promise<string | null> {
   const h = await headers();
   const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
