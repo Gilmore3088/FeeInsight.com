@@ -10,6 +10,9 @@ import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
 import { getMarketStudyData } from "@/lib/data-store/market-study";
 import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/hamilton/studies-exhibits/market";
+import { branchNetworkMap, type NetworkCity } from "@/lib/hamilton/branch-network-map";
+import { geoContains } from "d3-geo";
+import { countyFeature } from "@/lib/geo/counties";
 
 /** The fees compared across the market, in reading order. */
 export const MARKET_FEES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network", "wire_domestic_outgoing"] as const;
@@ -40,7 +43,7 @@ export interface LocalMarketAnswer {
     branchesInMarket: number | null;
     depositsInMarket: number | null;
     /** Where the bank's branches are, most first. */
-    cities: { city: string; state: string; branches: number }[];
+    cities: NetworkCity[];
     fees: Record<string, number>;
   };
   /** Bank deposits across the market's branches, whole dollars (FDIC SOD). */
@@ -54,22 +57,38 @@ export interface LocalMarketAnswer {
    * studies-exhibits/market.ts from escaped data), with its legend; null when it can't be drawn.
    */
   map: { html: string; legend: string } | null;
+  /** Every branch city on one map with the market shaded (trusted SVG from branch-network-map.ts); null when none has a location. */
+  network: string | null;
+  /** Branches with no location on file, so left off the network map. */
+  unmapped: number;
   /** Each institution's map colour, so the table beside the map uses the same one. */
   colours: Record<number, string>;
 }
 
 /** The footprint map for the county that holds most of the market, in the report look. */
-async function marketMap(institutionId: number, countyFips: string | undefined, creditUnion: boolean): Promise<Pick<LocalMarketAnswer, "map" | "colours">> {
+async function marketMap(institutionId: number, countyFips: string | undefined, own: BranchPoint[]): Promise<Pick<LocalMarketAnswer, "map" | "colours">> {
   if (!countyFips) return { map: null, colours: {} };
-  const d = await getMarketStudyData(institutionId, countyFips);
-  if (!d) return { map: null, colours: {} };
+  const found = await getMarketStudyData(institutionId, countyFips);
+  if (!found) return { map: null, colours: {} };
+  // Credit unions are not in the SOD; draw their own NCUA branch locations in the county as the bank's rings.
+  const county = countyFeature(found.county_fips);
+  const d =
+    found.branches.some((b) => b.institution_id === institutionId) || found.subject_branches.length > 0
+      ? found
+      : {
+          ...found,
+          branches: [
+            ...found.branches,
+            ...own
+              .filter((b) => b.latitude != null && b.longitude != null && county !== null && geoContains(county, [b.longitude, b.latitude]))
+              .map((b) => ({ institution_id: institutionId, cert: 0, branch_name: null, city: b.city, county_fips: found.county_fips, latitude: b.latitude!, longitude: b.longitude!, deposits: 0 })),
+          ],
+        };
   const styles = bankStyles(d);
   const html = responsive((size) => footprintMap(d, styles, size));
   const colours: Record<number, string> = {};
   for (const st of styles.values()) if (st.key > 0) colours[st.key] = st.colour;
-  // NCUA gives credit union branches no location, so the map can't place them; say that rather than "outside the county".
-  const legend = creditUnion ? footprintLegend(d, styles).replace(" (outside the county)", " (credit union branches have no map location)") : footprintLegend(d, styles);
-  return { map: html ? { html, legend } : null, colours };
+  return { map: html ? { html, legend: footprintLegend(d, styles) } : null, colours };
 }
 
 const MAX_COMPETITORS = 20;
@@ -80,18 +99,27 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** The bank's branches grouped by city, most first. */
-export function citiesOf(rows: { city: string | null; state: string | null }[]): { city: string; state: string; branches: number }[] {
-  const byCity = new Map<string, { city: string; state: string; branches: number }>();
+type BranchPoint = { city: string | null; state: string | null; latitude?: number | null; longitude?: number | null };
+
+/** The bank's branches grouped by city, most first, each placed at the mean of its located branches. */
+export function citiesOf(rows: BranchPoint[]): NetworkCity[] {
+  const byCity = new Map<string, NetworkCity & { n: number; latSum: number; lonSum: number }>();
   for (const r of rows) {
     if (!r.city || !r.state) continue;
     const city = r.city.trim().replace(/\b\w+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
     const key = `${city}|${r.state}`;
-    const entry = byCity.get(key) ?? { city, state: r.state, branches: 0 };
+    const entry = byCity.get(key) ?? { city, state: r.state, branches: 0, lat: null, lon: null, n: 0, latSum: 0, lonSum: 0 };
     entry.branches += 1;
+    if (r.latitude != null && r.longitude != null) {
+      entry.n += 1;
+      entry.latSum += r.latitude;
+      entry.lonSum += r.longitude;
+    }
     byCity.set(key, entry);
   }
-  return [...byCity.values()].sort((a, b) => b.branches - a.branches || a.city.localeCompare(b.city));
+  return [...byCity.values()]
+    .map(({ n, latSum, lonSum, ...c }) => ({ ...c, lat: n ? latSum / n : null, lon: n ? lonSum / n : null }))
+    .sort((a, b) => b.branches - a.branches || a.city.localeCompare(b.city));
 }
 
 /**
@@ -147,12 +175,17 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
   });
   if (!market) return null;
 
+  const branchesP = getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null);
   const [footprint, ownBranches, fees, drawn] = await Promise.all([
     getMarketBranchFootprint(market.county_fips.map(String), market.sod_year).catch(() => null),
-    getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null),
+    branchesP,
     ownFees(institutionId).catch(() => ({})),
-    marketMap(institutionId, market.county_fips.map(String)[0], charterType === "credit_union").catch(() => ({ map: null, colours: {} })),
+    branchesP
+      .then((b) => marketMap(institutionId, market.county_fips.map(String)[0], b?.rows ?? []))
+      .catch(() => ({ map: null, colours: {} })),
   ]);
+  const cities = citiesOf(ownBranches?.rows ?? []);
+  const marketCounties = market.county_fips.map((f) => String(f).padStart(5, "0"));
 
   const feeBy = new Map(market.competitors.map((c) => [c.institution_id, c]));
   const ids = new Set<number>([...feeBy.keys(), ...Object.keys(footprint?.byInstitution ?? {}).map(Number)]);
@@ -185,7 +218,7 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
       branches: ownBranches?.total ?? 0,
       branchesInMarket: own?.branches ?? null,
       depositsInMarket: own?.deposits ?? null,
-      cities: citiesOf(ownBranches?.rows ?? []),
+      cities,
       fees,
     },
     marketDeposits: footprint?.totalDeposits ?? null,
@@ -198,6 +231,8 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
       { label: "Bank Fee Index, published fee schedules", asOf: null },
     ],
     map: drawn.map,
+    network: responsive((size) => branchNetworkMap(cities, marketCounties, size)),
+    unmapped: (ownBranches?.rows ?? []).filter((b) => b.latitude == null || b.longitude == null).length,
     colours: drawn.colours,
   };
 }

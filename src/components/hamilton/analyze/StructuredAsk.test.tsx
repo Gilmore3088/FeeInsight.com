@@ -165,6 +165,8 @@ describe("StructuredAsk", () => {
       sources: [],
       map: null,
       colours: {},
+      network: null,
+      unmapped: 0,
     };
     const calls = mockFetch(market as never, {});
     const onNoStoryline = vi.fn();

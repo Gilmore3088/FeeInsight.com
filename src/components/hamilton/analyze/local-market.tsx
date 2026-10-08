@@ -92,6 +92,8 @@ function CitiesTable({ data }: { data: LocalMarketAnswer }) {
   const cities = data.you.cities.slice(0, 12);
   const max = Math.max(1, ...cities.map((c) => c.branches));
   const rest = data.you.cities.length - cities.length;
+  // One state needs no state on every row.
+  const oneState = new Set(data.you.cities.map((c) => c.state)).size === 1;
   return (
     <div className="rd-table-wrap overflow-x-auto">
       <table className="rd-table">
@@ -99,15 +101,13 @@ function CitiesTable({ data }: { data: LocalMarketAnswer }) {
           <tr>
             <th>City</th>
             <th className="num">Branches</th>
-            <th className="w-1/2" aria-hidden />
+            <th className="w-2/5" aria-hidden />
           </tr>
         </thead>
         <tbody>
           {cities.map((c) => (
             <tr key={`${c.city}-${c.state}`}>
-              <td>
-                {c.city}, {c.state}
-              </td>
+              <td>{oneState ? c.city : `${c.city}, ${c.state}`}</td>
               <td className="num">{c.branches}</td>
               <td aria-hidden>
                 <svg viewBox="0 0 100 8" preserveAspectRatio="none" className="block h-2 w-full">
@@ -248,7 +248,10 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
                 ? `${plural(data.marketBranches, "bank branch holds", "bank branches hold")} ${fmtDeposits(data.marketDeposits)} in the market's main county`
                 : "Bank branches in the market's main county",
             panels: [{ html: data.map.html }],
-            source: `Source: ${sod}. Banks only; credit union branches carry no location in this file.`,
+            source:
+              data.charterType === "credit_union"
+                ? `Source: ${sod} (bank branches); NCUA credit union branch file (your branches, drawn as rings since credit unions report no deposits by branch).`
+                : `Source: ${sod}.`,
           }}
         >
           {/* Legend HTML built from escaped names by studies-exhibits/market.ts. */}
@@ -278,7 +281,11 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
             key: "market-cities",
             label: `Exhibit ${next()} · Your branches`,
             title: `Your ${plural(data.you.branches, "branch is", "branches are")} in ${plural(data.you.cities.length, "city", "cities")}${topCity ? `, the most in ${topCity.city} (${topCity.branches})` : ""}`,
-            source: data.charterType === "credit_union" ? "Source: NCUA credit union branch file." : `Source: ${sod}.`,
+            sub: data.network ? "Each circle is a city, sized by your branches there. The shaded counties are the market above." : undefined,
+            panels: data.network ? [{ html: data.network }] : undefined,
+            source: `${data.charterType === "credit_union" ? "Source: NCUA credit union branch file." : `Source: ${sod}.`}${
+              data.network && data.unmapped > 0 ? ` ${plural(data.unmapped, "branch has", "branches have")} no location on file and ${data.unmapped === 1 ? "is" : "are"} left off the map.` : ""
+            }`,
           }}
         >
           <CitiesTable data={data} />

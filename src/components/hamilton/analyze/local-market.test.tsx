@@ -9,7 +9,7 @@ const data: LocalMarketAnswer = {
   institutionName: "Test Credit Union",
   charterType: "credit_union",
   market: { label: "Testville, FL area", basis: "hq_city", sodYear: 2026, countyCount: 1 },
-  you: { branches: 30, branchesInMarket: 20, depositsInMarket: null, cities: [{ city: "Testville", state: "FL", branches: 12 }], fees: { overdraft: 30 } },
+  you: { branches: 30, branchesInMarket: 20, depositsInMarket: null, cities: [{ city: "Testville", state: "FL", branches: 12, lat: null, lon: null }], fees: { overdraft: 30 } },
   marketDeposits: 10_000_000_000,
   marketBranches: 80,
   competitors: [
@@ -20,6 +20,8 @@ const data: LocalMarketAnswer = {
   sources: [],
   map: null,
   colours: {},
+  network: null,
+  unmapped: 0,
 };
 
 describe("LocalMarketView", () => {
