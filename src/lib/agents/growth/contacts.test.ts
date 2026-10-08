@@ -221,6 +221,7 @@ describe("shared mailboxes and phone lines", () => {
   it("drops a phone line printed where a title would be", () => {
     expect(normalizeContact({ name: null, title: "Member Services: 800.742.5582 or", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
     expect(normalizeContact({ name: null, title: "Main Branch Line: (360) 685-8477", role: "other", kind: "person" }).title).toBeNull();
+    expect(normalizeContact({ name: null, title: "By mail to Generations FCU, ATTN: Marketing Dept., P.O. Box 791870", role: "marketing", kind: "person" })).toMatchObject({ title: null, role: "other" });
   });
 });
 
