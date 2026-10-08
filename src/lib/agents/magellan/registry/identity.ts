@@ -144,7 +144,24 @@ export function matchCompany(name: string, index: IdentityIndex): IdentityMatch 
       candidates: candidates.length,
     };
   }
+  const exact = matchExactBankName(name, candidates);
+  if (exact) return exact;
   return { institutionId: largest.id, confidence: 0.5, method: "ambiguous_name", status: "needs_review", candidates: candidates.length };
+}
+
+/**
+ * A company name that is a bank's own full name ("COMMERCE BANK", "STATE STREET BANK AND TRUST
+ * COMPANY") goes to that bank when its parent is $10B or more and at least 20 times every other
+ * parent whose bank has the same full name. Debt collectors and holding-style names ("FMS Inc.",
+ * "Fidelity National Financial") never equal a bank's full name, so they stay for review.
+ */
+function matchExactBankName(name: string, candidates: IdentityCandidate[]): IdentityMatch | null {
+  const key = fullCompanyKey(name);
+  const exact = candidates.filter((c) => c.via === "institution_name" && fullCompanyKey(c.name) === key);
+  if (exact.length === 0) return null;
+  const [first, second] = parentGroups(exact);
+  if (first.assets < LARGE_BANK_ASSETS || (second && first.assets < second.assets * DOMINANT_PARENT_RATIO)) return null;
+  return { institutionId: first.largest.id, confidence: 0.8, method: "exact_bank_name_dominant", status: "accepted", candidates: candidates.length };
 }
 
 export interface IdentityLinkInput {

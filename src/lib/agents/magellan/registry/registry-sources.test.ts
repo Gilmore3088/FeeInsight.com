@@ -97,6 +97,25 @@ describe("identity matching", () => {
     // Comparable parents: no full-name match, and the loose name has no candidates.
     expect(matchCompany("INDEPENDENT BANK CORP.", idx)).toBeNull();
   });
+
+  it("accepts a bank's own full name only when that bank dwarfs every other bank of the same name", () => {
+    const bank = (id: number, name: string, hc: string | null, assets: number) => ({ id, name, holdingCompanyRssd: hc, assetSize: assets, via: "institution_name" as const });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["COMMERCE", [bank(70, "Commerce Bank", "1", 35_017_320), bank(71, "Commerce Bank", null, 762_489), bank(72, "Commerce Bank of Texas", null, 2_344_611)]],
+        ["UNITED COMMUNITY", [bank(75, "United Community Bank", "2", 28_987_812), bank(76, "United Community Bank", "3", 4_129_042)]],
+        ["WEST", [bank(80, "Bank of the West", null, 829_755), bank(81, "Bank of the West", null, 192_365), bank(82, "West Bank", "4", 4_029_129)]],
+        ["FMS", [bank(90, "FMS Bank", null, 324_823), bank(91, "FMS Bank", null, 1_000)]],
+      ]),
+    };
+    // Commerce Bank of Texas is a different full name, so only the two "Commerce Bank" charters compete.
+    expect(matchCompany("COMMERCE BANK", idx)).toMatchObject({ institutionId: 70, status: "accepted", method: "exact_bank_name_dominant" });
+    // Comparable banks of the same name, or a bank under $10B, stay for review.
+    expect(matchCompany("UNITED COMMUNITY BANK", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
+    expect(matchCompany("BANK OF THE WEST", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
+    // A firm whose name is not a bank's full name never matches this way.
+    expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
+  });
 });
 
 describe("registry CFPB worker", () => {
