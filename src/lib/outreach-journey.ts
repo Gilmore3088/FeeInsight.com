@@ -97,3 +97,36 @@ export function parseSnapshotEvent(body: unknown): SnapshotEventInput | null {
     utmContent: parseUtmValue(value.utm_content),
   };
 }
+
+/**
+ * The buyer log (GTM plan, "Who can buy"): what James learns on a call, one short answer per
+ * question, recorded with the outcome. The questions are the plan's discovery questions plus the
+ * email's own question (how they review fees today).
+ */
+export const BUYER_LOG_FIELDS = [
+  { key: "current_method", label: "How they review fees today", question: "Does your team handle competitive fee reviews internally, or do you use an outside research provider?", options: ["Internal", "Outside provider", "Core or consultant report", "Not done"] },
+  { key: "last_review", label: "Last review and its trigger", question: "When was your last competitive fee review, and what triggered it?", options: null },
+  { key: "review_cost", label: "What it cost", question: "What did that review cost in staff time or outside research?", options: null },
+  { key: "signer", label: "Who would sign", question: "Who would approve buying a report like this?", options: ["Marketing", "Retail or deposit product", "Finance", "CEO", "Consultant's principal", "Other"] },
+  { key: "budget", label: "Whose budget, set when", question: "Whose budget would it come from, and when is that budget set?", options: null },
+  { key: "price_point", label: "Would buy today at", question: "If this report were available today, would you buy it for $500, $1,000 or $1,500?", options: ["$500", "$1,000", "$1,500", "None of these"] },
+  { key: "frequency", label: "How often they need it", question: "How often would you need this data?", options: ["Monthly", "Quarterly", "Annually", "One project"] },
+] as const;
+
+export type BuyerLogKey = (typeof BUYER_LOG_FIELDS)[number]["key"];
+export type BuyerLog = Partial<Record<BuyerLogKey, string>>;
+
+export const BUYER_LOG_ANSWER_MAX_LENGTH = 200;
+
+/** The answered buyer-log fields from a form, trimmed; null when nothing was answered. */
+export function parseBuyerLog(get: (key: string) => unknown): BuyerLog | null {
+  const log: BuyerLog = {};
+  for (const field of BUYER_LOG_FIELDS) {
+    const raw = get(`log_${field.key}`);
+    const value = typeof raw === "string" ? raw.trim().slice(0, BUYER_LOG_ANSWER_MAX_LENGTH) : "";
+    if (!value) continue;
+    if (field.options && !(field.options as readonly string[]).includes(value)) continue;
+    log[field.key] = value;
+  }
+  return Object.keys(log).length ? log : null;
+}

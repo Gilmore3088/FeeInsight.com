@@ -7,7 +7,13 @@ import type { ContactCounts } from "@/lib/agents/growth/contacts";
 import type { GrowthLesson } from "@/lib/agents/growth/lessons";
 import { GROWTH_AGENT_ROLES, GROWTH_AGENTS, QUEUE_KINDS, type GrowthAgent } from "@/lib/agents/growth/roster";
 import { recordOutcomeAction } from "@/app/admin/customers/content/actions";
-import { OUTREACH_OUTCOME_LABELS, OUTREACH_OUTCOMES, type JourneyStage } from "@/lib/outreach-journey";
+import {
+  BUYER_LOG_ANSWER_MAX_LENGTH,
+  BUYER_LOG_FIELDS,
+  OUTREACH_OUTCOME_LABELS,
+  OUTREACH_OUTCOMES,
+  type JourneyStage,
+} from "@/lib/outreach-journey";
 import { CardActions } from "./card-actions";
 
 export type OutreachFunnel = Array<{ key: JourneyStage; label: string; count: number }>;
@@ -110,6 +116,32 @@ function OutcomeForm({ id }: { id: number }) {
       <button type="submit" className="rounded-md border border-gray-300 px-3 py-1 font-medium text-gray-700 dark:border-gray-600 dark:text-gray-300">
         Record
       </button>
+      <details className="w-full">
+        <summary className="cursor-pointer text-gray-600 dark:text-gray-400">Call notes (buyer log)</summary>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {BUYER_LOG_FIELDS.map((field) => (
+            <label key={field.key} className="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-400">
+              <span title={field.question}>{field.label}</span>
+              {field.options ? (
+                <select name={`log_${field.key}`} defaultValue="" className="rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-transparent">
+                  <option value="">Not asked</option>
+                  {field.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  name={`log_${field.key}`}
+                  maxLength={BUYER_LOG_ANSWER_MAX_LENGTH}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-transparent"
+                />
+              )}
+            </label>
+          ))}
+        </div>
+      </details>
     </form>
   );
 }

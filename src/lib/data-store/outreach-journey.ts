@@ -4,6 +4,7 @@
  */
 
 import {
+  type BuyerLog,
   journeyFunnel,
   journeyStage,
   type JourneyStage,
@@ -31,12 +32,20 @@ export async function insertSnapshotEvent(event: SnapshotEventInput, db: SqlTag 
 }
 
 export async function recordOutreachOutcome(
-  input: { draftId: number | null; institutionId: number; outcome: OutreachOutcome; note: string | null; recordedBy: string },
+  input: {
+    draftId: number | null;
+    institutionId: number;
+    outcome: OutreachOutcome;
+    note: string | null;
+    answers?: BuyerLog | null;
+    recordedBy: string;
+  },
   db: SqlTag = sql,
 ): Promise<void> {
+  const answers = input.answers ? JSON.stringify(input.answers) : null;
   await db`
-    INSERT INTO outreach_outcomes (draft_id, institution_id, outcome, note, recorded_by)
-    VALUES (${input.draftId}, ${input.institutionId}, ${input.outcome}, ${input.note}, ${input.recordedBy})
+    INSERT INTO outreach_outcomes (draft_id, institution_id, outcome, note, answers, recorded_by)
+    VALUES (${input.draftId}, ${input.institutionId}, ${input.outcome}, ${input.note}, ${answers}::jsonb, ${input.recordedBy})
   `;
 }
 

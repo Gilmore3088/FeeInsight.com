@@ -13,7 +13,7 @@ import {
 } from "@/lib/data-store/content-drafts";
 import { recordSkipLesson, withdrawSkipLesson } from "@/lib/agents/growth/lessons";
 import { recordOutreachOutcome } from "@/lib/data-store/outreach-journey";
-import { OUTREACH_OUTCOMES, type OutreachOutcome } from "@/lib/outreach-journey";
+import { OUTREACH_OUTCOMES, parseBuyerLog, type OutreachOutcome } from "@/lib/outreach-journey";
 
 const OUTCOME_NOTE_MAX_LENGTH = 500;
 
@@ -111,6 +111,7 @@ export async function recordOutcomeAction(form: FormData): Promise<void> {
   const institutionId = draft ? outreachInstitution(draft) : null;
   if (!institutionId) return;
   const note = String(form.get("note") ?? "").trim().slice(0, OUTCOME_NOTE_MAX_LENGTH) || null;
-  await recordOutreachOutcome({ draftId: id, institutionId, outcome, note, recordedBy: user.email ?? String(user.id) });
+  const answers = parseBuyerLog((key) => form.get(key));
+  await recordOutreachOutcome({ draftId: id, institutionId, outcome, note, answers, recordedBy: user.email ?? String(user.id) });
   revalidateQueuePages();
 }

@@ -2,6 +2,8 @@ import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
 import {
+  BUYER_LOG_FIELDS,
+  type BuyerLog,
   journeyFunnel,
   journeyStage,
   OUTREACH_OUTCOME_LABELS,
@@ -31,6 +33,7 @@ export interface LearningOutcome {
   institutionName: string | null;
   outcome: OutreachOutcome;
   note: string | null;
+  answers?: BuyerLog | null;
   at: string;
 }
 
@@ -139,6 +142,22 @@ export function buildLearningReport(input: LearningInput): { title: string; body
   }
   lines.push("");
 
+  const logged = input.outcomes.filter((item) => item.answers && Object.keys(item.answers).length);
+  lines.push("Buyer log to date");
+  if (logged.length === 0) lines.push("- No call notes recorded yet.");
+  for (const field of BUYER_LOG_FIELDS) {
+    const answers = logged.map((item) => item.answers?.[field.key]).filter((value): value is string => Boolean(value));
+    if (answers.length === 0) continue;
+    if (field.options) {
+      const tally = new Map<string, number>();
+      for (const answer of answers) tally.set(answer, (tally.get(answer) ?? 0) + 1);
+      lines.push(`- ${field.label}: ${[...tally].sort((a, b) => b[1] - a[1]).map(([answer, n]) => `${answer} ${n}`).join(", ")}.`);
+    } else {
+      lines.push(`- ${field.label}: ${answers.map((answer) => `"${answer}"`).join("; ")}.`);
+    }
+  }
+  lines.push("");
+
   const declines = input.outcomes.filter((item) => item.outcome === "declined");
   lines.push("Decline reasons to date");
   if (declines.length === 0) lines.push("- None recorded.");
@@ -188,7 +207,7 @@ async function loadLearningInput(db: SqlTag, weekStart: Date, weekEnd: Date): Pr
   const to = weekEnd.toISOString();
   const [outcomes, events, drafts, scored] = await Promise.all([
     db`
-      SELECT o.institution_id, s.institution_name, o.outcome, o.note, o.created_at
+      SELECT o.institution_id, s.institution_name, o.outcome, o.note, o.answers, o.created_at
         FROM outreach_outcomes o LEFT JOIN institution_sources s ON s.id = o.institution_id
        WHERE o.created_at < ${to}
        ORDER BY o.created_at, o.id
@@ -231,6 +250,7 @@ async function loadLearningInput(db: SqlTag, weekStart: Date, weekEnd: Date): Pr
       institutionName: row.institution_name === null ? null : String(row.institution_name),
       outcome: row.outcome as OutreachOutcome,
       note: row.note === null ? null : String(row.note),
+      answers: row.answers && typeof row.answers === "object" ? (row.answers as BuyerLog) : null,
       at: iso(row.created_at),
     })),
     events: events.map((row) => ({ institutionId: Number(row.institution_id), event: row.event as SnapshotEvent, at: iso(row.created_at) })),

@@ -10,8 +10,8 @@
 --
 -- outreach_outcomes: what happened after an email James sent, recorded by James or an admin in
 -- /admin/growth: sent, replied, conversation, report requested, proposal, bought the report,
--- bought Pro, declined (with the reason in the buyer's words). One row per step, so the
--- journey keeps its order and dates.
+-- bought Pro, declined (with the reason in the buyer's words), plus the buyer log from a call
+-- (answers). One row per step, so the journey keeps its order and dates.
 --
 -- Data change: none. Creates two empty tables with RLS on.
 
@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS public.outreach_outcomes (
     'purchased_report', 'purchased_pro', 'declined'
   )),
   note text,
+  -- The buyer log from a call (who would sign, whose budget, how often they need the data...),
+  -- short answers keyed by question: BUYER_LOG_FIELDS in src/lib/outreach-journey.ts.
+  answers jsonb,
   recorded_by text
 );
 

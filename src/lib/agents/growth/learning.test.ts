@@ -15,7 +15,7 @@ const outcomes: LearningOutcome[] = [
   outcome(3, "sent", "2026-10-13T15:10:00Z"),
   outcome(4, "sent", "2026-10-14T15:00:00Z"),
   outcome(1, "replied", "2026-10-14T09:00:00Z", "Asked who else we cover in Waco"),
-  outcome(1, "conversation", "2026-10-15T16:00:00Z", "Owns pricing, reviews fees each spring"),
+  { ...outcome(1, "conversation", "2026-10-15T16:00:00Z", "Owns pricing, reviews fees each spring"), answers: { signer: "Finance", frequency: "Quarterly", budget: "Marketing, set in November" } },
   outcome(1, "proposal", "2026-10-16T16:00:00Z"),
   outcome(1, "purchased_report", "2026-10-17T16:00:00Z"),
   outcome(2, "declined", "2026-10-15T12:00:00Z", "Their core vendor already sends a peer report"),
@@ -70,11 +70,14 @@ describe("what we learned", () => {
     expect(body).toContain("- Proposal to paid: 1 of 1 (100%).");
     expect(body).toContain("Email sent 4, Snapshot opened 2, Engaged with the data 1, Commercial interest 1, Purchase 1");
     expect(body).toContain("- Leads: 3 new, 1 from outreach links.");
+    expect(body).toContain("- Who would sign: Finance 1.");
+    expect(body).toContain("- Whose budget, set when: \"Marketing, set in November\".");
 
     const empty = buildLearningReport(input({ outcomes: [], events: [], leadsThisWeek: null })).body;
     expect(empty).toContain("- No email is marked sent yet, so there is nothing to measure.");
     expect(empty).toContain("- Snapshots: no snapshot page was opened from an outreach link.");
     expect(empty).toContain("- None recorded.");
+    expect(empty).toContain("- No call notes recorded yet.");
     expect(empty).not.toContain("Leads:");
   });
 });
