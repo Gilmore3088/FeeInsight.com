@@ -3442,3 +3442,11 @@ and quarter were already stored, without looking at the periods of the data behi
   price below (`wrappedNamePrices`), and names the fee by its first line. The source check
   reads such a run-on note as a qualifier between the name and its price.
 - **Watch.** MVB's overdraft and NSF fees, and Knox v35 rows from the other 12 texts.
+
+## 2026-10-08: A new API route without a policy entry fails only the Vercel build
+- **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
+  full vitest run (`policies.test.ts`, which was not run before the push) and the Vercel build
+  catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
+- **Fix.** Add the policy entry in the same commit as the route.
+- **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
