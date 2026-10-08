@@ -163,12 +163,23 @@ export function planCompetitorAlerts(input: {
 
 async function loadWorkspaceBanks(onlyInstitutionId: number | null): Promise<WorkspaceBank[]> {
   const rows = await sql<{ institution_id: number | string; user_ids: Array<number | string> }[]>`
-    SELECT m.institution_id, array_agg(DISTINCT m.user_id) AS user_ids
-      FROM institution_workspace_memberships m
-     WHERE m.membership_status = 'active'
-       AND (${onlyInstitutionId}::bigint IS NULL OR m.institution_id = ${onlyInstitutionId}::bigint)
-     GROUP BY m.institution_id
-     ORDER BY m.institution_id
+    SELECT b.institution_id, array_agg(DISTINCT b.user_id) AS user_ids
+      FROM (
+        SELECT m.institution_id::bigint AS institution_id, m.user_id::bigint AS user_id
+          FROM institution_workspace_memberships m
+         WHERE m.membership_status = 'active'
+        UNION
+        -- A Pro reader's saved bank counts too, so the bank they work on gets these before
+        -- anyone holds a seat on it (no institution has a paid seat yet).
+        SELECT c.selected_institution_id::bigint, c.user_id::bigint
+          FROM hamilton_workspace_contexts c
+          JOIN users u ON u.id = c.user_id
+         WHERE c.selected_institution_id IS NOT NULL AND u.is_active = TRUE
+           AND (u.role IN ('admin', 'analyst', 'premium') OR u.subscription_status IN ('active', 'past_due'))
+      ) b
+     WHERE (${onlyInstitutionId}::bigint IS NULL OR b.institution_id = ${onlyInstitutionId}::bigint)
+     GROUP BY b.institution_id
+     ORDER BY b.institution_id
   `;
   return rows.map((row) => ({
     institutionId: Number(row.institution_id),
