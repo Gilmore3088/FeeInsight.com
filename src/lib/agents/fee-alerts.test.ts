@@ -1,12 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sql: vi.fn(),
+  withConfirmedMovements: vi.fn(),
   sendResendEmail: vi.fn(),
   getTransactionalFromAddress: vi.fn(() => "alerts@feeinsight.com"),
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
+// The same-page check has its own tests; here every movement passes unless a test says not.
+vi.mock("./fee-movement-check", async () => {
+  const actual = await vi.importActual<typeof import("./fee-movement-check")>("./fee-movement-check");
+  return { ...actual, withConfirmedMovements: mocks.withConfirmedMovements };
+});
 vi.mock("@/lib/email/resend", async () => {
   const actual = await vi.importActual<typeof import("@/lib/email/resend")>("@/lib/email/resend");
   return {
@@ -24,6 +30,7 @@ import {
   summarizeFeeAlertDispatch,
   type CandidateRow,
 } from "./fee-alerts";
+import { markConfirmedMovements } from "./fee-movement-check";
 
 function movement(overrides: Partial<CandidateRow> = {}, movements: unknown[] = []): CandidateRow {
   return {
@@ -141,15 +148,31 @@ describe("runFeeAlertDispatch", () => {
     mocks.sql.mockReset();
     mocks.sendResendEmail.mockReset();
     mocks.getTransactionalFromAddress.mockReturnValue("alerts@feeinsight.com");
+    mocks.withConfirmedMovements.mockReset();
+    mocks.withConfirmedMovements.mockImplementation(async (rows: unknown[]) => rows);
   });
 
-  function installCandidates(rows: CandidateRow[]) {
+  function installCandidates(rows: CandidateRow[], watchlistRows: Array<Record<string, unknown>> = []) {
     mocks.sql.mockImplementation((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       if (text.includes("FROM institution_fee_alert_subscriptions sub")) return Promise.resolve(rows);
+      if (text.includes("FROM hamilton_watchlists w")) return Promise.resolve(watchlistRows);
       return Promise.resolve([]);
     });
   }
+
+  function watched(overrides: Record<string, unknown> = {}) {
+    return {
+      ...movement({ subscription_id: null, user_id: 20, email: "pro@example.com", signal_id: "sig-w" }),
+      role: "premium",
+      subscription_status: "active",
+      past_due_since: null,
+      ...overrides,
+    };
+  }
+
+  const watchlistUpdates = () =>
+    mocks.sql.mock.calls.map(templateText).filter((text) => text.includes("UPDATE hamilton_watchlists"));
 
   const updates = () => mocks.sql.mock.calls.map(templateText).filter((text) => text.includes("SET last_alerted_at"));
 
@@ -206,5 +229,74 @@ describe("runFeeAlertDispatch", () => {
     const result = await runFeeAlertDispatch({ maxRecipients: 1 });
     expect(result).toMatchObject({ sent: 1, deferred: 1 });
     expect(summarizeFeeAlertDispatch(result)).toContain("1 reader(s) wait for the next run");
+  });
+
+  it("emails nothing about a movement the same-page check did not confirm", async () => {
+    installCandidates([movement()]);
+    mocks.withConfirmedMovements.mockImplementation(async (rows: CandidateRow[]) =>
+      markConfirmedMovements(rows, new Set()),
+    );
+    const result = await runFeeAlertDispatch();
+    expect(result).toMatchObject({ readers: 0, changes: 0, sent: 0 });
+    expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+    // The reader's mark still moves past it, so it is not re-read forever.
+    expect(updates()).toHaveLength(1);
+  });
+
+  describe("Pro watchlists", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("counts and renders watchlist news but sends nothing while PRO_EMAILS_ENABLED is off", async () => {
+      vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
+      installCandidates([], [watched()]);
+      const result = await runFeeAlertDispatch();
+      expect(result).toMatchObject({ readers: 0, sent: 0, watchlistReaders: 1, watchlistHeld: true });
+      expect(result.previews).toHaveLength(1);
+      expect(result.previews[0].to).toBe("p***@example.com");
+      expect(result.previews[0].text).toContain("watch them in Hamilton");
+      expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+      expect(watchlistUpdates()).toHaveLength(0);
+      expect(summarizeFeeAlertDispatch(result)).toContain("1 Pro reader(s) have watchlist news held because PRO_EMAILS_ENABLED is off");
+    });
+
+    it("sends watchlist news and advances the watchlist mark once switched on", async () => {
+      vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
+      vi.stubEnv("PRO_EMAILS_ENABLED", "true");
+      installCandidates([], [watched()]);
+      mocks.sendResendEmail.mockResolvedValue({ status: "sent", id: "e1" });
+      const result = await runFeeAlertDispatch();
+      expect(result).toMatchObject({ readers: 1, sent: 1, watchlistHeld: false });
+      expect(mocks.sendResendEmail.mock.calls[0][0].to).toBe("pro@example.com");
+      expect(watchlistUpdates()).toHaveLength(1);
+      expect(updates().filter((text) => text.includes("institution_fee_alert_subscriptions"))).toHaveLength(0);
+    });
+
+    it("merges a saved and a watched institution into one email without repeating a signal", async () => {
+      vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
+      vi.stubEnv("PRO_EMAILS_ENABLED", "on");
+      const saved = movement({ user_id: 20, email: "pro@example.com", signal_id: "same" });
+      installCandidates([saved], [watched({ signal_id: "same" })]);
+      mocks.sendResendEmail.mockResolvedValue({ status: "sent", id: "e1" });
+      const result = await runFeeAlertDispatch();
+      expect(result).toMatchObject({ readers: 1, sent: 1, changes: 1 });
+      expect(mocks.sendResendEmail).toHaveBeenCalledTimes(1);
+      expect(watchlistUpdates()).toHaveLength(1);
+    });
+
+    it("leaves out readers without Pro access", async () => {
+      vi.stubEnv("PRO_EMAILS_ENABLED", "true");
+      installCandidates([], [watched({ role: "viewer", subscription_status: "canceled" })]);
+      const result = await runFeeAlertDispatch({ dryRun: true });
+      expect(result).toMatchObject({ readers: 0, watchlistReaders: 0 });
+    });
+
+    it("shows watchlist readers on a dry run without sending or marking", async () => {
+      installCandidates([movement()], [watched()]);
+      const result = await runFeeAlertDispatch({ dryRun: true });
+      expect(result).toMatchObject({ dryRun: true, readers: 2, watchlistReaders: 1 });
+      expect(result.previews).toHaveLength(2);
+      expect(mocks.sendResendEmail).not.toHaveBeenCalled();
+      expect(watchlistUpdates()).toHaveLength(0);
+    });
   });
 });

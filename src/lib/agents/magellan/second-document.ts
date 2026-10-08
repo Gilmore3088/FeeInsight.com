@@ -7,6 +7,19 @@ import { companionStreamsReady } from "@/lib/agents/companion-streams";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import {
+  BUSINESS_PATH_SQL,
+  CONSUMER_PATH_SQL,
+  DOCUMENT_YEAR_SQL,
+  FEE_NAMED_LINK_SQL,
+  HIDDEN_BELOW_CATEGORIES,
+  isForeignHostLink,
+  LARGE_BANK_ASSETS,
+  OVERDRAFT_PRICE_SQL,
+  PRODUCT_LINK_SQL,
+  REFERS_ELSEWHERE_SQL,
+  STALE_DOCUMENT_YEARS,
+} from "./link-coverage";
+import {
   cleanText,
   hubPages,
   pageLinks,
@@ -58,6 +71,8 @@ const AGREEMENT_PDF_PAGES = 12;
 export const MAX_SEARCH_PAGES_PER_BANK = 4;
 const MAX_HUBS = 3;
 const RECHECK_DAYS = 30;
+/** How much of each stored text the link-coverage checks read (a schedule's fees come early). */
+const COVERAGE_TEXT_CHARS = 60_000;
 /** Always searched first: it found Triangle FCU's fees. */
 const PRIMARY_SEARCH_QUERY = "fee schedule";
 /**
@@ -110,7 +125,7 @@ const AGREEMENT =
   /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
 const NOT_A_FEE_DOCUMENT =
-  /\b(privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculator|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
+  /\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
 /** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
 const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
@@ -149,12 +164,16 @@ function linkText(link: PageLink): string {
 export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string | null = null): CompanionCandidate | null {
   const lower = linkText(link);
   if (BUSINESS.test(lower) || NOT_A_FEE_DOCUMENT.test(lower)) return null;
+  // A rates page ("Savings Rates", "/rates-fees/account-rates") lists rates, not fees.
+  if (/\brates?\b/.test(lower) && !/\b(fees?|charges?)\b/.test(lower.replace(/\brates? fees\b/g, ""))) return null;
   let url: URL;
   try {
     url = new URL(link.url);
   } catch {
     return null;
   }
+  // Another country's bank of the same name (southeastbank.com.bd) is never a companion.
+  if (isForeignHostLink(link.url, site.toString())) return null;
   const source: LinkSource = "homepage_link";
   const strong = STRONG_FEE_DOCUMENT.exec(lower);
   const medium = MEDIUM_FEE_DOCUMENT.exec(lower);
@@ -264,9 +283,21 @@ export function siteSearchUrl(html: string, site: URL, query: string = PRIMARY_S
 }
 
 /** An account page is kept when it lists at least one fee with an amount. */
-export function accountPageListsFees(html: string, url: string): { ok: boolean; feeLines: number; reason: string } {
+/**
+ * Fee lines an account page or agreement must show to be kept. On prod (7 Oct) account
+ * pages kept with 1 or 2 fee lines gave live fees 9-11% of the time (77 of 781), with 3+
+ * 23-40%; agreements with 1 fee line 2 of 37. Knox read nothing from the rest.
+ */
+export const ACCOUNT_PAGE_MIN_FEE_LINES = 3;
+export const AGREEMENT_MIN_FEE_LINES = 2;
+
+export function accountPageListsFees(
+  html: string,
+  url: string,
+  minFeeLines = ACCOUNT_PAGE_MIN_FEE_LINES,
+): { ok: boolean; feeLines: number; reason: string } {
   const page = scoreFeePage(htmlToScoringText(html), url);
-  if (page.verdict === "wrong_document" || page.feeLines < 1) {
+  if (page.verdict === "wrong_document" || page.feeLines < minFeeLines) {
     return { ok: false, feeLines: page.feeLines, reason: page.reason };
   }
   return { ok: true, feeLines: page.feeLines, reason: `${page.feeLines} fee line${page.feeLines === 1 ? "" : "s"} on the account page` };
@@ -325,12 +356,12 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
     const text = await pdfCheckText(bytes, AGREEMENT_PDF_PAGES);
     if (!text) return { ok: false, documentType: "pdf", feeLines: 0, verdict: "unreadable_pdf", reason: "Agreement PDF has no readable text" };
     const page = scoreFeePage(text);
-    return page.feeLines >= 1 ? kept("pdf", page.feeLines) : noFee("pdf");
+    return page.feeLines >= AGREEMENT_MIN_FEE_LINES ? kept("pdf", page.feeLines) : noFee("pdf", page.feeLines);
   }
   if (!contentType.includes("text/html")) {
     return { ok: false, documentType: null, feeLines: 0, verdict: "unsupported_type", reason: `Unsupported content type ${contentType || "unknown"}` };
   }
-  const check = accountPageListsFees(await response.text(), url);
+  const check = accountPageListsFees(await response.text(), url, AGREEMENT_MIN_FEE_LINES);
   return check.ok ? kept("html", check.feeLines) : noFee("html", check.feeLines);
 }
 
@@ -341,6 +372,8 @@ interface ThinBankRow {
   website_url: string;
   fee_schedule_url: string;
   categories: number | string;
+  /** The link is not the consumer schedule yet (link-coverage.ts). */
+  incomplete?: boolean | null;
 }
 
 export interface CompanionPage {
@@ -389,40 +422,117 @@ export interface RunSecondDocumentFindResult {
   results: SecondDocumentResult[];
 }
 
-async function selectThinBanks(db: SqlTag, stateCode: string | null, limit: number): Promise<ThinBankRow[]> {
+/**
+ * Spare slots after the state's own thin banks go to banks the catalog hides (fewer than 3
+ * live fee categories) whose link is a product page or prices no overdraft, from any state:
+ * a state lane that has checked all its banks this month would otherwise leave the step idle,
+ * while most hidden banks sit in states the lane has not reached yet (Knox handoff, Oct 7).
+ */
+async function selectThinBanks(
+  db: SqlTag,
+  stateCode: string | null,
+  limit: number,
+  options: { hiddenOnly?: boolean; excludeIds?: number[] } = {},
+): Promise<ThinBankRow[]> {
+  const hiddenOnly = options.hiddenOnly ?? false;
+  const excludeIds = options.excludeIds ?? [];
   return db<ThinBankRow[]>`
     WITH thin AS (
       -- Every live row, not the catalog: the catalog hides banks with fewer than 3 fees,
       -- which are the banks this finder exists for.
       SELECT c.institution_id,
              count(DISTINCT c.canonical_fee_key)::int AS categories,
-             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee
+             bool_or(c.canonical_fee_key = 'monthly_maintenance') AS has_monthly_fee,
+             bool_or(c.canonical_fee_key = 'overdraft') AS has_overdraft
         FROM published_fee_records c
         JOIN institution_sources scoped ON scoped.id = c.institution_id
        WHERE c.rolled_back_at IS NULL
          AND (${stateCode}::text IS NULL OR upper(btrim(scoped.state_code)) = ${stateCode})
        GROUP BY c.institution_id
+    ),
+    scoped AS (
+      SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+             COALESCE(thin.categories, 0) AS categories,
+             COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
+             COALESCE(thin.has_overdraft, FALSE) AS has_overdraft,
+             EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+             -- The link is not the consumer schedule yet (link-coverage.ts): a business-only
+             -- schedule, no stored text that prices an overdraft, a text that sends the
+             -- reader to another document for its terms, or a current copy dated years ago.
+             (
+               lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
+               AND lower(regexp_replace(inst.fee_schedule_url, '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL}
+             ) AS business_only,
+             NOT EXISTS (
+               SELECT 1 FROM agent_source_texts text
+                WHERE text.institution_id = inst.id
+                  AND text.status = 'completed'
+                  AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${OVERDRAFT_PRICE_SQL}
+             ) AS no_overdraft_price,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts text
+                WHERE text.institution_id = inst.id
+                  AND text.status = 'completed'
+                  AND left(text.normalized_text, ${COVERAGE_TEXT_CHARS}) ~* ${REFERS_ELSEWHERE_SQL}
+             ) AS refers_elsewhere,
+             EXISTS (
+               SELECT 1 FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                  AND doc.status = 'success'
+                  AND doc.duplicate_of_id IS NULL
+                  AND doc.superseded_by_id IS NULL
+                  AND substring(doc.document_url from ${DOCUMENT_YEAR_SQL})::int
+                      <= extract(year from NOW())::int - ${STALE_DOCUMENT_YEARS}
+             ) AS stale_copy
+        FROM institution_sources inst
+        LEFT JOIN thin ON thin.institution_id = inst.id
+       WHERE COALESCE(inst.status, 'active') = 'active'
+         AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+         AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
+         AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
+         AND inst.id <> ALL(${excludeIds}::bigint[])
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.institution_id = inst.id
+              AND pa.stage = 'discover'
+              AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
+              AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
+              AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
+         )
     )
-    SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, thin.categories
-      FROM thin
-      JOIN institution_sources inst ON inst.id = thin.institution_id
-     WHERE COALESCE(inst.status, 'active') = 'active'
-       AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
-       AND inst.fee_schedule_url IS NOT NULL AND btrim(inst.fee_schedule_url) <> ''
-       -- Few categories, or an HTML fee link with no monthly fee: the product-page pattern.
+    SELECT id, institution_name, state_code, website_url, fee_schedule_url, categories,
+           (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
+      FROM scoped
+     WHERE (
+             categories < ${THIN_BANK_CATEGORY_LIMIT}
+             -- An HTML fee link with no monthly fee: the product-page pattern.
+             OR (NOT has_monthly_fee AND fee_schedule_url !~* '\\.pdf($|\\?)')
+             OR business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy
+             -- Near the report bar but missing a headline fee its link does not price: the
+             -- monthly maintenance or overdraft item fee often sits in a separate account
+             -- disclosure (Coulee Bank, Spencer Savings, Community Bank PA on Oct 7).
+             OR NOT has_monthly_fee
+             OR NOT has_overdraft
+           )
        AND (
-         thin.categories < ${THIN_BANK_CATEGORY_LIMIT}
-         OR (NOT thin.has_monthly_fee AND inst.fee_schedule_url !~* '\\.pdf($|\\?)')
-       )
-       AND NOT EXISTS (
-         SELECT 1 FROM pipeline_attempts pa
-          WHERE pa.institution_id = inst.id
-            AND pa.stage = 'discover'
-            AND pa.strategy = ${SECOND_DOCUMENT_FINDER.strategy}
-            AND pa.strategy_version = ${SECOND_DOCUMENT_FINDER.version}
-            AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
-       )
-     ORDER BY thin.categories ASC, inst.asset_size DESC NULLS LAST, inst.id ASC
+             NOT ${hiddenOnly}::boolean
+             OR (
+               categories < ${HIDDEN_BELOW_CATEGORIES}
+               AND (
+                 no_overdraft_price
+                 OR (lower(fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
+               )
+             )
+           )
+     -- Report requesters and $10B+ banks first: the names buyers check.
+     ORDER BY requested DESC,
+              (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
+              (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) DESC,
+              -- Then banks one headline fee short of a full schedule, before thinner ones.
+              (categories >= ${THIN_BANK_CATEGORY_LIMIT} AND (NOT has_monthly_fee OR NOT has_overdraft)) DESC,
+              categories ASC,
+              asset_size DESC NULLS LAST,
+              id ASC
      LIMIT ${limit}
   `;
 }
@@ -605,7 +715,7 @@ async function searchBank(
     const entry: TrailEntry = { url: candidate.url, source: candidate.source, foundOn: candidate.foundOn, label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "" };
     trail.push(entry);
     try {
-      const validation = await validateFeeCandidate(candidate, fetchImpl);
+      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: site.toString() }, fetchImpl);
       entry.verdict = validation.verdict;
       if (validation.ok) {
         keep({
@@ -673,6 +783,8 @@ export async function runSecondDocumentFind(options: {
   learning: boolean;
   /** Which slice of the site-search queries to run; defaults to the current recheck window. */
   searchRotation?: number;
+  /** Fill spare slots with hidden banks from any state (default on). */
+  hiddenTopUp?: boolean;
 }): Promise<RunSecondDocumentFindResult> {
   const empty = (status: RunSecondDocumentFindResult["status"]): RunSecondDocumentFindResult => ({ status, checked: 0, found: 0, results: [] });
   if (!options.learning) return empty("no_attempt_log");
@@ -680,7 +792,12 @@ export async function runSecondDocumentFind(options: {
   if (!(await companionStreamsReady(options.db))) return empty("schema_pending");
 
   const db = options.db;
-  const rows = await selectThinBanks(db, normalizeStateCode(options.stateCode ?? undefined), options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP);
+  const limit = options.limit ?? SECOND_DOCUMENT_BANKS_PER_STEP;
+  const stateCode = normalizeStateCode(options.stateCode ?? undefined);
+  const rows = await selectThinBanks(db, stateCode, limit);
+  if (stateCode && rows.length < limit && options.hiddenTopUp !== false) {
+    rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: rows.map((row) => Number(row.id)) })));
+  }
   const results: SecondDocumentResult[] = [];
   for (const row of rows) {
     if (Date.now() > options.deadline) break;

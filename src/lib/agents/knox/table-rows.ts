@@ -13,10 +13,12 @@ import {
 import {
   cleanFeeName,
   composableTail,
+  STOP_PAYMENT_ITEM_WORDS,
   LEADING_VALUE,
   looksLikeHeading,
   passesDarwinChecks,
   QUALIFIER,
+  qualifiesName,
   ZERO_WORD,
 } from "@/lib/agents/knox/layout";
 
@@ -32,7 +34,7 @@ import {
  * the adapter; the extractor only sees `KnoxTableRow`.
  */
 
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 4 } as const;
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 6 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -60,11 +62,16 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
   // A fee name waiting for the price on the next line.
   let pendingName: string | null = null;
   let pendingHeading: string | null = null;
+  // A fee heading that opened in a two-column schedule's right column, and the line of
+  // its latest sub-row.
+  let column: { heading: string; line: number } | null = null;
 
   for (let index = 0; index < lines.length && rows.length < MAX_ROWS; index += 1) {
     const line = lines[index];
     const next = lines[index + 1] ?? "";
     const lead = line.match(LEADING_VALUE);
+
+    if (pendingName && !lead && qualifiesName(line) && LEADING_VALUE.test(next)) continue;
 
     if (lead && pendingName) {
       const rest = line.slice(lead[0].length);
@@ -85,9 +92,36 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
       const filled = cells.filter(Boolean);
       if (filled.length === 1 && amountsIn(line).length === 0 && looksLikeHeading(filled[0])) {
         heading = filled[0];
-      } else {
-        rows.push({ cells, heading, layout: "cells" });
+        continue;
       }
+      // v27: a two-column page puts the next column's prose beside a heading ("Wire Transfer
+      // Fees | being returned NSF."). The left cell is still the heading.
+      if (filled.length === 2 && amountsIn(line).length === 0 && looksLikeHeading(filled[0]) && RIGHT_COLUMN_PROSE.test(filled[1])) {
+        heading = filled[0];
+        continue;
+      }
+      const opens = filled.length >= 2 ? rightColumnHeading(filled[filled.length - 1]) : null;
+      if (opens) {
+        column = { heading: opens, line: index };
+        rows.push({ cells, heading, layout: "cells" });
+        continue;
+      }
+      if (column) {
+        const tail = filled.slice(-2);
+        const subRow = filled.length >= 2 && BULLET.test(tail[0]) && amountsIn(tail[1]).length > 0 && !/[a-z]/i.test(tail[1].replace(/\b(per|each|item)\b/gi, ""));
+        // A two-cell line belongs to the right column only directly under its heading or
+        // its last sub-row; a line with both columns places it by position.
+        const placed = filled.length >= 4 || index - column.line <= 1;
+        if (subRow && placed && index - column.line <= COLUMN_SUBROW_LINES) {
+          rows.push({ cells: tail, heading: column.heading, layout: "cells" });
+          column.line = index;
+          if (filled.length >= 4) rows.push({ cells: filled.slice(0, -2), heading, layout: "cells" });
+          continue;
+        }
+        // A right-column row of its own ("Official Checks | $8.00") ends the heading's rows.
+        if (filled.length >= 3 && !BULLET.test(tail[0]) && /[a-z]{3,}/i.test(tail[0]) && amountsIn(tail[1]).length > 0) column = null;
+      }
+      rows.push({ cells, heading, layout: "cells" });
       continue;
     }
 
@@ -106,14 +140,35 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
       continue;
     }
 
-    if (LEADING_VALUE.test(next) && line.length <= MAX_NAME_LINE_CHARS && /[a-z]/i.test(line)) {
+    const priceFollows = LEADING_VALUE.test(next) || (qualifiesName(next) && LEADING_VALUE.test(lines[index + 2] ?? ""));
+    if (priceFollows && line.length <= MAX_NAME_LINE_CHARS && /[a-z]/i.test(line) && !qualifiesName(line)) {
       pendingName = line;
       pendingHeading = heading;
       continue;
     }
-    if (looksLikeHeading(line)) heading = line;
+    // Headings run longer on bank summary pages ("ATM fees per transaction – At
+    // non-Wells Fargo ATMs"); only composable row names ever borrow them.
+    if (looksLikeHeading(line, 10)) heading = line;
   }
   return rows;
+}
+
+/** Prose running on from another column: opens lowercase, or with a footnote number ("1. "). */
+const RIGHT_COLUMN_PROSE = /^(?:[a-z]|\d{1,2}\.\s+[A-Z])/;
+
+/** A sub-row's bullet ("• Personal"), which a row of its own never opens with. */
+const BULLET = /^[•·▪◦‣*-]\s*\S/;
+const COLUMN_SUBROW_LINES = 8;
+
+/**
+ * Two-column schedules flattened row by row put the right column's fee heading at the
+ * end of a left-column row ("• Business | $5.00 | Overdrafts (OD)"); its priced sub-rows
+ * follow ("• Personal | $36.00", or "• Expedited delivery | $40.00 | • Business | $36.00"
+ * with both columns). The heading names a fee by itself and states no price.
+ */
+function rightColumnHeading(cell: string): string | null {
+  if (!/^[A-Z]/.test(cell) || cell.length > 60 || amountsIn(cell).length > 0 || ZERO_WORD.test(cell)) return null;
+  return classifyFeeText(cell) ? cell : null;
 }
 
 function valueCellIndex(cells: string[], from: number): number {
@@ -152,7 +207,8 @@ export function extractFromTableRows(rows: KnoxTableRow[]): ExtractionRulesResul
 
     let hint = classifyFeeText(name);
     let feeName = name;
-    if (!hint && row.heading && composableTail(name)) {
+    const stopPaymentHeading = row.heading != null && classifyFeeText(row.heading) === "stop_payment";
+    if (!hint && row.heading && (composableTail(name) || (stopPaymentHeading && composableTail(name, STOP_PAYMENT_ITEM_WORDS)))) {
       hint = classifyFeeText(`${row.heading} ${name}`);
       feeName = `${row.heading}: ${name}`;
     }

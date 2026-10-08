@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { activateIfPaid } from "@/lib/subscription-activation";
@@ -8,16 +9,21 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
 import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
 import { HAMILTON_CANONICAL, PRO_SECTION_TITLE, PRO_SUBHEAD } from "@/app/for-institutions/hamilton-copy";
-import { ProPlanCards } from "./pro-plan-cards";
+import { ProPlanCards, type ProTierSelection } from "./pro-plan-cards";
+import { ProTierChooser } from "./pro-tier-chooser";
+import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
+import { NON_INSTITUTION_TIER, PRO_ANNUAL_RANGE_LABEL, proTier, tierForAssets } from "@/lib/pro-tiers";
 import { AdvisoryCard, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+
 import {
-  ANNUAL_PRICE_LABEL,
-  MONTHLY_PRICE_LABEL,
+  PLAN_TEAM_LABEL,
   isProPlan,
   proFeatureList,
   type ProPlan,
@@ -26,11 +32,9 @@ import {
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro seats (monthly or annual), and the Competitive Fee Position Report.",
+    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro priced by institution size (monthly or annual, for up to 5 people), and the Competitive Fee Position Report.",
 };
 
-const MONTHLY_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || "";
-const ANNUAL_PRICE_ID = process.env.STRIPE_ANNUAL_PRICE_ID || "";
 const WELCOME_PATH = "/account/welcome";
 
 interface SubscribeSearchParams {
@@ -40,17 +44,26 @@ interface SubscribeSearchParams {
   plan?: string;
   /** "1" right after signup: start checkout for ?plan= without another click. */
   checkout?: string;
+  /** Why /pro sent the reader here (src/lib/subscribe-reason.ts). */
+  reason?: string;
+  /** The bank or credit union the plan covers; its assets set the price tier. */
+  inst?: string;
+  /** "other": a consultant or other organization (NON_INSTITUTION_TIER). */
+  org?: string;
 }
 
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
   plan: ProPlan | null;
+  selection: ProTierSelection | null;
 }): string {
   const params = new URLSearchParams();
   if (options.inviteMode) params.set("invite", "workspace");
   if (options.returnTo && options.returnTo !== WELCOME_PATH) params.set("from", options.returnTo);
   if (options.plan) params.set("plan", options.plan);
+  if (options.selection?.institutionId) params.set("inst", String(options.selection.institutionId));
+  else if (options.selection?.otherOrganization) params.set("org", "other");
   const query = params.toString();
   return query ? `/subscribe?${query}` : "/subscribe";
 }
@@ -62,7 +75,7 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const summary = await getPublicStatsSummary();
+  const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
   const features = proFeatureList(summary);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
@@ -78,6 +91,7 @@ export default async function SubscribePage({
   }
 
   const isLoggedIn = !!user;
+  const reasonLine = subscribeReasonLine(params.reason, SITE_NAME);
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
   const autoStartPlan = isLoggedIn && checkoutRequested ? requestedPlan : null;
   const pendingInvitations =
@@ -86,12 +100,36 @@ export default async function SubscribePage({
       : [];
   const inviteMode = params.invite === "workspace" || pendingInvitations.length > 0;
 
+  // Who the plan covers sets the tier; checkout works it out again from the same id.
+  const institutionId = Number(params.inst);
+  const pricingInstitution =
+    Number.isSafeInteger(institutionId) && institutionId > 0
+      ? await getProPricingInstitution(institutionId).catch(() => null)
+      : null;
+  let selection: ProTierSelection | null = null;
+  let chosenLabel: string | null = null;
+  let chooserProblem: string | null = null;
+  if (pricingInstitution) {
+    const tier = tierForAssets(pricingInstitution.assetsThousands);
+    const place = [pricingInstitution.city, pricingInstitution.stateCode].filter(Boolean).join(", ");
+    chosenLabel = [pricingInstitution.name, place].filter(Boolean).join(", ");
+    if (tier) {
+      selection = { tier, institutionId: pricingInstitution.id, otherOrganization: false };
+      chosenLabel = `${chosenLabel} · ${proTier(tier).assetsLabel}`;
+    } else {
+      chooserProblem = `We don't have its asset size on file yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`;
+    }
+  } else if (params.org === "other") {
+    selection = { tier: NON_INSTITUTION_TIER, institutionId: null, otherOrganization: true };
+    chosenLabel = "A consultant or another organization";
+  }
+
   const registerHrefFor = (plan: ProPlan) => {
-    const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan });
+    const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
     return `/register?plan=${plan}&from=${encodeURIComponent(back)}`;
   };
   const loginHref = `/login?from=${encodeURIComponent(
-    buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan }),
+    buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection }),
   )}`;
 
   return (
@@ -100,12 +138,21 @@ export default async function SubscribePage({
       <main id="main-content">
 
       <div className="mx-auto max-w-5xl px-6 py-14">
+        {reasonLine && (
+          <p role="status" className="mb-6 rounded-xl border border-[#E8DFD1] bg-white px-4 py-3 text-sm text-[#1A1815]">
+            {reasonLine}
+          </p>
+        )}
         {inviteMode && (
           <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
             <p className="mt-1">
-              Activate a Pro seat with the invited email and Hamilton will attach the delegated
-              institution workspace automatically.
+              You don&apos;t need to buy a seat to accept it: an institution account includes up to
+              five teammates. Sign in with the invited email and{" "}
+              <Link href="/workspace-invite" className="font-semibold underline">
+                accept the invitation
+              </Link>
+              .
             </p>
             {pendingInvitations.length > 0 && (
               <div className="mt-3 grid gap-2">
@@ -128,14 +175,14 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
-            per seat, or {ANNUAL_PRICE_LABEL}/yr) → {SITE_NAME} Advisory (custom)
+            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({PRO_ANNUAL_RANGE_LABEL} by
+            institution size, {PLAN_TEAM_LABEL}) → {SITE_NAME} Advisory (custom)
           </p>
         </div>
 
         <div className="space-y-8">
           <FreeTierCard summary={summary} />
-          <ReportCard />
+          <ReportCard sampleLive={sampleLive} />
 
           <section id="pro" aria-labelledby="pro-heading" className="scroll-mt-20">
             <div className="mb-5">
@@ -156,12 +203,12 @@ export default async function SubscribePage({
             <ProPlanCards
               features={features}
               isLoggedIn={isLoggedIn}
-              monthlyPriceId={MONTHLY_PRICE_ID}
-              annualPriceId={ANNUAL_PRICE_ID}
+              chooser={<ProTierChooser chosenLabel={chosenLabel} problem={chooserProblem} />}
+              selection={selection}
               returnTo={returnTo ?? undefined}
               registerHrefFor={registerHrefFor}
               highlightedPlan={requestedPlan}
-              autoStartPlan={autoStartPlan}
+              autoStartPlan={selection ? autoStartPlan : null}
             />
           </section>
 

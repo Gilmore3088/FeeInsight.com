@@ -1,6 +1,6 @@
 import type { User } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
-import { acceptPendingWorkspaceInvitationsForUser } from "@/lib/hamilton/institution-membership";
+import { trackServerEvent } from "@/lib/analytics-server";
 
 /**
  * Activation fallback for when the Stripe webhook has not landed yet: if the user's
@@ -25,10 +25,7 @@ export async function activateIfPaid(
         await sql`
           UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
           WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
-        await acceptPendingWorkspaceInvitationsForUser({
-          userId: user.id,
-          email: user.email ?? user.username,
-        }).catch(() => []);
+        await trackServerEvent("pro_activated", { source: "fallback" });
         return true;
       }
     } catch (e) {

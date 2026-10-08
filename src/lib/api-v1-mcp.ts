@@ -19,7 +19,21 @@ export interface McpV1Handlers {
   fees: V1Handler;
   index: V1Handler;
   institutions: V1Handler;
+  revenue: V1Handler;
+  feeChanges: V1Handler;
+  branches: V1Handler;
+  market: V1Handler;
 }
+
+const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
+  fees: "/api/v1/fees",
+  index: "/api/v1/index",
+  institutions: "/api/v1/institutions",
+  revenue: "/api/v1/revenue",
+  feeChanges: "/api/v1/fee-changes",
+  branches: "/api/v1/branches",
+  market: "/api/v1/market",
+};
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
@@ -27,8 +41,11 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
 const SERVER_INSTRUCTIONS =
   `${PRODUCT_NAME} (${SITE_URL}) publishes bank and credit union fees read from each institution's own fee schedule, ` +
   "plus FDIC/NCUA call report figures and CFPB complaint counts. Amounts are US dollars. " +
-  "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name or state, " +
-  "and get_institution for one institution's fees with source links. Credit the data as shown in each result's attribution field.";
+  "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name, state, city or size, " +
+  "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
+  "get_revenue_trend gives market-wide fee revenue by quarter back to 2010; get_fee_changes lists fee changes detected recently. " +
+  "get_branches gives bank and credit union branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
+  "There is no full fee history yet, so do not infer fee trends from one snapshot. Credit the data as shown in each result's attribution field.";
 
 type Endpoint = keyof McpV1Handlers;
 
@@ -49,6 +66,11 @@ const charterProperty = {
   type: "string",
   enum: ["bank", "credit_union"],
   description: "Limit to banks or to credit unions",
+};
+const assetTierProperty = {
+  type: "string",
+  description:
+    "Asset-size tier(s), comma-separated: community_small (under $300M), community_mid ($300M-$1B), community_large ($1B-$10B), regional ($10B-$50B), large_regional ($50B-$250B), super_regional (over $250B)",
 };
 
 function optionalString(args: Record<string, unknown>, name: string): string | undefined {
@@ -77,13 +99,14 @@ const TOOLS: ToolDefinition[] = [
     name: "get_fee_index",
     title: "Typical fees",
     description:
-      "Median, 25th-75th percentile, min and max for every fee category, nationally or for a state, charter type or Fed district, with how many institutions each figure comes from.",
+      "Median, 25th-75th percentile, min and max for every fee category, nationally or for a state, charter type, Fed district or asset size, with how many institutions each figure comes from.",
     inputSchema: {
       type: "object",
       properties: {
         state: stateProperty,
         charter: charterProperty,
         district: { type: "string", description: "Fed district number 1-12, or several comma-separated, e.g. 11 or 6,11" },
+        asset_tier: assetTierProperty,
       },
       additionalProperties: false,
     },
@@ -93,6 +116,7 @@ const TOOLS: ToolDefinition[] = [
         state: optionalString(args, "state"),
         charter: optionalString(args, "charter"),
         district: optionalString(args, "district") ?? optionalNumber(args, "district"),
+        asset_tier: optionalString(args, "asset_tier"),
       }),
   },
   {
@@ -128,13 +152,15 @@ const TOOLS: ToolDefinition[] = [
     name: "find_institutions",
     title: "Find banks",
     description:
-      "Find banks and credit unions by name and/or state. Returns ids, city, assets and how many published fees each has. Use the id with get_institution.",
+      "Find banks and credit unions by name, state, city or asset size. Returns ids, city, assets and how many published fees each has. Use the id with get_institution. City and asset_tier can't be combined with name.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Part of the institution's name, e.g. Frost" },
         state: stateProperty,
         charter: charterProperty,
+        city: { type: "string", description: "Exact city name, e.g. Austin" },
+        asset_tier: assetTierProperty,
         has_fees: { type: "boolean", description: "Only institutions with published fees (ignored when name is given)" },
         page: { type: "integer", minimum: 1, default: 1 },
         limit: { type: "integer", minimum: 1, maximum: 200, default: 50 },
@@ -151,6 +177,8 @@ const TOOLS: ToolDefinition[] = [
         q: optionalString(args, "name"),
         state: optionalString(args, "state"),
         charter: optionalString(args, "charter"),
+        city: optionalString(args, "city"),
+        asset_tier: optionalString(args, "asset_tier"),
         has_fees: hasFees === true ? "true" : undefined,
         page: optionalNumber(args, "page"),
         limit: optionalNumber(args, "limit"),
@@ -161,10 +189,13 @@ const TOOLS: ToolDefinition[] = [
     name: "get_institution",
     title: "One bank in full",
     description:
-      "One institution's published fees (amount, conditions, the source link it was read from and the date), its last 8 quarters of FDIC/NCUA call report figures, and its CFPB complaint counts.",
+      "One institution's published fees (amount, conditions, the source link it was read from and the date), its FDIC/NCUA call report figures by quarter (8 by default, up to 66, back to 2010), and its CFPB complaint counts.",
     inputSchema: {
       type: "object",
-      properties: { id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" } },
+      properties: {
+        id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        quarters: { type: "integer", minimum: 1, maximum: 66, default: 8, description: "Call report quarters to include" },
+      },
       required: ["id"],
       additionalProperties: false,
     },
@@ -172,7 +203,123 @@ const TOOLS: ToolDefinition[] = [
     toParams: (args) => {
       const id = optionalNumber(args, "id");
       if (!id) throw new ToolArgumentError("id is required");
-      return { id };
+      return compact({ id, quarters: optionalNumber(args, "quarters") });
+    },
+  },
+  {
+    name: "rank_institutions_by_fee",
+    title: "Who charges the most",
+    description:
+      "Rank banks and credit unions by one fee, highest or lowest first, optionally within a state, charter type or name match. Each row has fee_amount (the institution's lowest published amount for that fee); null means not published, never $0.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        category: { type: "string", description: "Category key from list_fee_categories, e.g. overdraft" },
+        sort: { type: "string", enum: ["highest", "lowest"], default: "highest" },
+        state: stateProperty,
+        charter: charterProperty,
+        name: { type: "string", description: "Optional part of the institution's name" },
+        page: { type: "integer", minimum: 1, default: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 200, default: 25 },
+      },
+      required: ["category"],
+      additionalProperties: false,
+    },
+    endpoint: "institutions",
+    toParams: (args) => {
+      const category = optionalString(args, "category");
+      if (!category) throw new ToolArgumentError("category is required");
+      return compact({
+        fee_category: category,
+        sort: optionalString(args, "sort"),
+        state: optionalString(args, "state"),
+        charter: optionalString(args, "charter"),
+        q: optionalString(args, "name"),
+        page: optionalNumber(args, "page"),
+        limit: optionalNumber(args, "limit") ?? "25",
+      });
+    },
+  },
+  {
+    name: "get_revenue_trend",
+    title: "Fee revenue over time",
+    description:
+      "Market-wide deposit service-charge income from FDIC and NCUA call reports, by quarter, newest first, in thousands of US dollars. view=national splits banks vs credit unions with year-over-year change; view=districts gives each Fed district.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        view: { type: "string", enum: ["national", "districts"], default: "national" },
+        quarters: { type: "integer", minimum: 1, maximum: 66, default: 8 },
+      },
+      additionalProperties: false,
+    },
+    endpoint: "revenue",
+    toParams: (args) =>
+      compact({ view: optionalString(args, "view"), quarters: optionalNumber(args, "quarters") }),
+  },
+  {
+    name: "get_fee_changes",
+    title: "Recent fee changes",
+    description:
+      "Fee changes detected when an institution's published schedule changed between reads (previous and new amount, date). Coverage is still small, so treat it as examples, not a market-wide trend.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 365, default: 90 },
+        category: { type: "string", description: "Optional category key, e.g. overdraft" },
+      },
+      additionalProperties: false,
+    },
+    endpoint: "feeChanges",
+    toParams: (args) =>
+      compact({ days: optionalNumber(args, "days"), category: optionalString(args, "category") }),
+  },
+  {
+    name: "get_branches",
+    title: "Branch locations",
+    description:
+      "Bank and credit union branches: name, address, ZIP, county, latitude/longitude, and for banks the metro area and deposits (FDIC Summary of Deposits). Credit union branches come from NCUA and have no deposits; a few may lack coordinates. Give an institution_id for one institution's branches, or a state with optional city or ZIP for every branch there. Use latitude/longitude to draw a map.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        state: stateProperty,
+        city: { type: "string", description: "Exact city name, e.g. Austin (with state)" },
+        zip: { type: "string", description: "Five-digit ZIP code (with state)" },
+        page: { type: "integer", minimum: 1, default: 1 },
+        limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
+      },
+      additionalProperties: false,
+    },
+    endpoint: "branches",
+    toParams: (args) =>
+      compact({
+        institution_id: optionalNumber(args, "institution_id"),
+        state: optionalString(args, "state"),
+        city: optionalString(args, "city"),
+        zip: optionalString(args, "zip"),
+        page: optionalNumber(args, "page"),
+        limit: optionalNumber(args, "limit"),
+      }),
+  },
+  {
+    name: "get_local_market",
+    title: "Local competitors",
+    description:
+      "Who competes in an institution's local market (the counties holding most of its deposits), with each competitor's deposits there and deposit share. Credit unions appear when headquartered in a market city, with no deposit figure. Pair with rank_institutions_by_fee or get_institution to compare their fees.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+      },
+      required: ["institution_id"],
+      additionalProperties: false,
+    },
+    endpoint: "market",
+    toParams: (args) => {
+      const id = optionalNumber(args, "institution_id");
+      if (!id) throw new ToolArgumentError("institution_id is required");
+      return { institution_id: id };
     },
   },
 ];
@@ -219,7 +366,7 @@ async function callTool(
     throw error;
   }
 
-  const url = new URL(`/api/v1/${tool.endpoint}`, request.nextUrl.origin);
+  const url = new URL(ENDPOINT_PATHS[tool.endpoint], request.nextUrl.origin);
   for (const [name, value] of Object.entries(query)) url.searchParams.set(name, value);
 
   // Forward the caller's own credential, header or ?api_key=, so the v1 route

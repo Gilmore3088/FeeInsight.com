@@ -6,6 +6,7 @@ import {
   readStrategyFromDocumentType,
   sourceKindFromDocumentType,
 } from "@/lib/agents/state-lane-memory";
+import { inSavepoint } from "@/lib/agents/savepoint";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import {
   documentVaultSchemaReady,
@@ -14,9 +15,12 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { markCurrentCopy, supersedeSamePageCopies, type SamePageCopyResult } from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
+import { addOperatorSchedules, type OperatorScheduleResult } from "./operator-schedules";
+import { isErrorPageLink } from "./link-coverage";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -37,7 +41,7 @@ export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 2 } as
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
 
-interface FetchCandidateRow {
+export interface FetchCandidateRow {
   id: number | string;
   institution_name: string;
   fee_schedule_url: string | null;
@@ -61,7 +65,7 @@ interface PreviousDocument {
 
 type FetchOutcome = "success" | "unchanged" | "failed" | "skipped";
 
-interface FetchResult {
+export interface FetchResult {
   institutionId: number;
   institutionName: string;
   outcome: FetchOutcome;
@@ -128,8 +132,13 @@ export interface RunMagellanFetchResult {
   storedDocuments: number;
   vault: "on" | "not_configured" | "schema_pending";
   outcomes: Partial<Record<AttemptOutcome, number>>;
+  /** Older copies of fetched pages newly marked as history (superseded_by_id). */
+  supersededCopies: number;
   /** Companion pages (account pages, other fee documents) fetched after the fee links. */
   companions: RunCompanionFetchResult | null;
+  operatorSchedules: OperatorScheduleResult | null;
+  /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
+  samePageCopies: SamePageCopyResult | null;
   results: FetchResult[];
 }
 
@@ -172,9 +181,18 @@ export function redirectedToHomepage(requestedUrl: string, finalUrl: string | nu
   }
 }
 
-/** Fetch outcomes that mean the link itself is gone, not that the site had a bad moment. */
+/**
+ * Fetch outcomes that mean the link itself is gone, not that the site had a bad moment.
+ * A link whose address is the site's error page is gone however the fetch went: Northern
+ * Trust's ".../page-not-found" timed out on every fetch and kept the bank out of discovery.
+ */
 function linkIsGone(result: FetchResult): boolean {
-  return result.attemptOutcome === "http_404" || result.attemptOutcome === "http_410" || result.redirectedHome === true;
+  return (
+    result.attemptOutcome === "http_404" ||
+    result.attemptOutcome === "http_410" ||
+    result.redirectedHome === true ||
+    isErrorPageLink(result.sourceUrl)
+  );
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -793,6 +811,81 @@ async function storeInVault(
   }
 }
 
+export interface FetchLinkContext {
+  learning: boolean;
+  vaultSchema: boolean;
+  vault: DocumentVault;
+  vaultOn: boolean;
+  dryRun: boolean;
+  runId: number;
+  stepId: number | null;
+  /** The attempt-log strategy: the plain fetch, or the paid fallback for blocked links. */
+  strategy: { strategy: string; version: number };
+  /** Paid cost of this fetch, for the attempt log. */
+  costMicrousd?: number;
+  /** Extra detail for the attempt log (the paid fetch's own error). */
+  note?: string | null;
+}
+
+/**
+ * Fetches one bank's fee link and records it: the document row, the bank's fetch state,
+ * a gone link sent back to discovery, the vault copy and the attempt. Shared by the fetch
+ * step and the paid fallback for links that refuse our fetcher (blocked-fetch.ts).
+ */
+export async function fetchAndRecordLink(
+  db: SqlTag,
+  row: FetchCandidateRow,
+  fetchImpl: Fetcher,
+  ctx: FetchLinkContext,
+): Promise<{ result: FetchResult; sourceDocumentId: number | null; supersededCopies: number }> {
+  const { learning, vaultSchema, vault, vaultOn, dryRun } = ctx;
+  let supersededCopies = 0;
+  const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
+  const result = await fetchCandidate(row, fetchImpl, previous);
+  if (dryRun) return { result, sourceDocumentId: null, supersededCopies };
+  const sourceDocumentId = await recordFetchResult(db, result, learning);
+  // The copy this fetch stored or confirmed is the page's current one.
+  if (result.outcome === "success" || result.outcome === "unchanged") {
+    supersededCopies += await markCurrentCopy(db, sourceDocumentId);
+  }
+  if (linkIsGone(result)) {
+    if (isErrorPageLink(result.sourceUrl)) result.reason = "Link is the site's error page, not a fee schedule";
+    result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
+  }
+  // New content is always stored; an unchanged document is stored once if it predates the vault.
+  if (vaultOn && (result.outcome === "success" || (result.outcome === "unchanged" && !previous?.vaultKey))) {
+    await storeInVault(db, vault, result, sourceDocumentId);
+  }
+  result.body = null;
+  if (learning && result.attemptOutcome) {
+    await recordAttempt(db, {
+      institutionId: result.institutionId,
+      sourceDocumentId,
+      stage: "fetch",
+      strategy: ctx.strategy.strategy,
+      version: ctx.strategy.version,
+      fingerprint: result.contentHash ?? result.sourceUrl,
+      outcome: result.attemptOutcome,
+      yieldCount: result.outcome === "success" ? 1 : 0,
+      costMicrousd: ctx.costMicrousd ?? 0,
+      durationMs: result.durationMs,
+      runId: ctx.runId,
+      stepId: ctx.stepId,
+      detail: {
+        url: result.finalUrl ?? result.sourceUrl,
+        status_code: result.statusCode,
+        document_type: result.documentType,
+        bytes: result.bytes,
+        vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
+        vault_key: result.vaultKey,
+        reason: result.reason,
+        ...(ctx.note ? { note: ctx.note } : {}),
+      },
+    });
+  }
+  return { result, sourceDocumentId, supersededCopies };
+}
+
 export async function runMagellanFetch(
   options: RunMagellanFetchOptions,
 ): Promise<RunMagellanFetchResult> {
@@ -807,51 +900,43 @@ export async function runMagellanFetch(
   const vaultOn = vaultSchema && vault.configured;
 
   const results: FetchResult[] = [];
+  let supersededCopies = 0;
   for (const row of rows) {
-    const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
-    const result = await fetchCandidate(row, fetchImpl, previous);
-    results.push(result);
-    if (dryRun) continue;
-    const sourceDocumentId = await recordFetchResult(db, result, learning);
-    if (linkIsGone(result)) {
-      result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
-    }
-    // New content is always stored; an unchanged document is stored once if it predates the vault.
-    if (vaultOn && (result.outcome === "success" || (result.outcome === "unchanged" && !previous?.vaultKey))) {
-      await storeInVault(db, vault, result, sourceDocumentId);
-    }
-    result.body = null;
-    if (learning && result.attemptOutcome) {
-      await recordAttempt(db, {
-        institutionId: result.institutionId,
-        sourceDocumentId,
-        stage: "fetch",
-        strategy: MAGELLAN_FETCH_STRATEGY.strategy,
-        version: MAGELLAN_FETCH_STRATEGY.version,
-        fingerprint: result.contentHash ?? result.sourceUrl,
-        outcome: result.attemptOutcome,
-        yieldCount: result.outcome === "success" ? 1 : 0,
-        costMicrousd: 0,
-        durationMs: result.durationMs,
-        runId: options.runId,
-        stepId: options.stepId ?? null,
-        detail: {
-          url: result.finalUrl ?? result.sourceUrl,
-          status_code: result.statusCode,
-          document_type: result.documentType,
-          bytes: result.bytes,
-          vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
-          vault_key: result.vaultKey,
-          reason: result.reason,
-        },
-      });
-    }
+    const fetched = await fetchAndRecordLink(db, row, fetchImpl, {
+      learning,
+      vaultSchema,
+      vault,
+      vaultOn,
+      dryRun,
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      strategy: MAGELLAN_FETCH_STRATEGY,
+    });
+    results.push(fetched.result);
+    supersededCopies += fetched.supersededCopies;
   }
 
   // Companion pages ride on the same step, each stored as its own document stream. A
   // failure here never fails the fee-link fetch.
   let companions: RunCompanionFetchResult | null = null;
+  let operatorSchedules: OperatorScheduleResult | null = null;
+  let samePageCopies: SamePageCopyResult | null = null;
   if (!dryRun) {
+    try {
+      samePageCopies = await inSavepoint(db, (scope) =>
+        supersedeSamePageCopies(scope, { runId: options.runId, institutionId: options.institutionId ?? null }),
+      );
+    } catch (error) {
+      console.error("Same-page copies failed:", error);
+    }
+    // Schedules James found by hand join the companions before they are fetched.
+    try {
+      operatorSchedules = await inSavepoint(db, (scope) =>
+        addOperatorSchedules({ db: scope, runId: options.runId, stepId: options.stepId ?? null }),
+      );
+    } catch (error) {
+      console.error("Operator schedules failed:", error);
+    }
     try {
       const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
       companions = await runCompanionFetch({
@@ -883,7 +968,10 @@ export async function runMagellanFetch(
     storedDocuments: results.filter((result) => result.vaultStatus === "stored" || result.vaultStatus === "already_stored").length,
     vault: vaultOn ? "on" : vaultSchema ? "not_configured" : "schema_pending",
     outcomes: countOutcomes(results.map((result) => result.attemptOutcome)),
+    supersededCopies,
     companions,
+    operatorSchedules,
+    samePageCopies,
     results,
   };
 }

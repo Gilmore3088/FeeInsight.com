@@ -10,7 +10,8 @@ import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stat
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import {
   getCitiesInStateCached,
   getStateEconomicContextCached,
@@ -18,12 +19,13 @@ import {
   getStateStatsCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { StateEconomicContext } from "@/lib/data-store/economic-context";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import type { CitySummary, StateFeeIndexes } from "@/lib/data-store";
 import { ResearchSectionNav } from "../../research-hero";
 import { BENCHMARK_KEYS } from "../../benchmark-board";
 import { CharterExhibit, KeyFindings } from "../../exhibits";
 import { EconomyExhibit } from "./economy-exhibit";
-import { buildCharterPairs, buildComparisons, computeStateFindings } from "./state-findings";
+import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
 import {
   CoverageExhibit,
   FullTable,
@@ -52,11 +54,19 @@ const EMPTY_INDEXES: StateFeeIndexes = {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { code } = await params;
-  const name = STATE_NAMES[code.toUpperCase()];
+  const stateCode = code.toUpperCase();
+  const name = STATE_NAMES[stateCode];
   if (!name) return { title: "State Not Found" };
+  // Thin states (fewer institutions with published fees than the median floor) stay out of
+  // search; the sitemap leaves them out too. A failed read keeps the page indexable.
+  const stats = await getStateStatsCached(stateCode).catch(() => null);
+  const thin = stats !== null && stats.with_fees < MIN_INSTITUTIONS_FOR_MEDIAN;
 
   return {
     title: `${name} Bank Fees - State Fee Report`,
+    // One URL per state: /research/state/tx and /research/state/TX both render this page.
+    alternates: { canonical: `/research/state/${stateCode}` },
+    ...(thin ? { robots: { index: false, follow: true } } : {}),
     description: `What ${name} banks and credit unions charge for overdraft, NSF, maintenance, ATM and wire fees, compared with national medians. Every figure from verified, published fee schedules.`,
     keywords: [
       `${name} bank fees`,
@@ -95,6 +105,7 @@ export default async function StateReportPage({ params }: PageProps) {
   if (!stateName) notFound();
 
   const user = await getCurrentUser();
+  const sampleLive = await sampleReportAvailable();
   const showAllCategories = canAccessAllCategories(user);
 
   // Every read is served from the public cache between publishes.
@@ -175,7 +186,7 @@ export default async function StateReportPage({ params }: PageProps) {
           body={`Leave your email and we'll send you the link to the ${stateName} medians against national, updated as new fee schedules are verified.`}
           buttonLabel="Send it to me"
           secondaryLink={
-            SAMPLE_REPORT_LIVE
+            sampleLive
               ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
               : undefined
           }

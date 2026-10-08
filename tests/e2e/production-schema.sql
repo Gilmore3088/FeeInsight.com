@@ -1750,7 +1750,11 @@ CREATE TABLE public.raw_fee_observations (  fee_raw_id bigint DEFAULT nextval('r
   frequency text,
   conditions text,
   outlier_flags jsonb DEFAULT '[]'::jsonb NOT NULL,
-  source text DEFAULT 'knox'::text NOT NULL
+  source text DEFAULT 'knox'::text NOT NULL,
+  product_name text,
+  min_balance_to_avoid numeric,
+  min_opening_deposit numeric,
+  waiver_text text
 );
 CREATE TABLE public.reg_articles (  guid text NOT NULL,
   source text NOT NULL,
@@ -3007,3 +3011,152 @@ BEGIN
   END IF;
 END $$;
 
+-- Rate columns and the rate catalog (migration 20270110000006_percentage_fees.sql).
+ALTER TABLE public.raw_fee_observations
+  ADD COLUMN IF NOT EXISTS amount_kind text NOT NULL DEFAULT 'flat',
+  ADD COLUMN IF NOT EXISTS rate_percent numeric(7,4),
+  ADD COLUMN IF NOT EXISTS rate_min_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_max_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_basis text;
+
+ALTER TABLE public.verified_fee_observations
+  ADD COLUMN IF NOT EXISTS amount_kind text NOT NULL DEFAULT 'flat',
+  ADD COLUMN IF NOT EXISTS rate_percent numeric(7,4),
+  ADD COLUMN IF NOT EXISTS rate_min_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_max_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_basis text;
+
+ALTER TABLE public.published_fee_records
+  ADD COLUMN IF NOT EXISTS amount_kind text NOT NULL DEFAULT 'flat',
+  ADD COLUMN IF NOT EXISTS rate_percent numeric(7,4),
+  ADD COLUMN IF NOT EXISTS rate_min_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_max_amount numeric(12,2),
+  ADD COLUMN IF NOT EXISTS rate_basis text;
+
+DO $$
+DECLARE
+  tier text;
+BEGIN
+  FOREACH tier IN ARRAY ARRAY['raw_fee_observations', 'verified_fee_observations', 'published_fee_records'] LOOP
+    EXECUTE format(
+      $sql$ALTER TABLE public.%I ADD CONSTRAINT %I CHECK (
+        (amount_kind = 'flat' AND rate_percent IS NULL AND rate_min_amount IS NULL AND rate_max_amount IS NULL AND rate_basis IS NULL)
+        OR (amount_kind = 'percent' AND amount IS NULL AND rate_percent > 0 AND rate_percent <= 100
+            AND (rate_min_amount IS NULL OR rate_min_amount >= 0)
+            AND (rate_max_amount IS NULL OR rate_max_amount >= COALESCE(rate_min_amount, 0))
+            AND (rate_basis IS NULL OR rate_basis IN ('transaction', 'settlement', 'advance', 'balance_transferred', 'balance', 'loan_balance')))
+      ) NOT VALID$sql$,
+      tier,
+      tier || '_amount_kind_check'
+    );
+    EXECUTE format('ALTER TABLE public.%I VALIDATE CONSTRAINT %I', tier, tier || '_amount_kind_check');
+  END LOOP;
+END $$;
+
+CREATE OR REPLACE VIEW public.published_fee_rate_catalog
+WITH (security_invoker = true)
+AS
+SELECT
+  fp.fee_published_id AS id,
+  fp.fee_published_id,
+  fp.lineage_ref AS fee_verified_id,
+  fv.fee_raw_id,
+  fp.institution_id,
+  fp.fee_name,
+  fp.amount,
+  fp.frequency,
+  fr.conditions,
+  COALESCE(fp.extraction_confidence, fv.extraction_confidence, fr.extraction_confidence) AS extraction_confidence,
+  'approved'::text AS review_status,
+  COALESCE(fv.outlier_flags, '[]'::jsonb) AS validation_flags,
+  fp.canonical_fee_key AS fee_category,
+  fp.canonical_fee_key,
+  NULL::text AS fee_family,
+  NULL::text AS account_product_type,
+  false AS is_fee_cap,
+  fp.variant_type,
+  fp.coverage_tier,
+  COALESCE(fp.source_url, fv.source_url, fr.source_url) AS source_url,
+  fr.source,
+  COALESCE(fp.source_url, fv.source_url, fr.source_url) AS document_url,
+  COALESCE(fp.document_r2_key, fv.document_r2_key, fr.document_r2_key) AS document_r2_key,
+  fr.source_document_id,
+  COALESCE(fp.agent_event_id, fr.agent_event_id) AS agent_event_id,
+  COALESCE(fp.verified_by_agent_event_id, fv.verified_by_agent_event_id) AS verified_by_agent_event_id,
+  fp.published_by_adversarial_event_id,
+  fp.batch_id,
+  fp.published_at AS created_at,
+  fp.published_at AS updated_at,
+  fp.amount_kind,
+  fp.rate_percent,
+  fp.rate_min_amount,
+  fp.rate_max_amount,
+  fp.rate_basis
+FROM public.published_fee_records fp
+LEFT JOIN public.verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+LEFT JOIN public.raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+WHERE fp.rolled_back_at IS NULL
+  AND fp.amount_kind = 'percent'
+  AND fp.institution_id IN (
+    SELECT deep.institution_id
+      FROM public.published_fee_records deep
+     WHERE deep.rolled_back_at IS NULL
+     GROUP BY deep.institution_id
+    HAVING count(DISTINCT deep.canonical_fee_key) >= 3
+  );
+
+-- Added 2026-10-07: the shared learning store (migration 20270110000001), read by Magellan's
+-- link ledger and discovery since the 2026-10-04 snapshot.
+CREATE TABLE IF NOT EXISTS public.pipeline_feedback (
+  id                 BIGSERIAL PRIMARY KEY,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- The output being judged: the stage and strategy that produced it.
+  about_stage        TEXT NOT NULL,
+  about_strategy     TEXT,
+  about_version      INTEGER,
+  about_attempt_id   BIGINT,
+  signal             TEXT NOT NULL,
+  kind               TEXT NOT NULL,
+  -- Who judged it, and with which check.
+  reported_by        TEXT NOT NULL,
+  check_name         TEXT,
+  institution_id     BIGINT,
+  source_document_id BIGINT,
+  source_url         TEXT,
+  fee_raw_id         BIGINT,
+  fee_verified_id    BIGINT,
+  fee_published_id   BIGINT,
+  canonical_fee_key  TEXT,
+  amount             NUMERIC,
+  weight             NUMERIC NOT NULL DEFAULT 1,
+  evidence           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  agent_run_id       BIGINT,
+  dedupe_key         TEXT NOT NULL,
+  CONSTRAINT pipeline_feedback_dedupe_key_key UNIQUE (dedupe_key),
+  CONSTRAINT pipeline_feedback_about_stage_check
+    CHECK (about_stage IN ('discover', 'fetch', 'read', 'extract', 'verify', 'publish')),
+  CONSTRAINT pipeline_feedback_signal_check
+    CHECK (signal IN ('wrong', 'right', 'missed', 'restored')),
+  CONSTRAINT pipeline_feedback_reported_by_check
+    CHECK (reported_by IN ('atlas', 'magellan', 'rosetta', 'knox', 'darwin', 'hamilton', 'human'))
+);
+
+CREATE INDEX IF NOT EXISTS pipeline_feedback_strategy_idx
+  ON public.pipeline_feedback (about_stage, about_strategy, about_version, signal);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_institution_idx
+  ON public.pipeline_feedback (institution_id);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_document_idx
+  ON public.pipeline_feedback (source_document_id);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_url_idx
+  ON public.pipeline_feedback (source_url);
+CREATE INDEX IF NOT EXISTS pipeline_feedback_raw_idx
+  ON public.pipeline_feedback (fee_raw_id) WHERE fee_raw_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS pipeline_feedback_published_idx
+  ON public.pipeline_feedback (fee_published_id) WHERE fee_published_id IS NOT NULL;
+
+-- source_documents.companion_source_id (20270109000000_companion_fee_pages.sql)
+ALTER TABLE public.source_documents ADD COLUMN IF NOT EXISTS companion_source_id BIGINT;
+CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
+  ON public.source_documents (companion_source_id, id DESC)
+  WHERE companion_source_id IS NOT NULL;

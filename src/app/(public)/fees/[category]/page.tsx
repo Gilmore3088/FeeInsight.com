@@ -19,8 +19,10 @@ import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
-import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/data-store/public-cached-reads";
+import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -36,9 +38,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { category } = await params;
   const name = getDisplayName(category);
   const family = getFeeFamily(category);
+  // Thin pages (fewer institutions than the median floor) stay out of search; the sitemap
+  // leaves them out too. When the snapshot can't be read, the page stays indexable.
+  const snapshot = await getPublicSnapshot().catch(() => null);
+  const national = snapshot?.categories.find((c) => c.fee_category === category) ?? null;
+  const thin =
+    snapshot !== null &&
+    snapshot.categories.length > 0 &&
+    (national?.institution_count ?? 0) < MIN_INSTITUTIONS_FOR_MEDIAN;
 
   return {
     title: `${name} Fee - National Benchmarks & Analysis`,
+    ...(thin ? { robots: { index: false, follow: true } } : {}),
     description: `National benchmarking data for ${name.toLowerCase()} fees. See median, P25/P75, distribution, and breakdowns by bank vs. credit union, asset tier, Fed district, and state.`,
     openGraph: {
       title: `${name} Fee Benchmarks`,
@@ -99,10 +110,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const name = getDisplayName(category);
   const family = getFeeFamily(category);
   const familyColor = family ? getFamilyColor(family) : null;
-  const [detail, snapshot] = await Promise.all([
+  const [detail, snapshot, rateStats] = await Promise.all([
     getFeeCategoryDetailCached(category),
     getPublicSnapshot(),
+    // Fees this category may state as a rate ("1% of the transaction") get their own
+    // statistics; a rate is never pooled with the dollar figures above it.
+    percentFeeAllowed(category) ? getNationalRateStatsCached(category).catch(() => null) : Promise.resolve(null),
   ]);
+  const showRates = rateStats != null && rateStats.maturity_tier !== "insufficient" && rateStats.median_rate != null;
 
   // Close the loop the other way: a reader on a fee page can reach the guide that
   // explains it. Consumer guides are public, so this link is never a dead end.
@@ -206,6 +221,39 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           </div>
         ))}
       </div>
+
+      {showRates && rateStats && (
+        <section className="mt-6 rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4">
+          <h2 className="text-[16px] font-medium text-[#1A1815]" style={SERIF}>
+            When stated as a rate
+          </h2>
+          <p className="mt-1 text-[13px] text-[#5A5347]">
+            {rateStats.institution_count.toLocaleString("en-US")} institutions state this fee as a percentage
+            rather than a dollar amount. Those rates are summarized here on their own, never mixed into the
+            dollar figures above.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {[
+              { label: "Median rate", value: formatRatePercent(rateStats.median_rate) },
+              {
+                label: "Middle half",
+                value: `${formatRatePercent(rateStats.p25_rate)} \u2013 ${formatRatePercent(rateStats.p75_rate)}`,
+              },
+              {
+                label: "Range",
+                value: `${formatRatePercent(rateStats.min_rate)} \u2013 ${formatRatePercent(rateStats.max_rate)}`,
+              },
+            ].map((s) => (
+              <div key={s.label}>
+                <p className={EYEBROW}>{s.label}</p>
+                <p className="mt-1 text-[20px] font-light tabular-nums text-[#1A1815]" style={SERIF}>
+                  {s.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Distribution */}
       <section className="mt-10">

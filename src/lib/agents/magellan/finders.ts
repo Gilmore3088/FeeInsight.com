@@ -50,6 +50,9 @@ const STRONG_LINK_PHRASES = [
   "rates and fees",
   "fee sheet",
   "schedule of charges",
+  "schedule of service charges",
+  "account fee schedule",
+  "deposit account agreement",
 ];
 
 const MEDIUM_LINK_PHRASES = [
@@ -400,7 +403,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     };
     result.trail.push(entry);
     try {
-      const validation = await validateFeeCandidate(candidate, ctx.fetchImpl);
+      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: ctx.site.toString() }, ctx.fetchImpl);
       entry.verdict = validation.verdict;
       if (ctx.pageClassifier && validation.scoringText) {
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;

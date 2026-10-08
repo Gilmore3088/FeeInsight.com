@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 
@@ -35,6 +36,8 @@ export interface MarketFeeLine {
   fee_name: string;
   source_url: string | null;
   updated_at: string | null;
+  /** The day the stored copy of the schedule that states this fee was saved (YYYY-MM-DD). */
+  schedule_read_on: string | null;
   /** The line of the bank's own document that states this fee. */
   source_line: string;
   /**
@@ -57,6 +60,7 @@ export interface CustomReportMarketData {
 interface StoredText {
   text: string;
   url: string | null;
+  readOn: string | null;
 }
 
 function num(value: unknown): number | null {
@@ -89,19 +93,23 @@ interface MarketCountyRow {
  * The counties that make up an institution's local market: up to MAX_MARKET_COUNTIES of
  * its own branch counties (in the state holding most of its deposits), or, for an
  * institution not in the Summary of Deposits (credit unions), its headquarters city's counties.
+ * A credit union's stored number is its NCUA charter, which can equal an unrelated bank's FDIC
+ * cert, so a credit union never matches SOD branches by number.
  */
 async function loadMarketCounties(subject: {
   cert_number: string | null;
+  charter_type: string | null;
   state_code: string | null;
   city: string | null;
 }): Promise<MarketCountyRow[]> {
+  const fdicCert = subject.charter_type === "credit_union" ? null : subject.cert_number;
   return sql<MarketCountyRow[]>`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits),
     own_all AS (
       SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state,
              SUM(COALESCE(b.deposits, 0)) AS deposits
       FROM institution_branch_deposits b, latest
-      WHERE ${subject.cert_number}::text IS NOT NULL AND b.cert::text = ${subject.cert_number}::text
+      WHERE ${fdicCert}::text IS NOT NULL AND b.cert::text = ${fdicCert}::text
         AND b.year = latest.y AND b.county_fips IS NOT NULL
       GROUP BY b.county_fips, b.year
     ),
@@ -112,13 +120,16 @@ async function loadMarketCounties(subject: {
       ORDER BY deposits DESC
       LIMIT ${MAX_MARKET_COUNTIES}
     ),
+    -- A city can span more than 3 counties: keep the ones holding most of its branches, then
+    -- most of its deposits, then the lowest county code, so repeat runs pick the same counties.
     hq AS (
-      SELECT DISTINCT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state
+      SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state
       FROM institution_branch_deposits b, latest
       WHERE NOT EXISTS (SELECT 1 FROM own)
         AND b.year = latest.y AND b.state = ${subject.state_code} AND UPPER(b.city) = UPPER(${subject.city ?? ""})
         AND b.county_fips IS NOT NULL
       GROUP BY b.county_fips, b.year
+      ORDER BY COUNT(*) DESC, SUM(COALESCE(b.deposits, 0)) DESC, b.county_fips::text
       LIMIT ${MAX_MARKET_COUNTIES}
     )
     SELECT county_fips, year, city, state, 'branch_counties' AS basis FROM own
@@ -134,6 +145,8 @@ export interface LocalMarketMember extends MarketInstitution {
 export interface LocalMarketMembers {
   basis: "branch_counties" | "hq_city";
   places: string[];
+  /** The market counties, five-digit FIPS codes. */
+  county_fips: string[];
   sod_year: number;
   members: LocalMarketMember[];
 }
@@ -145,8 +158,10 @@ export interface LocalMarketMembers {
  * Null when the institution has no market counties on file.
  */
 export async function getLocalMarketMembers(institutionId: number): Promise<LocalMarketMembers | null> {
-  const [subject] = await sql<{ id: number; city: string | null; state_code: string | null; cert_number: string | null }[]>`
-    SELECT id, city, state_code, cert_number::text AS cert_number FROM institution_sources WHERE id = ${institutionId}`;
+  const [subject] = await sql<
+    { id: number; city: string | null; state_code: string | null; cert_number: string | null; charter_type: string | null }[]
+  >`
+    SELECT id, city, state_code, cert_number::text AS cert_number, charter_type FROM institution_sources WHERE id = ${institutionId}`;
   if (!subject) return null;
   const counties = await loadMarketCounties(subject);
   if (counties.length === 0) return null;
@@ -178,6 +193,7 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
   return {
     basis: counties[0].basis === "hq_city" ? "hq_city" : "branch_counties",
     places: [...new Set(counties.map((row) => `${row.city}, ${row.state}`))],
+    county_fips: countyFips.map((fips) => fips.padStart(5, "0")),
     sod_year: sodYear,
     members: rows.map((row) => {
       const deposits = num(row.market_deposits);
@@ -266,6 +282,9 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         AND c.amount IS NOT NULL
         AND COALESCE(c.is_fee_cap, false) = false
         AND c.fee_name ~* r.inc AND c.fee_name !~* r.exc
+        -- Business-only schedules are not the institution's consumer price (fee-stats rule 6).
+        AND NOT (lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
+                 AND lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL})
         AND ((c.amount BETWEEN r.lo AND r.hi AND c.amount > 0) OR (c.amount = 0 AND r.allow_zero))
     ),
     -- Every candidate, in preference order; the first one its source text supports is used.
@@ -297,17 +316,17 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   const textsByInstitution = new Map<number, StoredText[]>();
   if (documentIds.length > 0 || unlinkedInstitutions.length > 0) {
     const textRows = await sql<
-      { source_document_id: string; institution_id: number; source_url: string | null; normalized_text: string | null }[]
+      { source_document_id: string; institution_id: number; source_url: string | null; normalized_text: string | null; read_on: string | null }[]
     >`
       SELECT DISTINCT ON (source_document_id) source_document_id::text AS source_document_id, institution_id,
-             source_url, normalized_text
+             source_url, normalized_text, updated_at::date::text AS read_on
       FROM agent_source_texts
       WHERE status = 'completed'
         AND (source_document_id::text = ANY(${documentIds}) OR institution_id = ANY(${unlinkedInstitutions}))
       ORDER BY source_document_id, updated_at DESC NULLS LAST, id DESC`;
     for (const row of textRows) {
       if (!row.normalized_text) continue;
-      const stored = { text: row.normalized_text, url: row.source_url };
+      const stored = { text: row.normalized_text, url: row.source_url, readOn: row.read_on };
       texts.set(row.source_document_id, stored);
       const id = Number(row.institution_id);
       textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), stored]);
@@ -369,6 +388,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         fee_name: row.fee_name,
         source_url: row.source_url ?? source?.url ?? null,
         updated_at: row.updated_at ? row.updated_at.slice(0, 10) : null,
+        schedule_read_on: source?.readOn ?? null,
         source_line: check.sourceLine,
       };
       filled.set(slot, entry);

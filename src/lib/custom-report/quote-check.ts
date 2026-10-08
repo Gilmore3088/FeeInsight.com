@@ -1,4 +1,4 @@
-import { findInstitutionIdByName, getCustomReportMarketData } from "@/lib/data-store/custom-report-market";
+import { findInstitutionIdByName, getCustomReportMarketData, type CustomReportMarketData } from "@/lib/data-store/custom-report-market";
 import {
   HEADLINE_FEE_KEYS,
   MIN_RICH_COMPETITORS,
@@ -17,8 +17,17 @@ import { createReportToken, reportPath } from "./link";
  * (market-readiness.ts), the same rule the public reports grid and /admin/leads count use.
  */
 export type QuoteCheck =
-  | { status: "ready"; readiness: ReadinessResult; rule?: ReportRuleCheck | null; path: string | null }
-  | { status: "thin"; readiness: ReadinessResult; rule?: ReportRuleCheck | null }
+  | {
+      status: "ready";
+      readiness: ReadinessResult;
+      rule?: ReportRuleCheck | null;
+      path: string | null;
+      /** The market data that passed, so a paid report can keep exactly these numbers. */
+      data?: CustomReportMarketData;
+      /** The institution checked (given, or matched by name). */
+      institutionId?: number;
+    }
+  | { status: "thin"; readiness: ReadinessResult; rule?: ReportRuleCheck | null; institutionId?: number }
   | { status: "unmatched"; reason: string };
 
 /** Never throws: a failed check reads as unmatched with the reason, and the request is still stored. */
@@ -38,10 +47,10 @@ export async function checkInstitutionReport(request: {
     if (!data) return { status: "unmatched", reason: "The institution was not found." };
     const { readiness } = analyzeMarket(data);
     const rule = await getReportRuleCheck(institutionId);
-    if (!readiness.ready || !rule?.passes) return { status: "thin", readiness, rule };
+    if (!readiness.ready || !rule?.passes) return { status: "thin", readiness, rule, institutionId };
     // The link needs CUSTOM_REPORT_LINK_SECRET; without it James still learns the report is buildable.
     const token = createReportToken(institutionId);
-    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null };
+    return { status: "ready", readiness, rule, path: token ? reportPath(token) : null, data, institutionId };
   } catch (error) {
     console.error("[custom-report] quote check failed", {
       institutionId,
@@ -69,11 +78,26 @@ export function describeQuoteCheck(check: QuoteCheck, siteUrl: string): string {
   return `Report check: ready to quote (${counts}).${rule}${link}`;
 }
 
-/** e.g. "Report rule: passes (11 of 15 headline fees; 22 other credit unions in TX with 9+)." */
+function ordinal(n: number): string {
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+/**
+ * e.g. "Report rule: passes (11 of 15 headline fees; 22 other credit unions in TX with 9+)."
+ * On district peers: "Report rule: passes (10 of 15 headline fees; peers: Fed 12th District
+ * banks, WA had too few; 18 other banks with 9+)."
+ */
 export function describeReportRule(rule: ReportRuleCheck): string {
   const peers = rule.charter_type === "credit_union" ? "credit unions" : "banks";
-  const where = rule.state_code ? ` in ${rule.state_code}` : "";
-  const counts = `${rule.ownCategories} of ${HEADLINE_FEE_KEYS.length} headline fees; ${rule.richCompetitors} other ${peers}${where} with ${RICH_MIN_CATEGORIES}+`;
+  const own = `${rule.ownCategories} of ${HEADLINE_FEE_KEYS.length} headline fees`;
+  const counts =
+    rule.peerScope === "district" && rule.fed_district
+      ? `${own}; peers: Fed ${ordinal(rule.fed_district)} District ${peers}, ${rule.state_code ?? "the state"} had too few; ${rule.richCompetitors} other ${peers} with ${RICH_MIN_CATEGORIES}+`
+      : `${own}; ${rule.richCompetitors} other ${peers}${rule.state_code ? ` in ${rule.state_code}` : ""} with ${RICH_MIN_CATEGORIES}+` +
+        (!rule.passes && rule.fed_district && rule.districtRichCompetitors !== null
+          ? `, ${rule.districtRichCompetitors} in the Fed ${ordinal(rule.fed_district)} District`
+          : "");
   return rule.passes
     ? `Report rule: passes (${counts}).`
     : `Report rule: not met (${counts}; needs ${RICH_MIN_CATEGORIES}+ and ${MIN_RICH_COMPETITORS}+).`;

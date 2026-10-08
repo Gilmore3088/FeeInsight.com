@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { isRetiredCategory } from "@/lib/fee-fold";
 import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
 import {
   isExplicitZeroFee,
@@ -11,8 +12,13 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
+import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
+import { tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
+import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
+import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 
 type SqlTag = typeof sql;
 
@@ -43,7 +49,7 @@ const BLOCKING_FLAGS = new Set([
   "rejected",
 ]);
 
-interface VerifiedFeeRow {
+export interface VerifiedFeeRow extends RateFields {
   fee_verified_id: number | string;
   fee_raw_id: number | string;
   institution_id: number | string;
@@ -67,7 +73,7 @@ interface VerifiedFeeRow {
   institution_name?: string | null;
 }
 
-interface PriorPublishedFeeRow {
+interface PriorPublishedFeeRow extends RateFields {
   fee_published_id: number | string;
   amount: number | string | null;
   fee_name: string;
@@ -188,23 +194,37 @@ function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
-function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string | null {
+export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string | null {
   const flags = parseFlags(row.outlier_flags);
   if (!flags.includes("agentic_darwin_verified")) return "Not verified by the agentic Darwin path";
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
   if (blockingFlag) return `Blocking flag: ${blockingFlag}`;
   if (!VALID_CANONICAL_KEYS.has(row.canonical_fee_key)) return "Invalid canonical fee key";
+  // A fee whose wording found no home among the top 50 (fee-fold.ts) is not published.
+  if (isRetiredCategory(row.canonical_fee_key)) return "Category folded into the top 50 with no home for this fee";
   if (!row.fee_name?.trim()) return "Missing fee name";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
+  // A blog post or story quotes national averages, not this bank's price (article-page.ts).
+  if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
   const amount = normalizedAmount(row.amount);
-  if (amount == null || amount < 0) return "Missing or invalid amount";
-  if (amount === 0) {
+  if (isPercentFee(row)) {
+    // A rate publishes only in a category that publishes rates, inside its range.
+    const rate = ratePercentOf(row);
+    if (!percentFeeAllowed(row.canonical_fee_key)) return "Rate in a category that does not publish rates";
+    if (rate == null || amount != null) return "Missing or invalid rate";
+    const range = PERCENT_FEE_RANGES[row.canonical_fee_key];
+    if (rate < range.min || rate > range.max) return "Rate outside the category's plausible range";
+  } else if (amount == null || amount < 0) return "Missing or invalid amount";
+  else if (amount === 0) {
     // $0 is a real price (a free fee) only when Darwin verified it as one.
     if (!isExplicitZeroFee(amount, flags, ZERO_FEE_VERIFIED_FLAG)) return "Missing or invalid amount";
   } else if (!withinAmountEnvelope(row.canonical_fee_key, amount)) {
     return "Amount outside the category's plausible range";
   }
+  // A transfer or deposit limit read as a price; Knox's excerpt is checked by the sweep.
+  const limit = isPercentFee(row) ? null : limitGuardVerdict(row);
+  if (limit) return `Transaction limit, not a price: ${limit.detail}`;
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
     return "Below publish confidence threshold";
   }
@@ -314,6 +334,11 @@ async function selectVerifiedFees(
              fv.fee_name,
              fv.amount,
              fv.frequency,
+             fv.amount_kind,
+             fv.rate_percent,
+             fv.rate_min_amount,
+             fv.rate_max_amount,
+             fv.rate_basis,
              fr.agent_event_id AS raw_agent_event_id,
              fr.source_document_id,
              sd.crawled_at AS document_crawled_at,
@@ -370,6 +395,8 @@ async function institutionFeeDepth(
              NULL::text AS document_r2_key,
              NULL::text AS verified_by_agent_event_id,
              NULL::numeric AS amount,
+             NULL::text AS amount_kind,
+             NULL::numeric AS rate_percent,
              NULL::numeric AS extraction_confidence,
              '[]'::jsonb AS outlier_flags
         FROM published_fee_records fp
@@ -384,6 +411,8 @@ async function institutionFeeDepth(
              fv.document_r2_key,
              fv.verified_by_agent_event_id::text,
              fv.amount,
+             fv.amount_kind,
+             fv.rate_percent,
              fv.extraction_confidence,
              fv.outlier_flags
         FROM verified_fee_observations fv
@@ -403,7 +432,7 @@ async function institutionFeeDepth(
   return new Map(Array.from(depth, ([id, keys]) => [id, keys.size]));
 }
 
-async function insertPublishedFee(
+export async function insertPublishedFee(
   db: SqlTag,
   options: {
     runId: number;
@@ -414,7 +443,8 @@ async function insertPublishedFee(
   const feeVerifiedId = Number(options.row.fee_verified_id);
   const institutionId = Number(options.row.institution_id);
   const confidence = normalizedConfidence(options.row.extraction_confidence);
-  const amount = normalizedAmount(options.row.amount);
+  const percent = isPercentFee(options.row);
+  const amount = percent ? null : normalizedAmount(options.row.amount);
   // The publish gate is Darwin's verification, so its event id is the handshake id;
   // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
   const publishEventId = options.row.verified_by_agent_event_id;
@@ -434,7 +464,12 @@ async function insertPublishedFee(
       frequency,
       variant_type,
       coverage_tier,
-      batch_id
+      batch_id,
+      amount_kind,
+      rate_percent,
+      rate_min_amount,
+      rate_max_amount,
+      rate_basis
     )
     VALUES (
       ${feeVerifiedId},
@@ -451,7 +486,12 @@ async function insertPublishedFee(
       ${options.row.frequency},
       ${options.row.variant_type},
       ${coverageTier(confidence)},
-      ${options.batchId}
+      ${options.batchId},
+      ${percent ? "percent" : "flat"},
+      ${percent ? ratePercentOf(options.row) : null},
+      ${percent ? options.row.rate_min_amount ?? null : null},
+      ${percent ? options.row.rate_max_amount ?? null : null},
+      ${percent ? options.row.rate_basis ?? null : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_published_id
@@ -468,6 +508,8 @@ async function selectLivePublishedFees(
     return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fp.fee_published_id,
              fp.amount,
+             fp.amount_kind,
+             fp.rate_percent,
              fp.fee_name,
              fp.published_at,
              fr.source_document_id,
@@ -499,8 +541,9 @@ function documentStream(value: string | null | undefined): string {
   return value == null ? "" : String(value);
 }
 
-function normalizedFeeName(name: string | null | undefined): string {
-  return (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
+export function normalizedFeeName(name: string | null | undefined): string {
+  return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function documentTime(value: string | Date | null | undefined): number | null {
@@ -530,8 +573,9 @@ export type PriorFeeDecision =
  */
 export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
   if (live.length === 0) return { kind: "new" };
-  const amount = normalizedAmount(row.amount);
-  const identical = live.find((prior) => normalizedAmount(prior.amount) === amount);
+  // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
+  const value = feeValue(row);
+  const identical = live.find((prior) => feeValue(prior) === value);
   if (identical) return { kind: "identical", prior: identical };
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
@@ -549,7 +593,13 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
     const priorTime = documentTime(candidate.document_crawled_at);
     return priorTime != null && priorTime < rowTime && normalizedFeeName(candidate.fee_name) === name;
   });
-  return prior ? { kind: "supersede", prior } : { kind: "additional_line" };
+  // A rate never replaces a dollar amount, or the reverse; each stays its own line.
+  return prior && isPercentFee(prior) === isPercentFee(row) ? { kind: "supersede", prior } : { kind: "additional_line" };
+}
+
+/** A fee's comparable value: its rate for a percentage fee, else its amount. */
+export function feeValue(row: RateFields & { amount: number | string | null }): string {
+  return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
 interface ListedFeeLine {
@@ -580,6 +630,8 @@ async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | stri
  * accounts) has two lines, not a price change, whichever document is newer.
  */
 export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  // Knox's listed lines carry no rate here, so two rates are never read as two lines.
+  if (isPercentFee(row) || isPercentFee(prior)) return false;
   const name = normalizedFeeName(row.fee_name);
   const listed = (documentId: number | string | null | undefined, amount: number | string | null) =>
     lines.some(
@@ -618,6 +670,8 @@ async function supersedePriorFee(
     RETURNING fee_published_id
   `;
   if (closed.length === 0) return { superseded: false, changeRecorded: false };
+  // fee_change_records holds dollar amounts only; a rate change is not written there.
+  if (isPercentFee(options.row)) return { superseded: true, changeRecorded: false };
 
   // Same vocabulary as FeeChangeEvent in data-store/fee-changes.ts.
   const changeType = newAmount != null && previousAmount != null && newAmount < previousAmount ? "decrease" : "increase";
@@ -697,6 +751,50 @@ function movementFor(
   };
 }
 
+type MovementGroupEntry = {
+  canonical_fee_key: string;
+  fee_name: string;
+  previous_fee_published_id: number;
+  new_fee_published_id: number;
+  previous_amount: number;
+  new_amount: number;
+  amount_delta: number;
+  direction: "increase" | "decrease";
+};
+
+interface MovementEvidenceRow {
+  fee_published_id: number | string;
+  fee_name: string | null;
+  source_url: string | null;
+  document_text: string | null;
+}
+
+/** Name, page and current text of each published row, for the movement check below. */
+async function selectMovementEvidence(db: SqlTag, feePublishedIds: number[]): Promise<Map<number, MovementEvidenceRow>> {
+  if (feePublishedIds.length === 0) return new Map();
+  try {
+    const rows = await inSavepoint(db, (scope) => scope<MovementEvidenceRow[]>`
+      SELECT fp.fee_published_id,
+             fp.fee_name,
+             fp.source_url,
+             (SELECT t.normalized_text
+                FROM agent_source_texts t
+               WHERE t.source_document_id = fr.source_document_id
+                 AND t.status = 'completed'
+               ORDER BY t.id DESC
+               LIMIT 1) AS document_text
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.fee_published_id = ANY(${feePublishedIds}::bigint[])
+    `);
+    return new Map(rows.map((row) => [Number(row.fee_published_id), row]));
+  } catch (error) {
+    console.error("selectMovementEvidence failed:", error);
+    return new Map();
+  }
+}
+
 async function recordPublicationSignals(
   db: SqlTag,
   runId: number,
@@ -712,16 +810,7 @@ async function recordPublicationSignals(
   }>();
   const movementGroups = new Map<number, {
     institutionName: string;
-    movements: Array<{
-      canonical_fee_key: string;
-      fee_name: string;
-      previous_fee_published_id: number;
-      new_fee_published_id: number;
-      previous_amount: number;
-      new_amount: number;
-      amount_delta: number;
-      direction: "increase" | "decrease";
-    }>;
+    movements: MovementGroupEntry[];
   }>();
 
   results.forEach((result) => {
@@ -763,8 +852,45 @@ async function recordPublicationSignals(
     }
   });
 
+  // A price move alerts watchers only when the bank really changed the fee: the same
+  // check the alerts and Monthly Pulse use (confirmFeeChange: same page, same name, the
+  // old text states the old price, the new text states the new price and not the old).
+  // A re-read of the same edition or a new copy of the page that pairs a fee with a
+  // neighbouring price is kept as an unconfirmed movement on the publication signal.
+  const unconfirmedMovements = new Map<number, Array<MovementGroupEntry>>();
+  const movementIds = Array.from(movementGroups.values()).flatMap((group) =>
+    group.movements.flatMap((movement) => [movement.previous_fee_published_id, movement.new_fee_published_id]),
+  );
+  const evidence = await selectMovementEvidence(db, movementIds);
+  for (const [institutionId, group] of movementGroups) {
+    const confirmed = group.movements.filter((movement) => {
+      const before = evidence.get(movement.previous_fee_published_id);
+      const after = evidence.get(movement.new_fee_published_id);
+      return confirmFeeChange({
+        institution_name: group.institutionName,
+        state_code: null,
+        charter_type: null,
+        fee_key: movement.canonical_fee_key,
+        fee_name: after?.fee_name ?? movement.fee_name,
+        old_fee_name: before?.fee_name ?? null,
+        old_amount: movement.previous_amount,
+        new_amount: movement.new_amount,
+        changed_at: new Date(),
+        source_url: after?.source_url ?? null,
+        old_source_url: before?.source_url ?? null,
+        new_document_text: after?.document_text ?? null,
+        old_document_text: before?.document_text ?? null,
+      }) != null;
+    });
+    const unconfirmed = group.movements.filter((movement) => !confirmed.includes(movement));
+    if (unconfirmed.length > 0) unconfirmedMovements.set(institutionId, unconfirmed);
+    if (confirmed.length > 0) group.movements = confirmed;
+    else movementGroups.delete(institutionId);
+  }
+
   for (const [institutionId, group] of grouped) {
     const count = group.feePublishedIds.length;
+    const unconfirmed = unconfirmedMovements.get(institutionId) ?? [];
     await inSavepoint(db, (scope) => recordHamiltonMonitorSignal(
       {
         institutionId,
@@ -784,6 +910,8 @@ async function recordPublicationSignals(
           verified_fee_ids: group.feeVerifiedIds,
           canonical_fee_keys: Array.from(new Set(group.canonicalFeeKeys)),
           published_fee_count: count,
+          unconfirmed_movement_count: unconfirmed.length,
+          unconfirmed_movements: unconfirmed,
           refresh_recommended: ["reports", "scenarios", "watchlist"],
           provider_call_queued: false,
         },
@@ -969,7 +1097,7 @@ export async function runHamiltonPublish(
     let result: HamiltonPublishResult;
     // A row whose name contradicts its category (verified before Darwin had the guard)
     // is retired instead of published.
-    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name, { amount: row.amount });
     if (!category.ok && !dryRun) {
       await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
     }

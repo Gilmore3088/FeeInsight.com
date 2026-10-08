@@ -1,10 +1,12 @@
+import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
 
 /**
  * Economic and regulatory context for a state report, read from the tables the registry
  * steps already keep fresh: fed_beige_book (+ beige_book_themes), fed_economic_indicators
- * (FRED and BLS series) and reg_articles. Nothing here fetches from outside.
+ * (FRED and BLS series), fed_fomc_minutes, fed_publications and reg_articles. Nothing here
+ * fetches from outside.
  */
 
 export interface IndicatorPoint {
@@ -38,6 +40,20 @@ export interface RegulatoryItem {
   published_at: string | null;
 }
 
+export interface FomcPolicyContext {
+  meeting_date: string;
+  /** The minutes' sentence recording the rate decision, verbatim. */
+  policy_action: string;
+  source_url: string;
+}
+
+export interface DistrictResearchItem {
+  bank: string;
+  title: string;
+  link: string;
+  published_at: string | null;
+}
+
 export interface StateEconomicContext {
   state_unemployment: IndicatorSeries | null;
   state_payrolls: IndicatorSeries | null;
@@ -48,6 +64,10 @@ export interface StateEconomicContext {
   cpi_bank_services: IndicatorSeries | null;
   beige_book: BeigeBookContext | null;
   regulatory: RegulatoryItem[];
+  /** The latest FOMC minutes' rate decision; absent before fed_fomc_minutes has rows. */
+  fomc?: FomcPolicyContext | null;
+  /** The district Reserve Bank's recent banking and household research, newest first. */
+  district_research?: DistrictResearchItem[];
 }
 
 const HISTORY_POINTS = 72;
@@ -128,6 +148,55 @@ async function loadBeigeBook(district: number): Promise<BeigeBookContext | null>
   };
 }
 
+/** The sentence in a set of FOMC minutes that records the decision on the federal funds rate. */
+export function fomcPolicyAction(text: string): string | null {
+  const sentences = text.replace(/\s+/g, " ").match(/[^.]+(?:\.(?=\s|$)|$)/g) ?? [];
+  const hit = sentences.find((s) =>
+    /\b(decided|voted|agreed)\b/i.test(s) && /target range for the federal funds rate/i.test(s),
+  );
+  // The minutes' section heading has no full stop, so it runs into the decision sentence.
+  return hit ? hit.trim().replace(/^Committee Policy Actions\s+/i, "").slice(0, 400) : null;
+}
+
+async function loadFomc(): Promise<FomcPolicyContext | null> {
+  try {
+    const rows = await sql<Array<{ meeting_date: string; content_text: string; source_url: string }>>`
+      SELECT to_char(meeting_date, 'YYYY-MM-DD') AS meeting_date, content_text, source_url
+        FROM fed_fomc_minutes
+       ORDER BY meeting_date DESC
+       LIMIT 1
+    `;
+    const row = rows[0];
+    const policy = row ? fomcPolicyAction(row.content_text) : null;
+    return row && policy ? { meeting_date: row.meeting_date, policy_action: policy, source_url: row.source_url } : null;
+  } catch {
+    // Optional context: no table yet means no line.
+    return null;
+  }
+}
+
+/** Titles about banks, deposits, fees, payments, credit or household finances. */
+const DISTRICT_RESEARCH_TOPIC = "(bank|deposit|overdraft|fee|payment|credit|lending|household|consumer|saving)";
+const DISTRICT_RESEARCH_DAYS = 180;
+const DISTRICT_RESEARCH_LIMIT = 3;
+
+async function loadDistrictResearch(district: number): Promise<DistrictResearchItem[]> {
+  try {
+    const rows = await sql<DistrictResearchItem[]>`
+      SELECT bank, title, link, to_char(published_at, 'YYYY-MM-DD') AS published_at
+        FROM fed_publications
+       WHERE district = ${district}
+         AND title ~* ${DISTRICT_RESEARCH_TOPIC}
+         AND published_at >= NOW() - (${DISTRICT_RESEARCH_DAYS} * INTERVAL '1 day')
+       ORDER BY published_at DESC
+       LIMIT ${DISTRICT_RESEARCH_LIMIT}
+    `;
+    return [...rows];
+  } catch {
+    return [];
+  }
+}
+
 async function loadRegulatory(): Promise<RegulatoryItem[]> {
   try {
     const rows = await sql`
@@ -147,10 +216,12 @@ async function loadRegulatory(): Promise<RegulatoryItem[]> {
 export async function getStateEconomicContext(stateCode: string, district: number | null): Promise<StateEconomicContext> {
   const unemploymentId = `${stateCode}UR`;
   const payrollId = `${stateCode}NA`;
-  const [series, beigeBook, regulatory] = await Promise.all([
-    loadSeries([unemploymentId, payrollId, "UNRATE", "FEDFUNDS", "CPIAUCSL", "CUUR0000SEMC01", "CUUR0000SA0"]),
+  const [series, beigeBook, regulatory, fomc, districtResearch] = await Promise.all([
+    loadSeries([unemploymentId, payrollId, "UNRATE", "FEDFUNDS", "CPIAUCSL", CPI_BANK_SERVICES_SERIES, "CUUR0000SA0"]),
     district ? loadBeigeBook(district) : Promise.resolve(null),
     loadRegulatory(),
+    loadFomc(),
+    district ? loadDistrictResearch(district) : Promise.resolve([]),
   ]);
   return {
     state_unemployment: series.get(unemploymentId) ?? null,
@@ -158,9 +229,11 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
     national_unemployment: series.get("UNRATE") ?? null,
     fed_funds: series.get("FEDFUNDS") ?? null,
     cpi_all_items: series.get("CUUR0000SA0") ?? series.get("CPIAUCSL") ?? null,
-    cpi_bank_services: series.get("CUUR0000SEMC01") ?? null,
+    cpi_bank_services: series.get(CPI_BANK_SERVICES_SERIES) ?? null,
     beige_book: beigeBook,
     regulatory,
+    fomc,
+    district_research: districtResearch,
   };
 }
 

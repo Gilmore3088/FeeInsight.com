@@ -24,6 +24,14 @@ describe("lead capture emails", () => {
     ).toBe("fee-change alerts for Example CU");
   });
 
+  it("tells a reader who picked a state about that state's monthly edition", () => {
+    const links = { confirmUrl: "https://x/confirm", unsubscribeUrl: "https://x/unsub" };
+    const withState = buildCaptureConfirmation({ ...base, placement: "national_index", stateCode: "TX" }, links).lines.join("\n");
+    expect(withState).toContain("you'll also get the Texas edition each month");
+    const without = buildCaptureConfirmation({ ...base, placement: "national_index" }, links).lines.join("\n");
+    expect(without).not.toContain("edition each month");
+  });
+
   it.each(["sample_report", "homepage"] as const)("delivers the sample PDF and the report offer for %s", (placement) => {
     const content = buildCaptureConfirmation(
       { ...base, placement },
@@ -31,7 +39,7 @@ describe("lead capture emails", () => {
     );
     const text = content.lines.join("\n");
     expect(text).toContain("/reports/sample-competitive-fee-position.pdf");
-    expect(text).toContain("National and Fed district fee reports — free, and ready in a minute");
+    expect(text).toContain("National and Fed district fee reports — free and instant");
     expect(text).not.toContain("48 hours");
     expect(text).toContain("/for-institutions#report");
     expect(text).toContain("Unsubscribe: https://x/unsub");

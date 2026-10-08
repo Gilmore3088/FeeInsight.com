@@ -5,21 +5,9 @@ import { formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
 import { SectionHeading } from "./research-hero";
 import { ExhibitSource } from "./exhibits";
+import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
 
-/**
- * Everyday fees people ask about first. Flat-dollar categories only: foreign transaction
- * fees are usually a percentage, so a dollar median would mislead.
- */
-export const BENCHMARK_KEYS = [
-  "overdraft",
-  "nsf",
-  "monthly_maintenance",
-  "atm_non_network",
-  "wire_domestic_outgoing",
-  "wire_intl_outgoing",
-  "stop_payment",
-  "cashiers_check",
-] as const;
+export { BENCHMARK_KEYS };
 
 /** Fewer institutions than this and a median is too thin to headline. */
 const MIN_INSTITUTIONS = 10;

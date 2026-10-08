@@ -29,9 +29,20 @@ import {
   PERMANENT_OUTCOMES,
   type AttemptOutcome,
 } from "@/lib/agents/learning/outcomes";
-import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { playbookFromRow, type Playbook } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
+import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
+import { currentCopySchemaReady, restoreReadableCopies } from "@/lib/agents/magellan/current-copy";
+import {
+  ALTERNATE_READERS,
+  PRIMARY_READERS,
+  TEXT_SURVIVAL_CHECK,
+  nextReaderRung,
+  syncTextSurvival,
+  type ReaderRecord,
+} from "@/lib/agents/rosetta/text-survival";
+import { BATCH_REVIEW_CHECK, reviewReadBatches, type BatchReviewResult } from "@/lib/agents/rosetta/batch-review";
 import { DOCX_STRATEGY, DocxReadError, extractDocxText } from "@/lib/agents/rosetta/docx";
 import { extractHtmlDomText } from "@/lib/agents/rosetta/html-dom";
 import {
@@ -41,6 +52,7 @@ import {
   JS_FALLBACK_STRATEGY,
   looksLikeJsShell,
   ROSETTA_JS_FALLBACK_VERSION,
+  samePageKey,
   staticVariantUrls,
 } from "@/lib/agents/rosetta/js-fallback";
 import {
@@ -91,8 +103,20 @@ interface ReadCandidateRow {
   do_not_retry?: unknown;
   /** True when an older reader version already produced a text for these bytes. */
   is_reread?: boolean | null;
+  /**
+   * True when these bytes were reopened (see `reopenScriptLoadedFeePages`) and not read
+   * since: the failure recorded in the playbook before the reopen no longer stands.
+   */
+  reopen_pending?: boolean | null;
   /** Set for a companion page (account page, other fee document); see companion-streams.ts. */
   companion_source_id?: number | string | null;
+  /** Text-survival columns (text-survival.ts): the reader of this document's current text, */
+  last_reader?: string | null;
+  /** whether that text lost fees, and if so the text itself, */
+  last_text_lost?: boolean | null;
+  last_lost_text?: string | null;
+  /** and the bank's record per reader. */
+  reader_record?: Record<string, ReaderRecord> | null;
 }
 
 /**
@@ -161,6 +185,11 @@ export interface ReadResult {
   handoff: "magellan_paid_find" | null;
   /** Read again because an older reader version's text yielded no Knox fees. */
   reread: boolean;
+  /**
+   * Set when the text-survival record sent this read one rung up the reader ladder:
+   * the alternate tried, and whether its text replaced the primary reader's.
+   */
+  escalation?: { to: string; used: boolean } | null;
   durationMs: number;
 }
 
@@ -208,6 +237,22 @@ export interface RunRosettaReadResult {
   /** Earlier texts re-checked with the fee-page check this run, and how many failed it. */
   triagedTexts: number;
   triagedWrongDocuments: number;
+  /** Script-loaded fee pages rejected before the script fallback, reopened for one more read. */
+  reopenedFeePages: number;
+  reopenedBansLifted: number;
+  reopenedLinksRestored: number;
+  /** Current copies read as a bot check, script shell or bare title, put back on the page's readable copy. */
+  thinCopiesSetAside: number[];
+  /** Text-survival scores rebuilt this step, and how many texts held up or lost fees. */
+  textSurvivalRefreshed: boolean;
+  textsHeldUp: number;
+  textsLostFees: number;
+  /** Reads sent up the reader ladder by the survival record, and how many used its text. */
+  readerEscalations: number;
+  readerEscalationsUsed: number;
+  /** Batches of reads reviewed this step (batch-review.ts): each one's error rate and misses by kind. */
+  batchReviews: BatchReviewResult["batches"];
+  batchReviewError: string | null;
   /** Institutions whose learned format was filled in from an earlier text. */
   formatsBackfilled: number;
   /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
@@ -346,15 +391,26 @@ export async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise
  */
 export const ROSETTA_READ_VERSION = 3;
 export const PAGE_CHECK_STRATEGY = "read.page_check";
+/**
+ * Marks a rejected fee page Rosetta reopens for one more read (an attempt row, outcome
+ * "ok", fingerprint = the text's source hash). See `reopenScriptLoadedFeePages`.
+ */
+export const REOPEN_STRATEGY = "read.reopen";
+export const REOPEN_VERSION = 1;
+/** Rejected fee pages reopened per read step; later steps pick up the rest. */
+export const ROSETTA_REOPEN_LIMIT = 100;
 /** Strategies that run beside or after the first reader; they never settle a read. */
 export const AUXILIARY_READ_STRATEGIES = [
   PAGE_CHECK_STRATEGY,
+  REOPEN_STRATEGY,
   TABLE_ROWS_STRATEGY,
   OCR_STRATEGY,
   JS_FALLBACK_STRATEGY,
   "read.paid_transcribe",
 ];
 const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged", "low_yield"];
+/** Free OCR outcomes a newer OCR version may turn around: it read the page, but poorly. */
+const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
 /**
  * An older text with fewer Knox fees than this is read again with the current reader.
  * A real fee schedule lists far more; one or two fees usually means the table was
@@ -455,6 +511,8 @@ interface ReadContext {
   ocr: ScannedPdfReader | null;
   /** Scans this run may still OCR. */
   ocrBudget: { left: number };
+  /** Pages (samePageKey) the bank already has as documents of its own, read on their own. */
+  knownDocuments: (institutionId: number) => Promise<Set<string>>;
 }
 
 interface FreeText {
@@ -462,6 +520,12 @@ interface FreeText {
   rows: SourceTableRow[];
   reader: string;
   sourceUrl: string | null;
+}
+
+/** A reopened page gets its one read: drop the do-not-retry entries for its bytes. */
+function withoutReopenedFailures(playbook: Playbook, row: ReadCandidateRow): Playbook {
+  if (!row.reopen_pending || !row.content_hash) return playbook;
+  return { ...playbook, doNotRetry: playbook.doNotRetry.filter((entry) => entry.fingerprint !== row.content_hash) };
 }
 
 /** pass 2, scans: free OCR of up to OCR_MAX_PAGES pages. */
@@ -510,19 +574,55 @@ async function tryOcr(
   }
 }
 
+/** The bank's own documents by page, loaded once per bank per run (read-only). */
+function knownDocumentsLoader(db: SqlTag): ReadContext["knownDocuments"] {
+  const loaded = new Map<number, Promise<Set<string>>>();
+  return (institutionId) => {
+    let known = loaded.get(institutionId);
+    if (!known) {
+      known = Promise.resolve(
+        db<Array<{ document_url: string | null }>>`
+          SELECT document_url FROM source_documents WHERE institution_id = ${institutionId}
+        `,
+      )
+        .then((rows) => new Set((rows ?? []).flatMap((row) => (row?.document_url ? [samePageKey(row.document_url)] : []))))
+        .catch(() => new Set<string>());
+      loaded.set(institutionId, known);
+    }
+    return known;
+  };
+}
+
 /** A fallback text is used only when the fee-page check does not reject it. */
 function acceptableFeeText(text: string): boolean {
   return text.length > 0 && scoreFeePage(text).verdict !== "wrong_document";
 }
 
-/** pass 2, JavaScript pages: embedded data, then linked PDF/print versions, then static variants. */
+/**
+ * A rung-up reader's text replaces the primary reader's only when it is a fee page that
+ * lists at least as many fees with an amount: a re-read never trades a text for a thinner one.
+ */
+export function rungTextNotWorse(alternate: string, primary: string): boolean {
+  return acceptableFeeText(alternate) && scoreFeePage(alternate).feeLines >= scoreFeePage(primary).feeLines;
+}
+
+/**
+ * pass 2, JavaScript pages: embedded data, then linked PDF/print versions, then static variants.
+ * Finding nothing is `js_required` (handed to Magellan's paid finder) only for a page built by
+ * script (`scriptBuilt`); a page whose own text reads fine but is no fee schedule (a home page
+ * or a "not found" page served at a guessed fee link) stays `wrong_document`.
+ */
 async function tryJsFallback(
   html: string,
   pageUrl: string,
   ctx: ReadContext,
+  scriptBuilt: boolean,
+  institutionId: number,
 ): Promise<{ attempt: SpecialistAttempt; read: FreeText | null }> {
   const startedAt = Date.now();
   const tried: Array<{ route: string; url?: string; result: string }> = [];
+  // A linked schedule the bank already has as its own document is read there, not twice.
+  const coveredBy: string[] = [];
   const done = (outcome: AttemptOutcome, read: FreeText | null, route: string | null) => ({
     attempt: {
       strategy: JS_FALLBACK_STRATEGY,
@@ -531,7 +631,12 @@ async function tryJsFallback(
       yieldCount: read?.text.length ?? 0,
       costMicrousd: 0,
       durationMs: Date.now() - startedAt,
-      detail: { route, tried, ...(outcome === "js_required" ? { handoff: "magellan_paid_find" } : {}) },
+      detail: {
+        route,
+        tried,
+        ...(coveredBy.length > 0 && !read ? { covered_by: coveredBy } : {}),
+        ...(outcome === "js_required" ? { handoff: "magellan_paid_find" } : {}),
+      },
     },
     read,
   });
@@ -546,8 +651,17 @@ async function tryJsFallback(
   const candidates = [
     ...alternateDocumentUrls(html, pageUrl).map((url) => ({ route: "linked_document", url })),
     ...staticVariantUrls(pageUrl).map((url) => ({ route: "static_variant", url })),
-  ].slice(0, JS_FALLBACK_MAX_FETCHES);
+  ];
+  const known = await ctx.knownDocuments(institutionId);
+  let fetches = 0;
   for (const candidate of candidates) {
+    if (candidate.route === "linked_document" && known.has(samePageKey(candidate.url))) {
+      tried.push({ ...candidate, result: "already_a_document" });
+      coveredBy.push(candidate.url);
+      continue;
+    }
+    if (fetches >= JS_FALLBACK_MAX_FETCHES) break;
+    fetches += 1;
     const loaded = await loadDocumentBytes({ sourceUrl: candidate.url }, ctx.fetchImpl, null);
     if (!loaded.ok) {
       tried.push({ ...candidate, result: loaded.outcome });
@@ -562,6 +676,15 @@ async function tryJsFallback(
         if (!isLikelyScannedPdf(text, extracted.totalPages)) {
           const rows = rowsInText(tableRowsFromText((extracted.pages ?? [extracted.text]).map(normalizeWhitespace), "pdf_layout"), text);
           read = { text, rows, reader: "read.pdf_layout", sourceUrl: loaded.finalUrl };
+        } else if (ctx.ocr && ctx.ocrBudget.left > 0) {
+          // A linked scan (1streetcu.com's "Service Charge Schedule") gets the same free OCR
+          // a scan read on its own gets.
+          const ocr = await tryOcr(loaded.bytes, extracted.totalPages, ctx);
+          if (!ocr.read) {
+            tried.push({ ...candidate, result: `scanned_pdf_ocr_${ocr.attempt.outcome}` });
+            continue;
+          }
+          read = { ...ocr.read, sourceUrl: loaded.finalUrl };
         }
       } else if (format === "html") {
         const extracted = extractHtmlText(new TextDecoder("utf-8").decode(loaded.bytes));
@@ -577,7 +700,7 @@ async function tryJsFallback(
     }
     tried.push({ ...candidate, result: read ? "not_a_fee_page" : `unreadable_${format}` });
   }
-  return done("js_required", null, null);
+  return done(scriptBuilt ? "js_required" : "wrong_document", null, null);
 }
 
 async function readCandidate(
@@ -610,6 +733,7 @@ async function readCandidate(
     followUps: [],
     handoff: null,
     reread: row.is_reread === true,
+    escalation: null,
   };
   const finish = (
     fields: Partial<ReadResult> & Pick<ReadResult, "status" | "error" | "attemptOutcome">,
@@ -642,7 +766,7 @@ async function readCandidate(
   const decision = chooseStrategy({
     stage: "read",
     // The bank's playbook describes its main fee link, not its companion pages.
-    playbook: playbookFromRow(row.companion_source_id == null ? row : null),
+    playbook: withoutReopenedFailures(playbookFromRow(row.companion_source_id == null ? row : null), row),
     fingerprint: row.content_hash,
     candidates: READ_STRATEGIES[format],
   });
@@ -661,6 +785,15 @@ async function readCandidate(
   base.strategy = decision.strategy;
   base.routerReason = decision.reason;
   base.reader = decision.strategy;
+  // Learning plan steps 2 and 3: when this document's text, or this bank's texts from the
+  // primary reader, lost fees, the free reader one rung up reads it too (text-survival.ts).
+  const escalateTo = nextReaderRung(format, {
+    lastReader: row.last_reader ?? null,
+    lastTextLost: row.last_text_lost === true,
+    // The bank's record describes its main fee link, not its companion pages.
+    bankRecord: row.companion_source_id == null ? row.reader_record ?? null : null,
+  });
+  if (escalateTo) base.routerReason = `${decision.reason}; fees from this reader did not hold up → also ${escalateTo}`;
 
   /**
    * A readable text: completed, unless the fee-page check says it is not a fee schedule.
@@ -762,12 +895,12 @@ async function readCandidate(
     // the fee page, whose static text is no fee schedule. A fee page whose fees load by
     // script often has more than a shell's worth of menu text (atfcu.org/fees: 2,452
     // characters, no amounts), so the link is checked as well as the HTML.
+    const scriptBuilt = normalizedText.length === 0 || looksLikeJsShell(raw, normalizedText);
     const shell =
       normalizedText.length === 0 ||
-      ((looksLikeJsShell(raw, normalizedText) || urlNamesFeePage(finalUrl)) &&
-        scoreFeePage(normalizedText).verdict === "wrong_document");
+      ((scriptBuilt || urlNamesFeePage(finalUrl)) && scoreFeePage(normalizedText).verdict === "wrong_document");
     if (shell) {
-      const fallback = await tryJsFallback(raw, finalUrl, ctx);
+      const fallback = await tryJsFallback(raw, finalUrl, ctx, scriptBuilt, base.institutionId);
       base.followUps.push(fallback.attempt);
       if (fallback.read) {
         base.reader = fallback.read.reader;
@@ -789,6 +922,17 @@ async function readCandidate(
           },
           normalizedText,
         );
+      }
+    } else if (escalateTo === JS_FALLBACK_STRATEGY && normalizedText.length > 0) {
+      const fallback = await tryJsFallback(raw, finalUrl, ctx, false, base.institutionId);
+      base.followUps.push(fallback.attempt);
+      const used = fallback.read != null && rungTextNotWorse(fallback.read.text, normalizedText);
+      base.escalation = { to: JS_FALLBACK_STRATEGY, used };
+      if (used && fallback.read) {
+        base.reader = fallback.read.reader;
+        base.sourceUrl = fallback.read.sourceUrl ?? base.sourceUrl;
+        base.tableRows = fallback.read.rows.length;
+        return finishRead(fallback.read.text, "html_js", fallback.read.rows);
       }
     }
   } else {
@@ -817,6 +961,8 @@ async function selectCandidates(
   stateCode?: string,
   vaultSchema = false,
   companionStreams = false,
+  textSurvival = false,
+  currentCopy = false,
 ): Promise<ReadCandidateRow[]> {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
@@ -832,8 +978,14 @@ async function selectCandidates(
   // Without the vault migration no document has a stored copy.
   const notInVault = vaultSchema ? "cr.document_r2_key IS NULL" : "TRUE";
   let playbookColumns = "";
+  let survivalColumns = "";
   // Without the attempt log there is no reader version to compare, so never re-read.
   let rereadable = "FALSE";
+  // A reopened page waiting for its one read, even when the bank has a newer document.
+  let reopenedPage = "FALSE";
+  // A scan that an older OCR version gave up on, waiting for its one read with the current one.
+  let ocrRereadable = "FALSE";
+  let ocrRetryDocument = "FALSE";
   if (learning) {
     // Skip inputs that already failed permanently with the current reader version.
     // Capture each placeholder as it is pushed: later pushes must not shift earlier ones.
@@ -862,8 +1014,163 @@ async function selectCandidates(
                 )`;
     // A scan or JavaScript page an older reader gave up on gets one read with the
     // current reader, which escalates to free OCR or the JavaScript fallbacks.
+    params.push(REOPEN_STRATEGY);
+    const reopenParam = `$${params.length}`;
+    // The latest reopen of these bytes, if any: a rejected text reopened since gets one read.
+    const reopenedAt = (institution: string, fingerprint: string) => `(
+                  SELECT MAX(reopen.created_at) FROM pipeline_attempts reopen
+                   WHERE reopen.stage = 'read'
+                     AND reopen.strategy = ${reopenParam}
+                     AND reopen.outcome = 'ok'
+                     AND reopen.institution_id = ${institution}
+                     AND reopen.input_fingerprint = ${fingerprint}
+                )`;
+    // A scan whose free OCR gave up (rejected or empty) with an older OCR version gets one
+    // read with the current one: version 2 turns pages upright, the usual cause.
+    params.push(OCR_STRATEGY);
+    const ocrStrategyParam = `$${params.length}`;
+    params.push(ROSETTA_OCR_VERSION);
+    const ocrVersionParam = `$${params.length}`;
+    params.push(OCR_RETRY_OUTCOMES);
+    const ocrRetryOutcomesParam = `$${params.length}`;
+    const ocrRetry = (institution: string, fingerprint: string) => `(
+                EXISTS (
+                  SELECT 1 FROM pipeline_attempts old_ocr
+                   WHERE old_ocr.stage = 'read'
+                     AND old_ocr.strategy = ${ocrStrategyParam}
+                     AND old_ocr.institution_id = ${institution}
+                     AND old_ocr.input_fingerprint = ${fingerprint}
+                     AND old_ocr.strategy_version < ${ocrVersionParam}
+                     AND old_ocr.outcome = ANY(${ocrRetryOutcomesParam}::text[])
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts new_ocr
+                   WHERE new_ocr.stage = 'read'
+                     AND new_ocr.strategy = ${ocrStrategyParam}
+                     AND new_ocr.institution_id = ${institution}
+                     AND new_ocr.input_fingerprint = ${fingerprint}
+                     AND new_ocr.strategy_version >= ${ocrVersionParam}
+                )
+              )`;
+    ocrRereadable = `(adt.status = 'needs_ocr' AND ${ocrRetry("adt.institution_id", "adt.source_hash")})`;
+    ocrRetryDocument = ocrRetry("cr.institution_id", "cr.content_hash");
+    // A reopened page is its own page, often not the bank's newest document (its main fee
+    // link moved on). As the current copy of its page it gets its one read regardless.
+    if (currentCopy) {
+      reopenedPage = `(
+              cr.superseded_by_id IS NULL
+              AND cr.duplicate_of_id IS NULL
+              AND ${reopenedAt("cr.institution_id", "cr.content_hash")} IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM pipeline_attempts after_reopen
+                 WHERE after_reopen.stage = 'read'
+                   AND after_reopen.strategy <> ALL(${auxiliaryParam}::text[])
+                   AND after_reopen.institution_id = cr.institution_id
+                   AND after_reopen.input_fingerprint = cr.content_hash
+                   AND after_reopen.created_at > ${reopenedAt("cr.institution_id", "cr.content_hash")}
+              )
+            )`;
+    }
+    // A completed text whose fees did not hold up (text-survival.ts) gets one read a rung up
+    // the ladder: a legacy text with the current primary reader, a web page's text with the
+    // JavaScript fallbacks, each once per document.
+    let lostTextRereadable = "FALSE";
+    if (textSurvival) {
+      params.push(TEXT_SURVIVAL_CHECK);
+      const survivalParam = `$${params.length}`;
+      // A batch review lesson whose fix is this rung counts like a lost text (batch-review.ts).
+      params.push(BATCH_REVIEW_CHECK);
+      const batchParam = `$${params.length}`;
+      const lostLesson = (alias: string) =>
+        `(${alias}.check_name = ${survivalParam}
+          OR (${alias}.check_name = ${batchParam} AND ${alias}.evidence->>'remedy' = 'reread_js_fallback'))`;
+      // Only a web page has a free rung up; a PDF whose text lost fees goes to the paid pass.
+      params.push(PRIMARY_READERS.html);
+      const htmlPrimaryParam = `$${params.length}`;
+      params.push(ALTERNATE_READERS.html ?? JS_FALLBACK_STRATEGY);
+      const htmlAlternateParam = `$${params.length}`;
+      lostTextRereadable = `(
+                adt.status = 'completed'
+                AND EXISTS (
+                  SELECT 1 FROM pipeline_feedback lost
+                   WHERE ${lostLesson("lost")}
+                     AND lost.signal = 'wrong'
+                     AND lost.source_document_id = adt.source_document_id
+                     AND lost.evidence->>'text_hash' = adt.text_hash
+                )
+                AND (
+                  (adt.reader IS NULL AND ${notSettledByCurrentReader})
+                  OR (
+                    adt.reader = ${htmlPrimaryParam}
+                    AND NOT EXISTS (
+                      SELECT 1 FROM pipeline_attempts rung
+                       WHERE rung.stage = 'read'
+                         AND rung.institution_id = adt.institution_id
+                         AND rung.input_fingerprint = adt.source_hash
+                         AND rung.strategy = ${htmlAlternateParam}
+                    )
+                  )
+                )
+              )`;
+      survivalColumns = `,
+             (
+               SELECT COALESCE(adt.reader, 'legacy.' || COALESCE(adt.document_type, 'unknown'))
+                 FROM agent_source_texts adt
+                WHERE adt.source_document_id = cr.id AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                LIMIT 1
+             ) AS last_reader,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts adt
+                 JOIN pipeline_feedback lost
+                   ON lost.source_document_id = adt.source_document_id
+                  AND lost.evidence->>'text_hash' = adt.text_hash
+                WHERE adt.source_document_id = cr.id
+                  AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                  AND adt.status = 'completed'
+                  AND ${lostLesson("lost")}
+                  AND lost.signal = 'wrong'
+             ) AS last_text_lost,
+             (
+               SELECT adt.normalized_text FROM agent_source_texts adt
+                 JOIN pipeline_feedback lost
+                   ON lost.source_document_id = adt.source_document_id
+                  AND lost.evidence->>'text_hash' = adt.text_hash
+                WHERE adt.source_document_id = cr.id
+                  AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                  AND adt.status = 'completed'
+                  AND ${lostLesson("lost")}
+                  AND lost.signal = 'wrong'
+                LIMIT 1
+             ) AS last_lost_text,
+             (
+               SELECT jsonb_object_agg(about_strategy, jsonb_build_object('held', held, 'lost', lost))
+                 FROM (
+                   SELECT about_strategy,
+                          COUNT(*) FILTER (WHERE signal = 'right') AS held,
+                          COUNT(*) FILTER (WHERE signal = 'wrong') AS lost
+                     FROM pipeline_feedback
+                    WHERE check_name = ${survivalParam}
+                      AND institution_id = cr.institution_id
+                    GROUP BY about_strategy
+                 ) record
+             ) AS reader_record`;
+    }
     rereadable = `(
-              (
+              ${lostTextRereadable}
+              OR ${ocrRereadable}
+              OR (
+                adt.status = 'wrong_document'
+                AND ${reopenedAt("adt.institution_id", "adt.source_hash")} IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts after_reopen
+                   WHERE after_reopen.stage = 'read'
+                     AND after_reopen.strategy <> ALL(${auxiliaryParam}::text[])
+                     AND after_reopen.institution_id = adt.institution_id
+                     AND after_reopen.input_fingerprint = adt.source_hash
+                     AND after_reopen.created_at > ${reopenedAt("adt.institution_id", "adt.source_hash")}
+                )
+              )
+              OR (
                 adt.status IN ('needs_ocr', 'empty')
                 AND ${notSettledByCurrentReader}
               )
@@ -878,7 +1185,21 @@ async function selectCandidates(
                 AND ${notSettledByCurrentReader}
               )
             )`;
+    // A reopened page's earlier failure is in the playbook's do-not-retry list; the router
+    // would skip it there and write nothing, so the page was selected every run, never read.
+    const reopenPending = `(
+              ${reopenedAt("cr.institution_id", "cr.content_hash")} IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM pipeline_attempts after_reopen
+                 WHERE after_reopen.stage = 'read'
+                   AND after_reopen.strategy <> ALL(${auxiliaryParam}::text[])
+                   AND after_reopen.institution_id = cr.institution_id
+                   AND after_reopen.input_fingerprint = cr.content_hash
+                   AND after_reopen.created_at > ${reopenedAt("cr.institution_id", "cr.content_hash")}
+              )
+            )`;
     playbookColumns = `,
+             ${reopenPending} AS reopen_pending,
              profile.format,
              profile.best_strategy,
              profile.strategy_stats,
@@ -924,7 +1245,7 @@ async function selectCandidates(
                 AND stuck.created_at > NOW() - make_interval(days => ${stuckDaysParam}::int)
            ) >= ${stuckMaxParam}::int
          )`);
-    filters.push(`AND NOT EXISTS (
+    filters.push(`AND (${ocrRetryDocument} OR NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.stage = 'read'
@@ -933,9 +1254,11 @@ async function selectCandidates(
               AND pa.input_fingerprint = cr.content_hash
               AND pa.strategy_version = ${versionParam}
               AND pa.outcome = ANY(${permanentParam}::text[])
+              -- A rejection made before the page was reopened no longer stands.
+              AND pa.created_at > COALESCE(${reopenedAt("cr.institution_id", "cr.content_hash")}, '-infinity'::timestamptz)
               -- Word files were logged "unsupported" before read.docx_text existed.
               AND NOT (pa.strategy = 'read.docx' AND pa.outcome = 'unsupported_format')
-         )`);
+         ))`);
   }
   const vaultColumns = vaultSchema
     ? `,
@@ -954,7 +1277,7 @@ async function selectCandidates(
              cr.institution_id,
              ct.institution_name,
              cr.document_url,
-             cr.content_hash${playbookColumns}${vaultColumns}${companionColumns}
+             cr.content_hash${playbookColumns}${survivalColumns}${vaultColumns}${companionColumns}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -966,16 +1289,19 @@ async function selectCandidates(
          -- Only the bank's current document. A newer download replaces this one, and when
          -- Magellan's newer download failed, a copy that is not in the vault would only be
          -- fetched again from the link Magellan just could not get.
-         AND NOT EXISTS (
-           SELECT 1
-             FROM source_documents newer
-            WHERE newer.institution_id = cr.institution_id
-              AND newer.id > cr.id
-              ${sameStream}
-              AND (
-                (newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM cr.id)
-                OR (newer.status = 'failed' AND ${notInVault})
-              )
+         AND (
+           NOT EXISTS (
+             SELECT 1
+               FROM source_documents newer
+              WHERE newer.institution_id = cr.institution_id
+                AND newer.id > cr.id
+                ${sameStream}
+                AND (
+                  (newer.status = 'success' AND newer.duplicate_of_id IS DISTINCT FROM cr.id)
+                  OR (newer.status = 'failed' AND ${notInVault})
+                )
+           )
+           OR ${reopenedPage}
          )
          AND (
            ${companionPage}
@@ -1343,6 +1669,145 @@ async function triageEarlierTexts(
   return { checked: rows.length, wrong, sentBack };
 }
 
+/**
+ * Fee pages whose fees load by script were rejected as "not a fee page" before the free
+ * script fallback existed (PR 206): their static text is menus, their own link names
+ * the fee page, and they show at most one amount. Each gets one more read: Rosetta
+ * lifts the 90-day ban on the link, gives the bank its link back when it has none (so
+ * Magellan fetches it again), and logs a `read.reopen` attempt that makes the rejected
+ * text readable once more. If the page still is not a fee page, the normal rejection
+ * applies again. Nothing here touches a fee.
+ */
+async function reopenScriptLoadedFeePages(
+  db: SqlTag,
+  options: { runId: number; stepId: number | null; institutionId?: number; stateCode?: string; currentCopy?: boolean },
+): Promise<{ reopened: number; unbanned: number; relinked: number }> {
+  const params: Array<number | string> = [ROSETTA_REOPEN_LIMIT, REOPEN_STRATEGY, JS_FALLBACK_STRATEGY, ROSETTA_JS_FALLBACK_VERSION];
+  const filters: string[] = [];
+  if (options.currentCopy) {
+    // An older copy of a page is history: its page's current copy is judged on its own.
+    filters.push(`AND EXISTS (
+           SELECT 1 FROM source_documents doc
+            WHERE doc.id = adt.source_document_id
+              AND doc.superseded_by_id IS NULL
+              AND doc.duplicate_of_id IS NULL
+         )`);
+  }
+  if (options.institutionId) {
+    params.push(options.institutionId);
+    filters.push(`AND adt.institution_id = $${params.length}`);
+  }
+  const normalizedState = normalizeStateCode(options.stateCode);
+  if (normalizedState) {
+    params.push(normalizedState);
+    filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  const rows = await db.unsafe<Array<{
+    text_id: number | string;
+    source_document_id: number | string;
+    institution_id: number | string;
+    source_url: string;
+    source_hash: string;
+    normalized_text: string;
+  }>>(
+    `
+      SELECT adt.id AS text_id, adt.source_document_id, adt.institution_id, adt.source_url,
+             adt.source_hash, adt.normalized_text
+        FROM agent_source_texts adt
+        JOIN institution_sources inst ON inst.id = adt.institution_id
+       WHERE adt.status = 'wrong_document'
+         AND adt.document_type = 'html'
+         AND adt.source_url IS NOT NULL
+         AND adt.source_hash IS NOT NULL
+         ${filters.join("\n         ")}
+         -- The link names the fee page (urlNamesFeePage re-checks it exactly).
+         AND regexp_replace(adt.source_url, '^https?://[^/]+', '') ~* '(fee-?schedule|schedule-of-(fees|charges)|fee-?disclosure|service-charges|pricing|(^|[/_-])fees?([/_.-]|$))'
+         -- Never tried by the current script fallback, and not checked for reopening since
+         -- an older fallback tried it: a fallback that learns new routes gets one more look.
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts js
+            WHERE js.stage = 'read' AND js.institution_id = adt.institution_id
+              AND js.source_document_id = adt.source_document_id AND js.strategy = $3
+              AND js.strategy_version >= $4
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts reopen
+            WHERE reopen.stage = 'read' AND reopen.institution_id = adt.institution_id
+              AND reopen.input_fingerprint = adt.source_hash AND reopen.strategy = $2
+              AND reopen.created_at > COALESCE((
+                SELECT MAX(js.created_at) FROM pipeline_attempts js
+                 WHERE js.stage = 'read' AND js.institution_id = adt.institution_id
+                   AND js.source_document_id = adt.source_document_id AND js.strategy = $3
+              ), '-infinity'::timestamptz)
+         )
+       ORDER BY adt.id
+       LIMIT $1
+    `,
+    params,
+  );
+
+  let reopened = 0;
+  let unbanned = 0;
+  let relinked = 0;
+  for (const row of rows) {
+    const institutionId = Number(row.institution_id);
+    const score = scoreFeePage(row.normalized_text);
+    // A page with real amounts was judged on its own text; only menus-only pages reopen.
+    const eligible = urlNamesFeePage(row.source_url) && score.dollarAmounts <= 1;
+    if (eligible) {
+      reopened += 1;
+      const lifted = await db`
+        UPDATE institution_source_profiles
+           SET rejected_source_urls = (
+                 SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+                   FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+                  WHERE entry->>'url' IS DISTINCT FROM ${row.source_url}
+               ),
+               updated_at = NOW()
+         WHERE institution_id = ${institutionId}
+           AND COALESCE(rejected_source_urls, '[]'::jsonb) @> ${JSON.stringify([{ url: row.source_url }])}::jsonb
+        RETURNING institution_id
+      `;
+      unbanned += lifted.length;
+      // Only a bank left with no link gets this one back; a bank that moved on keeps its link.
+      const restored = await db`
+        UPDATE institution_sources inst
+           SET fee_schedule_url = ${row.source_url},
+               document_type = 'html',
+               rescue_status = 'rescued',
+               last_rescue_attempt_at = NOW(),
+               failure_reason = NULL,
+               failure_reason_note = NULL,
+               failure_reason_updated_at = NOW()
+         WHERE inst.id = ${institutionId}
+           AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM institution_source_profiles profile
+              WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+           )
+        RETURNING inst.id
+      `;
+      relinked += restored.length;
+    }
+    await recordAttempt(db, {
+      institutionId,
+      sourceDocumentId: Number(row.source_document_id),
+      stage: "read",
+      strategy: REOPEN_STRATEGY,
+      version: REOPEN_VERSION,
+      fingerprint: row.source_hash,
+      // "rejected": checked and left closed, so it is not checked again.
+      outcome: eligible ? "ok" : "rejected",
+      yieldCount: 0,
+      costMicrousd: 0,
+      runId: options.runId,
+      stepId: options.stepId,
+      detail: { text_id: Number(row.text_id), url: row.source_url, dollar_amounts: score.dollarAmounts },
+    });
+  }
+  return { reopened, unbanned, relinked };
+}
+
 export async function runRosettaRead(
   options: RunRosettaReadOptions,
 ): Promise<RunRosettaReadResult> {
@@ -1358,7 +1823,46 @@ export async function runRosettaRead(
   // Table rows and the reader column need migration 20270106020000.
   const textColumns = !dryRun && (await rosettaTextColumnsReady(db));
   const companionStreams = !dryRun && (await companionStreamsReady(db));
-  const rows = await selectCandidates(db, limit, learning, options.institutionId, options.stateCode, vaultSchema, companionStreams);
+  const currentCopy = learning && (await currentCopySchemaReady(db));
+  const reopen = vaultSchema
+    ? await reopenScriptLoadedFeePages(db, {
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        institutionId: options.institutionId,
+        stateCode: options.stateCode,
+        currentCopy,
+      })
+    : { reopened: 0, unbanned: 0, relinked: 0 };
+  // A copy read as a bot check or script shell never displaces the page's readable copy.
+  const thinCopies = learning
+    ? await restoreReadableCopies(db, { institutionId: options.institutionId })
+    : { thinCopies: [], superseded: 0 };
+  // Learning plan step 1: score each text by whether its fees stayed live (once a day).
+  const textSurvivalReady = learning && textColumns && (await feedbackSchemaReady(db));
+  const survival = textSurvivalReady
+    ? await syncTextSurvival(db, { runId: options.runId, dryRun })
+    : { ready: false, refreshed: false, texts: 0, held: 0, lost: 0, written: 0 };
+  // Every BATCH_REVIEW_SIZE settled reads: judge the batch, write its misses as lessons (read
+  // below by the candidate and paid-read selections) and its error rate. Not in a dry run.
+  // A failed review never stops the reads; its error is on the step result.
+  let batchReviewError: string | null = null;
+  const batchReview = textSurvivalReady
+    ? await reviewReadBatches(db, { runId: options.runId }).catch((error: unknown) => {
+        batchReviewError = error instanceof Error ? error.message : String(error);
+        return { ready: false, batches: [], written: 0 } as BatchReviewResult;
+      })
+    : { ready: false, batches: [], written: 0 };
+  const rows = await selectCandidates(
+    db,
+    limit,
+    learning,
+    options.institutionId,
+    options.stateCode,
+    vaultSchema,
+    companionStreams,
+    textSurvivalReady,
+    currentCopy,
+  );
 
   // Free OCR is local work, so a dry run skips it. The worker starts on the first scan.
   const ownsOcr = !options.scannedPdfReader;
@@ -1370,6 +1874,7 @@ export async function runRosettaRead(
     checkPage: vaultSchema,
     ocr,
     ocrBudget: { left: Math.max(0, Math.floor(options.ocrDocumentsPerRun ?? OCR_DOCUMENTS_PER_RUN)) },
+    knownDocuments: knownDocumentsLoader(db),
   };
 
   const results: ReadResult[] = [];
@@ -1383,10 +1888,18 @@ export async function runRosettaRead(
       results.push(result);
       if (dryRun || result.status === "known_failure" || result.status === "deferred") continue;
       // A re-read replaces the earlier text only with a better answer; otherwise the old
-      // text stays and only the attempt is logged.
-      const keepEarlierText = result.reread && result.status !== "completed" && result.status !== "wrong_document";
+      // text stays and only the attempt is logged. A text whose fees did not hold up still
+      // has live fees: a re-read keeps it unless the new text lists at least as many fees,
+      // and never sends the bank back to Magellan.
+      const keepLostText =
+        row.last_lost_text != null &&
+        !(result.status === "completed" && normalizedText != null && rungTextNotWorse(normalizedText, row.last_lost_text));
+      const keepEarlierText =
+        keepLostText || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
       if (!keepEarlierText) await recordReadResult(db, options.runId, result, normalizedText, textColumns);
-      if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
+      if (keepLostText) {
+        // Only the attempt below is logged.
+      } else if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
         if (
           await sendBackToMagellan(db, {
             institutionId: result.institutionId,
@@ -1438,6 +1951,7 @@ export async function runRosettaRead(
             table_rows: result.tableRows,
             reader: result.reader,
             reread: result.reread,
+            escalation: result.escalation ?? null,
             page_check: result.pageCheck,
             error: result.error,
           },
@@ -1539,6 +2053,17 @@ export async function runRosettaRead(
     deferred: results.filter((result) => result.status === "deferred").length,
     triagedTexts: triage.checked,
     triagedWrongDocuments: triage.wrong,
+    reopenedFeePages: reopen.reopened,
+    reopenedBansLifted: reopen.unbanned,
+    reopenedLinksRestored: reopen.relinked,
+    thinCopiesSetAside: thinCopies.thinCopies,
+    textSurvivalRefreshed: survival.refreshed,
+    textsHeldUp: survival.held,
+    textsLostFees: survival.lost,
+    readerEscalations: results.filter((result) => result.escalation != null).length,
+    readerEscalationsUsed: results.filter((result) => result.escalation?.used).length,
+    batchReviews: batchReview.batches,
+    batchReviewError,
     formatsBackfilled: formats.updated,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,

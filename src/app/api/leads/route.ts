@@ -3,14 +3,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/quote-check";
+import { recordRequestedInstitution } from "@/lib/data-store/report-payments";
+import { recordLeadFirstTouch } from "@/lib/data-store/marketing-touches";
+import { parseMarketingTouch } from "@/lib/marketing-touch";
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
+  NEWSLETTER_SOURCE,
   buildCaptureAttribution,
   isEmailOnlySource,
   parseStateCode,
   placementForSource,
 } from "@/lib/lead-capture";
+import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import {
   REPORT_SOURCE,
   buildBenchmarkUseCase,
@@ -18,10 +23,12 @@ import {
   isBenchmarkSource,
   parseBenchmarkRequest,
   notifyForLead,
+  parseCompetitors,
   parseInstitutionId,
   parseSrc,
 } from "./lead-notifications";
 import { isRequestLead } from "@/lib/leads/lead-status";
+import { knownReaderEmail } from "@/lib/leads/known-reader";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -58,23 +65,31 @@ async function handlePOST(request: NextRequest) {
     const name =
       cleanText(body.name) ??
       (isEmailOnlySource(source) || benchmark ? NEWSLETTER_PLACEHOLDER_NAME : null);
-    const email = cleanText(body.email);
+    // A confirmed reader asking for a free report isn't asked to type their email again:
+    // the form sends none and the signed cookie from their confirm link supplies it.
+    const email = cleanText(body.email) ?? (benchmark ? await knownReaderEmail(request).catch(() => null) : null);
     const company = cleanText(body.company);
     const role = cleanText(body.role);
     const institutionId =
       source === REPORT_SOURCE || placement ? parseInstitutionId(body.institutionId) : null;
-    const stateCode = placement ? parseStateCode(body.state) : null;
+    // The newsletter form may name a state too, for that state's monthly edition.
+    const stateCode = placement || source === NEWSLETTER_SOURCE ? parseStateCode(body.state) : null;
     const institutionName = placement
       ? cleanText(body.institutionName)?.slice(0, MAX_INSTITUTION_NAME_LENGTH) ?? null
       : null;
     const src = source === REPORT_SOURCE || benchmark ? parseSrc(body.src) : null;
+    // Optional on the institution report form: the requester's state and the competitors they want compared.
+    const reportState = source === REPORT_SOURCE ? parseStateCode(body.state) : null;
+    const competitors = source === REPORT_SOURCE ? parseCompetitors(body.competitors) : null;
     const useCase = placement
       ? buildCaptureAttribution(placement, institutionId, stateCode)
       : benchmarkScope
         ? buildBenchmarkUseCase(benchmarkScope, src)
         : source === REPORT_SOURCE
-          ? buildReportUseCase(cleanText(body.use_case), institutionId, src)
-          : cleanText(body.use_case);
+          ? buildReportUseCase(cleanText(body.use_case), institutionId, src, { stateCode: reportState, competitors })
+          : source === NEWSLETTER_SOURCE && stateCode
+            ? `state=${stateCode}`
+            : cleanText(body.use_case);
 
     if (benchmark && !benchmarkScope) {
       return NextResponse.json({ error: "Pick a Fed district for the district report" }, { status: 400 });
@@ -101,8 +116,14 @@ async function handlePOST(request: NextRequest) {
     // A signup folds into the newest signup row for this email. Request rows are never
     // touched by a signup: appending capture sources to them changed their history and
     // could reopen an answered request.
-    const known = await sql<{ id: number | string; source: string | null }[]>`
-      SELECT id, source FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
+    const known = await sql<{
+      id: number | string;
+      source: string | null;
+      use_case?: string | null;
+      email_confirmed_at?: string | Date | null;
+      email_unsubscribed_at?: string | Date | null;
+    }[]>`
+      SELECT id, source, use_case, email_confirmed_at, email_unsubscribed_at FROM leads WHERE lower(email) = lower(${email}) ORDER BY created_at DESC, id DESC`;
     const existing = isRequestLead(source) ? undefined : known.find((row) => !isRequestLead(row.source));
     let leadId: number | null = null;
 
@@ -130,7 +151,7 @@ async function handlePOST(request: NextRequest) {
           END,
           status = COALESCE(status, ${NEW_LEAD_STATUS})
         WHERE id = ${existing.id}`;
-      if ((placement || benchmarkScope) && useCase) {
+      if ((placement || benchmarkScope || (source === NEWSLETTER_SOURCE && stateCode)) && useCase) {
         // Attribution accumulates too: a returning lead signing up from a new placement,
         // or asking for another free report, keeps its earlier use_case and gains this one.
         await sql`
@@ -145,6 +166,15 @@ async function handlePOST(request: NextRequest) {
         VALUES (${name}, ${email}, ${company}, ${role}, ${useCase}, ${source})
         RETURNING id`;
       leadId = parseLeadId(inserted?.id);
+    }
+
+    // The session's first tracked link (utm_ tags), when the form sent one. First touch wins:
+    // a lead that already has a tracked source keeps it. Attribution never fails the form.
+    const firstTouch = parseMarketingTouch(body.firstTouch);
+    if (firstTouch && leadId !== null) {
+      await recordLeadFirstTouch(leadId, firstTouch).catch((error) => {
+        console.error("[api/leads] first touch not saved", error instanceof Error ? error.message : error);
+      });
     }
 
     // An institution report is paid and quoted by James, so the requester gets nothing
@@ -166,7 +196,25 @@ async function handlePOST(request: NextRequest) {
           END,
           status = CASE WHEN ${held} AND status = ${NEW_LEAD_STATUS} THEN 'held' ELSE status END
           WHERE id = ${leadId}`;
+        const requested = check.status === "unmatched" ? null : check.institutionId ?? null;
+        if (requested) await recordRequestedInstitution(leadId, requested);
       }
+    }
+
+    // A reader who already confirmed doesn't wait for another click: the new source and
+    // state go to MailerLite now (the confirm sync does this for everyone else).
+    const confirmed = existing && existing.email_confirmed_at && !existing.email_unsubscribed_at;
+    if (confirmed && !isRequestLead(source)) {
+      const sources = [...new Set([...known.map((row) => row.source ?? ""), source].join(",").split(",").map((s) => s.trim()).filter(Boolean))];
+      const sync = await syncLeadToMailerLite({
+        email,
+        subscribed: true,
+        source: sources.join(","),
+        // Only a state picked on this form changes the reader's state group; a form with no
+        // state leaves their group alone (an older row's state must not add a second one).
+        state: stateCode,
+      });
+      if (sync.status === "failed") console.error("[api/leads] MailerLite sync failed", { error: sync.error });
     }
 
     // Storage is done; email is best-effort and its status rides along for the client.
@@ -185,6 +233,8 @@ async function handlePOST(request: NextRequest) {
       benchmarkScope,
       quoteCheck,
       heldDistrict,
+      reportState,
+      competitors,
     });
 
     return NextResponse.json(notifications ? { success: true, notifications } : { success: true });

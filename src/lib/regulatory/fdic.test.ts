@@ -112,6 +112,13 @@ describe("FDIC financial parser", () => {
     expect(row?.fee_income_ratio).toBeNull();
   });
 
+  it("stores no total capital ratio for community bank leverage ratio filers", () => {
+    const cblr = parseFdicFinancial({ CERT: "9", RBC1AAJ: 11.76, RBC1RWAJ: null, RBCRWAJ: 0 }, { year: 2026, quarter: 2 });
+    expect(cblr).toMatchObject({ leverage_ratio: 11.76, tier1_capital_ratio: null, total_capital_ratio: null });
+    const full = parseFdicFinancial({ CERT: "9", RBC1RWAJ: 12.1, RBCRWAJ: 13.4 }, { year: 2026, quarter: 2 });
+    expect(full?.total_capital_ratio).toBe(13.4);
+  });
+
   it("drops records without a certificate", () => {
     expect(parseFdicFinancial({ ASSET: 1 }, { year: 2026, quarter: 1 })).toBeNull();
   });
@@ -135,6 +142,12 @@ describe("FDIC institution parser", () => {
       established_date: "1792-01-01",
       closed_date: null,
     });
+  });
+
+  it("keeps only a real Fed district (1-12)", () => {
+    expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, FED: "12" })?.fed_district).toBe(12);
+    expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, FED: 0 })?.fed_district).toBeNull();
+    expect(parseFdicInstitution({ ...STATE_STREET_INSTITUTION, FED: 13 })?.fed_district).toBeNull();
   });
 
   it("records the end date for an inactive institution", () => {

@@ -14,6 +14,9 @@ const FEED_LABELS: Record<string, string> = {
   "sec-links": "SEC holding-company links",
   "sec-filings": "SEC filings",
   "state-regulators": "State regulators",
+  "state-reg-news": "State regulator news",
+  "state-bill-news": "News on state fee bills",
+  enforcement: "OCC and Fed enforcement actions",
 };
 
 const CALL_REPORT_LABELS: Record<string, string> = {

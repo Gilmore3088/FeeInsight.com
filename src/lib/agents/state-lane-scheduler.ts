@@ -1,5 +1,5 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
-import { startAgentRun, type StartAgentRunResult } from "@/lib/agents/run-store";
+import { currentDeploy, startAgentRun, type StartAgentRunResult } from "@/lib/agents/run-store";
 import type {
   AgentRunStepDefinition,
   AgentRunTriggerSource,
@@ -10,8 +10,14 @@ import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
-import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
+import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
+import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
+import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
+import { REPORT_REVIEW_STATES } from "./atlas/report-review-states";
+import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES } from "@/lib/data-store/market-readiness";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -56,9 +62,21 @@ export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; 
 /**
  * Bulk fill (James, 2026-10-05): every state runs a daily full pass instead of a monthly one
  * while more than this many of its active institutions still have no fee schedule link, then
- * falls back to the monthly refresh on its own.
+ * falls back to the monthly refresh on its own. Only banks a search can still find count
+ * (James, 2026-10-06): a website on file, not offline or manual-review, and not a dead end
+ * (`dead` / `needs_human`, which the quarterly re-check searches again). Counting dead ends
+ * kept 23 states on daily paid passes that could never turn off; on this count alone 5 do.
+ * A state also stays daily while Magellan's paid steps have at least DAILY_FULL_PASS_FIND_DUE
+ * banks due this month (dead-end banks the paid find has not tried, `discover-paid`, plus
+ * institutions with no website the website search has not tried), or while any market leader
+ * is among them. Both are monthly per bank, so the rule turns off on its own, and the paid
+ * caps still bound the spend. A state with fewer banks due runs weekly until they are tried.
+ * Daily for any bank due kept 36 of 55 states daily on Oct 7 (HI with 1 bank due); this rule
+ * keeps 21.
  */
 export const DAILY_FULL_PASS_MISSING_LINKS = 50;
+/** About one day's paid finding: the paid find tries up to 25 banks a pass. */
+export const DAILY_FULL_PASS_FIND_DUE = 25;
 
 export type StateLaneRecheck = "quarterly";
 
@@ -158,11 +176,19 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
  * re-extract, verify and publish the documents the state already has. Discovery's own
  * backoff (12 hours after a miss that may clear, a month or a quarter after a dead end)
  * keeps a bank from being searched more often than that. The paid find and
- * public-discovery steps stay on the state's full-pass cadence. A re-read downloads a
+ * public-discovery steps stay on the state's full-pass cadence. Knox's paid pass runs
+ * hourly too (James, 2026-10-06: close the 297 dense schedules the free team can't
+ * read): it picks only dense texts the current free version read poorly and that no paid
+ * attempt has read, at most PAID_PASS_ITEMS_PER_RUN a run, so it spends nothing once they
+ * are read, and the Knox and global budget caps still stop it. Darwin's paid pass runs
+ * hourly for the same reason (2026-10-07: with it on the full pass only, held fees went
+ * unreviewed from 14:24 UTC once the last full passes drained): it reviews only held fees
+ * and disagreements no attempt of the current version has read, so it too spends nothing
+ * once they are done, and the Darwin and global budget caps still stop it. A re-read downloads a
  * document that is not in the vault once per reader version; Knox, Darwin and Hamilton
  * work from stored rows only.
  */
-export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "classify", "publish"] as const;
+export const STATE_LANE_BACKLOG_STEP_KEYS = ["discover", "fetch", "read", "extract", "extract-paid", "classify", "verify-paid", "publish"] as const;
 export const STATE_LANE_BACKLOG_STEPS: AgentRunStepDefinition[] = STATE_LANE_STEPS
   .filter((step) => (STATE_LANE_BACKLOG_STEP_KEYS as readonly string[]).includes(step.key))
   .map((step) => (step.key === "fetch" ? { ...step, title: "Fetch new and month-old fee links", input: { ...step.input, new_links_only: true } } : step));
@@ -206,6 +232,8 @@ export interface DueStateLaneScheduleResult {
   reused: number;
   /** Lanes with no full pass due and no backlog: put to sleep until next month. */
   idle: number;
+  /** States whose failed lane was woken because the step that broke it works again. */
+  recovered?: string[];
   failed: Array<{ stateCode: string; error: string }>;
   results: Array<{
     stateCode: string;
@@ -234,6 +262,12 @@ export function quarterWindowKey(date = new Date()): string {
 /** Start of the next UTC day: when a daily focus lane's next full pass is due. */
 export function nextDayStart(date = new Date()): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
+}
+
+/** Start of the next UTC week (Monday, as Postgres date_trunc('week') counts it). */
+export function nextWeekStart(date = new Date()): Date {
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - daysSinceMonday + 7));
 }
 
 /** Start of the next UTC calendar month: when an idle lane's next full pass is due. */
@@ -424,6 +458,13 @@ function uncheckedLiveFeeStates(stateCode: string | null) {
               WHERE pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_fee_id::text
                 AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
                 AND pa.institution_id = live.institution_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM pipeline_attempts restore
+                   WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                     AND restore.institution_id = live.institution_id
+                     AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                     AND restore.id > pa.id
+                )
            )
         OR (
           live.rolled_back_at IS NULL
@@ -452,6 +493,70 @@ export async function stateHasUncheckedLiveFees(stateCode: string): Promise<bool
   }
 }
 
+/** A failure shared by at least this many runs is a break in our code, not one bank's problem. */
+export const RECOVERY_SHARED_FAILURE_RUNS = 3;
+
+/**
+ * Automatic rerun after a break is fixed. When a step type breaks for many states (a bad
+ * deploy, 2026-10-08: every Hamilton publish failed on a generated column), each failed
+ * lane would otherwise wait an hour for its retry. A shared failure recorded under an
+ * older deploy, with no failure of that step and reason since the current deploy went
+ * live, is presumed fixed: wake those lanes now and log a `run.recovery_rerun` event on
+ * each failed run so the rerun is visible. Each failed lane is rerun at most once per
+ * deploy (a rerun that fails again records the current deploy). A step success alone is
+ * not proof: a publish with nothing to publish succeeds while the break is still live.
+ * A failure seen in fewer than RECOVERY_SHARED_FAILURE_RUNS runs is left to the normal
+ * retry, so one bank's bad document never loops a lane.
+ */
+export async function wakeLanesAfterRecovery(deploy: string | null = currentDeploy()): Promise<string[]> {
+  if (!deploy) return [];
+  try {
+    const rows = await sql<{ state_code: string; run_id: number; step_key: string; error: string; failed_deploy: string | null }[]>`
+      WITH failures AS (
+        SELECT step.agent_run_id, step.step_key, step.error_summary, event.detail->>'deploy' AS deploy
+          FROM public.agent_run_steps step
+          LEFT JOIN LATERAL (
+            SELECT e.detail FROM public.agent_run_events e
+             WHERE e.step_id = step.id AND e.event_type = 'step.failed'
+             ORDER BY e.id DESC LIMIT 1
+          ) event ON true
+         WHERE step.status = 'failed'
+           AND step.completed_at > NOW() - INTERVAL '24 hours'
+           AND step.error_summary IS NOT NULL
+      ), fixed AS (
+        SELECT step_key, error_summary
+          FROM failures
+         GROUP BY step_key, error_summary
+        HAVING COUNT(DISTINCT agent_run_id) >= ${RECOVERY_SHARED_FAILURE_RUNS}
+           AND COUNT(*) FILTER (WHERE deploy = ${deploy}) = 0
+      )
+      UPDATE public.agent_state_lanes lane
+         SET next_run_after = NOW(),
+             updated_at = NOW()
+        FROM public.agent_runs run
+        JOIN failures ON failures.agent_run_id = run.id
+        JOIN fixed ON fixed.step_key = failures.step_key AND fixed.error_summary = failures.error_summary
+       WHERE run.id = lane.last_agent_run_id
+         AND run.status = 'failed'
+         AND lane.next_run_after > NOW()
+      RETURNING lane.state_code, run.id AS run_id, failures.step_key, failures.error_summary AS error,
+                failures.deploy AS failed_deploy
+    `;
+    for (const row of rows) {
+      const message = `The "${row.step_key}" failure that stopped ${row.state_code} came from an earlier deploy and has not happened since the current one went live, so the lane reruns now instead of waiting for its retry.`;
+      await sql`
+        INSERT INTO public.agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (${Number(row.run_id)}, 'run.recovery_rerun', 'queued', ${message},
+                ${JSON.stringify({ state_code: row.state_code, step_key: row.step_key, error: row.error, failed_deploy: row.failed_deploy, deploy })}::jsonb)
+      `;
+    }
+    return rows.map((row) => String(row.state_code));
+  } catch (error) {
+    console.error("wakeLanesAfterRecovery failed:", error);
+    return [];
+  }
+}
+
 /**
  * A rules fix or a new source rule must reach every live fee within hours, not at each
  * state's next monthly pass: wake sleeping lanes whose state has live fees Hamilton has
@@ -475,6 +580,193 @@ export async function wakeLanesWithUncheckedLiveFees(): Promise<number> {
   }
 }
 
+/**
+ * A bank with no fee link that a search can still find: it has a website, is not marked
+ * offline or manual-review, and its last search was not a dead end. Needs `inst`
+ * (institution_sources) and `profile` (institution_source_profiles, LEFT JOIN).
+ */
+function findableBankSql() {
+  return sql`
+    NULLIF(btrim(inst.website_url), '') IS NOT NULL
+    AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+    AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+    AND COALESCE(inst.rescue_status, 'pending') NOT IN ('dead', 'needs_human')
+  `;
+}
+
+/** A due lane overdue by this long goes before every higher-priority lane, so no state starves. */
+export const STATE_LANE_STARVATION_HOURS = 3;
+
+/**
+ * Schedule by where the work is (James, 2026-10-06). Each lane's priority_score is the
+ * number of banks in its state with open work or a recent error: banks due a search,
+ * fee links not fetched for MAGELLAN_STALE_LINK_REFETCH_DAYS, banks whose newest live fee
+ * Hamilton has not source-checked, and banks with a source-check takedown in the last 7
+ * days. Due lanes run highest score first (see scheduleDueStateLaneRuns). Deterministic
+ * SQL, refreshed with the hourly nationwide sync. Returns the lanes updated.
+ *
+ * Report demand goes first (coordinator, 2026-10-06, from the funnel audit): a state with
+ * an unpaid institution report request from the last REPORT_REQUEST_DAYS whose institution
+ * fails James's report rule gets REPORT_REQUEST_PRIORITY, and a state whose bank market is
+ * within NEAR_READY_GAP rich banks of ready gets NEAR_READY_BANK_PRIORITY plus 10 per rich
+ * bank, so the closest market runs first. A state in REPORT_REVIEW_STATES (a report
+ * James is waiting to review) gets REPORT_REQUEST_PRIORITY too. This only moves when a state runs; what the
+ * state's steps then work on is unchanged.
+ */
+export const REPORT_REQUEST_DAYS = 30;
+export const REPORT_REQUEST_PRIORITY = 2000;
+export const NEAR_READY_GAP = 6;
+export const NEAR_READY_BANK_PRIORITY = 2000;
+/**
+ * Each of a state's market leaders (its top MARKET_LEADERS_PER_STATE by deposits, service
+ * charge income or total income) still below RICH_MIN_CATEGORIES headline fees adds this
+ * much, so states whose price-setters lack fees run first (James, 2026-10-07: all fees for
+ * the largest 10 to 15 institutions in every state). 15 uncovered leaders add 750.
+ */
+export const UNCOVERED_LEADER_PRIORITY = 50;
+
+export async function refreshLanePriorities(): Promise<number> {
+  try {
+    const leaderIds = await loadMarketLeaderIds(sql);
+    // postgres.js sends numbers untyped, so every number here carries a cast: an uncast
+    // "${a} - ${b}" fails to plan ("operator is not unique: unknown - unknown").
+    const updated = await sql`
+      WITH due_search AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS banks
+          FROM public.institution_sources inst
+          LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+         WHERE COALESCE(inst.status, 'active') = 'active'
+           AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+           AND ${findableBankSql()}
+           AND (
+             inst.last_rescue_attempt_at IS NULL
+             OR inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours'
+           )
+         GROUP BY 1
+      ),
+      stale AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS banks
+          FROM public.institution_sources inst
+         WHERE COALESCE(inst.status, 'active') = 'active'
+           AND NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL
+           AND inst.last_crawl_at < NOW() - ${MAGELLAN_STALE_LINK_REFETCH_DAYS}::int * INTERVAL '1 day'
+         GROUP BY 1
+      ),
+      newest AS (
+        SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_id
+          FROM public.published_fee_records fp
+         WHERE fp.rolled_back_at IS NULL
+            OR fp.rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`}
+         GROUP BY fp.institution_id
+      ),
+      unchecked AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS banks
+          FROM newest
+          JOIN public.institution_sources inst ON inst.id = newest.institution_id
+         WHERE NOT EXISTS (
+           SELECT 1 FROM public.pipeline_attempts pa
+            WHERE pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+              AND pa.institution_id = newest.institution_id
+              AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || newest.max_id::text
+              AND NOT EXISTS (
+                SELECT 1 FROM public.pipeline_attempts restore
+                 WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                   AND restore.institution_id = newest.institution_id
+                   AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                   AND restore.id > pa.id
+              )
+         )
+         GROUP BY 1
+      ),
+      takedowns AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(DISTINCT fp.institution_id)::int AS banks
+          FROM public.published_fee_records fp
+          JOIN public.institution_sources inst ON inst.id = fp.institution_id
+         WHERE fp.rolled_back_at > NOW() - INTERVAL '7 days'
+           AND fp.rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`}
+         GROUP BY 1
+      ),
+      coverage AS (
+        -- Headline categories live per institution: the count market-readiness.ts uses.
+        SELECT institution_id, COUNT(DISTINCT canonical_fee_key)::int AS categories
+          FROM public.published_fee_catalog
+         WHERE canonical_fee_key = ANY(${[...HEADLINE_FEE_KEYS]}::text[])
+         GROUP BY institution_id
+      ),
+      market AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, inst.charter_type,
+               count(*) FILTER (WHERE coverage.categories >= ${RICH_MIN_CATEGORIES}::int)::int AS rich
+          FROM public.institution_sources inst
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+         WHERE inst.state_code IS NOT NULL AND inst.charter_type IS NOT NULL
+         GROUP BY 1, 2
+      ),
+      near_ready AS (
+        SELECT state_code, max(rich) AS rich
+          FROM market
+         WHERE charter_type = 'bank'
+           AND rich < ${MARKET_READY_MIN_RICH}::int
+           AND rich >= ${MARKET_READY_MIN_RICH}::int - ${NEAR_READY_GAP}::int
+         GROUP BY 1
+      ),
+      requested AS (
+        -- Report requests carry the institution in use_case ("institution_id=117"); the
+        -- request counts while unpaid and the institution or its market fails the rule.
+        SELECT DISTINCT upper(btrim(inst.state_code)) AS state_code
+          FROM public.leads lead
+          JOIN public.institution_sources inst
+            ON inst.id = (substring(lead.use_case FROM 'institution_id=([0-9]+)'))::bigint
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+          LEFT JOIN market ON market.state_code = upper(btrim(inst.state_code))
+                          AND market.charter_type = inst.charter_type
+         WHERE 'report' = ANY(string_to_array(lead.source, ','))
+           AND lead.created_at > NOW() - ${REPORT_REQUEST_DAYS}::int * INTERVAL '1 day'
+           AND lead.paid_at IS NULL
+           AND position('src=e2e-test' IN COALESCE(lead.use_case, '')) = 0
+           AND (COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
+                OR COALESCE(market.rich, 0) < ${MARKET_READY_MIN_RICH}::int)
+      ),
+      leaders AS (
+        SELECT upper(btrim(inst.state_code)) AS state_code, count(*)::int AS uncovered
+          FROM public.institution_sources inst
+          LEFT JOIN coverage ON coverage.institution_id = inst.id
+         WHERE inst.id = ANY(${leaderIds}::bigint[])
+           AND COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
+         GROUP BY 1
+      ),
+      score AS (
+        SELECT lane.state_code,
+               COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
+                 + COALESCE(unchecked.banks, 0) + COALESCE(takedowns.banks, 0)
+                 + CASE WHEN requested.state_code IS NOT NULL
+                          OR lane.state_code = ANY(${[...REPORT_REVIEW_STATES]}::text[])
+                        THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
+                 + CASE WHEN near_ready.state_code IS NOT NULL
+                        THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END
+                 + ${UNCOVERED_LEADER_PRIORITY}::int * COALESCE(leaders.uncovered, 0) AS priority
+          FROM public.agent_state_lanes lane
+          LEFT JOIN due_search ON due_search.state_code = lane.state_code
+          LEFT JOIN stale ON stale.state_code = lane.state_code
+          LEFT JOIN unchecked ON unchecked.state_code = lane.state_code
+          LEFT JOIN takedowns ON takedowns.state_code = lane.state_code
+          LEFT JOIN requested ON requested.state_code = lane.state_code
+          LEFT JOIN near_ready ON near_ready.state_code = lane.state_code
+          LEFT JOIN leaders ON leaders.state_code = lane.state_code
+      )
+      UPDATE public.agent_state_lanes lane
+         SET priority_score = score.priority,
+             updated_at = NOW()
+        FROM score
+       WHERE lane.state_code = score.state_code
+         AND lane.priority_score IS DISTINCT FROM score.priority
+    `;
+    return updated.count;
+  } catch (error) {
+    console.error("refreshLanePriorities failed:", error);
+    return 0;
+  }
+}
+
 export interface StateLaneCadence {
   /** No full pass started (and not failed) this UTC calendar month. */
   fullDue: boolean;
@@ -482,6 +774,8 @@ export interface StateLaneCadence {
   recheckDue: boolean;
   /** Focus state still missing many links: full passes are due daily, not monthly. */
   daily: boolean;
+  /** Some banks still due a paid find this month, too few for daily: full passes weekly. */
+  weekly: boolean;
 }
 
 /**
@@ -491,12 +785,65 @@ export interface StateLaneCadence {
  */
 export async function stateLaneCadence(stateCode: string): Promise<StateLaneCadence> {
   try {
+    const leaderIds = await loadMarketLeaderIds(sql, { stateCode });
     const [row] = await sql<{
       full_this_month: boolean;
+      full_this_week: boolean;
       full_today: boolean;
       recheck_this_quarter: boolean;
       missing_links: number;
+      paid_find_due: number;
+      website_find_due: number;
+      leader_find_due: number;
     }[]>`
+      -- Mirrors magellan/paid-find.ts selectBanks: dead-end banks the paid pick or paid
+      -- web search has not tried this month after every free finder ran.
+      WITH paid_due AS (
+          SELECT inst.id FROM public.institution_sources inst
+            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+           WHERE upper(btrim(inst.state_code)) = ${stateCode}
+             AND COALESCE(inst.status, 'active') = 'active'
+             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+             AND NULLIF(btrim(inst.website_url), '') IS NOT NULL
+             AND inst.rescue_status = 'dead'
+             AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+             AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+             AND COALESCE(profile.locked_by_correction, false) = false
+             AND EXISTS (
+               SELECT 1 FROM public.pipeline_attempts pa
+                WHERE pa.institution_id = inst.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION })}::jsonb
+             )
+             AND (
+               SELECT count(DISTINCT pa.strategy) FROM public.pipeline_attempts pa
+                WHERE pa.institution_id = inst.id
+                  AND pa.stage = 'discover'
+                  AND pa.strategy IN (${PAID_PICK_STRATEGY.strategy}, ${PAID_FIND_STRATEGY.strategy})
+                  AND pa.created_at >= date_trunc('month', NOW())
+                  AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
+             ) < 2
+      ),
+      -- Mirrors magellan/website-find.ts selectRows: institutions with no website the
+      -- website search has not tried this month.
+      website_due AS (
+          SELECT inst.id FROM public.institution_sources inst
+            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+           WHERE upper(btrim(inst.state_code)) = ${stateCode}
+             AND COALESCE(inst.status, 'active') = 'active'
+             AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+             AND NULLIF(btrim(inst.website_url), '') IS NULL
+             AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+             AND COALESCE(profile.locked_by_correction, false) = false
+             AND NOT EXISTS (
+               SELECT 1 FROM public.pipeline_attempts pa
+                WHERE pa.institution_id = inst.id
+                  AND pa.stage = 'discover'
+                  AND pa.strategy = ${WEBSITE_FIND_STRATEGY.strategy}
+                  AND pa.created_at >= date_trunc('month', NOW())
+                  AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
+             )
+      )
       SELECT
         EXISTS (
           SELECT 1 FROM public.agent_runs run
@@ -520,12 +867,28 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
              AND run.started_at >= date_trunc('day', NOW(), 'UTC')
         ) AS full_today,
+        EXISTS (
+          SELECT 1 FROM public.agent_runs run
+           WHERE run.run_kind = 'workflow_lane'
+             AND upper(btrim(run.state_code)) = ${stateCode}
+             AND COALESCE(run.params_json->>'lane_mode', 'full') = 'full'
+             AND run.status IN ('queued', 'running', 'cancel_requested', 'completed')
+             AND run.started_at >= date_trunc('week', NOW(), 'UTC')
+        ) AS full_this_week,
         (
           SELECT count(*)::int FROM public.institution_sources inst
+            LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
            WHERE upper(btrim(inst.state_code)) = ${stateCode}
              AND COALESCE(inst.status, 'active') = 'active'
              AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
+             AND ${findableBankSql()}
         ) AS missing_links,
+        (SELECT count(*)::int FROM paid_due) AS paid_find_due,
+        (SELECT count(*)::int FROM website_due) AS website_find_due,
+        (
+          SELECT count(*)::int FROM (SELECT id FROM paid_due UNION SELECT id FROM website_due) due
+           WHERE due.id = ANY(${leaderIds}::bigint[])
+        ) AS leader_find_due,
         EXISTS (
           SELECT 1 FROM public.agent_runs run
            WHERE run.run_kind = 'workflow_lane'
@@ -536,27 +899,34 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND run.started_at >= date_trunc('quarter', NOW(), 'UTC')
         ) AS recheck_this_quarter
     `;
-    const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS;
+    const findDue = Number(row?.paid_find_due ?? 0) + Number(row?.website_find_due ?? 0);
+    const daily = Number(row?.missing_links ?? 0) > DAILY_FULL_PASS_MISSING_LINKS
+      || findDue >= DAILY_FULL_PASS_FIND_DUE
+      || Number(row?.leader_find_due ?? 0) > 0;
+    const weekly = !daily && findDue > 0;
     return {
-      fullDue: daily ? !row?.full_today : !row?.full_this_month,
+      fullDue: daily ? !row?.full_today : weekly ? !row?.full_this_week : !row?.full_this_month,
       recheckDue: !row?.recheck_this_quarter,
       daily,
+      weekly,
     };
   } catch (error) {
     console.error("stateLaneCadence failed:", error);
-    return { fullDue: true, recheckDue: false, daily: false };
+    return { fullDue: true, recheckDue: false, daily: false, weekly: false };
   }
 }
 
-function nextFullPassAt(daily: boolean): string {
-  return (daily ? nextDayStart() : nextMonthStart()).toISOString();
+function nextFullPassAt(cadence: Pick<StateLaneCadence, "daily" | "weekly"> | null): string {
+  if (cadence?.daily) return nextDayStart().toISOString();
+  if (cadence?.weekly) return nextWeekStart().toISOString();
+  return nextMonthStart().toISOString();
 }
 
 async function markLaneScheduled(
   stateCode: string,
   runId: number,
   backlog: boolean,
-  daily: boolean,
+  cadence: StateLaneCadence | null,
 ): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
@@ -564,7 +934,7 @@ async function markLaneScheduled(
            last_run_at = NOW(),
            next_run_after = CASE
              WHEN ${backlog} THEN NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-             ELSE LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour')
+             ELSE LEAST(${nextFullPassAt(cadence)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour')
            END,
            lease_token = NULL,
            lease_expires_at = NULL,
@@ -574,13 +944,14 @@ async function markLaneScheduled(
 }
 
 /**
- * Nothing due and no backlog: the lane sleeps until its next full pass (next month, or
- * tomorrow for a daily state), or at most STATE_LANE_IDLE_RECHECK_HOURS.
+ * Nothing due and no backlog: the lane sleeps until its next full pass (next month,
+ * tomorrow for a daily state, next Monday for a weekly one), or at most
+ * STATE_LANE_IDLE_RECHECK_HOURS.
  */
-async function markLaneIdle(stateCode: string, daily: boolean): Promise<void> {
+async function markLaneIdle(stateCode: string, cadence: StateLaneCadence): Promise<void> {
   await sql`
     UPDATE public.agent_state_lanes
-       SET next_run_after = LEAST(${nextFullPassAt(daily)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour'),
+       SET next_run_after = LEAST(${nextFullPassAt(cadence)}::timestamptz, NOW() + ${STATE_LANE_IDLE_RECHECK_HOURS} * INTERVAL '1 hour'),
            lease_token = NULL,
            lease_expires_at = NULL,
            updated_at = NOW()
@@ -667,7 +1038,7 @@ export async function startStateLaneRun(
       stateCode,
       result.run.id,
       await stateHasDocumentBacklog(stateCode),
-      cadence?.daily ?? false,
+      cadence,
     );
   }
   return { ...result, stateCode, idempotencyKey, mode, recheck };
@@ -683,8 +1054,20 @@ export function shouldRunNationwideLaneSync(now: Date = new Date()): boolean {
   return now.getUTCMinutes() < 5;
 }
 
+/** State lanes launched per 5-minute tick (36 an hour). Raised from 2 on 2026-10-06 after load checks. */
+export const STATE_LANE_LIMIT_PER_TICK = 3;
+
+/**
+ * Lane runs allowed queued or running at once. The executor runs one step at a time and
+ * finishes about six full passes an hour, so launching 3 lanes every tick (36 an hour)
+ * left ~40 runs queued in launch order with a 1h40m wait, and the priority order never
+ * applied (2026-10-07). With a short queue, each free slot goes to the highest-priority
+ * due lane when it opens.
+ */
+export const MAX_ACTIVE_STATE_LANE_RUNS = 3;
+
 export async function scheduleDueStateLaneRuns({
-  limit = 2,
+  limit = STATE_LANE_LIMIT_PER_TICK,
   triggeredBy = "atlas.scheduler",
   now = new Date(),
 }: {
@@ -696,10 +1079,30 @@ export async function scheduleDueStateLaneRuns({
   if (shouldRunNationwideLaneSync(now)) {
     await syncStateLaneProfiles(sql);
     await wakeLanesWithUncheckedLiveFees();
+    await refreshLanePriorities();
   }
+  // Every tick: a fixed break should rerun its failed lanes within minutes, not an hour.
+  const recovered = await wakeLanesAfterRecovery();
 
+  const emptyResult: DueStateLaneScheduleResult = {
+    selected: 0,
+    scheduled: 0,
+    reused: 0,
+    idle: 0,
+    failed: [],
+    results: [],
+    recovered,
+  };
   let dueRows: Array<{ state_code: string }>;
   try {
+    const [active] = await sql<{ runs: number }[]>`
+      SELECT count(*)::int AS runs
+        FROM public.agent_runs
+       WHERE run_kind = 'workflow_lane'
+         AND status IN ('queued', 'running', 'cancel_requested')
+    `;
+    const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
+    if (slots <= 0) return emptyResult;
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (
         SELECT state_code
@@ -712,8 +1115,15 @@ export async function scheduleDueStateLaneRuns({
               WHERE active.id = agent_state_lanes.last_agent_run_id
                 AND active.status IN ('queued', 'running', 'cancel_requested')
            )
-         ORDER BY priority_score DESC, next_run_after ASC, state_code ASC
-         LIMIT ${safeLimit}
+         -- Most open work first; a lane overdue STATE_LANE_STARVATION_HOURS goes ahead of all,
+         -- longest overdue first. Busy lanes come back due every hour and wait past the cut-off
+         -- too, so ranking overdue lanes by score kept GA, KY, CT, PR, VI, DC and GU waiting
+         -- since Oct 7 (2026-10-08).
+         ORDER BY (next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour') DESC,
+                  CASE WHEN next_run_after < NOW() - ${STATE_LANE_STARVATION_HOURS} * INTERVAL '1 hour'
+                       THEN next_run_after END ASC NULLS LAST,
+                  priority_score DESC, next_run_after ASC, state_code ASC
+         LIMIT ${slots}
          FOR UPDATE SKIP LOCKED
       )
       UPDATE public.agent_state_lanes lane
@@ -725,16 +1135,7 @@ export async function scheduleDueStateLaneRuns({
       RETURNING lane.state_code
     `);
   } catch (error) {
-    if (isMissingStateLaneSchemaError(error)) {
-      return {
-        selected: 0,
-        scheduled: 0,
-        reused: 0,
-        idle: 0,
-        failed: [],
-        results: [],
-      };
-    }
+    if (isMissingStateLaneSchemaError(error)) return emptyResult;
     throw error;
   }
 
@@ -745,6 +1146,7 @@ export async function scheduleDueStateLaneRuns({
     idle: 0,
     failed: [],
     results: [],
+    recovered,
   };
 
   for (const row of dueRows) {
@@ -752,7 +1154,7 @@ export async function scheduleDueStateLaneRuns({
     try {
       const cadence = await stateLaneCadence(stateCode);
       if (!cadence.fullDue && !(await stateHasDocumentBacklog(stateCode))) {
-        await markLaneIdle(stateCode, cadence.daily);
+        await markLaneIdle(stateCode, cadence);
         output.idle += 1;
         continue;
       }

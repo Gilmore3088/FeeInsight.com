@@ -22,6 +22,9 @@ export interface InstitutionPositionEntry {
   displayName: string;
   yourAmount: number;
   benchmarkMedian: number;
+  /** The benchmark's middle half (25th to 75th percentile); null when too few institutions. */
+  benchmarkP25: number | null;
+  benchmarkP75: number | null;
   benchmarkCount: number;
   maturityTier: IndexEntry["maturity_tier"];
   gapAmount: number;
@@ -34,6 +37,9 @@ export interface InstitutionPositioning {
   institutionName: string;
   benchmarkLabel: string;
   benchmarkSource: HamiltonPeerIndexSource;
+  /** Where the institution is, for the state and Fed district context around its fees. */
+  stateCode: string | null;
+  fedDistrict: number | null;
   /** Categories where the institution has a fee and the benchmark has a median, largest gap first. */
   entries: InstitutionPositionEntry[];
   /** Categories with a fee of the institution's own, benchmarked or not. */
@@ -58,12 +64,23 @@ function gapSize(entry: InstitutionPositionEntry): number {
   return entry.gapPct === null ? 0 : Math.abs(entry.gapPct);
 }
 
+/** The largest gaps, but never without overdraft (Hamilton's flagship fee) when the bank publishes it. */
+function keepOverdraft(entries: InstitutionPositionEntry[], max: number): InstitutionPositionEntry[] {
+  const top = entries.slice(0, max);
+  const overdraft = entries.find((e) => e.feeCategory === "overdraft");
+  if (!overdraft || top.includes(overdraft)) return top;
+  return [...top.slice(0, max - 1), overdraft];
+}
+
 export function buildInstitutionPositioning(params: {
   institutionId: number;
   institutionName: string;
   benchmarkLabel: string;
   benchmarkSource: HamiltonPeerIndexSource;
-  benchmark: Pick<IndexEntry, "fee_category" | "median_amount" | "institution_count" | "maturity_tier">[];
+  stateCode?: string | null;
+  fedDistrict?: number | null;
+  benchmark: (Pick<IndexEntry, "fee_category" | "median_amount" | "institution_count" | "maturity_tier">
+    & Partial<Pick<IndexEntry, "p25_amount" | "p75_amount">>)[];
   ownValues: Map<string, number>;
 }): InstitutionPositioning {
   const benchmarkByCategory = new Map(params.benchmark.map((entry) => [entry.fee_category, entry]));
@@ -78,6 +95,8 @@ export function buildInstitutionPositioning(params: {
       displayName: displayNameFor(category),
       yourAmount,
       benchmarkMedian: median,
+      benchmarkP25: benchmark.p25_amount ?? null,
+      benchmarkP75: benchmark.p75_amount ?? null,
       benchmarkCount: benchmark.institution_count,
       maturityTier: benchmark.maturity_tier,
       gapAmount,
@@ -91,19 +110,27 @@ export function buildInstitutionPositioning(params: {
     institutionName: params.institutionName,
     benchmarkLabel: params.benchmarkLabel,
     benchmarkSource: params.benchmarkSource,
-    entries: entries.slice(0, MAX_POSITION_ROWS),
+    stateCode: params.stateCode ?? null,
+    fedDistrict: params.fedDistrict ?? null,
+    entries: keepOverdraft(entries, MAX_POSITION_ROWS),
     ownFeeCount: params.ownValues.size,
     topGap,
     priority: topGap ? gapPriority(topGap.gapPct) : null,
   };
 }
 
-/** The selected institution's positioning, or null when the institution doesn't exist. */
-export async function fetchInstitutionPositioning(institutionId: number): Promise<InstitutionPositioning | null> {
+/**
+ * The selected institution's positioning, or null when the institution doesn't exist. With a
+ * userId, it follows the workspace's (or the user's) default peer group.
+ */
+export async function fetchInstitutionPositioning(
+  institutionId: number,
+  userId?: string | number | null,
+): Promise<InstitutionPositioning | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
   const [peerIndex, ownValues] = await Promise.all([
-    resolveHamiltonPeerIndex({ selectedInstitution: institution }),
+    resolveHamiltonPeerIndex({ selectedInstitution: institution, institutionId, userId: userId ?? null }),
     getInstitutionFeeValues(institutionId),
   ]);
   return buildInstitutionPositioning({
@@ -111,6 +138,8 @@ export async function fetchInstitutionPositioning(institutionId: number): Promis
     institutionName: institution.institution_name,
     benchmarkLabel: peerIndex.label,
     benchmarkSource: peerIndex.source,
+    stateCode: institution.state_code ?? null,
+    fedDistrict: institution.fed_district ?? null,
     benchmark: peerIndex.entries,
     ownValues,
   });

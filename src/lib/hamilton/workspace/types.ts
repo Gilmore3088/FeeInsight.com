@@ -10,6 +10,8 @@
  * Client-safe: no server imports.
  */
 
+import type { Storyline, StorylineExhibit } from "./storyline-types";
+
 /** A source behind a fact, named so the reader can check it. */
 export interface SourceRef {
   label: string;
@@ -21,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.4.0";
+export const WORKSPACE_ENGINE_VERSION = "1.12.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -167,9 +169,20 @@ export interface Briefing {
   nationalIncomeSeries: MarketIncome[];
   /** Fees on the bank's published schedule that Hamilton reviewed. */
   feesReviewed: number;
+  /** One row per reviewed fee: the bank's price against its peer band. Unranked; band is null below the peer minimum. */
+  positions: FeePositionRow[];
   peerLabel: string;
   generatedAt: string;
   provenance: Provenance;
+}
+
+export interface FeePositionRow {
+  feeCategory: string;
+  displayName: string;
+  current: number;
+  /** The peers' middle half and median; null when too few peers publish the fee. */
+  band: { p25: number; median: number; p75: number; n: number } | null;
+  peerLabel: string;
 }
 
 export interface PeerValue {
@@ -219,7 +232,78 @@ export interface RevenueLine {
   combinedWith?: string;
 }
 
+/** A published price change, as seen on the institution's schedule. */
+export interface ChangeEvent {
+  date: string;
+  institutionName: string;
+  from: number | null;
+  to: number | null;
+}
+
+/** The fees around overdraft and NSF, for the bank and the group it is compared with. */
+export interface FeeStructureSet {
+  /** e.g. "institutions with $10 billion or more in assets" or "peers (Banks in Texas)". */
+  groupLabel: string;
+  columns: { category: string; label: string }[];
+  /** The bank first, then the group in its display order. Amounts by fee category. */
+  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number> }[];
+  source: SourceRef;
+}
+
 /** Everything Research shows for one fee. */
+/**
+ * A slice of the market the reader names in a question: "$10B and up", "credit unions
+ * under $1 billion in Texas", "the 25 largest banks". Assets are in thousands of dollars,
+ * as institution_sources.asset_size stores them.
+ */
+export interface AskSegment {
+  /** Plain words for the slice, e.g. "institutions with $10 billion or more in assets". */
+  label: string;
+  minAssets: number | null;
+  maxAssets: number | null;
+  charterType: "bank" | "credit_union" | null;
+  stateCode: string | null;
+  /** The N largest by assets after the other filters; null for no size cut. */
+  largest: number | null;
+}
+
+/** One institution in a segment that publishes the fee. */
+export interface SegmentMember extends PeerValue {
+  /** Total assets in thousands of dollars; null when the registry has none. */
+  totalAssets: number | null;
+  charterType: string | null;
+  /** The published daily cap on this fee (overdraft or NSF), when the schedule states one. */
+  dailyCap: number | null;
+  /**
+   * How many of these fees the schedule charges at most in a day ("Maximum 3 Overdraft fees
+   * per day"), with the line that states it; null when the fee's own document states none.
+   */
+  dailyFeeLimit: { count: number; line: string } | null;
+}
+
+/** The fee across a segment, with the bank's own place in it. */
+export interface SegmentResearch {
+  segment: AskSegment;
+  /** Institutions in the registry that fit the segment (active), whether or not they publish the fee. */
+  institutionsInSegment: number;
+  /** Members that publish the fee, largest by assets first. The asking bank is left out. */
+  members: SegmentMember[];
+  band: { p25: number; median: number; p75: number; n: number } | null;
+  /** Members whose published fee is $0. */
+  zeroCount: number;
+  /** Members that publish a daily cap. */
+  withDailyCap: number;
+  /** Members whose schedule limits how many of these fees it charges in a day. */
+  withDailyFeeLimit: number;
+  /** Percentile of the bank's own fee among members; null without a fee or enough members. */
+  ownPosition: number | null;
+  /** Whether the asking bank itself fits the segment. */
+  ownInSegment: boolean;
+  /** Set when the segment could not be built, in one plain sentence. */
+  problem: string | null;
+  source: SourceRef;
+}
+
 export interface FeeResearch {
   institutionId: number;
   institutionName: string;
@@ -256,7 +340,35 @@ export interface FeeResearch {
   regulation: Fact[];
   /** The state and national economy around the fee; null when no state or no series is on file. */
   economy?: EconomicBackdrop | null;
+  /** The segment the question named, when it named one. */
+  segment?: SegmentResearch | null;
+  /** Price changes in the bank's state that the schedules bear out, newest first. */
+  changeEvents?: ChangeEvent[];
+  /** How the comparison group structures overdraft and NSF, beyond the price. */
+  structure?: FeeStructureSet | null;
+  /**
+   * The fee where it is stated as a rate ("1% of the transaction"); only for the fees that
+   * may publish as one. Kept apart from every dollar figure above and never pooled with them.
+   */
+  rates?: RateResearch | null;
   provenance: Provenance;
+}
+
+/** One of the bank's own fees stated as a rate. */
+export interface RateFeeLine {
+  feeName: string;
+  /** "3% of the advance ($10 minimum)". */
+  label: string;
+  ratePercent: number;
+  sourceUrl: string | null;
+}
+
+export interface RateResearch {
+  /** The bank's own rate fees in this category, highest rate first. */
+  own: RateFeeLine[];
+  /** Rates across institutions nationally, one per institution; null figures when too few state one. */
+  national: { n: number; median: number | null; p25: number | null; p75: number | null; min: number | null; max: number | null };
+  source: SourceRef;
 }
 
 export type EconomicIndicatorKey =
@@ -293,6 +405,10 @@ export interface EconomicBackdrop {
   indicators: EconomicIndicator[];
   /** The district's latest Beige Book, banking section first. */
   beigeBook: { releaseDate: string; text: string; source: SourceRef } | null;
+  /** The latest FOMC minutes' rate decision, quoted. */
+  fomc?: { meetingDate: string; text: string; source: SourceRef } | null;
+  /** The district Reserve Bank's newest banking or household research piece. */
+  districtResearch?: { title: string; publishedAt: string | null; source: SourceRef } | null;
 }
 
 /** A marker on a fee exhibit: one market's median. */
@@ -335,10 +451,12 @@ export type Exhibit =
       unit: "dollars";
       own: number | null;
       ownLabel: string;
-      items: { name: string; amount: number; url: string | null }[];
+      /** deposits: the institution's deposits in the bank's market counties (FDIC Summary of Deposits), local competitors only. */
+      items: { name: string; amount: number; url: string | null; deposits?: number | null }[];
       sources: SourceRef[];
       note?: string;
-    };
+    }
+  | StorylineExhibit;
 
 export type HamiltonRole = "economist" | "consultant" | "data_engineer" | "writer";
 
@@ -360,6 +478,8 @@ export interface HamiltonAnswer {
   question: ClarifyingQuestion | null;
   evidenceLevel: EvidenceLevel;
   provenance: Provenance;
+  /** The answer as a consulting memo: governing thought, numbered exhibits, both readers' lenses. */
+  storyline?: Storyline | null;
 }
 
 export type EvidenceLevel = "market" | "working_estimate" | "institution";
@@ -491,8 +611,27 @@ export interface AskResponse {
   facts?: Fact[];
   /** The structured answer: headline, sourced claims, drivers, exhibit and question. */
   answer?: HamiltonAnswer;
+  /** The segment the question named, with its members, when it asked about one. */
+  segment?: SegmentResearch | null;
   /** The decision this exchange was logged to; send it back with the next question. */
   decisionId?: string;
+  /** The saved analysis this answer was filed as (history and "Add to report"); send it with the memo request. */
+  savedAnalysisId?: string;
+  /** For a question about every fee: each fee against its peer median, furthest first. */
+  positions?: SchedulePosition[];
+}
+
+export interface SchedulePosition {
+  feeCategory: string;
+  displayName: string;
+  current: number;
+  peerMedian: number;
+  peerCount: number;
+  peerLabel: string;
+  /** Against the peer median, within half a cent counts as "at". */
+  direction: "higher" | "lower" | "at";
+  /** The peers' middle half, for drawing the fee as a range strip; absent on answers saved before 1.12.1. */
+  band?: { p25: number; p75: number } | null;
 }
 
 export interface AskRequest {

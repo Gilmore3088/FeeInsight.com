@@ -5,8 +5,10 @@ import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attemp
 import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
+import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
+import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -20,15 +22,16 @@ import {
 } from "./category-model";
 
 import {
-  amountEnvelopeFor,
   isExplicitZeroFee,
-  withinAmountEnvelope,
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
 } from "./envelopes";
+import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
   DARWIN_PEER_STRATEGY,
   DARWIN_SECOND_SOURCE_STRATEGY,
+  districtOfState,
+  holdsForPeerReview,
   loadSourceCopies,
   PeerLevelCache,
   peerCheck,
@@ -70,7 +73,8 @@ export type DarwinReasonCode =
   | "outside_envelope"
   | "peer_outlier"
   | "duplicate_in_batch"
-  | "duplicate_verified";
+  | "duplicate_verified"
+  | "percent_not_publishable";
 
 /**
  * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
@@ -91,6 +95,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   peer_outlier: "Amount far outside the state's peer range for this fee and asset size",
   duplicate_in_batch: "Same fee already verified in this batch",
   duplicate_verified: "Duplicate verified row",
+  percent_not_publishable: "A rate in a category that does not publish rates (often an interest rate, not a fee)",
 };
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
@@ -100,7 +105,7 @@ function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   return "rejected";
 }
 
-export interface RawFeeRow {
+export interface RawFeeRow extends RateFields {
   fee_raw_id: number | string;
   institution_id: number | string;
   source_url: string | null;
@@ -162,6 +167,12 @@ export interface RunDarwinVerifyResult {
   zeroFeesVerified: number;
   /** Pass 2: rows held for review as far outside their state peers. */
   peerOutliers: number;
+  /** Pass 2: rows compared with their Fed district or national peers (state had too few). */
+  peerFallbackChecks: number;
+  /** Pass 2: fallback comparisons far outside the district or national range (recorded, not held). */
+  peerFallbackOutliers: number;
+  /** Rows held because the amount is above a learned (not hand-set) category range. */
+  learnedEnvelopeHolds: number;
   /** Pass 2: rows whose amount another stored document of the same bank confirms. */
   secondSourceAgreements: number;
   /** Pass 2: rows another stored document of the same bank shows at a different amount. */
@@ -228,18 +239,32 @@ function normalizedAmount(value: number | string | null): number | null {
   return Math.round(parsed * 100) / 100;
 }
 
+const NO_LEARNED_ENVELOPES: ReadonlyMap<string, LearnedEnvelope> = new Map();
+
 /** The first rule a row fails, or null when it can be verified. Exported for tests. */
-export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string | null): DarwinReasonCode | null {
+export function verificationReasonCode(
+  row: RawFeeRow,
+  canonicalFeeKey: string | null,
+  learnedEnvelopes: ReadonlyMap<string, LearnedEnvelope> = NO_LEARNED_ENVELOPES,
+): DarwinReasonCode | null {
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
-  if (!checkFeeCategory(canonicalFeeKey, row.fee_name).ok) return "category_mismatch";
+  if (!checkFeeCategory(canonicalFeeKey, row.fee_name, row).ok) return "category_mismatch";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
+  if (isPercentFee(row)) {
+    if (!percentFeeAllowed(canonicalFeeKey)) return "percent_not_publishable";
+    const rate = ratePercentOf(row);
+    if (rate == null || row.amount != null) return "invalid_amount";
+    const range = PERCENT_FEE_RANGES[canonicalFeeKey];
+    return rate < range.min || rate > range.max ? "outside_envelope" : null;
+  }
   const amount = normalizedAmount(row.amount);
   if (amount == null || amount < 0) return "invalid_amount";
   if (amount === 0) {
     return isExplicitZeroFee(amount, parseFlags(row.outlier_flags), ZERO_FEE_RAW_FLAG) ? null : "invalid_amount";
   }
-  if (!withinAmountEnvelope(canonicalFeeKey, amount)) return "outside_envelope";
+  const envelope = darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes);
+  if (amount < envelope.min || amount > envelope.max) return "outside_envelope";
   return null;
 }
 
@@ -249,19 +274,25 @@ export function verificationReasonCode(row: RawFeeRow, canonicalFeeKey: string |
  * bank's real price for its band. A row with no stored text cannot be traced. Exported for tests.
  */
 export function statedInOwnSource(
-  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id">,
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent">,
   texts: ReadonlyMap<number, string>,
+  canonicalFeeKey?: string | null,
 ): boolean {
+  if (isPercentFee(row)) {
+    const rate = ratePercentOf(row);
+    const text = row.source_document_id == null ? undefined : texts.get(Number(row.source_document_id));
+    return rate != null && !!text && checkRateAgainstSource(text, row.fee_name, rate, ".").ok;
+  }
   const amount = normalizedAmount(row.amount);
   if (amount == null || row.source_document_id == null) return false;
   const text = texts.get(Number(row.source_document_id));
   if (!text) return false;
-  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".");
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
   return result.ok || result.reason === "tiered_fee";
 }
 
 /** The newest completed text of each document, as Hamilton's source check reads it. */
-async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
+export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
   if (documentIds.length === 0) return new Map();
   const texts = await db<{ source_document_id: number | string; normalized_text: string }[]>`
     SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
@@ -274,14 +305,25 @@ async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<n
   return new Map(texts.map((text) => [Number(text.source_document_id), text.normalized_text]));
 }
 
-/** Same institution, category, amount, frequency and source: the same fee line. */
+/**
+ * Version of the in-batch duplicate key, recorded on each attempt. Version 1 keyed on the
+ * source URL, so a fee on a bank's current copy of a page was held as a duplicate of the
+ * same fee on an older copy at that URL, and only the older copy was ever verified.
+ * Version 2 keys on the stored document.
+ */
+export const DARWIN_BATCH_KEY_VERSION = 2;
+
+/** Same institution, category, amount, frequency and document: the same fee line. */
 function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
   return [
     Number(row.institution_id),
     canonicalFeeKey,
     normalizedAmount(row.amount),
+    isPercentFee(row) ? `rate:${ratePercentOf(row)}` : "",
     (row.frequency ?? "").trim().toLowerCase(),
-    (row.source_url ?? row.document_r2_key ?? "").trim(),
+    row.source_document_id != null
+      ? `doc:${Number(row.source_document_id)}`
+      : (row.source_url ?? row.document_r2_key ?? "").trim(),
   ].join("|");
 }
 
@@ -291,6 +333,7 @@ async function selectRawFees(
   learning: boolean,
   institutionId?: number,
   stateCode?: string,
+  currentCopy = false,
 ): Promise<RawFeeRow[]> {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
@@ -312,6 +355,28 @@ async function selectRawFees(
     // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
     // rejected, or one a new re-file rule now places, is not lost.
     const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
+    // A row held as an in-batch duplicate under the old URL key is re-checked once when it
+    // sits on the bank's current copy and nothing on that same document is verified as the
+    // same fee; a row with a verified twin on its own document stays a duplicate. Needs the
+    // current-copy column (source_documents.superseded_by_id).
+    const batchKeyParam = currentCopy ? `$${params.push(DARWIN_BATCH_KEY_VERSION)}` : null;
+    const duplicateRecheck = batchKeyParam ? `
+              AND NOT (
+                pa.detail->>'reason_code' = 'duplicate_in_batch'
+                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${batchKeyParam}
+                AND EXISTS (
+                  SELECT 1 FROM source_documents sd
+                   WHERE sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM verified_fee_observations twin
+                    JOIN raw_fee_observations twin_raw ON twin_raw.fee_raw_id = twin.fee_raw_id
+                   WHERE twin_raw.source_document_id = fr.source_document_id
+                     AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
+                     AND twin.amount IS NOT DISTINCT FROM fr.amount
+                )
+              )` : "";
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -322,6 +387,7 @@ async function selectRawFees(
                 pa.detail->>'reason_code' = 'category_mismatch'
                 AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
               )
+${duplicateRecheck}
          )`);
   }
   return db.unsafe<RawFeeRow[]>(
@@ -337,6 +403,11 @@ async function selectRawFees(
              fr.frequency,
              fr.outlier_flags,
              fr.conditions,
+             fr.amount_kind,
+             fr.rate_percent,
+             fr.rate_min_amount,
+             fr.rate_max_amount,
+             fr.rate_basis,
              inst.institution_name,
              fr.source_document_id,
              upper(btrim(inst.state_code)) AS state_code,
@@ -362,22 +433,25 @@ async function selectRawFees(
   );
 }
 
-async function insertVerifiedFee(
+export async function insertVerifiedFee(
   db: SqlTag,
   options: {
     runId: number;
     row: RawFeeRow;
     canonicalFeeKey: string;
     secondSourceAgrees?: boolean;
+    extraFlags?: string[];
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
   const institutionId = Number(options.row.institution_id);
-  const amount = normalizedAmount(options.row.amount);
+  const percent = isPercentFee(options.row);
+  const amount = percent ? null : normalizedAmount(options.row.amount);
   const eventId = stableUuid(`darwin:${options.runId}:${feeRawId}:${options.canonicalFeeKey}`);
   const flags = ["agentic_darwin_verified"];
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
+  if (options.extraFlags) flags.push(...options.extraFlags);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -392,7 +466,12 @@ async function insertVerifiedFee(
       fee_name,
       amount,
       frequency,
-      review_status
+      review_status,
+      amount_kind,
+      rate_percent,
+      rate_min_amount,
+      rate_max_amount,
+      rate_basis
     )
     VALUES (
       ${feeRawId},
@@ -407,7 +486,12 @@ async function insertVerifiedFee(
       ${options.row.fee_name},
       ${amount},
       ${options.row.frequency},
-      'verified'
+      'verified',
+      ${percent ? "percent" : "flat"},
+      ${percent ? ratePercentOf(options.row) : null},
+      ${percent ? options.row.rate_min_amount ?? null : null},
+      ${percent ? options.row.rate_max_amount ?? null : null},
+      ${percent ? options.row.rate_basis ?? null : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_verified_id
@@ -428,6 +512,7 @@ async function recordVerificationSignals(
   runId: number,
   results: DarwinVerificationResult[],
   rowByRawFeeId: Map<number, RawFeeRow>,
+  learnedEnvelopes: ReadonlyMap<string, LearnedEnvelope>,
 ): Promise<void> {
   const grouped = new Map<number, {
     institutionName: string;
@@ -440,7 +525,7 @@ async function recordVerificationSignals(
     feeRawIds: number[];
     canonicalFeeKeys: string[];
     reasons: Map<DarwinReasonCode, number>;
-    envelopes: Record<string, { min: number; max: number }>;
+    envelopes: Record<string, { min: number; max: number; source: string }>;
     peerOutliers: Array<Record<string, string | number | boolean | null>>;
   }>();
 
@@ -461,7 +546,7 @@ async function recordVerificationSignals(
       const code = result.reasonCode ?? "invalid_amount";
       group.reasons.set(code, (group.reasons.get(code) ?? 0) + 1);
       if (code === "outside_envelope" && result.canonicalFeeKey) {
-        group.envelopes[result.canonicalFeeKey] = amountEnvelopeFor(result.canonicalFeeKey);
+        group.envelopes[result.canonicalFeeKey] = darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes);
       }
       if (code === "peer_outlier" && result.peerCheck) {
         group.peerOutliers.push({
@@ -588,6 +673,8 @@ async function recordPassTwoAttempts(
         canonical_fee_key: result.canonicalFeeKey,
         amount: result.amount,
         peer_outlier: result.peerCheck.outlier,
+        peer_scope: result.peerCheck.scope,
+        peer_held: holdsForPeerReview(result.peerCheck),
         peer_low: result.peerCheck.low,
         peer_high: result.peerCheck.high,
         peer_p25: result.peerCheck.p25,
@@ -650,12 +737,14 @@ export async function runDarwinVerify(
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
-  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode);
+  const currentCopy = learning && (await currentCopySchemaReady(db));
+  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode, currentCopy);
   const rowByRawFeeId = new Map(rows.map((row) => [Number(row.fee_raw_id), row]));
   const results: DarwinVerificationResult[] = [];
 
   const verifiedInBatch = new Set<string>();
   const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
+  const learnedEnvelopes = rows.length > 0 ? await loadLearnedEnvelopes(db) : NO_LEARNED_ENVELOPES;
   const sourceTexts = await loadSourceTexts(
     db,
     Array.from(new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))),
@@ -676,8 +765,8 @@ export async function runDarwinVerify(
 
   for (const row of rows) {
     const canonicalFeeKey = categoryOf(row);
-    let reasonCode = verificationReasonCode(row, canonicalFeeKey);
-    if (!reasonCode && !statedInOwnSource(row, sourceTexts)) reasonCode = "not_in_source";
+    let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
+    if (!reasonCode && !statedInOwnSource(row, sourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }
@@ -693,8 +782,16 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      const levels = await peers.forState(row.state_code ?? options.stateCode);
-      peer = peerCheck(levels, canonicalFeeKey, institutionTier(row.asset_size_tier, row.asset_size), base.amount);
+      const stateCode = row.state_code ?? options.stateCode;
+      const levels = await peers.forState(stateCode);
+      peer = peerCheck(
+        levels,
+        canonicalFeeKey,
+        institutionTier(row.asset_size_tier, row.asset_size),
+        base.amount,
+        await peers.widerLevels(),
+        districtOfState(stateCode),
+      );
       secondSource = secondSourceCheck(
         {
           feeRawId: base.feeRawId,
@@ -705,7 +802,7 @@ export async function runDarwinVerify(
         },
         sourceCopies,
       );
-      if (peer?.outlier) reasonCode = "peer_outlier";
+      if (holdsForPeerReview(peer)) reasonCode = "peer_outlier";
     }
 
     let result: DarwinVerificationResult;
@@ -772,6 +869,10 @@ export async function runDarwinVerify(
           reason_code: result.reasonCode,
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
+          batch_key_version: DARWIN_BATCH_KEY_VERSION,
+          amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
+            ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
+            : undefined,
         },
       });
       await recordPassTwoAttempts(db, options, result);
@@ -779,7 +880,7 @@ export async function runDarwinVerify(
   }
 
   if (!dryRun) {
-    await recordVerificationSignals(db, options.runId, results, rowByRawFeeId);
+    await recordVerificationSignals(db, options.runId, results, rowByRawFeeId, learnedEnvelopes);
   }
 
   // Each decision goes to the shared learning store as a judgement on Knox's read.
@@ -807,6 +908,13 @@ export async function runDarwinVerify(
     reasonCounts,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
+    peerFallbackChecks: results.filter((result) => result.peerCheck && result.peerCheck.scope !== "state").length,
+    peerFallbackOutliers: results.filter((result) => result.peerCheck?.outlier && result.peerCheck.scope !== "state").length,
+    learnedEnvelopeHolds: results.filter((result) =>
+      result.reasonCode === "outside_envelope" &&
+      result.canonicalFeeKey != null &&
+      darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes).source === "learned"
+    ).length,
     secondSourceAgreements: results.filter((result) => result.secondSource?.verdict === "agrees").length,
     secondSourceDisagreements: results.filter((result) => result.secondSource?.verdict === "disagrees").length,
     categoryModelDisputes: results.filter((result) => result.categoryModel?.disputed).length,

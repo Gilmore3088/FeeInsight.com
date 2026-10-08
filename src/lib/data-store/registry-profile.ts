@@ -1,8 +1,12 @@
 import { sql } from "./connection";
+import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
+import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
+import { getLocalMarketMembers } from "./custom-report-market";
+import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
- * branch footprint (FDIC SOD), CFPB complaints, SEC filings and holding-company
+ * branch footprint (FDIC SOD for banks, NCUA's branch file for credit unions), CFPB complaints, SEC filings and holding-company
  * financials, and regulator identity. Every function reads only registry
  * tables, so callers wrap each one in a fallback.
  */
@@ -19,6 +23,7 @@ export interface BranchYear {
 }
 
 export interface BranchMarket {
+  /** A metro area for banks; a city ("Austin, TX") for credit unions. */
   msa_name: string;
   branches: number;
   deposits: number;
@@ -31,10 +36,148 @@ export interface BranchState {
 }
 
 export interface BranchFootprint {
+  /** fdic_sod: bank branches with deposits. ncua: credit union offices, no deposits (all zero). */
+  source: "fdic_sod" | "ncua";
+  /** NCUA only: the quarter-end date of the branch file. */
+  reportDate?: string | null;
   latestYear: number;
   byYear: BranchYear[];
   byState: BranchState[];
   topMarkets: BranchMarket[];
+  /** A zoomed map with a dot per office when the offices sit in a few states; else null (national map). */
+  localMap?: CardLocalMap | null;
+  /**
+   * The largest competitors in the institution's local market, by the definition the
+   * custom report and the API use (getLocalMarketMembers): deposit share first.
+   */
+  nearby?: NearbyInstitution[];
+  /** How many other institutions are in the local market. */
+  nearbyCount?: number;
+  /** Banks only: this bank's share of the bank deposits in its local market, in percent. */
+  ownDepositSharePct?: number | null;
+  /** Offices placed on the zoomed map (credit union coordinates are added over time). */
+  mappedOffices?: number;
+  /** True when the zoomed map applies but too few offices are placed yet to draw it. */
+  mapPending?: boolean;
+  /** Offices on the map drawn at the middle of their town until their address is geocoded. */
+  approxOffices?: number;
+}
+
+type OfficePoint = {
+  latitude: number | string;
+  longitude: number | string;
+  city: string | null;
+  weight?: number | string | null;
+  /** Placed at the middle of its town, not its own address. */
+  approx?: boolean | null;
+};
+
+/** The zoomed map as the card receives it (server-only fields removed). */
+export type CardLocalMap = Omit<LocalOfficeMap, "othersInFrame" | "ownWeightInFrame">;
+
+export interface NearbyInstitution {
+  name: string;
+  charter: "bank" | "credit_union";
+  /** Share of the bank deposits in the local market, in percent; null for credit unions (no branch deposits). */
+  depositSharePct: number | null;
+}
+
+const NEARBY_LIMIT = 5;
+
+interface OtherOffice {
+  institution_id: number | string | null;
+  name: string | null;
+  kind: "bank" | "credit_union";
+  latitude: number | string;
+  longitude: number | string;
+  deposits: number | string | null;
+}
+
+/** Every other bank branch (latest SOD year) and credit union office with coordinates in the box. */
+async function otherOfficesIn(
+  institutionId: number,
+  box: { south: number; north: number; west: number; east: number },
+): Promise<OtherOffice[]> {
+  const rows = await sql<OtherOffice[]>`
+    SELECT b.institution_id, s.institution_name AS name, 'bank'::text AS kind, b.latitude, b.longitude, b.deposits
+      FROM institution_branch_deposits b
+      LEFT JOIN institution_sources s ON s.id = b.institution_id
+     WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+       AND b.latitude BETWEEN ${box.south} AND ${box.north}
+       AND b.longitude BETWEEN ${box.west} AND ${box.east}
+       AND b.institution_id IS DISTINCT FROM ${institutionId}
+    UNION ALL
+    SELECT c.institution_id, COALESCE(s.institution_name, c.cu_name), 'credit_union', c.latitude, c.longitude, NULL
+      FROM credit_union_branches c
+      LEFT JOIN institution_sources s ON s.id = c.institution_id
+     WHERE c.latitude BETWEEN ${box.south} AND ${box.north}
+       AND c.longitude BETWEEN ${box.west} AND ${box.east}
+       AND c.institution_id IS DISTINCT FROM ${institutionId}`;
+  return [...rows];
+}
+
+/** The largest competitors in the institution's local market, and a bank's own deposit share there. */
+async function marketCompetitors(
+  institutionId: number,
+): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+  const market = await getLocalMarketMembers(institutionId).catch(() => null);
+  if (!market) return { nearby: [], nearbyCount: 0, ownDepositSharePct: null };
+  const total = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
+  const share = (deposits: number | null) =>
+    deposits === null || total <= 0 ? null : Math.round((deposits / total) * 1000) / 10;
+  const rivals = market.members.filter((m) => !m.is_subject);
+  const subject = market.members.find((m) => m.is_subject);
+  return {
+    nearby: rivals.slice(0, NEARBY_LIMIT).map((m) => ({
+      name: m.institution_name,
+      charter: m.charter_type === "credit_union" ? "credit_union" : "bank",
+      depositSharePct: share(m.market_deposits),
+    })),
+    nearbyCount: rivals.length,
+    ownDepositSharePct: subject ? share(subject.market_deposits) : null,
+  };
+}
+
+/**
+ * The zoomed map with other institutions' offices on it, the few with the most offices
+ * in view, and (for a bank) its share of bank deposits in view. Empty when the
+ * institution's offices span too many states for the zoomed map.
+ */
+/** Share of an institution's offices that must have coordinates before its zoomed map is drawn. */
+const MIN_MAPPED_SHARE = 0.5;
+
+async function localMapFor(
+  institutionId: number,
+  states: string[],
+  points: OfficePoint[],
+  isBank: boolean,
+  totalOffices: number,
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+  if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
+  const own = points.map((p) => ({
+    latitude: Number(p.latitude),
+    longitude: Number(p.longitude),
+    city: p.city,
+    weight: p.weight == null ? 1 : Number(p.weight),
+  }));
+  const box = localMapBounds(states, own);
+  const others = box ? await otherOfficesIn(institutionId, box) : [];
+  const map = buildLocalOfficeMap(
+    states,
+    own,
+    others.map((o) => ({ latitude: Number(o.latitude), longitude: Number(o.longitude) })),
+  );
+  if (!map) return { localMap: null, mappedOffices: 0 };
+
+  // A map with one dot for nine offices misleads, so wait until most offices are placed.
+  if (map.dots.length < Math.max(1, Math.ceil(totalOffices * MIN_MAPPED_SHARE))) {
+    return { localMap: null, mappedOffices: map.dots.length, mapPending: true, ...(await marketCompetitors(institutionId)) };
+  }
+  const { othersInFrame: _inFrame, ownWeightInFrame, ...localMap } = map;
+  void _inFrame;
+  void ownWeightInFrame;
+  const approxOffices = points.filter((p) => p.approx).length;
+  return { localMap, mappedOffices: map.dots.length, approxOffices, ...(await marketCompetitors(institutionId)) };
 }
 
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
@@ -44,7 +187,7 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
      WHERE institution_id = ${institutionId}
      GROUP BY year
      ORDER BY year`;
-  if (byYear.length === 0) return null;
+  if (byYear.length === 0) return getCreditUnionFootprint(institutionId);
   const latestYear = Number(byYear[byYear.length - 1].year);
   const [byState, topMarkets] = await Promise.all([
     sql<Array<{ state: string; branches: number; deposits: string }>>`
@@ -62,11 +205,84 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
        ORDER BY 3 DESC
        LIMIT 8`,
   ]);
+  const points =
+    byState.length > 0 && byState.length <= LOCAL_MAP_MAX_STATES
+      ? await sql<OfficePoint[]>`
+          SELECT latitude, longitude, INITCAP(city) AS city, COALESCE(deposits, 0) AS weight
+            FROM institution_branch_deposits
+           WHERE institution_id = ${institutionId} AND year = ${latestYear}
+             AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      : [];
   return {
+    source: "fdic_sod",
     latestYear,
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
     topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
+    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true, Number(byYear[byYear.length - 1]?.branches ?? 0))),
+  };
+}
+
+/**
+ * A credit union's offices from NCUA's branch file (latest quarter only, so one year).
+ * NCUA reports no deposits by office, so deposit fields are zero and the card hides them;
+ * markets are the cities with the most offices.
+ */
+async function getCreditUnionFootprint(institutionId: number): Promise<BranchFootprint | null> {
+  const [byState, topCities, [latest]] = await Promise.all([
+    sql<Array<{ state: string; branches: number }>>`
+      SELECT state, COUNT(*)::int AS branches
+        FROM credit_union_branches
+       WHERE institution_id = ${institutionId} AND state IS NOT NULL
+       GROUP BY state
+       ORDER BY branches DESC`,
+    sql<Array<{ city: string; branches: number }>>`
+      SELECT INITCAP(city) || ', ' || state AS city, COUNT(*)::int AS branches
+        FROM credit_union_branches
+       WHERE institution_id = ${institutionId} AND city IS NOT NULL AND state IS NOT NULL
+       GROUP BY 1
+       ORDER BY 2 DESC, 1
+       LIMIT 8`,
+    sql<Array<{ branches: number; report_date: unknown }>>`
+      SELECT COUNT(*)::int AS branches, MAX(report_date) AS report_date
+        FROM credit_union_branches
+       WHERE institution_id = ${institutionId}`,
+  ]);
+  const total = Number(latest?.branches ?? 0);
+  if (total === 0) return null;
+  const points =
+    byState.length > 0 && byState.length <= LOCAL_MAP_MAX_STATES
+      ? await sql<OfficePoint[]>`
+          -- An office not geocoded yet is drawn at the middle of the known offices in its
+          -- town (bank branches from the last two SOD years and geocoded credit union offices).
+          SELECT COALESCE(b.latitude, t.latitude) AS latitude,
+                 COALESCE(b.longitude, t.longitude) AS longitude,
+                 INITCAP(b.city) AS city,
+                 (b.latitude IS NULL) AS approx
+            FROM credit_union_branches b
+            LEFT JOIN LATERAL (
+              SELECT AVG(k.latitude) AS latitude, AVG(k.longitude) AS longitude FROM (
+                SELECT d.latitude, d.longitude FROM institution_branch_deposits d
+                 WHERE d.state = b.state AND upper(d.city) = upper(b.city)
+                   AND d.year >= ${latestSodYear(new Date()) - 1} AND d.latitude IS NOT NULL
+                UNION ALL
+                SELECT c.latitude, c.longitude FROM credit_union_branches c
+                 WHERE c.state = b.state AND upper(c.city) = upper(b.city) AND c.latitude IS NOT NULL
+              ) k
+            ) t ON b.latitude IS NULL
+           WHERE b.institution_id = ${institutionId}
+             AND COALESCE(b.latitude, t.latitude) IS NOT NULL`
+      : [];
+  const reportDate = dateStr(latest.report_date);
+  const year = reportDate ? Number(reportDate.slice(0, 4)) : new Date().getUTCFullYear();
+  return {
+    source: "ncua",
+    reportDate,
+    latestYear: year,
+    byYear: [{ year, branches: total, deposits: 0 }],
+    byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: 0 })),
+    topMarkets: topCities.map((r) => ({ msa_name: r.city, branches: Number(r.branches), deposits: 0 })),
+    ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], false, total)),
   };
 }
 
@@ -213,6 +429,108 @@ export async function getRegulatorInfo(institutionId: number): Promise<Regulator
     cu_charter_type: text(row.cu_charter_type),
     state_agency_name: text(row.state_agency_name),
     state_agency_url: text(row.state_agency_url),
+  };
+}
+
+export interface EnforcementActionRow {
+  /** "OCC", "FRB", or a state banking department ("STATE_NJ"); enforcementAgencyLabel names it. */
+  agency: string;
+  party_name: string;
+  /** True when the action names the holding company rather than this institution. */
+  against_holding_company: boolean;
+  action_type: string | null;
+  subject: string | null;
+  start_date: string | null;
+  termination_date: string | null;
+  penalty_amount: number | null;
+  document_url: string | null;
+}
+
+export interface EnforcementRecord {
+  /** Agencies whose list is loaded and whose actions could name this institution. */
+  agenciesChecked: string[];
+  /**
+   * Orders with no end date on file that began in the last OPEN_ACTION_YEARS years, newest
+   * first. The agencies don't always record an end date, so these may have ended; they are
+   * never called active.
+   */
+  open: EnforcementActionRow[];
+  /** Everything else (ended, a penalty alone, or older), newest first, at most ENFORCEMENT_RECENT_LIMIT. */
+  past: EnforcementActionRow[];
+  pastCount: number;
+  /** Date the lists were last read. */
+  asOf: string | null;
+}
+
+const ENFORCEMENT_RECENT_LIMIT = 5;
+export const OPEN_ACTION_YEARS = 10;
+
+/** A civil money penalty with no order attached is done once assessed; it has no end date. */
+export function isPenaltyOnly(actionType: string | null | undefined): boolean {
+  return Boolean(actionType && /penalty|\bCMP\b/i.test(actionType) && !/cease|desist|agreement|order|directive|prompt corrective/i.test(actionType));
+}
+
+/** No end date on file, more than a penalty, and recent enough that it may still be in force. */
+export function isOpenAction(action: Pick<EnforcementActionRow, "termination_date" | "action_type" | "start_date">, today: Date = new Date()): boolean {
+  if (action.termination_date || isPenaltyOnly(action.action_type) || !action.start_date) return false;
+  const cutoff = new Date(today);
+  cutoff.setUTCFullYear(cutoff.getUTCFullYear() - OPEN_ACTION_YEARS);
+  return action.start_date >= cutoff.toISOString().slice(0, 10);
+}
+const agencyOrder = (a: string) => (a === "OCC" ? 0 : a === "FRB" ? 1 : 2);
+const AGENCY_FOR_REGULATOR: Record<string, "OCC" | "FRB"> = { OCC: "OCC", "Federal Reserve": "FRB" };
+
+/**
+ * OCC and Federal Reserve enforcement actions naming this bank or its holding company.
+ * Null for credit unions, and for a bank with none on file whose regulator's list isn't
+ * loaded (FDIC-supervised banks: FDIC orders aren't loaded), so "none" is only ever said
+ * where the list was actually checked.
+ */
+export async function getEnforcementRecord(institutionId: number): Promise<EnforcementRecord | null> {
+  const [inst] = await sql<Array<Record<string, unknown>>>`
+    SELECT charter_type, primary_regulator, holding_company_name, state_code, charter_agency FROM institution_sources WHERE id = ${institutionId}`;
+  if (!inst || inst.charter_type !== "bank") return null;
+  const holding = inst.holding_company_name ? String(inst.holding_company_name) : null;
+  const loaded = await sql<Array<Record<string, unknown>>>`
+    SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions GROUP BY agency`;
+  const loadedAgencies = new Set(loaded.map((r) => String(r.agency)));
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT agency, party_name, institution_id, action_type, subject, start_date, termination_date,
+           penalty_amount, document_url
+      FROM institution_enforcement_actions
+     WHERE institution_id = ${institutionId}
+        OR (${holding}::text IS NOT NULL AND holding_company = ${holding})
+     ORDER BY start_date DESC NULLS LAST, id DESC`;
+  const actions: EnforcementActionRow[] = rows.map((r) => ({
+    agency: String(r.agency),
+    party_name: String(r.party_name),
+    against_holding_company: r.institution_id === null || Number(r.institution_id) !== institutionId,
+    action_type: r.action_type ? String(r.action_type) : null,
+    subject: r.subject ? String(r.subject) : null,
+    start_date: dateStr(r.start_date),
+    termination_date: dateStr(r.termination_date),
+    penalty_amount: numOrNull(r.penalty_amount),
+    document_url: r.document_url ? String(r.document_url) : null,
+  }));
+  const regulatorAgency = AGENCY_FOR_REGULATOR[String(inst.primary_regulator ?? "")];
+  const checked = new Set<string>();
+  if (regulatorAgency && loadedAgencies.has(regulatorAgency)) checked.add(regulatorAgency);
+  // The Fed supervises holding companies, so its list is checked for any bank that has one.
+  if (holding && loadedAgencies.has("FRB")) checked.add("FRB");
+  // A state-chartered bank's own state department, when that state's orders are loaded.
+  const stateAgency = inst.charter_agency === "State" && inst.state_code ? stateAgencyCode(String(inst.state_code).trim()) : null;
+  if (stateAgency && loadedAgencies.has(stateAgency)) checked.add(stateAgency);
+  for (const a of actions) checked.add(a.agency);
+  if (checked.size === 0) return null;
+  const open = actions.filter((a) => isOpenAction(a));
+  const past = actions.filter((a) => !isOpenAction(a));
+  const latest = loaded.map((r) => dateStr(r.fetched_at)).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
+  return {
+    agenciesChecked: [...checked].sort((a, b) => agencyOrder(a) - agencyOrder(b) || a.localeCompare(b)),
+    open,
+    past: past.slice(0, ENFORCEMENT_RECENT_LIMIT),
+    pastCount: past.length,
+    asOf: latest,
   };
 }
 

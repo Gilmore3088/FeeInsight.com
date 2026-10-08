@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { rollBackOffTaxonomyFees, taxonomyFeeKeys } from "./off-taxonomy-rollback";
+import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees, taxonomyFeeKeys } from "./off-taxonomy-rollback";
+import { RETIRED_CATEGORY_KEYS } from "@/lib/fee-fold";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -24,9 +25,11 @@ const offTaxonomy = {
 };
 
 describe("Hamilton off-taxonomy rollback", () => {
-  it("keeps exactly the taxonomy's fee categories", () => {
+  // The 15 categories folded into the top 50 stay valid here: the fold step re-files them, and
+  // a fee with no home goes through its second look rather than this rollback.
+  it("keeps exactly the taxonomy's fee categories and the folded ones", () => {
     const keys = taxonomyFeeKeys();
-    expect(new Set(keys)).toEqual(new Set(Object.values(FEE_FAMILIES).flat()));
+    expect(new Set(keys)).toEqual(new Set([...Object.values(FEE_FAMILIES).flat(), ...RETIRED_CATEGORY_KEYS]));
     expect(keys).not.toContain("zipper_bags");
   });
 
@@ -91,5 +94,19 @@ describe("Hamilton off-taxonomy rollback", () => {
       rollBackOffTaxonomyFees(asDb(db), { runId: 214, batchId: "agentic-run-214", dryRun: false }),
     ).resolves.toEqual([]);
     spy.mockRestore();
+  });
+
+  it("restores an earlier off-taxonomy takedown whose category is in the taxonomy today", async () => {
+    const db = createDbMock([{ ...offTaxonomy, canonical_fee_key: "safe_deposit_box" }]);
+
+    const restores = await restoreFeesNowInTaxonomy(asDb(db), { runId: 8, dryRun: false });
+
+    expect(restores.map((fee) => fee.feePublishedId)).toEqual([7001]);
+    const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("SET rolled_back_at = NULL");
+    expect(query).toContain("canonical_fee_key = ANY($1::text[])");
+    expect(query).toContain("NOT EXISTS");
+    expect(params[2]).toBe("category_outside_taxonomy");
+    expect(JSON.stringify(db.mock.calls)).toContain("hamilton.off_taxonomy_restored");
   });
 });

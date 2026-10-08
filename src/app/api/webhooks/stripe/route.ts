@@ -1,8 +1,9 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { getStripe, getWebhookSecret } from "@/lib/stripe";
 import { withTransaction } from "@/lib/data-store/connection";
-import { applyStripeEvent, type StripeEventEffects } from "@/lib/stripe-webhook";
+import { applyStripeEvent, recordStripeEvent, type StripeEventEffects } from "@/lib/stripe-webhook";
 import { sendProWelcomeEmail } from "@/lib/email/pro-welcome";
+import { trackServerEvent } from "@/lib/analytics-server";
 import { alertDuplicateReportPayment, deliverPaidReport } from "@/lib/leads/report-paid";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
@@ -32,14 +33,7 @@ async function handlePOST(req: Request) {
   let effects: StripeEventEffects | null = null;
   try {
     await withTransaction(async (tx) => {
-      // Atomic idempotency: INSERT ON CONFLICT DO NOTHING
-      const result = await tx`
-        INSERT INTO stripe_events (id, event_type, stripe_customer_id, payload_json)
-        VALUES (${event.id}, ${event.type}, ${extractCustomerId(event)}, ${JSON.stringify(event)})
-        ON CONFLICT (id) DO NOTHING
-      `;
-
-      if (result.count === 0) return; // Already processed
+      if (!(await recordStripeEvent(tx, event))) return; // Already processed
 
       effects = await applyStripeEvent(tx, event);
     });
@@ -49,8 +43,10 @@ async function handlePOST(req: Request) {
   }
 
   // After commit, so a rolled-back event never sends; never throws.
+  // One welcome per account checkout just activated, so it also counts activations.
   for (const welcome of (effects as StripeEventEffects | null)?.welcome ?? []) {
     await sendProWelcomeEmail(welcome);
+    await trackServerEvent("pro_activated", { source: "webhook" });
   }
   for (const paid of (effects as StripeEventEffects | null)?.reportPaid ?? []) {
     await deliverPaidReport(paid);
@@ -60,16 +56,6 @@ async function handlePOST(req: Request) {
   }
 
   return new Response(JSON.stringify({ received: true }), { status: 200 });
-}
-
-function extractCustomerId(event: Stripe.Event): string | null {
-  const obj = event.data.object as unknown as Record<string, unknown>;
-  const customer = obj.customer;
-  if (typeof customer === "string") return customer;
-  if (customer && typeof customer === "object" && "id" in (customer as object)) {
-    return (customer as { id: string }).id;
-  }
-  return null;
 }
 
 export const POST = withApiRoutePolicy("api.webhooks.stripe", "POST", handlePOST);

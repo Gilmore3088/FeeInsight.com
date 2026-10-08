@@ -3,7 +3,198 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-08
+
+**When an agent breaks, recovery fixes it without asking first.** James, 12:26 UTC ("Fix" on the
+recovery card), after a deploy broke every Hamilton publish at 12:06 ("Hamilton is blocked. We
+need a way to automate resolution when this happens"). A scheduled recovery check finds the break,
+opens a fix PR, merges it on green, proves the failed work reran, and tells James after. Revert-only
+and alert-only were the other options. What it may and may not do is in `.claude/skills/recover/SKILL.md`.
+It never touches data with SQL, never deletes, and never makes paid calls.
+
+**The institution report stays quoted on request; free instant reports lead to the paid offers.**
+James, 11:55 UTC: "I'm fine with quotes for request" (no published $300, no "from $300" anchor), and
+"I'd like to give a free instant report to upsells". Quotes keep running through /admin/leads and
+/pay/report. Which free report carries the upsell (the existing national and district reports, a new
+own-bank snapshot, or both) is the open choice in the marketing thread. Small banks sit on the $1,500
+Pro tier.
+
+**Pro moves to three tiers; the monthly brief stays free; banks and credit unions get equal weight.**
+James, 11:35 UTC, after the pricing and competitive strategy pages. Pro becomes three tiers at
+$1,500, $3,000 and $5,000 a year ("If we need to bump prices later we can. 5k for an on demand
+consultant isn't a lot"). The Stripe payments thread owns `src/app/subscribe/pricing.ts`, the Stripe
+prices, and the open tier questions (asset breakpoints, a monthly option, how the tier is picked).
+Marketing copy and the plan follow its answers. The free Fee Pulse monthly email stays free and is
+positioned against Moebs's paid news product (task 2.27). Marketing gives banks and credit unions equal
+weight. The report price is still open: it stays "Priced on request" until James answers.
+
+**Eleven marketing gaps added; the admin stays simple.** James, 08:57 UTC. After the pricing and
+competitive strategy research, he added tasks 2.25-2.35 to `growth-os/BUILD-PLAN.md`: lead follow-up,
+pricing rollout, Fee Pulse positioning, a method and accuracy page, a live sample report, a first
+case study, comparison pages, a credit union campaign, association partners, email scores and sales
+in the scoreboard. "Just ensure cleanness on the admin side. Simplicity": every admin screen for
+marketing lives inside /admin/growth, which opens on items to review with everything else in tabs.
+No new admin pages for marketing.
+
+**The taxonomy is the top 50 fee types, and every fee is fitted into them.** James, Oct 7 ("Fold
+into existing", no new categories) and Oct 8 (the About page said 61: "do the top 50 and
+try to fit everything there"; "Use extensive and comprehensive text matching"), 09:05 UTC ("Merge
+caps": the NSF daily cap joins the overdraft daily cap, and International ATM stays one of the
+50). Fifteen categories left `FEE_FAMILIES`; `src/lib/fee-fold.ts` re-files each of their fees by
+its own wording, and a bare name by the schedule section above it. At 09:47 UTC he chose to keep
+Appraisal as its own type (folding it into loan origination would move that median), and at
+11:44 UTC picked Mortgage Lien Release (with reconveyance) to fold into Other Lending Fee in its
+place. He also asked to see the fees with no home before any
+are archived, so Hamilton's fold step flags them but keeps them live
+(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
+
+**One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
+automated loop that extends the existing content and email workflows and runs on the same run
+ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on
+GitHub. Free reports are described as "instant". At 07:20 he approved the plan with its
+recommended answers: a new agent, BERNAYS, owns press, events and partners; 3 LinkedIn drafts a
+week; agents that change code run as scheduled Claude Code sessions that open PRs; the growth
+budget is $5 a day and $60 a month; 3 follow-up email drafts after a free report; loop
+infrastructure is built before the agents; and each task is a GitHub issue labeled `growth`.
+Nothing is scheduled until he says go after a two-week dry run. Lesson for Claude: ask him when a
+choice changes scope, rather than picking a default.
+
+**A second agent team for marketing: GrowthOS.** James, 02:26 UTC, proposed a marketing team built
+from the Marketing Skills library (MIT, copied into `.agents/skills/`). Week 1 is in `growth-os/`:
+the manager is DRAPER (Atlas is already the pipeline orchestrator), SHERLOCK does market
+intelligence, GitHub issues labeled `growth` are the work queue, and nothing is scheduled until
+James says go. The team runs as Claude Code routines because its output is GitHub issues and PRs;
+any app-side paid step gets its own `ANTHROPIC_API_KEY_GROWTH` slot and `agent:growth` budget.
+Every public number passes `growth-os/context/editorial-policy.md`. James asked (04:20 UTC) where
+SEO and social were: ERNEST (SEO) moved up to start with the first run, and MURROW (social) was
+added to own LinkedIn through the existing content workflow, not a second pipeline.
+
+**Darwin releases held fees that pass Claude's review.** James, 02:16 UTC, tapped "Turn on" on the
+held-fees card. The bar he set was his own word plus at least 19 of 20 passes right in a hand
+check; review v10 met it (19 right, 1 arguable; earlier rounds 17, 18, 18). Released fees carry the
+`darwin_released_hold` flag so the release can be found and rolled back; a fee taken down later
+is archived, never deleted.
+
+## 2026-10-07
+
+**Hamilton gets the new market study and the merger screen.** James, 07:24 UTC ("Go on market",
+"Go on merger") after the previews. The Improving Hamilton thread builds both; open PRs 441 and
+447 carry them.
+
+**The 13,215 bad FFIEC rows leave the live call-report table.** James, 07:18 UTC, typed "Archive
+the 13,215 FFIEC financial rows." Written by an old loader on Aug 10, their service charges were
+about a million times too large and most duplicated good FDIC and NCUA rows. They move to a
+restorable archive table; readers use only `fdic` and `ncua` rows (#440). Bank overdraft income now
+comes from the FFIEC bulk call report step instead (#369, #386).
+
+**Every state report gets the Tennessee-style map and detail.** James, 07:11 UTC ("I love the state
+map... Need that for every state"). Open PR 436 carries it.
+
+**Each state's 10 to 15 largest institutions come first.** James, 03:07 UTC: find all fees for the
+largest institutions in every state, which likely hold over half the deposits and have pricing
+power. A shared ranking of each state's top 15 (#355) now goes first in Magellan's search (#356)
+and Atlas's state order (#359).
+
+**Taking a fee down is a last resort: a second look, a decision log, and a way back.** James,
+01:20 UTC (Live board cleanup thread): "we need to constantly learn from fees we pass or scrap...
+It needs to be last case decision, picked over multiple times, decision log. And it's never
+deleted, just archive and can always be revisited." A Hamilton check that fails a live fee logs
+it as `takedown_pending` in `pipeline_feedback` and leaves it live; only a later run (at least
+12 hours on) that fails it again takes it down (`hamilton/second-look.ts`). A fee that passes
+in between is logged `takedown_cleared`. Takedowns stay soft (`rolled_back_at` plus the reason),
+every takedown and restore is synced to `pipeline_feedback`, and a check that is fixed brings
+back the fees it now passes. Started with the source check and the category guard. The rules
+re-check, outlier range and off-taxonomy checks follow.
+
+**The public sample report names a real bank.** James, 01:00 UTC, in the value funnel thread.
+The sample is a live report for one real community bank and its named competitors, with the
+source link on every fee, rather than an anonymized copy without links. Every figure on it is
+already public on the institution pages. James approved the previews and said to move forward
+at 01:37 UTC, so links to the sample show across the site whenever a sample market qualifies.
+
+**Scrapping a fee is a last resort: looked at more than once, logged, archived, never deleted.**
+James, 01:20 UTC ("we need to constantly learn from fees we pass or scrap ... It needs to be last
+case decision, picked over multiple times, decision log. And it's never deleted, just archive and
+can always be revisited"). Every pass or scrap feeds `pipeline_feedback`. Darwin's held-fee pass
+(`verify.release` v4) now takes two looks at least 20 hours apart, the second against the bank's
+current copy, before a reject is final; a fee later found on the schedule gets a `restored` note.
+
+**Held fees with no category fold into an existing one; nothing beyond the ~50 tracked
+categories gets its own.** James, 01:18 UTC, chose "Fold into existing" on the Knox held-lines
+card, then: "do our best to match fees to the right category, but at some point we just need to
+stop caring about anything beyond the top 50." Knox rules v26 (`FOLDED_PATTERNS` in
+`knox/rules.ts`) file returned mail, bad address, fax and excess-withdrawal fees under account
+research, collection items and foreign checks under check cashing, and loan cancellation, credit
+report and UCC fees under loan origination, as the taxonomy and answer keys already map them.
+Groups with no right home (membership, phone transfers, credit card, uncollected funds,
+returned statements) stay held rather than skew a featured fee.
+
+**Nothing Knox sets aside is deleted.** James, 01:20 UTC: "We can't just aimless toss. It needs
+to be last case decision, picked over multiple times, decision log. And it's never deleted, just
+archive and can always be revisited." A held line is set aside (`knox_set_aside`) only after three
+rules versions have read it; every read is logged in `pipeline_feedback`
+(`knox.held:raw:<id>`, versions checked, outcome), the row stays, and every later rules version
+re-reads it.
+
 ## 2026-10-06
+
+**Value funnel answers.** James, 23:49 UTC, in the value funnel thread.
+1. The report rule falls back to Fed district peers when a state has too few (PR 302).
+2. No "from $300" anchor on the report offer.
+3. Pro pricing stays as it is ($499.99/mo or $5,000/yr per seat); no per-institution plan.
+4. Fee-change alerts on a followed institution are free; Pro is sold on Hamilton, not alerts.
+5. Every paid report ends with "Track this market in Hamilton", linking to the Pro plans.
+
+**One marketing email a month per reader.** James, 17:53 UTC. A reader who picked a state gets
+that state's edition instead of the national email; everyone else (and readers in a state too
+thin for its own edition) gets one national email. Product and site updates ride in a one-line
+"What's new" in that email, never as their own sends. Built in `src/lib/agents/marketing/`.
+
+**Darwin's held-fee pass acts on rejects only; every release stays held.** James, 16:49 UTC,
+chose "Reject only" on the Darwin thread's card after the v1 spot check found 12 of 20 releases
+right. Held fees the bank's schedule doesn't state leave the held pile with a `not_on_schedule`
+note (`verify.release` v3). Releases stay a dry run until the stricter Claude review passes its
+own spot check (at least 19 of 20 right), and switching them on needs James's word.
+
+**Darwin's held fees get a way out: release or reject against the bank's schedule.** James, 13:20
+UTC ("i need you to close all those gaps with the agents"), taken as the go-ahead on the
+held-fees card's recommended option. Each fee Darwin holds (outside its range or far from peers)
+is checked with the shared accuracy check: not stated is rejected with the reason; stated and held
+only as a peer outlier is released; stated but outside the hand-set range stays for a person,
+since Hamilton's publish gate uses that range. It runs as a dry run on live data first
+(`verify.release` v1 records verdicts only) and acts only after the dry run is reported.
+
+**Institution reports may compare thin states against Fed district peers.** James picked "District
+fallback" on the decision card at 14:34 UTC: when a state has too few peers with rich fee data, the
+report compares against same-charter peers in the bank's Fed district, labelled as such. Only 6 of
+109 state markets passed the state-only rule (card context, 14:11 UTC). The build is question 1 of
+the funnel thread's plan and waits for his answers there.
+
+**The mailing address stays blank until the state registration comes through.** James, 13:03 UTC
+("its blank for right now. im waiting on the state"). `MARKETING_MAILING_ADDRESS` is not set and
+nobody asks him for it; until it exists no marketing email can send, which is the intended state.
+
+**Every agent gets the same fixed daily health check, compared with yesterday.** James, about
+05:40 UTC ("a clear process to break this into manageable chunks that stay consistent so any new
+or change is easy to spot"; chose "Build it" on the Atlas audit thread). Each agent's AGENTS.md has
+a "Daily health check" table of rules, each tested by one number; `src/lib/agents/agent-health.ts`
+reads them read-only with the daily scoreboard step and stores them in
+`pipeline_scoreboard_snapshots.detail.agent_health`. The scoreboard step's summary names every
+broken rule and every number that moved more than 25% since yesterday. A change to an agent's
+selector or behaviour updates its table and the health check in the same PR.
+
+**Each state gets its own monthly edition for readers who pick it.** James, 07:42 UTC ("50 different
+emails based on the states"). Readers choose a state at signup or on the confirm page and join that
+state's MailerLite group; the marketing run drafts one edition per state with readers, from data
+alone (no model call), sent with the month's approval. Monthly rather than weekly, because
+published fee schedules barely change week to week (Claude's default; one setting to change).
+Drafts no longer need the postal address: the send step adds it (James, 07:23 UTC).
+
+**A monthly marketing agent drafts the emails; James approves each month before anything sends.**
+James, 07:02 and 07:03 UTC ("approve each month"). Hamilton's marketing run on the 1st scores last
+month's campaigns, picks two formats not used in three months (readers tire of the same email),
+writes them from live data, and drafts each as an A/B subject test in MailerLite. One approval in
+/admin/customers/marketing sends the month. Results and lessons go to `pipeline_feedback`.
 
 **The institution report is paid by card through Stripe.** James, 07:21 UTC ("pay should be via
 stripe"). James types the quoted price on a report request in /admin/leads, which gives a private
@@ -12,6 +203,11 @@ the request row, never the link. The Stripe webhook marks the request Paid, aler
 the requester their private report link. A quote is saved only when the report check says "ready to
 quote", so no one pays for a report built on thin data. The report stays "priced on request".
 
+**Work keeps going overnight without Allow taps.** James, 07:13 UTC ("i dont want it to stop because
+i have to check allow"). Threads skip any step that needs a tap and use a safe alternative (no
+force-push, reset or push to main; after a merge, merge `origin/main` and push normally). Reviews,
+merges to main, database and production changes wait in a list for him.
+
 **Magellan's upgrade plan runs in full; its fee-page classifier learns continuously and starts in
 shadow.** James, 05:41 UTC, on the Magellan Upgrade Plan
 (https://claude.ai/code/artifact/12c7e165-b7af-4aee-a356-cc0c4f5c15a8): tighten the main-link
@@ -19,6 +215,20 @@ check and re-search (agreed), a $250 paid-find trial (yes), classifier weights k
 a Magellan run step retrains ("Yes. Consistently reinforced"), no further plan upgrades, and the
 thread runs it. The classifier (`magellan_page_classifier`) only records its opinion until James
 reviews it; letting it decide is his call.
+
+**One Fee Insight header across the public site and Pro; Hamilton has four tabs.** James,
+00:22-00:33 UTC, on a decision card. Pro no longer swaps in its own header: the site header stays,
+and for Pro users its links are Hamilton's tabs, This month, My fees, Try a price and Reports ("a
+banker doesn't wake up wanting to model or watch"). The bank and its data, all changes, the
+reference pages, Admin and sign out sit in the account menu. No sidebar. Built in PR 89.
+
+**Every Hamilton output shows its audit trail; nothing is a black box.** James, 00:08 UTC. For
+regulatory work a figure has to be defensible. Each Briefing, Research, Model and Plan screen has a
+"How this was built" panel listing every source with its date, the method, every assumption
+(including figures the bank typed in) and whether it rests on market data alone. The bank's own fee
+lines link to its schedule with their publish date and verification record, and a CSV lists every
+institution behind a comparison with its source. The CEO one-pager and committee packet carry the
+same panel as an appendix. Built in PR 89; the stored audit record belongs to the Hamilton engine.
 
 **Threads push their own `claude/*` branches without asking.** James, 06:35 UTC, before two weeks
 abroad: `.claude/settings.json` moves `git push` from "ask" to "allow" for `claude/*` branches.
@@ -71,6 +281,21 @@ the moment they were made. The same message set out Hamilton's faces (fee verifi
 publisher, research publisher, industry expert, paid-client workspace); the Hamilton agent guide
 describes all four. Built in PR 170.
 
+## 2026-10-05
+
+**Hamilton is a neutral research and modeling workspace, never a fee recommender.** James,
+23:27-23:39 UTC. Hamilton follows the same path every time: research, compare, model any price
+the bank wants to test, refine with the bank's own figures, plan the change, then build the
+report. It never tells a bank to raise or change a fee. It gives an opinion only when asked, and
+then names the objective it assumes. Dollar totals rest on the bank's own volume. Implementation
+is its own step: approvals, customer notice (30 days for an increase under Reg DD, none for a
+decrease), systems, the Reg E opt-in notice, the effective date and monitoring.
+
+The nav is Briefing, Research, Model, Reports, Watch and Data. Ask Hamilton is a docked bar on
+every screen; its work lands on the page, not in a chat log. Overdraft is the flagship example.
+The look follows James's "living memo" option, rendered in the Fee Insight brand.
+Mockup: https://claude.ai/artifact/Cjx5VmTFS2zhpi6bM7YQv1. Built in PR 89.
+
 **The institution report has no fixed price yet; the granular data stays paid.** James, 23:31 UTC
 Oct 5 and 00:15 UTC Oct 6. It will be a $300 report once it is ready, but for now a request is
 quoted by hand. Free reports give value away (national and district medians only); per-bank fees
@@ -90,6 +315,14 @@ email them"). He uses Outlook and is already paying for several small services w
 yet. Pages offer an email link, never a scheduler; PR 178 changed the private report page's
 "Book 15 minutes" button to "Email us about this report". Any new paid service waits until a
 report has sold.
+
+**Atlas schedules by where the work is, and daily passes count only findable banks.** James,
+13:20 UTC ("i need you to close all those gaps with the agents", on the agent audits). Each
+state lane is ranked by its banks with open work or a recent error, and the busiest due lane
+goes first. A state stays on daily full passes only while more than 50 of its banks still have
+no link and could be found by a search. Dead ends wait for the quarterly re-check. A state with
+paid-find targets or banks with no website still due a website search also stays daily, so
+those paid steps keep running inside the paid caps (coordinator, 13:39 UTC).
 
 ## 2026-10-05
 
@@ -215,3 +448,22 @@ Already-live thin institutions stay live but stay queued for re-review.
 
 **Crawl each state monthly with a quarterly re-check, with a state expert agent per state.** James.
 Built in PR 75 (state experts, monthly full pass, quarterly re-check).
+
+## 2026-10-08
+
+**Pro is described as one plan for up to 5 people, not per seat.** James, 08:19 UTC, Stripe
+thread. One checkout ($499.99 a month or $5,000 a year) already gives an institution account 5
+logins (`WORKSPACE_SEAT_LIMIT`), so the site now says "for up to 5 people" instead of "per
+seat". Prices and Stripe are unchanged. Answers build-plan task 0.11.
+
+**Pro has three price tiers by institution size, each for up to 5 people.** James, 11:35 and
+11:47 UTC, marketing and Stripe threads. Under $500M in assets $1,500 a year, $500M to $2B
+$3,000, over $2B $5,000. Monthly is offered too; annual equals about 10 monthly payments, so
+monthly is $150 / $300 / $500 (James 12:03: "10 at 150"). A bank's tier comes
+from its own assets (`institution_sources.asset_size`), worked out again at checkout; with no
+asset size on file, the buyer is asked to email. Consultants and other non-banks pay the middle
+tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton reports
+(James chose a report cap 12:04; `CONSULTANT_MONTHLY_REPORTS`, 10 a month, James 12:10); past it they move
+to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The site sets up its own Stripe prices by lookup key (James 12:53: "you can do
+everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
+(`src/lib/pro-tiers.ts`).

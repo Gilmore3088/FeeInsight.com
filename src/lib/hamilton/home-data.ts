@@ -14,6 +14,7 @@ import { hasAnthropicApiKey } from "@/lib/ai-provider";
 import { recordProRequest } from "@/lib/agents/run-store";
 import type { ThesisOutput, ThesisSummaryPayload } from "./types";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
+import { parseCompetitorChangeDetail, type CompetitorChangeDetail } from "@/lib/hamilton/competitor-alert-detail";
 
 // ---------------------------------------------------------------------------
 // Signal/alert types (Plan 02 additions)
@@ -29,6 +30,8 @@ export interface SignalEntry {
   createdAt: string;
   evidencePolicy?: HamiltonEvidencePolicy | null;
   providerCallQueued?: boolean;
+  /** Prices behind a competitor fee change alert, shown as a report exhibit. */
+  competitorChange?: CompetitorChangeDetail | null;
 }
 
 export interface AlertEntry {
@@ -274,7 +277,8 @@ async function fetchRecentSignals(
             body,
             created_at,
             source_json ->> 'evidence_policy' AS evidence_policy,
-            COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
+            COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued,
+            CASE WHEN signal_type = 'hamilton_competitor_fee_change' THEN source_json END AS competitor_json
           FROM hamilton_signals
           WHERE institution_id = ANY(${scopedInstitutionIds}::text[])
           ORDER BY created_at DESC
@@ -290,7 +294,8 @@ async function fetchRecentSignals(
             body,
             created_at,
             source_json ->> 'evidence_policy' AS evidence_policy,
-            COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
+            COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued,
+            CASE WHEN signal_type = 'hamilton_competitor_fee_change' THEN source_json END AS competitor_json
           FROM hamilton_signals
           ORDER BY created_at DESC
           LIMIT ${limit}
@@ -305,6 +310,7 @@ async function fetchRecentSignals(
       createdAt: String(r.created_at),
       evidencePolicy: r.evidence_policy == null ? null : (String(r.evidence_policy) as HamiltonEvidencePolicy),
       providerCallQueued: r.provider_call_queued === true,
+      competitorChange: parseCompetitorChangeDetail(r.competitor_json),
     }));
   } catch {
     return [];
@@ -408,7 +414,8 @@ export async function fetchHomeBriefingSignals(
 ): Promise<HomeBriefingSignals> {
   const institutionIds = normalizeHomeInstitutionScope(options.institutionIds ?? []);
   const [recentFive, alerts, recentThree] = await Promise.all([
-    fetchRecentSignals(5, institutionIds),
+    // Enough rows that pipeline housekeeping, which the page leaves out, never crowds out real changes.
+    fetchRecentSignals(25, institutionIds),
     fetchPriorityAlerts(userId, 3, institutionIds),
     fetchRecentSignals(3, institutionIds),
   ]);

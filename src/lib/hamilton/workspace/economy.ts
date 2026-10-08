@@ -1,8 +1,10 @@
 /**
  * The economy behind a fee, shaped for Hamilton's economist role: the state and national
  * unemployment rates, payroll growth, the fed funds rate, consumer and bank-service price
- * inflation, and the district's latest Beige Book. Pure and client-safe; the series come
- * from getStateEconomicContext (fed_economic_indicators, fed_beige_book).
+ * inflation, the district's latest Beige Book, the latest FOMC rate decision and the district
+ * Reserve Bank's newest banking research. Pure and client-safe; the inputs come from
+ * getStateEconomicContext (fed_economic_indicators, fed_beige_book, fed_fomc_minutes,
+ * fed_publications).
  */
 
 import type { IndicatorSeries, StateEconomicContext } from "@/lib/data-store/economic-context";
@@ -88,6 +90,33 @@ export function economicBackdrop(
       }
     : null;
 
-  if (indicators.length === 0 && !beigeBook) return null;
-  return { place, district, districtName, indicators, beigeBook };
+  const fomc = ctx.fomc
+    ? {
+        meetingDate: ctx.fomc.meeting_date,
+        text: ctx.fomc.policy_action,
+        source: {
+          label: "Minutes of the Federal Open Market Committee",
+          table: "fed_fomc_minutes",
+          url: ctx.fomc.source_url,
+          asOf: ctx.fomc.meeting_date,
+        } satisfies SourceRef,
+      }
+    : null;
+
+  const piece = ctx.district_research?.[0];
+  const districtResearch = piece
+    ? {
+        title: piece.title,
+        publishedAt: piece.published_at,
+        source: {
+          label: `Federal Reserve Bank of ${piece.bank}, via Fed in Print`,
+          table: "fed_publications",
+          url: piece.link,
+          asOf: piece.published_at,
+        } satisfies SourceRef,
+      }
+    : null;
+
+  if (indicators.length === 0 && !beigeBook && !fomc && !districtResearch) return null;
+  return { place, district, districtName, indicators, beigeBook, fomc, districtResearch };
 }

@@ -21,12 +21,13 @@ export type AnalyticsEvent =
   /** The welcome page after Stripe returns with success=true. */
   | "checkout_complete"
   | "upgrade_click"
-  | "book_walkthrough"
   | "hosted_report_view"
   /** A free national or district benchmark report was opened. */
   | "benchmark_report_view"
   /** A private institution report link (/market-report/[token]) opened. */
   | "market_report_view"
+  /** The public sample report opened while it is live (value funnel A5). */
+  | "sample_report_view"
   /** The private pay page for a quoted institution report (/pay/report/[token]) opened. */
   | "report_pay_view"
   /** The pay page shown after Stripe confirmed the card payment. */

@@ -21,6 +21,12 @@ type SqlTag = typeof sql;
  *     bank (`rejected_source_urls`) counts -2.
  * Peer hints come from the same platform nationwide: reusable paths that produced live
  * fees at one bank (too few to join the platform paths yet), best yield first.
+ *
+ * A bank's companion fee schedules (`institution_additional_sources`, role
+ * `consumer_supplement`: what the paid search, the companion finder or a person found
+ * beside its link) count too, once the ledger has judged them. So a schedule a person
+ * adds by hand, or one a paid search finds, teaches the free finders where such pages
+ * live on that platform, and a wrong or dead one counts against its path.
  */
 
 const MAX_PLATFORM_PATHS = 6;
@@ -46,6 +52,8 @@ export const LINK_YIELD_SCORE: Record<string, number> = {
   thin_link: -1,
   wrong_document: -2,
   dead_link: -2,
+  business_schedule: -2,
+  confirmed_wrong_fees: -2,
 };
 /** A link the ledger has not judged yet. */
 const UNJUDGED_SCORE = 1;
@@ -73,12 +81,15 @@ export interface PathFactRow {
   yield_kind?: string | null;
   /** Live fees the link produced, from the ledger row's weight. */
   live_fees?: number | string | null;
+  /** A companion page: counts only once the ledger has judged it. */
+  companion?: boolean | null;
 }
 
 /** Folds one bank's fee link and rejected pages into the platform's path facts. */
 export function addPathFacts(facts: PathFacts, row: PathFactRow): void {
   const path = pathOf(row.url);
   const kind = row.yield_kind ?? null;
+  if (!kind && row.companion) return;
   const score = kind ? (LINK_YIELD_SCORE[kind] ?? 0) : UNJUDGED_SCORE;
   bump(facts.found, path, score);
   if (score > 0) bump(facts.banks, path);
@@ -183,6 +194,29 @@ export function createPlatformLearner(db: SqlTag, enabled = true): PlatformLearn
         for (const row of rows) {
           addPathFacts(facts, row);
           ownLinks.set(Number(row.id), pathOf(row.url));
+        }
+        if (ledger) {
+          const companions = await db<PathFactRow[]>`
+            SELECT extra.url, '[]'::jsonb AS rejected, outcome.kind AS yield_kind, outcome.weight AS live_fees,
+                   TRUE AS companion
+              FROM institution_additional_sources extra
+              JOIN institution_sources inst ON inst.id = extra.institution_id
+              LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+              JOIN LATERAL (
+                SELECT f.kind, f.weight
+                  FROM pipeline_feedback f
+                 WHERE f.institution_id = extra.institution_id
+                   AND f.check_name = ${LINK_YIELD_CHECK}
+                   AND f.source_url = extra.url
+                 ORDER BY f.updated_at DESC
+                 LIMIT 1
+              ) outcome ON TRUE
+             WHERE extra.document_role = 'consumer_supplement'
+               AND COALESCE(profile.platform, inst.cms_platform) = ${platform}
+               AND COALESCE(inst.status, 'active') = 'active'
+               AND extra.url IS DISTINCT FROM COALESCE(profile.canonical_source_url, inst.fee_schedule_url)
+          `;
+          for (const row of companions) addPathFacts(facts, row);
         }
         return facts;
       })().catch(() => emptyFacts()));

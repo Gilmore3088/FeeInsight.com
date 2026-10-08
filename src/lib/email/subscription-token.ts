@@ -14,10 +14,24 @@ import {
   EMAIL_PREFERENCES_PATH,
   FEE_ALERT_UNSUBSCRIBE_ACTION,
   FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  PRO_DIGEST_UNSUBSCRIBE_ACTION,
   SUBSCRIPTION_API_PATH,
 } from "./subscription-paths";
 
-export { EMAIL_PREFERENCES_PATH, FEE_ALERT_UNSUBSCRIBE_ACTION, FEE_ALERT_UNSUBSCRIBE_API_PATH, SUBSCRIPTION_API_PATH };
+export {
+  EMAIL_PREFERENCES_PATH,
+  FEE_ALERT_UNSUBSCRIBE_ACTION,
+  FEE_ALERT_UNSUBSCRIBE_API_PATH,
+  PRO_DIGEST_UNSUBSCRIBE_ACTION,
+  SUBSCRIPTION_API_PATH,
+};
+
+/** Account-level stop links: each signs its own action with the user id and address. */
+export type AccountUnsubscribeAction = typeof FEE_ALERT_UNSUBSCRIBE_ACTION | typeof PRO_DIGEST_UNSUBSCRIBE_ACTION;
+
+export function isAccountUnsubscribeAction(value: unknown): value is AccountUnsubscribeAction {
+  return value === FEE_ALERT_UNSUBSCRIBE_ACTION || value === PRO_DIGEST_UNSUBSCRIBE_ACTION;
+}
 
 export function isSubscriptionAction(value: unknown): value is SubscriptionAction {
   return value === "confirm" || value === "unsubscribe";
@@ -66,22 +80,38 @@ function feeAlertSubject(userId: number, email: string) {
   return `${userId}:${normalizeSubscriptionEmail(email)}`;
 }
 
-export function signFeeAlertUnsubscribeToken(userId: number, email: string, secret: string) {
-  return sign(FEE_ALERT_UNSUBSCRIBE_ACTION, feeAlertSubject(userId, email), secret);
+export function signFeeAlertUnsubscribeToken(
+  userId: number,
+  email: string,
+  secret: string,
+  action: AccountUnsubscribeAction = FEE_ALERT_UNSUBSCRIBE_ACTION,
+) {
+  return sign(action, feeAlertSubject(userId, email), secret);
 }
 
-export function verifyFeeAlertUnsubscribeToken(userId: number, email: string, token: string, secret: string): boolean {
+export function verifyFeeAlertUnsubscribeToken(
+  userId: number,
+  email: string,
+  token: string,
+  secret: string,
+  action: AccountUnsubscribeAction = FEE_ALERT_UNSUBSCRIBE_ACTION,
+): boolean {
   if (!secret || !token || !Number.isInteger(userId) || userId <= 0) return false;
-  return safeEqual(signFeeAlertUnsubscribeToken(userId, email, secret), token);
+  return safeEqual(signFeeAlertUnsubscribeToken(userId, email, secret, action), token);
 }
 
 /** The page link (a button, so prefetching scanners change nothing) and the RFC 8058 target. */
-export function feeAlertUnsubscribeUrls(userId: number, email: string, secret: string): { page: string; oneClick: string } {
+export function feeAlertUnsubscribeUrls(
+  userId: number,
+  email: string,
+  secret: string,
+  action: AccountUnsubscribeAction = FEE_ALERT_UNSUBSCRIBE_ACTION,
+): { page: string; oneClick: string } {
   const query = new URLSearchParams({
-    action: FEE_ALERT_UNSUBSCRIBE_ACTION,
+    action,
     uid: String(userId),
     email: normalizeSubscriptionEmail(email),
-    token: signFeeAlertUnsubscribeToken(userId, email, secret),
+    token: signFeeAlertUnsubscribeToken(userId, email, secret, action),
   }).toString();
   return {
     page: `${siteBase()}${EMAIL_PREFERENCES_PATH}?${query}`,
@@ -109,4 +139,28 @@ export function subscriptionPageUrl(action: SubscriptionAction, email: string, s
 /** RFC 8058 one-click target for the List-Unsubscribe header (mail clients POST here). */
 export function oneClickUnsubscribeUrl(email: string, secret: string) {
   return `${siteBase()}${SUBSCRIPTION_API_PATH}?${linkQuery("unsubscribe", email, secret)}`;
+}
+
+/**
+ * The "known reader" cookie, set when someone confirms their address. It carries the
+ * address and an HMAC of it, so a free report form can skip asking for the email again.
+ * Server-only (httpOnly): the browser can't read it, and /api/leads/reader checks it.
+ */
+export const READER_COOKIE = "fi_reader";
+export const READER_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const READER_ACTION = "reader";
+
+export function signReaderCookie(email: string, secret: string): string {
+  const normalized = normalizeSubscriptionEmail(email);
+  return `${Buffer.from(normalized).toString("base64url")}.${sign(READER_ACTION, normalized, secret)}`;
+}
+
+/** The confirmed address in a reader cookie, or null when it is missing, malformed or forged. */
+export function readReaderCookie(value: string | null | undefined, secret: string): string | null {
+  if (!value || !secret) return null;
+  const [encoded, token] = value.split(".");
+  if (!encoded || !token) return null;
+  const email = normalizeSubscriptionEmail(Buffer.from(encoded, "base64url").toString("utf8"));
+  if (!email.includes("@")) return null;
+  return safeEqual(sign(READER_ACTION, email, secret), token) ? email : null;
 }

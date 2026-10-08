@@ -215,6 +215,21 @@ async function assertWindowSpend(policy: BudgetPolicyRow): Promise<void> {
   }
 }
 
+async function agentRunUsage(
+  agentRunId: number,
+  agentName: string,
+): Promise<{ actualCalls: number; actualCost: number }> {
+  const [row] = await sql`
+    SELECT COALESCE(SUM(request_count), 0)::bigint AS calls,
+           COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd
+      FROM public.ai_api_usage_events
+     WHERE status = 'completed'
+       AND agent_run_id = ${agentRunId}
+       AND agent_name = ${agentName}
+  `;
+  return { actualCalls: Number(row?.calls ?? 0), actualCost: Number(row?.microusd ?? 0) };
+}
+
 async function assertRunCaps(
   context: ProviderBudgetContext,
   policies: readonly BudgetPolicyRow[],
@@ -226,10 +241,16 @@ async function assertRunCaps(
      WHERE id = ${context.agentRunId}
      LIMIT 1
   `;
-  const actualCalls = Number(run?.actual_provider_calls ?? 0);
-  const actualCost = Number(run?.actual_estimated_cost_microusd ?? 0);
+  const runCalls = Number(run?.actual_provider_calls ?? 0);
+  const runCost = Number(run?.actual_estimated_cost_microusd ?? 0);
 
   for (const policy of policies) {
+    // An agent's per-run cap counts only that agent's calls in the run. One state run holds
+    // several agents' paid steps, and counting the whole run let earlier agents use up a
+    // later agent's cap before it made a single call.
+    const { actualCalls, actualCost } = policy.scope === "agent" && policy.agent_name
+      ? await agentRunUsage(context.agentRunId, policy.agent_name)
+      : { actualCalls: runCalls, actualCost: runCost };
     const callCap = policy.max_provider_calls_per_run;
     if (callCap !== null && actualCalls >= callCap) {
       throw new ProviderBudgetBlockedError(

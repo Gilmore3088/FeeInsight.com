@@ -1,3 +1,5 @@
+import { SERIF } from "@/components/hamilton/memo/memo";
+
 interface ReportSectionProps {
   heading: string;
   children: React.ReactNode;
@@ -6,20 +8,10 @@ interface ReportSectionProps {
 
 export function ReportSection({ heading, children, ariaLabel }: ReportSectionProps) {
   return (
-    <section
-      aria-label={ariaLabel ?? heading}
-      className="py-8 border-b"
-      style={{ borderColor: "var(--hamilton-border)" }}
-    >
-      <h2
-        className="text-xl font-semibold mb-4 leading-snug"
-        style={{
-          fontFamily: "var(--hamilton-font-serif)",
-          color: "var(--hamilton-text-primary)",
-        }}
-      >
+    <section aria-label={ariaLabel ?? heading} className="border-b border-warm-200 py-7 last:border-b-0">
+      <h3 className="mb-3 text-xl leading-snug text-warm-900" style={SERIF}>
         {heading}
-      </h2>
+      </h3>
       {children}
     </section>
   );

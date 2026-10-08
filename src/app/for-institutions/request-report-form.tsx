@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
@@ -8,14 +8,21 @@ import { trackEvent } from "@/lib/analytics";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { readFirstTouch } from "@/lib/marketing-touch";
+import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
+import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
 
 const LEADS_ENDPOINT = "/api/leads";
+const READER_ENDPOINT = "/api/leads/reader";
 const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
+/** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
+const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
+const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 const SUCCESS_HEADLINE = "Request received.";
@@ -26,6 +33,11 @@ const CONFIRMATION_MISSING =
 const FREE_SUCCESS_HEADLINE = "Your report is ready.";
 const FREE_EMAIL_SENT = "We also emailed you the link.";
 const FREE_EMAIL_MISSING = "We couldn't email the link, so keep this page or bookmark the report.";
+// Say plainly what the email field signs someone up for (James, 2026-10-06).
+const FREE_EMAIL_NOTE =
+  "We email you the link. Nothing else arrives unless you confirm your address in that email.";
+const KNOWN_READER_NOTE =
+  "You confirmed this address earlier, so there's nothing to type. A first free report also starts three short emails on reading it, alongside your monthly update. Unsubscribe anytime.";
 const GENERIC_ERROR = "We couldn't send that request. Please try again or email us directly.";
 
 const INPUT_CLASS =
@@ -103,7 +115,10 @@ export function RequestReportForm(props: RequestReportFormProps) {
 
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
-  return <RequestReportFormInner {...props} prefill={readPrefill(params, props.defaultSrc ?? DEFAULT_SRC)} />;
+  const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
+  // Keyed on the report type so a same-page link that changes `?report=` reloads the form
+  // with that option selected (useState reads the prefill only on first render).
+  return <RequestReportFormInner key={prefill.reportType} {...props} prefill={prefill} />;
 }
 
 function RequestReportFormInner({
@@ -119,6 +134,25 @@ function RequestReportFormInner({
   );
   const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? "national");
   const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
+  const [pickedInstitution, setPickedInstitution] = useState<PickedInstitution | null>(null);
+  const [reportState, setReportState] = useState("");
+  // A reader who already confirmed (signed cookie from their confirm link) isn't asked again.
+  const [knownReader, setKnownReader] = useState<string | null>(null);
+  const [useOtherEmail, setUseOtherEmail] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(READER_ENDPOINT, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { email?: string | null } | null) => {
+        if (!cancelled && typeof body?.email === "string") setKnownReader(body.email);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const readerEmail = knownReader && !useOtherEmail ? knownReader : null;
 
   const src = prefill?.src ?? defaultSrc;
   const lockedInstitutionId = institutionLocked ? prefill?.institutionId ?? null : null;
@@ -138,10 +172,13 @@ function RequestReportFormInner({
       email: String(formData.get("email") ?? "").trim(),
       company: String(formData.get("institution") ?? "").trim(),
       role: String(formData.get("role") ?? "").trim() || null,
+      state: String(formData.get("state") ?? "").trim() || null,
+      competitors: String(formData.get("competitors") ?? "").trim() || null,
       use_case: REPORT_USE_CASE,
       source: REPORT_SOURCE,
-      institutionId: lockedInstitutionId,
+      institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
 
@@ -155,7 +192,7 @@ function RequestReportFormInner({
       if (!response.ok) {
         throw new Error(body?.error || GENERIC_ERROR);
       }
-      trackEvent("request_report", { src });
+      trackEvent("request_report", { src, report: "institution" });
       setConfirmation(toConfirmationStatus(body));
       setStatus("success");
     } catch (error) {
@@ -169,10 +206,12 @@ function RequestReportFormInner({
     const scope: BenchmarkScope =
       reportType === "district" ? { kind: "district", district } : { kind: "national" };
     const payload = {
-      email: String(formData.get("email") ?? "").trim(),
+      // No email for a known reader: the server reads it from their signed cookie.
+      email: readerEmail ? undefined : String(formData.get("email") ?? "").trim(),
       source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
       district: reportType === "district" ? district : undefined,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
     };
     try {
@@ -258,6 +297,13 @@ function RequestReportFormInner({
             </label>
           ))}
         </div>
+        <p className="mt-2 text-[13px] text-[#6B6255]">
+          Want your own bank or credit union right now?{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+            Look it up free
+          </Link>{" "}
+          to see its published fees against state and national medians.
+        </p>
       </fieldset>
 
       {reportType === "district" && (
@@ -284,7 +330,23 @@ function RequestReportFormInner({
         </div>
       )}
 
-      {!institution && (
+      {!institution && readerEmail && (
+        <div className="rounded-md border border-[#E8DFD1] bg-[#FAF7F2] px-3 py-2 text-sm text-[#1A1815]">
+          <p>
+            Sending to <span className="font-medium">{readerEmail}</span>.{" "}
+            <button
+              type="button"
+              onClick={() => setUseOtherEmail(true)}
+              className="text-xs font-medium text-[#6B6255] underline underline-offset-2 hover:text-[#1A1815]"
+            >
+              Use a different email
+            </button>
+          </p>
+          <p className="mt-1 text-xs text-[#5A5347]">{KNOWN_READER_NOTE}</p>
+        </div>
+      )}
+
+      {!institution && !readerEmail && (
         <div>
           <label htmlFor="report-email-free" className={LABEL_CLASS}>
             Email
@@ -295,8 +357,12 @@ function RequestReportFormInner({
             type="email"
             required
             autoComplete="email"
+            aria-describedby="report-email-free-note"
             className={INPUT_CLASS}
           />
+          <p id="report-email-free-note" className="mt-1 text-xs text-[#5A5347]">
+            {FREE_EMAIL_NOTE}
+          </p>
         </div>
       )}
 
@@ -317,17 +383,16 @@ function RequestReportFormInner({
               </button>
             )}
           </div>
-          <input
+          <InstitutionCombobox
             id="report-institution"
             name="institution"
-            type="text"
-            required
             readOnly={institutionLocked}
-            aria-readonly={institutionLocked}
             defaultValue={prefill?.institutionName ?? ""}
-            autoComplete="organization"
-            placeholder="First National Bank"
             className={INPUT_CLASS}
+            onPick={(picked) => {
+              setPickedInstitution(picked);
+              if (picked?.stateCode && !reportState) setReportState(picked.stateCode);
+            }}
           />
         </div>
 
@@ -372,6 +437,41 @@ function RequestReportFormInner({
             placeholder="VP Retail Banking"
             className={INPUT_CLASS}
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+          <div>
+            <label htmlFor="report-state" className={LABEL_CLASS}>
+              State <span className="font-normal text-[#6B6255]">(optional)</span>
+            </label>
+            <select
+              id="report-state"
+              name="state"
+              value={reportState}
+              onChange={(event) => setReportState(event.target.value)}
+              className={INPUT_CLASS}
+            >
+              <option value="">Select</option>
+              {STATE_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {STATE_NAMES[code]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="report-competitors" className={LABEL_CLASS}>
+              Competitors to include <span className="font-normal text-[#6B6255]">(optional)</span>
+            </label>
+            <input
+              id="report-competitors"
+              name="competitors"
+              type="text"
+              maxLength={300}
+              placeholder="e.g. Frost Bank, Amplify Credit Union"
+              className={INPUT_CLASS}
+            />
+          </div>
         </div>
         </>
       )}
@@ -458,6 +558,13 @@ function FreeReportSuccess({
       >
         Open your report
       </Link>
+      <p className="mt-4 text-[#5A5347]">
+        Want your own institution against named competitors?{" "}
+        <Link href={INSTITUTION_REPORT_HREF} className="font-medium underline underline-offset-2">
+          Request your institution report
+        </Link>
+        .
+      </p>
     </div>
   );
 }

@@ -1,0 +1,194 @@
+import { describe, expect, it } from "vitest";
+import { buildFeeAnswer } from "./answer";
+import { buildAskResponse, parseAsk } from "./ask";
+import { evaluateFourRoles } from "./four-roles";
+import { buildSegmentResearch, parseSegment } from "./segment";
+import { archetypeOf, asksAboutStructure, storylineKind } from "./storyline";
+import { overdraftResearch } from "./test-fixtures";
+import type { FeeResearch, SegmentMember } from "./types";
+
+// Invented figures for tests only; no figure here is live data.
+const structure: FeeResearch["structure"] = {
+  groupLabel: "peers (Credit unions in Tennessee)",
+  columns: [
+    { category: "overdraft", label: "Overdraft fee" },
+    { category: "nsf", label: "NSF fee" },
+    { category: "od_daily_cap", label: "Daily cap" },
+    { category: "od_protection_transfer", label: "Transfer fee" },
+    { category: "continuous_od", label: "Continuous OD" },
+  ],
+  rows: [
+    { institutionId: 1, name: "Example Valley Credit Union", own: true, values: { overdraft: 32, nsf: 32 } },
+    ...[1, 2, 3, 4, 5, 6].map((i) => ({
+      institutionId: i,
+      name: `Peer ${i}`,
+      own: false,
+      values: { overdraft: 25 + i, ...(i <= 4 ? { nsf: 25 } : {}), ...(i <= 2 ? { od_protection_transfer: 10 } : {}), ...(i === 1 ? { od_daily_cap: 3 } : {}) },
+    })),
+  ],
+  source: { label: "Fees on each institution's own published schedule (verified, live)", table: "published_fee_catalog" },
+};
+
+const changeEvents: FeeResearch["changeEvents"] = [
+  { date: "2026-08-02", institutionName: "Peer 4", from: 30, to: 25 },
+  { date: "2026-09-15", institutionName: "Peer 9", from: 29, to: 32 },
+];
+
+function research(overrides: Partial<FeeResearch> = {}): FeeResearch {
+  return overdraftResearch({ structure, changeEvents, ...overrides });
+}
+
+describe("storyline", () => {
+  it("picks the storyline from the question", () => {
+    expect(storylineKind(research(), {})).toBe("position");
+    expect(storylineKind(research(), { tested: [25] })).toBe("price_test");
+    expect(storylineKind(research(), { wantsDecision: true })).toBe("board_decision");
+    expect(storylineKind(research(), { structure: true })).toBe("structure");
+    expect(storylineKind(research(), { focus: "trend" })).toBe("trend");
+    expect(asksAboutStructure("do others cap overdraft per day?")).toBe(true);
+    expect(asksAboutStructure("how does my overdraft fee compare?")).toBe(false);
+  });
+
+  it("builds three to five numbered exhibits, each titled with a point that carries a number", () => {
+    const story = buildFeeAnswer(research()).storyline!;
+    expect(story.kind).toBe("position");
+    expect(story.exhibits.length).toBeGreaterThanOrEqual(3);
+    expect(story.exhibits.length).toBeLessThanOrEqual(5);
+    expect(story.exhibits.map((e) => e.number)).toEqual(story.exhibits.map((_, i) => i + 1));
+    for (const e of story.exhibits) expect(e.actionTitle).toMatch(/\d/);
+    expect(story.exhibits[0].actionTitle).toBe("Peers' middle half charges $25.75 to $32; your $32 sits at the 75th percentile.");
+    expect(story.governingThought).toMatch(/\$32/);
+    expect(story.keyFigures.length).toBeLessThanOrEqual(4);
+    expect(story.keyFigures[0]).toMatchObject({ value: "$32", label: "Your overdraft fee" });
+    expect(story.defaultView).toBe("market");
+  });
+
+  it("sorts peers into the four pricing groups and places the bank", () => {
+    const story = buildFeeAnswer(research()).storyline!;
+    const map = story.exhibits.find((e) => e.exhibit.kind === "archetype_map")!;
+    expect(map.actionTitle).toBe("Of 16 peers, 11 charge $15.01 to $30 and 5 charge over $30.");
+    if (map.exhibit.kind === "archetype_map") {
+      expect(map.exhibit.archetypes.map((a) => a.count)).toEqual([0, 0, 11, 5]);
+      expect(map.exhibit.ownKey).toBe("premium");
+    }
+    expect(map.takeaway?.text).toBe("Your $32 puts you in the premium group (Over $30) with 5 peers.");
+    expect([archetypeOf(0), archetypeOf(10), archetypeOf(15), archetypeOf(30), archetypeOf(30.5)]).toEqual(["zero_od", "low_capped", "low_capped", "mid", "premium"]);
+  });
+
+  it("shows fee structure beyond the price, with blanks where a schedule shows nothing", () => {
+    const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
+    expect(story.kind).toBe("structure");
+    const matrix = story.exhibits[0];
+    expect(matrix.actionTitle).toBe("Of 6 peers, 4 also publish an NSF fee, 2 a transfer fee and 1 a daily cap.");
+    if (matrix.exhibit.kind === "structure_matrix") {
+      expect(matrix.exhibit.rows[0]).toMatchObject({ name: "Example Valley Credit Union", own: true, cells: ["$32", "$32", null, null, null] });
+      expect(matrix.exhibit.rows).toHaveLength(7);
+    }
+  });
+
+  it("lays options side by side for a decision, with consequences and no pick", () => {
+    const story = buildFeeAnswer(research(), { story: { wantsDecision: true } }).storyline!;
+    expect(story.kind).toBe("board_decision");
+    expect(story.defaultView).toBe("finance");
+    expect(story.options?.map((o) => o.label)).toEqual(["Hold at $32", "Peer median, $29.50", "Remove the overdraft fee"]);
+    expect(story.options?.map((o) => o.price)).toEqual([32, 29.5, 0]);
+    expect(story.options?.[2].consequences.map((c) => c.text)).toContain("None of 16 peers publishes a $0 overdraft fee today.");
+    expect(JSON.stringify(story)).not.toMatch(/recommend|should|raise your|lower your|best option/i);
+  });
+
+  it("puts filed money at stake on the finance side and says when the fee line is missing", () => {
+    const story = buildFeeAnswer(research(), { story: { wantsDecision: true } }).storyline!;
+    const money = story.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!;
+    expect(money.actionTitle).toBe("Your fee income came to $209 thousand in the year to June 30, 2026.");
+    if (money.exhibit.kind === "money_at_stake") {
+      expect(money.exhibit.rows).toEqual([{ label: "Fee income (NCUA 5300), last four quarters", low: 209_400, high: 209_400, evidenceLevel: "institution" }]);
+      expect(money.exhibit.note).toBe("NCUA reports no overdraft income line; this is all fee income.");
+    }
+    expect(story.lenses.finance.some((f) => /\$209 thousand/.test(f.text))).toBe(true);
+  });
+
+  it("prices each option off the filed fee line at today's item count, labelled as such", () => {
+    const withLine = research({
+      revenueLine: {
+        annualIncome: 120_000,
+        label: "Overdraft fee income (NCUA 5300)",
+        quarterEnd: "2026-06-30",
+        source: { label: "NCUA 5300 call report", table: "institution_financial_records" },
+      },
+    });
+    const story = buildFeeAnswer(withLine, { story: { tested: [25] } }).storyline!;
+    expect(story.kind).toBe("price_test");
+    const test = story.options!.find((o) => o.label === "Test $25")!;
+    expect(test.consequences.map((c) => c.text)).toContain("At today's item count, overdraft income would be about $93.8 thousand a year, against $120 thousand filed.");
+  });
+
+  it("names who changed the fee and when, newest first", () => {
+    const story = buildFeeAnswer(research(), { story: { focus: "trend" } }).storyline!;
+    const timeline = story.exhibits.find((e) => e.exhibit.kind === "change_timeline")!;
+    expect(timeline.actionTitle).toBe("2 institutions in Tennessee changed an overdraft fee in the last 180 days; 1 lowered it.");
+    if (timeline.exhibit.kind === "change_timeline") expect(timeline.exhibit.events[0].institutionName).toBe("Peer 9");
+    expect(story.complication[0].text).toMatch(/^2 institutions in Tennessee changed an overdraft fee/);
+  });
+
+  it("leads a segment question with the segment table and its pricing groups", () => {
+    const segment = parseSegment("all 10B and up institutions")!;
+    const members: SegmentMember[] = [10, 0, 36, 35, 35, 38].map((amount, i) => ({
+      institutionId: 200 + i,
+      institutionName: `Big Bank ${i + 1}`,
+      amount,
+      stateCode: "NY",
+      sourceDocumentIds: [i],
+      documentUrls: [`https://example.org/big-${i}.pdf`],
+      publishedAt: "2026-09-20",
+      totalAssets: 1_000_000_000 - i * 10_000_000,
+      charterType: "bank",
+      dailyCap: null,
+      dailyFeeLimit: null,
+    }));
+    const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 32, ownInSegment: false });
+    const question = "talk to me about all 10B and up institutions for od fees";
+    const res = buildAskResponse({ question, intent: parseAsk(question), research: research({ segment: seg }), memory: [] });
+    const story = res.answer!.storyline!;
+    expect(story.kind).toBe("segment");
+    expect(story.exhibits[0].exhibit.kind).toBe("segment_table");
+    expect(story.exhibits[0].actionTitle).toBe("6 of 184 $10B+ institutions publish an overdraft fee, 1 at $0; the median is $35.");
+    expect(story.exhibits.some((e) => e.exhibit.kind === "archetype_map")).toBe(true);
+    // The table already lists every member at its price; no second exhibit repeats it.
+    expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
+    expect(story.lenses.market.map((f) => f.text)).toEqual([
+      "2 of 6 $10B+ institutions price below your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
+      "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
+      "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
+      "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
+    ]);
+  });
+
+  it("reads the exhibits for a market reader instead of repeating their titles", () => {
+    for (const intent of [{}, { structure: true }, { focus: "trend" as const }]) {
+      const story = buildFeeAnswer(research(), { story: intent }).storyline!;
+      const titles = new Set(story.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text]));
+      expect(story.lenses.market.length).toBeGreaterThan(0);
+      for (const fact of story.lenses.market) expect(titles.has(fact.text)).toBe(false);
+    }
+  });
+
+  it("passes the four-roles check across every storyline", () => {
+    for (const story of [{}, { wantsDecision: true }, { tested: [25, 0] }, { structure: true }, { focus: "trend" as const }]) {
+      const answer = buildFeeAnswer(research(), { story });
+      const verdict = evaluateFourRoles(answer);
+      expect(verdict.roles.flatMap((r) => r.failures)).toEqual([]);
+    }
+  });
+});
+
+describe("local competitors carry their market deposits", () => {
+  it("passes each competitor's local deposits to the exhibit, null when unknown", () => {
+    const base = overdraftResearch();
+    const local = base.localCompetitors!.map((c, i) => ({ ...c, marketDeposits: i === 0 ? 1_200_000_000 : null }));
+    const story = buildFeeAnswer(overdraftResearch({ localCompetitors: local })).storyline!;
+    const exhibit = story.exhibits.find((e) => e.exhibit.kind === "competitor_range")!.exhibit;
+    if (exhibit.kind !== "competitor_range") throw new Error("expected competitor_range");
+    expect(exhibit.items.find((i) => i.name === "Peer 101")?.deposits).toBe(1_200_000_000);
+    expect(exhibit.items.find((i) => i.name === "Peer 102")?.deposits).toBeNull();
+  });
+});

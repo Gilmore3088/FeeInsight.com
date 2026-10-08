@@ -1,12 +1,18 @@
+import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
-import { CONTACT_EMAIL, REPORT_INCLUDES, SAMPLE_REPORT_LIVE } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES } from "@/lib/constants";
+import type { CustomReportAnalysis, ReportLine } from "@/lib/custom-report/analysis";
+import type { MarketReport } from "@/lib/custom-report/report-data";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { money, POSITION_LABEL } from "@/app/market-report/report-body";
 import { RequestReportForm } from "./request-report-form";
 
 
 // The same list as the homepage offer and the pay page, so the paid report is described one way.
 const REPORT_CONTENTS = REPORT_INCLUDES;
 
-export function ReportOfferSection() {
+export async function ReportOfferSection() {
+  const sample = await loadSampleReport().catch(() => null);
   return (
     <section id="report" className="scroll-mt-16 border-b border-warm-200 bg-white">
       <div className="mx-auto max-w-6xl px-6 py-14">
@@ -19,7 +25,7 @@ export function ReportOfferSection() {
               className="mt-3 text-warm-900 text-[28px] leading-tight"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
-              Free national and Fed district reports, in a minute
+              Free, instant national and Fed district reports
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-warm-700">
               Pick the national report or your Fed district and it opens right away: the median
@@ -36,8 +42,8 @@ export function ReportOfferSection() {
                 </li>
               ))}
             </ul>
-            {/* Rows copied from the sample, which is offline until re-rendered from source-checked data. */}
-            {SAMPLE_REPORT_LIVE && <ProofExcerpt />}
+            {/* Live rows from the sample report; hidden when no sample market passes the rule today. */}
+            {sample && <SampleExcerpt report={sample} />}
           </div>
           <RequestReportForm contactEmail={CONTACT_EMAIL} />
         </div>
@@ -46,47 +52,59 @@ export function ReportOfferSection() {
   );
 }
 
-// Real rows from the sample report (Reports/studio/sample/), data pulled Oct 3, 2026.
-// Only the client bank is anonymized; peer medians are from 60 published schedules.
-const PROOF_ROWS = [
-  { fee: "Returned deposited item", you: "$18.00", peerMedian: "$5.00", flag: "Above peer range" },
-  { fee: "Monthly maintenance, checking", you: "$10.00", peerMedian: "$7.50", flag: "Within range" },
-];
+const SAMPLE_HREF = "/reports/sample-competitive-fee-position";
+const EXCERPT_ROWS = 3;
 
-/** Excerpt of the sample Competitive Fee Position Report. */
-function ProofExcerpt() {
+/**
+ * Three comparable lines from the live sample report: lines outside the local range first,
+ * since those are what a buyer learns from, then lines inside it, in report order.
+ */
+export function sampleExcerptLines(analysis: CustomReportAnalysis): ReportLine[] {
+  const comparable = analysis.lines.filter((line) => line.comparable && line.own && line.peers && line.position);
+  const outside = comparable.filter((line) => line.position !== "in_market");
+  const inside = comparable.filter((line) => line.position === "in_market");
+  return [...outside, ...inside].slice(0, EXCERPT_ROWS);
+}
+
+/** Excerpt of the live sample Competitive Fee Position Report (value funnel A1). */
+function SampleExcerpt({ report }: { report: MarketReport }) {
+  const lines = sampleExcerptLines(report.analysis);
+  if (lines.length === 0) return null;
   return (
     <figure className="mt-8 overflow-hidden rounded-lg border border-warm-300 bg-warm-50">
-      <figcaption className="flex items-center justify-between border-b border-warm-200 px-4 py-2">
-        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">
-          From the sample report
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-warm-200 px-4 py-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">From the sample report</span>
+        <span className="text-[11px] text-warm-600">
+          {report.data.subject.institution_name} vs. {report.analysis.readiness.competitorsWithData} local competitors
         </span>
-        <span className="text-[11px] text-warm-600">Sample Community Bank vs. 60 peer banks</span>
       </figcaption>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-warm-200 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">
               <th className="px-4 py-2 font-bold">Fee</th>
-              <th className="px-3 py-2 text-right font-bold">You</th>
-              <th className="px-3 py-2 text-right font-bold">Peer median</th>
-              <th className="px-4 py-2 font-bold">Flag</th>
+              <th className="px-3 py-2 text-right font-bold">Theirs</th>
+              <th className="px-3 py-2 text-right font-bold">Local median</th>
+              <th className="px-4 py-2 font-bold">Position</th>
             </tr>
           </thead>
           <tbody>
-            {PROOF_ROWS.map((row) => (
-              <tr key={row.fee} className="border-b border-warm-200 last:border-b-0">
-                <td className="px-4 py-2 text-warm-900">{row.fee}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums text-warm-900">{row.you}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-warm-700">{row.peerMedian}</td>
-                <td className="px-4 py-2 text-warm-700">{row.flag}</td>
+            {lines.map((line) => (
+              <tr key={line.key} className="border-b border-warm-200 last:border-b-0">
+                <td className="px-4 py-2 text-warm-900">{line.label}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-warm-900">{money(line.own!.amount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-warm-700">{money(line.peers!.median)}</td>
+                <td className="px-4 py-2 text-warm-700">{POSITION_LABEL[line.position!]}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="border-t border-warm-200 px-4 py-2 font-mono text-[11px] text-warm-600">
-        Source: published fee schedules, Bank Fee Index · data pulled Oct 3, 2026
+      <p className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-warm-200 px-4 py-2 text-[11px] text-warm-600">
+        <span>Live from each institution&apos;s own published fee schedule</span>
+        <Link href={SAMPLE_HREF} className="font-semibold text-terra hover:underline">
+          Read the full sample report
+        </Link>
       </p>
     </figure>
   );

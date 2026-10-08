@@ -17,6 +17,22 @@
       "schedule": "23 13 * * *"
     },
     {
+      "path": "/api/admin/crew/pro-digest",
+      "schedule": "11 13 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/pro-digest?dry_run=1",
+      "schedule": "31 13 * * *"
+    },
+    {
+      "path": "/api/admin/crew/briefing-refresh",
+      "schedule": "7 15 * * *"
+    },
+    {
+      "path": "/api/admin/crew/competitor-alerts",
+      "schedule": "51 14 * * *"
+    },
+    {
       "path": "/api/admin/crew/lead-watch",
       "schedule": "41 * * * *"
     },
@@ -31,6 +47,18 @@
     {
       "path": "/api/admin/reports/schedule?type=national_index",
       "schedule": "30 14 5 1,4,7,10 *"
+    },
+    {
+      "path": "/api/admin/crew/marketing",
+      "schedule": "7 14 1 * *"
+    },
+    {
+      "path": "/api/admin/crew/studies",
+      "schedule": "37 15 * * *"
+    },
+    {
+      "path": "/api/admin/crew/content",
+      "schedule": "37 13 * * 0"
     }
   ]
 }

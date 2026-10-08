@@ -13,6 +13,8 @@ export interface DisplayFee {
   conditions: string | null;
   status: "verified" | "provisional";
   sourceUrl: string | null;
+  /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
+  rate?: { rate: string; detail: string | null } | null;
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -108,15 +110,25 @@ export interface MedianDelta {
  * How a verified amount sits against the national median, in words. Null when either
  * side is missing: no comparison is better than a misleading one.
  */
-export function describeMedianDelta(amount: number | null, median: number | null | undefined): MedianDelta | null {
+export function describeMedianDelta(
+  amount: number | null,
+  median: number | null | undefined,
+  place = "national",
+): MedianDelta | null {
   if (amount === null || median === null || median === undefined) return null;
   if (!Number.isFinite(amount) || !Number.isFinite(median)) return null;
   const diff = Math.round((amount - median) * 100) / 100;
-  if (Math.abs(diff) < 0.01) return { text: "At the national median", tone: "at" };
+  if (Math.abs(diff) < 0.01) return { text: `At the ${place} median`, tone: "at" };
   const money = formatFeeAmount(Math.abs(diff)) ?? `$${Math.abs(diff).toFixed(2)}`;
   return diff > 0
-    ? { text: `${money} above the national median`, tone: "above" }
-    : { text: `${money} below the national median`, tone: "below" };
+    ? { text: `${money} above the ${place} median`, tone: "above" }
+    : { text: `${money} below the ${place} median`, tone: "below" };
+}
+
+/** Home-state medians by fee category, with the state's name for the sentence. */
+export interface StateMedians {
+  place: string;
+  medians: Map<string, number | null>;
 }
 
 const DELTA_TONE: Record<MedianDelta["tone"], string> = {
@@ -126,19 +138,49 @@ const DELTA_TONE: Record<MedianDelta["tone"], string> = {
 };
 
 /** Verified rows with a known category link to the national picture for that fee. */
-function MedianCell({ fee, medians }: { fee: DisplayFee; medians: Map<string, number | null> }) {
+function MedianCell({
+  fee,
+  medians,
+  stateMedians,
+}: {
+  fee: DisplayFee;
+  medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
+}) {
   if (fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
-  if (!delta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  const stateDelta = stateMedians
+    ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
+    : null;
+  if (!delta && !stateDelta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   return (
-    <Link
-      href={`/fees/${fee.feeCategory}`}
-      className={`text-xs font-medium underline-offset-2 hover:underline ${DELTA_TONE[delta.tone]}`}
-    >
-      {delta.text}
-    </Link>
+    <>
+      {delta && (
+        <Link
+          href={`/fees/${fee.feeCategory}`}
+          className={`text-xs font-medium underline-offset-2 hover:underline ${DELTA_TONE[delta.tone]}`}
+        >
+          {delta.text}
+        </Link>
+      )}
+      {stateDelta && (
+        <span className={`block text-xs ${DELTA_TONE[stateDelta.tone]}`}>{stateDelta.text}</span>
+      )}
+    </>
   );
 }
+/** A rate in the amount column, with what it is a share of beneath it. */
+function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
+  return (
+    <>
+      {rate.rate}
+      {rate.detail && (
+        <span className="block max-w-[180px] whitespace-normal text-right font-sans text-xs text-[#6B6255]">{rate.detail}</span>
+      )}
+    </>
+  );
+}
+
 const FAMILY_ORDER = [...Object.keys(FEE_FAMILIES), OTHER_FAMILY];
 
 function familyFor(fee: DisplayFee): string {
@@ -146,7 +188,7 @@ function familyFor(fee: DisplayFee): string {
 }
 
 function dedupeKey(fee: DisplayFee): string {
-  return `${fee.feeName.trim().toLowerCase()}|${fee.amount ?? "null"}`;
+  return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
 }
 
 /** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order. */
@@ -207,6 +249,7 @@ export function FeeScheduleTable({
   disclosureUrl,
   focusCategory = null,
   medians = new Map(),
+  stateMedians,
   benchmarks,
 }: {
   fees: DisplayFee[];
@@ -214,6 +257,8 @@ export function FeeScheduleTable({
   focusCategory?: string | null;
   /** National medians by fee category, for the "vs national median" column. */
   medians?: Map<string, number | null>;
+  /** The institution's home-state medians, shown as a second line under the national one. */
+  stateMedians?: StateMedians;
   /** National percentiles by fee category; verified fees with a match get a position bar. */
   benchmarks?: FeeBenchmarks;
 }) {
@@ -229,6 +274,7 @@ export function FeeScheduleTable({
         disclosureUrl={disclosureUrl}
         isFocused={isFocused}
         medians={medians}
+        stateMedians={stateMedians}
         benchmarks={benchmarks}
       />
       <div className="hidden sm:block">
@@ -241,7 +287,7 @@ export function FeeScheduleTable({
               <tr className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
                 <th scope="col" className={HEADER_CELL}>Fee</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Amount</th>
-                <th scope="col" className={HEADER_CELL}>vs national median</th>
+                <th scope="col" className={HEADER_CELL}>{stateMedians ? "vs medians" : "vs national median"}</th>
                 <th scope="col" className={HEADER_CELL}>Basis</th>
                 <th scope="col" className={HEADER_CELL}>Note</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Source</th>
@@ -265,6 +311,7 @@ export function FeeScheduleTable({
                     mixedGroup={group.verifiedCount > 0}
                     focused={isFocused(fee)}
                     medians={medians}
+                    stateMedians={stateMedians}
                     benchmark={benchmarkFor(fee, benchmarks)}
                   />
                 ))}
@@ -285,7 +332,11 @@ function UnderReviewChip() {
   );
 }
 
-function SourceLink({ href }: { href: string | null }) {
+/**
+ * A fee's own source document, or, when the fee has none of its own, the institution's
+ * general schedule, labelled as such so it never reads as the fee's exact source.
+ */
+function SourceLink({ href, fallback = false }: { href: string | null; fallback?: boolean }) {
   if (!href) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   return (
     <a
@@ -294,7 +345,7 @@ function SourceLink({ href }: { href: string | null }) {
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-xs font-semibold text-[#A93D25] hover:text-[#A93D25]"
     >
-      Source
+      {fallback ? "Institution\u2019s schedule" : "Source"}
       <ExternalLink className="h-3 w-3" />
     </a>
   );
@@ -306,6 +357,7 @@ function FeeRow({
   mixedGroup,
   focused = false,
   medians,
+  stateMedians,
   benchmark,
 }: {
   fee: DisplayFee;
@@ -313,6 +365,7 @@ function FeeRow({
   mixedGroup: boolean;
   focused?: boolean;
   medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
   benchmark: FeeBenchmark | null;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
@@ -331,7 +384,7 @@ function FeeRow({
         {showUnderReview && <UnderReviewChip />}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
-        {amount ?? "\u2014"}
+        {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
             <FeePosition amount={fee.amount} benchmark={benchmark} />
@@ -339,14 +392,14 @@ function FeeRow({
         )}
       </td>
       <td className="px-4 py-2.5 align-top">
-        <MedianCell fee={fee} medians={medians} />
+        <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 align-top text-[#5A5347]">{basis || "\u2014"}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-[#6B6255]">
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top">
-        <SourceLink href={sourceUrl} />
+        <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />
       </td>
     </tr>
   );
@@ -358,12 +411,14 @@ function FeeScheduleStack({
   disclosureUrl,
   isFocused,
   medians,
+  stateMedians,
   benchmarks,
 }: {
   groups: FeeGroup[];
   disclosureUrl: string | null;
   isFocused: (fee: DisplayFee) => boolean;
   medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
   benchmarks?: FeeBenchmarks;
 }) {
   return (
@@ -394,22 +449,22 @@ function FeeScheduleStack({
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
                       <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
-                        {formatFeeAmount(fee.amount) ?? "\u2014"}
+                        {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
                       </span>
                       {benchmark && fee.amount !== null && (
                         <FeePosition amount={fee.amount} benchmark={benchmark} />
                       )}
                     </span>
                   </div>
-                  {fee.status === "verified" && fee.feeCategory && medians.has(fee.feeCategory) && (
+                  {fee.status === "verified" && fee.feeCategory && (medians.has(fee.feeCategory) || stateMedians?.medians.has(fee.feeCategory)) && (
                     <p className="mt-0.5">
-                      <MedianCell fee={fee} medians={medians} />
+                      <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
                     </p>
                   )}
                   <p className="mt-1 text-xs leading-relaxed text-[#6B6255]">
                     {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
                     {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
-                    {sourceUrl && <SourceLink href={sourceUrl} />}
+                    {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}
                   </p>
                 </li>
               );

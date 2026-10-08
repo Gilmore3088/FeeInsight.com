@@ -69,7 +69,7 @@ describe("HAMILTON_VOICE", () => {
 
 describe("consultant bar", () => {
   it("tells Hamilton not to restate what the public site shows", () => {
-    expect(HAMILTON_VERSION).toBe("3.4.0");
+    expect(HAMILTON_VERSION).toBe("3.5.1");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Consultant, not restatement.");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Never answer by repeating them.");
     expect(HAMILTON_SYSTEM_PROMPT).toContain("Never tell the institution to raise, lower or drop a fee.");

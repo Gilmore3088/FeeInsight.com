@@ -6,29 +6,33 @@
  * rendered by Playwright to PDF — no Next.js CSS variables available.
  */
 
+import { RD, RD_FONTS, RD_TYPE } from "@/lib/report-design/tokens";
+
+/** The state and national reports read the shared report design (src/lib/report-design). */
 export const PALETTE = {
-  text: "#1A1815",           // warm black — all body copy
-  textSecondary: "#7A7062",  // secondary text
-  textMuted: "#A09788",      // labels, captions, footnotes
-  background: "#FDFBF8",     // cream page background
-  sectionBg: "#F5EFE6",      // alternating section background
-  accent: "#C44B2E",         // terracotta — section labels, highlights
-  accentLight: "#FDF0ED",    // terracotta tint — callout backgrounds
-  border: "#E8DFD1",         // warm border — cards, tables
-  borderLight: "#F0E8DC",    // lighter border — table rows
-  textDark2: "#2D2A26",      // heading level 2
-  textDark3: "#3D3830",      // heading level 3
+  text: RD.ink,              // warm black — all body copy
+  textSecondary: RD.inkSoft, // secondary text
+  textMuted: RD.muted,       // labels, captions, footnotes
+  background: RD.cream,      // cream page background
+  sectionBg: RD.sand,        // alternating section background
+  accent: RD.terra,          // terracotta — rules, highlights
+  accentText: RD.terraText,  // terracotta for small text (labels)
+  accentLight: RD.terraSoft, // terracotta tint — callout backgrounds
+  border: RD.rule2,          // warm border — cards, tables
+  borderLight: RD.rule,      // lighter border — table rows
+  textDark2: RD.ink,         // heading level 2
+  textDark3: RD.ink2,        // heading level 3
 } as const;
 
 export const TYPOGRAPHY = {
-  // Newsreader loads via @import in REPORT_CSS — fallback for pre-load
-  serif: '"Newsreader", "Georgia", "Times New Roman", serif',
-  sans: '"Inter", "Helvetica Neue", system-ui, -apple-system, sans-serif',
-  mono: '"JetBrains Mono", "Courier New", monospace',
+  // Newsreader, Geist and Geist Mono load via @import in REPORT_CSS — fallbacks for pre-load
+  serif: RD_FONTS.serif,
+  sans: RD_FONTS.sans,
+  mono: RD_FONTS.mono,
 } as const;
 
 export const REPORT_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
 
 * {
   margin: 0;
@@ -46,15 +50,14 @@ body {
   padding: 48px 32px;
 }
 
-@media print {
-  body {
-    padding: 24px 16px;
-    max-width: 100%;
-    margin: 0;
-  }
-  @page {
-    margin: 20mm 16mm;
-  }
+/* Headings never leave one word on its own line; body text avoids orphan words. */
+h1, h2, h3, h4,
+.report-cover-title, .report-heading, .chapter-title, .chapter-divider-title, .playbook-heading {
+  text-wrap: balance;
+}
+
+p, li, .report-narrative, .finding-detail, .figure-finding-detail, .footnote {
+  text-wrap: pretty;
 }
 
 /* Cover page */
@@ -133,17 +136,17 @@ body {
 
 .report-section-label {
   font-family: ${TYPOGRAPHY.sans};
-  font-size: 10px;
+  font-size: ${RD_TYPE.label}px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: ${PALETTE.accent};
+  letter-spacing: 0.08em;
+  color: ${PALETTE.accentText};
   margin-bottom: 8px;
 }
 
 .report-heading {
   font-family: ${TYPOGRAPHY.serif};
-  font-size: 24px;
+  font-size: ${RD_TYPE.headline}px;
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
@@ -449,6 +452,158 @@ body {
   font-style: italic;
 }
 
+/* Release list (agency releases, fee changes) */
+.release-group {
+  margin: 18px 0 8px;
+}
+
+.release-group-title {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: ${PALETTE.accent};
+  margin-bottom: 6px;
+}
+
+.release-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid ${PALETTE.border};
+}
+
+.release-item {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid ${PALETTE.borderLight};
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.release-date {
+  flex: 0 0 48px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9.5px;
+  color: ${PALETTE.textMuted};
+  font-variant-numeric: tabular-nums;
+  padding-top: 1px;
+}
+
+.release-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.release-source {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9.5px;
+  font-weight: 600;
+  color: ${PALETTE.textDark3};
+  margin-right: 4px;
+}
+
+.release-body a {
+  color: ${PALETTE.text};
+  text-decoration: none;
+  border-bottom: 1px solid ${PALETTE.border};
+}
+
+.release-note {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  color: ${PALETTE.textMuted};
+  font-style: italic;
+  margin-top: 4px;
+}
+
+/* Column chart (stacked) */
+.col-chart {
+  margin: 24px 0;
+  --col-seg-0: ${PALETTE.accent};
+  --col-seg-1: #E3A98F;
+  --col-seg-2: ${PALETTE.border};
+}
+
+.col-chart-legend {
+  display: flex;
+  gap: 16px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  color: ${PALETTE.textDark3};
+  margin-bottom: 10px;
+}
+
+.col-chart-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+.col-chart-cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  border-bottom: 1px solid ${PALETTE.border};
+}
+
+.col-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.col-chart-value {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  font-weight: 600;
+  color: ${PALETTE.textDark3};
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+
+.col-chart-plot {
+  height: 150px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.col-chart-bar {
+  width: 70%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+
+.col-chart-seg {
+  width: 100%;
+}
+
+.col-chart-label {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  color: ${PALETTE.textDark3};
+  margin-top: 6px;
+  white-space: nowrap;
+}
+
+.col-chart-note {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 8px;
+  color: ${PALETTE.textMuted};
+  font-variant-numeric: tabular-nums;
+}
+
 /* Two-column layout */
 .two-col {
   display: grid;
@@ -464,6 +619,7 @@ body {
   margin: 48px 0 32px;
 }
 
+.chapter-number,
 .chapter-divider-number {
   font-family: ${TYPOGRAPHY.sans};
   font-size: 9px;
@@ -474,6 +630,7 @@ body {
   margin-bottom: 8px;
 }
 
+.chapter-title,
 .chapter-divider-title {
   font-family: ${TYPOGRAPHY.serif};
   font-size: 24px;
@@ -983,77 +1140,374 @@ body {
   line-height: 1.7;
 }
 
-/* Print overrides */
+/* Figure-led findings (state report key findings) */
+.figure-findings {
+  margin: 8px 0 0;
+}
+
+.figure-finding {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 20px;
+  align-items: baseline;
+  padding: 16px 0;
+  border-top: 1px solid ${PALETTE.borderLight};
+}
+
+.figure-finding:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.figure-finding-figure {
+  font-family: ${TYPOGRAPHY.serif};
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1;
+  color: ${PALETTE.accent};
+  font-variant-numeric: tabular-nums;
+}
+
+.figure-finding-headline {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 15px;
+  font-weight: 700;
+  color: ${PALETTE.text};
+  margin-bottom: 4px;
+}
+
+.figure-finding-detail {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 13px;
+  color: ${PALETTE.textSecondary};
+  line-height: 1.6;
+}
+
+/* State report exhibits (base/state-charts.ts): SVG drawn at a fixed viewBox, scaled to the column. */
+.state-exhibit {
+  margin: 16px 0 0;
+}
+
+.state-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.state-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 10px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: ${RD_TYPE.legend}px;
+  color: ${PALETTE.textSecondary};
+}
+
+.state-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Each state chart is drawn for report width and for a phone; show the one that fits. */
+.sc-narrow {
+  display: none;
+}
+
+@media screen and (max-width: 640px) {
+  .sc-wide {
+    display: none;
+  }
+
+  .sc-narrow {
+    display: block;
+  }
+}
+
+.state-chart-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.state-chart-title {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 12px;
+  font-weight: 600;
+  color: ${PALETTE.text};
+  margin: 0 0 6px;
+}
+
+/* Position against national: diverging bars around the national median */
+.position-chart {
+  margin: 16px 0 0;
+}
+
+.position-row {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 190px;
+  gap: 14px;
+  align-items: center;
+  padding: 5px 0;
+}
+
+.position-label {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 12px;
+  font-weight: 600;
+  color: ${PALETTE.text};
+}
+
+.position-small {
+  font-weight: 400;
+  font-size: 10px;
+  color: ${PALETTE.textMuted};
+}
+
+.position-track {
+  position: relative;
+  height: 14px;
+}
+
+.position-axis {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: ${PALETTE.textMuted};
+}
+
+.position-bar {
+  position: absolute;
+  top: 3px;
+  height: 8px;
+}
+
+.position-bar-up {
+  left: 50%;
+  background: ${PALETTE.accent};
+  opacity: 0.75;
+  border-radius: 0 4px 4px 0;
+}
+
+.position-bar-down {
+  right: 50%;
+  background: #7A7F3F;
+  opacity: 0.75;
+  border-radius: 4px 0 0 4px;
+}
+
+.position-dot {
+  position: absolute;
+  top: 3px;
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: ${PALETTE.textMuted};
+}
+
+.position-value {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 11px;
+  color: ${PALETTE.textDark3};
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.position-up { color: #A93D25; font-weight: 700; }
+.position-down { color: #4F6B3A; font-weight: 700; }
+.position-flat { color: ${PALETTE.textMuted}; font-weight: 700; }
+
+.position-scale {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 190px;
+  gap: 14px;
+  margin-top: 6px;
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: ${PALETTE.textMuted};
+}
+
+.position-scale-axis {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Exhibit source line and empty-data statement */
+.exhibit-source {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: ${RD_TYPE.source}px;
+  color: ${PALETTE.textMuted};
+  margin-top: 10px;
+  font-style: italic;
+}
+
+.report-empty {
+  font-family: ${TYPOGRAPHY.sans};
+  font-size: 13px;
+  color: ${PALETTE.textSecondary};
+  border: 1px dashed ${PALETTE.border};
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+
+/*
+ * Print. Rules that keep every page used:
+ * - The page is white; the cream screen background would print as a box on each page.
+ * - The cover is exactly one page and nothing else shares it.
+ * - Headings and labels never end a page: each stays with the first block that follows.
+ * - Sections flow; no rule forces a page break that would strand white space, except the
+ *   cover and table of contents, and pageBreak() where a template asks for one.
+ * - Small blocks (cards, callouts, chart rows) are not split; long tables split between
+ *   rows and repeat their header row.
+ */
 @media print {
+  @page {
+    size: letter;
+    margin: 18mm 16mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  body {
+    padding: 0;
+    max-width: none;
+    margin: 0;
+  }
+
   .report-cover {
-    min-height: 90vh;
+    /* Letter content height is about 243mm at these margins; stay safely inside one page. */
+    min-height: 0;
+    height: 225mm;
+    margin: 0;
+    padding: 0 12mm;
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    overflow: hidden;
+  }
+
+  .toc {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .report-section {
+    padding: 28px 0 0;
+    border-top: none;
+  }
+
+  .report-section + .report-section {
+    margin-top: 12px;
+    border-top: 1px solid ${PALETTE.border};
+  }
+
+  /* Headings stay with what follows them. */
+  h1, h2, h3, h4,
+  .report-section-header,
+  .report-section-label,
+  .chapter-divider,
+  .report-table-caption,
+  .h-bar-title,
+  .col-chart-legend,
+  .release-group-title,
+  .comparison-chart-title,
+  .comparison-chart-header,
+  .playbook-heading {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .report-section-header,
+  .chapter-divider {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .chapter-divider {
-    page-break-before: always;
-    break-before: page;
-    margin-top: 0;
+    margin-top: 32px;
   }
 
-  .stat-cards {
+  .stat-cards,
+  .state-exhibit:not(.state-exhibit-flow),
+  .state-ladder-row,
+  .state-chart-panel,
+  .h-bar-chart,
+  .col-chart,
+  .finding,
+  .figure-finding,
+  .position-row,
+  .comp-row,
+  .key-finding,
+  .numbered-findings,
+  .hamilton-block,
+  .so-what-box,
+  .insight-card,
+  .comparison-chart,
+  .playbook-segment,
+  .data-framework,
+  .revenue-pyramid,
+  .report-pull-quote,
+  .report-empty {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .h-bar-chart {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .finding {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .key-finding {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
+  /* Tables flow across pages between rows rather than jumping whole to the next page. */
   .report-table-wrapper {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  /* Compact tables (appendix) must flow across pages — override wrapper rule */
-  .report-table-wrapper:has(.compact-table) {
+    overflow: visible;
     break-inside: auto;
     page-break-inside: auto;
   }
 
-  .numbered-findings {
+  /* Figures stay on one line; the first (label) column takes the remaining width. */
+  .report-table th,
+  .report-table td {
+    padding: 6px 8px;
+  }
+
+  .report-table td + td,
+  .compact-table td + td {
+    white-space: nowrap;
+  }
+
+  .report-table-wrapper.report-table-short {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .hamilton-block {
+  .report-table thead,
+  .compact-table thead {
+    display: table-header-group;
+  }
+
+  .release-item,
+  .report-table tr,
+  .compact-table tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .so-what-box {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  /* A ladder breaks between fee rows; its legend and axis stay with the first row. */
+  .state-exhibit-flow .state-chart-legend,
+  .state-ladder-axis {
+    break-after: avoid;
+    page-break-after: avoid;
   }
 
-  .insight-card {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .comparison-chart {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .playbook-segment {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  .exhibit-source,
+  .footnote {
+    break-before: avoid;
+    page-break-before: avoid;
   }
 }
 `;

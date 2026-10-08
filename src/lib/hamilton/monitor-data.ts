@@ -117,10 +117,10 @@ function buildScopeLabel(institutionIds: string[], watchlistCount: number): stri
   }
   if (institutionIds.length === 1) {
     return watchlistCount > 0
-      ? "Monitoring 1 watchlisted institution."
-      : "Monitoring the selected institution.";
+      ? "Watching 1 institution on your list."
+      : "Watching your institution.";
   }
-  return `Monitoring ${institutionIds.length} selected and watchlisted institutions.`;
+  return `Watching ${institutionIds.length} institutions: yours and your list.`;
 }
 
 // ---------------------------------------------------------------------------

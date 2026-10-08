@@ -1,4 +1,5 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
+import { retiredKeysInFamilies } from "@/lib/fee-fold";
 import { CANONICAL_KEY_MAP, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   AMOUNT_PATTERN,
@@ -16,6 +17,7 @@ import {
   cleanFeeName,
   composableTail,
   looksLikeHeading,
+  qualifiesName,
   passesDarwinChecks,
   QUALIFIER,
   splitCapsHeading,
@@ -48,8 +50,10 @@ export interface FamilyExpert {
   patterns: Array<{ key: string; pattern: RegExp }>;
 }
 
+// A family still reads the categories folded out of it into the top 50; `refileCategory`
+// places those reads among the 50 before Darwin and Hamilton see them.
 function familyKeys(...families: string[]): ReadonlySet<string> {
-  return new Set(families.flatMap((family) => FEE_FAMILIES[family] ?? []));
+  return new Set([...families.flatMap((family) => FEE_FAMILIES[family] ?? []), ...retiredKeysInFamilies(families)]);
 }
 
 /** The five fee families with their own expert; every other family goes to `services`. */
@@ -59,19 +63,19 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "overdraft_nsf",
     strategy: "extract.family.overdraft_nsf",
-    version: 3,
+    version: 5,
     keys: familyKeys("Overdraft & NSF"),
     patterns: [
       { key: "od_protection_transfer", pattern: /\b(overdraft|OD)\b.{0,40}\bfrom (savings|shares?|money market|line)\b/i },
       { key: "overdraft", pattern: /\b(overdraft privilege|courtesy pay|paid items?|bounce)\b/i },
     ],
   },
-  { family: "wires", strategy: "extract.family.wires", version: 2, keys: familyKeys("Wire Transfers"), patterns: [] },
-  { family: "atm_card", strategy: "extract.family.atm_card", version: 2, keys: familyKeys("ATM & Card"), patterns: [] },
+  { family: "wires", strategy: "extract.family.wires", version: 4, keys: familyKeys("Wire Transfers"), patterns: [] },
+  { family: "atm_card", strategy: "extract.family.atm_card", version: 4, keys: familyKeys("ATM & Card"), patterns: [] },
   {
     family: "account",
     strategy: "extract.family.account",
-    version: 2,
+    version: 4,
     keys: familyKeys("Account Maintenance"),
     patterns: [
       {
@@ -80,11 +84,11 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
       },
     ],
   },
-  { family: "checks", strategy: "extract.family.checks", version: 2, keys: familyKeys("Check Services"), patterns: [] },
+  { family: "checks", strategy: "extract.family.checks", version: 4, keys: familyKeys("Check Services"), patterns: [] },
   {
     family: "services",
     strategy: "extract.family.services",
-    version: 2,
+    version: 4,
     keys: familyKeys(...Object.keys(FEE_FAMILIES).filter((family) => !EXPERT_FAMILIES.includes(family))),
     patterns: [],
   },
@@ -150,14 +154,26 @@ export function priceWindows(text: string): PriceWindow[] {
     if (windows.length >= MAX_WINDOWS) return;
     const values = valuesIn(line);
     if (values.length === 0) {
-      pending = line.length <= 160 ? line : null;
+      // "(for each overdraft item paid)" under "Overdraft Item Fee": the name stays the one above.
+      if (!(pending != null && qualifiesName(line))) pending = line.length <= 160 ? line : null;
       // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.
       if (looksLikeHeading(line) && !line.includes(CELL_SEPARATOR)) heading = line;
       return;
     }
     let nameStart = 0;
     let afterCondition: number | null = null;
+    // "... a fee of $25.00 on the 7th day. This fee is in addition to any Overdraft Fees. | $25.00":
+    // a row's price cell repeating the price before it, in the same cell, is the same fee.
+    const lastCell = line.lastIndexOf(CELL_SEPARATOR);
+    const priceCellAt = lastCell >= 0 && /^\s*\$?\s?\d[\d,]*(?:\.\d{1,2})?\s*$/.test(line.slice(lastCell + CELL_SEPARATOR.length))
+      ? lastCell
+      : -1;
     values.forEach((value, index) => {
+      if (priceCellAt >= 0 && index > 0 && value.start > priceCellAt && !value.zero && value.amount === values[index - 1].amount &&
+        line.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < values[index - 1].start) {
+        nameStart = value.end;
+        return;
+      }
       let own = line.slice(nameStart, value.start);
       // After a threshold, a fresh name ("Up to $29 Rush Card Replacement $25") starts
       // the next fee; otherwise the threshold stays part of this fee's name
@@ -257,7 +273,10 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // The fee's own name ends right before its price; earlier lowercase terms belong
     // to the fee before it.
     const tail = cleaned ? titleTail(cleaned) : null;
-    const name = tail && classifyPatternKey(tail) ? tail : cleaned;
+    // v28: a fee named after the previous fee's note ("Check printing – (fee depends on
+    // style) Temporary check – $.20") is the words after the note.
+    const afterNote = cleanFeeName(split.name.match(/\)\s*([A-Z][^()]*?)\s*[–—-]?\s*$/)?.[1] ?? "");
+    const name = afterNote && classifyPatternKey(afterNote) ? afterNote : tail && classifyPatternKey(tail) ? tail : cleaned;
     const recent = last && window.lineIndex - last.lineIndex <= 2 ? last : null;
     const detail = `${window.rawName} ${window.after}`;
     const frequency = detectFrequency(detail);

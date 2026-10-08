@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { financialSourceFilter } from "./financial-sources";
 import type { RichIndicator } from "./fed";
 
 export type { RichIndicator };
@@ -35,6 +36,7 @@ async function buildHealthIndicator(
          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.${column})           AS median_value
        FROM institution_financial_records inf
        WHERE inf.${column} IS NOT NULL AND inf.${column} != 0
+         AND ${financialSourceFilter("inf")}
        GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
        ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
        LIMIT $1`,
@@ -79,6 +81,7 @@ async function buildHealthIndicatorByCharter(
        FROM institution_financial_records inf
        JOIN institution_sources ct ON ct.id = inf.institution_id
        WHERE inf.${column} IS NOT NULL AND inf.${column} != 0
+         AND ${financialSourceFilter("inf")}
          AND ct.charter_type = $1
        GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
        ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
@@ -149,6 +152,7 @@ async function buildGrowthTrend(
          SUM(inf.${column})                                                    AS absolute
        FROM institution_financial_records inf
        WHERE inf.${column} IS NOT NULL AND inf.${column} > 0
+         AND ${financialSourceFilter("inf")}
        GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
        ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
        LIMIT $1`,
@@ -229,6 +233,7 @@ export async function getInstitutionCountTrends(
          COUNT(DISTINCT CASE WHEN ct.charter_type = 'credit_union' THEN inf.institution_id END) AS cu_count
        FROM institution_financial_records inf
        JOIN institution_sources ct ON ct.id = inf.institution_id
+       WHERE ${financialSourceFilter("inf")}
        GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
        ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
        LIMIT $1`,

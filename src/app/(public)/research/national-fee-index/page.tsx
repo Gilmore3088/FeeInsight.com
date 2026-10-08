@@ -2,20 +2,22 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCpiContext } from "@/lib/data-store";
-import { getPublicNationalIndex } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import {
   getDisplayName,
   FEE_FAMILIES,
   FAMILY_COLORS,
   TAXONOMY_COUNT,
   FEATURED_COUNT,
-  getSpotlightCategories,
+  getFeaturedCategories,
 } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { SAMPLE_REPORT_LIVE, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
@@ -41,12 +43,16 @@ export default async function NationalFeeIndexPage() {
   // Same snapshot as the fee index and research hub, so the medians match to the cent.
   const allIndex = await getPublicNationalIndex();
   const cpi = await getCpiContext();
+  // The count of categories with published fees, the same figure the homepage, pricing and
+  // institution pages show (not the taxonomy size, which includes categories with no data yet).
+  const { categoriesLabel } = await getPublicStatsSummary();
+  const sampleLive = await sampleReportAvailable();
 
-  // Pro: full index. Free: spotlight preview only (6 categories)
-  const spotlightCats = new Set(getSpotlightCategories());
+  // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
+  const headlineCats = new Set(getFeaturedCategories());
   const index = isPro
     ? allIndex
-    : allIndex.filter((e) => spotlightCats.has(e.fee_category));
+    : allIndex.filter((e) => headlineCats.has(e.fee_category));
   const gatedCount = allIndex.length - index.length;
 
   // Group by family
@@ -95,14 +101,14 @@ export default async function NationalFeeIndexPage() {
       <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
         {isPro ? (
           <>
-            National benchmarking data across {TAXONOMY_COUNT} fee categories,
+            National benchmarking data across {categoriesLabel} fee categories,
             computed from published fee schedules of FDIC-insured banks and
             NCUA-insured credit unions.
           </>
         ) : (
           <>
-            Preview of {index.length} spotlight fee categories from our full
-            index of {TAXONOMY_COUNT} categories.{" "}
+            Preview of {index.length} headline fee categories from our full
+            index of {categoriesLabel} categories.{" "}
             <Link
               href="/subscribe"
               className="text-[#C44B2E] hover:underline font-medium"
@@ -123,9 +129,9 @@ export default async function NationalFeeIndexPage() {
         className="mt-5"
         eyebrow="National index updates"
         headline="Get the national fee index in your inbox"
-        body="New national medians, the fee changes that moved them, and one chart. No more than once a month."
+        body="New national medians and one table worth bringing to a pricing meeting. No more than once a month."
         buttonLabel="Subscribe"
-        secondaryLink={SAMPLE_REPORT_LIVE ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
+        secondaryLink={sampleLive ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
       />
 
       {/* CPI context strip */}
@@ -202,7 +208,7 @@ export default async function NationalFeeIndexPage() {
               fontWeight: 300,
             }}
           >
-            {TAXONOMY_COUNT} categories
+            {categoriesLabel} categories
           </p>
         </div>
         <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
@@ -236,7 +242,7 @@ export default async function NationalFeeIndexPage() {
                 You&apos;re viewing a preview
               </h2>
               <p className="text-[13px] text-[#6B6255] mt-1">
-                Showing {index.length} spotlight categories with median only.
+                Showing {index.length} headline categories with median only.
                 The full index includes {gatedCount} more categories with
                 P25/P75 percentiles, bank vs. credit union breakdowns, and range
                 data.
@@ -392,7 +398,7 @@ export default async function NationalFeeIndexPage() {
         <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
           The National Fee Index is computed from published fee schedules of
           FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
-          into {TAXONOMY_COUNT} standard categories across 9 families. All
+          into {TAXONOMY_COUNT} standard categories across {Object.keys(FEE_FAMILIES).length} families. All
           statistics are based on published fee schedules. National
           medians are computed across all reporting institutions for each fee
           category.
@@ -406,7 +412,7 @@ export default async function NationalFeeIndexPage() {
             "@context": "https://schema.org",
             "@type": "Dataset",
             name: "National Fee Index - US Bank & Credit Union Fee Benchmarks",
-            description: `National benchmarking data across ${TAXONOMY_COUNT} bank and credit union fee categories.`,
+            description: `National benchmarking data across ${categoriesLabel} bank and credit union fee categories.`,
             url: `${SITE_URL}/research/national-fee-index`,
             creator: {
               "@type": "Organization",

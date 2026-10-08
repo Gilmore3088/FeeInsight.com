@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { REPORT_BULLETS, REPORT_PRICE_LABEL } from "./pricing";
 
@@ -14,7 +15,7 @@ const CHECK = "✓";
 const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
-const WALKTHROUGH_HREF = "/contact?source=enterprise";
+const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
@@ -27,7 +28,7 @@ export function FreeTierCard({ summary }: { summary: PublicStatsSummary }) {
         <p className="text-base text-[#1A1815]">
           <span className="font-semibold">{PRODUCT_NAME} lookup:</span> published fees for{" "}
           {summary.institutionsLabel} banks and credit unions, {summary.categoriesLabel} categories,
-          consumer guides.
+          consumer guides, and an email when a bank or credit union you follow changes a fee.
         </p>
       </div>
       <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
@@ -40,7 +41,7 @@ export function FreeTierCard({ summary }: { summary: PublicStatsSummary }) {
 }
 
 /** The one commissioned product. Eyebrow is the product name, not the Advisory tier. */
-export function ReportCard() {
+export function ReportCard({ sampleLive = false }: { sampleLive?: boolean }) {
   return (
     <div className={CARD_CLASS}>
       <div className="md:flex md:items-start md:justify-between md:gap-8">
@@ -62,7 +63,7 @@ export function ReportCard() {
           <p className="mt-3 text-sm text-[#5A5347]">
             One institution, one peer set, one PDF for your pricing committee.{" "}
             {REPORT_OFFER.nextStep}.
-            {SAMPLE_REPORT_LIVE && (
+            {sampleLive && (
               <>
                 {" "}
                 <TrackLink
@@ -129,15 +130,21 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes. Monthly seats cancel at the end of the current billing period; no long-term commitment.",
+      answer: "Yes. Monthly plans cancel at the end of the current billing period; no long-term commitment.",
     },
     {
       question: "Do you invoice or accept POs?",
-      answer: `Yes, for annual seats. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+      answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+    },
+    {
+      question: "How is the Pro price set?",
+      answer: `By your institution's total assets from its latest call report: ${PRO_TIERS.map(
+        (tier) => `${tier.assetsLabel.toLowerCase()} is ${tierPriceLabel(tier.key, "annual")}`,
+      ).join(", ")}. ${CONSULTANT_PRICE_NOTE} If we don't have your fee schedule yet, send it to ${CONTACT_EMAIL} and we'll add it.`,
     },
     {
       question: "How do seats work?",
-      answer: `One seat per named user. Each seat is billed separately; to add colleagues, email ${CONTACT_EMAIL} and we will set them up on the same workspace.`,
+      answer: "An institution account includes up to five teammates, the owner included. Once your bank's workspace is set up, add colleagues from Hamilton Settings and send them the invite link. Each person gets their own login and full Pro access.",
     },
     {
       question: "How often is the data refreshed?",
@@ -165,13 +172,17 @@ export function PricingFaq({ summary }: { summary: PublicStatsSummary }) {
       <p className="mt-4 text-sm text-[#5A5347]">
         Prefer to talk it through?{" "}
         <TrackLink
-          event="book_walkthrough"
+          event="contact_sales"
           eventProps={{ placement: "pricing_faq" }}
-          href={WALKTHROUGH_HREF}
+          href={CONTACT_SALES_HREF}
           className="font-medium text-[#1A1815] underline underline-offset-2"
         >
-          Book a 20-minute walkthrough
-        </TrackLink>
+          Send us a message
+        </TrackLink>{" "}
+        or email{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#1A1815] underline underline-offset-2">
+          {CONTACT_EMAIL}
+        </a>
         .
       </p>
     </section>

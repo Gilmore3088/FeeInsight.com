@@ -16,8 +16,12 @@ import {
 } from "@/lib/agents/paid-pass";
 
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
-import { fetchWithTimeout, validateFeeCandidate } from "./find-validate";
+import { runBlockedFetch } from "./blocked-fetch";
+import { fetchWithTimeout, looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { pageLinks, urlIdentity, type PageLink } from "./finders";
+import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
+import { runScheduleSearch } from "./schedule-search";
+import { runWebsiteFind } from "./website-find";
 
 type Fetcher = typeof fetch;
 
@@ -48,8 +52,10 @@ const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 1024;
 /** Link score given to the model's answer: strong enough to accept a scanned PDF. */
 const PAID_ANSWER_SCORE = 0.85;
+/** An answer the bank's site refused to show us (HTTP 403): kept, unchecked, for the paid fetch. */
+const BLOCKED_ANSWER_CONFIDENCE = 0.75;
 /** Paid outcomes that do not count as this month's paid try (nothing was learned). */
-const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
+export const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
 
 interface PaidFindRow {
   id: number | string;
@@ -96,7 +102,14 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
        AND inst.rescue_status = 'dead'
-       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+       -- $10B+ banks and report requesters are searched from any state's paid step: they
+       -- are national names, and waiting for their own state's full pass can take weeks.
+       AND (
+         ${stateCode}::text IS NULL
+         OR upper(btrim(inst.state_code)) = ${stateCode}
+         OR inst.asset_size >= ${LARGE_BANK_ASSETS}
+         OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)
+       )
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
        AND COALESCE(profile.locked_by_correction, false) = false
@@ -126,36 +139,14 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
        )
-     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     -- Report requesters first, then the largest banks: the names buyers check.
+     ORDER BY EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) DESC,
+              inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${limit}
   `;
 }
 
-function websiteHost(website: string): string | null {
-  for (const candidate of [website.trim(), `https://${website.trim()}`]) {
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") return url.hostname.toLowerCase().replace(/^www\./, "");
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-/** The bank's own domain: the website host or one of its subdomains. */
-export function onBankDomain(url: string, website: string): boolean {
-  const host = websiteHost(website);
-  if (!host) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    const candidate = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    return candidate === host || candidate.endsWith(`.${host}`);
-  } catch {
-    return false;
-  }
-}
+export { onBankDomain };
 
 export function paidFindPrompt(row: Pick<PaidFindRow, "institution_name" | "city" | "state_code" | "website_url">): string {
   const host = websiteHost(row.website_url) ?? row.website_url;
@@ -163,14 +154,16 @@ export function paidFindPrompt(row: Pick<PaidFindRow, "institution_name" | "city
     "Find the URL of this bank's consumer fee schedule: the document (PDF or web page) that lists",
     "account service fees with dollar amounts, such as overdraft, NSF/returned item, stop payment,",
     "wire transfer, and monthly maintenance fees. It is often titled \"Schedule of Fees\",",
-    "\"Fee Schedule\", or \"Truth in Savings / Fee Disclosure\".",
+    "\"Fee Schedule\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Account Fee Schedule\",",
+    "\"Consumer Fees\", \"Deposit Account Agreement\", or \"Truth in Savings / Fee Disclosure\". Large banks often",
+    "publish it on their parent company's domain.",
     "",
     `Bank: ${row.institution_name}`,
     `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
     `Website: ${row.website_url}`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${host} or a subdomain of it).`,
+    `- The URL must be on the bank's own domain (${host}, a subdomain of it, or its parent company's domain).`,
     "- Do not return rate sheets, press releases, account agreements without fee amounts, or other sites.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -184,7 +177,8 @@ export function paidPickPrompt(row: Pick<PaidFindRow, "institution_name" | "stat
     "Below are the links on a bank's homepage. Pick the links most likely to open the bank's",
     "consumer fee schedule: the document or page that lists account service fees with dollar",
     "amounts (overdraft, NSF, stop payment, wire, monthly maintenance). Good labels include",
-    "\"Schedule of Fees\", \"Fee Schedule\", \"Truth in Savings\", \"Disclosures\", \"Forms & Documents\".",
+    "\"Schedule of Fees\", \"Fee Schedule\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Consumer Fees\",",
+    "\"Deposit Account Agreement\", \"Truth in Savings\", \"Disclosures\", \"Forms & Documents\".",
     "Do not pick rates pages, loan or card pages, news, or careers.",
     "",
     `Bank: ${row.institution_name} (${row.state_code ?? "unknown state"}), website ${row.website_url}`,
@@ -262,8 +256,15 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   result.selected = rows.length;
   if (dryRun) {
     result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true }));
+    await addWebsiteFind(result, options, db);
+    await addScheduleSearch(result, options, db);
     return result;
   }
+
+  // Known links the bank's site blocks go first: a few cheap calls on links already found.
+  // Run last, they got what the run's call cap left (one bank of three on 7 Oct, 08:23).
+  await addBlockedFetch(result, options, db);
+  if (result.budgetStopped) return result;
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
@@ -349,6 +350,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
             documentType = validation.documentType;
             confidence = validation.confidence;
             reason = `Paid web search: ${validation.reason}`;
+          } else if (validation.status === 403) {
+            // The bank's site refuses our fetcher (Huntington, KeyBank): keep the answer so
+            // the paid fetch (blocked-fetch.ts) reads it; Rosetta then rules on the page.
+            outcome = "ok";
+            url = proposed;
+            documentType = looksLikePdfUrl(proposed) ? "pdf" : "html";
+            confidence = BLOCKED_ANSWER_CONFIDENCE;
+            reason = `Paid web search; the bank's site refused our check (HTTP 403), kept for the paid fetch: ${proposed}`;
           } else {
             outcome = validation.status != null && validation.status >= 400 ? classifyFetchFailure(validation.status) : "wrong_document";
             reason = `Answer failed the fee-page check (${validation.reason}): ${proposed}`;
@@ -410,7 +419,85 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     });
     result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason });
   }
+  if (!result.budgetStopped) await addWebsiteFind(result, options, db);
+  if (!result.budgetStopped) await addScheduleSearch(result, options, db);
   return result;
+}
+
+/**
+ * Fee links and companion pages the bank's site blocks (refused, timing out, or a PDF
+ * answered with a web page) get one paid server-side fetch in the same step
+ * (blocked-fetch.ts); what it returns is stored and read like any fetched document.
+ */
+async function addBlockedFetch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+  const fetched = await runBlockedFetch({
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    dryRun: Boolean(options.dryRun),
+    db,
+    create: options.create,
+  });
+  result.selected += fetched.selected;
+  result.processed += fetched.processed;
+  result.succeeded += fetched.stored;
+  result.failed += fetched.failed;
+  result.costMicrousd += fetched.costMicrousd;
+  if (fetched.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = fetched.budgetReason;
+  }
+  result.results.push(...fetched.results);
+}
+
+/**
+ * $10B+ banks and report requesters whose page is not the consumer schedule get a paid
+ * search for it in the same step (schedule-search.ts); the answer is kept as a companion.
+ */
+async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+  const searched = await runScheduleSearch({
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    dryRun: Boolean(options.dryRun),
+    db,
+    create: options.create,
+    fetchImpl: options.fetchImpl,
+  });
+  result.selected += searched.selected;
+  result.processed += searched.processed;
+  result.succeeded += searched.found;
+  result.failed += searched.processed - searched.found;
+  result.costMicrousd += searched.costMicrousd;
+  if (searched.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = searched.budgetReason;
+  }
+  result.results.push(...searched.results);
+}
+
+/**
+ * Institutions with no website at all get a website search in the same paid step
+ * (website-find.ts), so they reach the free finders on their next search.
+ */
+async function addWebsiteFind(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+  const found = await runWebsiteFind({
+    runId: options.runId,
+    stepId: options.stepId ?? null,
+    stateCode: options.stateCode ?? null,
+    dryRun: Boolean(options.dryRun),
+    db,
+    create: options.create,
+    fetchImpl: options.fetchImpl,
+  });
+  result.selected += found.selected;
+  result.processed += found.processed;
+  result.succeeded += found.saved;
+  result.failed += found.needsHuman;
+  result.costMicrousd += found.costMicrousd;
+  if (found.budgetStopped) {
+    result.budgetStopped = true;
+    result.budgetReason = found.budgetReason;
+  }
+  result.results.push(...found.results);
 }
 
 interface PickResult {

@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
@@ -91,6 +92,29 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
       WHERE ${conditions.join(" AND ")}`,
     params as never[],
   ) as ContractFeeRow[];
+}
+
+export interface SegmentFeeRow extends ContractFeeRow {
+  fed_district: number | null;
+}
+
+/**
+ * Approved, sourced published rows for the given categories with each institution's
+ * Fed district and asset tier, for district, state and size-tier breakdowns.
+ */
+export async function getSegmentFeeRows(categories: string[]): Promise<SegmentFeeRow[]> {
+  if (categories.length === 0) return [];
+  const rows = await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount, ct.institution_name,
+            ct.state_code, ct.charter_type, ct.asset_size_tier, ct.fed_district
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ef.fee_category = ANY($1::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [categories] as never[],
+  ) as (ContractFeeRow & { fed_district: number | string | null })[];
+  return rows.map((r) => ({ ...r, fed_district: r.fed_district === null ? null : Number(r.fed_district) }));
 }
 
 /**
@@ -195,16 +219,11 @@ export async function getSourcedInstitutionCount(): Promise<number> {
 }
 
 export async function getPeerIndex(
-  filters: {
-    charter_type?: string;
-    asset_tiers?: string[];
-    fed_districts?: number[];
-    state_code?: string;
-  },
+  filters: PeerFilterSet,
   approvedOnly = true
 ): Promise<IndexEntry[]> {
   const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
-  const params: (string | number)[] = [];
+  const params: (string | number | string[] | number[])[] = [];
   let paramIdx = 0;
 
   conditions.push(
@@ -213,31 +232,44 @@ export async function getPeerIndex(
       : "ef.review_status != 'rejected'"
   );
 
-  if (filters.charter_type) {
+  const institutionIds = peerInstitutionIds(filters);
+  if (institutionIds) {
+    // Hand-picked peers are exactly those institutions; the other filters do not apply.
     paramIdx++;
-    conditions.push(`ct.charter_type = $${paramIdx}`);
-    params.push(filters.charter_type);
-  }
-  if (filters.asset_tiers && filters.asset_tiers.length > 0) {
-    const placeholders = filters.asset_tiers.map(() => {
+    conditions.push(`ct.id = ANY($${paramIdx}::int[])`);
+    params.push(institutionIds);
+  } else {
+    if (filters.charter_type) {
       paramIdx++;
-      return `$${paramIdx}`;
-    }).join(",");
-    conditions.push(`ct.asset_size_tier IN (${placeholders})`);
-    params.push(...filters.asset_tiers);
-  }
-  if (filters.fed_districts && filters.fed_districts.length > 0) {
-    const placeholders = filters.fed_districts.map(() => {
+      conditions.push(`ct.charter_type = $${paramIdx}`);
+      params.push(filters.charter_type);
+    }
+    if (filters.asset_tiers && filters.asset_tiers.length > 0) {
+      const placeholders = filters.asset_tiers.map(() => {
+        paramIdx++;
+        return `$${paramIdx}`;
+      }).join(",");
+      conditions.push(`ct.asset_size_tier IN (${placeholders})`);
+      params.push(...filters.asset_tiers);
+    }
+    if (filters.fed_districts && filters.fed_districts.length > 0) {
+      const placeholders = filters.fed_districts.map(() => {
+        paramIdx++;
+        return `$${paramIdx}`;
+      }).join(",");
+      conditions.push(`ct.fed_district IN (${placeholders})`);
+      params.push(...filters.fed_districts);
+    }
+    if (filters.state_code) {
       paramIdx++;
-      return `$${paramIdx}`;
-    }).join(",");
-    conditions.push(`ct.fed_district IN (${placeholders})`);
-    params.push(...filters.fed_districts);
-  }
-  if (filters.state_code) {
-    paramIdx++;
-    conditions.push(`ct.state_code = $${paramIdx}`);
-    params.push(filters.state_code);
+      conditions.push(`ct.state_code = $${paramIdx}`);
+      params.push(filters.state_code);
+    }
+    if (filters.states && filters.states.length > 0) {
+      paramIdx++;
+      conditions.push(`ct.state_code = ANY($${paramIdx}::text[])`);
+      params.push(filters.states);
+    }
   }
 
   const where = conditions.join(" AND ");
@@ -248,7 +280,7 @@ export async function getPeerIndex(
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${where}`,
-    params
+    params as never[]
   ) as {
     fee_category: string;
     amount: number | null;
@@ -266,6 +298,16 @@ export interface PeerFilterSet {
   asset_tiers?: string[];
   fed_districts?: number[];
   state_code?: string;
+  /** Any of these states (a saved peer group's state filter). */
+  states?: string[];
+  /** Hand-picked peers. When set, the peers are exactly these institutions and the other filters are ignored. */
+  institutionIds?: number[];
+}
+
+/** The hand-picked peer ids, or null when the set is filter-based. */
+export function peerInstitutionIds(filters: PeerFilterSet): number[] | null {
+  const ids = (filters.institutionIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  return ids.length > 0 ? [...new Set(ids)] : null;
 }
 
 interface PeerRow extends IndexRow {
@@ -275,9 +317,14 @@ interface PeerRow extends IndexRow {
 }
 
 export function matchesPeerFilters(
-  row: Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code">,
+  row: Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code"> & {
+    institution_id?: number | string;
+  },
   filters: PeerFilterSet,
 ): boolean {
+  const ids = peerInstitutionIds(filters);
+  if (ids) return ids.includes(Number(row.institution_id));
+  if (filters.states?.length && !filters.states.includes(row.state_code ?? "")) return false;
   if (filters.charter_type && row.charter_type !== filters.charter_type) return false;
   if (filters.state_code && row.state_code !== filters.state_code) return false;
   if (filters.asset_tiers?.length && !filters.asset_tiers.includes(row.asset_size_tier ?? "")) return false;
@@ -300,13 +347,19 @@ export async function getPeerIndexes(
     STATS_ROW_FILTER,
     approvedOnly ? "ef.review_status = 'approved'" : "ef.review_status != 'rejected'",
   ];
-  const params: string[][] = [];
-  // Every set anchored on a charter or a state lets the query skip everything else.
-  if (filterSets.every((filters) => filters.charter_type || filters.state_code)) {
+  const params: (string[] | number[])[] = [];
+  // Every set anchored on a charter, a state or hand-picked peers lets the query skip everything else.
+  if (filterSets.every((f) => f.charter_type || f.state_code || f.states?.length || peerInstitutionIds(f))) {
     const charters = [...new Set(filterSets.map((f) => f.charter_type).filter((v): v is string => !!v))];
-    const states = [...new Set(filterSets.map((f) => f.state_code).filter((v): v is string => !!v))];
+    const states = [...new Set(filterSets.flatMap((f) => [f.state_code, ...(f.states ?? [])]).filter((v): v is string => !!v))];
+    const ids = [...new Set(filterSets.flatMap((f) => peerInstitutionIds(f) ?? []))];
     params.push(charters, states);
-    conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]))");
+    if (ids.length > 0) {
+      params.push(ids);
+      conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]) OR ct.id = ANY($3::int[]))");
+    } else {
+      conditions.push("(ct.charter_type = ANY($1::text[]) OR ct.state_code = ANY($2::text[]))");
+    }
   }
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.review_status, ef.created_at,
@@ -317,6 +370,44 @@ export async function getPeerIndexes(
     params as never[],
   ) as PeerRow[];
   return filterSets.map((filters) => buildIndexEntries(rows.filter((row) => matchesPeerFilters(row, filters))));
+}
+
+export interface PeerGroupCount {
+  /** Active institutions in the group (the asking institution left out). */
+  institutions: number;
+  /** Of those, how many have at least one live fee that counts toward statistics. */
+  publishing: number;
+}
+
+/**
+ * How many institutions each peer group holds, and how many of them publish live fees,
+ * from one read of the registry. Results follow the order of `filterSets`.
+ */
+export async function getPeerGroupCounts(
+  filterSets: PeerFilterSet[],
+  excludeInstitutionId?: number | null,
+): Promise<PeerGroupCount[]> {
+  if (filterSets.length === 0) return [];
+  const rows = await sql.unsafe(
+    `SELECT ct.id AS institution_id, ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
+            EXISTS (
+              SELECT 1 FROM published_fee_catalog ef
+               WHERE ef.institution_id = ct.id
+                 AND ef.fee_category IS NOT NULL
+                 AND ef.review_status = 'approved'
+                 AND ${STATS_ROW_FILTER}
+            ) AS publishes
+       FROM institution_sources ct
+      WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'`,
+  ) as (Pick<PeerRow, "charter_type" | "asset_size_tier" | "fed_district" | "state_code"> & {
+    institution_id: number | string;
+    publishes: boolean;
+  })[];
+  const peers = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
+  return filterSets.map((filters) => {
+    const members = peers.filter((row) => matchesPeerFilters(row, filters));
+    return { institutions: members.length, publishing: members.filter((row) => row.publishes).length };
+  });
 }
 
 export async function getIndexSnapshot(
@@ -733,4 +824,172 @@ export async function getPeerFeeValues(
     }
     return result;
   });
+}
+
+export interface SegmentFilter {
+  /** Total assets in thousands of dollars. */
+  minAssets: number | null;
+  maxAssets: number | null;
+  charterType: string | null;
+  stateCode: string | null;
+  /** Keep only the N largest by assets after the other filters. */
+  largest: number | null;
+}
+
+export interface SegmentFeeValue extends PeerFeeValue {
+  total_assets: number | null;
+  charter_type: string | null;
+}
+
+/**
+ * One fee (and its daily cap, when given) across a segment of the registry: how many active
+ * institutions fit, and each one's value under the statistics contract with its documents.
+ */
+export async function getSegmentFeeValues(
+  filter: SegmentFilter,
+  feeCategory: string,
+  capCategory: string | null,
+  excludeInstitutionId?: number,
+): Promise<{
+  institutionsInSegment: number;
+  ownInSegment: boolean;
+  values: SegmentFeeValue[];
+  caps: Map<number, number>;
+  limits: Map<number, DailyFeeLimit>;
+}> {
+  const params = [filter.minAssets, filter.maxAssets, filter.charterType, filter.stateCode, filter.largest ?? null];
+  const segmentSql = `
+    SELECT ct.id
+      FROM institution_sources ct
+     WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'
+       AND ($1::bigint IS NULL OR ct.asset_size >= $1)
+       AND ($2::bigint IS NULL OR ct.asset_size < $2)
+       AND ($3::text IS NULL OR ct.charter_type = $3)
+       AND ($4::text IS NULL OR ct.state_code = $4)
+       AND ($5::int IS NULL OR ct.asset_size IS NOT NULL)
+     ORDER BY ct.asset_size DESC NULLS LAST, ct.id
+     LIMIT COALESCE($5::int, 100000)`;
+  // Counted without the asking institution, as the values are.
+  const [countRow] = (await sql.unsafe(
+    `SELECT COUNT(*) FILTER (WHERE s.id IS DISTINCT FROM $6::int)::int AS n, COALESCE(BOOL_OR(s.id = $6::int), false) AS own
+       FROM (${segmentSql}) s`,
+    [...params, excludeInstitutionId ?? null] as never[],
+  )) as { n: number; own: boolean }[];
+  const categories = capCategory ? [feeCategory, capCategory] : [feeCategory];
+  const rows = (await sql.unsafe(
+    `WITH seg AS (${segmentSql})
+     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
+            ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+       JOIN seg ON seg.id = ct.id
+      WHERE ef.fee_category = ANY($6::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [...params, categories] as never[],
+  )) as {
+    fee_category: string;
+    amount: number | string | null;
+    institution_id: number | string;
+    institution_name: string;
+    charter_type: string | null;
+    state_code: string | null;
+    asset_size: number | string | null;
+    source_document_id: number | string | null;
+    document_url: string | null;
+    created_at: Date | string | null;
+  }[];
+  const kept = rows.filter((r) => Number(r.institution_id) !== excludeInstitutionId);
+  const iso = (v: Date | string | null) => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
+  const feeRows = kept.filter((r) => r.fee_category === feeCategory);
+  const values: SegmentFeeValue[] = [];
+  for (const [id, amount] of valuePerInstitution(feeRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })))) {
+    const own = feeRows.filter((r) => Number(r.institution_id) === id);
+    const first = own[0];
+    values.push({
+      institution_id: id,
+      institution_name: first?.institution_name ?? `Institution ${id}`,
+      state_code: first?.state_code ?? null,
+      amount,
+      source_document_ids: [...new Set(own.map((r) => Number(r.source_document_id)).filter((v) => Number.isFinite(v) && v > 0))],
+      document_urls: [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))],
+      published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
+      total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),
+      charter_type: first?.charter_type ?? null,
+    });
+  }
+  const capRows = capCategory ? kept.filter((r) => r.fee_category === capCategory) : [];
+  const caps = valuePerInstitution(capRows.map((r) => ({ ...r, institution_id: Number(r.institution_id) })));
+  const limits = await getDailyFeeLimits(values, feeCategory);
+  return { institutionsInSegment: Number(countRow?.n ?? 0), ownInSegment: Boolean(countRow?.own), values, caps, limits };
+}
+
+/**
+ * The daily limit on how many overdraft or NSF fees each institution charges ("Maximum 3
+ * Overdraft fees per day"), read from the stored text of the documents its live fee came
+ * from. Only the lines that mention a day (and the line above each) leave the database.
+ */
+export async function getDailyFeeLimits(
+  values: Pick<PeerFeeValue, "institution_id" | "source_document_ids">[],
+  feeCategory: string,
+): Promise<Map<number, DailyFeeLimit>> {
+  const limits = new Map<number, DailyFeeLimit>();
+  if (feeCategory !== "overdraft" && feeCategory !== "nsf") return limits;
+  const documentIds = [...new Set(values.flatMap((v) => v.source_document_ids))];
+  if (documentIds.length === 0) return limits;
+  const rows = (await sql.unsafe(
+    `SELECT t.source_document_id,
+            (SELECT string_agg(left(l.prev, 300) || E'\\n' || left(l.line, 1200), E'\\n' ORDER BY l.n)
+               FROM (SELECT x.line, x.n, lag(x.line, 1, '') OVER (ORDER BY x.n) AS prev
+                       FROM unnest(string_to_array(t.normalized_text, E'\\n')) WITH ORDINALITY AS x(line, n)) l
+              WHERE l.line ~* '\\mday\\M') AS day_lines
+       FROM (SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+               FROM agent_source_texts
+              WHERE source_document_id = ANY($1::bigint[])
+                AND status = 'completed'
+                AND normalized_text IS NOT NULL
+              ORDER BY source_document_id, id DESC) t`,
+    [documentIds] as never[],
+  )) as { source_document_id: number | string; day_lines: string | null }[];
+  const byDocument = new Map(rows.map((r) => [Number(r.source_document_id), r.day_lines]));
+  for (const value of values) {
+    for (const documentId of value.source_document_ids) {
+      const limit = dailyFeeLimitFor(byDocument.get(documentId), feeCategory);
+      if (limit) {
+        limits.set(value.institution_id, limit);
+        break;
+      }
+    }
+  }
+  return limits;
+}
+
+/**
+ * Several fees for a list of institutions, one value each under the statistics contract:
+ * institution id -> fee category -> amount. An institution or fee with no counted row is absent.
+ */
+export async function getFeeValuesForInstitutions(
+  institutionIds: number[],
+  categories: string[],
+): Promise<Map<number, Map<string, number>>> {
+  const out = new Map<number, Map<string, number>>();
+  if (institutionIds.length === 0 || categories.length === 0) return out;
+  const rows = (await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.amount
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = ANY($1::int[])
+        AND ef.fee_category = ANY($2::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [institutionIds, categories] as never[],
+  )) as { institution_id: number | string; fee_category: string; amount: number | string | null }[];
+  for (const category of categories) {
+    const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
+    for (const [id, value] of valuePerInstitution(list)) {
+      const own = out.get(id) ?? new Map<string, number>();
+      own.set(category, value);
+      out.set(id, own);
+    }
+  }
+  return out;
 }

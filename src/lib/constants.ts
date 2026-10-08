@@ -5,6 +5,12 @@ export const SITE_URL =
 export const SITE_NAME = "Fee Insight";
 export const PRODUCT_NAME = "Bank Fee Index";
 export const SITE_DOMAIN = "feeinsight.com";
+// The legal entity behind the site: formed in Washington, approved by the state Oct 7 2026.
+export const LEGAL_ENTITY_NAME = "Fee Insight LLC";
+export const LEGAL_ENTITY_STATE = "Washington";
+export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} limited liability company`;
+// Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
+export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
@@ -29,14 +35,17 @@ export const REPORT_OFFER = {
   priceUsd: 0,
   priceLabel: "Priced on request",
   ctaLabel: "Get a free fee report",
+  /** Label for links that open the request form on the paid institution report. */
+  institutionCtaLabel: "Request your institution report",
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
 } as const;
-// The public sample report (Reports/studio/sample + public/reports/sample-*) is offline
-// until it is re-rendered from live data that passes the per-fee source check. While false,
-// the sample page shows a "new sample coming soon" note, its PDF redirects there
-// (next.config.ts), and the homepage previews and the Hamilton benchmark example
-// (rows copied from the sample) are hidden.
+// The sample report page (/reports/sample-competitive-fee-position) is a live report rendered
+// from published data (src/lib/custom-report/sample-report.ts); links to it show whenever
+// sampleReportAvailable() is true. This flag gates only the OLD static sample
+// (Reports/studio/sample + public/reports/sample-*): its PDF redirects to the live page
+// (next.config.ts), and the homepage page images, the reports-hub position preview and the
+// Hamilton benchmark example (rows copied from the old sample) stay hidden while false.
 export const SAMPLE_REPORT_LIVE = false;
 /** The free offer, in one line: the instant national and Fed district reports. */
 /** What the institution report contains; the bank landing offer and the pay page list it. */
@@ -47,11 +56,11 @@ export const REPORT_INCLUDES = [
   "A source for every figure: the document, the page, the date",
 ] as const;
 
-export const REPORT_OFFER_LINE = "National and Fed district fee reports — free, and ready in a minute";
+export const REPORT_OFFER_LINE = "National and Fed district fee reports — free and instant";
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =
-  `Hamilton is the ${SITE_NAME} Pro workspace: benchmark, scenario, report and monitor ` +
-  "your fee position against a verified peer set.";
-export const HAMILTON_MODES = ["Analyze", "Benchmark", "Scenario", "Report", "Monitor"] as const;
+  `Hamilton is the ${SITE_NAME} Pro workspace: research, model and report your fee position ` +
+  "against a verified market, from your own counties to the nation.";
+export const HAMILTON_MODES = ["This month", "My fees", "Try a price", "Reports"] as const;
 export type HamiltonMode = (typeof HAMILTON_MODES)[number];

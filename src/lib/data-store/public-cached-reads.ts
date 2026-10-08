@@ -22,6 +22,9 @@ import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
 import { getMarketReadiness } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
+import { getInstitutionPeerRank } from "./peer-fee-rank";
+import { getMarketBranchFootprint } from "./branches";
+import { getNationalRateStats } from "./rate-fees";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -37,6 +40,11 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
   "fee-category-detail",
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
+);
+export const getNationalRateStatsCached = cachedPublicRead(
+  "national-rate-stats",
+  getNationalRateStats,
+  (stats) => stats.institution_count === 0,
 );
 export const getPeerIndexCached = cachedPublicRead("peer-index", getPeerIndex);
 export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats);
@@ -87,3 +95,5 @@ export const getStateEconomicContextCached = cachedPublicRead(
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
+export const getInstitutionPeerRankCached = cachedPublicRead("institution-peer-rank", getInstitutionPeerRank);
+export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);

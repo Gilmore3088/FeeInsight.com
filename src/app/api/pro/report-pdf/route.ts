@@ -20,12 +20,14 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { createElement } from "react";
 import type { ReactElement, JSXElementConstructor } from "react";
 import { getCurrentUser } from "@/lib/auth";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDocument";
 import { getHamiltonReportById } from "@/lib/hamilton/pro-tables";
 import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
 import { loadPublishedReport } from "@/app/pro/(hamilton)/reports/actions";
 import { getInstitutionById } from "@/lib/data-store";
+import { loadAnswerBrief } from "@/lib/hamilton/answer-brief";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -74,12 +76,19 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
       ? await getInstitutionById(Number(record.institutionId)).catch(() => null)
       : null;
     const institutionName = institution?.institution_name ?? undefined;
+    // The engine's standing figures for the institution go behind the answer; a failure leaves them out.
+    const briefInstitutionId = record.institutionId ? Number(record.institutionId) : null;
+    const peerSet = briefInstitutionId
+      ? await getActivePeerSet({ userId: user.id, institutionId: briefInstitutionId }).catch(() => null)
+      : null;
+    const brief = briefInstitutionId ? await loadAnswerBrief(briefInstitutionId, { peerSet }).catch(() => null) : null;
 
     try {
       const element = createElement(AnalysisPdfDocument, {
         analysis,
         analysisFocus,
         institutionName,
+        brief,
       }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
       const buffer = await renderToBuffer(element);
       const uint8 = new Uint8Array(buffer);

@@ -1,6 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 
-import type { AttemptStage } from "./outcomes";
+import { ATTEMPT_STAGES } from "./outcomes";
 
 type SqlTag = typeof sql;
 
@@ -17,14 +17,33 @@ type SqlTag = typeof sql;
  */
 
 export type FeedbackSignal = "wrong" | "right" | "missed" | "restored";
-export type FeedbackReporter = "atlas" | "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "human";
+/**
+ * Who may judge an output. Mirrors `pipeline_feedback_reported_by_check`
+ * (migration 20270110000024); a test keeps the two lists equal.
+ */
+export const FEEDBACK_REPORTERS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth", "human"] as const;
+export type FeedbackReporter = (typeof FEEDBACK_REPORTERS)[number];
+
+/**
+ * The stage an output came from: a pipeline stage (`ATTEMPT_STAGES`), or `marketing` for
+ * growth's posts, emails and PRs. Mirrors `pipeline_feedback_about_stage_check`
+ * (migration 20270110000024). `pipeline_attempts` keeps the pipeline stages only.
+ */
+export const FEEDBACK_STAGES = [...ATTEMPT_STAGES, "marketing"] as const;
+export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
 
 /**
  * Known kinds. Writers may add new ones; keep them snake_case and list them here.
  *   Fee level: wrong_category, wrong_amount, not_a_fee, threshold, not_on_schedule,
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
- *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link
+ *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
+ *     business_schedule (a main link that is a business-only schedule)
+ *   Text level (Rosetta, `rosetta/text-survival.ts`): text_held_up, text_lost_fees
+ *   Read level (Rosetta, `rosetta/batch-review.ts`): no_fees_found, short_text, missed_fee_page,
+ *     unresolved_fee_page, unread, batch_error_rate (one row per batch of reads)
+ *   Extract level (Knox, `knox/batch-review.ts`): batch_miss, batch_error_rate (one row per
+ *     batch of 500 Knox reads)
  */
 export type FeedbackKind =
   | "wrong_category"
@@ -36,6 +55,7 @@ export type FeedbackKind =
   | "outside_range"
   | "off_taxonomy"
   | "duplicate"
+  | "refreshed"
   | "answer_key"
   | "restored_after_takedown"
   | "darwin_verified"
@@ -44,11 +64,13 @@ export type FeedbackKind =
   | "thin_link"
   | "wrong_document"
   | "dead_link"
+  | "text_held_up"
+  | "text_lost_fees"
   | (string & {});
 
 export interface FeedbackRow {
   /** Stage and strategy that produced the output being judged. */
-  aboutStage: AttemptStage;
+  aboutStage: FeedbackStage;
   aboutStrategy?: string | null;
   aboutVersion?: number | null;
   /** The `pipeline_attempts.id` that produced it, when known. */
@@ -157,17 +179,45 @@ export function knoxStrategyFromFlags(flags: unknown): string {
   return specialist ? specialist.slice("knox_specialist:".length) : "extract.rules";
 }
 
+/**
+ * A takedown reason's group without the row it points at ("refreshed by #69017" ->
+ * "refreshed by"), so a check or kind is one name, never one per fee; the id stays in
+ * the row's evidence (`takedownPointer`).
+ */
+function takedownGroup(group: string): string {
+  return group.replace(/\s*#\d+\s*$/, "").trim();
+}
+
+/** The live row a takedown reason points at ("superseded by #69017" -> 69017), if any. */
+export function takedownPointer(reason: string): number | null {
+  const match = reason.split(":")[0].match(/#(\d+)\s*$/);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * A refresh closes a live row because the current copy of the page states the same fee
+ * (same name and amount) and that row was published in its place: Knox's read and
+ * Darwin's approval held up, so it is a `right` signal, not a takedown.
+ */
+export function takedownSignal(reason: string): "wrong" | "right" {
+  return takedownGroup(reason.split(":")[0]) === "refreshed by" ? "right" : "wrong";
+}
+
 /** The feedback kind for a Hamilton takedown reason (`published_fee_records.rolled_back_reason`). */
 export function takedownKind(reason: string): FeedbackKind {
-  const [group, detail] = reason.split(":");
+  const [rawGroup, detail] = reason.split(":");
+  const group = takedownGroup(rawGroup);
+  if (group === "refreshed by") return "refreshed";
   if (group === "rules_recheck_unreproduced") return "unreproduced";
   if (group === "category_guard") return "wrong_category";
   if (group === "amount_outside_category_range") return "outside_range";
   if (group === "category_outside_taxonomy") return "off_taxonomy";
-  if (/^(duplicate of|superseded by)/.test(group)) return "duplicate";
+  if (group === "limit_as_fee") return "not_a_fee";
+  if (/^(duplicate of|superseded by|older document than)/.test(group)) return "duplicate";
   if (group === "source_check_untraceable") {
     if (detail === "amount_is_a_threshold") return "threshold";
     if (detail === "amount_not_the_fee") return "wrong_amount";
+    if (detail === "priced_per_amount") return "priced_per_amount";
     if (detail === "category_not_in_text") return "wrong_category";
     return "not_on_schedule";
   }
@@ -176,8 +226,9 @@ export function takedownKind(reason: string): FeedbackKind {
 
 /** The Hamilton check behind a takedown reason. */
 export function takedownCheck(reason: string): string {
-  const group = reason.split(":")[0];
-  if (/^(duplicate of|superseded by)/.test(group)) return "hamilton.duplicate_collapse";
+  const group = takedownGroup(reason.split(":")[0]);
+  if (group === "refreshed by") return "hamilton.refresh_copy";
+  if (/^(duplicate of|superseded by|older document than)/.test(group)) return "hamilton.duplicate_collapse";
   if (group === "rules_recheck_unreproduced") return "hamilton.rules_recheck";
   if (group === "source_check_untraceable") return "hamilton.source_check";
   return `hamilton.${group}`;

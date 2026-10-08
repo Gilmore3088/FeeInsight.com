@@ -1,7 +1,13 @@
-What each part of a profile means, and how to get an email when a fee changes.
+What the state page shows, and the institution profiles behind it.
 
-How to read an institution's fee profile
-[ READING A PROFILE ]
+How to read your state's fee numbers
+[ READING THE STATE PAGE ]
+- The median: the middle price among institutions in the state that publish the fee.
+- The middle half: the 25th to 75th percentile, where most institutions price.
+- Institutions behind it: how many schedules each number rests on. A small count means read it as a hint, not a verdict.
+Find your state's page: https://feeinsight.com/research?utm_source=mailerlite&utm_medium=email&utm_campaign=explorer&utm_content=what-you-watch
+Free, no login.
+[ THEN LOOK AT A SINGLE INSTITUTION ]
 - The fee table: each fee next to the national median.
 - Source: the published document and the date we read it.
 - Coverage: how many of the 15 headline fees the schedule publishes. A missing fee isn't a $0 fee.
@@ -10,5 +16,4 @@ Full email with tables and charts: {$url}
 
 --
 Fee Insight · feeinsight.com · reply with questions
-[Fee Insight mailing address]
 Unsubscribe: {$unsubscribe}

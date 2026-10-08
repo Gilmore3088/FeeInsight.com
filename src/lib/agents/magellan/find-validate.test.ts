@@ -114,3 +114,53 @@ describe("Magellan fee-page check", () => {
     expect(looksLikeProductPage("https://a.example/fees")).toBe(false);
   });
 });
+
+describe("business-only schedules", () => {
+  const page = (body: string) => vi.fn(async () => new Response(`<html><body><main>${body}</main></body></html>`, { status: 200, headers: { "content-type": "text/html" } }));
+  const lines = "<p>Overdraft fee $35.00</p><p>Stop payment $30.00</p><p>Wire $25.00</p><p>Cashier's check $10.00</p>";
+
+  it("rejects a link whose address names a business-only schedule without opening it", async () => {
+    const fetchImpl = page(lines);
+    const result = await validateFeeCandidate({ url: "https://bank.example/uploads/Business-Account-Fee-Schedule.pdf", score: 0.9, reasons: [] }, fetchImpl);
+    expect(result).toMatchObject({ ok: false, verdict: "business_schedule" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects an article about fees without opening it, and keeps a fee document filed under articles", async () => {
+    const fetchImpl = page(lines);
+    const article = await validateFeeCandidate({ url: "https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid", score: 0.9, reasons: [] }, fetchImpl);
+    expect(article).toMatchObject({ ok: false, verdict: "article_page" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const schedule = await validateFeeCandidate({ url: "https://www.mtcfederal.com/articles/schedule-of-fees/", score: 0.9, reasons: [] }, fetchImpl);
+    expect(schedule.verdict).not.toBe("article_page");
+  });
+
+  it("rejects one product's disclosure without opening it", async () => {
+    const fetchImpl = page(lines);
+    const disclosure = await validateFeeCandidate({ url: "https://www.fiveriversbank.com/documents/truth-in-savings-12-month-time-deposit-disclosure", score: 0.9, reasons: [] }, fetchImpl);
+    expect(disclosure).toMatchObject({ ok: false, verdict: "single_product_disclosure" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects another country's schedule by its domain without opening it, and by its currency once read", async () => {
+    const fetchImpl = page(lines);
+    const foreignHost = await validateFeeCandidate({ url: "https://www.southeastbank.com.bd/documents/schedule-of-charges.pdf", score: 0.95, reasons: [] }, fetchImpl);
+    expect(foreignHost).toMatchObject({ ok: false, verdict: "foreign_schedule" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const ownSite = await validateFeeCandidate({ url: "https://www.nbc.ca/natbank/fees", score: 0.95, reasons: [], websiteUrl: "https://www.nbc.ca/natbank" }, page(lines));
+    expect(ownSite.verdict).not.toBe("foreign_schedule");
+    const taka = "<h1>Schedule of Charges</h1>" + [
+      "Account maintenance fee Tk 500", "Cheque book issue fee Tk 10 per leaf", "Debit card annual fee BDT 1,000",
+      "Statement fee Tk 50", "Stop payment fee Tk 100", "Standing instruction fee Tk 200",
+    ].map((line) => `<p>${line}</p>`).join("");
+    const foreignText = await validateFeeCandidate({ url: "https://www.citigroup.com/rcs/citigpa/storage/public/Schedule_of_Charges.html", score: 0.95, reasons: [] }, page(taka));
+    expect(foreignText).toMatchObject({ ok: false, verdict: "foreign_schedule" });
+  });
+
+  it("rejects a page whose own heading is a business schedule, and keeps a combined one", async () => {
+    const business = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Business Account Fee Schedule</h1>${lines}`));
+    expect(business).toMatchObject({ ok: false, verdict: "business_schedule" });
+    const combined = await validateFeeCandidate({ url: "https://bank.example/fees", score: 0.9, reasons: [] }, page(`<h1>Schedule of Fees</h1><p>Personal and business accounts</p>${lines}`));
+    expect(combined.ok).toBe(true);
+  });
+});

@@ -1,4 +1,4 @@
-export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton";
+export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "growth";
 
 export type AgentRunStatus =
   | "queued"
@@ -94,7 +94,7 @@ export interface AgentRunEventSnapshot {
  * is deterministic and is paused only by the separate pipeline control.
  */
 /** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
-export const PROVIDER_STEP_KEYS: readonly string[] = ["discover-paid", "read-paid", "extract-paid", "verify-paid", "report-render"];
+export const PROVIDER_STEP_KEYS: readonly string[] = ["discover-paid", "read-paid", "extract-paid", "verify-paid", "report-render", "marketing-write"];
 
 export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);
@@ -110,9 +110,42 @@ export const MAX_STEP_ATTEMPTS = 3;
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
+  "briefing-refresh",
+  "competitor-alerts",
   "daily-brief",
   "fee-alert-dispatch",
   "lead-watch",
+  "pro-digest",
   "score-answer-key",
   "scoreboard-snapshot",
 ];
+
+/**
+ * Growth's marketing steps (content drafts, monthly email, queue intake, weekly scoring).
+ * They obey the `marketing` control (`getMarketingControl`) instead of the pipeline pause:
+ * pausing marketing leaves data runs going, and pausing the pipeline leaves marketing runs going.
+ */
+export const MARKETING_STEP_KEYS: readonly string[] = [
+  "content-fee-depth",
+  "content-market-spread",
+  "growth-intake",
+  "growth-score",
+  "marketing-score",
+  "marketing-send",
+  "marketing-states",
+  "marketing-write",
+];
+
+export function isMarketingStep(stepKey: string): boolean {
+  return MARKETING_STEP_KEYS.includes(stepKey);
+}
+
+/**
+ * Which operator pause holds a step: `marketing` for growth's steps, `none` for the
+ * reporting steps that run through any pause, `pipeline` for everything else.
+ */
+export function pauseScopeForStep(stepKey: string): "marketing" | "pipeline" | "none" {
+  if (isMarketingStep(stepKey)) return "marketing";
+  if (PAUSE_EXEMPT_STEP_KEYS.includes(stepKey)) return "none";
+  return "pipeline";
+}

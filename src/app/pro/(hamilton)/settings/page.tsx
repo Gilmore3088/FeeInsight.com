@@ -7,7 +7,19 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PeerSetManager } from "./PeerSetManager";
-import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
+import {
+  getPeerInstitutionNames,
+  getPeerSetWorkspace,
+  getSavedPeerSets,
+  type SavedPeerSet,
+} from "@/lib/data-store/saved-peers";
+import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
+import {
+  buildInstitutionPeerFilterCandidates,
+  describePeerFilters,
+  parseSavedPeerSetFilters,
+} from "@/lib/hamilton/peer-index";
+import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
   getIntelligenceSnapshot,
   getWorkspaceInstitutionClaimState,
@@ -24,9 +36,14 @@ import {
   type InstitutionWorkspaceInvitation,
 } from "@/lib/hamilton/institution-membership";
 import { WorkspaceAccessManager } from "./WorkspaceAccessManager";
+import { buildWorkspaceInvitePath, inviteLinksConfigured } from "@/lib/hamilton/workspace-invite-link";
+import { LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
+import { FeeFiguresUpload } from "@/components/hamilton/settings/FeeFiguresUpload";
+import { isCappedConsultant } from "@/lib/hamilton/report-cap";
+import { CONSULTANT_MONTHLY_REPORTS } from "@/lib/pro-tiers";
 
 export const metadata: Metadata = {
-  title: "Strategy Settings",
+  title: "My bank and data",
 };
 
 const PLAN_LABEL: Record<string, string> = {
@@ -37,9 +54,8 @@ const PLAN_LABEL: Record<string, string> = {
 };
 
 /**
- * Settings page — Strategy Settings editorial design.
- * Institution profile form feeds HamiltonContextBar across all screens.
- * Per D-01, D-09: warm parchment aesthetic, serif headers, editorial layout.
+ * My bank and data (reached from the Account menu), in the living-memo layout.
+ * The bank picked here is the one Hamilton works on across every screen.
  */
 export default async function SettingsPage({
   searchParams,
@@ -65,10 +81,36 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [peerSets, snapshot] = await Promise.all([
-    getSavedPeerSets(String(user.id)).catch(() => []),
+  const [peerSetWorkspace, snapshot, cappedConsultant] = await Promise.all([
+    getPeerSetWorkspace(String(user.id)).catch(() => null),
     getIntelligenceSnapshot(),
+    isCappedConsultant(user).catch(() => false),
   ]);
+  const peerSets: SavedPeerSet[] = await getSavedPeerSets(
+    String(user.id),
+    peerSetWorkspace?.institutionId ?? null,
+  ).catch(() => []);
+  // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
+  const [peerSetCounts, peerInstitutionNames] = await Promise.all([
+    getPeerGroupCounts(
+      peerSets.map((set) => parseSavedPeerSetFilters(set)),
+      peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null,
+    ).catch((): PeerGroupCount[] => []),
+    getPeerInstitutionNames(peerSets.flatMap((set) => set.institution_ids ?? [])).catch(
+      () => new Map<number, string>(),
+    ),
+  ]);
+  // Where a set is too thin for a fee, charts fall back to the bank's own default group.
+  const firstDefaultGroup = selectedInstitution
+    ? buildInstitutionPeerFilterCandidates({
+        institution_name: selectedInstitution.name,
+        state_code: selectedInstitution.stateCode,
+        charter_type: selectedInstitution.charterType,
+        asset_size_tier: selectedInstitution.assetTier,
+        fed_district: selectedInstitution.fedDistrict,
+      })[0]
+    : undefined;
+  const widerGroupLabel = firstDefaultGroup ? describePeerFilters(firstDefaultGroup) : "the national index";
   const [selectedClaim, selectedMembership, workspaceMembers, workspaceInvitations] = selectedInstitution
     ? await Promise.all([
         getWorkspaceInstitutionClaimState(selectedInstitution.id),
@@ -84,303 +126,245 @@ export default async function SettingsPage({
     isAdmin ||
     selectedMembership?.role === "owner" ||
     selectedMembership?.role === "admin";
+  // Signed per-invite links, computed here on the server; the secret never reaches the page.
+  const inviteLinksReady = inviteLinksConfigured();
+  const workspaceInviteLinks: Record<number, string | null> = canManageWorkspaceAccess
+    ? Object.fromEntries(
+        workspaceInvitations.map((invitation) => [
+          invitation.id,
+          buildWorkspaceInvitePath({
+            invitationId: invitation.id,
+            email: invitation.email,
+            institutionId: invitation.institutionId,
+          }),
+        ]),
+      )
+    : {};
 
-  const cardStyle = {
-    backgroundColor: "var(--hamilton-surface-elevated)",
-    border: "1px solid var(--hamilton-border)",
-    borderRadius: "0.5rem",
-    padding: "1.5rem",
-  };
+  const subscriptionStatus = user.subscription_status ?? "none";
+  const statusLabel =
+    subscriptionStatus === "active"
+      ? "Active"
+      : subscriptionStatus === "past_due"
+        ? "Payment past due"
+        : subscriptionStatus === "canceled"
+          ? "Canceled"
+          : "No subscription";
+  const statusClass =
+    subscriptionStatus === "past_due" || subscriptionStatus === "canceled"
+      ? "bg-terra-soft text-terra-text"
+      : "bg-warm-150 text-warm-800";
+  // ManageBillingButton carries its own inline styles; for the neutral states (open the portal,
+  // or subscribe) bring it in line with the memo's secondary button. Past-due and canceled keep
+  // their own warning colours.
+  const neutralBilling = !user.stripe_customer_id || subscriptionStatus === "none" || subscriptionStatus === "active";
+  const billingButtonStyle = neutralBilling
+    ? {
+        padding: "0.5rem 0.875rem",
+        fontSize: "0.875rem",
+        fontWeight: 500,
+        borderRadius: "0.375rem",
+        border: "1px solid var(--color-warm-300)",
+        color: "var(--color-warm-800)",
+        backgroundColor: "var(--color-warm-50)",
+        opacity: 1,
+        cursor: "pointer",
+      }
+    : { padding: "0.5rem 0.875rem", fontSize: "0.875rem", fontWeight: 500 };
 
-  const sectionLabelStyle = {
-    fontSize: "11px",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    color: "var(--hamilton-text-secondary)",
-  };
-
-  const statusColors: Record<string, { bg: string; text: string }> = {
-    active: { bg: "rgb(236, 253, 245)", text: "rgb(5, 150, 105)" },
-    past_due: { bg: "rgb(255, 251, 235)", text: "rgb(217, 119, 6)" },
-    canceled: { bg: "rgb(254, 242, 242)", text: "rgb(220, 38, 38)" },
-    none: { bg: "rgb(243, 244, 246)", text: "rgb(107, 114, 128)" },
-  };
   const selectedInstParam = selectedInstitution
     ? `?instId=${selectedInstitution.id}`
     : "";
   const selectedInstAndIntentParam = selectedInstitution
     ? `?instId=${selectedInstitution.id}&intent=competitive-brief`
     : "?intent=competitive-brief";
+  const panel = "rounded-lg border border-warm-300 bg-warm-50 p-5";
 
   return (
-    <div className="pb-16">
-      {/* Page header */}
-      <div className="mb-8">
-        <p className="text-[10px] uppercase tracking-[0.2em] mb-2" style={{ color: "var(--hamilton-text-secondary)" }}>
-          Hamilton Intelligence
-        </p>
-        <h1
-          className="text-3xl font-bold mb-2"
-          style={{
-            fontFamily: "var(--hamilton-font-serif)",
-            color: "var(--hamilton-text-primary)",
-          }}
-        >
-          Strategy Settings
-        </h1>
-        <p className="text-sm max-w-xl" style={{ color: "var(--hamilton-text-secondary)" }}>
-          Choose your institution and peer sets, manage your watchlist and team, and handle billing.
-        </p>
-      </div>
+    <MemoPage>
+      <MemoHeader
+        kicker="Account"
+        title="My bank and data"
+        dek={
+          selectedInstitution
+            ? `Hamilton is working on ${selectedInstitution.name}.`
+            : "Pick your bank so Hamilton can compare your fees with your peers."
+        }
+        actions={
+          <>
+            <LinkButton href={`/pro/monitor${selectedInstParam}`}>All changes</LinkButton>
+            <LinkButton href={`/pro/analyze${selectedInstParam}`}>Ask Hamilton</LinkButton>
+            <LinkButton href={`/pro/reports${selectedInstAndIntentParam}`} primary>
+              Build a report
+            </LinkButton>
+          </>
+        }
+      />
 
-      {/* Row 1: Account Overview + Intelligence Snapshot */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 mb-6">
-        {/* Account Overview */}
-        <div className="lg:col-span-2" style={cardStyle}>
-          <p style={sectionLabelStyle} className="mb-4">Account Overview</p>
-
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p
-                className="text-lg font-bold"
-                style={{
-                  fontFamily: "var(--hamilton-font-serif)",
-                  color: "var(--hamilton-text-primary)",
-                }}
-              >
-                {user.display_name}
-              </p>
-              {user.email && (
-                <p className="text-sm mt-0.5" style={{ color: "var(--hamilton-text-secondary)" }}>
-                  {user.email}
-                </p>
-              )}
-
-              <div className="flex items-center gap-3 mt-3">
-                <span
-                  className="px-2 py-0.5 text-[11px] font-semibold rounded uppercase tracking-wider"
-                  style={{
-                    backgroundColor: "var(--hamilton-accent-subtle)",
-                    color: "var(--hamilton-text-accent)",
-                  }}
-                >
-                  {user.role === "admin" ? "Admin" : user.role === "analyst" ? "Analyst" : "Subscriber"}
-                </span>
-                <span className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-                  {planLabel}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {!isAdmin && (
-            <div className="flex items-center gap-3 mt-5">
-              <ManageBillingButton
-                hasStripeAccount={!!user.stripe_customer_id}
-                subscriptionStatus={user.subscription_status ?? "none"}
-                className="px-4 py-2 text-xs font-semibold rounded-md border transition-opacity hover:opacity-80"
-              />
-              <a
-                href={`mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Hamilton%20support`}
-                className="px-4 py-2 text-xs font-semibold rounded-md border transition-opacity hover:opacity-80"
-                style={{
-                  borderColor: "var(--hamilton-border)",
-                  color: "var(--hamilton-text-secondary)",
-                  backgroundColor: "transparent",
-                }}
-              >
-                Contact Support
-              </a>
-            </div>
-          )}
+      <MemoSection
+        title="Your bank"
+        note={
+          selectedInstitution
+            ? "Every screen starts from this bank."
+            : "Choose your bank so Hamilton can compare your fees with your peers."
+        }
+      >
+        <div className={panel}>
+          <WorkspaceInstitutionForm
+            selectedInstitution={selectedInstitution}
+            selectedSource={selectedSource === "artifact" ? "manual" : selectedSource}
+            selectedClaim={selectedClaim}
+            selectedMembership={selectedMembership}
+          />
         </div>
+      </MemoSection>
 
-        {/* Intelligence Snapshot (SET-05) */}
-        <div style={cardStyle}>
-          <p style={sectionLabelStyle} className="mb-4">Intelligence Snapshot</p>
-          <div className="space-y-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Account Tier
-              </p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: "var(--hamilton-text-primary)" }}>
-                {snapshot.tier}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Saved Analyses
-              </p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: "var(--hamilton-text-primary)" }}>
-                {snapshot.savedAnalyses}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Saved Scenarios
-              </p>
-              <p className="text-sm font-bold tabular-nums" style={{ color: "var(--hamilton-text-primary)" }}>
-                {snapshot.savedScenarios}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Last Activity
-              </p>
-              <p className="text-sm" style={{ color: "var(--hamilton-text-secondary)" }}>
-                {snapshot.lastActivity ? new Date(snapshot.lastActivity).toLocaleDateString() : "No activity yet"}
-              </p>
-            </div>
-          </div>
-          <Link
-            href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/pro/analyze"}
-            className="inline-block mt-4 text-xs font-medium no-underline hover:opacity-80"
-            style={{ color: "var(--hamilton-accent)" }}
-          >
-            View in Analyze
-          </Link>
+      <MemoSection
+        id="your-figures"
+        title="Your own figures"
+        note="Turns Hamilton's estimates into your own numbers."
+      >
+        <FeeFiguresUpload institutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
+      </MemoSection>
+
+      <MemoSection
+        id="peer-sets"
+        title="Peer groups"
+        note="Who your fees are compared with."
+      >
+        <div className={`${panel} scroll-mt-24`}>
+          <PeerSetManager
+            initialPeerSets={peerSets}
+            initialCounts={Object.fromEntries(
+              peerSets.flatMap((set, i) => (peerSetCounts[i] ? [[set.id, peerSetCounts[i]]] : [])),
+            )}
+            initialInstitutionNames={Object.fromEntries(peerInstitutionNames)}
+            workspaceName={
+              peerSetWorkspace && selectedInstitution?.id === peerSetWorkspace.institutionId
+                ? selectedInstitution.name
+                : peerSetWorkspace
+                  ? "your team"
+                  : null
+            }
+            canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
+            currentUserId={String(user.id)}
+            minPeers={MIN_PEERS_FOR_POSITION}
+            widerGroupLabel={widerGroupLabel}
+          />
         </div>
-      </div>
+      </MemoSection>
 
-      {/* Selected Hamilton Institution */}
-      <div style={cardStyle} className="mb-6">
-        <p style={sectionLabelStyle} className="mb-1">Your Institution</p>
-        <p className="text-xs mb-5" style={{ color: "var(--hamilton-text-tertiary)" }}>
-          {selectedInstitution
-            ? "Your Briefing, Analyze, Reports, Scenarios and Watchlist start from this institution."
-            : "Choose your institution so Hamilton can compare your fees with your peers."}
-        </p>
-        <WorkspaceInstitutionForm
-          selectedInstitution={selectedInstitution}
-          selectedSource={selectedSource === "artifact" ? "manual" : selectedSource}
-          selectedClaim={selectedClaim}
-          selectedMembership={selectedMembership}
-        />
-      </div>
-
-      {/* Peer Set Management (SET-02) */}
-      <div id="peer-sets" style={cardStyle} className="mb-6 scroll-mt-24">
-        <p style={sectionLabelStyle} className="mb-1">Peer Set Management</p>
-        <p className="text-xs mb-4" style={{ color: "var(--hamilton-text-tertiary)" }}>
-          Configure peer groups for Simulate and Reports. Peer sets define the comparison universe for your fee analysis.
-        </p>
-        <PeerSetManager initialPeerSets={peerSets} />
-      </div>
-
-      {/* Row: Usage & Limits + Feature Access */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
-        {/* Usage & Limits */}
-        <div style={cardStyle}>
-          <p style={sectionLabelStyle} className="mb-3">Usage and Limits</p>
-          <div className="space-y-2">
-            {[
-              { label: "Research queries", value: "Unlimited" },
-              { label: "Report exports", value: "Unlimited" },
-              { label: "Saved analyses", value: "Unlimited" },
-              { label: "Saved scenarios", value: "Unlimited" },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between text-sm">
-                <span style={{ color: "var(--hamilton-text-secondary)" }}>{item.label}</span>
-                <span className="font-semibold" style={{ color: "var(--hamilton-text-primary)" }}>{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Feature Access (SET-03) */}
-        <div style={cardStyle}>
-          <p style={sectionLabelStyle} className="mb-3">Feature Access</p>
-          <FeatureToggles selectedInstitutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
-        </div>
-      </div>
-
-      {/* Row: Workspace Access + Billing */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mb-6">
-        {/* Workspace Access */}
-        <div id="workspace-access" style={cardStyle}>
-          <p style={sectionLabelStyle} className="mb-3">Workspace Access</p>
+      <MemoSection
+        id="workspace-access"
+        title="Team access"
+        note="Colleagues see the same bank and saved work."
+      >
+        <div className={`${panel} scroll-mt-24`}>
           <WorkspaceAccessManager
             institutionId={selectedInstitution?.id ?? null}
             members={workspaceMembers}
             invitations={workspaceInvitations}
             canManage={canManageWorkspaceAccess}
+            inviteLinks={workspaceInviteLinks}
+            inviteLinksReady={inviteLinksReady}
           />
         </div>
+      </MemoSection>
 
-        {/* Billing (SET-04) */}
-        <div style={cardStyle}>
-          <p style={sectionLabelStyle} className="mb-3">Billing</p>
-          {isAdmin ? (
-            <div>
-              <span
-                className="inline-block px-3 py-1 text-[11px] font-semibold rounded uppercase tracking-wider"
-                style={{ backgroundColor: "rgb(255, 251, 235)", color: "rgb(180, 83, 9)" }}
-              >
-                Admin Access
+      <MemoSection title="Your account and billing">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className={panel}>
+            <p className="text-lg text-warm-900" style={SERIF}>
+              {user.display_name}
+            </p>
+            {user.email && <p className="mt-0.5 text-sm text-warm-700">{user.email}</p>}
+            <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-warm-700">
+              <span className="rounded-full bg-warm-150 px-2.5 py-0.5 text-xs font-medium text-warm-800">
+                {user.role === "admin" ? "Admin" : user.role === "analyst" ? "Analyst" : "Subscriber"}
               </span>
-              <p className="text-sm mt-2" style={{ color: "var(--hamilton-text-secondary)" }}>
-                You have full platform access as an administrator. No billing applies.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <p
-                  className="text-base font-bold"
-                  style={{ fontFamily: "var(--hamilton-font-serif)", color: "var(--hamilton-text-primary)" }}
-                >
-                  Hamilton Pro
-                </p>
-                <span
-                  className="px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wider"
-                  style={{
-                    backgroundColor: statusColors[user.subscription_status]?.bg ?? statusColors.none.bg,
-                    color: statusColors[user.subscription_status]?.text ?? statusColors.none.text,
-                  }}
-                >
-                  {user.subscription_status === "active" ? "Active" :
-                   user.subscription_status === "past_due" ? "Past Due" :
-                   user.subscription_status === "canceled" ? "Canceled" : "No Subscription"}
-                </span>
-              </div>
-              <p className="text-xs" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                Plan, renewal date and invoices are in the billing portal.
-              </p>
-              <ManageBillingButton
-                hasStripeAccount={!!user.stripe_customer_id}
-                subscriptionStatus={user.subscription_status ?? "none"}
-                className="px-4 py-2 text-xs font-semibold rounded-md transition-opacity hover:opacity-80"
-              />
-            </div>
-          )}
-        </div>
-      </div>
+              <span>{planLabel}</span>
+            </p>
 
-      {/* Quick Actions */}
-      <div style={cardStyle} className="mb-6">
-        <p style={sectionLabelStyle} className="mb-4">Quick Actions: Continue Working</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[
-            { href: `/pro/monitor${selectedInstParam}`, label: "Back to Monitor" },
-            { href: `/pro/analyze${selectedInstParam}`, label: "Run Analysis" },
-            { href: `/pro/reports${selectedInstAndIntentParam}`, label: "Build Report" },
-          ].map((action) => (
+            <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-warm-200 pt-4 text-sm">
+              <div>
+                <dt className="text-warm-600">Saved analyses</dt>
+                <dd className="mt-0.5 text-warm-900 [font-variant-numeric:tabular-nums]">{snapshot.savedAnalyses}</dd>
+              </div>
+              <div>
+                <dt className="text-warm-600">Saved scenarios</dt>
+                <dd className="mt-0.5 text-warm-900 [font-variant-numeric:tabular-nums]">{snapshot.savedScenarios}</dd>
+              </div>
+              <div>
+                <dt className="text-warm-600">Account tier</dt>
+                <dd className="mt-0.5 text-warm-900">{snapshot.tier}</dd>
+              </div>
+              <div>
+                <dt className="text-warm-600">Last activity</dt>
+                <dd className="mt-0.5 text-warm-900">
+                  {snapshot.lastActivity ? new Date(snapshot.lastActivity).toLocaleDateString() : "No activity yet"}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-sm text-warm-700">
+              {cappedConsultant
+                ? `Your plan includes ${CONSULTANT_MONTHLY_REPORTS} Hamilton reports a month. Research questions, saved analyses and saved scenarios have no monthly limit.`
+                : "Research questions, report exports, saved analyses and saved scenarios have no monthly limit on your plan."}
+            </p>
             <Link
-              key={action.href}
-              href={action.href}
-              className="block p-3 rounded-md text-sm font-medium no-underline text-center transition-all hover:opacity-80"
-              style={{
-                backgroundColor: "var(--hamilton-surface-container-low)",
-                color: "var(--hamilton-text-primary)",
-                border: "1px solid transparent",
-              }}
+              href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/pro/analyze"}
+              className="mt-3 inline-block text-sm font-medium text-terra-text underline decoration-terra/40 underline-offset-2 hover:decoration-terra"
             >
-              {action.label}
+              Ask Hamilton about your bank
             </Link>
-          ))}
+          </div>
+
+          <div className={panel}>
+            {isAdmin ? (
+              <>
+                <p className="text-lg text-warm-900" style={SERIF}>
+                  Admin access
+                </p>
+                <p className="mt-2 text-sm text-warm-700">
+                  You have full access as an administrator. No billing applies.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-lg text-warm-900" style={SERIF}>
+                    Hamilton Pro
+                  </p>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusClass}`}>{statusLabel}</span>
+                </div>
+                <p className="mt-2 text-sm text-warm-700">
+                  Your plan, renewal date and invoices are in the billing portal.
+                </p>
+                <div className="mt-4 flex flex-wrap items-start gap-2">
+                  <ManageBillingButton
+                    hasStripeAccount={!!user.stripe_customer_id}
+                    subscriptionStatus={subscriptionStatus}
+                    className="hover:border-warm-500"
+                    style={billingButtonStyle}
+                  />
+                  <a
+                    href={`mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Hamilton%20support`}
+                    className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 no-underline hover:border-warm-500"
+                  >
+                    Contact support
+                  </a>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    </div>
+      </MemoSection>
+
+      <MemoSection
+        title="What your plan includes"
+        note="Each link opens on the bank you picked above."
+      >
+        <FeatureToggles selectedInstitutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
+      </MemoSection>
+    </MemoPage>
   );
 }

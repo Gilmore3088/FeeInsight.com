@@ -22,6 +22,25 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Direct state re-search (`priority-state-research.ts`)
+
+A state on `PRIORITY_STATE_RESEARCH_REQUESTS` gets a `manual_repair` run (source
+`atlas.priority_state_research`) of free steps: discover with `upgrade_slots` 25, then
+fetch, read, extract, classify, publish. One run per state at a time, none while the
+state's own lane is running (a queued lane does not count), and none once nothing is due (dead ends whose last search used
+an older discovery method, and product-page links not yet searched for the real schedule)
+or the request's `until` day has passed. Magellan's own selectors pick the banks, so a bank
+is never searched twice under one method. Tennessee is on it until 10 Oct 2026.
+
+## Direct runs for one institution (`priority-institutions.ts`)
+
+Up to two at a time, free steps only (fetch, read, extract, verify, publish) for one bank, in
+this order: a schedule found by hand and not yet fetched; a document Magellan's paid fetch
+stored that is still unread (the paid step fetches blocked links for banks in every state,
+while a state run reads only its own state, so these would wait for their state's lane); a
+bank asked for by name; a $10B+ bank or market leader with no live overdraft fee. A new
+hand-found link or paid-fetched document starts a new run even inside the retry window.
+
 ## State lanes: cadence and state experts
 
 - `state-lane-scheduler.ts`: one full pass per state per UTC calendar month. The first
@@ -32,6 +51,37 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   free work left (`stateHasDocumentBacklog`, which must use the same filters as those steps'
   selectors); otherwise it sleeps until its next full pass, checking again at least every 12
   hours (`STATE_LANE_IDLE_RECHECK_HOURS`).
+- A state runs daily full passes instead of monthly while more than
+  `DAILY_FULL_PASS_MISSING_LINKS` (50) of its banks have no fee link and a search can still
+  find them (website on file, not offline or manual-review, last search not `dead` or
+  `needs_human`). Dead ends wait for the quarterly re-check instead. A state also stays daily
+  while at least `DAILY_FULL_PASS_FIND_DUE` (25) banks are paid-find targets
+  (`paid_find_due`, the same banks Magellan's paid find picks this month) or have no website
+  and are still due Magellan's website search (`website_find_due`, the same rows
+  `magellan/website-find.ts` picks), or while any market leader is among them. A state with
+  fewer of them due runs a weekly full pass until they are tried. The paid caps still bound
+  the spend.
+- Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
+  nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
+  banks in the state with open work or a recent error: due a search, a fee link not fetched
+  for 30 days, newest live fee not source-checked, or a source-check takedown in the last 7
+  days. Due lanes run highest score first; a lane overdue by `STATE_LANE_STARVATION_HOURS`
+  (3) goes ahead of all, so quiet states still get turns. The tick launches
+  `STATE_LANE_LIMIT_PER_TICK` (3) lanes every 5 minutes.
+- Report demand goes first (2026-10-06, funnel audit): a state gets
+  `REPORT_REQUEST_PRIORITY` (2000) while an unpaid report request from the last 30 days names
+  an institution there (`institution_id=` in `leads.use_case`) that fails James's report rule,
+  and `NEAR_READY_BANK_PRIORITY` (2000) plus 10 per rich bank while its bank market is within
+  `NEAR_READY_GAP` (6) rich banks of ready (`market-readiness.ts`). This only changes when a
+  state runs, not what its steps pick.
+- Market leaders next (2026-10-07, James wants all fees for each state's 10 to 15 largest):
+  each institution in `loadMarketLeaderIds` (`data-store/market-leaders.ts`) with fewer than 9
+  headline fees live adds `UNCOVERED_LEADER_PRIORITY` (50) to its home state's lane, since
+  that lane finds its schedule. On 2026-10-07, 585 of 693 leaders were uncovered (ME, UT and
+  WI had 19 each).
+- At most `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane runs are queued or running at once. The
+  executor finishes started runs first, then runs waiting over an hour, then the highest
+  `priority_score`.
 - Idempotency keys (they only dedupe active runs): `atlas:state-lane:<ST>:<YYYY-MM>`,
   `atlas:state-lane-recheck:<ST>:<YYYY>-Q<n>`, `atlas:state-lane-backlog:<ST>:<YYYY-MM-DDTHH>`.
 - State experts (`state-expert/`): one design, 55 memories (`state_memory`). The roster
@@ -39,6 +89,31 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
   The `state-expert` step (right after `enhance`, full passes only, free) refreshes the
   state's regulator, common platforms, best finder/reader strategies (`pipeline_attempts`)
   and peer levels (p25/median/p75 per canonical fee and asset-size tier from
-  `published_fee_catalog`). `stateExpertHints(stateCode)` gives Magellan/Rosetta a
-  preferred strategy order; `hamilton/state-expert-summary.ts` gives the report engine
+  `published_fee_catalog`). `stateExpertHints(stateCode)` gives Magellan its specialist
+  order for the state (`finderOrderFromHints` in `magellan/discovery.ts`: specialists that
+  found links there run first, ones tried 5+ times without a find run last; each discover
+  step records the order in its result as `finderOrder`); `hamilton/state-expert-summary.ts` gives the report engine
   the expert's summary. Darwin's peer check reads the peer levels.
+
+## Daily health check (contract)
+
+`agent-health.ts` runs with the daily scoreboard step and stores Atlas's numbers in
+`pipeline_scoreboard_snapshots.detail.agent_health`, next to yesterday's. Each contract rule
+is tested by one number; a broken rule, or any number that moved more than 25% since
+yesterday, is named in the scoreboard step's summary.
+
+| Rule | Number | Holds when |
+|---|---|---|
+| Lane runs do not fail | `laneRunsFailed` (24 h) | 0 |
+| A state with work gets a turn at least every 90 minutes | `medianGapMinutes` | ≤ 90 |
+| Catch-up runs only start when there is work | `emptyBacklogRuns / backlogRuns` | ≤ 10% |
+| No lane does nothing 3 catch-up runs in a row | `emptyStreakLanes` (lanes whose last 3 catch-up runs did nothing) | 0 |
+| The backlog check counts only work a step will pick up | `phantomExtractTexts` | 0 |
+| Paid steps are not skipped while under budget | `paidStepsSkipped` (24 h) | 0 |
+| Spend stays inside the daily cap | `spendUsd` vs. the global `hard_daily_microusd` | ≤ cap |
+
+Also recorded, without a rule: `laneRuns`, `backlogRuns`, `overdueLanes`, `queuedRuns`,
+`spendUsd`, `dailyCapUsd`, `banksDueSearch`, `staleLinks`. When the lane's backlog check or a
+step's selector changes, add or change the matching number here so the two can't drift apart
+unseen. Every agent has the same section in its own AGENTS.md; a new rule goes in that table and
+in `agent-health.ts` in the same PR.

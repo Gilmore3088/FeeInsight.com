@@ -1,6 +1,9 @@
 import { sql } from "@/lib/data-store/connection";
 import { answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
+import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -21,6 +24,9 @@ import { learningSchemaReady } from "@/lib/agents/learning/attempts";
  *   Knox survival        of Knox fees ever published, the share still live, overall and
  *                        per Knox strategy. Yield rewards finding more fees; survival
  *                        rewards finding fees that stay right. Stored in `detail`.
+ *   report-ready         institutions passing the report rule (state peers, or Fed
+ *                        district peers where the state has too few). Stored in
+ *                        `detail.report_ready`; /admin/leads shows it week over week.
  */
 
 type SqlTag = typeof sql;
@@ -36,6 +42,8 @@ export interface ScoreboardNumbers {
   accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null } | null;
   freshness: { medianDays: number | null; liveFees: number };
   knoxSurvival: KnoxSurvival;
+  /** Null when the count could not be read; the other numbers are still stored. */
+  reportReady: ReportReadyCount | null;
 }
 
 export interface KnoxSurvival {
@@ -115,7 +123,7 @@ async function readKnoxYield(db: SqlTag): Promise<ScoreboardNumbers["knoxYield"]
              SELECT COUNT(*) FROM raw_fee_observations fr
               WHERE fr.institution_id = s.institution_id
                 AND fr.source_document_id = s.source_document_id
-                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'superseded_by_reread')
+                AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
            )), 0)::int AS fees
       FROM sample s
   `;
@@ -203,6 +211,13 @@ async function readKnoxSurvival(db: SqlTag): Promise<KnoxSurvival> {
   return { rate: rate(live, published), live, published, byStrategy };
 }
 
+async function readReportReady(db: SqlTag): Promise<ReportReadyCount | null> {
+  return inSavepoint(db, async (scope) => summarizeReportReady(await getMarketReadiness(scope))).catch((error) => {
+    console.error("readReportReady failed:", error);
+    return null;
+  });
+}
+
 export async function readScoreboardNumbers(db: SqlTag = sql): Promise<ScoreboardNumbers> {
   const [coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival] = await Promise.all([
     readCoverage(db),
@@ -213,7 +228,9 @@ export async function readScoreboardNumbers(db: SqlTag = sql): Promise<Scoreboar
     readFreshness(db),
     readKnoxSurvival(db),
   ]);
-  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival };
+  // Its own savepoint, after the others: a failure here must not abort the snapshot.
+  const reportReady = await readReportReady(db);
+  return { coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival, reportReady };
 }
 
 export interface ScoreboardSnapshotResult {
@@ -221,6 +238,8 @@ export interface ScoreboardSnapshotResult {
   snapshotDate: string;
   numbers: ScoreboardNumbers;
   stored: boolean;
+  /** Per-agent health check (agent-health.ts); null when it could not be read. */
+  agentHealth?: AgentHealthReport | null;
 }
 
 /** Reads the six numbers and stores today's snapshot (one row per UTC day; reruns replace it). */
@@ -238,7 +257,14 @@ export async function runScoreboardSnapshot({
   const snapshotDate = now.toISOString().slice(0, 10);
   const numbers = await readScoreboardNumbers(db);
   const schemaReady = await scoreboardSchemaReady(db);
-  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false };
+  // The health check reads yesterday's snapshot, so it needs the scoreboard table too.
+  const agentHealth = schemaReady
+    ? await inSavepoint(db, (scope) => readAgentHealth(scope, snapshotDate)).catch((error) => {
+        console.error("readAgentHealth failed:", error);
+        return null;
+      })
+    : null;
+  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth };
   await db`
     INSERT INTO pipeline_scoreboard_snapshots (
       snapshot_date, agent_run_id,
@@ -260,6 +286,16 @@ export async function runScoreboardSnapshot({
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
         knox_survival: numbers.knoxSurvival,
+        ...(numbers.reportReady
+          ? {
+              report_ready: {
+                institutions: numbers.reportReady.institutions,
+                via_district: numbers.reportReady.viaDistrict,
+                markets_ready: numbers.reportReady.marketsReady,
+              },
+            }
+          : {}),
+        ...(agentHealth ? { agent_health: agentHealth } : {}),
       })}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
@@ -284,7 +320,7 @@ export async function runScoreboardSnapshot({
       detail = EXCLUDED.detail,
       updated_at = NOW()
   `;
-  return { schemaReady, snapshotDate, numbers, stored: true };
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth };
 }
 
 function pct(value: number | null | undefined): string {
@@ -302,11 +338,15 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
     `accuracy ${pct(n.accuracy?.precision)} precision / ${pct(n.accuracy?.recall)} recall`,
     `freshness ${n.freshness.medianDays == null ? "n/a" : `${n.freshness.medianDays} days`}`,
     `Knox survival ${pct(n.knoxSurvival.rate)} of ${n.knoxSurvival.published.toLocaleString("en-US")} published fees still live`,
+    n.reportReady
+      ? `${n.reportReady.institutions.toLocaleString("en-US")} institutions pass the report rule (${n.reportReady.viaDistrict.toLocaleString("en-US")} on Fed district peers)`
+      : "report-ready count n/a",
   ];
   const prefix = result.stored
     ? `Atlas recorded the ${result.snapshotDate} scoreboard`
     : result.schemaReady
       ? `Atlas read the scoreboard (dry run, not stored)`
       : `Atlas read the scoreboard (not stored: the scoreboard migration is not applied yet)`;
-  return `${prefix}: ${parts.join(", ")}.`;
+  const health = result.agentHealth ? ` ${summarizeAgentHealth(result.agentHealth)}` : "";
+  return `${prefix}: ${parts.join(", ")}.${health}`;
 }

@@ -13,6 +13,7 @@ describe("admin rooms", () => {
     expect(roomForPath("/admin/states/TX/runs/12").key).toBe("agents");
     expect(roomForPath("/admin/institution/281").key).toBe("data");
     expect(roomForPath("/admin/leads").key).toBe("customers");
+    expect(roomForPath("/admin/growth").key).toBe("customers");
     expect(roomForPath("/admin/hamilton/reports").key).toBe("publishing");
     expect(roomForPath("/admin/api-trust").key).toBe("controls");
   });

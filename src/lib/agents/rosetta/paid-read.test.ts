@@ -80,6 +80,58 @@ describe("Rosetta paid read (pass 3)", () => {
     expect(recorded.map(([strategy]) => strategy)).toEqual(["read.paid_transcribe", "read.table_rows", "read.page_check"]);
   });
 
+  describe("text PDFs whose fees did not hold up after the free readers", () => {
+    const current = ["SCHEDULE OF FEES", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00"].join("\n");
+    const lost = (id: number) => ({ ...scan(id), text_status: "completed", current_text: current });
+    function survivalDb(rows: Array<Record<string, unknown>>): DbMock {
+      const db = paidDb(rows);
+      const base = db.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+        templateText(strings).includes("to_regclass('public.pipeline_feedback')") ? Promise.resolve([{ ready: true }]) : base(strings, ...values),
+      );
+      return db;
+    }
+
+    it("selects them after scans, with no free OCR rung first", async () => {
+      const db = survivalDb([]);
+
+      await runRosettaPaidRead({ runId: 910, db: asDb(db), create: vi.fn(), fetchImpl: pdfFetch() });
+
+      const query = String(db.unsafe.mock.calls[0][0]);
+      expect(query).toContain("adt.status = 'completed'");
+      expect(query).toContain("lost.signal = 'wrong'");
+      expect(query).toContain("adt.reader IN (");
+      expect(query).not.toContain("rung.strategy =");
+      expect(query).toContain("ORDER BY (adt.status = 'needs_ocr') DESC");
+      expect(db.unsafe.mock.calls[0][1]).toEqual(expect.arrayContaining(["rosetta.text_survival", "read.ocr_tesseract", "read.pdf_layout"]));
+    });
+
+    it("replaces the stored text only with a transcription that lists at least as many fees", async () => {
+      const richer = [current, "Wire transfer fee | $25.00"].join("\n");
+      const db = survivalDb([lost(1)]);
+      const create = vi.fn<(params: unknown) => Promise<never>>(async () => message(richer));
+
+      const result = await runRosettaPaidRead({ runId: 911, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter: async () => 2 });
+
+      expect(result).toMatchObject({ processed: 1, succeeded: 1 });
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"))).toBe(true);
+      expect(attempts(db)[0].slice(0, 2)).toEqual(["read.paid_transcribe", "ok"]);
+    });
+
+    it("keeps the earlier text and logs low_yield when the transcription is thinner", async () => {
+      const db = survivalDb([lost(2)]);
+      const create = vi.fn<(params: unknown) => Promise<never>>(async () => message("SCHEDULE OF FEES\nOverdraft fee | $35.00"));
+
+      const result = await runRosettaPaidRead({ runId: 912, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter: async () => 2 });
+
+      expect(result).toMatchObject({ processed: 1, succeeded: 1 });
+      expect(result.costMicrousd).toBeGreaterThan(0);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"))).toBe(false);
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("fee_schedule_url = NULL"))).toBe(false);
+      expect(attempts(db)).toEqual([["read.paid_transcribe", "low_yield", result.costMicrousd]]);
+    });
+  });
+
   it("stops cleanly at the budget cap without spending or recording", async () => {
     const db = paidDb([scan(1), scan(2)]);
     const create = vi.fn();

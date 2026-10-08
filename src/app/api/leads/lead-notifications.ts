@@ -43,6 +43,9 @@ export interface StoredLead {
    * Fed district for their free report, or null when unknown. Undefined when not held.
    */
   heldDistrict?: number | null;
+  /** Institution report requests only: optional state and named competitors from the form. */
+  reportState?: string | null;
+  competitors?: string | null;
 }
 
 /** Status shape returned to the client so it can soften the success copy. */
@@ -55,6 +58,24 @@ export function parseInstitutionId(value: unknown): number | null {
   const numeric = typeof value === "string" ? Number(value) : value;
   if (typeof numeric !== "number" || !Number.isInteger(numeric)) return null;
   return numeric > 0 && numeric <= MAX_INSTITUTION_ID ? numeric : null;
+}
+
+const MAX_COMPETITORS_LENGTH = 300;
+
+/**
+ * The competitors a requester names, made safe for the `; key=value` use_case format:
+ * separators become commas and the text is capped. Null when empty.
+ */
+export function parseCompetitors(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const cleaned = value
+    .replace(/[;=\n\r]+/g, ", ")
+    .replace(/\s+/g, " ")
+    .replace(/(,\s*)+/g, ", ")
+    .replace(/^[,\s]+|[,\s]+$/g, "")
+    .slice(0, MAX_COMPETITORS_LENGTH)
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 export function parseSrc(value: unknown): string | null {
@@ -71,10 +92,13 @@ export function buildReportUseCase(
   useCase: string | null,
   institutionId: number | null,
   src: string | null,
+  extra: { stateCode?: string | null; competitors?: string | null } = {},
 ): string | null {
   const parts = [useCase];
   if (institutionId !== null) parts.push(`institution_id=${institutionId}`);
   if (src) parts.push(`src=${src}`);
+  if (extra.stateCode) parts.push(`state=${extra.stateCode}`);
+  if (extra.competitors) parts.push(`competitors=${extra.competitors}`);
   const joined = parts.filter((part): part is string => Boolean(part)).join("; ");
   return joined.length > 0 ? joined : null;
 }
@@ -187,6 +211,8 @@ export async function notifyForLead(lead: StoredLead): Promise<LeadNotificationS
         institutionId: lead.institutionId,
         src: lead.src,
         quoteCheck: lead.quoteCheck ?? null,
+        stateCode: lead.reportState ?? null,
+        competitors: lead.competitors ?? null,
         ...(lead.heldDistrict !== undefined ? { held: { district: lead.heldDistrict } } : {}),
       });
       await handleUndelivered(lead, outcome);

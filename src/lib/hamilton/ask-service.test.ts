@@ -9,6 +9,7 @@ const store = vi.hoisted(() => ({
   logged: [] as { kind: string; detail: Record<string, unknown> }[],
   saved: [] as { fieldKey: string; value: unknown }[],
   status: undefined as string | undefined,
+  analyses: [] as { id: string; userId: number; prompt: string; analysisFocus: string; response: Record<string, unknown> }[],
 }));
 
 const decision: DecisionRecord = {
@@ -46,8 +47,27 @@ vi.mock("./workspace-context", () => ({
     instId === "1" ? { institution: { id: 1 }, error: null, source: "url" } : { institution: null, error: "Institution not found", source: "none" },
 }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: vi.fn(async () => 1) }));
+vi.mock("@/lib/data-store/hamilton-analyses", () => ({
+  insertSavedAnalysis: async (input: { userId: number; prompt: string; analysisFocus: string; response: Record<string, unknown> }) => {
+    const id = `a${store.analyses.length + 1}`;
+    store.analyses.push({ id, ...input });
+    return id;
+  },
+  getSavedAnalysisResponse: async (userId: number, id: string) => store.analyses.find((a) => a.id === id && a.userId === userId)?.response ?? null,
+  updateSavedAnalysisResponse: async (userId: number, id: string, response: Record<string, unknown>) => {
+    const row = store.analyses.find((a) => a.id === id && a.userId === userId);
+    if (row) row.response = response;
+    return !!row;
+  },
+}));
+vi.mock("./memo", () => ({
+  writeStorylineMemo: async () => ({
+    status: "written",
+    memo: { summary: "Memo summary.", board: "Board.", market: "Market.", questions: ["Why?"], model: "m", generatedAt: "2026-10-06T15:00:00Z", figureCheck: { checked: 2, unmatched: [] } },
+  }),
+}));
 
-import { answerAsk } from "./ask-service";
+import { answerAsk, answerAskMemo } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
 
@@ -58,6 +78,7 @@ beforeEach(() => {
   store.logged = [];
   store.saved = [];
   store.status = undefined;
+  store.analyses = [];
 });
 
 describe("answerAsk", () => {
@@ -110,5 +131,36 @@ describe("answerAsk", () => {
     expect(result.body).toMatchObject({ kind: "research" });
     expect(result.body).not.toHaveProperty("decisionId");
     expect(store.logged).toEqual([]);
+  });
+
+  it("files each storyline answer once as a saved analysis, and adds the memo to it", async () => {
+    const res = await answerAsk(user, { institutionId: "1", question: "how does my overdraft fee compare?" });
+    expect(res.status).toBe(200);
+    const body = res.body as { savedAnalysisId?: string; answer?: { storyline?: unknown } };
+    expect(body.answer?.storyline).toBeTruthy();
+    expect(body.savedAnalysisId).toBe("a1");
+    expect(store.analyses).toHaveLength(1);
+    expect(store.analyses[0]).toMatchObject({ userId: 7, prompt: "how does my overdraft fee compare?", analysisFocus: "Peer Position" });
+    expect(store.analyses[0].response).toMatchObject({ storyline: expect.any(Object), engineVersion: expect.any(String) });
+
+    const memo = await answerAskMemo(user, { institutionId: "1", question: "how does my overdraft fee compare?", savedAnalysisId: "a1" });
+    expect(memo.body).toMatchObject({ status: "written" });
+    expect(store.analyses).toHaveLength(1);
+    expect(store.analyses[0].response).toMatchObject({ hamiltonView: "Memo summary.", whatThisMeans: "Board.\n\nMarket.", exploreFurther: ["Why?"], memo: { summary: "Memo summary." } });
+  });
+
+  it("does not file a clarifying question", async () => {
+    await answerAsk(user, { institutionId: "1", question: "hello" });
+    expect(store.analyses).toHaveLength(0);
+  });
+});
+
+describe("waiver rate answers", () => {
+  it("stores a waiver rate as a share, so 1% is 0.01 and never 100%", async () => {
+    const { waiverShare } = await import("./ask-service");
+    expect(waiverShare("1%")).toBe(0.01);
+    expect(waiverShare("8")).toBe(0.08);
+    expect(waiverShare("0.08")).toBe(0.08);
+    expect(waiverShare("150%")).toBeNull();
   });
 });

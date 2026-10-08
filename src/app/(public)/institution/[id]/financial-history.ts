@@ -4,6 +4,7 @@ import type {
   PeerPercentiles,
   PeerRankMetric,
 } from "@/lib/data-store/financial";
+import { isFinancialSource } from "@/lib/data-store/financial-sources";
 import { balanceToDollars, formatReportQuarter, sourceRank } from "./financial-units";
 
 /**
@@ -86,7 +87,7 @@ function deYearToDate(points: FinancialPoint[], rows: Map<string, InstitutionFin
   return points.map((point, index) => {
     const row = rows.get(point.reportDate);
     if (!row || !hasYearToDateIncome(row)) return point;
-    const dollars = (value: number | null) => balanceToDollars(finiteOrNull(value), "ncua");
+    const dollars = (value: number | null) => balanceToDollars(finiteOrNull(value));
     const q = quarterNumber(point.reportDate);
     if (q === 1) {
       return { ...point, netIncome: dollars(row.net_income), serviceCharges: dollars(row.service_charge_income) };
@@ -108,7 +109,7 @@ function deYearToDate(points: FinancialPoint[], rows: Map<string, InstitutionFin
 
 export function toFinancialPoint(row: InstitutionFinancialHistoryRow): FinancialPoint {
   const source = row.source.toLowerCase();
-  const dollars = (value: number | null) => balanceToDollars(finiteOrNull(value), source);
+  const dollars = (value: number | null) => balanceToDollars(finiteOrNull(value));
   const quarterly = hasQuarterlyIncome(row);
   const loans = dollars(row.total_loans);
   const realEstate = dollars(row.loans_real_estate);
@@ -149,16 +150,17 @@ export function toFinancialPoint(row: InstitutionFinancialHistoryRow): Financial
     provision: quarterly ? dollars(row.provision_for_losses) : null,
     roePct: finiteOrNull(row.roe),
     leveragePct: finiteOrNull(row.leverage_ratio),
-    totalCapitalPct: finiteOrNull(row.total_capital_ratio),
+    totalCapitalPct: row.total_capital_ratio !== null && row.total_capital_ratio !== 0 ? finiteOrNull(row.total_capital_ratio) : null,
     employees: finiteOrNull(row.employee_count),
     members: finiteOrNull(row.member_count),
   };
 }
 
-/** One point per quarter (fdic, then ffiec, then ncua), oldest first. */
+/** One point per quarter (fdic, then ncua; other sources dropped), oldest first. */
 export function buildFinancialSeries(rows: InstitutionFinancialHistoryRow[]): FinancialPoint[] {
   const byQuarter = new Map<string, InstitutionFinancialHistoryRow>();
   for (const row of rows) {
+    if (!isFinancialSource(row.source)) continue;
     const current = byQuarter.get(row.report_date);
     if (!current || sourceRank(row.source) < sourceRank(current.source)) byQuarter.set(row.report_date, row);
   }

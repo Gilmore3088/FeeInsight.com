@@ -12,6 +12,7 @@ import {
   KNOX_PAID_FLAG,
   KNOX_PAID_STRATEGY,
   PAID_MIN_PRICED_LINES,
+  paidExtractPrompt,
   pricedLineCount,
   runKnoxPaidExtract,
 } from "./paid-extract";
@@ -98,10 +99,53 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(groundPaidRow({ canonical_key: "stop_payment", amount: 31 }, text)).toBe("missing_fields");
   });
 
+  it("never takes a limit as a fee, and counts prices under a dollar", () => {
+    const line = "Digital Banking | Zelle® transfer limit | $1,000.00";
+    expect(groundPaidRow({ fee_name: "Zelle transfer limit", canonical_key: "zelle_fee", amount: 1000, source_line: line }, line)).toBe("limit_not_fee");
+    expect(pricedLineCount("Paid check | $.50 each\nPhotocopy | 75¢ per page\nCoin | 25 cents")).toBe(3);
+  });
+
   it("never grounds a balance threshold as the fee (Texar $50.01)", () => {
     const line = "Overdraft Protection Items - Negative from $50.01 and more | $35";
     expect(groundPaidRow({ fee_name: "Overdraft Protection Items", canonical_key: "overdraft", amount: 50.01, source_line: line }, line)).toBe("not_in_text");
     expect(groundPaidRow({ fee_name: "Overdraft Protection Items", canonical_key: "overdraft", amount: 35, source_line: line }, line)).toMatchObject({ amount: 35 });
+  });
+
+  it("reads a monthly fee's lineup fields, keeping only the ones the text states", () => {
+    const text = [
+      "Premier Checking | $12.00 monthly maintenance fee",
+      "Waived with a $1,500 minimum daily balance or $500 in direct deposits.",
+      "Minimum opening deposit $100.",
+    ].join("\n");
+    const row = {
+      fee_name: "Premier Checking monthly maintenance fee",
+      canonical_key: "monthly_maintenance",
+      amount: 12,
+      frequency: "monthly",
+      source_line: "Premier Checking | $12.00 monthly maintenance fee",
+      product_name: "Premier  Checking",
+      min_balance_to_avoid: 1500,
+      // Invented: the text never states $2,500.
+      min_opening_deposit: 2500,
+      waiver_text: null,
+      conditions: "Waived with a $1,500 minimum daily balance or $500 in direct deposits.",
+    };
+    expect(groundPaidRow(row, text)).toMatchObject({
+      canonicalKey: "monthly_maintenance",
+      lineup: {
+        productName: "Premier Checking",
+        minBalanceToAvoid: 1500,
+        minOpeningDeposit: null,
+        // The waiver came back in `conditions`; it is kept because the text states it.
+        waiverText: "Waived with a $1,500 minimum daily balance or $500 in direct deposits.",
+      },
+    });
+    expect(groundPaidRow({ ...row, min_opening_deposit: "$100", waiver_text: "Waived for students" }, text)).toMatchObject({
+      lineup: { minOpeningDeposit: 100, waiverText: null },
+    });
+    // Other categories never carry lineup fields.
+    expect(groundPaidRow({ ...row, canonical_key: "minimum_balance" }, text)).toMatchObject({ lineup: null });
+    expect(paidExtractPrompt(text)).toContain("For a monthly_maintenance fee only");
   });
 
   it("makes one budget-checked call per document and writes grounded rows like the rule path", async () => {
@@ -154,6 +198,35 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(query).toContain("free.yield_count <");
     expect(query).toContain("paid.strategy =");
     expect(params).toEqual(expect.arrayContaining([KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version, KNOX_PAID_STRATEGY.strategy, "TX"]));
+  });
+
+  it("writes a monthly fee's grounded lineup fields on its raw row", async () => {
+    const line = "Premier Checking monthly maintenance fee $12.00, waived with a $1,500 minimum daily balance.";
+    const db = createDbMock([{ ...textRow, normalized_text: `${denseText}\n${line}` }]);
+    const create = vi.fn(async () =>
+      reply({
+        fees: [
+          {
+            fee_name: "Premier Checking monthly maintenance fee",
+            canonical_key: "monthly_maintenance",
+            amount: 12,
+            frequency: "monthly",
+            source_line: line,
+            product_name: "Premier Checking",
+            min_balance_to_avoid: 1500,
+            min_opening_deposit: 50,
+            waiver_text: "waived with a $1,500 minimum daily balance",
+          },
+        ],
+      }),
+    );
+
+    await runKnoxPaidExtract({ runId: 306, db: asDb(db), create });
+
+    const [insert] = insertCalls(db);
+    expect(insert.slice(7, 9)).toEqual(["Premier Checking monthly maintenance fee", 12]);
+    // product_name, min_balance_to_avoid, min_opening_deposit ($50 is not in the text), waiver_text
+    expect(insert.slice(12, 16)).toEqual(["Premier Checking", 1500, null, "waived with a $1,500 minimum daily balance"]);
   });
 
   it("records evidence_mismatch when the model returns only ungrounded rows", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "./families";
-import { composableTail, splitCapsHeading, titleTail } from "./layout";
+import { composableTail, namesALimit, splitCapsHeading, titleTail } from "./layout";
 import { runFreeSpecialists } from "./specialists";
 import { extractFromTableRows, tableRowsFromText } from "./table-rows";
 
@@ -45,6 +45,62 @@ describe("Knox pass 2a: extract.table", () => {
     expect(held(text)).toEqual([["zero", "Paper statement", 0, "paper_statement"]]);
   });
 
+  it("keeps the name above a qualifier line, and lets an ATM heading name a cash withdrawal row", () => {
+    // Community Bank (Longview, TX) and Wells Fargo summary pages, as Rosetta stores them.
+    const text = [
+      "Community Bank Debit Card (replacement or PIN)",
+      "$5.00",
+      "Temporary Checks",
+      "If checks are not on order (10 maximum)",
+      "$2.00",
+      "Overdraft Item Fee",
+      "(for each overdraft item, overdraft debit or overdraft check paid)",
+      "$30.00",
+      "Deposited checks (and other items) returned unpaid",
+      "$3.00",
+      "ATM fees per transaction – At Wells Fargo ATMs",
+      "Cash withdrawals",
+      "$0",
+      "ATM fees per transaction – At non-Wells Fargo ATMs",
+      "(non-Wells Fargo ATM operator fees may also apply)",
+      "Cash withdrawals - Within U.S. / U.S. territories",
+      "$3.00",
+      "Cash withdrawals - Outside U.S.",
+      "$5.00",
+      "Money order footnote 2",
+      "(up to $1,000)",
+      "$5",
+      "each",
+    ].join("\n");
+
+    expect(fees(text)).toEqual([
+      ["Community Bank Debit Card (replacement or PIN)", 5, "card_replacement"],
+      // The shared accuracy check reads a price two lines under its name, past a note
+      // line ("If checks are not on order", "(up to $1,000)").
+      ["Temporary Checks", 2, "counter_check"],
+      ["Overdraft Item Fee", 30, "overdraft"],
+      ["Deposited checks (and other items) returned unpaid", 3, "deposited_item_return"],
+      ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Within U.S. / U.S. territories", 3, "atm_non_network"],
+      ["ATM fees per transaction – At non-Wells Fargo ATMs: Cash withdrawals - Outside U.S.", 5, "atm_international"],
+      ["Money order footnote 2", 5, "money_order"],
+    ]);
+    // The bank's own ATMs are not out-of-network, so nothing is held.
+    expect(held(text)).toEqual([]);
+  });
+
+  it("self-checks each find against its line and drops one that doesn't trace", () => {
+    // The family pass read the business price as the consumer one; the shared accuracy
+    // check finds no row that names "Consumer" at $5.00.
+    const text = ["Counter-Temporary Checks", "$1.50 -Consumer", "$5.00 - Business", "Stop Payment", "$30.00"].join("\n");
+    const result = runFreeSpecialists(text);
+
+    expect(result.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([
+      ["Counter-Temporary Checks", 1.5, "counter_check"],
+      ["Stop Payment", 30, "stop_payment"],
+    ]);
+    expect(result.runs.find((run) => run.strategy === "extract.family.checks")?.selfCheckFailed).toBe(1);
+  });
+
   it("re-pairs dot-leader rows whose prices were pushed onto the next line", () => {
     const text = [
       "Wire Transfer (outgoing).................................................",
@@ -56,12 +112,18 @@ describe("Knox pass 2a: extract.table", () => {
     ].join("\n");
 
     // v3 read "$10.00 Outgoing International Wire" as a $10 international wire.
-    expect(fees(text)).toEqual([
+    const reads = [
       ["Wire Transfer (outgoing)", 20, "wire_domestic_outgoing"],
       ["Outgoing International Wire (in foreign currency)", 50, "wire_intl_outgoing"],
       ["Garnishments", 100, "garnishment_levy"],
       ["Levies", 20, "garnishment_levy"],
-    ]);
+    ];
+    const table = runFreeSpecialists(text).runs.find((run) => run.strategy === "extract.table");
+    expect(table?.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual(reads);
+    // The shared accuracy check pairs each dot-leader name with the price that opens the
+    // next line, so all four trace.
+    expect(fees(text)).toEqual(reads);
+    expect(held(text)).toEqual([]);
   });
 
   it("reads structured rows through a small adapter over Rosetta's cell lines", () => {
@@ -112,7 +174,8 @@ describe("Knox pass 2b: fee-family experts", () => {
       ["extract.family.services", "Notary - Non Member", 5, "notary_fee"],
       ["extract.family.services", "Levy/Writ", 50, "garnishment_levy"],
     ]);
-    // Explicit NONE/FREE next to a fee name is a $0 price Darwin can verify.
+    // Explicit NONE/FREE next to a fee name is read as $0; the shared accuracy check ties
+    // the word to the words before it, as it does a price.
     expect(held(flattened)).toEqual([
       ["zero", "Continuous Overdraft Fee (Per Day)", 0, "continuous_od"],
       ["zero", "Wire Transfer - Domestic Incoming", 0, "wire_domestic_incoming"],
@@ -130,6 +193,7 @@ describe("Knox pass 2b: fee-family experts", () => {
       ["Overdraft fee (2nd and subsequent items)", 35, "overdraft"],
       ["Paid overdraft item daily maximum", 175, "od_daily_cap"],
     ]);
+    expect(held(text)).toEqual([]);
   });
 
   it("reads prices after dot leaders that dropped the dollar sign", () => {
@@ -172,5 +236,148 @@ describe("Knox layout helpers", () => {
     expect(composableTail("Incoming Domestic")).toBe(true);
     expect(composableTail("Per Item")).toBe(true);
     expect(composableTail("Gift Cards")).toBe(false);
+  });
+});
+
+describe("Knox v23 layouts", () => {
+  it("reads labeled fee cards (ESL: \"Fee TypeX\" / description / \"Fee$5.00\")", () => {
+    const text = [
+      "Fee TypeCourtesy Pay Overdraft Fee",
+      "DescriptionOverdraft Service for checks, bill pay, and automatic ACH payments. The monthly maximum overdraft is $250 for Free and Premier Checking accounts.",
+      "Ways to avoid fees",
+      "- Monitor account activity with online banking and/or mobile banking.",
+      "Fee$5.00",
+      "Fee TypeStop Payment",
+      "DescriptionStop a check you wrote.",
+      "Fee$30.00",
+    ].join("\n\n");
+    expect(fees(text)).toEqual(expect.arrayContaining([["Courtesy Pay Overdraft Fee", 5, "overdraft"], ["Stop Payment", 30, "stop_payment"]]));
+    expect(held(text).some(([, name]) => name === "Fee")).toBe(false);
+  });
+
+  it("reads a two-column table's right-column heading and its sub-rows (Trustmark)", () => {
+    const text = [
+      "• $0.25 per $100 deposited over $5,000 per month | Non-Sufficient Funds (NSF)",
+      "• Business accounts only | $36.00",
+      "Collection Items | $25.00 | • Per each item* returned unpaid",
+      "Copies of Checks (per item) | Official Checks | $8.00",
+      "• Personal | $3.00",
+      "• Business | $5.00 | Overdrafts (OD)",
+      "• Personal | $36.00",
+      "Customized Debit or Credit Card | • Per each item* paid in overdraft",
+      "Deposit Bags",
+      "• Locking (small) | $40.00",
+    ].join("\n");
+    const found = fees(text, "extract.table");
+    expect(found).toEqual(
+      expect.arrayContaining([
+        ["Non-Sufficient Funds (NSF): Business accounts only", 36, "nsf"],
+        ["Overdrafts (OD): Personal", 36, "overdraft"],
+      ]),
+    );
+    // Copies of Checks' own sub-row is not the NSF heading's, and the heading ends with its rows.
+    expect(found.some(([name, amount]) => /Non-Sufficient|Overdrafts/.test(name) && (amount === 3 || amount === 40))).toBe(false);
+  });
+});
+
+describe("Knox v25 one-line dot-leader schedules", () => {
+  const text =
+    "Revised May 4, 2022 SCHEDULE OF FEES AND CHARGES DEPOSIT SERVICES MISCELLANEOUS SERVICES Cashier’s Checks………………………………………..……. $4.00 " +
+    "Stop Payment………………………………………………… $35.00 Over $300 USD…………………………..……. $40.00 Dormant Account Fee……………………………………. $7.00/Month " +
+    "SAFE DEPOSIT BOX FEES 5x10 & 6x10 Inch $60.00 $65.00 OVERDRAFT AND NSF FEES 10.5x10.5 Inch $90.00 100.00 Overdraft (items paid)……………………. $10.00 " +
+    "Late Charge………………………………………………………. $20.00";
+
+  it("keeps fees whose name and price sit on one leader row", () => {
+    expect(fees(text)).toEqual(
+      expect.arrayContaining([
+        ["Stop Payment", 35, "stop_payment"],
+        ["Cashier’s Checks", 4, "cashiers_check"],
+        ["Dormant Account Fee", 7, "dormant_account"],
+        ["Overdraft (items paid)", 10, "overdraft"],
+      ]),
+    );
+  });
+
+  it("reads a box size in inches as a box, not the heading glued before it", () => {
+    expect(fees(text).some(([, amount, key]) => key === "overdraft" && amount === 90)).toBe(false);
+  });
+});
+
+
+describe("Knox v27 two-column headings and joined NSF/overdraft rows", () => {
+  // First National Bank Alaska, personal fee schedule (doc 19925): the right column's
+  // footnotes run beside the left column's headings.
+  const text = [
+    "Other Account Fees | • Mobile banking at no additional cost",
+    "Stop Payments | ledger balance for the monthly statement cycle required to waive the",
+    "Online per check | $25.00 | Monthly Service Fee. Other account fees or restrictions may apply.",
+    "Non-sufficient funds item (NSFs/Overdrafts)9 | $33.00 per item | 3. Automatic Transfer Agreement enrollment required.",
+    "Insufficient Funds Transfer (Savings Overdraft | $10.00 per transfer | met. Other account fees or restrictions may apply.",
+    "Money Orders | $5.00 per item | Multiple fees will not be assessed for any item identified as previously",
+    "Wire Transfer Fees | being returned NSF.",
+    "Domestic Outgoing | $35.00 per wire | 10. Account type no longer offered.",
+    "International Outgoing | $50.00 per wire | 11. Service assisted refers to transactions processed with bank staff.",
+  ].join("\n");
+
+  it("reads rows under a heading that shares its line with the next column's prose", () => {
+    const read = fees(text);
+    expect(read).toContainEqual(["Wire Transfer Fees: Domestic Outgoing", 35, "wire_domestic_outgoing"]);
+    expect(read).toContainEqual(["Wire Transfer Fees: International Outgoing", 50, "wire_intl_outgoing"]);
+    expect(read).toContainEqual(["Stop Payments: Online per check", 25, "stop_payment"]);
+  });
+
+  it("files one price that names both NSF and overdraft under both", () => {
+    const read = fees(text);
+    expect(read).toContainEqual(["Non-sufficient funds item (NSFs/Overdrafts)", 33, "nsf"]);
+    expect(read).toContainEqual(["Non-sufficient funds item (NSFs/Overdrafts)", 33, "overdraft"]);
+    // A transfer from savings that covers an overdraft is not an overdraft fee.
+    expect(read).toContainEqual(["Insufficient Funds Transfer (Savings Overdraft", 10, "od_protection_transfer"]);
+    expect(read.some(([, amount, key]) => key === "overdraft" && amount === 10)).toBe(false);
+  });
+
+  it("does not hold a balance an account requires as a fee", () => {
+    const result = runFreeSpecialists("Checking\nMinimum Daily Balance Requirement1 | $1,500 | Monthly Service Fee | $7.00");
+    expect(result.held.some((row) => row.amount === 1500)).toBe(false);
+    expect(result.candidates.map((fee) => [fee.canonicalHint, fee.amount])).toEqual([["monthly_maintenance", 7]]);
+  });
+
+  it("lends a stop payment heading only to the item it stops", () => {
+    expect(composableTail("Online per check")).toBe(false);
+    expect(fees("Loan Modification\nForeign check fee | $25.00")).not.toContainEqual(expect.arrayContaining(["mortgage_modification"]));
+  });
+});
+
+describe("Knox v28 limits are not prices", () => {
+  it("does not read a limit the name states as a fee", () => {
+    const text = [
+      "Digital Banking | Zelle® transfer limit | $1,000.00",
+      "Mobile Deposit Checks are limited to $1,000 per day.",
+      "VISA Gift Cards: Maximum card load | $500.00",
+      "No Bounce Courtesy Pay Limit | $600.00",
+      "Stop Payment | $30.00",
+      "Overdraft and NSF Daily Maximum | $150.00",
+      "Visa Late Fee/ Over Limit | $39.00",
+    ].join("\n");
+    const read = fees(text).map(([, amount, key]) => `${key}:${amount}`);
+    expect(read).toEqual(expect.arrayContaining(["stop_payment:30", "late_payment:39"]));
+    for (const limit of ["zelle_fee:1000", "mobile_deposit:1000", "gift_card_purchase:500", "od_daily_cap:600"]) expect(read).not.toContain(limit);
+  });
+});
+
+describe("Knox v30 limits are not prices", () => {
+  it("does not read a rising limit or an ATM limits row as a fee", () => {
+    expect(namesALimit("calendar day, the Overdraft Privilege limit will increase to", "overdraft")).toBe(true);
+    expect(namesALimit("On the sixtieth (60th) calendar day, the limit will increase to", "overdraft")).toBe(true);
+    expect(namesALimit("Daily ATM Limits ($/#)", "atm_non_network")).toBe(true);
+    expect(namesALimit("Over Limit Fee", "overdraft")).toBe(false);
+    expect(namesALimit("Mobile Deposit Fee (daily limits apply)", "mobile_deposit")).toBe(false);
+  });
+});
+
+describe("Knox v31 rebate caps are not prices", () => {
+  it("does not read a maximum rebate as a fee", () => {
+    expect(namesALimit("Rebate of such surcharge fees will appear on your statement as a “credit.” The maximum rebate per 12-month statement", "atm_non_network")).toBe(true);
+    expect(namesALimit("Refund of such surcharge fees will appear on your statement as a “credit.” The maximum rebate per 12-month cycle per", "atm_non_network")).toBe(true);
+    expect(namesALimit("ATM Surcharge Rebate Fee", "atm_non_network")).toBe(false);
   });
 });

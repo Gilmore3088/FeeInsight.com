@@ -37,7 +37,12 @@ vi.mock("@/lib/email/resend", async (importOriginal) => ({
   sendResendEmail: vi.fn(() => Promise.resolve({ status: "sent", providerId: "alert_1" })),
 }));
 
+vi.mock("@/lib/email/mailerlite", () => ({
+  syncLeadToMailerLite: vi.fn(() => Promise.resolve({ status: "disabled", reason: "test" })),
+}));
+
 import { sql } from "@/lib/data-store/connection";
+import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
 import { sendLeadCaptureNotifications } from "@/lib/email/lead-capture";
 import { sendBenchmarkReportNotifications } from "@/lib/email/benchmark-report";
 import {
@@ -45,6 +50,7 @@ import {
   sendReportRequestNotifications,
 } from "@/lib/email/report-request";
 import { checkInstitutionReport } from "@/lib/custom-report/quote-check";
+import { READER_COOKIE, signReaderCookie } from "@/lib/email/subscription-token";
 import { POST } from "./route";
 
 const sqlMock = sql as unknown as ReturnType<typeof vi.fn>;
@@ -52,6 +58,7 @@ const reportNotifyMock = sendReportRequestNotifications as unknown as ReturnType
 const contactNotifyMock = sendContactRequestNotifications as unknown as ReturnType<typeof vi.fn>;
 const captureNotifyMock = sendLeadCaptureNotifications as unknown as ReturnType<typeof vi.fn>;
 const benchmarkNotifyMock = sendBenchmarkReportNotifications as unknown as ReturnType<typeof vi.fn>;
+const syncMock = syncLeadToMailerLite as unknown as ReturnType<typeof vi.fn>;
 const SENT = { status: "sent", providerId: "em_1" };
 
 function post(body: Record<string, unknown>) {
@@ -105,6 +112,33 @@ describe("POST /api/leads", () => {
       expect(benchmarkNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ scope: { kind: "national" } }));
     });
 
+    it("takes a confirmed reader's address from their cookie, without asking again", async () => {
+      vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "test-secret");
+      sqlMock
+        .mockResolvedValueOnce([{ id: 7 }]) // the cookie's address is still confirmed
+        .mockResolvedValueOnce([{ id: 7, source: "newsletter", use_case: "state=FL", email_confirmed_at: "2026-10-06", email_unsubscribed_at: null }])
+        .mockResolvedValue([]);
+      const res = await POST(
+        new NextRequest("http://localhost/api/leads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Cookie: `${READER_COOKIE}=${signReaderCookie("vp@bank.example", "test-secret")}` },
+          body: JSON.stringify({ source: "report_national" }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(issued(2).text).toContain("UPDATE leads SET");
+      expect(sqlMock.mock.calls.some(([strings]) => (strings as TemplateStringsArray).join("").includes("INSERT INTO leads"))).toBe(false);
+      expect(benchmarkNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ email: "vp@bank.example" }));
+      // No state on this form, so the reader's state group is left alone.
+      expect(syncMock).toHaveBeenCalledWith(expect.objectContaining({ email: "vp@bank.example", state: null }));
+      vi.unstubAllEnvs();
+    });
+
+    it("still asks for an email when there is no reader cookie", async () => {
+      const res = await post({ source: "report_national" });
+      expect(res.status).toBe(400);
+    });
+
     it("rejects a district report without a real district", async () => {
       const res = await post({ email: "vp@bank.example", source: "report_district", district: "13" });
       expect(res.status).toBe(400);
@@ -127,6 +161,28 @@ describe("POST /api/leads", () => {
     const insert = issued(1);
     expect(insert.text).toContain("INSERT INTO leads");
     expect(insert.values).toEqual(["Newsletter signup", "a@b.co", null, null, null, "newsletter"]);
+  });
+
+  it("keeps the state a newsletter reader picks, for their state's edition", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    await post({ name: "Newsletter signup", email: "a@b.co", source: "newsletter", state: "tx" });
+    expect(issued(1).values).toEqual(["Newsletter signup", "a@b.co", null, null, "state=TX", "newsletter"]);
+  });
+
+  it("sends an already-confirmed reader's new source and state straight to MailerLite", async () => {
+    syncMock.mockClear();
+    sqlMock
+      .mockResolvedValueOnce([{ id: 7, source: "newsletter", use_case: null, email_confirmed_at: "2026-10-01", email_unsubscribed_at: null }])
+      .mockResolvedValue([]);
+    await post({ email: "vp@bank.example", source: "capture_state", state: "TX" });
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,capture_state", state: "TX" });
+  });
+
+  it("waits for the confirm click when the reader hasn't confirmed", async () => {
+    syncMock.mockClear();
+    sqlMock.mockResolvedValueOnce([{ id: 7, source: "newsletter", email_confirmed_at: null }]).mockResolvedValue([]);
+    await post({ email: "vp@bank.example", source: "capture_state", state: "TX" });
+    expect(syncMock).not.toHaveBeenCalled();
   });
 
   it("does not overwrite an existing qualified lead on newsletter signup", async () => {
@@ -225,12 +281,59 @@ describe("POST /api/leads", () => {
     expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ held: { district: 11 } }));
   });
 
+  it("records the institution a report request is about, so the pipeline can put it first", async () => {
+    vi.mocked(checkInstitutionReport).mockResolvedValueOnce({
+      status: "thin",
+      readiness: {} as never,
+      rule: null,
+      institutionId: 117,
+    });
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@bank.com", company: "Banner Bank", source: "report", institutionId: 117 });
+    const record = issued(3);
+    expect(record.text).toContain("SET quote_institution_id = ?");
+    expect(record.text).toContain("quote_institution_id IS NULL");
+    expect(record.values).toEqual([117, 42]);
+  });
+
+  it("records no institution when the request matched none", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "First National Bank", source: "report" });
+    expect(sqlMock.mock.calls.some((call) => String(call[0].join("?")).includes("quote_institution_id"))).toBe(false);
+  });
+
   it("does not hold a request it could not match; James checks it by hand", async () => {
     sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
     reportNotifyMock.mockResolvedValueOnce(SENT);
     await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report" });
     expect(issued(2).values).toContain(false);
     expect(reportNotifyMock.mock.calls[0][0]).not.toHaveProperty("held");
+  });
+
+  it("stores the optional state and competitors on a report request and passes them to James's email", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({
+      name: "Dana Lee",
+      email: "dana@cu.org",
+      company: "Example CU",
+      source: "report",
+      state: "tx",
+      competitors: "Frost Bank; Amplify CU\nstate=CA",
+    });
+    expect(issued(1).values).toContain("state=TX; competitors=Frost Bank, Amplify CU, state, CA");
+    expect(reportNotifyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ stateCode: "TX", competitors: "Frost Bank, Amplify CU, state, CA" }),
+    );
+  });
+
+  it("ignores a state that is not a US state", async () => {
+    sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 42 }]).mockResolvedValueOnce([]);
+    reportNotifyMock.mockResolvedValueOnce(SENT);
+    await post({ name: "Dana Lee", email: "dana@cu.org", company: "Example CU", source: "report", state: "ZZ" });
+    expect(reportNotifyMock).toHaveBeenCalledWith(expect.objectContaining({ stateCode: null, competitors: null }));
   });
 
   it("records the report data check when the driver returns the bigint id as a string", async () => {
@@ -300,6 +403,8 @@ describe("POST /api/leads", () => {
       institutionId: 4802,
       src: "profile",
       quoteCheck: "Report check: No match.",
+      stateCode: null,
+      competitors: null,
     });
   });
 
@@ -512,6 +617,45 @@ describe("POST /api/leads", () => {
       expect(await res.json()).toEqual({ success: true });
       expect(sqlMock).not.toHaveBeenCalled();
       expect(captureNotifyMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("first tracked source", () => {
+    const firstTouch = {
+      utm_source: "linkedin",
+      utm_medium: "social",
+      utm_campaign: "market-spread",
+      utm_content: "tampa",
+      landing_path: "/for-institutions",
+    };
+    const firstTouchCalls = () =>
+      sqlMock.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("").includes("first_utm_source ="));
+
+    it("saves the session's first touch on a contact request, guarded so first touch wins", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 77 }]).mockResolvedValue([{ id: 77 }]);
+      const res = await post({ name: "Ann", email: "ann@bank.example", source: "contact_general", firstTouch });
+      expect(res.status).toBe(200);
+      const [call] = firstTouchCalls();
+      const [strings, ...values] = call as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join("?")).toContain("first_utm_source IS NULL");
+      expect(values).toEqual(["linkedin", "social", "market-spread", "tampa", "/for-institutions", 77]);
+    });
+
+    it("saves nothing when the form sends no tracked source", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 78 }]).mockResolvedValue([]);
+      await post({ name: "Ann", email: "ann@bank.example", source: "contact_general", firstTouch: { utm_content: "x" } });
+      await post({ name: "Ann", email: "ann@bank.example", source: "contact_general" });
+      expect(firstTouchCalls()).toHaveLength(0);
+    });
+
+    it("still accepts the form when saving the touch fails", async () => {
+      sqlMock
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 79 }])
+        .mockRejectedValueOnce(new Error("column missing"))
+        .mockResolvedValue([]);
+      const res = await post({ name: "Ann", email: "ann@bank.example", source: "contact_general", firstTouch });
+      expect(res.status).toBe(200);
     });
   });
 });

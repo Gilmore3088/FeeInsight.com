@@ -35,7 +35,7 @@ describe("per-agent Anthropic keys", () => {
     vi.stubEnv("ANTHROPIC_API_KEY_HAMILTON", "  ");
     const sources = Object.fromEntries(anthropicKeySources().map((row) => [row.agent, row.source]));
     expect(sources).toEqual({
-      atlas: "shared", magellan: "shared", rosetta: "shared", knox: "shared", darwin: "own", hamilton: "shared",
+      atlas: "shared", magellan: "shared", rosetta: "shared", knox: "shared", darwin: "own", hamilton: "shared", growth: "shared",
     });
   });
 });

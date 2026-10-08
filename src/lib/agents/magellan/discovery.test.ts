@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { ARTICLE_LINK_SQL } from "./link-coverage";
 
 import {
   DISCOVERY_METHOD_VERSION,
+  finderOrderFromHints,
   nextDiscoveryResume,
   parseDiscoveryResume,
   rejectedSourcesFrom,
@@ -9,6 +11,8 @@ import {
   RESUME_MAX_TICKS,
   runMagellanDiscovery,
   type DiscoveryResume,
+  UPGRADE_SEARCH_VERSION,
+  UPGRADE_RESERVED_SLOTS,
 } from "./discovery";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -25,7 +29,9 @@ function createDbMock(rows: Array<Record<string, unknown>>, extra: Handler = () 
     const answer = extra(text, values);
     if (answer) return Promise.resolve(answer);
     if (text.includes("product-page upgrade search")) return Promise.resolve([]);
+    if (text.includes("business-only link search")) return Promise.resolve([]);
     if (text.includes("stale-link freshness search")) return Promise.resolve([]);
+    if (text.includes("never-searched banks in other states")) return Promise.resolve([]);
     if (text.includes("AS profile_canonical_source_url")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
@@ -140,7 +146,16 @@ describe("Magellan agentic discovery", () => {
     const result = await runMagellanDiscovery({ runId: 102, dryRun: true, db: asDiscoveryDb(db), fetchImpl });
 
     expect(result.discovered).toBe(1);
-    expect(db).toHaveBeenCalledTimes(1);
+    // Only reads: the market-leader ranking and the candidate list.
+    expect(db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("market leaders by state"))).toHaveLength(1);
+  });
+
+  it("searches the state's market leaders first", async () => {
+    const db = createDbMock([]);
+    await runMagellanDiscovery({ runId: 103, dryRun: true, stateCode: "TX", leaderIds: [7, 9], db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("AS profile_canonical_source_url"));
+    expect(templateText(call![0])).toMatch(/profile\.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,[\s\S]*?inst\.id = ANY\(\s*::bigint\[\]\) THEN 0/);
+    expect(call!.slice(1)).toContainEqual([7, 9]);
   });
 
   it("runs every free specialist before calling a bank a miss, and logs each one", async () => {
@@ -655,6 +670,27 @@ describe("Magellan agentic discovery", () => {
     });
   });
 
+  describe("never-searched banks in other states", () => {
+    it("fills a state step's spare slots with them, after the state's own banks", async () => {
+      const own = bank(90, "https://own.example");
+      const elsewhere = bank(91, "https://far.example", { state_code: "IL" });
+      const db = createDbMock([own], learningHandler((text) => (text.includes("never-searched banks in other states") ? [elsewhere] : undefined)));
+      const fetchImpl = site({});
+
+      const result = await runMagellanDiscovery({ runId: 130, stateCode: "VT", limit: 5, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results.map((r) => r.institutionId)).toEqual([90, 91]);
+      const call = db.mock.calls.find((c) => templateText(c[0]).includes("never-searched banks in other states"))!;
+      expect(call.slice(1)).toContain("VT");
+    });
+
+    it("is not asked for when the state fills the step", async () => {
+      const db = createDbMock([bank(92, "https://own.example")], learningHandler(() => undefined));
+      await runMagellanDiscovery({ runId: 131, stateCode: "VT", limit: 1, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(db.mock.calls.some((c) => templateText(c[0]).includes("never-searched banks in other states"))).toBe(false);
+    });
+  });
+
   describe("product-page upgrade search", () => {
     const productBank = bank(77, "https://upbank.example", {
       fee_schedule_url: "https://upbank.example/personal/checking",
@@ -680,7 +716,7 @@ describe("Magellan agentic discovery", () => {
       const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
       expect(companion).toBeDefined();
       expect(companion).toContain("https://upbank.example/personal/checking");
-      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
     });
 
     it("leaves the bank's link and rescue state alone when no schedule is found", async () => {
@@ -696,7 +732,92 @@ describe("Magellan agentic discovery", () => {
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
-      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
+    });
+
+    it("picks article links for the same search and does not keep the article once the schedule is found", async () => {
+      const articleBank = bank(78, "https://artbank.example", {
+        fee_schedule_url: "https://artbank.example/articles/common-checking-account-fees-to-avoid",
+        profile_canonical_source_url: "https://artbank.example/articles/common-checking-account-fees-to-avoid",
+      });
+      const db = createDbMock([], learningHandler((text) => (text.includes("product-page upgrade search") ? [articleBank] : undefined)));
+      const fetchImpl = site({
+        "https://artbank.example/": () => response('<a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://artbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://artbank.example/disclosures/fee-schedule" });
+      const texts = db.mock.calls.map((call) => templateText(call[0]));
+      expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
+      expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
+      const upgradeCall = db.mock.calls.find((call) => templateText(call[0]).includes("product-page upgrade search"))!;
+      expect(upgradeCall.slice(1)).toContain(ARTICLE_LINK_SQL);
+    });
+  });
+
+  describe("business-only link search", () => {
+    const businessBank = bank(79, "https://fnbak.example", {
+      fee_schedule_url: "https://fnbak.example/wp-content/uploads/Business-Account-Fee-Schedule.pdf",
+      profile_canonical_source_url: "https://fnbak.example/wp-content/uploads/Business-Account-Fee-Schedule.pdf",
+    });
+    const businessDb = () =>
+      createDbMock([], learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
+
+    it("keeps slots for business-only links when banks without a link fill the step", async () => {
+      const missing = [1, 2, 3, 4].map((id) => bank(id, `https://bank${id}.example`));
+      const db = createDbMock(missing, learningHandler((text) => (text.includes("business-only link search") ? [businessBank] : undefined)));
+      const result = await runMagellanDiscovery({ runId: 123, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0, limit: 4 });
+      expect(result.selected).toBe(4);
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(79);
+      const businessCall = db.mock.calls.find((call) => templateText(call[0]).includes("business-only link search"))!;
+      expect(businessCall.slice(1)).toContain(3);
+    });
+
+    it("searches reserved product-page and out-of-date links before banks without a link", async () => {
+      const missing = Array.from({ length: 10 }, (_, i) => bank(i + 1, `https://bank${i + 1}.example`));
+      const product = bank(81, "https://prod.example", { fee_schedule_url: "https://prod.example/personal/checking" });
+      const stale = bank(82, "https://old.example", { fee_schedule_url: "https://old.example/2021-fee-schedule.pdf", url_year: 2021, effective_year: null });
+      const db = createDbMock(
+        missing,
+        learningHandler((text) => {
+          if (text.includes("business-only link search")) return [businessBank];
+          if (text.includes("product-page upgrade search")) return [product];
+          if (text.includes("stale-link freshness search")) return [stale];
+          return undefined;
+        }),
+      );
+      const result = await runMagellanDiscovery({ runId: 124, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0, limit: 10 });
+      expect(result.selected).toBe(10);
+      const order = result.results.map((row) => Number(row.institutionId));
+      expect(order.slice(0, 3)).toEqual([79, 81, 82]);
+      const upgradeCall = db.mock.calls.find((call) => templateText(call[0]).includes("product-page upgrade search"))!;
+      expect(upgradeCall.slice(1)).toContain(UPGRADE_RESERVED_SLOTS);
+    });
+
+    it("makes a bank whose link answered 404 due at once, not after 30 days", async () => {
+      const db = createDbMock([]);
+      await runMagellanDiscovery({ runId: 125, dryRun: true, db: asDiscoveryDb(db), fetchImpl: vi.fn() });
+      expect(templateText(selectorCall(db)[0])).toMatch(/IN \(404, 410\)/);
+    });
+
+    it("replaces a business-only schedule with the consumer one and keeps it as a business companion", async () => {
+      const db = businessDb();
+      const fetchImpl = site({
+        "https://fnbak.example/": () =>
+          response('<a href="/business-fee-schedule">Business Fees</a><a href="/disclosures/fee-schedule">Personal Fee Schedule</a>'),
+        "https://fnbak.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 122, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://fnbak.example/disclosures/fee-schedule" });
+      const companion = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_additional_sources"));
+      expect(companion).toBeDefined();
+      expect(templateText(companion![0])).toContain("'business'");
+      expect(companion).toContain("https://fnbak.example/wp-content/uploads/Business-Account-Fee-Schedule.pdf");
+      expect(attempts(db).every((attempt) => attempt.detail.business_search === 1)).toBe(true);
     });
   });
 
@@ -711,6 +832,18 @@ describe("Magellan agentic discovery", () => {
     };
     const staleDb = () =>
       createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [staleBank] : undefined)));
+
+    it("re-searches a link the ledger judged a wrong source of fees, once per judgement", async () => {
+      const wrongBank = { ...staleBank, url_year: null, effective_year: null, wrong_at: "2026-10-07T05:00:00Z", searched_at: null };
+      const db = createDbMock([], learningHandler((text) => (text.includes("stale-link freshness search") ? [wrongBank] : undefined)));
+      const result = await runMagellanDiscovery({ runId: 126, dryRun: false, db: asDiscoveryDb(db), fetchImpl: site({}), politeDelayMs: 0 });
+      expect(result.results.map((row) => Number(row.institutionId))).toContain(78);
+      const call = db.mock.calls.find((c) => templateText(c[0]).includes("stale-link freshness search"))!;
+      const text = templateText(call[0]);
+      expect(text).toContain("'confirmed_wrong_fees'");
+      expect(text).toMatch(/searched_at < wrong_at/);
+      expect(attempts(db).some((attempt) => attempt.detail.stale_reason === "fees read from it were confirmed wrong on a second look")).toBe(true);
+    });
 
     it("replaces an out-of-date link with the bank's current schedule, without keeping the old one", async () => {
       const db = staleDb();
@@ -943,5 +1076,28 @@ describe("Magellan agentic discovery", () => {
       expect(sqlText).toContain("ranked.cut_rank <=");
       expect(call).toContain(RESUME_FIRST_PER_STEP);
     });
+  });
+});
+
+describe("finderOrderFromHints", () => {
+  const hints = {
+    stateCode: "TX",
+    expertName: null,
+    finderOrder: ["discover.site_crawl", "discover.hub_pages"],
+    readerOrder: [],
+    avoid: ["discover.sitemap", "discover.common_paths"],
+    platforms: [],
+    source: "memory" as const,
+  };
+
+  it("runs the state's best specialists first and its dead ends last, known link always first", () => {
+    const keys = finderOrderFromHints(hints).map((finder) => finder.key);
+    expect(keys).toEqual(["knownLink", "siteCrawl", "hubPages", "homepageLinks", "platformPaths", "peerHint", "sitemap", "commonPaths"]);
+  });
+
+  it("keeps the default order without state memory", () => {
+    const keys = finderOrderFromHints({ ...hints, source: "none" }).map((finder) => finder.key);
+    expect(keys[0]).toBe("knownLink");
+    expect(keys).toEqual(finderOrderFromHints(null).map((finder) => finder.key));
   });
 });

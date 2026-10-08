@@ -1,6 +1,8 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
+import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
+
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
  * stored: open the candidate and make sure it is a fee schedule. HTML pages must list
@@ -35,6 +37,11 @@ const FEE_CONTENT_KEYWORDS = [
   "schedule of fees",
   "fee schedule",
   "fee disclosure",
+  // Large banks' names for the same document (Citi's "Schedule of Charges", Oct 6).
+  "schedule of charges",
+  "schedule of service charges",
+  "consumer fees",
+  "deposit account agreement",
 ];
 
 /**
@@ -72,6 +79,8 @@ export interface FeeCandidate {
   /** Link score 0..1 from its label and address (see `scoreLink` in finders.ts). */
   score: number;
   reasons: string[];
+  /** The bank's own website: a foreign country domain on the same host is the bank's own. */
+  websiteUrl?: string | null;
 }
 
 export type CandidateVerdict =
@@ -82,6 +91,11 @@ export type CandidateVerdict =
   | "rate_page"
   | "too_few_fee_words"
   | "product_page"
+  | "business_schedule"
+  | "foreign_schedule"
+  | "error_page"
+  | "article_page"
+  | "single_product_disclosure"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -173,6 +187,26 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
 
 /** Open a candidate and decide whether it is the bank's fee schedule. Throws only on network errors. */
 export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
+  if (isBusinessOnlyLink(candidate.url)) {
+    return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
+  }
+  if (isErrorPageLink(candidate.url)) {
+    return rejected("error_page", "Candidate address is the site's error page", null, candidate.score);
+  }
+  if (isArticleLink(candidate.url)) {
+    return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
+  }
+  if (isSingleProductDisclosureLink(candidate.url)) {
+    return rejected(
+      "single_product_disclosure",
+      "Candidate is one deposit product's disclosure (CD, certificate or time deposit), not the fee schedule",
+      null,
+      candidate.score,
+    );
+  }
+  if (isForeignHostLink(candidate.url, candidate.websiteUrl)) {
+    return rejected("foreign_schedule", "Candidate is on another country's domain, not the US bank's schedule", null, candidate.score);
+  }
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
   if (!response.ok) {
     return rejected(`http_${response.status}`, `Candidate HTTP ${response.status}`, response.status);
@@ -193,6 +227,10 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   // of the site, so they are counted on the page's own content only.
   const keywordMatches = FEE_CONTENT_KEYWORDS.filter((keyword) => body.includes(keyword)).length;
   // The page must actually list fees with amounts, or at least not clearly fail the check.
+  // Another country's schedule (a bank of the same name abroad) is never this bank's.
+  if (looksForeignSchedule(mainText)) {
+    return { ...rejected("foreign_schedule", "Candidate is another country's fee schedule (foreign currency)", response.status, candidate.score), html: rawBody, scoringText: mainText };
+  }
   const page = scoreFeePage(mainText, candidate.url);
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
@@ -205,6 +243,10 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   // the fee page, or its link label is strong and it lists at least one fee. A checking
   // account page quoting its monthly fee is not the schedule (Magellan audit, Oct 6:
   // 853 of 4,451 fee links were product pages, median 4 live fees vs 15).
+  // A business-only schedule is not the consumer's: keep looking (link-coverage.ts).
+  if (isBusinessOnlyText(mainText)) {
+    return { ...rejected("business_schedule", "Candidate is a business-only fee schedule", response.status, candidate.score), html: rawBody, scoringText: mainText };
+  }
   const accepted =
     page.verdict === "fee_page" ||
     (keywordMatches >= 2 && urlNamesFeePage(candidate.url)) ||
@@ -256,12 +298,18 @@ async function validatePdf(candidate: FeeCandidate, response: Response): Promise
 
   const text = await pdfCheckText(bytes);
   if (!text) return acceptUnread("has no readable text (likely a scan)");
+  if (looksForeignSchedule(text)) {
+    return { ...rejected("foreign_schedule", "PDF is another country's fee schedule (foreign currency)", response.status, candidate.score), scoringText: text };
+  }
   const page = scoreFeePage(text);
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `PDF is not a fee schedule (${page.reason})`, response.status, candidate.score), scoringText: text };
   }
   if (page.verdict !== "fee_page" && page.rateTerms >= 4 && page.feeLines < 2) {
     return { ...rejected("rate_page", `PDF is a rate sheet (${page.rateTerms} rate terms, ${page.feeLines} fee lines)`, response.status, candidate.score), scoringText: text };
+  }
+  if (isBusinessOnlyText(text)) {
+    return { ...rejected("business_schedule", "PDF is a business-only fee schedule", response.status, candidate.score), scoringText: text };
   }
   return {
     ok: true,

@@ -10,7 +10,7 @@ vi.mock("@/lib/email/mailerlite", () => ({ syncLeadToMailerLite: vi.fn() }));
 
 import { sql } from "@/lib/data-store/connection";
 import { syncLeadToMailerLite } from "@/lib/email/mailerlite";
-import { signSubscriptionToken } from "@/lib/email/subscription-token";
+import { READER_COOKIE, readReaderCookie, signReaderCookie, signSubscriptionToken } from "@/lib/email/subscription-token";
 import { POST } from "./route";
 
 const sqlMock = sql as unknown as ReturnType<typeof vi.fn>;
@@ -48,8 +48,44 @@ describe("POST /api/leads/subscription", () => {
     expect(res.status).toBe(200);
     expect(issuedText(0)).toContain("email_confirmed_at = COALESCE(email_confirmed_at, now())");
     expect(issuedText(0)).toContain("email_unsubscribed_at = NULL");
-    expect(sqlMock.mock.calls[0].slice(1)).toEqual(["vp@bank.example"]);
-    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "capture_state" });
+    expect(sqlMock.mock.calls[0].slice(1)).toEqual([null, null, null, "vp@bank.example"]);
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "capture_state", state: null, reconfirmed: true });
+    // The confirmed reader is remembered, so free report forms don't ask for the email again.
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toMatch(/HttpOnly/i);
+    const value = new RegExp(`${READER_COOKIE}=([^;]+)`).exec(setCookie)?.[1];
+    expect(readReaderCookie(value, SECRET)).toBe("vp@bank.example");
+  });
+
+  it("stores a state picked on the confirm page and syncs it, using every row's sources", async () => {
+    sqlMock.mockResolvedValueOnce([
+      { source: "newsletter", use_case: "state=TX" },
+      { source: "report", use_case: "placement=report" },
+    ]);
+    const token = signSubscriptionToken("confirm", "vp@bank.example", SECRET);
+    const res = await postJson({ action: "confirm", email: "vp@bank.example", token, state: "tx" });
+    expect(res.status).toBe(200);
+    expect(sqlMock.mock.calls[0].slice(1)).toEqual(["state=TX", "state=TX", "state=TX", "vp@bank.example"]);
+    expect(issuedText(0)).toContain("contact(_[a-z0-9-]+)?");
+    expect(syncMock).toHaveBeenCalledWith({ email: "vp@bank.example", subscribed: true, source: "newsletter,report", state: "TX", reconfirmed: true });
+  });
+
+  it("syncs the newest row's latest state when the confirm page picks none", async () => {
+    sqlMock.mockResolvedValueOnce([
+      { source: "newsletter", use_case: "state=AL", created_at: "2026-10-01T00:00:00Z" },
+      { source: "report_national", use_case: "state=AL; state=FL", created_at: "2026-10-06T00:00:00Z" },
+    ]);
+    const token = signSubscriptionToken("confirm", "vp@bank.example", SECRET);
+    await postJson({ action: "confirm", email: "vp@bank.example", token });
+    expect(syncMock.mock.calls[0][0].state).toBe("FL");
+  });
+
+  it("rejects a forged reader cookie", () => {
+    const real = signReaderCookie("vp@bank.example", SECRET);
+    const forged = `${Buffer.from("ceo@bank.example").toString("base64url")}.${real.split(".")[1]}`;
+    expect(readReaderCookie(real, SECRET)).toBe("vp@bank.example");
+    expect(readReaderCookie(forged, SECRET)).toBeNull();
+    expect(readReaderCookie(real, "other-secret")).toBeNull();
   });
 
   it("supports RFC 8058 one-click unsubscribe with query parameters", async () => {

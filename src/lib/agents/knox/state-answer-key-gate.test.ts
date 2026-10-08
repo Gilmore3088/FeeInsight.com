@@ -12,15 +12,20 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * show how Texas-tuned rules carry to other states. Floors are today's counts per state; raise
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
+// Since v17 the gate counts only reads that pass Knox's self-check; main at v16 scored 659
+// right / 48 wrong on that basis. Floors raised to main at v29 (2026-10-07), and CA, GA, MN and
+// all to the top-50 fold (Oct 8: 724 right / 46 wrong, from 723 / 47).
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 121, wrong: 10 },
-  FL: { right: 96, wrong: 7 },
-  GA: { right: 140, wrong: 13 },
-  IL: { right: 86, wrong: 7 },
-  MI: { right: 104, wrong: 0 },
-  MN: { right: 92, wrong: 14 },
-  NY: { right: 38, wrong: 8 },
-  all: { right: 677, wrong: 59 },
+  CA: { right: 130, wrong: 7 },
+  FL: { right: 102, wrong: 7 },
+  GA: { right: 150, wrong: 12 },
+  // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
+  // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
+  IL: { right: 88, wrong: 7 },
+  MI: { right: 114, wrong: 0 },
+  MN: { right: 97, wrong: 7 },
+  NY: { right: 40, wrong: 6 },
+  all: { right: 724, wrong: 46 },
 };
 
 const fixture = JSON.parse(
@@ -33,6 +38,7 @@ describe("Knox answer-key gate (seven states)", () => {
   });
 
   for (const [state, floor] of Object.entries(FLOORS)) {
+    // The self-check traces every read against its text, so a whole fixture takes several seconds.
     it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones (${state})`, () => {
       const documents = state === "all" ? fixture.keys : fixture.keys.filter((document) => document.state === state);
       const score = scoreAnswerKeys(documents);
@@ -43,6 +49,6 @@ describe("Knox answer-key gate (seven states)", () => {
         `wrong: ${score.errors.map((error) => `${error.tid} ${error.fee} (${error.kind})`).join(", ")}`;
       expect(score.right, summary).toBeGreaterThanOrEqual(floor.right);
       expect(wrong, summary).toBeLessThanOrEqual(floor.wrong);
-    });
+    }, 60_000);
   }
 });
