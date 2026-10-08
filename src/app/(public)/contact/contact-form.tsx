@@ -8,6 +8,7 @@ import { readFirstTouch } from "@/lib/marketing-touch";
 const INQUIRY_TYPES = [
   { value: "report", label: "Competitive Fee Position Report (priced on request)" },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
+  { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },
   { value: "general", label: "Something else" },
