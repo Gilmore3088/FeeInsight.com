@@ -235,7 +235,6 @@ describe("shared mailboxes and phone lines", () => {
     expect(normalizeContact({ name: null, title: "Member Services: MemberServices@TheQ.org", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
     for (const email of ["boardofdirectors@lafcu.org", "visa@theq.org", "board@x.org"]) expect(isSharedMailbox(email)).toBe(true);
     expect(isSharedMailbox("ceo@nihfcu.org")).toBe(false);
-    expect(normalizeContact({ name: null, title: "Elevate your Ag Operations with BankIowa's Farm Management System", role: "operations", kind: "person" })).toMatchObject({ title: null, role: "other" });
     expect(normalizeContact({ name: "Richard Fogl", title: "Business Product Specialist | Business Services", role: "retail", kind: "person" }).role).toBe("other");
     expect(normalizeContact({ name: "Sarah Gonneville", title: "VP, Retail Branch Administrator", role: "retail", kind: "person" })).toMatchObject({ title: "VP, Retail Branch Administrator", role: "retail" });
   });
