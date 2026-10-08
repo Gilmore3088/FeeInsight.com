@@ -5,6 +5,23 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**Pro moves to three tiers; the monthly brief stays free; banks and credit unions get equal weight.**
+James, 11:35 UTC, after the pricing and competitive strategy pages. Pro becomes three tiers at
+$1,500, $3,000 and $5,000 a year ("If we need to bump prices later we can. 5k for an on demand
+consultant isn't a lot"). The Stripe payments thread owns `src/app/subscribe/pricing.ts`, the Stripe
+prices, and the open tier questions (asset breakpoints, a monthly option, how the tier is picked).
+Marketing copy and the plan follow its answers. The free Fee Pulse monthly email stays free and is
+positioned against Moebs's paid news product (task 2.27). Marketing gives banks and credit unions equal
+weight. The report price is still open: it stays "Priced on request" until James answers.
+
+**Eleven marketing gaps added; the admin stays simple.** James, 08:57 UTC. After the pricing and
+competitive strategy research, he added tasks 2.25-2.35 to `growth-os/BUILD-PLAN.md`: lead follow-up,
+pricing rollout, Fee Pulse positioning, a method and accuracy page, a live sample report, a first
+case study, comparison pages, a credit union campaign, association partners, email scores and sales
+in the scoreboard. "Just ensure cleanness on the admin side. Simplicity": every admin screen for
+marketing lives inside /admin/growth, which opens on items to review with everything else in tabs.
+No new admin pages for marketing.
+
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
 ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on
