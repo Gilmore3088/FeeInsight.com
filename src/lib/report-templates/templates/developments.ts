@@ -8,8 +8,10 @@
 import { dataTable, emptyNotice, escapeHtml, footnote, releaseList } from "../index";
 import type { ReleaseListGroup } from "../index";
 import { formatAmount } from "@/lib/format";
+import { STATE_BILL_STAGE_LABELS, type StateNews } from "@/lib/data-store/state-news";
 import {
   AGENCY_LABELS,
+  DEVELOPMENTS_WINDOW_DAYS,
   DEVELOPMENT_KIND_LABELS,
   DEVELOPMENT_KIND_ORDER,
   itemsNamingState,
@@ -102,12 +104,71 @@ export function developmentsContent(block: DevelopmentsBlock | null | undefined,
   ].join("\n");
 }
 
-/** State: releases naming the state, the state regulator, then the federal releases. */
+/** State items listed per group before "N more". */
+const STATE_ITEMS_PER_GROUP = 6;
+
+function stateGroup(title: string, items: ReleaseListGroup["items"], noun: [string, string]): ReleaseListGroup {
+  const more = items.length - STATE_ITEMS_PER_GROUP;
+  return {
+    title: `${title} (${items.length})`,
+    items: items.slice(0, STATE_ITEMS_PER_GROUP),
+    note: more > 0 ? `${count(more, `more ${noun[0]}`, `more ${noun[1]}`)} stored.` : undefined,
+  };
+}
+
+/**
+ * The state's own items: its regulators' posts, its fee bills and press coverage of them.
+ * A press story is labelled with its outlet and never as a regulator's release.
+ */
+export function stateNewsContent(news: StateNews | null | undefined, stateName: string, windowDays: number): string {
+  if (!news) return emptyNotice(`${stateName} regulator posts, fee bills and press coverage were not read for this report.`);
+  const groupsOut = [
+    stateGroup(
+      `${stateName} regulator posts`,
+      news.regulator_posts.map((p) => ({ date: p.published_at ? shortDate(p.published_at) : "", source: "State regulator", title: p.title, href: p.link })),
+      ["post", "posts"],
+    ),
+    stateGroup(
+      `${stateName} fee bills`,
+      news.bills.map((b) => ({
+        date: b.stage_on ? shortDate(b.stage_on) : "",
+        source: b.stage ? STATE_BILL_STAGE_LABELS[b.stage] ?? b.stage : "Bill",
+        title: b.identifier ? `${b.identifier}: ${b.title}` : b.title,
+        href: b.url,
+      })),
+      ["bill", "bills"],
+    ),
+    stateGroup(
+      "In the news",
+      news.press.map((s) => ({ date: s.published_at ? shortDate(s.published_at) : "", source: s.publisher ?? "Press", title: s.headline, href: s.link })),
+      ["story", "stories"],
+    ),
+  ];
+  const total = news.regulator_posts.length + news.bills.length + news.press.length;
+  if (total === 0) {
+    return emptyNotice(`No ${stateName} regulator posts or press stories from the last ${windowDays} days are stored, and no ${stateName} fee bill has had action in the last year.`);
+  }
+  const recentMissing = [news.regulator_posts.length === 0 ? "regulator posts" : "", news.press.length === 0 ? "press stories" : ""].filter(Boolean);
+  const missing = [
+    recentMissing.length > 0 ? `No ${stateName} ${recentMissing.join(" or ")} from the last ${windowDays} days are stored.` : "",
+    news.bills.length === 0 ? `No ${stateName} fee bill has had action in the last year.` : "",
+  ].filter(Boolean);
+  return [
+    releaseList(groupsOut),
+    missing.length > 0 ? paragraph(missing.join(" ")) : "",
+    footnote(
+      `Source: the ${stateName} banking and credit union regulators' own news pages; bills in the ${stateName} legislature whose text names a bank or credit union fee (Open States); and press stories naming ${stateName} or one of those bills (Google News). Press stories are the outlet's reporting, not the regulator's. Posts and stories from the last ${windowDays} days; bills with action in the last year.`,
+    ),
+  ].join("\n");
+}
+
+/** State: releases naming the state, the state regulator and its own items, then the federal releases. */
 export function stateDevelopmentsContent(
   block: DevelopmentsBlock | null | undefined,
   stateName: string,
   regulator: StateRegulatorRef | null | undefined,
   generatedAt: string,
+  stateNews?: StateNews | null,
 ): string {
   const parts: string[] = [];
   if (block && block.items.length > 0) {
@@ -131,14 +192,13 @@ export function stateDevelopmentsContent(
     const cu = regulator.credit_union_agency_name
       ? ` State-chartered credit unions answer to the ${regulator.credit_union_website_url ? `${regulator.credit_union_agency_name} (${regulator.credit_union_website_url})` : regulator.credit_union_agency_name}.`
       : "";
-    parts.push(
-      paragraph(
-        `State-chartered banks in ${stateName} are supervised by the ${bank}.${cu} We do not yet collect state regulator bulletins or orders, so state actions are not listed here.`,
-      ),
-    );
-  } else {
+    const collected =
+      stateNews === undefined ? " We do not yet collect state regulator bulletins or orders, so state actions are not listed here." : "";
+    parts.push(paragraph(`State-chartered banks in ${stateName} are supervised by the ${bank}.${cu}${collected}`));
+  } else if (stateNews === undefined) {
     parts.push(paragraph(`We have no ${stateName} banking regulator on file and do not yet collect state regulator bulletins, so state actions are not listed here.`));
   }
+  if (stateNews !== undefined) parts.push(stateNewsContent(stateNews, stateName, DEVELOPMENTS_WINDOW_DAYS));
 
   if (!block) {
     parts.push(emptyNotice("Federal agency releases were not read for this report."));
