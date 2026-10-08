@@ -473,3 +473,10 @@ tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton
 to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The site sets up its own Stripe prices by lookup key (James 12:53: "you can do
 everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
 (`src/lib/pro-tiers.ts`).
+
+**Outreach is founder-led: agents draft, James sends, after the site is launch-ready.** 2026-10-08.
+James chose "Yes, 75 a week" (15:15 UTC) for personal outreach emails that the agents draft and
+he sends from Outlook; "agents DRAFT, never send these" (15:14). Sends start only once the site
+passes the launch-ready check in the Q4 go-to-market plan (James 15:16: "ONCE we get the site
+ready to launch"). Contacts come from the same process as fee schedules, aimed at executive
+emails the institution publishes (`src/lib/agents/growth/contacts.ts`); nothing is guessed.
