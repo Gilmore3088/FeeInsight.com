@@ -8,6 +8,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
+import { getMarketStudyData } from "@/lib/data-store/market-study";
+import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/hamilton/studies-exhibits/market";
 
 /** The fees compared across the market, in reading order. */
 export const MARKET_FEES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network", "wire_domestic_outgoing"] as const;
@@ -47,6 +49,27 @@ export interface LocalMarketAnswer {
   competitors: MarketCompetitor[];
   categories: string[];
   sources: { label: string; asOf: string | null }[];
+  /**
+   * The market's main county drawn as the report footprint map (trusted SVG built by
+   * studies-exhibits/market.ts from escaped data), with its legend; null when it can't be drawn.
+   */
+  map: { html: string; legend: string } | null;
+  /** Each institution's map colour, so the table beside the map uses the same one. */
+  colours: Record<number, string>;
+}
+
+/** The footprint map for the county that holds most of the market, in the report look. */
+async function marketMap(institutionId: number, countyFips: string | undefined, creditUnion: boolean): Promise<Pick<LocalMarketAnswer, "map" | "colours">> {
+  if (!countyFips) return { map: null, colours: {} };
+  const d = await getMarketStudyData(institutionId, countyFips);
+  if (!d) return { map: null, colours: {} };
+  const styles = bankStyles(d);
+  const html = responsive((size) => footprintMap(d, styles, size));
+  const colours: Record<number, string> = {};
+  for (const st of styles.values()) if (st.key > 0) colours[st.key] = st.colour;
+  // NCUA gives credit union branches no location, so the map can't place them; say that rather than "outside the county".
+  const legend = creditUnion ? footprintLegend(d, styles).replace(" (outside the county)", " (credit union branches have no map location)") : footprintLegend(d, styles);
+  return { map: html ? { html, legend } : null, colours };
 }
 
 const MAX_COMPETITORS = 20;
@@ -124,10 +147,11 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
   });
   if (!market) return null;
 
-  const [footprint, ownBranches, fees] = await Promise.all([
+  const [footprint, ownBranches, fees, drawn] = await Promise.all([
     getMarketBranchFootprint(market.county_fips.map(String), market.sod_year).catch(() => null),
     getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null),
     ownFees(institutionId).catch(() => ({})),
+    marketMap(institutionId, market.county_fips.map(String)[0], charterType === "credit_union").catch(() => ({ map: null, colours: {} })),
   ]);
 
   const feeBy = new Map(market.competitors.map((c) => [c.institution_id, c]));
@@ -173,5 +197,7 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
       { label: "NCUA credit union branch file", asOf: null },
       { label: "Bank Fee Index, published fee schedules", asOf: null },
     ],
+    map: drawn.map,
+    colours: drawn.colours,
   };
 }

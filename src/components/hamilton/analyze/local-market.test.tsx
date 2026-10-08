@@ -18,6 +18,8 @@ const data: LocalMarketAnswer = {
   ],
   categories: ["overdraft", "nsf"],
   sources: [],
+  map: null,
+  colours: {},
 };
 
 describe("LocalMarketView", () => {
@@ -25,7 +27,11 @@ describe("LocalMarketView", () => {
     const html = renderToStaticMarkup(<LocalMarketView data={data} />);
     expect(html).toContain("2 institutions compete with you in the Testville, FL area");
     expect(html).toContain("Test Credit Union (you)");
-    expect(html).toContain("$2.0B · 20%");
+    expect(html).toContain("$2.0B");
+    expect(html).toContain("20.0%");
+    expect(html).toContain("You have the most branches here (20); Test Bank A is next with 12");
+    expect(html).toContain("Of 2 competitors with an overdraft fee on file, 1 is higher than your $30 and 1 lower");
+    expect(html).toContain('class="rd-exhibit"');
     expect(html).toContain("Testville, FL");
     expect(html).toContain('aria-label="higher than yours"');
     expect(html).toContain('aria-label="lower than yours"');
