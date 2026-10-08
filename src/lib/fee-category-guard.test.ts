@@ -717,4 +717,28 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
     }
   });
+
+  it("v42 files an NSF item marked paid as the overdraft fee, and reads extended coverage as the program (Oct 8)", () => {
+    for (const name of [
+      "NSF Fee Charge - Paid (per item)",
+      "Insufficient Funds Charge - Paid (per item)",
+      "Nonsufficient Funds Fee-Paid +",
+      "Insufficient Funds Charge (Check Paid, Per Item)",
+      "Overdraft Privilege Standard or Extended Coverage",
+    ]) {
+      expect(checkFeeCategory("overdraft", name), name).toEqual({ ok: true });
+    }
+    for (const name of ["NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid +", "Insufficient Funds Charge (Check Paid, Per Item)"]) {
+      expect(refileCategory("nsf", name), name).toBe("overdraft");
+    }
+    for (const name of [
+      "NSF Fee Charge - Returned (per item)",
+      "Insufficient Funds Charge (Check Returned Unpaid, Per Item)",
+      "Insufficient Funds (items paid or returned, per item)",
+      "Extended Overdraft Fee",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
+    expect(refileCategory("nsf", "NSF Fee Charge - Returned (per item)")).toBe("nsf");
+  });
 });
