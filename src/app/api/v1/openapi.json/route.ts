@@ -308,7 +308,7 @@ const spec = {
         name: "format",
         in: "query",
         schema: { type: "string", enum: ["csv"] },
-        description: 'Set to "csv" for CSV download. Requires a pro or enterprise API key, or a signed-in Seat License export session.',
+        description: 'Set to "csv" for CSV download. Requires a pro or enterprise API key, or a signed-in Pro export session.',
       },
     },
   },

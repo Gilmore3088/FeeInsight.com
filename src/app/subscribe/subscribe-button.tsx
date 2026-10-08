@@ -44,26 +44,25 @@ export function SubscribeButton({
     setPending(true);
     setError(null);
     try {
-      const { url } = await createCheckoutSession({ plan, institutionId, otherOrganization, returnTo });
-      if (url) {
-        window.location.href = url;
-      } else {
-        setError("Could not create checkout. Please try again.");
-        setPending(false);
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Something went wrong";
-      if (msg.includes("Not authenticated")) {
+      const result = await createCheckoutSession({ plan, institutionId, otherOrganization, returnTo });
+      if (result.url) {
+        window.location.href = result.url;
+      } else if (result.needsSignIn) {
+        // Same hand-off as the signed-out link: plan in both places so checkout
+        // starts again by itself once the account exists.
         const back = new URLSearchParams({ plan });
         if (institutionId) back.set("inst", String(institutionId));
         else if (otherOrganization) back.set("org", "other");
         if (returnTo) back.set("from", returnTo);
         const registerFrom = `/subscribe?${back.toString()}`;
-        router.push(`/register?from=${encodeURIComponent(registerFrom)}`);
+        router.push(`/register?plan=${plan}&from=${encodeURIComponent(registerFrom)}`);
       } else {
-        setError(msg);
+        setError(result.error ?? "Could not create checkout. Please try again.");
         setPending(false);
       }
+    } catch {
+      setError("Could not open checkout. Please try again in a moment.");
+      setPending(false);
     }
   }, [plan, institutionId, otherOrganization, returnTo, router, autoStart]);
 

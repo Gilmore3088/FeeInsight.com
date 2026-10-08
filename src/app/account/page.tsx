@@ -247,7 +247,7 @@ export default async function AccountPage({
                 <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]">
                   Plan
                 </span>
-                <span className="text-[14px] font-medium text-[#1A1815]">Seat License</span>
+                <span className="text-[14px] font-medium text-[#1A1815]">Fee Insight Pro</span>
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 uppercase">
                   Active
                 </span>
@@ -516,7 +516,7 @@ export default async function AccountPage({
                 <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
                   CSV Export
                 </span>
-                Seat License export of verified-only fee medians.
+                Pro export of verified-only fee medians.
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-amber-800">
                 <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
