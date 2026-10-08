@@ -44,6 +44,7 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "stop_payment",
     "counter_check",
     "check_cashing",
+    "collection_item",
     "check_image",
   ],
   "Digital & Electronic": [
@@ -119,6 +120,7 @@ export const DISPLAY_NAMES: Record<string, string> = {
   stop_payment: "Stop Payment",
   counter_check: "Counter/Temporary Check",
   check_cashing: "Check Cashing",
+  collection_item: "Collection Items",
   check_image: "Check Image/Copy",
   // Digital & Electronic
   ach_origination: "ACH Origination",
@@ -197,6 +199,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   stop_payment: "stop_payment",
   counter_check: "counter_check",
   check_cashing: "check_cashing",
+  collection_item: "collection_item",
+  collection_items: "collection_item",
   check_image: "check_image",
   // Digital & Electronic
   ach_origination: "ach_origination",
@@ -332,8 +336,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   check_by_phone: "check_cashing",
   corporate_check: "cashiers_check",
   cashed_fee: "check_cashing",
-  foreign_check_collection: "check_cashing",
-  items_sent_for_collection: "deposited_item_return",
+  foreign_check_collection: "collection_item",
+  items_sent_for_collection: "collection_item",
   // --- Safe deposit / key variants ---
   lost_key_fee: "safe_deposit_box",
   lost_key: "safe_deposit_box",
@@ -366,7 +370,7 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   // --- Coin / deposit variants ---
   coin_deposited_fee: "coin_counting",
   deposited_fee: "deposited_item_return",
-  collection_fee: "deposited_item_return",
+  collection_fee: "collection_item",
   // --- ATM variants ---
   all_other_atms: "atm_non_network",
   atm_deposit_adjustment: "deposited_item_return",
@@ -551,6 +555,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   od_daily_cap: "comprehensive",
   counter_check: "comprehensive",
   check_cashing: "comprehensive",
+  collection_item: "comprehensive",
   check_image: "comprehensive",
   bill_pay: "comprehensive",
   mobile_deposit: "comprehensive",

@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { foldRetiredCategory } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
@@ -202,11 +202,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
       /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
-  // 2026). A collection fee on a charged-off or past-due account, or a collection phone
-  // call, is debt collection; every other name passes.
+  // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
+  // for collection or a foreign check handled for deposit is a collection item (v30). A
+  // collection fee on a charged-off or past-due account, or a collection phone call, is debt
+  // collection; every other name passes.
   check_cashing: {
     include: /\S/,
-    exclude: /(charged[- ]?off|past[- ]due|delinquen|\bcalls?\b)/i,
+    exclude: new RegExp(String.raw`(charged[- ]?off|past[- ]due|delinquen|\bcalls?\b)|${COLLECTION_ITEM.source}`, "i"),
+  },
+  collection_item: {
+    include: COLLECTION_ITEM,
+    exclude: /(?!)/,
   },
   // A credit report pulled to open a deposit account or membership is not a loan fee.
   loan_origination: {
@@ -252,7 +258,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 29;
+export const CATEGORY_GUARD_VERSION = 30;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -302,6 +308,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
+  { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 

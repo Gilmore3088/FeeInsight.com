@@ -135,8 +135,44 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
 
 export const RETIRED_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(RETIRED_CATEGORIES));
 
+/**
+ * A check or item sent to another bank for collection, or a foreign or Canadian check or item
+ * handled for deposit ("Foreign Check Processing", "Canadian Item Deposit"), which banks send
+ * for collection. Cashing a foreign check is check cashing and a returned one is a returned
+ * item. A collection fee on a charged-off, past-due or negative-balance account, or a
+ * collection call, is debt collection, not this.
+ */
+export const COLLECTION_ITEM =
+  /^(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))(?:[\s\S]*\bcollections?\b|(?![\s\S]*\b(?:cash\w*|returns?|returned)\b)[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\.?)\s+(?:checks?|items?|drafts?)\b)/i;
+
+interface SplitCategory {
+  to: string;
+  name: RegExp;
+  /** A cheap SQL pre-filter (case-insensitive regex) for the rows the rule might move. */
+  sqlPattern: string;
+}
+
+/**
+ * Live categories part of which moved to a new type. James, Oct 8 2026: collection items get
+ * their own type ("Own type"); Knox v26 had filed them under check cashing, where their $20
+ * median sat beside check cashing's $5. A fee the rule does not match stays where it is.
+ */
+export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
+  check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+};
+
+export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
+
+/** Where a live-category fee moves under `SPLIT_CATEGORIES`, or null when it stays. Pure. */
+export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
+  if (!key) return null;
+  const split = SPLIT_CATEGORIES[key];
+  if (!split || !split.name.test(plain(feeName ?? ""))) return null;
+  return { to: split.to, rule: `${key}#split` };
+}
+
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 1;
+export const FOLD_RULES_VERSION = 2;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

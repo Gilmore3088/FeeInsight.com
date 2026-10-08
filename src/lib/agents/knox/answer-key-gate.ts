@@ -1,6 +1,6 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
 import { foldedCategory } from "@/lib/agents/knox/rules";
-import { foldContext, foldRetiredCategory, isRetiredCategory } from "@/lib/fee-fold";
+import { foldContext, foldRetiredCategory, isRetiredCategory, splitLiveCategory } from "@/lib/fee-fold";
 
 /**
  * Knox's rule-change gate: scores today's free extractor team (plus Darwin's rule checks,
@@ -46,6 +46,8 @@ const cents = (amount: number) => Math.round(amount * 100);
 
 /** A hand-keyed fee under a category folded into the top 50 counts where the fold rules put it. */
 function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string {
+  const split = splitLiveCategory(fee.key, fee.source_line);
+  if (split?.to) return split.to;
   if (!isRetiredCategory(fee.key)) return fee.key;
   const line = fee.source_line ?? "";
   return foldRetiredCategory(fee.key, line, foldContext(text, line))?.to ?? fee.key;

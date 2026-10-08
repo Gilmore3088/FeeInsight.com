@@ -456,9 +456,9 @@ describe("Knox extract.rules", () => {
     ["Fax Outgoing", "account_research"],
     ["Excessive Withdrawal Fee", "account_research"],
     ["Withdrawal Limit Fee", "account_research"],
-    ["Foreign Item Collection", "check_cashing"],
-    ["Canadian Check Processing Fee", "check_cashing"],
-    ["Collection Item", "check_cashing"],
+    ["Foreign Item Collection", "collection_item"],
+    ["Canadian Check Processing Fee", "collection_item"],
+    ["Collection Item", "collection_item"],
     ["Loan Cancellation Fee", "loan_origination"],
     ["Loan Refinance Fee", "other_lending_fee"],
   ])("v26 folds %s into %s (James, Oct 7 2026)", (name, key) => {
@@ -487,8 +487,8 @@ describe("Knox extract.rules", () => {
 
   it.each([
     ["Payoff fax fee", "account_research"],
-    ["Clean Collection Fee (per item)", "check_cashing"],
-    ["Collection Items for Deposit", "check_cashing"],
+    ["Clean Collection Fee (per item)", "collection_item"],
+    ["Collection Items for Deposit", "collection_item"],
     ["Credit Report Fee", "loan_origination"],
   ])("v30 still folds %s into %s", (name, key) => {
     expect(foldedCategory(name)).toBe(key);

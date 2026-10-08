@@ -140,10 +140,29 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v30 files collection items and foreign checks under their own type; cashing one stays check cashing (James, Oct 8)", () => {
+    for (const name of [
+      "Foreign Item Collection Fee (per item)",
+      "Collection Item",
+      "Items Sent for Collection",
+      "Foreign Check Processing",
+      "Canadian Item Deposit",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name).ok).toBe(false);
+      expect(checkFeeCategory("collection_item", name)).toEqual({ ok: true });
+      expect(refileCategory("check_cashing", name)).toBe("collection_item");
+    }
+    for (const name of ["Foreign Check Cashing", "Returned Canadian Check", "Non-Member Check Cashing"]) {
+      expect(checkFeeCategory("check_cashing", name)).toEqual({ ok: true });
+      expect(checkFeeCategory("collection_item", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("collection_item", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
+    expect(checkFeeCategory("collection_item", "Negative Balance Collection Fee").ok).toBe(false);
+  });
+
   it("v15 keeps debt collection out of check cashing and account opening out of loan fees (prod, Oct 7)", () => {
     expect(checkFeeCategory("check_cashing", "Phone Call Collection Fee").ok).toBe(false);
     expect(checkFeeCategory("check_cashing", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
-    expect(checkFeeCategory("check_cashing", "Foreign Item Collection Fee (per item)")).toEqual({ ok: true });
     expect(checkFeeCategory("check_cashing", "Check Cashing Fee - Non-Member")).toEqual({ ok: true });
     expect(checkFeeCategory("loan_origination", "Credit Report Fee to Open Account").ok).toBe(false);
     expect(checkFeeCategory("loan_origination", "Credit Report Fee")).toEqual({ ok: true });
