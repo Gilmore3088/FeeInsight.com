@@ -561,6 +561,19 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Returned)").ok).toBe(false);
   });
 
+  it("v31 files paid and honored NSF items as the overdraft fee (Saco & Biddeford, Bluestone, NIH, Oct 8)", () => {
+    for (const name of [
+      "Paid nonsufficient funds (NSF)*: Consumer account",
+      "NSF Share Draft (Honored)",
+      "Paid Consumer & Business NSF Items",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok).toBe(true);
+      expect(refileCategory("nsf", name)).toBe("overdraft");
+    }
+    expect(refileCategory("nsf", "NSF Share Draft (Returned)")).toBe("nsf");
+    expect(checkFeeCategory("overdraft", "NSF Share Draft (Returned)").ok).toBe(false);
+  });
+
   it("v29 accepts a per-item overdraft fee whose note states the daily count, never the cap itself (First Financial, Oct 8)", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Fee-Paid Item (Maximum of 2 Items/Day)")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Item Fee (Maximum of 5 Charged Per Day On Consumer Accounts)")).toEqual({ ok: true });
@@ -612,7 +625,7 @@ describe("checkFeeCategory", () => {
     }
   });
 
-  it("v32 keeps worked examples, waiver thresholds and page text out of the overdraft and NSF fees (Oct 8)", () => {
+  it("v33 keeps worked examples, waiver thresholds and page text out of the overdraft and NSF fees (Oct 8)", () => {
     for (const name of [
       "charged for Wednesday’s Overdraft Item",
       "but you will be charged an Overdraft Fee because your Available Balance was not sufficient at the time of payment to cov",
