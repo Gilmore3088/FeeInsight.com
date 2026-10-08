@@ -48,6 +48,18 @@ describe("publishing calendar", () => {
     expect(schedule("crew/fee-alerts")).toBe("23 13 * * *");
     expect(schedule("crew/content")).toBe("37 13 * * 0");
     expect(schedule("crew/marketing")).toBe("7 14 1 * *");
-    expect(PUBLICATIONS).toHaveLength(6);
+    expect(PUBLICATIONS).toHaveLength(7);
+  });
+
+  it("lists the weekly growth scores with no next date until their cron is registered", () => {
+    const crons: { path: string }[] = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8")).crons;
+    // Nothing turns on until James says go: the scoring route is not a cron yet.
+    expect(crons.some((cron) => cron.path.includes("growth-score"))).toBe(false);
+    const scores = buildPublishingCalendar([], now).find((row) => row.publication.key === "growth_scores")!;
+    expect(scores.publication.scheduled).toBe(false);
+    expect(scores.nextAt).toBeNull();
+    expect(scores.publication.freshnessKey).toBe("run:growth.score");
+    // The planned schedule (Mondays 13:07 UTC) is kept for when it is turned on.
+    expect(scores.publication.next(now).toISOString()).toBe("2026-10-12T13:07:00.000Z");
   });
 });
