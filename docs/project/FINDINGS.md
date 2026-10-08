@@ -79,7 +79,9 @@ answers a missing key with a 200 page, which the step treated as a failure.
 under an older parser is due at once, so a parser bump retries its failures on the next tick.
 `ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
 partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
-completes instead of failing. Other non-data replies still fail.
+is marked "skipped" instead of failing. Other non-data replies still fail. (Until Oct 8 the step
+showed "completed", which made unloaded data look green on Health; a worker can now return
+`skipped`.)
 **Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
 
 ## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
