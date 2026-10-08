@@ -32,6 +32,20 @@ export interface RegistryFetchOptions {
   backoffMs?: number;
   /** Extra request headers, e.g. an API key that must stay out of URLs and error messages. */
   headers?: Record<string, string>;
+  /** Statuses to retry beyond the shared set, e.g. a source that answers bursts with 403. */
+  retryStatuses?: readonly number[];
+}
+
+/** Longest Retry-After wait honoured, so one request cannot use up a run's time limit. */
+const MAX_RETRY_AFTER_MS = 30_000;
+
+/** Wait asked for by a Retry-After header (seconds or an HTTP date), capped; null when absent. */
+export function retryAfterMs(header: string | null, now: number = Date.now()): number | null {
+  if (!header) return null;
+  const seconds = Number(header);
+  const ms = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(header) - now;
+  if (!Number.isFinite(ms)) return null;
+  return Math.min(Math.max(ms, 0), MAX_RETRY_AFTER_MS);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -58,9 +72,14 @@ export async function registryFetch(
   const timeoutMs = options.timeoutMs ?? 60_000;
   const backoffMs = options.backoffMs ?? 1_000;
 
+  const retryable = new Set([...RETRYABLE_STATUS, ...(options.retryStatuses ?? [])]);
+
   let lastError: unknown = null;
+  let waitMs: number | null = null;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
-    if (attempt > 0) await sleep(backoffMs * 2 ** (attempt - 1));
+    // Tests pass backoffMs 0, which also skips any Retry-After wait.
+    if (attempt > 0) await sleep(backoffMs > 0 ? Math.max(backoffMs * 2 ** (attempt - 1), waitMs ?? 0) : 0);
+    waitMs = null;
     try {
       const isJson = body !== undefined && "json" in body;
       const response = await fetchImpl(url, {
@@ -76,12 +95,13 @@ export async function registryFetch(
         redirect: "follow",
       });
       if (response.ok) return response;
-      if (!RETRYABLE_STATUS.has(response.status)) {
+      if (!retryable.has(response.status)) {
         throw new RegistryHttpError(`HTTP ${response.status} from ${url}`, url, response.status);
       }
+      waitMs = retryAfterMs(response.headers.get("retry-after"));
       lastError = new RegistryHttpError(`HTTP ${response.status} from ${url}`, url, response.status);
     } catch (error) {
-      if (error instanceof RegistryHttpError && error.status !== null && !RETRYABLE_STATUS.has(error.status)) {
+      if (error instanceof RegistryHttpError && error.status !== null && !retryable.has(error.status)) {
         throw error;
       }
       lastError = error;
