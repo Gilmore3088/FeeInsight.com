@@ -1,16 +1,20 @@
 import { ROOMS, type RoomKey } from "@/lib/admin-rooms";
+import { AdminRoomScreens } from "./admin-nav";
 
-/** A room's landing header: its name and the question it answers. */
+/** A room's landing header: its name and the question it answers, then (on a phone) its other screens. */
 export function RoomHeader({ room: key, children }: { room: RoomKey; children?: React.ReactNode }) {
   const room = ROOMS.find((candidate) => candidate.key === key)!;
   return (
-    <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-gray-500">{room.label}</p>
-        <h1 className="admin-display-title mt-2">{room.question}</h1>
-      </div>
-      {children}
-    </header>
+    <>
+      <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-gray-500">{room.label}</p>
+          <h1 className="admin-display-title mt-2">{room.question}</h1>
+        </div>
+        {children}
+      </header>
+      <AdminRoomScreens />
+    </>
   );
 }
 
