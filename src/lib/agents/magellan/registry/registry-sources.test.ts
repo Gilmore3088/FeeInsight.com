@@ -5,7 +5,7 @@ import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
 import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
 import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
-import { matchCompany, type IdentityIndex } from "./identity";
+import { decideIdentityLink, matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
@@ -96,6 +96,41 @@ describe("identity matching", () => {
     expect(matchCompany("FIRST CITIZENS BANCSHARES, INC.", idx)).toMatchObject({ institutionId: 17, method: "holding_company_dominant_parent" });
     // Comparable parents: no full-name match, and the loose name has no candidates.
     expect(matchCompany("INDEPENDENT BANK CORP.", idx)).toBeNull();
+  });
+
+  it("accepts a bank's own full name only when that bank dwarfs every other bank of the same name", () => {
+    const bank = (id: number, name: string, hc: string | null, assets: number) => ({ id, name, holdingCompanyRssd: hc, assetSize: assets, via: "institution_name" as const });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["COMMERCE", [bank(70, "Commerce Bank", "1", 35_017_320), bank(71, "Commerce Bank", null, 762_489), bank(72, "Commerce Bank of Texas", null, 2_344_611)]],
+        ["UNITED COMMUNITY", [bank(75, "United Community Bank", "2", 28_987_812), bank(76, "United Community Bank", "3", 4_129_042)]],
+        ["WEST", [bank(80, "Bank of the West", null, 829_755), bank(81, "Bank of the West", null, 192_365), bank(82, "West Bank", "4", 4_029_129)]],
+        ["FMS", [bank(90, "FMS Bank", null, 324_823), bank(91, "FMS Bank", null, 1_000)]],
+      ]),
+    };
+    // Commerce Bank of Texas is a different full name, so only the two "Commerce Bank" charters compete.
+    expect(matchCompany("COMMERCE BANK", idx)).toMatchObject({ institutionId: 70, status: "accepted", method: "exact_bank_name_dominant" });
+    // Comparable banks of the same name, or a bank under $10B, stay for review.
+    expect(matchCompany("UNITED COMMUNITY BANK", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
+    expect(matchCompany("BANK OF THE WEST", idx)).toMatchObject({ status: "needs_review", method: "ambiguous_name" });
+    // A firm whose name is not a bank's full name never matches this way.
+    expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
+  });
+
+  it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
+    const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
+    await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
+    expect(accept.statements[0].values).toEqual(["accepted", "james", "cfpb_company", "COMMERCE BANK"]);
+    expect(accept.statements[1]).toMatchObject({ text: expect.stringContaining("UPDATE registry_ingest_partitions"), values: ["cfpb"] });
+
+    const reject = createDb([["UPDATE institution_identity_links", () => [{ id: 2 }]]]);
+    await decideIdentityLink(reject.db, { linkType: "sec_cik", externalKey: "0000123", decision: "rejected", verifiedBy: "james" });
+    expect(reject.statements).toHaveLength(1);
+
+    // Already decided (no needs_review row): nothing else happens.
+    const stale = createDb([]);
+    await expect(decideIdentityLink(stale.db, { linkType: "cfpb_company", externalKey: "X", decision: "accepted", verifiedBy: "james" })).resolves.toBe(false);
+    expect(stale.statements).toHaveLength(1);
   });
 });
 
