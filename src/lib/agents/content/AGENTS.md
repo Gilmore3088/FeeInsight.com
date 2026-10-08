@@ -31,6 +31,8 @@ Cards for both are drawn in `cards.tsx` from the draft's stored facts.
 ## Rules
 
 - Institutions are never named on a card or in a caption; posts name markets.
+- Every caption ends with the free-report call to action, "Get a free fee report:" and a tagged
+  feeinsight.com/reports link (`freeReportLink`), not a link to a Hamilton page.
 - Wording: "lower" and "higher"; never advise a fee change; never say what Hamilton can't do.
 - Brand: Fee Insight publishes (card header), the Bank Fee Index is the source (footer), and
   Hamilton is the product. Never write Fee Insight and Bank Fee Index side by side as one name.

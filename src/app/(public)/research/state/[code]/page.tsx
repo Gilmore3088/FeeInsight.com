@@ -19,6 +19,7 @@ import {
   getStateStatsCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { StateEconomicContext } from "@/lib/data-store/economic-context";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import type { CitySummary, StateFeeIndexes } from "@/lib/data-store";
 import { ResearchSectionNav } from "../../research-hero";
 import { BENCHMARK_KEYS } from "../../benchmark-board";
@@ -53,11 +54,19 @@ const EMPTY_INDEXES: StateFeeIndexes = {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { code } = await params;
-  const name = STATE_NAMES[code.toUpperCase()];
+  const stateCode = code.toUpperCase();
+  const name = STATE_NAMES[stateCode];
   if (!name) return { title: "State Not Found" };
+  // Thin states (fewer institutions with published fees than the median floor) stay out of
+  // search; the sitemap leaves them out too. A failed read keeps the page indexable.
+  const stats = await getStateStatsCached(stateCode).catch(() => null);
+  const thin = stats !== null && stats.with_fees < MIN_INSTITUTIONS_FOR_MEDIAN;
 
   return {
     title: `${name} Bank Fees - State Fee Report`,
+    // One URL per state: /research/state/tx and /research/state/TX both render this page.
+    alternates: { canonical: `/research/state/${stateCode}` },
+    ...(thin ? { robots: { index: false, follow: true } } : {}),
     description: `What ${name} banks and credit unions charge for overdraft, NSF, maintenance, ATM and wire fees, compared with national medians. Every figure from verified, published fee schedules.`,
     keywords: [
       `${name} bank fees`,
