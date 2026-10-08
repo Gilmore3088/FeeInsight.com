@@ -175,8 +175,9 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({PRO_ANNUAL_RANGE_LABEL} by
-            institution size, {PLAN_TEAM_LABEL}) → {SITE_NAME} Advisory (custom)
+            Fee lookup and the national reports are free, and an institution report is priced on request.{" "}
+            {SITE_NAME} Pro is {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}, and{" "}
+            {SITE_NAME} Advisory is custom work.
           </p>
         </div>
 
