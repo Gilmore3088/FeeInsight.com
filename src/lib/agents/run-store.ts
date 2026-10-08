@@ -60,6 +60,7 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { PREVIEW_INSTITUTION_ID, runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
 import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
+import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -1551,6 +1552,24 @@ async function executeAgenticStep(
         },
       };
     }
+    case "indexnow-ping": {
+      const result = await runIndexNowPing({ dryRun: run.runKind === "dry_run" });
+      // A rejected ping fails the step (and is retried) so it shows on the run ledger.
+      if (result.error) throw new Error(summarizeIndexNow(result));
+      return {
+        status: "completed",
+        summary: summarizeIndexNow(result),
+        detail: {
+          submitted: result.submitted,
+          changed_institutions: result.changedInstitutions,
+          url_count: result.urls.length,
+          http_status: result.httpStatus,
+          skipped: result.skipped,
+          dry_run: result.dryRun,
+          sample_urls: result.urls.slice(0, 10),
+        },
+      };
+    }
     case "score-answer-key": {
       const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
@@ -2341,7 +2360,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
-const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
 
 function isQuickStep(stepKey: string): boolean {
   return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
