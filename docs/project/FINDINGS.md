@@ -74,6 +74,12 @@ SEMC rows are relabelled as medical series on the next refresh. With a BLS key t
 BLS's own catalog title and records it in the partition detail (`bls_catalog_titles`). The ids were
 checked against BLS item-code listings found by search, not against api.bls.gov (blocked from the
 sandbox); proof is the step loading both series on prod with no `missing_series`.
+**Proof (2026-10-08 04:27 UTC run):** `missing_series` is empty. `CUUR0000SS68021` holds 79
+months from 2020-01 to 2026-08 (190.234 in Aug 2026, down 1.4% on a year earlier), and
+`CUUR0000SEGD05` holds 79 months (466.442). No BLS key is set, so `bls_catalog_titles` is empty. The
+pre-2020 SEMC rows, which are outside the 7-year pull, kept the old bank label; the step now
+relabels every row of a mapped series. The bank series' units label is now plain "Index", because
+its base period was not verified.
 **Lesson:** check any external series id against its publisher's catalogue before naming it.
 
 ## 2026-10-07: ffiec rows in institution_financial_records mixed units with fdic/ncua
@@ -2984,3 +2990,18 @@ Rows already on file gain the fields only when Knox reads their document again.
   done; the Darwin and global budget caps still stop it.
 - **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
   `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
+
+## 2026-10-08: Many large banks' fee links point at product or rates pages
+
+- **Problem.** Of the 10 largest institutions by in-state deposits in each state (510 slots),
+  412 had live fees on prod at 02:40 UTC. 48 of the 82 missing institutions had a link and
+  documents on file that were read, but fewer than 3 fee types came through. Their stored
+  `fee_schedule_url` was mostly not a fee schedule: checking product pages, rates pages, a
+  small-business page, a loan fee schedule, an Australian American Express fee sheet, and a
+  City of Cincinnati HSA document for Bell Bank. Their Atlas priority runs on 7 Oct re-read the
+  same pages, so they stayed thin. The other 34 had no link, mostly `magellan_dead` after
+  blocked or missing pages.
+- **Fix.** 12 schedules found by web search added to `OPERATOR_SCHEDULES`, which run first on
+  the priority path. The rest wait on the paid schedule search or a link found by hand.
+- **Watch.** `/mnt/project-files/coverage/gaps-2026-10-08.md` lists all 82; re-count live
+  coverage for the same 510 slots after the hand-found runs.
