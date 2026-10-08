@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
-import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
+import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -141,6 +141,21 @@ describe("the outreach step", () => {
     expect(
       summarizeOutreach({ schemaReady: true, dryRun: false, considered: 9, drafted: 2, draftIds: [4, 5], skipped: { own_fee_unverified: 3 }, reason: null }),
     ).toBe("Drafted 2 first emails for James to audit and send himself (9 prospects read). Passed over: 3 own overdraft fee didn't verify.");
+  });
+});
+
+describe("loadOutreachCandidates", () => {
+  it("counts only institutions with a decision-maker toward the limit", async () => {
+    const row = (institution_id: number, email: string, title: string | null, role: string) => ({ institution_id, asset_size: 900_000, email, kind: "person", name: null, title, role, source_url: "https://x" });
+    const db = (() =>
+      Promise.resolve([
+        row(1, "a@big1.com", "Loan Officer", "other"),
+        row(2, "b@big2.com", "Senior Mortgage Loan Officer", "other"),
+        row(3, "c@small.com", "Chief Marketing Officer", "marketing"),
+        row(4, "d@smaller.com", "President & CEO", "executive"),
+      ])) as never;
+    const candidates = await loadOutreachCandidates(db, 1);
+    expect(candidates.map((candidate) => candidate.institutionId)).toEqual([3]);
   });
 });
 

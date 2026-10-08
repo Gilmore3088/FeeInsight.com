@@ -206,12 +206,14 @@ export async function loadOutreachCandidates(db: SqlTag, limit: number): Promise
        AND s.closed_date IS NULL AND s.cbsa_code IS NOT NULL
      ORDER BY (s.asset_size >= ${OUTREACH_FIRST_SEGMENT_K[0]}) DESC, s.asset_size DESC, c.institution_id, c.email
   `;
+  // Every institution with saved contacts, biggest first; only those with a decision-maker
+  // count toward the limit, so a run of non-buyer contacts at bigger banks can't crowd out a
+  // smaller bank that has one.
   const byInstitution = new Map<number, OutreachCandidate>();
   for (const row of rows) {
     const id = Number(row.institution_id);
     let candidate = byInstitution.get(id);
     if (!candidate) {
-      if (byInstitution.size >= limit) break;
       candidate = { institutionId: id, assetsK: row.asset_size === null ? null : Number(row.asset_size), contacts: [] };
       byInstitution.set(id, candidate);
     }
@@ -224,7 +226,7 @@ export async function loadOutreachCandidates(db: SqlTag, limit: number): Promise
       source_url: String(row.source_url),
     }));
   }
-  return [...byInstitution.values()];
+  return [...byInstitution.values()].filter((candidate) => candidate.contacts.some(isDecisionMaker)).slice(0, limit);
 }
 
 export interface OutreachRunResult {
