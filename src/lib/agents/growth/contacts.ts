@@ -68,6 +68,15 @@ const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
 const GENERAL_MAILBOX =
   /^(info|contact|contactus|customerservice|customer\.?service|service|services|support|help|hello|questions|webmaster|web|mail|online|onlinebanking|ebanking|loans?|lending|mortgages?|cards?|fraud|security|careers|jobs|hr|humanresources|privacy|deposits?|accounting|bsa|compliance|memberservices?|members?|marketing|media|press|news|investor|investors|ir|noreply|no-reply|donotreply)$/i;
 
+/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees. */
+const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|^members?[._-]/i;
+
+/** True when an address is a shared mailbox, not one person's. */
+export function isSharedMailbox(email: string): boolean {
+  const local = email.split("@")[0] ?? "";
+  return GENERAL_MAILBOX.test(local) || SHARED_MAILBOX_PART.test(local);
+}
+
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}/g;
 const NOT_EMAIL_TLD = /\.(png|jpe?g|gif|svg|webp|css|js)$/i;
 const PERSON_NAME =
@@ -155,7 +164,7 @@ export function roleFor(text: string): ContactRole {
 }
 
 /** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ..."). */
-const NOT_A_TITLE = /message|branches served|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+const NOT_A_TITLE = /message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
 /** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
 const NOT_A_NAME =
   /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general)\b/i;

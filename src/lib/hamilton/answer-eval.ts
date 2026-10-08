@@ -22,6 +22,7 @@ import type { AskResponse, FeeResearch } from "./workspace/types";
 /** The questions asked of every institution: one per kind of ask, across six fees. */
 export const EVAL_QUESTION_IDS = ["q01", "q04", "q06", "q07", "q09", "q10", "q11", "q12", "q15", "q17", "q18", "q23", "q25", "q27"] as const;
 const REGULATION = new Set(["q25", "q26"]);
+const CONCURRENCY = 3;
 const STATE = new Set(["q17"]);
 
 export interface EvalInstitution {
@@ -40,6 +41,17 @@ export interface EvalResult {
   failures: string[];
 }
 
+/** Every line of the storyline the reader sees: its framing, both lenses, the exhibits and what to watch. */
+function storylineText(response: AskResponse): string[] {
+  const story = response.answer?.storyline;
+  if (!story) return [];
+  return [
+    story.governingThought,
+    ...[...story.situation, ...story.complication, ...story.lenses.finance, ...story.lenses.market, ...story.watch].map((f) => f.text),
+    ...story.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]),
+  ];
+}
+
 /** Every reader-facing line of a response, facts included. */
 function answerText(response: AskResponse): string {
   return [
@@ -47,7 +59,7 @@ function answerText(response: AskResponse): string {
     response.answer?.headline ?? "",
     ...(response.answer?.claims ?? []).map((c) => c.text),
     ...(response.facts ?? []).map((f) => f.text),
-    ...(response.answer?.storyline?.exhibits ?? []).map((e) => `${e.actionTitle} ${e.takeaway?.text ?? ""}`),
+    ...storylineText(response),
   ].join("\n");
 }
 
@@ -191,13 +203,15 @@ export async function runAnswerEval({
   const results: EvalResult[] = [];
   let done = 0;
   let timedOut = false;
-  for (const institution of institutions) {
+  // A few institutions at a time: each spends most of its time waiting on reads.
+  for (let i = 0; i < institutions.length; i += CONCURRENCY) {
     if (Date.now() - started > budgetMs) {
       timedOut = true;
       break;
     }
-    results.push(...(await evaluateInstitution(institution)));
-    done += 1;
+    const batch = institutions.slice(i, i + CONCURRENCY);
+    for (const rows of await Promise.all(batch.map(evaluateInstitution))) results.push(...rows);
+    done += batch.length;
   }
   return summarizeEval(results, done, timedOut);
 }

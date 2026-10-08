@@ -302,6 +302,28 @@ async function selectTextArtifacts(
              )
            )`;
     }
+    // A priority bank or market leader with no live overdraft fee has its current page read
+    // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
+    // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
+    // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
+    if (currentCopy && priorityIds.length > 0) {
+      const leaderParam = `$${params.push(`{${priorityIds.join(",")}}`)}`;
+      thinTextReextract += `
+           OR (
+             adt.institution_id = ANY(${leaderParam}::bigint[])
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records live_overdraft
+                WHERE live_overdraft.institution_id = adt.institution_id
+                  AND live_overdraft.canonical_fee_key = 'overdraft'
+                  AND live_overdraft.rolled_back_at IS NULL
+             )
+           )`;
+    }
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
@@ -851,9 +873,14 @@ export async function runKnoxExtract(
   const currentCopy = !dryRun && (await currentCopySchemaReady(db));
   // The named priority banks (in list order), then market leaders, are read first while the
   // stale backlog lasts.
-  const priorityIds = learning && currentCopy && !options.institutionId
-    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])]
-    : [];
+  // A run for one institution (Atlas's read-now runs) reads its current page again once per
+  // rules version while it has no live overdraft fee, so a rules fix reaches a requested bank
+  // without waiting for its state lane (2026-10-08: Marketing's outreach batch).
+  const priorityIds = !(learning && currentCopy)
+    ? []
+    : options.institutionId
+      ? [options.institutionId]
+      : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
-import { buildFollowUpDraft, buildOutreachDraft, firstName, summarizeOutreach, type OutreachContact } from "./outreach";
+import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -118,6 +118,16 @@ describe("buildOutreachDraft", () => {
     expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane])).toEqual({ skip: "too_few_verified_peers" });
   });
 
+  it("never addresses a lender, a committee or a name with no title", () => {
+    const lender: OutreachContact = { ...jane, email: "eroche@firstbank.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" };
+    const committee: OutreachContact = { ...jane, email: "supervisory@firstbank.com", name: "Ivan Shefrin", title: null, role: "other" };
+    expect(isDecisionMaker(lender)).toBe(false);
+    expect(isDecisionMaker(committee)).toBe(false);
+    expect(buildOutreachDraft(snapshot(), [lender, committee])).toEqual({ skip: "no_contact" });
+    const brand: OutreachContact = { ...jane, email: "mark.rieger@firstbank.com", name: null, title: "Chief Brand Officer", role: "marketing" };
+    expect(isDecisionMaker(brand)).toBe(true);
+  });
+
   it("greets by first name only when the page printed one", () => {
     expect(firstName("Dr. Robert Lee")).toBe("Robert");
     expect(firstName(null)).toBeNull();
@@ -131,6 +141,41 @@ describe("the outreach step", () => {
     expect(
       summarizeOutreach({ schemaReady: true, dryRun: false, considered: 9, drafted: 2, draftIds: [4, 5], skipped: { own_fee_unverified: 3 }, reason: null }),
     ).toBe("Drafted 2 first emails for James to audit and send himself (9 prospects read). Passed over: 3 own overdraft fee didn't verify.");
+  });
+});
+
+describe("loadOutreachCandidates", () => {
+  it("counts only institutions with a decision-maker toward the limit", async () => {
+    const row = (institution_id: number, email: string, title: string | null, role: string) => ({ institution_id, asset_size: 900_000, email, kind: "person", name: null, title, role, source_url: "https://x" });
+    const db = (() =>
+      Promise.resolve([
+        row(1, "a@big1.com", "Loan Officer", "other"),
+        row(2, "b@big2.com", "Senior Mortgage Loan Officer", "other"),
+        row(3, "c@small.com", "Chief Marketing Officer", "marketing"),
+        row(4, "d@smaller.com", "President & CEO", "executive"),
+      ])) as never;
+    const candidates = await loadOutreachCandidates(db, 1);
+    expect(candidates.map((candidate) => candidate.institutionId)).toEqual([3]);
+  });
+});
+
+describe("withdrawing drafts made before the decision-maker rule", () => {
+  it("skips unreviewed drafts whose addressee is not a buyer, and leaves buyers alone", async () => {
+    const updates: unknown[][] = [];
+    const db = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (query.includes("SELECT id, facts")) {
+        return Promise.resolve([
+          { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" } } },
+          { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" } }) },
+          { id: 13, facts: { to: { email: "supervisorycommittee@x.org", name: "Ivan Shefrin", title: null, role: "other" } } },
+        ]);
+      }
+      updates.push(values);
+      return Promise.resolve([]);
+    }) as never;
+    expect(await withdrawNonBuyerDrafts(db)).toBe(2);
+    expect(updates.map((values) => values.at(-1))).toEqual([7, 13]);
   });
 });
 

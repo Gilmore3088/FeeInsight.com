@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
 import { KNOX_FAULT_REASONS } from "./calibration";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -339,6 +339,43 @@ describe("Knox agentic extraction", () => {
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("WHERE older_copy.superseded_by_id = adt.source_document_id");
       expect(query).toContain("live_fee.rolled_back_at IS NULL");
+    });
+
+    it("reads a priority bank's current page again while it has no live overdraft fee", async () => {
+      const db = createDbMock([]);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        return Promise.resolve([]);
+      });
+
+      await runKnoxExtract({ runId: 111, db: asExtractDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const leaderParam = query.match(/adt\.institution_id = ANY\(\$(\d+)::bigint\[\]\)/);
+      expect(leaderParam).not.toBeNull();
+      expect(String(params[Number(leaderParam?.[1]) - 1])).toContain(String(KNOX_PRIORITY_REREAD_IDS[0]));
+      expect(query).toContain("live_overdraft.canonical_fee_key = 'overdraft'");
+      expect(query).toContain("live_overdraft.rolled_back_at IS NULL");
+    });
+
+    it("reads a requested institution's current page again in its own run while it has no live overdraft fee", async () => {
+      const db = createDbMock([]);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        return Promise.resolve([]);
+      });
+
+      await runKnoxExtract({ runId: 112, institutionId: 1223, db: asExtractDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const leaderParam = query.match(/adt\.institution_id = ANY\(\$(\d+)::bigint\[\]\)/);
+      expect(leaderParam).not.toBeNull();
+      expect(params[Number(leaderParam?.[1]) - 1]).toBe("{1223}");
+      expect(query).toContain("live_overdraft.canonical_fee_key = 'overdraft'");
     });
 
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {
