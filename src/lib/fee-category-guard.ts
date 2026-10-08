@@ -175,6 +175,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
+  // v43: guarded so Hamilton reads them for names cut from another fee's note (noteTailOfAnotherFee).
+  bill_pay: { include: /\S/, exclude: /\breload fee\b/i },
+  ach_origination: { include: /\S/, exclude: /(?!)/ },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
     exclude: /(cop(y|ies)|stop|replace|lost|research)/i,
@@ -306,7 +309,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
 // v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
 // v41: charge-off fees leave overdraft and check cashing (4 rows).
-export const CATEGORY_GUARD_VERSION = 41;
+// v43 (v42 is Magellan's PR 684): names cut from another fee's note (10 rows) and a reload fee filed as bill pay.
+export const CATEGORY_GUARD_VERSION = 43;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -513,5 +517,32 @@ export function checkFeeCategory(
   if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
   const protectionReason = cheapOverdraftProtection(canonicalFeeKey, name, context);
   if (protectionReason) return { ok: false, code: "name_contradicts", reason: protectionReason };
+  const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
+  if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
   return { ok: true };
+}
+
+const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bstop pay/i, "stop_payment"],
+  [/(?:\bin|\bnon[-\s]?)sufficient|\bnsf\b/i, "nsf"],
+  [/\boverdraft (?:protection )?transfers?\b/i, "od_protection_transfer"],
+];
+
+/**
+ * v43: a name cut from the end of another fee's note ("Bill Pay)" from "Stop Payment
+ * (includes ACH, Bill Pay) | $10.00"; "ACH or ATM)" from "Overdraft protection transfers (to
+ * cover check, ACH or ATM) | $5.00") was filed by the note's last word. The row's excerpt
+ * shows the fee the note belongs to.
+ */
+function noteTailOfAnotherFee(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (!/^[^(]*\)\s*$/.test(name)) return null;
+  const excerpt = context?.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const tail = name.replace(/\)\s*$/, "").trim();
+  if (!excerpt || tail.length < 3) return null;
+  const at = excerpt.toLowerCase().indexOf(tail.toLowerCase());
+  const open = at < 0 ? -1 : excerpt.lastIndexOf("(", at);
+  if (open < 0) return null;
+  const head = excerpt.slice(excerpt.lastIndexOf("|", open) + 1, open).trim();
+  const owner = NOTE_HEAD_FEES.find(([pattern, key]) => key !== canonicalFeeKey && pattern.test(head));
+  return owner ? `"${name}" ends a note on "${head}", a ${owner[1]} fee, not ${canonicalFeeKey}` : null;
 }

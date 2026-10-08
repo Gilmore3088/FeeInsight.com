@@ -738,4 +738,19 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
     expect(checkFeeCategory("check_cashing", "Collection Item (Incoming)")).toEqual({ ok: true });
   });
+
+  it("v43 fails a name cut from the end of another fee's note (Darwin audit, Oct 8)", () => {
+    const ctx = (excerpt: string) => ({ amount: "10.00", conditions: `Knox deterministic extraction. excerpt="${excerpt}"` });
+    expect(checkFeeCategory("bill_pay", "ACH, Bill Pay)", ctx("Stop Payment (includes ACH, Bill Pay) | $10.00 Per Item")).ok).toBe(false);
+    expect(checkFeeCategory("bill_pay", "Bill Pay)", ctx("Non-Sufficient Funds4 | Stop Payment Fee (includes Bill Pay) . . . . $30")).ok).toBe(false);
+    expect(checkFeeCategory("bill_pay", "Bill Pay)", ctx("Insufficient funds (Check, ATM, pre-authorized ACH drafts, Bill Pay) | $20.00")).ok).toBe(false);
+    expect(checkFeeCategory("atm_non_network", "ACH or ATM)", ctx("Overdraft protection transfers (to cover check, ACH or ATM) | $5.00")).ok).toBe(false);
+    expect(checkFeeCategory("cashiers_check", "Cashier Checks)", ctx("Stop payment fee (to include Cashier Checks) | $15.00")).ok).toBe(false);
+    expect(checkFeeCategory("ach_origination", "ACH Origination for Loan Payments)", ctx("Non-Sufficient Funds (including ACH Origination for Loan Payments) / $30")).ok).toBe(false);
+    expect(checkFeeCategory("bill_pay", "Reload Fee", ctx("Reload Fee | $4.95")).ok).toBe(false);
+    // The note's own fee, and a note on a fee of the same kind, stay.
+    expect(checkFeeCategory("stop_payment", "place stop payment)", ctx("Stop Payment Request (if presented)($2 place stop payment) | $20")).ok).toBe(true);
+    expect(checkFeeCategory("bill_pay", "Online Bill Pay)", ctx("Express Pay Fee (Expedited Payments in Online Bill Pay) ....... $14.95"))).toEqual({ ok: true });
+    expect(checkFeeCategory("bill_pay", "Bill Pay Monthly Fee")).toEqual({ ok: true });
+  });
 });
