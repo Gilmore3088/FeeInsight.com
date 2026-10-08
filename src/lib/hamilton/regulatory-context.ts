@@ -66,7 +66,7 @@ export const REGULATORY_RULES: readonly RegulatoryRule[] = [
     date: "August 2022",
     applies_to: ["nsf"],
     summary:
-      "Charging an NSF fee each time the same item is re-presented, without clear disclosure, raises unfairness and deception risk in FDIC examinations.",
+      "Charging an NSF fee on each re-presentment of the same item, without clear disclosure, risks unfairness and deception findings.",
     url: null,
   },
   {
