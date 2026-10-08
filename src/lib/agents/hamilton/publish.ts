@@ -15,6 +15,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
+import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -569,8 +570,9 @@ export function normalizedFeeName(name: string | null | undefined): string {
  */
 export function publishedFeeName(name: string, canonicalKey: string): string {
   const current = name.trim();
-  const repaired = repairNameShape(current);
-  if (repaired === current) return current;
+  // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
+  const repaired = repairNameShape(stripFootnoteMarks(current));
+  if (!repaired || repaired === current) return current;
   if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return current;
   return repaired;
 }
