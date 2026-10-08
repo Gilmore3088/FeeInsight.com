@@ -469,4 +469,20 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
     }
   });
+
+  it("v21 keeps business services' monthly fees out of monthly maintenance and deposited returns out of NSF (prod, Oct 8)", () => {
+    for (const name of [
+      "Remote Deposit Capture Machine Rental (monthly fee)",
+      "IntraFi Network-ICS Monthly Fee (Consumer)",
+      "Monthly Maintenance Fee Per Location",
+      "Each Additional Scanner Monthly Service Fee",
+      "Waiving the Monthly Fee",
+    ]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly service charge (waived with statement cycle balance)")).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "Returned Item-Reroute of Return Fee (Business)").ok).toBe(false);
+    expect(refileCategory("nsf", "Returned Item fee (written to you)")).toBe("deposited_item_return");
+    expect(checkFeeCategory("nsf", "Returned Check Fee")).toEqual({ ok: true });
+  });
 });

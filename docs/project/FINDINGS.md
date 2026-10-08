@@ -2973,3 +2973,16 @@ Rows already on file gain the fields only when Knox reads their document again.
   done; the Darwin and global budget caps still stop it.
 - **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
   `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
+
+## 2026-10-08: Darwin's release review passed service fees the prompt already named
+
+- **Problem.** Review v11 released 1,637 held fees. A hand check of 20 live ones found 18 right.
+  The two misses were cases the prompt already named ("a monthly charge for one service is not the
+  account's monthly maintenance fee", "returning a deposited check is not NSF"), so the model reads
+  the rule and still passes the fee. Fees held at verify were also never re-checked against the
+  category guard's newer versions.
+- **Fix.** Review v12 holds a fee by its own name, amount and rows (`releaseHoldReason`), and
+  category guard v21 adds the name patterns, which also lets Hamilton's guard take live ones down
+  after its second look. A prompt rule that a hand check shows the model ignoring becomes a code check.
+- **Watch.** `pipeline_attempts` `verify.release_review` v12 `detail.hold_reason`, and
+  `hamilton.category_guard` takedowns of `monthly_maintenance` and `nsf` after the merge.
