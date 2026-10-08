@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**No rollback; finish the work.** James, 22:44 UTC, Rollback thread: "i dont want rollback. i want
+the fucking work done." He had asked about going back to Oct 4 or Oct 5; the cost check is in
+`/mnt/project-files/audits/rollback-oct4-oct5-2026-10-08.md`. Work is reported per ask as live,
+built not live, or missing, and only the UAT thread marks an ask done.
+
+**Darwin's 11 critical eval rows come down now.** James, 23:18 UTC, Darwin thread ("please resolve
+each of thes. all of them"), answering Hide or Guard for the 11 critical rows and Split or Pool for
+the taxonomy. #714 archives the 11 on the first publish step, with the eval label as the audit
+record; nothing is deleted. Collection Items split out (#701); the other four pooled groups wait on
+the Top 50 card.
+
 **A paying Pro buyer holds their bank's owner seat at checkout, before claim review.** James, 13:44
 UTC ("Grant at checkout" on the decision card). The plan sells 5 seats, so they work the moment the
 buyer pays. The claim is still filed for James to review, and rejecting it revokes that seat
