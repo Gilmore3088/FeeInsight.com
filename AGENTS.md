@@ -15,7 +15,7 @@ This repository uses one agentic experience for data trust, validation, publishi
 
 ## Marketing Team
 
-GrowthOS, the marketing team (DRAPER, SHERLOCK and five more), is separate from the pipeline roster
+GrowthOS, the marketing team (DRAPER, SHERLOCK and six more), is separate from the pipeline roster
 below: it never writes fee data. Its definitions, rules and work queue are in
 `growth-os/README.md`; its skills are in `.agents/skills/`.
 

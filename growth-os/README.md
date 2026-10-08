@@ -1,6 +1,6 @@
 # Fee Insight GrowthOS
 
-The marketing team: one manager and six specialists that find banks and credit unions who need
+The marketing team: one manager and seven specialists that find banks and credit unions who need
 fee benchmarking, earn their trust with sourced research, and turn interest into report requests
 and Pro customers. Proposed by James on 2026-10-08; built in weekly stages.
 
@@ -14,7 +14,8 @@ paid reports, Pro and institution plans, and agent cost per qualified lead
 |---|---|---|---|
 | DRAPER | Don Draper, the ad agency creative director in Mad Men | Chief marketing officer: priorities, assignments, review, weekly growth report | Defined, dry run only |
 | SHERLOCK | Sherlock Holmes: finds evidence | Market intelligence: competitors, industry research, buyer questions | Defined, dry run only |
-| ERNEST | Ernest Hemingway: short, plain sentences | Content and SEO | Week 2, not active |
+| ERNEST | Ernest Hemingway: short, plain sentences | SEO and content | Defined, dry run only |
+| MURROW | Edward R. Murrow, the broadcaster | Social: owns LinkedIn through the existing content workflow | Defined, dry run only |
 | NORMAN | Don Norman, who coined "user experience" | Conversion and UX | Week 2, not active |
 | NIELSEN | Nielsen, the audience measurement company | Growth analytics | Week 3, not active |
 | EDISON | Thomas Edison: builds working things | Product-led growth tools | Week 3, not active |
@@ -71,8 +72,18 @@ account (hello@aibankinginstitute.com).
 
 ## Build order
 
-1. Week 1 (this folder): skills, context, DRAPER and SHERLOCK, analytics inventory, work queue. Dry run.
-2. Week 2: ERNEST and NORMAN; SEO and conversion-path audits; first sourced article PR.
+1. Week 1 (this folder): skills, context, DRAPER, SHERLOCK, ERNEST (SEO) and MURROW (social), analytics inventory, work queue. Dry run.
+2. Week 2: NORMAN; conversion-path audit; first sourced article PR from ERNEST.
 3. Week 3: NIELSEN and EDISON; qualified-lead and purchase events; an overdraft scenario tool.
 4. Week 4: CARNEGIE drafts for one segment; review funnel and operating cost; decide what can be
    more autonomous.
+
+## Not covered yet
+
+No one owns these yet. Each gets an agent when the loop above is working:
+
+- Press and trade media (American Banker, Credit Union Times, state association newsletters).
+- Partnerships: state bankers' and credit union associations, core vendors and consultants.
+- Webinars and events.
+
+Paid ads and referral programs are out on purpose until the first sale.

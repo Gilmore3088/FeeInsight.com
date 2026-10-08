@@ -11,7 +11,9 @@ the manager is DRAPER (Atlas is already the pipeline orchestrator), SHERLOCK doe
 intelligence, GitHub issues labeled `growth` are the work queue, and nothing is scheduled until
 James says go. The team runs as Claude Code routines because its output is GitHub issues and PRs;
 any app-side paid step gets its own `ANTHROPIC_API_KEY_GROWTH` slot and `agent:growth` budget.
-Every public number passes `growth-os/context/editorial-policy.md`.
+Every public number passes `growth-os/context/editorial-policy.md`. James asked (04:20 UTC) where
+SEO and social were: ERNEST (SEO) moved up to start with the first run, and MURROW (social) was
+added to own LinkedIn through the existing content workflow, not a second pipeline.
 
 **Darwin releases held fees that pass Claude's review.** James, 02:16 UTC, tapped "Turn on" on the
 held-fees card. The bar he set was his own word plus at least 19 of 20 passes right in a hand

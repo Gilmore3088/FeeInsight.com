@@ -1,7 +1,7 @@
 # Security review of the copied skills (2026-10-08)
 
-Scope: the 27 skill folders in `.agents/skills/` copied from marketingskills commit `b9ba399`,
-116 markdown files (1.5 MB). Re-run these checks whenever the skills are re-copied.
+Scope: the 28 skill folders in `.agents/skills/` copied from marketingskills commit `b9ba399`,
+126 markdown files (1.6 MB); `social` was added and scanned the same way later on 2026-10-08. Re-run these checks whenever the skills are re-copied.
 
 ## Result
 
@@ -34,6 +34,10 @@ skill reads first, overrides them.
    name or email goes in an issue, a run file or the repo.
 5. **Loop state files.** Loops write logs to `.agents/loops/`. Ours: run notes go in
    `growth-os/runs/` and never contain personal data.
+6. **Scheduling tools and scrapers.** `social` suggests scheduling posts through Buffer, Typefully
+   or similar (by MCP or API) and scraping LinkedIn with Apify. Ours: James posts by hand; no
+   scheduling tools, no scrapers. Its `curl` listening recipes (Reddit, Hacker News, Bluesky
+   public APIs) only read public posts; they are not run without asking.
 
 ## Ongoing risk
 

@@ -18,6 +18,7 @@ the commit above.
 | DRAPER | `product-marketing`, `marketing-ideas`, `launch`, `marketing-psychology`, `marketing-loops` |
 | SHERLOCK | `competitors`, `competitor-profiling`, `customer-research`, `product-marketing` |
 | ERNEST | `content-strategy`, `copywriting`, `copy-editing`, `seo-audit`, `ai-seo`, `schema`, `programmatic-seo` |
+| MURROW | `social`, `copywriting`, `copy-editing`, `marketing-psychology` |
 | NORMAN | `cro`, `signup`, `copywriting`, `ab-testing` |
 | NIELSEN | `analytics`, `attribution`, `ab-testing` |
 | EDISON | `free-tools`, `lead-magnets`, `programmatic-seo`, `onboarding` |
@@ -34,6 +35,12 @@ Left out because they don't fit the plan or need paid channels: `ads`, `ad-creat
 (the monthly email already exists in `src/lib/agents/marketing/`), `events`,
 `influencer-marketing`, `image`, `marketing-council`, `marketing-plan`, `offers`, `paywalls`,
 `popups`, `pricing` (prices are James's decision), `public-relations`, `referrals`,
-`site-architecture`, `sms`, `social` (LinkedIn drafts already run in
-`src/lib/agents/content/`), `video`, and the library's `tools/` folder. Copy one later when an
-agent needs it.
+`site-architecture`, `sms`, `video`, and the library's `tools/` folder. Copy one later when an
+agent needs it; `public-relations`, `co-marketing` and `events` are the likely next ones.
+
+## In use
+
+28 skills are copied. 16 are used by the four agents that start first (DRAPER, SHERLOCK,
+ERNEST, MURROW). The other 12 wait for later agents: `cro`, `signup`, `ab-testing` (NORMAN);
+`analytics`, `attribution` (NIELSEN); `free-tools`, `lead-magnets`, `onboarding` (EDISON);
+`prospecting`, `cold-email`, `sales-enablement`, `revops` (CARNEGIE).

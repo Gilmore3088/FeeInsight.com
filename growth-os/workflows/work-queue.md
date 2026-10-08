@@ -13,7 +13,7 @@ his phone with the "Growth task" issue template.
 | `growth:ready` | Triaged and assigned; carries one agent label |
 | `growth:review` | Output waiting on James (a PR or a draft) |
 | `growth:backlog` | Assigned to an agent that is not active yet |
-| `agent:draper`, `agent:sherlock`, `agent:ernest`, `agent:norman`, `agent:nielsen`, `agent:edison`, `agent:carnegie` | Owner |
+| `agent:draper`, `agent:sherlock`, `agent:ernest`, `agent:murrow`, `agent:norman`, `agent:nielsen`, `agent:edison`, `agent:carnegie` | Owner |
 | `guard:pass`, `guard:fail` | Result of the editorial policy check on a public-facing output |
 
 ## Issue body
