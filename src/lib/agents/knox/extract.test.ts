@@ -323,6 +323,10 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("COALESCE(inst.asset_size, 0) >=");
       expect(params).toEqual(expect.arrayContaining([KNOX_REREAD_ASSET_FLOOR]));
       expect(query).toContain(`ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`);
+      // Among them, a bank with no live overdraft fee first, then the text read longest ago.
+      expect(query).toContain("live_overdraft.canonical_fee_key = 'overdraft'");
+      expect(query).toContain("FROM pipeline_attempts last_read");
+      expect(query.indexOf("live_overdraft.canonical_fee_key")).toBeLessThan(query.indexOf("adt.updated_at DESC"));
     });
 
     it("reads a page's current copy again when its older copy still carries live fees", async () => {

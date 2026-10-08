@@ -39,6 +39,9 @@ Knox owns conservative raw fee extraction.
 - Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
   once per rules version, ahead of other texts. The rules re-check only reaches documents
   with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
+  Among them, a bank with no live overdraft fee goes first, then the page Knox read longest
+  ago: ordered by newest text alone, each version bump (ten on Oct 8) restarted the same banks
+  and the tail, GreenState among them, was never reached.
 - A priority bank (`KNOX_PRIORITY_REREAD_IDS`) or state market leader with no live overdraft
   fee has its current page re-read once per rules version too, so a rules fix for a missed
   overdraft reaches it. `asset_size` is in thousands, so the $10B floor misses most state
