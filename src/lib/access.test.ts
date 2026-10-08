@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { canAccessApiKey, canAccessPremium, canExportData, isInPaymentGrace, isPaymentLapsed } from "./access";
+import {
+  UNLIMITED_RESEARCH_QUERIES,
+  canAccessApiKey,
+  canAccessPremium,
+  canExportData,
+  getResearchQueryLimit,
+  hasTeamSeat,
+  isInPaymentGrace,
+  isPaymentLapsed,
+} from "./access";
 import type { User } from "./auth";
 
 const premiumUser: User = {
@@ -50,5 +59,29 @@ describe("past_due grace window", () => {
     expect(isInPaymentGrace(premiumUser, now)).toBe(false);
     expect(isPaymentLapsed({ ...premiumUser, subscription_status: "canceled" }, now)).toBe(false);
     expect(canAccessPremium({ ...premiumUser, subscription_status: "canceled" })).toBe(false);
+  });
+});
+
+describe("team seats", () => {
+  const freeUser: User = { ...premiumUser, role: "viewer", subscription_status: "none" };
+
+  it("gives a seat holder Pro access without a subscription of their own", () => {
+    expect(canAccessPremium(freeUser)).toBe(false);
+    expect(canAccessPremium({ ...freeUser, workspace_seat: true })).toBe(true);
+    expect(canExportData({ ...freeUser, workspace_seat: true })).toBe(true);
+  });
+
+  it("fails closed when the seat flag is missing or false", () => {
+    expect(hasTeamSeat(freeUser)).toBe(false);
+    expect(hasTeamSeat({ ...freeUser, workspace_seat: false })).toBe(false);
+    expect(hasTeamSeat(null)).toBe(false);
+    expect(canAccessPremium({ ...freeUser, workspace_seat: false })).toBe(false);
+  });
+
+  it("lifts the daily Hamilton question cap for seat holders, the owner included", () => {
+    expect(getResearchQueryLimit(premiumUser)).toBe(50);
+    expect(getResearchQueryLimit({ ...premiumUser, workspace_seat: true })).toBe(UNLIMITED_RESEARCH_QUERIES);
+    expect(getResearchQueryLimit({ ...freeUser, workspace_seat: true })).toBe(Number.POSITIVE_INFINITY);
+    expect(getResearchQueryLimit(freeUser)).toBe(3);
   });
 });

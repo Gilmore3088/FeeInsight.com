@@ -55,7 +55,7 @@ const DATA_SOURCES = [
   },
   {
     name: "BLS Consumer Price Index",
-    description: "Bureau of Labor Statistics CPI data including the bank-specific series CUUR0000SEMC01 (Checking Account and Other Bank Services) and regional professional services CPI.",
+    description: "Bureau of Labor Statistics CPI data including the bank-specific series CUUR0000SS68021 (Checking Account and Other Bank Services) and CUUR0000SEGD05 (Financial Services).",
     agency: "Bureau of Labor Statistics",
     cadence: "Weekly",
     key: "bls_observations",

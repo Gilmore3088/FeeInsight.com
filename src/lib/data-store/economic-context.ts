@@ -1,3 +1,4 @@
+import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
 
@@ -216,7 +217,7 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
   const unemploymentId = `${stateCode}UR`;
   const payrollId = `${stateCode}NA`;
   const [series, beigeBook, regulatory, fomc, districtResearch] = await Promise.all([
-    loadSeries([unemploymentId, payrollId, "UNRATE", "FEDFUNDS", "CPIAUCSL", "CUUR0000SEMC01", "CUUR0000SA0"]),
+    loadSeries([unemploymentId, payrollId, "UNRATE", "FEDFUNDS", "CPIAUCSL", CPI_BANK_SERVICES_SERIES, "CUUR0000SA0"]),
     district ? loadBeigeBook(district) : Promise.resolve(null),
     loadRegulatory(),
     loadFomc(),
@@ -228,7 +229,7 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
     national_unemployment: series.get("UNRATE") ?? null,
     fed_funds: series.get("FEDFUNDS") ?? null,
     cpi_all_items: series.get("CUUR0000SA0") ?? series.get("CPIAUCSL") ?? null,
-    cpi_bank_services: series.get("CUUR0000SEMC01") ?? null,
+    cpi_bank_services: series.get(CPI_BANK_SERVICES_SERIES) ?? null,
     beige_book: beigeBook,
     regulatory,
     fomc,

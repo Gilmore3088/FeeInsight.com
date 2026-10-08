@@ -77,7 +77,7 @@ const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
-const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
+const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|up to|less than|more than|greater than|or equal to|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
 // "$200+" (attached) is a threshold; "$100.00 + Locksmith Fee" (spaced) adds a cost to a price.
 const THRESHOLD_AFTER = /^\+|^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
@@ -216,6 +216,10 @@ export function sourceLines(text: string): string[] {
 const SIZE_CELL = /^\d+\s*["”']?\s*x\s*\d+(?:\s*["”']?\s*x\s*\d+)?\s*["”']?$/i;
 const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
 const NAME_CELL = /^[A-Z][^$|]*[a-z]{3}[^$|]*$/;
+const PRICE_OR_FREE_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{2})?|free|no charge|none|n\/c)$/i;
+// A second column's own fee name has at least two words of its own, not a qualifier of the first
+// ("Monthly Statement – Electronic", "Withdrawals at Allpoint & Presto! ATMs"; not "Non-network").
+const SECOND_COLUMN_NAME = /^[A-Z]\S*\s+\S+/;
 
 /**
  * Two table layouts that print a fee's price on a different row than its name are rewritten
@@ -259,6 +263,12 @@ function regridRows(lines: string[]): string[] {
     ) {
       out.push(`${cells[0]} | ${next[0]}`, `${cells[1]} | ${cells[2]}`, next.slice(1).join(" | "));
       i += 1;
+      continue;
+    }
+    // Two columns' names on one row and one price ("Stop Payment | Monthly Statement – Electronic |
+    // Free"): the price is the second name's; the first name's price is printed under it.
+    if (cells.length === 3 && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
+      out.push(cells[0], `${cells[1]} | ${cells[2]}`);
       continue;
     }
     out.push(lines[i]);
@@ -475,7 +485,24 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   // "Under $1000 - $5.00 fee per month": a dash after a balance, then a price named as the fee,
   // is a separator, not a band's upper end.
   if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;
+  if (statesMaximumFee(line, token) && !THRESHOLD_AFTER.test(after)) return false;
   return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after) || OBJECT_BEFORE.test(before);
+}
+
+// "We will charge you a fee of up to $35.00 each time we pay an overdraft" and "Late Payment Fee
+// Up to $20.00" state the fee's maximum, which is its published price (SmartBank, Oct 7).
+// "No fee up to $5,000, then $0.30" and "check cashing fee up to $4,999.99 | $5.00" are bands:
+// a price follows them. Plural "fees up to $25" is a reimbursement cap, not a price.
+const MAX_FEE_BEFORE = /\b(?:fee|charge)\s+(of\s+)?up to\s*$/i;
+
+function statesMaximumFee(line: string, token: MoneyToken): boolean {
+  const before = line.slice(Math.max(0, token.start - 40), token.start).split("|").pop() ?? "";
+  const rest = line.slice(token.end);
+  const nothingPricedAfter = moneyTokens(rest).length === 0 && !ZERO_WORDS.test(rest);
+  if (/^\s*up to\s*$/i.test(line.slice(0, token.start)) && rest.trim() === "") return true;
+  const max = MAX_FEE_BEFORE.exec(before);
+  if (!max || /\bno\s+(?:fee|charge)\s+(?:of\s+)?up to\s*$/i.test(before)) return false;
+  return Boolean(max[1]) || nothingPricedAfter;
 }
 
 // "the $34 Overdraft Fee on the $60 gasoline transaction": a figure after "on the" is what the fee

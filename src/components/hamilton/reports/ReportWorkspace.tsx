@@ -2,6 +2,7 @@
 
 import type { ReportClientGoal } from "@/lib/hamilton/report-goal";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { TemplateCard } from "./TemplateCard";
 import { ConfigSidebar } from "./ConfigSidebar";
 import { ReportOutput } from "./ReportOutput";
@@ -11,7 +12,8 @@ import { basketItemsFor } from "@/lib/hamilton/report-basket";
 import { GeneratingState } from "./GeneratingState";
 import { ReportLibrary } from "./ReportLibrary";
 import { PRODUCT_NAME, RESEARCH_IMPRINT } from "@/lib/constants";
-import { Callout, MemoHeader, MemoPage, MemoSection } from "@/components/hamilton/memo/memo";
+import { Callout, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
+import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import {
   generateReport,
   loadActiveScenarios,
@@ -53,6 +55,20 @@ const TEMPLATES: Array<{
     type: "competitive_positioning",
     title: "Where you stand against competitors",
     description: "Which of your fees sit above or below the institutions you compete with, across your whole schedule.",
+  },
+];
+
+/** Studies are their own pages (plain links), not report templates. */
+const STUDIES: Array<{ href: string; title: string; description: string }> = [
+  {
+    href: "/pro/studies/market",
+    title: "Study a new market",
+    description: "Map a county you don't serve yet: who holds the deposits, their fees beside yours, and households.",
+  },
+  {
+    href: "/pro/studies/merger",
+    title: "Screen a merger",
+    description: "Two banks side by side: where their branches meet, earnings, capital, local deposit share and fees.",
   },
 ];
 
@@ -497,6 +513,25 @@ export function ReportWorkspace({
             isPeerCoverageLoading={isPeerCoverageLoading}
             peerCoverageError={peerCoverageError}
           />
+        </MemoSection>
+      )}
+
+      {setupVisible && (
+        <MemoSection title="Studies" note="Pages built straight from live data, ready to read on screen or print.">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {STUDIES.map((study) => (
+              <Link
+                key={study.href}
+                href={hrefWithInstitutionContext(study.href, selectedInstitution?.id?.toString() ?? null)}
+                className="flex flex-col rounded-lg border border-warm-300 bg-warm-50 p-5 text-left no-underline hover:border-warm-500"
+              >
+                <span className="text-lg leading-snug text-warm-900" style={SERIF}>
+                  {study.title}
+                </span>
+                <span className="mt-1.5 text-sm leading-relaxed text-pretty text-warm-700">{study.description}</span>
+              </Link>
+            ))}
+          </div>
         </MemoSection>
       )}
 

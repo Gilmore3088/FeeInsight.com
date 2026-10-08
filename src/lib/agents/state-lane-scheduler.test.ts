@@ -253,7 +253,7 @@ describe("state lane scheduler", () => {
     expect(result.recheck).toBeNull();
     expect(result.idempotencyKey).toMatch(/^atlas:state-lane-backlog:PA:\d{4}-\d{2}-\d{2}T\d{2}$/);
     const args = startAgentRunMock.mock.calls[0][0];
-    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["discover", "fetch", "read", "extract", "extract-paid", "classify", "publish"]);
+    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["discover", "fetch", "read", "extract", "extract-paid", "classify", "verify-paid", "publish"]);
     expect(args.params).toMatchObject({ lane_mode: "backlog" });
     expect(args.params.recheck).toBeUndefined();
     // Magellan runs the free search and fetches links found since the last fetch; the paid
@@ -407,6 +407,14 @@ describe("state lane scheduler", () => {
       expect(text).toContain(part);
     }
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
+  });
+
+  it("gives a state whose report James is waiting to review the report-request weight", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
   });
 
   it("puts states whose market leaders lack headline fees ahead", async () => {

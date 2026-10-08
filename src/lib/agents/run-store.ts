@@ -1,6 +1,7 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
+import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
@@ -128,6 +129,8 @@ export interface AgentRunExecutionResult {
   terminal: boolean;
   executedSteps: number;
   message: string;
+  /** True when the run was left queued because its first real step would not finish by the tick deadline. */
+  heldForDeadline?: boolean;
 }
 
 export interface ExecuteQueuedAgentRunsResult {
@@ -418,6 +421,7 @@ async function executeAgenticStep(
         mode: step.stepKey === "rescue" ? "rescue" : "discover",
         dryRun: run.runKind === "dry_run",
         limit: numericRunParam(params, ["discovery_limit", "rescue_limit", "limit", "size"]),
+        upgradeSlots: numericRunParam(params, ["upgrade_slots"]),
         stateCode,
       });
       // Outcome ledger: judge one slot of banks' links by the live fees they produced and
@@ -456,6 +460,7 @@ async function executeAgenticStep(
           second_documents_found: discovery.secondDocuments?.found ?? 0,
           restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
+          search_miss_lessons: discovery.searchMisses,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,
           recheck,
@@ -2262,6 +2267,8 @@ async function providerStepGate(
 const STEP_EXPECTED_MS: Record<string, number> = {
   "discover-paid": 200_000,
   "registry-cfpb": 180_000,
+  // Paced to about ten Open States requests a minute; a run ends within about two minutes.
+  "registry-state-bills": 120_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,
@@ -2380,6 +2387,7 @@ export async function executeAgentRun(
         terminal: false,
         executedSteps: 0,
         message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+        heldForDeadline: true,
       };
     }
   }
@@ -2507,7 +2515,7 @@ export async function executeQueuedAgentRuns({
   // When provider steps cannot run this tick, skip runs whose next queued step is a
   // provider step so they do not crowd deterministic work out of the run limit.
   const rows = await sql`
-    SELECT r.id
+    SELECT r.id, r.run_kind
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -2531,18 +2539,30 @@ export async function executeQueuedAgentRuns({
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
-     -- institution, then a retry of a failed
-     -- state lane, then a lane with a hand-found schedule to fetch, then any run waiting
-     -- over an hour, then state lanes by Atlas's priority score (open work, report
-     -- requests, near-ready markets), then launch order.
+     -- institution (hand-found schedules go that way, not by promoting their whole state
+     -- lane), then a retry of a failed state lane, then a state whose report James is
+     -- waiting to review, then any run waiting over an hour,
+     -- then state lanes by Atlas's priority score (open work, report requests,
+     -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
               ) DESC,
               -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
-              -- a hand-found schedule or a large bank missing its overdraft fee.
-              COALESCE(r.params_json->>'source' = 'atlas.priority_institution', false) DESC,
+              -- a hand-found schedule or a large bank missing its overdraft fee; and its
+              -- direct re-search of one state's missed banks (atlas/priority-state-research.ts).
+              -- They go ahead of state lanes only while a lane has started a step in the last
+              -- ten minutes: three or four direct runs fill a tick, and a lane's first step
+              -- needs most of one, so ranking them first every tick starved every lane
+              -- (no lane started 08:52-09:25 on 2026-10-07, Tennessee included).
+              (COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false)
+                AND EXISTS (
+                  SELECT 1 FROM agent_run_steps lane_step
+                    JOIN agent_runs lane_run ON lane_run.id = lane_step.agent_run_id
+                   WHERE lane_run.run_kind = 'workflow_lane'
+                     AND lane_step.started_at > NOW() - INTERVAL '10 minutes'
+                )) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
@@ -2552,16 +2572,9 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
-              -- A state holding a fee schedule found by hand (Magellan's operator list) that
-              -- has not been fetched yet goes next, so those links don't wait behind routine
-              -- passes. The lane's own fetch, read and extract steps then pick it up.
-              (r.run_kind = 'workflow_lane' AND EXISTS (
-                SELECT 1 FROM institution_additional_sources hand
-                  JOIN institution_sources inst ON inst.id = hand.institution_id
-                 WHERE hand.found_by_strategy = 'discover.operator_schedule'
-                   AND hand.status = 'found'
-                   AND upper(btrim(inst.state_code)) = upper(btrim(r.state_code))
-              )) DESC,
+              -- A state whose report James is waiting to review (atlas/report-review-states.ts).
+              (r.run_kind = 'workflow_lane'
+                AND upper(btrim(r.state_code)) = ANY(${[...REPORT_REVIEW_STATES]}::text[])) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC
@@ -2573,7 +2586,13 @@ export async function executeQueuedAgentRuns({
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
+  // Once a state lane is held because its first real step would not finish this tick,
+  // no lane further down the order starts in its place: a lower lane that fits would
+  // count as under way and take the next tick ahead of it (Tennessee waited behind WY
+  // this way, 2026-10-07). Other runs can still use the rest of the tick.
+  let laneHeld = false;
   for (const row of rows) {
+    if (laneHeld && row.run_kind === "workflow_lane") continue;
     // The first run always gets a step; a later run starts a step only when that step can
     // finish by the deadline, so a larger run limit fills the tick without running past it.
     if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
@@ -2590,15 +2609,15 @@ export async function executeQueuedAgentRuns({
     }
     const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
     if (providerSlot) providerRuns += 1;
-    results.push(
-      await executeAgentRun(runId, {
-        maxSteps: maxStepsPerRun,
-        allowProviderSteps,
-        deadlineAt,
-        alwaysRunFirstStep: results.length === 0,
-        deferProviderSteps: allowProviderSteps && !providerSlot,
-      }),
-    );
+    const result = await executeAgentRun(runId, {
+      maxSteps: maxStepsPerRun,
+      allowProviderSteps,
+      deadlineAt,
+      alwaysRunFirstStep: results.length === 0,
+      deferProviderSteps: allowProviderSteps && !providerSlot,
+    });
+    results.push(result);
+    if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
   }
   return { selected: rows.length, results };
 }

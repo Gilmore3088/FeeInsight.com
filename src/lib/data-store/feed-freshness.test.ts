@@ -43,13 +43,19 @@ describe("getCallReportFreshness", () => {
   it("flags a source whose newest quarter is older than another source's", async () => {
     mock.mockResolvedValueOnce([
       { source: "fdic", latest_period: new Date("2026-06-30T00:00:00Z"), last_fetched_at: new Date("2026-10-05T11:17:43Z") },
-      { source: "ffiec", latest_period: "2026-03-31", last_fetched_at: "2026-08-10T10:51:17Z" },
+      { source: "ncua", latest_period: "2026-03-31", last_fetched_at: "2026-08-10T10:51:17Z" },
     ]);
     const rows = await getCallReportFreshness();
     expect(rows.map((r) => [r.source, r.latestPeriod, r.behind])).toEqual([
       ["fdic", "2026-06-30", false],
-      ["ffiec", "2026-03-31", true],
+      ["ncua", "2026-03-31", true],
     ]);
+  });
+
+  it("reads only the fdic and ncua sources", async () => {
+    mock.mockResolvedValueOnce([]);
+    await getCallReportFreshness();
+    expect((mock.mock.calls[0][0] as string[]).join("?")).toContain("source IN ('fdic', 'ncua')");
   });
 });
 

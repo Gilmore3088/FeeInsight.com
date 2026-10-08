@@ -386,4 +386,35 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(usb, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0, ".").ok).toBe(false);
     expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
   });
+
+  it("never reads a balance \"greater than or equal to $0\" as a $0 fee (Citizens, Oct 7)", () => {
+    const citizens = "transactions that post to the account that day. If the available balance,\nexcluding the overdraft fees, is positive (greater than or equal to $0)\nat the end of the following business day, any overdraft fees will be\nreversed.";
+    expect(checkFeeAgainstSource(citizens, "excluding the overdraft fees, is positive (greater than or equal to", 0, ".", "overdraft").ok).toBe(false);
+  });
+
+  it("reads a fee of up to $X as the fee's maximum, and a band before a price as a band (SmartBank, Oct 7)", () => {
+    const smartbank = "What You Need to Know about Overdrafts\n• We will charge you a fee of up to $35.00 each time we pay an overdraft.";
+    expect(checkFeeAgainstSource(smartbank, "Overdraft Fee", 35, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource("- Late Payment Fee Up to $20.00", "Late Payment Fee", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Non-member check cashing fee up to $4,999.99 | $5.00", "Non-member check cashing fee", 4999.99, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("• Batch Check Scanner Rental Fee | No fee up to $5,000, then $0.30 per", "Batch Check Scanner Rental Fee", 5000, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("refunds worldwide ATM fees up to $25 monthly when qualifications are met", "ATM fees", 25, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft Fee | $35 if overdrawn by more than $5", "Overdraft Fee", 5, ".").ok).toBe(false);
+  });
+
+  it("gives a two-name row's one price to the second name (First American Bank, Oct 7)", () => {
+    const fab = [
+      "ACCOUNT SERVICES | CHECK AND STATEMENT SERVICES",
+      "Stop Payment | Monthly Statement – Electronic | Free",
+      "Via Customer Service | $35.00",
+      "Via Online Banking | $30.00 | Monthly Statement – Paper | $5.50",
+      "Audit Confirmation or Verification of | Withdrawals at Allpoint & Presto! ATMs | Free",
+      "$20.00",
+      "Deposit (VOD)",
+    ].join("\n");
+    expect(checkFeeAgainstSource(fab, "Stop Payment", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(fab, "Audit Confirmation or Verification", 0, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource(fab, "Monthly Statement – Electronic", 0, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(fab, "Withdrawals at Allpoint & Presto! ATMs", 0, ".").ok).toBe(true);
+  });
 });

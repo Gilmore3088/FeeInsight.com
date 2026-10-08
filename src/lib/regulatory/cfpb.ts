@@ -25,8 +25,9 @@ function yearRange(year: number): { min: string; max: string } {
   return { min: `${year}-01-01`, max: `${year}-12-31` };
 }
 
-function buildUrl(params: Record<string, string>): string {
+function buildUrl(params: Record<string, string>, repeated: Record<string, readonly string[]> = {}): string {
   const search = new URLSearchParams({ size: "0", ...params });
+  for (const [name, values] of Object.entries(repeated)) for (const value of values) search.append(name, value);
   return `${CFPB_API}?${search.toString()}`;
 }
 
@@ -38,6 +39,38 @@ export function aggregationBuckets(body: CfpbAggResponse, name: string): Bucket[
   return buckets
     .map((bucket) => ({ key: String(bucket.key ?? ""), doc_count: Number(bucket.doc_count ?? 0) }))
     .filter((bucket) => bucket.key && Number.isFinite(bucket.doc_count) && bucket.doc_count > 0);
+}
+
+export interface SubIssueBucket {
+  issue: string;
+  subIssue: string;
+  doc_count: number;
+}
+
+/**
+ * Sub-issue buckets nested inside each issue bucket ("sub_issue.raw" in the CFPB response).
+ * Returns [] when the response carries none, so callers can tell sub-issues were not loaded.
+ */
+export function subIssueBuckets(body: CfpbAggResponse): SubIssueBucket[] {
+  const outer = body.aggregations?.issue as Record<string, unknown> | undefined;
+  const inner = (outer?.issue ?? outer) as { buckets?: unknown } | undefined;
+  const issues = Array.isArray(inner?.buckets) ? (inner.buckets as Array<Record<string, unknown>>) : [];
+  const out: SubIssueBucket[] = [];
+  for (const issue of issues) {
+    const issueKey = String(issue.key ?? "");
+    for (const [name, value] of Object.entries(issue)) {
+      if (!name.startsWith("sub_issue") || !value || typeof value !== "object") continue;
+      const holder = value as Record<string, unknown>;
+      const nested = (Array.isArray(holder.buckets) ? holder : holder[name] ?? holder.sub_issue) as { buckets?: unknown } | undefined;
+      const buckets = Array.isArray(nested?.buckets) ? (nested.buckets as Array<Record<string, unknown>>) : [];
+      for (const bucket of buckets) {
+        const subIssue = String(bucket.key ?? "");
+        const count = Number(bucket.doc_count ?? 0);
+        if (issueKey && subIssue && Number.isFinite(count) && count > 0) out.push({ issue: issueKey, subIssue, doc_count: count });
+      }
+    }
+  }
+  return out;
 }
 
 export async function fetchCfpbCompanyCounts(
@@ -76,6 +109,28 @@ export async function fetchCfpbCompanyBreakdown(
   };
 }
 
+export interface CfpbProductIssues {
+  company: string;
+  total: number;
+  issues: Bucket[];
+  subIssues: SubIssueBucket[];
+  url: string;
+}
+
+/** One company-year's issues (and sub-issues, when returned) within the given products only. */
+export async function fetchCfpbCompanyProductIssues(
+  company: string,
+  year: number,
+  products: readonly string[],
+  options: RegistryFetchOptions = {},
+): Promise<CfpbProductIssues> {
+  const { min, max } = yearRange(year);
+  const url = buildUrl({ company, date_received_min: min, date_received_max: max }, { product: products });
+  const body = await registryFetchJson<CfpbAggResponse>(url, options);
+  const total = typeof body.hits?.total === "number" ? body.hits.total : Number(body.hits?.total?.value ?? 0);
+  return { company, total, issues: aggregationBuckets(body, "issue"), subIssues: subIssueBuckets(body), url };
+}
+
 const NAME_NOISE = new Set([
   "THE",
   "INC",
@@ -99,6 +154,9 @@ const NAME_NOISE = new Set([
   "BANCORP",
   "BANCORPORATION",
   "BANCSHARES",
+  "BCORP",
+  "FINL",
+  "PLC",
   "BANK",
   "FSB",
   "SSB",
@@ -113,6 +171,27 @@ const NAME_NOISE = new Set([
  * Association" both become "JPMORGAN CHASE". Credit-union words are kept so
  * "Navy Federal Credit Union" never collapses to "NAVY".
  */
+const LEGAL_SUFFIXES = new Set(["THE", "INC", "INCORPORATED", "CORP", "CORPORATION", "CO", "COMPANY", "LLC", "LTD", "PLC"]);
+const ABBREVIATIONS: Record<string, string> = { BCORP: "BANCORP", FINL: "FINANCIAL", ASSN: "ASSOCIATION", BANCSHS: "BANCSHARES" };
+
+/**
+ * Full company key: only legal suffixes dropped and FFIEC abbreviations expanded, so
+ * "CITIZENS FINANCIAL GROUP, INC." (CFPB) and "CITIZENS FINANCIAL GROUP INC" (FFIEC holding
+ * company) agree while plain "Citizens Bank" stays distinct.
+ */
+export function fullCompanyKey(name: string | null | undefined): string {
+  if (!name) return "";
+  return name
+    .toUpperCase()
+    .replace(/&/g, " ")
+    .replace(/[^A-Z0-9 ]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => ABBREVIATIONS[token] ?? token)
+    .filter((token) => !LEGAL_SUFFIXES.has(token))
+    .join(" ");
+}
+
 export function normalizeCompanyName(name: string | null | undefined): string {
   if (!name) return "";
   const tokens = name

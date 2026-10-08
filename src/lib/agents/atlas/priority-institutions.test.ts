@@ -46,21 +46,21 @@ describe("priority institutions", () => {
   it("lists each requested institution once, the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 6)).toEqual([37, 47, 27, 122, 5, 251]);
+    expect(ids.slice(0, 10)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
     expect(ids).toContain(8109);
   });
 
   it("ranks hand-found schedules, then requests, then large banks with no live overdraft fee", async () => {
     const { db, calls } = createDb(() => [
-      { id: "1", institution_name: "JPMorgan Chase Bank, N.A.", state_code: "oh ", tier: "1" },
-      { id: "8109", institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: 2 },
+      { id: "1", institution_name: "JPMorgan Chase Bank, N.A.", state_code: "oh ", tier: "1", hand_link_id: "2070" },
+      { id: "8109", institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: 2, hand_link_id: null },
     ]);
 
     const rows = await selectPriorityInstitutions(db, { limit: 2, leaderIds: [7, 9] });
 
     expect(rows).toEqual([
-      { id: 1, institution_name: "JPMorgan Chase Bank, N.A.", state_code: "OH", tier: "hand_found" },
-      { id: 8109, institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: "requested" },
+      { id: 1, institution_name: "JPMorgan Chase Bank, N.A.", state_code: "OH", tier: "hand_found", hand_link_id: 2070, paid_document_id: null },
+      { id: 8109, institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: "requested", hand_link_id: null, paid_document_id: null },
     ]);
     const { text, values } = calls[0];
     const hand = text.indexOf("hand.found_by_strategy = 'discover.operator_schedule'");
@@ -72,9 +72,31 @@ describe("priority institutions", () => {
     expect(text).toContain("hand.last_fetched_at IS NULL");
     expect(text).toContain("r.status IN ('queued', 'running', 'cancel_requested')");
     expect(text).toContain("CASE WHEN c.tier = 2 THEN array_position(");
+    expect(text).toContain("c.tier <> 1 OR c.hand_found_at IS NULL OR r.started_at >= c.hand_found_at");
     expect(values).toContain(PRIORITY_INSTITUTION_SOURCE);
     expect(values).toContainEqual([7, 9]);
     expect(values).toContainEqual(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId));
+  });
+
+  it("ranks an unread document from the paid fetch right after hand-found schedules, keyed by the document", async () => {
+    const { db, calls } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [{ id: 18, institution_name: "Citizens Bank, National Association", state_code: "RI", tier: 4, hand_link_id: null, paid_document_id: 21028 }];
+    });
+
+    const result = await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-07T11:30:00Z") });
+
+    expect(result.runs).toEqual([{ institutionId: 18, runId: 1018, tier: "paid_fetched" }]);
+    expect(startAgentRunMock.mock.calls[0][0]).toMatchObject({
+      stateCode: "RI",
+      idempotencyKey: "atlas:priority:18:paid:21028",
+      params: { institution_id: 18, tier: "paid_fetched" },
+    });
+    const select = calls.find((call) => call.text.includes("WITH candidates"))!.text;
+    expect(select).toContain("paid.strategy LIKE 'fetch.paid_web_fetch%'");
+    expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
+    expect(select).toContain("CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END");
+    expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
   });
 
   it("runs only free steps, each scoped to the one institution", () => {
@@ -86,7 +108,7 @@ describe("priority institutions", () => {
   it("fills only the free slots, one idempotent run per institution per day", async () => {
     const { db } = createDb((text) => {
       if (text.includes("COUNT(*)::int AS active")) return [{ active: 1 }];
-      return [{ id: 1, institution_name: "JPMorgan Chase Bank, N.A.", state_code: "OH", tier: 1 }];
+      return [{ id: 1, institution_name: "JPMorgan Chase Bank, N.A.", state_code: "OH", tier: 3, hand_link_id: null }];
     });
 
     const result = await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-07T06:10:00Z") });
@@ -100,7 +122,21 @@ describe("priority institutions", () => {
       stateCode: "OH",
       triggerSource: "schedule",
       idempotencyKey: "atlas:priority:1:2026-10-07",
-      params: { source: PRIORITY_INSTITUTION_SOURCE, institution_id: 1, tier: "hand_found" },
+      params: { source: PRIORITY_INSTITUTION_SOURCE, institution_id: 1, tier: "overdraft_gap" },
+    });
+  });
+
+  it("keys a hand-found run by its link, so a link added after today's run still runs", async () => {
+    const { db } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [{ id: 3, institution_name: "Citibank, N.A.", state_code: "SD", tier: 1, hand_link_id: 2070 }];
+    });
+
+    await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-07T07:30:00Z") });
+
+    expect(startAgentRunMock.mock.calls[0][0]).toMatchObject({
+      idempotencyKey: "atlas:priority:3:hand:2070",
+      params: { institution_id: 3, tier: "hand_found" },
     });
   });
 

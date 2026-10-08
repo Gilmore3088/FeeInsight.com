@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { ACS_STATE_FIPS, fetchAcs, type AcsGeoType, type AcsRow } from "@/lib/regulatory/census-acs";
+import { ACS_STATE_FIPS, CensusKeyError, fetchAcs, type AcsGeoType, type AcsRow } from "@/lib/regulatory/census-acs";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
 
@@ -11,8 +11,13 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  */
 
 export const CENSUS_ACS_SOURCE = "census-acs";
-/** v2: a non-data reply is an error, not "not published" (v1 recorded 2024 as unpublished). */
-export const CENSUS_ACS_PARSER_VERSION = 2;
+/**
+ * v2: a non-data reply is an error, not "not published" (v1 recorded 2024 as unpublished).
+ * v3: Census's "Missing Key" reply skips the vintage with a "no key" reason instead of failing.
+ */
+export const CENSUS_ACS_PARSER_VERSION = 3;
+/** With no key, look again daily so a newly set CENSUS_API_KEY is picked up without a deploy. */
+const NO_KEY_RETRY_HOURS = 24;
 const UPSERT_CHUNK = 1000;
 const REFRESH_HOURS = 24 * 90;
 const EMPTY_RETRY_HOURS = 24 * 7;
@@ -43,6 +48,8 @@ export interface RegistryCensusAcsResult {
   upsertedRows: number;
   dryRun: boolean;
   empty: boolean;
+  /** Census refused the request for want of an API key; nothing was loaded. */
+  skippedNoKey?: boolean;
 }
 
 async function upsert(db: RegistryDb, rows: AcsRow[]): Promise<number> {
@@ -83,7 +90,32 @@ export async function runRegistryCensusAcs(options: RegistryCensusAcsOptions): P
   const counts: Record<AcsGeoType, number> = { state: 0, county: 0, zcta: 0, tract: 0 };
   const base = { source: CENSUS_ACS_SOURCE, partitionKey: options.partitionKey, year, counts, withIncome: 0, upsertedRows: 0, dryRun };
 
-  const states = await fetchAcs(year, "state", options.fetchOptions);
+  let states: Awaited<ReturnType<typeof fetchAcs>>;
+  try {
+    states = await fetchAcs(year, "state", options.fetchOptions);
+  } catch (error) {
+    if (!(error instanceof CensusKeyError)) throw error;
+    // Census now refuses keyless requests. Readers keep using the latest vintage already loaded.
+    if (!dryRun) {
+      await recordRegistryPartition(db, {
+        source: CENSUS_ACS_SOURCE,
+        partitionKey: options.partitionKey,
+        status: "empty",
+        rowCount: 0,
+        runId: options.runId ?? null,
+        nextAttemptAfterHours: NO_KEY_RETRY_HOURS,
+        detail: {
+          year,
+          reason: process.env.CENSUS_API_KEY?.trim()
+            ? "Census rejected CENSUS_API_KEY; check the key"
+            : "No CENSUS_API_KEY set; Census requires a key, so this vintage was skipped",
+          no_key: true,
+          parser_version: CENSUS_ACS_PARSER_VERSION,
+        },
+      });
+    }
+    return { ...base, empty: true, skippedNoKey: true };
+  }
   if (!states || states.rows.length === 0) {
     if (!dryRun) {
       await recordRegistryPartition(db, {

@@ -7,16 +7,9 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import type { LocalCompetitorFee } from "@/lib/hamilton/answer-brief";
 import type { MarketShare, RatePoint } from "@/lib/hamilton/brief-context";
 import type { InstitutionFinancials, SchedulePosition } from "@/lib/hamilton/workspace/types";
+import { RD_PDF_CHART } from "@/lib/report-design/tokens";
 
-const C = {
-  ink: "#1c1917",
-  muted: "#78716c",
-  faint: "#a8a29e",
-  accent: "#b45309",
-  band: "#e7dfcf",
-  bar: "#cbbfa8",
-  rule: "#d6d0c5",
-};
+const C = RD_PDF_CHART;
 
 const s = StyleSheet.create({
   legend: { flexDirection: "row", gap: 14, marginBottom: 8 },

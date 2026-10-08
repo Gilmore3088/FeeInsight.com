@@ -13,6 +13,132 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
+**Owner:** the Data inventory thread.
+**What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
+(05:42-06:27 UTC). PR 399 fixed it at 06:52, but the six quarters stayed claimed until
+10:32-12:27, because a failed run leaves its partition "scheduled" for `CLAIM_RETRY_HOURS`, and a
+parser version bump re-ran only succeeded or empty partitions. `registry-census-acs` failed at 07:02
+(2025) and 07:32 (2024) with Census's "Missing Key" page. No `CENSUS_API_KEY` is set (the logged
+URL has no key), and Census refuses keyless requests from prod. `demographics` holds only 2022
+state and county rows (loaded 2026-04-06), and readers use the latest year on file.
+**Cause:** the scheduler had no way to tell that a failure came from code since fixed. Census
+answers a missing key with a 200 page, which the step treated as a failure.
+**Fix:** the claim records `claimed_parser_version`. A partition still "scheduled" from a claim
+under an older parser is due at once, so a parser bump retries its failures on the next tick.
+`ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
+partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
+completes instead of failing. Other non-data replies still fail.
+**Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
+
+## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
+**What happened:** James asked Hamilton "who are my local competitors and locations" at 07:36 UTC.
+The written answer (`api.research.hamilton`, `ai_api_usage_events` id 2928) read 127,096 input
+tokens and took 47 seconds, and the page looked like it had reset. Over the 30 days before, the 10
+written answers averaged 63k input tokens (median 47k) and 34 seconds.
+**Cause:** an answer runs up to 4 model steps, and each step re-sends the system prompt (about 15k
+characters), the tool definitions (about 9k) and every earlier tool result in full. A tool result
+had no size limit (`getInstitution` returns every fee with its conditions and source link), and
+nothing was cached, so a large result was paid for again on each later step.
+**Fix:** `src/lib/research/tool-output.ts`: tool results over 12,000 characters have their longest
+lists shortened with a note saying so; the system prompt and the newest message are Anthropic cache
+points, and the ledger records cache reads apart from uncached input. Proof after merge is the
+next written answer's row in `ai_api_usage_events`. Competitor questions themselves go to a
+deterministic market answer in the Pro page thread's PR 435.
+**Lesson:** anything handed to the model inside a tool loop is paid for once per step. Give every
+tool result a size limit, and cache what repeats.
+
+## 2026-10-07: The CPI "bank services" series was physicians' services
+**Owner:** the Data inventory thread.
+**What happened:** the app read BLS series `CUUR0000SEMC01` as "CPI: Checking Account and Other
+Bank Services" in the economic context (Hamilton briefing and benchmark), `getCpiContext` and the
+research tools. In the CPI item codes, `SEMC` is medical "Professional services" and `SEMC01` is
+physicians' services. On prod it reads 439.389 for August 2026, a medical-care index level. The four
+regional `CUUR0x00SEMC` series, also loaded as bank context, are medical professional services.
+**Cause:** the series id was picked by name, not checked against the BLS catalogue.
+**Fix:** `CPI_BANK_SERVICES_SERIES = "CUUR0000SS68021"` (Checking account and other bank services)
+and `CPI_FINANCIAL_SERVICES_SERIES = "CUUR0000SEGD05"` (Financial services) in
+`src/lib/regulatory/fed.ts`, loaded as required series; every reader uses the constant. Stored
+SEMC rows are relabelled as medical series on the next refresh. With a BLS key the step asks for
+BLS's own catalog title and records it in the partition detail (`bls_catalog_titles`). The ids were
+checked against BLS item-code listings found by search, not against api.bls.gov (blocked from the
+sandbox); proof is the step loading both series on prod with no `missing_series`.
+**Lesson:** check any external series id against its publisher's catalogue before naming it.
+
+## 2026-10-07: ffiec rows in institution_financial_records mixed units with fdic/ncua
+**Owner:** the Data inventory thread.
+**What happened:** `institution_financial_records` has three `source` values. `fdic` and `ncua`
+rows carry every dollar column in thousands. The 13,215 `ffiec` rows (report dates 2025-09-30,
+2025-12-31 and 2026-03-31, all written on 2026-08-10) use other units: balance-sheet columns in
+whole dollars (`total_assets` exactly 1,000x), `service_charge_income` not a fixed multiple of the
+fdic figure (median about 750,000x, 10th-90th percentile about 146,000x-3,150,000x, some banks 0;
+Orrstown, institution 270, 2026-03-31: 946,778,000 against 2,077 in its fdic row), `fee_income_ratio`
+195x-750x, `tier1_capital_ratio` about 10% against fdic's 15-28%, and `net_income` null. No rescaling
+recovers the right figure. 12,934 of them duplicate an fdic/ncua row for the same institution and quarter
+(counts from the Data inventory thread's read-only queries). Readers that did not filter by source
+could take an ffiec row as "the latest" quarter, or average and sum both rows: the industry health
+medians and growth trends, the revenue index, fee-revenue correlation and tier/charter summaries
+(the public /research/fee-revenue-analysis page joins each institution's latest quarter, so an
+institution whose latest quarter is an ffiec quarter could appear with the ffiec figures, or twice), fee dependency and revenue-per-institution trends, the latest-quarter lookups behind top revenue,
+district and tier revenue, the institution financials and history reads (public institution page,
+admin institution and peers pages, API v1 institutions, evidence route), and the admin
+financial-coverage counts, call-report freshness and missing-financials check.
+**Cause:** a loader that no longer exists wrote the ffiec rows once in its own units. Some readers
+filtered or rescaled them (`call-reports.ts`, the institution page's `financial-units.ts`, report
+exhibits, the briefing and research tool); most did not.
+**Fix:** this change. `src/lib/data-store/financial-sources.ts` holds `FINANCIAL_SOURCES`
+(`fdic`, `ncua`) and `financialSourceFilter()`; every read in `src/` now filters to those sources,
+the ffiec rescaling in `financial-units.ts` and `annualServiceCharges` is gone, and
+`scripts/ci-guards.sh financial-source-kill` fails any `FROM`/`JOIN institution_financial_records`
+without a source filter in the next eight lines. The Hamilton studies
+(`src/lib/agents/hamilton/studies/drivers.ts`, `fee-dependence.ts`, `inferred-volume.ts`) already
+read only `source = 'fdic'` / `'ncua'` rows, so their results were not affected.
+**Applied:** with James's typed approval (07:18), the 13,215 rows were copied to
+`institution_financial_records_ffiec_archive` (count checked, 13,215) and removed from the live
+table at 07:22 UTC on 2026-10-07. The live table now holds fdic (386,056) and ncua (382,278) only.
+**Saved items that used ffiec figures** (read-only prod audit, 07:35 UTC; none deleted):
+- `hamilton_saved_analyses` bf1a5278 (Texas National Bank of Jacksonville, 1165, 2026-10-05): the
+  $20,279,000 service charges, 221.7% fee-income ratio, 9,000,000% change and 9.9% Tier 1 are ffiec.
+  The analysis itself calls them a units problem; its headline ($209K, Q2 2026) is fdic.
+- `hamilton_saved_analyses` 6c74e9e1 (1165, 2026-10-05): the 9,565,466% change for 2026 Q1 is ffiec
+  over fdic. It also calls this a units problem.
+- `hamilton_saved_analyses` b1ec5e7b (Angelina Savings Bank, 3827, 2026-10-05): "100% drop ... $0
+  service charges" for 2025Q3-2026Q1 is the ffiec rows (0). Its other figures are fdic.
+- `hamilton_messages` b5fba6d6 (National Overdraft Benchmark chat reply, 2026-10-06): the bank row
+  (average service charges $2,511,310, ratio 15.82) was inflated by ffiec rows through
+  `getCharterFeeRevenueSummary`. Recomputed on fdic only today: about $5,966 thousand and 3.13.
+  Credit-union figures are unaffected.
+These rows have no flag column and re-running them needs James's session, so they are listed here
+instead. Cleared: hamilton_reports, the other 19 saved analyses, report_jobs rows, hamilton_signals,
+the five Hamilton studies and their placements. Not checkable: report_jobs HTML output files (not
+in storage) and whether fdic 2026Q1/Q2 existed between 08-10 and 10-03.
+**Also seen (not ffiec, not yet verified):** saved report f2ae49ae prints fdic thousands as dollars
+("$209"), and analyses bf1a5278 and b1ec5e7b put institution 1165 in a "micro" peer tier although it
+is community_mid, possibly from fdic `total_assets` in thousands read as dollars.
+Any new reader must use the source filter; the guard checks this.
+
+## 2026-10-07: Open States allows about ten requests a minute, so state bill runs hit 429
+**What happened:** the first two 12-state runs (05:32 and 07:12 UTC) read 16 states and failed 10 with
+HTTP 429 (CA, DE, FL, IA, ID, KS, MA, MD, MN, MO in `registry_ingest_partitions`). The failures came after
+about ten requests each time, and retries 6 and 12 seconds later were refused too.
+**Cause:** the step sent each state's four to six requests back to back. Open States' free tier allows
+about ten a minute, inferred from these runs since its docs aren't reachable from the cloud sandbox.
+A failed state then waited six hours.
+**Fix:** requests are paced 6.5 seconds apart. A run starts no new state after 60 seconds, and a 429 stops
+the run and leaves that state due instead of failing it.
+**Lesson:** pace any keyed free-tier API to its limit inside the step, and treat a 429 as "come back
+later", not as a failed item.
+
+## 2026-10-07: A hand-found link added after a bank's direct run waited a full day
+**What happened:** on prod (read-only, 07:22 UTC) Citi's corrected US fee chart (link 2070, added
+06:43) and First Horizon's TotalView guide (link 2101, added 07:12) sat unfetched. Both banks had
+already had a direct run that morning (Citi 06:25, First Horizon 07:07).
+**Cause:** the direct path (PR 408) skipped any bank with a run in the last 24 hours and keyed runs
+by bank and day, so a second link the same day reused the finished run.
+**Fix:** this PR keys a hand-found run by its link id and lets a link found after the last run start
+a new one. Merged, not yet proven until Citi's chart is fetched.
+**Lesson:** a retry window should only block retries of the same work; new input is new work.
+
 ## 2026-10-07: Enforcement lists rarely record an end date, so "no end date" is not "active"
 **What happened:** the Pro enforcement card (PR 372) called every action with no termination date
 "active". On prod (read-only, 07:05 UTC) that was 825 of 4,431 OCC and Fed actions: 651 are civil
@@ -27,6 +153,18 @@ orders from the last ten years and puts penalties and older ones under "Past"; H
 to call such an action active.
 **Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
 match, count how many rows it covers on prod and read a sample of them.
+
+## 2026-10-07: Saved peer groups filtered asset size by codes no institution has
+**What happened:** the Settings peer group form saved asset sizes as `a` to `f`, and the
+resolver filtered `institution_sources.asset_size_tier` by them. That column holds
+`community_small` to `super_regional` (`assetSizeTier` in `src/lib/regulatory/fdic.ts`), so any
+saved group with an asset size matched no institution and Hamilton fell back to national. How
+many saved rows carry `a`-`f` codes: none; prod `saved_peer_sets` had 0 rows (read-only, 07:20 UTC Oct 7).
+**Cause:** the form's tier list was written separately from the registry's tier vocabulary.
+**Fix:** the custom peer groups PR: the form and `PeerSetSchema` use the registry's tiers, and
+Settings shows each group's real institution count. No rows needed fixing.
+**Lesson:** a filter's values come from the column it filters; show the count a filter
+resolves to, so a group that matches nothing is visible.
 
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
@@ -187,6 +325,23 @@ search and paid read (140 to 290 seconds each), so serial runs top out near 6 an
 daily rule also put 36 of 55 states on daily full passes for any bank due a paid find (HI
 had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs weekly
 (21 daily states on the Oct 7 numbers).
+**Follow-up (07:15):** Atlas's direct runs for one institution (PR 408) now fetch hand-found
+schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
+lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
+direct runs already do, so it was removed.
+**Follow-up (08:10):** score order alone left Tennessee's lane (score 690, eighth) queued
+from 00:55 to past 08:00, while Knox re-reads and Magellan re-searches for the state waited
+on it. A state whose report James is waiting to review (`REPORT_REVIEW_STATES`) now runs
+right after failed-lane retries and carries the report-request weight in its score.
+**Follow-up (09:00):** Tennessee was then first in the order but still did not start. Each
+tick's direct institution runs used the first minutes, so Tennessee's first real step
+(enhance, state-expert, discover: about 170 seconds) no longer fit, and the next lane that
+did fit (WY at 08:48) started instead, counted as under way, and took the next tick. Once a
+lane is held for the deadline, no lower lane starts in that tick.
+**Follow-up (09:30):** with that in, no lane started at all from 08:52 to 09:25. Atlas's
+direct institution runs ranked ahead of every lane and three or four of them filled each
+tick, so a lane's first step never fit. Direct runs now go ahead of lanes only while some
+lane has started a step in the last ten minutes; otherwise the waiting lane goes first.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2576,6 +2731,9 @@ funds-availability, checking and rates pages; the other 33 were not sampled).
 with its fix (`evidence.remedy`) and one error-rate row per batch. The reread selection and the paid
 pass read those lessons. See rosetta/AGENTS.md "Batch review".
 **Lesson:** count Knox yield per document, not per read: deduped rereads look like empty reads.
+**Follow-up (07:20 UTC Oct 7):** the first 28 live batches walked reads back to Oct 3, and 61 of
+the 76 web pages sent for a JavaScript reread were replaced copies the reader never selects. The
+review now judges only each bank's current document from the last 3 days.
 
 ## 2026-10-07: The Census income step recorded a published vintage as "not published"
 **What happened:** at 05:17 UTC `registry-census-acs` recorded the 2024 ACS 5-year vintage, released
@@ -2625,6 +2783,44 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   replacing the read, so it is counted as superseded. Counting it as a miss put Oct 4's first batch
   at 58% wrong.
 
+## 2026-10-07: Fee links led to foreign banks of the same name
+
+- **Problem.** SouthEast Bank (TN) had a companion document on southeastbank.com.bd, a
+  Bangladesh bank's schedule priced in taka, and Citi's link was Citi Bangladesh's schedule
+  on citigroup.com. Nothing in Magellan's checks looked at the country or the currency.
+- **Fix.** Magellan refuses links on foreign country domains (unless the bank's own website
+  is on that domain) and pages priced mostly in another currency (`foreign_schedule`).
+- **Watch.** Fees already read from those two documents are Knox's and Hamilton's to take
+  down through the 12-hour second look; this fix stops new ones.
+
+## 2026-10-07: Dead-end banks waited a month after Magellan improved
+
+- **Problem.** 60 Tennessee banks with a website were `dead` and the state lane was hours
+  away. A dead end is searched again after 30 days, or at once when the discovery method
+  version changes, but the version was not bumped for the 7 Oct finder fixes, and a state
+  could not be re-searched outside its lane.
+- **Fix.** Discovery method 5, and a direct state re-search run (Atlas
+  `priority-state-research.ts`) for states that must not wait. Each miss now leaves a
+  `magellan.search_miss` lesson.
+
+## 2026-10-07: Bank sites that refuse our fetcher had no way in
+
+- **Problem.** 51 banks' fee links return HTTP 403 to Magellan's fetcher (Pinnacle's pnfp.com,
+  Citizens, Flagstar, Columbia), and the paid web search's answers for Huntington and KeyBank
+  failed the same way, so those banks stayed without a schedule. The JS fallback uses the same
+  fetcher, and Firecrawl is off-limits.
+- **Fix.** `magellan/blocked-fetch.ts` asks Anthropic's server-side web fetch for the exact
+  link (bank's own host only), inside Magellan's paid step and cap.
+- **Watch.** Whether Anthropic's fetcher gets past each bank's bot wall is only known on prod
+  (the cloud sandbox cannot reach bank sites). Several 403 links are not on the bank's site
+  (an LPL disclosure, a car-price site); they are wrong links and are skipped.
+- **First run (08:03).** Citizens, Pinnacle and Flagstar were tried, and none was fetched: at
+  64 output tokens the model stopped while writing the fetch call. Room raised to 1,024
+  (only used tokens bill), version 2. Those tries no longer count toward the weekly wait, and
+  the bank list now reads the plain fetch's last outcome, because a failed paid try rewrote
+  `failure_reason`. Banks whose site keeps timing out (First Horizon, Northern Trust, USAA,
+  Morgan Stanley, Associated) are included too.
+
 ## 2026-10-07: Tennessee banks held back by thin reads are mostly product pages
 
 - **Problem.** 48 open Tennessee banks have Darwin-verified fees that Hamilton holds back: Knox read
@@ -2638,3 +2834,142 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   Resound CU (document 16143) and Enbright CU (PDF document 10293). Two links are wrong:
   - Tsu FCU (5080) points at a Tennessee State University tuition page.
   - SouthEast Bank (371) also holds copies of a Bangladesh bank's schedule.
+
+## 2026-10-07: Team seat invites trust an unverified email
+**What happened:** with team seats, an invitation is accepted by any signed-in account whose email
+matches, and the seat gives Pro access without payment. Registration does not verify that a person
+owns the email they sign up with (no verification step in `createUserWithSession`).
+**Cause:** invitations were tied to email when accepting also needed a paid subscription, which was
+some protection; seats remove it.
+**Fix:** closed in the same PR by signed invite links. Every grant, an existing account included,
+is now an invitation. A seat starts only when someone opens
+`/workspace-invite?i=<id>&t=<token>` signed in with the invited email. The token is
+HMAC-SHA256 of `id:email:institution`, keyed with `BFI_COOKIE_SECRET` and compared with
+`timingSafeEqual`, and the invitation must still be pending and unexpired
+(`src/lib/hamilton/workspace-invite-link.ts`). Without the secret, no link is issued or accepted.
+Accepting by email alone (`acceptPendingWorkspaceInvitationsForUser`, called from the Stripe webhook,
+the payment fallback and /account) is removed. Someone who registers with another person's
+email still cannot join without that person's link.
+**Cost:** `getCurrentUser` makes one extra query per signed-in request (`hasWorkspaceSeat`). It is
+left in place for now.
+**Lesson:** when a check stops costing money to pass, re-check what it was protecting.
+
+## 2026-10-07: CFPB fee complaints were over-counted, cut short, and missing for big banks
+
+**What happened:** Checking the complaint data for the peer benchmark found four problems.
+
+**Cause:**
+- "Fee-related" counted every "Managing an account" complaint, which is mostly deposits, withdrawals and errors.
+- The step kept only each institution's top 15 issues, which dropped 23,855 complaints in 2025.
+- It deleted only the institutions it touched. That left 56,389 old-loader complaints at 259 institutions, some on wrong matches.
+- Short names ("PNC", "TD", "BMO", "U S", "M T") always went to review. FFIEC also writes holding companies as "BCORP" and "FINL", so U.S. Bank, PNC, TD, BMO, M&T, Citizens and First Citizens had no complaints linked. Only 77 of 160 $10B+ banks were linked.
+
+**Fix:**
+- A shared fee definition (`src/lib/complaints/fee-issues.ts`) counts only the issues within deposit and card products. "Managing an account" counts only through its "Fee problem" sub-issue.
+- The step stores all issues and replaces the whole year.
+- A short name is accepted for one $10B+ parent. A full holding-company name is matched first.
+- The CFPB parser version is now 2, so every year re-pulls.
+
+**Also:** `institution_financial_records.total_deposits` is in thousands for `fdic` and `ncua` rows but in dollars for `ffiec` rows. Readers must filter by source.
+
+**Unverified:** whether CFPB's search API returns sub-issue buckets. The run ledger records `sub_issues_loaded`.
+
+## 2026-10-07: Checking account lineup fields were never captured
+**What happened:** none of the 1,914 monthly maintenance fees on prod named its product, the
+balance that avoids the fee, the opening deposit, or the waiver (audit:
+`data-inventory/account-lineup-audit-2026-10-07.md`).
+**Cause:**
+- No fee tier had a column for them, and `published_fee_catalog.account_product_type` was a
+  hard-coded `NULL::text`.
+- Knox's paid prompt asked for `conditions` but kept only a `waivable` flag and threw the text
+  away. It also told the model to skip balance requirements.
+- The rule candidate had no field for a product, threshold or waiver.
+**Fix:** migration `20270110000020_account_lineup_fields.sql` adds `product_name`,
+`min_balance_to_avoid`, `min_opening_deposit` and `waiver_text` to `raw_fee_observations`. The
+catalog reads `account_product_type` from `product_name` and adds the other three at its end.
+Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-reads carry them) fills them for `monthly_maintenance` only, grounded in the text by
+`knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
+Rows already on file gain the fields only when Knox reads their document again.
+
+## 2026-10-07: Overdraft pages named their fee in a heading Knox did not read
+
+- **Problem.** $10B+ banks' overdraft pages were being read, but no overdraft fee went live
+  (78 of 192). Knox took the words right before each price as the name, so it named the fee
+  "fee for each item or transaction paid" (Wilson Bank & Trust), "This" or "Maximum amount of
+  times this" (SouthEast Bank). With no category, nothing reached Darwin. SmartBank's Reg E
+  consent form, "a fee of up to $35.00 each time we pay an overdraft", gave no row at all.
+- **Fix.** Knox v33 (`knox/context-names.ts`) names a per-item price from the overdraft heading
+  above it and "this $X fee" from the term defined just above. It drops a fee the page says is
+  being eliminated, and it reads "a fee of up to $X each time we pay an overdraft".
+- **Watch.** The shared source check reads "up to $35.00" as a threshold, so the Reg E form's fee
+  is held as untraced until the accuracy thread changes `source-check.ts`. ACNB's document 20915
+  is a list of services with no overdraft price; finding its schedule is Magellan's work.
+
+## 2026-10-07: Darwin's release review only read the held fees of the lane's own state
+
+- **Problem.** `verify-paid` runs inside each state lane, and the release review picked held fees
+  from that state only. State lanes start hours after they are queued (Utah's, queued 02:05 UTC,
+  reached `verify-paid` at 08:07). At 08:25 Utah had 1 held fee waiting while about 1,000 waited
+  in other states, so release review v7 reviewed 1 fee in 90 minutes.
+- **Fix.** A lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (`release-review.ts`). Releases stay off; this changes only
+  which held fees get reviewed.
+## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
+
+- **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
+  `CONNECT tunnel failed, 403`). So the readers for state orders were written against the page
+  formats described in search results, not against fetched pages.
+- **Fix.** `registry-state-enforcement` runs on the live pipeline, which can reach those sites, and
+  records each state's pages read, orders found, matches and three sample rows in the run detail.
+  The first prod run is the check: a state whose reader finds nothing is fixed there and the parser
+  version bumped. Seven states for now (NJ, NY, IL, MD, WA, TX, NC); Pennsylvania's listing page
+  wasn't found.
+- **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
+  Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
+
+## 2026-10-07: The paid fetch for blocked sites got only the call cap's leftovers
+
+- **Problem.** After PR 444 the paid fetch ran last in Magellan's paid step. On its first real
+  run (08:23, run 1964) the searches before it used the run's provider call cap, so it fetched
+  one bank of three (Morgan Stanley, stored for $0.018) and First Horizon waited. Separately,
+  53.com answers Fifth Third's fee PDFs with a "page doesn't exist" web page. The companion fetch
+  stored that page and Rosetta set the PDFs aside as blank reads, so nothing marked them blocked.
+- **Fix.** The paid fetch runs first in the step. The companion fetch refuses a PDF link
+  answered with a web page (`blocked_bot`), and the paid fetch also takes blocked companion pages
+  (one slot of three kept for them), including PDFs already set aside after reading that page.
+- **Watch.** `pipeline_attempts` with strategy `fetch.paid_web_fetch_companion` for Fifth Third
+  (institution 19) and `fetch.paid_web_fetch` for First Horizon (37).
+
+## 2026-10-07: Written Hamilton answers were saved only from the browser
+
+- **Problem.** The Analyze screen saved a written answer to `hamilton_saved_analyses` from the
+  browser after the stream ended, and dropped any save error. One answer on prod (the 07:36
+  `research_stream`, usage row 2928) has no saved row; every earlier answer does.
+- **Fix.** `/api/research/hamilton` saves the answer in its `onFinish` (`src/lib/hamilton/answer-save.ts`)
+  and keeps the stream running if the browser drops it. The row id goes back as message metadata
+  under `savedAnalysisId`; the screen updates that row instead of inserting another.
+- **Watch.** Until the screen reads `savedAnalysisId`, both sides insert, so each answer gets two rows.
+
+## 2026-10-07: Documents from the paid fetch waited for their own state's lane
+
+- **Problem.** Magellan's paid fetch runs in whichever state's run holds the paid step and takes
+  blocked links from every state. A state run's read step reads only its own state. By 11:20,
+  12 documents were stored for 11 banks (First Horizon, Citizens, Fifth Third, Huntington,
+  KeyBank, Flagstar and others). Only the Tennessee ones were read (First Horizon: 16 fees
+  extracted, 9 live). The rest sat unread until their state's next pass.
+- **Fix.** `priority-institutions.ts` gives a bank with an unread paid-fetched document (stored
+  in the last 7 days) a direct run, ranked right after hand-found schedules.
+- **Watch.** `agent_runs` with `params_json->>'tier' = 'paid_fetched'`, and `agent_source_texts`
+  for documents 21028 (Citizens) and 21030 (Fifth Third).
+
+## 2026-10-07: Darwin's paid pass ran only on monthly full passes
+
+- **Problem.** `verify-paid` (Claude's review of held fees and of Darwin's disagreements) was in
+  the full state-lane pass only, not the hourly backlog run. The last full passes with it were
+  queued by 02:40 UTC and drained by 14:24 UTC. After that no held fee was reviewed, so release
+  review v10 (PR 467) had nothing to run in.
+- **Fix.** `verify-paid` joins `STATE_LANE_BACKLOG_STEP_KEYS`, like Knox's `extract-paid`. It
+  reads only fees no attempt of the current version has read, so it spends nothing once they are
+  done; the Darwin and global budget caps still stop it.
+- **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
+  `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.

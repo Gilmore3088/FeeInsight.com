@@ -46,7 +46,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 10: a box-size grid (sizes closing one row, their prices closing the next) and a price
 // wrapped under its name ("Returned Check | Verification of Deposit | $20" / "$30 | ...") are
 // read one fee per row, so neither fee takes the other's price (Space Coast, Oct 7).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 10 } as const;
+// Version 11: a row with two columns' names and one price ("Stop Payment | Monthly Statement –
+// Electronic | Free") gives the price to the second name (First American Bank, Oct 7).
+// Version 12: "(greater than or equal to $0)" is a balance condition, not a $0 fee (Citizens, Oct 7).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 12 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

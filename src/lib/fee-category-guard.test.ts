@@ -397,10 +397,53 @@ describe("checkFeeCategory", () => {
     ).toEqual({ ok: true });
   });
 
+  it("v18 keeps only inactivity fees under dormant_account", () => {
+    // Live on prod Oct 7: Space Coast's "Money Market Savings Account (below )" $15 beside its real $5 dormant fee.
+    expect(checkFeeCategory("dormant_account", "Money Market Savings Account (below )").ok).toBe(false);
+    expect(checkFeeCategory("dormant_account", "Telephone transfers").ok).toBe(false);
+    expect(checkFeeCategory("dormant_account", "Vacation Club Withdrawal").ok).toBe(false);
+    for (const name of [
+      "Dormant Fee (no member activity for 24 months)",
+      "Inactive Account Fee",
+      "Limited Activity Fee",
+      "Sunshine Checking - Under Utilization",
+      "Checking Account Reactivation Fee",
+      "If there is no transaction activity on your share and/or share draft account for a period of twelve (12) months and AOD",
+      "Cuenta inac=va por más de un año",
+      "Escheatment Fee",
+    ]) {
+      expect(checkFeeCategory("dormant_account", name)).toEqual({ ok: true });
+    }
+  });
+
   it("explains a rejection in the reason", () => {
     const verdict = checkFeeCategory("nsf", "Returned Deposit Check");
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toContain('"Returned Deposit Check"');
+  });
+
+  it("accepts one name that prices overdrafts and returned items together, never a returned item alone (First Horizon, Oct 7)", () => {
+    for (const name of [
+      "Return check/overdraft charges",
+      "Overdraft or Returned Item fee (per item)+",
+      "Overdraft Fee and Returned Item Fee",
+      "Returned Item Fee/Overdraft Fee (each)",
+      "Overdraft Fee or a Return Item Fee",
+    ]) {
+      expect(checkFeeCategory("overdraft", name), name).toEqual({ ok: true });
+    }
+    for (const name of [
+      "Overdraft Item Returned Fee (aka NSF Fee)",
+      "Overdraft Fee (Returned NSF)",
+      "Returned Overdraft Item Fee",
+      "Overdraft Return Item Fee (Fee applies to each overdraft or returned item created by",
+      "Insufficient Funds Fee Returned item/overdraft (NSF) with no/insufficient overdraft coverage",
+      "Other fees such as overdraft or returned item fees may apply.",
+      "Maximum Return Item/Overdraft Fees per day is",
+      "excluding the overdraft fees, is positive (greater than or equal to",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
   });
 
   it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
