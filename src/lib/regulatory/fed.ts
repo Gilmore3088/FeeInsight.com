@@ -207,7 +207,7 @@ export const REQUIRED_FRED_SERIES: RequiredFredSeries[] = [
   {
     series_id: CPI_BANK_SERVICES_SERIES,
     series_title: BLS_SERIES_TITLES[CPI_BANK_SERVICES_SERIES],
-    units: "Index Dec 1977=100",
+    units: "Index",
     frequency: "Monthly",
     fed_district: null,
   },

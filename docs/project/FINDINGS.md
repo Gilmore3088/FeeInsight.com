@@ -63,6 +63,12 @@ SEMC rows are relabelled as medical series on the next refresh. With a BLS key t
 BLS's own catalog title and records it in the partition detail (`bls_catalog_titles`). The ids were
 checked against BLS item-code listings found by search, not against api.bls.gov (blocked from the
 sandbox); proof is the step loading both series on prod with no `missing_series`.
+**Proof (2026-10-08 04:27 UTC run):** `missing_series` is empty. `CUUR0000SS68021` holds 79
+months from 2020-01 to 2026-08 (190.234 in Aug 2026, down 1.4% on a year earlier), and
+`CUUR0000SEGD05` holds 79 months (466.442). No BLS key is set, so `bls_catalog_titles` is empty. The
+pre-2020 SEMC rows, which are outside the 7-year pull, kept the old bank label; the step now
+relabels every row of a mapped series. The bank series' units label is now plain "Index", because
+its base period was not verified.
 **Lesson:** check any external series id against its publisher's catalogue before naming it.
 
 ## 2026-10-07: ffiec rows in institution_financial_records mixed units with fdic/ncua

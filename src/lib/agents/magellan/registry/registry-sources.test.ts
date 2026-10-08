@@ -344,6 +344,9 @@ describe("registry FRED worker: BLS and required series", () => {
     const regional = inserts.find((s) => s.values[0] === "CUUR0100SEMC")!;
     // A stored medical series keeps refreshing but under its real name, not a bank label.
     expect(regional.values[1]).toBe("CPI: Medical Professional Services, Northeast");
+    // Rows older than the pull window are relabelled too.
+    const relabel = statements.find((s) => s.text.includes("UPDATE fed_economic_indicators") && s.values.includes("CUUR0100SEMC"));
+    expect(relabel?.values).toContain("CPI: Medical Professional Services, Northeast");
     const blsRows = payloadOf(regional.values);
     expect(blsRows).toEqual([{ observation_date: "2026-08-01", value: 301.5 }]);
   });
