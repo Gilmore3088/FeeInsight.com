@@ -4,6 +4,8 @@ import { sql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { checkInstitutionReport, describeQuoteCheck } from "@/lib/custom-report/quote-check";
 import { recordRequestedInstitution } from "@/lib/data-store/report-payments";
+import { recordLeadFirstTouch } from "@/lib/data-store/marketing-touches";
+import { parseMarketingTouch } from "@/lib/marketing-touch";
 import {
   EMAIL_ONLY_LEAD_NAME,
   LEAD_HONEYPOT_FIELD,
@@ -164,6 +166,15 @@ async function handlePOST(request: NextRequest) {
         VALUES (${name}, ${email}, ${company}, ${role}, ${useCase}, ${source})
         RETURNING id`;
       leadId = parseLeadId(inserted?.id);
+    }
+
+    // The session's first tracked link (utm_ tags), when the form sent one. First touch wins:
+    // a lead that already has a tracked source keeps it. Attribution never fails the form.
+    const firstTouch = parseMarketingTouch(body.firstTouch);
+    if (firstTouch && leadId !== null) {
+      await recordLeadFirstTouch(leadId, firstTouch).catch((error) => {
+        console.error("[api/leads] first touch not saved", error instanceof Error ? error.message : error);
+      });
     }
 
     // An institution report is paid and quoted by James, so the requester gets nothing

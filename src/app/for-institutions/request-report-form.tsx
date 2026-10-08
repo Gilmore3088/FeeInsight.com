@@ -8,6 +8,7 @@ import { trackEvent } from "@/lib/analytics";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { readFirstTouch } from "@/lib/marketing-touch";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
@@ -175,6 +176,7 @@ function RequestReportFormInner({
       source: REPORT_SOURCE,
       institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
 
@@ -207,6 +209,7 @@ function RequestReportFormInner({
       source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
       district: reportType === "district" ? district : undefined,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
     };
     try {
