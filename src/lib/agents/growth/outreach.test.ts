@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
+import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
 import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
@@ -116,6 +116,36 @@ describe("buildOutreachDraft", () => {
 
   it("needs enough verified competitors for a median", () => {
     expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane])).toEqual({ skip: "too_few_verified_peers" });
+  });
+
+  it("compares with the state when the local market is too thin", () => {
+    const stateRows = [odRow(1, 30), ...[20, 25, 25, 35, 35, 40].map((amount, index) => odRow(50 + index, amount)), odRow(70, 15, "No overdraft wording here")];
+    const state: StateComparison = {
+      stateCode: "TX",
+      fee: buildSnapshotFee("overdraft", 1, stateRows),
+      names: new Map([50, 51, 52, 53, 54, 55, 70].map((id) => [id, `State Peer ${id}`])),
+    };
+    const built = buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane], state);
+    if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
+    const { draft } = built;
+    expect(draft.scope).toBe("state");
+    expect(draft.median).toBe(30);
+    expect(draft.verifiedPeers).toBe(6);
+    expect(draft.caption).toContain("Subject: How your overdraft fee compares across Texas");
+    expect(draft.caption).toContain(
+      "reviewing published banking fees in Texas and noticed that First Bank's overdraft fee is $30, compared with a median of $30 among 6 verified banks and credit unions across Texas.",
+    );
+    const [, audit] = draft.caption.split("--- For your audit");
+    expect(audit).toContain("Compared statewide: Waco, TX has 3 verified local competitors, fewer than the 5 a local median needs.");
+    expect(audit).toContain("- State Peer 55: $40");
+    expect(audit).toContain("- State Peer 70: $15");
+  });
+
+  it("keeps the local comparison when the local market has enough, and skips when the state is thin too", () => {
+    const thinState: StateComparison = { stateCode: "TX", fee: buildSnapshotFee("overdraft", 1, rows.slice(0, 3)), names: new Map() };
+    const built = buildOutreachDraft(snapshot(), [jane], thinState);
+    expect("draft" in built && built.draft.scope).toBe("local");
+    expect(buildOutreachDraft(snapshot(rows.slice(0, 4)), [jane], thinState)).toEqual({ skip: "too_few_verified_peers" });
   });
 
   it("never addresses a lender, a committee or a name with no title", () => {

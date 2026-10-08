@@ -235,6 +235,32 @@ export async function loadMarketSnapshot(
   return { ...market, fees: categories.map((category) => buildSnapshotFee(category, institutionId, rows)) };
 }
 
+/** One fee compared across the subject's state, with each institution's name for the audit. */
+export interface StateComparison {
+  stateCode: string;
+  fee: SnapshotFee;
+  names: Map<number, string>;
+}
+
+/**
+ * The statewide comparison for one fee, used when the local market has too few verified
+ * competitors for a median (James chose "Statewide" for small-metro banks, 21:31 UTC Oct 8).
+ * Peers are the open institutions in the same state with a live row for the fee; the same
+ * source check and minimum apply as for a local median.
+ */
+export async function loadStateComparison(db: SqlTag, subject: SnapshotInstitution, category: string): Promise<StateComparison | null> {
+  if (!subject.stateCode) return null;
+  const peerRows = await db`
+    SELECT s.id, s.institution_name
+      FROM institution_sources s
+     WHERE s.state_code = ${subject.stateCode} AND s.id <> ${subject.id} AND s.closed_date IS NULL
+       AND EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = s.id AND ef.fee_category = ${category})
+  `;
+  const names = new Map<number, string>(peerRows.map((row) => [Number(row.id), String(row.institution_name)]));
+  const rows = await loadSnapshotRows(db, [subject.id, ...names.keys()], [category]);
+  return { stateCode: subject.stateCode, fee: buildSnapshotFee(category, subject.id, rows), names };
+}
+
 /**
  * A short market name for a subject line: "Waco, TX" from "Waco, TX"; a metro that spans
  * several cities keeps its first two ("New York-Newark" from "New York-Newark-Jersey City,
