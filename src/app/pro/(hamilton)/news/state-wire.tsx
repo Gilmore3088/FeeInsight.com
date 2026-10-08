@@ -159,7 +159,7 @@ export function StateWire({ news, states, activeState }: StateWireProps) {
           title="Fee bills"
           note="Bills in the state legislature whose text names a bank or credit union fee, from Open States."
           rows={bills}
-          empty={`No fee bills stored for ${where}.`}
+          empty={`No fee bills stored for ${where} yet. Each state's bills are checked once a week.`}
         />
         <List
           title="In the news"

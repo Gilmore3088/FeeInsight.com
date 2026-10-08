@@ -30,6 +30,7 @@ describe("state news shaping", () => {
       "RESIDENTS URGED TO FILE INSURANCE CLAIMS AFTER SEVERE WEATHER",
       "Department of Financial Services Announces 2027 Health Insurance Premium Rates, Saving New Yorkers $1.6 Billion",
       "FREE EMISSIONS FIX AVAILABLE FOR AFFECTED MERCEDES-BENZ DIESEL OWNERS IN HAWAIʻI",
+      "NYSIF Collaborates with Cities for Financial Empowerment Fund to Expand Safe Banking Access for Injured Workers",
       // The agency's name alone does not make a post about banking (prod, Oct 8 2026).
       "Department of Financial Services Announces Return of Painting to Heirs of Family Persecuted by Nazi Regime",
     ]) expect(isBankingPost(dropped), dropped).toBe(false);

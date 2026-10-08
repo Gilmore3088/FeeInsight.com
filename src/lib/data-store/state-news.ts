@@ -93,7 +93,7 @@ const BANKING_WORDS =
 const AGENCY_NAMES =
   /(department|division|office) of (financial services|financial institutions|banking)/gi;
 const OTHER_DEPARTMENT_WORDS =
-  /(?<!deposit )insurance|cannabis|construction|hiring|job service|jobs in|apprenticeship|workforce|layoff|emissions|solar|health|medical|weather|holiday schedule|holidays-for-year/i;
+  /(?<!deposit )insurance|nysif|injured workers|cannabis|construction|hiring|job service|jobs in|apprenticeship|workforce|layoff|emissions|solar|health|medical|weather|holiday schedule|holidays-for-year/i;
 
 /**
  * Several states publish one feed for a whole department (labor, commerce, insurance and
