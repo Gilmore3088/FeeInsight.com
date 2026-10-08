@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { FEEDBACK_REPORTERS, FEEDBACK_STAGES, recordFeedback } from "./feedback";
 
 const MIGRATION = readFileSync(
-  resolve(__dirname, "../../../../supabase/migrations/20270110000023_pipeline_feedback_growth.sql"),
+  resolve(__dirname, "../../../../supabase/migrations/20270110000024_pipeline_feedback_growth.sql"),
   "utf-8",
 );
 

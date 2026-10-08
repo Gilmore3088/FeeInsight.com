@@ -5,6 +5,7 @@ const getCurrentUserMock = vi.fn();
 const hasPermissionMock = vi.fn();
 const matchesConfiguredCronSecretMock = vi.fn();
 const getPipelineControlMock = vi.fn();
+const getMarketingControlMock = vi.fn();
 const hasQueuedProviderStepsMock = vi.fn();
 const reapStaleAgentStepsMock = vi.fn();
 const getExecutionBackendStatusMock = vi.fn();
@@ -24,6 +25,7 @@ vi.mock("@/lib/cron-secret", () => ({
 
 vi.mock("@/lib/automation-control", () => ({
   getPipelineControl: getPipelineControlMock,
+  getMarketingControl: getMarketingControlMock,
 }));
 
 vi.mock("@/lib/execution-backend", () => ({
@@ -65,6 +67,13 @@ describe("/api/admin/agents/tick", () => {
       changedBy: "system",
       changedAt: "2026-08-15T00:00:00.000Z",
       revision: 1,
+    });
+    getMarketingControlMock.mockResolvedValue({
+      enabled: true,
+      reason: null,
+      changedBy: "default",
+      changedAt: "1970-01-01T00:00:00.000Z",
+      revision: 0,
     });
     getExecutionBackendStatusMock.mockReturnValue({
       backend: "agentic_v1",
@@ -118,6 +127,7 @@ describe("/api/admin/agents/tick", () => {
       maxEstimatedCostMicrousd: null,
       providerRunLimit: null,
       deadlineAt: expect.any(Number),
+      paused: { pipeline: false, marketing: false },
     });
   });
 
@@ -204,6 +214,7 @@ describe("/api/admin/agents/tick", () => {
       maxEstimatedCostMicrousd: 250_000,
       providerRunLimit: 1,
       deadlineAt: expect.any(Number),
+      paused: { pipeline: false, marketing: false },
     });
   });
 
@@ -238,13 +249,20 @@ describe("/api/admin/agents/tick", () => {
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(expect.objectContaining({ allowProviderSteps: false }));
   });
 
-  it("does not schedule or drain while the pipeline is paused", async () => {
+  it("does not schedule or drain while both the pipeline and marketing are paused", async () => {
     getPipelineControlMock.mockResolvedValue({
       enabled: false,
       reason: "Operator pause for maintenance",
       changedBy: "admin",
       changedAt: "2026-10-02T00:00:00.000Z",
       revision: 2,
+    });
+    getMarketingControlMock.mockResolvedValue({
+      enabled: false,
+      reason: "Holding marketing",
+      changedBy: "admin",
+      changedAt: "2026-10-08T00:00:00.000Z",
+      revision: 1,
     });
     const { GET } = await import("./route");
 
@@ -255,10 +273,53 @@ describe("/api/admin/agents/tick", () => {
     expect(body.ok).toBe(true);
     expect(body.paused).toBe(true);
     expect(body.pauseReason).toBe("Operator pause for maintenance");
+    expect(body.marketing).toMatchObject({ enabled: false, reason: "Holding marketing" });
     expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
+  });
+
+  it("still drains growth's marketing runs while only the pipeline is paused, and schedules no data runs", async () => {
+    getPipelineControlMock.mockResolvedValue({
+      enabled: false,
+      reason: "Operator pause for maintenance",
+      changedBy: "admin",
+      changedAt: "2026-10-02T00:00:00.000Z",
+      revision: 2,
+    });
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.paused).toBeUndefined();
+    expect(body.partlyPaused).toBe("pipeline");
+    expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
+    expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ paused: { pipeline: true, marketing: false } }),
+    );
+  });
+
+  it("keeps scheduling and draining data runs while only marketing is paused", async () => {
+    getMarketingControlMock.mockResolvedValue({
+      enabled: false,
+      reason: "Holding marketing",
+      changedBy: "admin",
+      changedAt: "2026-10-08T00:00:00.000Z",
+      revision: 1,
+    });
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.paused).toBeUndefined();
+    expect(body.partlyPaused).toBe("marketing");
+    expect(scheduleDueStateLaneRunsMock).toHaveBeenCalled();
+    expect(schedulePriorityInstitutionRunsMock).toHaveBeenCalled();
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ paused: { pipeline: false, marketing: true } }),
+    );
   });
 
   it("does not drain queued runs when the execution backend is disabled", async () => {
