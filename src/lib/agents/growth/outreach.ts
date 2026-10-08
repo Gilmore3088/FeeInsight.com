@@ -4,7 +4,7 @@ import { contentSchemaReady, insertContentDraft, setContentDraftStatus } from "@
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
 import { contactConfidence, contactsSchemaReady, isSharedMailbox, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { STATE_NAMES } from "@/lib/us-states";
-import { isOverdraftChargeLine, loadMarketSnapshot, loadStateComparison, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotFee, type SnapshotValue, type StateComparison } from "./market-snapshot";
+import { loadMarketSnapshot, loadStateComparison, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotFee, type SnapshotValue, type StateComparison } from "./market-snapshot";
 
 /**
  * CARNEGIE's first-email drafts (GTM plan, James 15:25-15:39 UTC Oct 8). One draft per
@@ -110,7 +110,7 @@ function contactLine(contact: OutreachContact & { confidence: ContactConfidence 
 
 function valueLine(name: string, value: SnapshotValue): string {
   const read = value.readAt ? `, schedule read ${value.readAt.slice(0, 10)}` : "";
-  const line = value.sourceLine ? ` Schedule line: "${value.sourceLine}".` : "";
+  const line = `${value.feeName ? ` Fee: "${value.feeName}".` : ""}${value.sourceLine ? ` Schedule line: "${value.sourceLine}".` : ""}`;
   const notes = value.notes.length ? ` ${value.notes.join("; ")}.` : "";
   return `- ${name}: ${money(value.value)} (${value.documentUrl ?? "no document link"}${read}).${line}${notes}`;
 }
@@ -256,12 +256,14 @@ export interface OutreachRunResult {
 /** Who withdrew a draft, and why, as the skip shows it on /admin/growth. */
 export const OUTREACH_WITHDRAWN_BY = "carnegie";
 export const OUTREACH_WITHDRAWN_REASON = "Withdrawn by CARNEGIE: the addressee is not a decision-maker (lender, branch, committee or shared mailbox).";
-export const OUTREACH_WRONG_FEE_REASON = "Withdrawn by CARNEGIE: the quoted schedule line is another charge (a returned item, a charge-off or a transfer), not the overdraft fee.";
+export const OUTREACH_STALE_QUOTE_REASON = "Withdrawn by CARNEGIE: drafted before the quoted line came from the fee's own catalog row; the institution is drafted again.";
+/** Drafts carry the rule they were quoted under; 2 = the catalog row's own excerpt, consumer tier first. */
+export const OUTREACH_QUOTE_RULE = 2;
 
 /**
  * Takes back first emails still waiting for review whose addressee no longer passes
- * `isDecisionMaker`, or whose quoted overdraft line prints another charge
- * (`isOverdraftChargeLine`): drafts made before either rule. Only unreviewed drafts: anything James
+ * `isDecisionMaker`, or that were quoted before `OUTREACH_QUOTE_RULE` (a neighbouring line with the
+ * same price could stand in for the fee's own): drafts made before either rule. Only unreviewed drafts: anything James
  * approved, marked sent or skipped himself stays as he left it. Returns how many.
  */
 export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
@@ -271,13 +273,14 @@ export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
   `;
   let withdrawn = 0;
   for (const row of rows) {
-    const facts = (typeof row.facts === "string" ? JSON.parse(row.facts) : row.facts) as { to?: { email?: string; name?: string | null; title?: string | null; role?: ContactRole }; overdraft_line?: string | null } | null;
+    const facts = (typeof row.facts === "string" ? JSON.parse(row.facts) : row.facts) as { to?: { email?: string; name?: string | null; title?: string | null; role?: ContactRole }; quote_rule?: number } | null;
     const to = facts?.to;
     if (!to?.email) continue;
     const contact = normalizeContact({ name: to.name ?? null, title: to.title ?? null, role: to.role ?? "other", kind: "person" as ContactKind });
-    const wrongFee = typeof facts?.overdraft_line === "string" && !isOverdraftChargeLine(facts.overdraft_line);
-    if (isDecisionMaker({ ...contact, email: to.email }) && !wrongFee) continue;
-    await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, wrongFee ? OUTREACH_WRONG_FEE_REASON : OUTREACH_WITHDRAWN_REASON);
+    const buyer = isDecisionMaker({ ...contact, email: to.email });
+    const staleQuote = Number(facts?.quote_rule ?? 1) < OUTREACH_QUOTE_RULE;
+    if (buyer && !staleQuote) continue;
+    await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, buyer ? OUTREACH_STALE_QUOTE_REASON : OUTREACH_WITHDRAWN_REASON);
     withdrawn++;
   }
   return withdrawn;
@@ -359,6 +362,8 @@ export async function runOutreachDrafts(input: {
           overdraft: draft.own.value,
           overdraft_source: draft.own.documentUrl,
           overdraft_line: draft.own.sourceLine,
+          overdraft_row: draft.own.feeName,
+          quote_rule: OUTREACH_QUOTE_RULE,
           comparison: draft.scope,
           local_median: draft.scope === "local" ? draft.median : null,
           state_median: draft.scope === "state" ? draft.median : null,
@@ -392,7 +397,7 @@ export function summarizeOutreach(result: OutreachRunResult): string {
     .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently"]}`)
     .join(", ");
   const head = `${result.dryRun ? "Would draft" : "Drafted"} ${result.drafted} first emails for James to audit and send himself (${result.considered} prospects read).`;
-  const withdrawn = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts addressed to someone who isn't a decision-maker or quoting a charge that isn't the overdraft fee.` : "";
+  const withdrawn = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts addressed to someone who isn't a decision-maker or quoted before the catalog-row rule (those are drafted again).` : "";
   return (skipped ? `${head} Passed over: ${skipped}.` : head) + withdrawn;
 }
 

@@ -3561,21 +3561,18 @@ and quarter were already stored, without looking at the periods of the data behi
   A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
   board and card-line mailboxes are shared. The next run withdraws both.
 
-## 2026-10-08: The overdraft category holds other charges, and the highest tier picks them
-- **Problem.** Outreach run 3148 quoted Tri City National Bank's overdraft fee as $50. The schedule
-  line was "Overdraft Charge-off negative balance account $50.00". A check of all 23 unreviewed
-  drafts found 5 more where the quoted line was another charge. Three were returned or NSF items
-  (First Federal KC, NIH FCU, Bluestone FCU), one an overdraft-protection transfer (BankGloucester),
-  and one a bare "Business account | $35.00" (Saco & Biddeford). Each passed `checkFeeAgainstSource`
-  because the amount is on the line. The catalog files these rows under overdraft, and the overdraft
-  rule (highest tier) chose the charge-off over the real fee.
-- **Fix.** The market snapshot leaves out an overdraft row whose verified line prints another
-  charge (`isOverdraftChargeLine`: no overdraft, courtesy pay or paid-item wording, or a returned
-  item, charge-off or transfer). The outreach run withdraws unreviewed drafts that quoted such a line,
-  and their institutions are read again. The catalog rows themselves are still wrong; they go to the
-  accuracy work as wrong-category fees.
-- **Watch.** Overdraft rows in `published_fee_catalog` whose source line says returned, unpaid,
-  charge-off or transfer.
+## 2026-10-08: Outreach quoted a neighbouring schedule line with the same price
+- **Problem.** Outreach run 3148's drafts quoted, as each bank's overdraft fee, the first schedule
+  line that carried the same amount (`checkFeeAgainstSource` returns the first match). Four drafts
+  showed the wrong line beside a correct fee: First Federal KC ("Insufficient Funds Fee $25" for its
+  $25 overdraft row), NIH FCU ("Returned Unpaid NSF Items" for its paid-NSF row), Bluestone FCU
+  ("Returned" for "Honored") and Saco & Biddeford ("Business account $35", the business tier). Two
+  rows were miscategorised in the catalog (Tri City's $50 charge-off, BankGloucester's $5 transfer)
+  and are taken down by PR 682.
+- **Fix.** The snapshot quotes the catalog row's own excerpt and name, compares the consumer tier when
+  a business tier is also printed, and drafts record `quote_rule`. The outreach run withdraws
+  unreviewed drafts quoted under the old rule, and their institutions are drafted again.
+- **Watch.** The audit block's "Fee:" and "Schedule line:" should name the same charge.
 
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so

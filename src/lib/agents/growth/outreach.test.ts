@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, isOverdraftChargeLine, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
+import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
 import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
@@ -69,18 +69,23 @@ describe("market snapshot", () => {
     expect(fee.peers.find((peer) => peer.institutionId === 99)).toMatchObject({ verified: false, sourceLine: null });
   });
 
-  it("never takes a returned item, a charge-off or a transfer as the overdraft fee", () => {
-    const chargeOff = { ...odRow(1, 50, "Overdraft Charge-off negative balance account $50.00 per charged off account"), fee_name: "Overdraft Charge-off" };
-    const fee = buildSnapshotFee("overdraft", 1, [chargeOff, odRow(1, 30), ...rows.slice(1)]);
-    expect(fee.subject).toMatchObject({ value: 30, verified: true });
-    const onlyReturned = buildSnapshotFee("overdraft", 1, [{ ...odRow(1, 30, "5 Returned Unpaid NSF Items (consumer) | $30 per item"), fee_name: "Returned Unpaid NSF Items" }]);
-    expect(onlyReturned.subject).toBeNull();
-    for (const line of ["Insufficient Funds Fee (item $10.01 or greater) $25", "Business account | $35.00", "NSF Share Draft (Returned) | $25.00 per item", "Overdraft Protection Fee (per pre-authorized automatic transfer) $5.00"]) {
-      expect(isOverdraftChargeLine(line)).toBe(false);
-    }
-    for (const line of ["Courtesy Pay | $30", "Paid Item | $29.00", "Overdraft Paid NSF item: Checking | $23.00 per item", "Overdraft (OD) or Non-sufficient Funds (NSF) item | $30.00 per item", "Debit Card Overdraft Protection (Opt-In)* | $10.00"]) {
-      expect(isOverdraftChargeLine(line)).toBe(true);
-    }
+  it("quotes the row's own line, not a neighbouring one with the same price", () => {
+    const text = "Insufficient Funds Fee (item $10.01 or greater) $25\nOverdraft Fee (item $10.01 or greater) $25";
+    const row = { ...odRow(1, 25, text), fee_name: "Overdraft Fee (item or greater)", conditions: `Knox deterministic extraction from Rosetta artifact #6107. canonical_hint=overdraft; excerpt="Overdraft Fee (item $10.01 or greater) $25"` };
+    const fee = buildSnapshotFee("overdraft", 1, [row]);
+    expect(fee.subject).toMatchObject({ value: 25, verified: true, feeName: "Overdraft Fee (item or greater)", sourceLine: "Overdraft Fee (item $10.01 or greater) $25" });
+    expect(fee.subject?.notes).toEqual([]);
+  });
+
+  it("compares the consumer tier when a business tier is also printed", () => {
+    const text = "Paid nonsufficient funds (NSF)*\nConsumer account | $25.00\nBusiness account | $35.00";
+    const consumer = { ...odRow(1, 25, text), fee_name: "Paid nonsufficient funds (NSF)*: Consumer account", conditions: `excerpt="Consumer account | $25.00"` };
+    const business = { ...odRow(1, 35, text), fee_name: "Paid nonsufficient funds (NSF)*: Business account", conditions: `excerpt="Business account | $35.00"` };
+    expect(buildSnapshotFee("overdraft", 1, [consumer, business]).subject).toMatchObject({ value: 25, sourceLine: "Consumer account | $25.00" });
+    expect(buildSnapshotFee("overdraft", 1, [business]).subject).toMatchObject({ value: 35 });
+    const perDay = { ...odRow(1, 30, "Overdraft Fee $30 per item, up to 4 per business day"), conditions: `excerpt="Overdraft Fee $30 per item, up to 4 per business day"` };
+    const extended = { ...odRow(1, 20, "Extended Overdraft Fee $20"), fee_name: "Extended Overdraft Fee", conditions: `excerpt="Extended Overdraft Fee $20"` };
+    expect(buildSnapshotFee("overdraft", 1, [perDay, extended]).subject).toMatchObject({ value: 30 });
   });
 
   it("gives no median below the site's minimum of verified institutions", () => {
@@ -211,10 +216,10 @@ describe("withdrawing drafts made before the decision-maker rule", () => {
       if (query.includes("SELECT id, facts")) {
         return Promise.resolve([
           { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" } } },
-          { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" } }) },
+          { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" }, quote_rule: 2 }) },
           { id: 13, facts: { to: { email: "supervisorycommittee@x.org", name: "Ivan Shefrin", title: null, role: "other" } } },
-          { id: 37, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, overdraft_line: "Overdraft Charge-off negative balance account $50.00 per charged off account" } },
-          { id: 23, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, overdraft_line: "Overdraft (each overdraft paid) $ 35.00" } },
+          { id: 37, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" } } },
+          { id: 23, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, quote_rule: 2 } },
         ]);
       }
       updates.push(values);
