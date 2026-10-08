@@ -3237,3 +3237,13 @@ schedule's price off the live catalog and logs the difference as a price change.
 pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
 alert has been raised from these records.
 **Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
+
+## 2026-10-08: Hamilton's studies kept old Census income after a new year landed
+**What happened:** Census ACS 2024 loaded on prod at 13:37 UTC on Oct 8. The current local income study
+(`hamilton_studies`, as of 2026-Q4) still named ACS 2022 as its income source, and the daily studies
+run would have reported it "already current" until the quarter changed.
+**Cause:** `store` in `src/lib/agents/hamilton/studies/index.ts` skipped any study whose key, method
+and quarter were already stored, without looking at the periods of the data behind it.
+**Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
+(`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
+**Lesson:** a study's identity is its period and its inputs' periods, not its period alone.

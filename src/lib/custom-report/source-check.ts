@@ -559,6 +559,23 @@ function columnLines(text: string): string[][] {
  * category (`canonicalFeeKey` in DAILY_CAP_CATEGORIES) that does not trace as a price is
  * read once more as a cap on its fee's row, so the cap can only gain a trace, never lose one.
  */
+/** Fees charged per item, never per day of a lasting overdraft. */
+const PER_ITEM_CATEGORIES: ReadonlySet<string> = new Set(["overdraft", "nsf"]);
+
+/** "$5.00 per day after 10 business days", "$5.00/day after 7th day": a sustained overdraft charge. */
+const SUSTAINED_AFTER =
+  /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b)/i;
+
+/**
+ * The fee's price on its own row is charged by the day once an account stays overdrawn
+ * ("Overdraft Fee .... $5.00 per day after 10 business day", Oct 8): a sustained overdraft
+ * charge, not the per-item overdraft or NSF fee. Every mention of the price on the row must say so.
+ */
+function chargedOnceOverdrawnDays(row: string, amount: number): boolean {
+  const prices = moneyTokens(row).filter((token) => Math.abs(token.value - amount) < 0.005);
+  return prices.length > 0 && prices.every((token) => SUSTAINED_AFTER.test(row.slice(token.end, token.end + 60)));
+}
+
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
@@ -569,9 +586,10 @@ export function checkFeeAgainstSource(
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
   const pages = [cachedSourceLines(text), ...lastColumns];
   const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
+  const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);
   let first: SourceCheckResult | null = null;
   for (const lines of pages) {
-    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false);
+    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
     if (asPrice.ok) return asPrice;
     first ??= asPrice;
     if (!asCap) continue;
@@ -587,6 +605,7 @@ function checkAgainstLines(
   amount: number,
   categoryPattern: string,
   dailyCap: boolean,
+  perItem = false,
 ): SourceCheckResult {
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
   const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
@@ -657,6 +676,7 @@ function checkAgainstLines(
       amountProblem = null;
     }
     if (!amountProblem && !dailyCap && pricedPerAmount(row, rounded)) amountProblem = "priced_per_amount";
+    if (!amountProblem && perItem && chargedOnceOverdrawnDays(row, rounded)) amountProblem = "amount_not_the_fee";
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
