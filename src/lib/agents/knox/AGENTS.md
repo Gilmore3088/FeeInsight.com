@@ -482,6 +482,13 @@ v40 (rules 40, from the state top-10 banks with no live overdraft fee, Oct 8):
 - "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
 - A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
 
+v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 50 branch):
+- A paid NSF item is the overdraft fee: "Paid nonsufficient funds (NSF)" (Saco & Biddeford), "NSF Share Draft (Honored)" (Bluestone FCU), "Paid Consumer & Business NSF Items" (NIH FCU). A returned or unpaid one stays NSF.
+- A long name that ends in a note keeps its title: "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)" was named "5 max total OD or Returned Item fees daily" and filed as NSF (BankIowa).
+- In a table row, a last text cell that only lists what an overdraft covers ("Checks (Share Drafts), Online Payments, & ACH", "For Debit Card Transactions including ATM, POS") does not name the price; the overdraft cell before it does (Los Angeles FCU).
+- A price row named only by its threshold ("Per Item greater than $10.01 | $30 per item") belongs to the priceless fee line just above it (NIH FCU).
+- A run for one institution (Atlas's read-now runs) reads its current page again once per rules version while it has no live overdraft fee, as state leaders' runs do since v40.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own

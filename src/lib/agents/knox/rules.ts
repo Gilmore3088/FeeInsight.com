@@ -476,7 +476,13 @@ export function classifyPatternKey(value: string): string | null {
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
   // v34: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd).
-  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b|\(\s*paid\s*\)/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
+  // v42: "Paid nonsufficient funds (NSF)" (Saco & Biddeford) and "NSF Share Draft (Honored)"
+  // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
+  if (
+    key === "nsf" &&
+    /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i.test(text) &&
+    !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)
+  ) {
     return "overdraft";
   }
   // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
@@ -502,6 +508,10 @@ export function nearestFeeText(prefix: string): string {
   // v38: a cell holding only a threshold's comparison word, cut off from its figure
   // ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse), names no fee.
   while (cells.length > 1 && THRESHOLD_WORD_CELL.test(cells.at(-1) ?? "")) cells.pop();
+  // v42: an overdraft row's last text cell that only lists the items it covers ("Courtesy Pay
+  // for paid items | Checks (Share Drafts), Online Payments, & ACH", "Overdrawn/Courtesy Pay |
+  // For Debit Card Transactions including ATM, POS", Los Angeles FCU) does not name the fee.
+  while (cells.length > 1 && COVERAGE_CELL.test(cells.at(-1) ?? "") && classifyFeeText(cells.at(-2) ?? "") === "overdraft") cells.pop();
   for (let start = cells.length - 1; start >= 0; start -= 1) {
     const text = cells.slice(start).join(CELL_SEPARATOR);
     // A cell that names a fee of its own owns the price, even when no rule knows it.
@@ -510,6 +520,7 @@ export function nearestFeeText(prefix: string): string {
   return cells.join(CELL_SEPARATOR);
 }
 
+const COVERAGE_CELL = /^\s*(?:for|includes?|including)\b|,[^,]*,/i;
 const THRESHOLD_WORD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than|up\s+to)\s*$/i;
 const THRESHOLD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/i;
 

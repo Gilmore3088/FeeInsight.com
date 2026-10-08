@@ -39,6 +39,21 @@ const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread 
  * is what counts. An institution leaves the direct path on its own once it has run.
  */
 export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[] = [
+  // Marketing's outreach batch (2026-10-08 18:20), first: each has 5+ local competitors with a
+  // sourced overdraft fee, and its own current page prints an overdraft line Knox v42 reads.
+  ...([
+    [1223, "BankIowa"],
+    [767, "Saco & Biddeford Savings Institution"],
+    [4715, "Bluestone Federal Credit Union"],
+    [8085, "Quantum Federal Credit Union"],
+    [4522, "Los Angeles Federal Credit Union"],
+    [3331, "The First State Bank of Rosemount"],
+    [4779, "National Institutes Of Health Federal Credit Union"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Marketing outreach: market report needs this institution's overdraft fee",
+  })),
   // Tennessee report (2026-10-07 06:50): 6 of the 7 largest TN deposit holders had no live
   // overdraft fee, so only 26% of TN branch deposits had one.
   ...([

@@ -360,6 +360,24 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("live_overdraft.rolled_back_at IS NULL");
     });
 
+    it("reads a requested institution's current page again in its own run while it has no live overdraft fee", async () => {
+      const db = createDbMock([]);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        return Promise.resolve([]);
+      });
+
+      await runKnoxExtract({ runId: 112, institutionId: 1223, db: asExtractDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const leaderParam = query.match(/adt\.institution_id = ANY\(\$(\d+)::bigint\[\]\)/);
+      expect(leaderParam).not.toBeNull();
+      expect(params[Number(leaderParam?.[1]) - 1]).toBe("{1223}");
+      expect(query).toContain("live_overdraft.canonical_fee_key = 'overdraft'");
+    });
+
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {
       const db = learningDb([
         {
