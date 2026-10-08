@@ -253,6 +253,9 @@ export async function selectPriorityInstitutions(
                 -- work, not a retry.
                 AND (c.tier <> 1 OR c.hand_found_at IS NULL OR r.started_at >= c.hand_found_at)
                 AND (c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at)
+                -- A request by name is new work after an overdraft-gap run of the same bank
+                -- (Bluestone FCU's 06:45 gap run held Marketing's 18:44 request for a day).
+                AND (c.tier <> 2 OR r.params_json->>'tier' = 'requested')
               )
             )
        )
