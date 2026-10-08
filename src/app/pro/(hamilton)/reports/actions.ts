@@ -19,6 +19,7 @@ import {
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
+import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/report-cap";
 import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
@@ -675,6 +676,8 @@ export async function generateReport(
     // (one usage row per report, one pro_request run in the ledger) however it ends.
     const quota = await checkProAiQuota(user);
     if (!quota.allowed) return { success: false, error: quotaExceededMessage(quota) };
+    const reportCap = await checkConsultantReportCap(user);
+    if (!reportCap.allowed) return { success: false, error: reportCapMessage(reportCap) };
     const ledgerBase = {
       userId: user.id,
       institutionId: selectedInstitution?.id ?? null,
