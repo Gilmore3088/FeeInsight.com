@@ -54,9 +54,21 @@ describe("storyline memo", () => {
     const invented = good.replace("$209 thousand", "$412 thousand");
     const c = client(invented, invented);
     const result = await writeStorylineMemo(storyline, "q", { client: c });
-    expect(result).toEqual({ status: "withheld", reason: expect.stringContaining("figure and advice checks") });
+    expect(result).toEqual({
+      status: "withheld",
+      reason: expect.stringContaining("figure and advice checks"),
+      problems: ["These figures are not in DATA: $412 thousand."],
+    });
     expect(c.calls).toHaveLength(2);
     expect(c.calls[1]).toContain("$412 thousand");
+  });
+
+  it("names a reply cut off mid-JSON when it withholds", async () => {
+    const cut = good.slice(0, Math.floor(good.length / 2));
+    const c = client(cut, cut);
+    const result = await writeStorylineMemo(storyline, "q", { client: c });
+    expect(result).toMatchObject({ status: "withheld", problems: ["The reply was not a complete JSON object."] });
+    expect(c.calls[1]).toMatch(/not the complete JSON object/);
   });
 
   it("refuses advice and accepts the corrected draft", async () => {
