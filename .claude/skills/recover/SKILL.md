@@ -38,7 +38,21 @@ runs in 24 hours, and the latest of those failures is less than 2 hours old.
 **c. Stalled tick.** No `agent_run_steps` row has been updated for 30 minutes while
 `agent_runs` has queued runs.
 
-**d. Starved lane.** `agent_state_lanes.next_run_after` is more than 6 hours in the past.
+**d. Starved lane.** A lane that is due (`next_run_after` in the past) has not run within its
+`freshness_target_hours`:
+
+```sql
+SELECT state_code, freshness_target_hours, last_run_at, next_run_after
+  FROM agent_state_lanes
+ WHERE next_run_after <= NOW()
+   AND (last_run_at IS NULL OR last_run_at < NOW() - freshness_target_hours * INTERVAL '1 hour');
+```
+
+Lanes come due about an hour after each run, but the queue only gets through about five an
+hour, so with 55 lanes most are due and many are 6+ hours overdue while each still runs
+every 12 hours or so. That is the queue's normal pace, not a break (2026-10-08: 29 lanes
+3+ hours overdue, every one inside its 24-hour target). A lane parked with a future
+`next_run_after` (FM until November) is not starved.
 
 If none of these holds, stop. Reply nothing.
 

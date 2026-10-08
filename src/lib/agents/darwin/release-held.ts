@@ -45,7 +45,9 @@ type SqlTag = typeof sql;
  * `darwin.release` and can be removed, and a version bump judges every held fee again.
  * Releases stay a dry run (DARWIN_RELEASE_ACTS) until the review's own spot check passes.
  * James turned them on 2026-10-08 02:16 UTC ("Turn on" on the held-fees card) after the
- * review's v10 hand check found 19 of 20 passes right.
+ * review's v10 hand check found 19 of 20 passes right. James paused them again 2026-10-08
+ * 21:30 UTC ("Pause" on the release card) after the v13 hand check scored 17 of 20; they
+ * stay verdicts-only until a fixed review's 20-fee check scores 19 or better.
  *
  * Version 4 (James, 2026-10-07 01:20 UTC: scrapping is a last resort, "picked over
  * multiple times", logged, never deleted, always revisitable) makes a reject take two
@@ -60,7 +62,7 @@ export const DARWIN_RELEASE_STRATEGY = { strategy: "verify.release", version: 4 
 /** Hours between a fee's first and second "not stated" look. */
 export const DARWIN_REJECT_SECOND_LOOK_HOURS = 20;
 /** Publish fees the release review confirms. Off: verdicts only. */
-export const DARWIN_RELEASE_ACTS = true;
+export const DARWIN_RELEASE_ACTS = false;
 /** Record rejects in the learning store. */
 export const DARWIN_RELEASE_REJECTS_ACT = true;
 /**

@@ -33,9 +33,9 @@ export function ArticlesTable({
       sortable: true,
       format: (_, row) => (
         <div>
-          <span className="font-medium text-gray-900 dark:text-gray-100 text-xs">
+          <a href={`/admin/hamilton/research/articles/${row.id as number}`} className="font-medium text-gray-900 dark:text-gray-100 text-xs hover:underline">
             {row.title as string}
-          </span>
+          </a>
           {row.subtitle && (
             <p className="text-[11px] text-gray-400 mt-0.5 truncate max-w-xs">{row.subtitle as string}</p>
           )}

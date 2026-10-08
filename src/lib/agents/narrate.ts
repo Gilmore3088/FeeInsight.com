@@ -205,6 +205,8 @@ export function narrateStepFinished(
       const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
       return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
     }
+    case "hamilton-answer-eval":
+      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
@@ -221,8 +223,25 @@ export function narrateStepFinished(
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
     case "content-od-by-state": {
-      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted the overdraft-fees-by-state article for James to publish.`;
-      return `Drafted no overdraft-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
+      return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+    }
+    case "growth-contacts": {
+      if (detail.schemaReady === false) return "Read no websites; the contacts tables are not there yet.";
+      const checked = n(detail, "checked");
+      if (!checked) return "No prospect was due a contact check.";
+      return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
+    }
+    case "growth-outreach": {
+      if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
+      const drafted = n(detail, "drafted");
+      if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
+      return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
+    }
+    case "growth-learning": {
+      if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
+      return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
@@ -259,6 +278,13 @@ export function narrateStepFinished(
       return detail.alert === "sent"
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
+    }
+    case "indexnow-ping": {
+      const submitted = n(detail, "submitted");
+      if (submitted > 0) return `Told Bing about ${count(submitted, "changed page")}.`;
+      return detail.skipped === "no pages changed"
+        ? "No institution pages changed in the last day."
+        : `Did not notify Bing (${String(detail.skipped ?? "unknown")}).`;
     }
     case "briefing-refresh": {
       const stored = n(detail, "stored");
@@ -419,12 +445,16 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "indexnow-ping": "atlas",
   "pro-digest": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
   "content-fee-depth": "growth",
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
+  "growth-contacts": "growth",
+  "growth-outreach": "growth",
+  "growth-learning": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",
@@ -433,6 +463,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-states": "growth",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
+  "hamilton-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

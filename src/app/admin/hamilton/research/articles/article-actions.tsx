@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { updateArticleAction, deleteArticleAction } from "./actions";
 import type { Article } from "@/lib/data-store/articles";
 
-export function ArticleActions({ article }: { article: Article }) {
+export function ArticleActions({ article, showPreview = true }: { article: Article; showPreview?: boolean }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -40,6 +40,14 @@ export function ArticleActions({ article }: { article: Article }) {
 
   return (
     <div className={`flex gap-1 justify-end ${pending ? "opacity-50" : ""}`}>
+      {showPreview && article.status !== "published" && (
+        <a
+          href={`/admin/hamilton/research/articles/${article.id}`}
+          className="rounded px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 transition-colors"
+        >
+          Preview
+        </a>
+      )}
       {article.status === "draft" && (
         <button
           onClick={handlePublish}
