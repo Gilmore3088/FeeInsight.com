@@ -5,6 +5,11 @@ const mocks = vi.hoisted(() => ({
   stripeCheckoutCreateMock: vi.fn(),
   headersMock: vi.fn(),
   institutionMock: vi.fn(),
+  resolveProPriceIdMock: vi.fn(),
+}));
+
+vi.mock("@/lib/stripe-prices", () => ({
+  resolveProPriceId: mocks.resolveProPriceIdMock,
 }));
 
 vi.mock("@/lib/data-store/pro-accounts", () => ({
@@ -56,6 +61,10 @@ function user(overrides: Record<string, unknown> = {}) {
 
 describe("createCheckoutSession", () => {
   beforeEach(() => {
+    mocks.resolveProPriceIdMock.mockReset();
+    mocks.resolveProPriceIdMock.mockImplementation(
+      async (tier: string, plan: string) => process.env[`STRIPE_PRO_${tier.toUpperCase()}_${plan.toUpperCase()}_PRICE_ID`],
+    );
     for (const tier of ["SMALL", "MID", "LARGE"]) {
       for (const plan of ["MONTHLY", "ANNUAL"]) {
         process.env[`STRIPE_PRO_${tier}_${plan}_PRICE_ID`] = `price_${tier.toLowerCase()}_${plan.toLowerCase()}`;
@@ -119,11 +128,15 @@ describe("createCheckoutSession", () => {
     expect(mocks.stripeCheckoutCreateMock).not.toHaveBeenCalled();
   });
 
-  it("keeps a tier closed until its Stripe price is set", async () => {
+  it("sets up a missing tier price in Stripe instead of closing checkout", async () => {
     delete process.env.STRIPE_PRO_SMALL_ANNUAL_PRICE_ID;
+    mocks.resolveProPriceIdMock.mockResolvedValueOnce("price_from_lookup");
     const { createCheckoutSession } = await import("./stripe-actions");
-    await expect(createCheckoutSession({ plan: "annual", institutionId: 2945 })).rejects.toThrow("isn't open yet");
-    expect(mocks.stripeCheckoutCreateMock).not.toHaveBeenCalled();
+    await createCheckoutSession({ plan: "annual", institutionId: 2945 });
+    expect(mocks.resolveProPriceIdMock).toHaveBeenCalledWith("small", "annual", expect.anything());
+    expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ line_items: [{ price: "price_from_lookup", quantity: 1 }] }),
+    );
   });
 
   it("rejects an unknown plan", async () => {

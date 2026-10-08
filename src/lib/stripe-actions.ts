@@ -8,10 +8,10 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
+import { resolveProPriceId } from "@/lib/stripe-prices";
 import {
   NON_INSTITUTION_TIER,
   isProPlan,
-  proPriceId,
   tierForAssets,
   type ProPlan,
   type ProTier,
@@ -53,10 +53,9 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
     throw new Error("Pick your bank or credit union first");
   }
 
-  const priceId = proPriceId(tier, plan);
-  if (!priceId) throw new Error(`Checkout for this plan isn't open yet. Email ${CONTACT_EMAIL} to sign up.`);
-
   const stripe = getStripe();
+  const priceId = await resolveProPriceId(tier, plan, stripe);
+
   const origin = (await headers()).get("origin") || process.env.NEXT_PUBLIC_SITE_URL;
   const sanitizedReturnTo = input.returnTo
     ? sanitizeInternalRedirect(input.returnTo, "/account/welcome")

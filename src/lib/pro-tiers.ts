@@ -98,7 +98,15 @@ export function proPriceEnvVar(tier: ProTier, plan: ProPlan): string {
   return `STRIPE_PRO_${tier.toUpperCase()}_${plan.toUpperCase()}_PRICE_ID`;
 }
 
-/** The configured Stripe price id, or null until James creates it and sets the variable. */
+/** Stripe lookup key for a tier and plan, e.g. pro_small_annual (src/lib/stripe-prices.ts). */
+export function proLookupKey(tier: ProTier, plan: ProPlan): string {
+  return `pro_${tier}_${plan}`;
+}
+
+/** The Stripe product the tier prices live on. */
+export const PRO_PRODUCT_NAME = "Fee Insight Pro";
+
+/** A price id set by Vercel variable, or null; when null, src/lib/stripe-prices.ts sets one up. */
 export function proPriceId(tier: ProTier, plan: ProPlan): string | null {
   return process.env[proPriceEnvVar(tier, plan)]?.trim() || null;
 }

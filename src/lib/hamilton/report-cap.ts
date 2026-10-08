@@ -2,10 +2,10 @@ import { sql } from "@/lib/data-store/connection";
 import { getStripe } from "@/lib/stripe";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import type { User } from "@/lib/auth";
+import { isProTierPrice } from "@/lib/stripe-prices";
 import {
   CONSULTANT_MONTHLY_REPORTS,
   CONSULTANT_UPGRADE_TIER,
-  proPriceId,
   tierAmountLabel,
 } from "@/lib/pro-tiers";
 
@@ -37,10 +37,7 @@ export async function isCappedConsultant(user: Pick<User, "stripe_customer_id">)
   });
   const subscription = subscriptions.data[0];
   if (!subscription || subscription.metadata?.organization !== "other") return false;
-  const upgradePrices = new Set(
-    [proPriceId(CONSULTANT_UPGRADE_TIER, "monthly"), proPriceId(CONSULTANT_UPGRADE_TIER, "annual")].filter(Boolean),
-  );
-  return !subscription.items.data.some((item) => upgradePrices.has(item.price.id));
+  return !subscription.items.data.some((item) => isProTierPrice(item.price, CONSULTANT_UPGRADE_TIER));
 }
 
 export async function checkConsultantReportCap(

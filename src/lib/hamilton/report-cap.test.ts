@@ -9,8 +9,8 @@ import { checkConsultantReportCap, isCappedConsultant, reportCapMessage } from "
 
 const user = { id: 7, stripe_customer_id: "cus_1" };
 
-function subscription(metadata: Record<string, string>, priceId: string) {
-  return { data: [{ metadata, items: { data: [{ price: { id: priceId } }] } }] };
+function subscription(metadata: Record<string, string>, priceId: string, unitAmount = 1) {
+  return { data: [{ metadata, items: { data: [{ price: { id: priceId, lookup_key: null, unit_amount: unitAmount, currency: "usd", recurring: { interval: "year", interval_count: 1 } } }] } }] };
 }
 
 describe("consultant report cap", () => {

@@ -421,5 +421,6 @@ from its own assets (`institution_sources.asset_size`), worked out again at chec
 asset size on file, the buyer is asked to email. Consultants and other non-banks pay the middle
 tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton reports
 (James chose a report cap 12:04; `CONSULTANT_MONTHLY_REPORTS`, 10 a month, James 12:10); past it they move
-to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). Each tier's Stripe price is its own Vercel variable
-(`src/lib/pro-tiers.ts`); a tier stays closed until its variable is set.
+to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The site sets up its own Stripe prices by lookup key (James 12:53: "you can do
+everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
+(`src/lib/pro-tiers.ts`).
