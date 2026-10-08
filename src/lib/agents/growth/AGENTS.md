@@ -128,5 +128,5 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `pr_url` and `score` / `scored_at` (migration `20270110000025`). Scheduled sessions file into
   it through the intake route above.
 - Prospect contacts go to `prospect_contacts` and `prospect_contact_checks` (migration
-  `20270110000027`).
+  `20270110000028`).
 - No other tables for marketing results.
