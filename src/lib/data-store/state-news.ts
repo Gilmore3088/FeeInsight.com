@@ -1,4 +1,5 @@
 import { isFeeHeadline, splitPublisher } from "@/lib/regulatory/state-news";
+import { likePattern, type WireKind } from "@/lib/regulatory/wire";
 import { sql } from "./connection";
 
 /**
@@ -69,7 +70,7 @@ interface ArticleRow {
   published_at: string | null;
 }
 
-interface BillRow {
+export interface BillRow {
   jurisdiction: string;
   identifier: string | null;
   title: string;
@@ -196,4 +197,181 @@ export async function getStatesWithNews(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// The Regulatory Wire's States view: one chronological, paged, searchable feed
+// ---------------------------------------------------------------------------
+
+/**
+ * Most candidate rows a part reads for one window. The state parts hold hundreds of rows, so
+ * a part normally reads all of its window; when one reaches this cap its count is a floor
+ * and the page says so (`capped`).
+ */
+export const STATE_WIRE_READ_CAP = 5000;
+
+export interface StateWireBill extends StateFeeBill {
+  /** When the bill was introduced (reg_tracker_items.published_on). */
+  introduced_on: string | null;
+}
+
+export type StateWireItem =
+  | ({ kind: "regulator"; date: string | null } & StateRegulatorPost)
+  | ({ kind: "press"; date: string | null } & StatePressStory)
+  | ({ kind: "bill"; date: string | null } & StateWireBill);
+
+export interface StateWireCounts {
+  bills: number;
+  regulators: number;
+  press: number;
+}
+
+export interface StateWirePage {
+  items: StateWireItem[];
+  /** Items of the chosen kind(s) in the window, after the banking filter. */
+  total: number;
+  /** The offset actually used: a page past the end shows the last page. */
+  offset: number;
+  /** Each kind's count in the window, whatever the kind filter. */
+  counts: StateWireCounts;
+  /** Parts whose read failed: their counts are 0 because nothing could be read, not because nothing is stored. */
+  failed: WireKind[];
+  /** Parts that reached STATE_WIRE_READ_CAP: their counts are at least the number shown. */
+  capped: WireKind[];
+}
+
+export interface StateWireOptions {
+  stateCode?: string | null;
+  kind?: WireKind | null;
+  /** ISO timestamp or day; bills use their latest action date (or introduction date). */
+  since?: string | null;
+  /** Case-insensitive title search; a bill's number matches too. */
+  q?: string | null;
+  limit?: number;
+  offset?: number;
+}
+
+export interface StateWireParts {
+  regulators: StateRegulatorPost[];
+  press: StatePressStory[];
+  bills: StateWireBill[];
+}
+
+const KIND_ORDER: Record<StateWireItem["kind"], number> = { bill: 0, regulator: 1, press: 2 };
+
+/**
+ * Merges the three parts newest first and cuts one page. The parts arrive already filtered
+ * (regulator posts through isBankingPost), so `total` and `counts` are what the reader can
+ * actually page through. Undated items go last. Ties keep official items ahead of press.
+ */
+export function mergeStateWire(
+  parts: StateWireParts,
+  options: { kind?: WireKind | null; limit?: number; offset?: number } = {},
+): Pick<StateWirePage, "items" | "total" | "offset" | "counts"> {
+  const limit = Math.max(1, options.limit ?? 25);
+  const counts: StateWireCounts = {
+    bills: parts.bills.length,
+    regulators: parts.regulators.length,
+    press: parts.press.length,
+  };
+  const all: StateWireItem[] = [];
+  if (!options.kind || options.kind === "bills") {
+    for (const b of parts.bills) all.push({ kind: "bill", date: b.stage_on ?? b.introduced_on, ...b });
+  }
+  if (!options.kind || options.kind === "regulators") {
+    for (const p of parts.regulators) all.push({ kind: "regulator", date: p.published_at, ...p });
+  }
+  if (!options.kind || options.kind === "press") {
+    for (const s of parts.press) all.push({ kind: "press", date: s.published_at, ...s });
+  }
+  all.sort((a, b) => {
+    if (a.date !== b.date) {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return b.date.localeCompare(a.date);
+    }
+    return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
+  });
+  const total = all.length;
+  const lastPageOffset = total === 0 ? 0 : Math.floor((total - 1) / limit) * limit;
+  const offset = Math.min(Math.max(0, options.offset ?? 0), lastPageOffset);
+  return { items: all.slice(offset, offset + limit), total, offset, counts };
+}
+
+export interface WireBillRow extends BillRow {
+  published_on: string | Date | null;
+}
+
+async function readWireArticles(prefix: "state" | "news", options: StateWireOptions, cap: number): Promise<ArticleRow[]> {
+  const pattern = options.stateCode ? `${prefix}:${options.stateCode.toUpperCase()}` : `${prefix}:%`;
+  const since = options.since ?? null;
+  const q = likePattern(options.q);
+  return (await sql`
+    SELECT source, title, link, published_at
+      FROM reg_articles
+     WHERE source LIKE ${pattern}
+       AND (${since}::text IS NULL OR published_at >= ${since})
+       AND (${q}::text IS NULL OR title ILIKE ${q})
+     ORDER BY published_at DESC NULLS LAST, created_at DESC
+     LIMIT ${cap}
+  `) as unknown as ArticleRow[];
+}
+
+async function readWireBills(options: StateWireOptions, cap: number): Promise<WireBillRow[]> {
+  const state = options.stateCode ? options.stateCode.toUpperCase() : null;
+  const since = options.since ?? null;
+  const q = likePattern(options.q);
+  return (await sql`
+    SELECT jurisdiction, identifier, title, stage, stage_on, url, published_on
+      FROM reg_tracker_items
+     WHERE source = 'open_states'
+       AND cardinality(topics) > 0
+       AND (${state}::text IS NULL OR jurisdiction = ${state})
+       AND (${since}::date IS NULL OR COALESCE(stage_on, published_on) >= ${since}::date)
+       AND (${q}::text IS NULL OR title ILIKE ${q} OR identifier ILIKE ${q})
+     ORDER BY COALESCE(stage_on, published_on) DESC NULLS LAST
+     LIMIT ${cap}
+  `) as unknown as WireBillRow[];
+}
+
+/** Bill rows with their introduction date kept for the feed's ordering. */
+export function toWireBills(rows: WireBillRow[]): StateWireBill[] {
+  return toFeeBills(rows).map((bill, i) => ({ ...bill, introduced_on: isoDay(rows[i].published_on) }));
+}
+
+/**
+ * One page of the States view. Each part reads every candidate row in the window (state,
+ * since and search applied in SQL), the banking filter runs on the regulator posts, and the
+ * merged list is paged in memory, so the total, the per-kind counts and the page numbers all
+ * count the same filtered rows. A part that fails is reported in `failed` and the others
+ * still show. Unlike getStateNews (the State report's reader), fee posts are not put first.
+ */
+export async function getStateWire(options: StateWireOptions = {}): Promise<StateWirePage> {
+  const cap = STATE_WIRE_READ_CAP;
+  const failed: WireKind[] = [];
+  const capped: WireKind[] = [];
+  const part = <T,>(kind: WireKind, read: () => Promise<T[]>): Promise<T[]> =>
+    read().then(
+      (rows) => {
+        if (rows.length >= cap) capped.push(kind);
+        return rows;
+      },
+      (error: unknown) => {
+        console.error(`[state-news] wire ${kind} read failed`, error);
+        failed.push(kind);
+        return [] as T[];
+      },
+    );
+  const [posts, press, bills] = await Promise.all([
+    part("regulators", () => readWireArticles("state", options, cap)),
+    part("press", () => readWireArticles("news", options, cap)),
+    part("bills", () => readWireBills(options, cap)),
+  ]);
+  const page = mergeStateWire(
+    { regulators: toRegulatorPosts(posts), press: toPressStories(press), bills: toWireBills(bills) },
+    { kind: options.kind, limit: options.limit, offset: options.offset },
+  );
+  const order: WireKind[] = ["bills", "regulators", "press"];
+  const inOrder = (list: WireKind[]) => order.filter((k) => list.includes(k));
+  return { ...page, failed: inOrder(failed), capped: inOrder(capped) };
 }
