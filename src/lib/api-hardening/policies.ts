@@ -118,6 +118,21 @@ export const API_ROUTE_POLICIES = [
       "Reads the default Stripe customer portal configuration and opens one portal session for an existing customer to prove Manage billing works; no charge, nothing changed.",
   },
   {
+    routeId: "api.admin.email_check",
+    routeTemplate: "/api/admin/email-check",
+    file: "src/app/api/admin/email-check/route.ts",
+    surface: "admin",
+    allowedMethods: ["GET"],
+    authRequirement: "admin",
+    rateLimitBucket: "admin-read",
+    costPolicy: "none",
+    telemetryEvent: "api.admin.email_check",
+    failBehavior: "fail_closed",
+    auditPriority: "high",
+    notes:
+      "Shows the outgoing email setup (From address, key last 4, Resend domain verification); with ?send=1 emails the admin their own confirmation link and returns Resend's answer.",
+  },
+  {
     routeId: "api.admin.flow",
     routeTemplate: "/api/admin/flow",
     file: "src/app/api/admin/flow/route.ts",
