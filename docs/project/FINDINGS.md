@@ -13,6 +13,36 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
+**What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
+"Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
+"Early Account Closure" rows. Read-only counts at 13:50 UTC, out of 63,620 live fees:
+- 417 names (329 institutions) have more "(" than ")";
+- 32 (27 institutions) repeat a word;
+- 2 have untrimmed space;
+- 912 live rows at 443 institutions repeat another live row except for frequency, for
+  example one row per_occurrence and the other unstated.
+
+Extraco has no exact twin: its second row is "Early Account Closure (by Extraco – no", which
+is a $35 fee next to the $50 one.
+**Cause:** the PDF's columns. A row label wraps onto the next line, so the parenthesis is
+never closed in the text Knox reads. A row label printed next to its own cell heading doubles
+the word ("Account Research | Research: $25.00 per hour"). The duplicate collapse partitioned
+by frequency, so "per item", "per occurrence" and an unstated frequency kept separate copies of
+one fee read from two documents.
+**Fix:** `repairNameShape` in `knox/layout.ts` ends a name before an unclosed "(" and reads a
+doubled word once (an ALL-CAPS heading word or a trailing description is dropped). It applies to
+the published name only (`publishedFeeName` in `hamilton/publish.ts`), under the category guard.
+Knox and Darwin keep the name as read, because its words are the category evidence; cutting
+"(Savings Overdraft" from a read changed the category in the re-check. Name retidy v4 renames
+the live names through the same guarded, logged path. The duplicate collapse now treats per
+item, per occurrence, per transaction and one-time as one frequency, and an unstated or "other"
+frequency as matching any; rows with two different stated frequencies stay. Closed copies get
+`rolled_back_at` with "duplicate of #id", so nothing is deleted.
+**Lesson:** fix a display problem in the name a reader sees, not in the read the category rests
+on. When a dedupe key includes a field that is often unstated, check how many twins differ only
+in that field.
+
 ## 2026-10-08: Pro checkout dropped the buyer's institution
 **What happened:** the six live Pro tiers (PR 566) price checkout from the buyer's institution and send
 it to Stripe as `metadata.institution_id`, but the webhook only set `users.subscription_status`. A new
@@ -3326,3 +3356,42 @@ and quarter were already stored, without looking at the periods of the data behi
 **Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
 (`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
 **Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
+
+## 2026-10-08: Bot walls keep big banks' overdraft fees off the board
+
+- **Problem.** At 13:20 UTC Oct 8, 90 active $10B+ banks had no live overdraft fee. About 30 of them
+  are trust, card or wholesale banks that publish no consumer overdraft fee. Of the retail rest, many
+  have no readable page on file because the site refuses the server:
+  - Zions answers 403.
+  - Mountain America serves an Incapsula block page.
+  - VyStar redirects to a ShieldSquare check.
+  - Arvest's and Mountain America's pages are built by JavaScript and wait for the paid finder.
+  - Golden 1, PenFed and Morgan Stanley time out.
+  - Sunflower's and BancFirst's PDFs answer 404.
+
+  In the schedules that were read, Knox missed four overdraft lines:
+  - Banc of California's "Per transaction" cell.
+  - Pinnacle's "lowered ... from $38 to $30".
+  - Park National's "You still pay a fee of $35 per item for overdrawing your account".
+  - WaFd's "Insufficient Funds Charge (Paid)".
+
+  Darwin rejected First Financial's per-item fees, which note a daily count ("Maximum of 2 Items/Day").
+- **Fix.** Guard v29 and Knox v34 (PR 580) read and accept those lines. The held re-check also
+  re-reads changed-price ranges, and renames a promoted line whose held name says nothing. New
+  operator links on other hosts or pages go to Zions, Sunflower, Golden 1, DCU, Mountain America,
+  VyStar, Popular and TowneBank.
+- **Watch.** Most of the remaining retail gap is fetch-blocked, not misread. Each new link either reads
+  or fails the same way. A bank behind a bot wall needs the paid finder or a copy fetched from
+  James's computer.
+
+## 2026-10-08: Top-10 banks without an overdraft fee waited for their state's lane
+
+- **Problem.** 349 of 510 top-10-by-deposits slots had a live overdraft fee. Of the 80 banks
+  under $10B without one, 40 had no stored document that priced an overdraft, and 20 of those
+  had never had a second-document search. The companion finder takes six banks per step from
+  the discover step's own state, and tops up only banks the catalog hides, so a live leader in a
+  state the lane had not reached waited.
+- **Fix.** Each step's companion finder gives two slots to state top-10 banks from any state
+  with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
+- **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
+  count of top-10 slots with a live overdraft fee.

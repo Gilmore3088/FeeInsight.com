@@ -3,7 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
@@ -37,13 +37,15 @@ const SENTENCE_BREAK = /[a-z]\.\s+[A-Z]/;
 export function retidiedFeeName(name: string, canonicalKey: string): string | null {
   const tidy = fullyTidiedName(name, canonicalKey);
   if (tidy) return tidy;
-  // v3: only a footnote number to drop. The words stay as they were read, so the run-on
-  // limits don't apply ("Overdraft Protection Transfer Fee4 (from Line of Credit ...)").
+  // v3: only a footnote number to drop; v4: or a cut-off parenthesis or a doubled word. The
+  // other words stay as they were read, so the run-on limits don't apply ("Overdraft
+  // Protection Transfer Fee4 (from Line of Credit ...)").
   const current = name.trim();
-  const unfooted = stripFootnoteMarks(current);
-  if (!unfooted || unfooted === current) return null;
-  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, unfooted).ok) return null;
-  return unfooted;
+  const repaired = repairNameShape(stripFootnoteMarks(current));
+  // Compared with the stored name, so untrimmed space alone is worth a rename.
+  if (!repaired || repaired === name) return null;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return null;
+  return repaired;
 }
 
 function fullyTidiedName(name: string, canonicalKey: string): string | null {
@@ -85,8 +87,10 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
 /**
  * v2: a footnote number glued to the name ("Check Cashing Fee1") is messy too.
  * v3: a long name loses its footnote number even when the full tidy would leave it as is.
+ * v4: a cut-off parenthesis, a doubled word and untrimmed space are messy too (Extraco:
+ * "Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10").
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 3 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 4 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 export const NAME_RETIDY_INSTITUTION_LIMIT = 40;
@@ -194,12 +198,17 @@ export async function retidyLiveFeeNames(
       SELECT live.institution_id, live.max_fee_id
         FROM (
           SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_fee_id,
-                 -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on, a footnote number.
+                 -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on, a
+                 -- footnote number, untrimmed space, a doubled word or an unclosed parenthesis.
                  bool_or(
                    fp.fee_name LIKE '%|%'
                    OR fp.fee_name ~* '[[:space:]](of|for|at|is|to|and|or|with|by|a|an|the)$'
                    OR length(fp.fee_name) > 80
                    OR fp.fee_name ~ ${FOOTNOTE_SQL}
+                   OR fp.fee_name <> btrim(fp.fee_name)
+                   OR fp.fee_name ~* ${DOUBLED_WORD_SQL}
+                   OR length(fp.fee_name) - length(replace(fp.fee_name, '(', ''))
+                      > length(fp.fee_name) - length(replace(fp.fee_name, ')', ''))
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -339,15 +348,22 @@ export async function retidyLiveFeeNames(
   return result;
 }
 
-/** The live names this step looks at: joined cells, a dangling lead-in word, a run-on, or a footnote number. */
+/**
+ * The live names this step looks at: joined cells, a dangling lead-in word, a run-on, a
+ * footnote number, untrimmed space, a doubled word or a cut-off parenthesis.
+ */
 export function isMessyName(name: string): boolean {
   return (
     name.includes("|") ||
     /\s(?:of|for|at|is|to|and|or|with|by|a|an|the)$/i.test(name) ||
     name.length > 80 ||
-    stripFootnoteMarks(name) !== name.trim()
+    stripFootnoteMarks(name) !== name.trim() ||
+    name !== name.trim() ||
+    repairNameShape(name) !== name.trim()
   );
 }
 
 /** Postgres twin of `stripFootnoteMarks`'s match, so the due query finds the same names. */
 const FOOTNOTE_SQL = "([A-Za-z][a-z]{2}|\\))[0-9]{1,2}(,[0-9]{1,2})*(\\s*\\(|\\s*$)";
+/** Postgres twin of `repairNameShape`'s doubled-word match (case-insensitive with `~*`). */
+const DOUBLED_WORD_SQL = "\\m([a-z][a-z'’]{2,})\\M\\s+\\1\\M";

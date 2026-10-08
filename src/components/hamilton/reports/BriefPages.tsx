@@ -7,7 +7,7 @@ import { StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { AnswerBrief } from "@/lib/hamilton/answer-brief";
 import type { IncomeSplit } from "@/lib/hamilton/workspace/why";
 import { splitSentences } from "@/components/hamilton/analyze/parse-response";
-import { CompetitorBars, FeeRangeChart, IncomeCompareBars, IncomeTrendChart, MarketShareBars, UnemploymentChart } from "./BriefCharts";
+import { CompetitorBars, DependenceTrendChart, FeeRangeChart, IncomeCompareBars, IncomeTrendChart, MarketShareBars, UnemploymentChart } from "./BriefCharts";
 import { RD_PDF } from "@/lib/report-design/tokens";
 
 const COLORS = RD_PDF;
@@ -52,6 +52,25 @@ const styles = StyleSheet.create({
   },
   table: {
     marginTop: 10,
+  },
+  studyItem: {
+    marginTop: 10,
+    paddingLeft: 10,
+    borderLeftWidth: 2,
+    borderLeftColor: COLORS.accent,
+    borderLeftStyle: "solid",
+  },
+  studyHeadline: {
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textPrimary,
+    lineHeight: 1.45,
+    marginBottom: 3,
+  },
+  studyFact: {
+    fontSize: 9,
+    color: COLORS.textSecondary,
+    lineHeight: 1.45,
   },
   tableSource: {
     fontSize: 7.5,
@@ -282,6 +301,29 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
           ))}
           <Text style={styles.tableSource}>
             Institutions with branches in the market, largest local deposits first (FDIC Summary of Deposits); prices from their published fee schedules.
+          </Text>
+        </>
+      ) : null}
+
+      {brief.studies && (brief.studies.items.length > 0 || brief.studies.dependence) ? (
+        <>
+          <View style={styles.sectionRule} />
+          <View wrap={false}>
+            <Text style={styles.sectionHeading}>Where you sit in Hamilton&apos;s studies</Text>
+            {brief.studies.dependence ? <DependenceTrendChart chart={brief.studies.dependence} /> : null}
+          </View>
+          {brief.studies.items.map((o) => (
+            <View key={o.id} style={styles.studyItem} wrap={false}>
+              <Text style={styles.studyHeadline}>{o.headline}</Text>
+              {o.facts.map((f) => (
+                <Text key={f.text} style={styles.studyFact}>
+                  {f.text}
+                </Text>
+              ))}
+            </View>
+          ))}
+          <Text style={styles.tableSource}>
+            Hamilton studies: {[...new Set(brief.studies.items.flatMap((o) => o.facts.map((f) => `${f.source.label.replace("Hamilton study: ", "")} (${f.source.asOf ?? "current"})`)))].join("; ")}. Built from FDIC and NCUA call reports, FDIC Summary of Deposits, Census household income and published fee schedules. Inferred figures are labelled and never reported.
           </Text>
         </>
       ) : null}
