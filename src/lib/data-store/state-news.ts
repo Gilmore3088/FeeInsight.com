@@ -88,9 +88,24 @@ function stateOf(source: string): string {
   return source.slice(source.indexOf(":") + 1).toUpperCase();
 }
 
-/** Regulator posts with fee headlines first, then newest first. */
+const BANKING_WORDS =
+  /\bbank|credit union|deposit|\blend|\bloan|mortgage|financ|money|\bfees?\b|overdraft|scam|fraud|payment|crypto|virtual currency|stablecoin|settle|consent order|cease and desist|commissioner|consumer alert|licens|servicer|savings|ombuds|bulletin/i;
+const OTHER_DEPARTMENT_WORDS =
+  /(?<!deposit )insurance|cannabis|construction|hiring|job service|jobs in|apprenticeship|workforce|layoff|emissions|solar|health|medical|weather|holiday schedule|holidays-for-year/i;
+
+/**
+ * Several states publish one feed for a whole department (labor, commerce, insurance and
+ * banking together), so a regulator post is shown only when its headline is about banking,
+ * lending, money or consumer finance and not another division's business.
+ */
+export function isBankingPost(title: string): boolean {
+  return BANKING_WORDS.test(title) && !OTHER_DEPARTMENT_WORDS.test(title);
+}
+
+/** Banking posts only, fee headlines first, then newest first. */
 export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
   return rows
+    .filter((r) => isBankingPost(r.title))
     .map((r) => ({
       state_code: stateOf(r.source),
       title: r.title,
@@ -155,11 +170,12 @@ export async function getStateNews(options: StateNewsOptions = {}): Promise<Stat
     return [];
   };
   const [posts, press, bills] = await Promise.all([
-    readArticles("state", options, limit).catch(empty<ArticleRow>("regulator posts")),
+    // Read extra posts: department-wide feeds lose many to the banking filter.
+    readArticles("state", options, limit * 4).catch(empty<ArticleRow>("regulator posts")),
     readArticles("news", options, limit).catch(empty<ArticleRow>("press stories")),
     readBills(options, limit).catch(empty<BillRow>("fee bills")),
   ]);
-  return { regulator_posts: toRegulatorPosts(posts), press: toPressStories(press), bills: toFeeBills(bills) };
+  return { regulator_posts: toRegulatorPosts(posts).slice(0, limit), press: toPressStories(press), bills: toFeeBills(bills) };
 }
 
 /** States with at least one stored item, for the news page's state picker. */

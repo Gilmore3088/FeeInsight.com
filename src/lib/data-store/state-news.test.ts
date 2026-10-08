@@ -1,15 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { toFeeBills, toPressStories, toRegulatorPosts } from "./state-news";
+import { isBankingPost, toFeeBills, toPressStories, toRegulatorPosts } from "./state-news";
 
 describe("state news shaping", () => {
   it("puts fee posts first, then newest, and reads the state from the source", () => {
     const posts = toRegulatorPosts([
-      { source: "state:ny", title: "DFS announces new superintendent", link: "https://a", published_at: "2026-10-01T00:00:00.000Z" },
+      { source: "state:ny", title: "Kansas Bank Commissioner to Retire", link: "https://a", published_at: "2026-10-01T00:00:00.000Z" },
+      { source: "state:ny", title: "Jobs in the 605 Statewide Virtual Hiring Event", link: "https://x", published_at: "2026-10-07T00:00:00.000Z" },
       { source: "state:ny", title: "DFS proposes limits on bank overdraft fees", link: "https://b", published_at: "2026-09-01T00:00:00.000Z" },
       { source: "state:ny", title: "DFS warns of scam calls", link: "https://c", published_at: null },
     ]);
+    // The hiring event comes from a department-wide feed and is dropped.
     expect(posts.map((p) => p.link)).toEqual(["https://b", "https://a", "https://c"]);
     expect(posts[0]).toMatchObject({ state_code: "NY", fee_related: true, published_at: "2026-09-01" });
+  });
+
+  it("keeps banking posts and drops other divisions' news (headlines from prod, Oct 8 2026)", () => {
+    for (const kept of [
+      "Kansas Joins $15.5 Million Settlement with Mortgage Servicer NewRez LLC",
+      "Consumer Alert: The Fine Print Behind Social Media’s Credit Repair Promises",
+      "Banking Commissioner Announces 2026 Deposit Index",
+      "2026-09-17 Electronic Bulletin",
+      "Kansas Office of the State Bank Commissioner Closes Small Business Bank, Lenexa, Kansas, Appoints Federal Deposit Insurance Corporation as Receiver",
+      "Don’t let scammers steal your holiday spirit",
+    ])expect(isBankingPost(kept), kept).toBe(true);
+    for (const dropped of [
+      "Jobs in the 605 Statewide Virtual Hiring Event",
+      "Investigation uncovers illegal cannabis operation in Torrance County",
+      "RESIDENTS URGED TO FILE INSURANCE CLAIMS AFTER SEVERE WEATHER",
+      "Department of Financial Services Announces 2027 Health Insurance Premium Rates, Saving New Yorkers $1.6 Billion",
+      "FREE EMISSIONS FIX AVAILABLE FOR AFFECTED MERCEDES-BENZ DIESEL OWNERS IN HAWAIʻI",
+    ]) expect(isBankingPost(dropped), dropped).toBe(false);
   });
 
   it("splits the outlet off a press headline", () => {

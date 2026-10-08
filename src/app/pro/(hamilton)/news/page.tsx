@@ -85,7 +85,12 @@ export default async function NewsPage({
 
   if (view === "states") {
     const [news, states] = await Promise.all([
-      getStateNews({ stateCode: activeState, limit: activeState ? 50 : 30 }),
+      // Some state news pages list posts going back years; the wire shows the last twelve months.
+      getStateNews({
+        stateCode: activeState,
+        since: new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        limit: activeState ? 50 : 30,
+      }),
       getStatesWithNews(),
     ]);
     return (
