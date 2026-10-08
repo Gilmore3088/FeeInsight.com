@@ -3138,3 +3138,17 @@ Rows already on file gain the fields only when Knox reads their document again.
   current key can't find (test-mode customers after the switch to live keys, or one deleted
   in the dashboard), which failed checkout with "No such customer".
 - **Watch.** `stripe_events` gains a row for each delivery; Stripe's webhook page shows 200s.
+
+## 2026-10-08: The local competitors answer scanned every SOD branch row twice
+
+- **Problem.** "Who are my local competitors" took about a minute for James at 12:17 UTC Oct 8.
+  `institution_branch_deposits` (1.5M rows) had no index on `institution_id`. So the bank's own
+  branches (2.6 s) and its latest-year branches for the county map (1.6 s, figures from
+  `pg_stat_statements`) were full scans. They ran one after the other, because the map waited for
+  the branch list. The market footprint compared `county_fips::text`, which skipped the county
+  index.
+- **Fix.** Migration `20270110000026` adds `(institution_id, year)`. `getLocalMarketAnswer` starts
+  every read at once. The footprint compares integers.
+- **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
+  what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
+  230 s at a time).
