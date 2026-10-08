@@ -1,6 +1,6 @@
-# Hamilton marketing
+# Growth marketing
 
-Hamilton's monthly marketing loop. It owns the Fee Insight marketing emails sent through
+Growth's monthly marketing loop (it ran as Hamilton until 2026-10-08; see `../growth/AGENTS.md`). It owns the Fee Insight marketing emails sent through
 MailerLite: planning, writing, A/B testing, scoring and learning. It never sends on its own.
 
 ## Run (cron `/api/admin/crew/marketing`, the 1st of each month)
@@ -12,7 +12,7 @@ MailerLite: planning, writing, A/B testing, scoring and learning. It never sends
    stores this month's national figures (`kind = market_snapshot`); next month the writer gets only
    last month's institution counts, labeled as coverage, never last month's medians (a median
    that differs mostly reflects which institutions were added, not a price move).
-2. `marketing-write` (paid, `PROVIDER_STEP_KEYS`, Hamilton's key and budget): `planMonth` picks
+2. `marketing-write` (paid, `PROVIDER_STEP_KEYS`, Growth's key and `agent:growth` budget): `planMonth` picks
    one format (`CAMPAIGNS_PER_MONTH`) from `MARKETING_FORMATS` that have not run in the last three months, best past
    score first. National facts come from `getNationalIndexCached` (as the public report shows,
    with its freshness and method-version checks); bank vs credit union and one state come from
