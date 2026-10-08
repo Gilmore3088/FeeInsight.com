@@ -135,7 +135,7 @@ describe("selectBlockedLinks", () => {
 });
 
 describe("selectBlockedCompanions", () => {
-  it("takes PDF links stored as web pages and pages refused or timing out, on the bank's own site", async () => {
+  it("takes PDF links stored as web pages and pages refused or timing out, on the bank's own site or given by hand", async () => {
     const { selectBlockedCompanions } = await import("./blocked-fetch");
     const texts: string[] = [];
     const db = vi.fn(async (strings: TemplateStringsArray) => {
@@ -143,10 +143,15 @@ describe("selectBlockedCompanions", () => {
       return [
         { id: 2104, institution_id: 19, url: "https://www.53.com/docs/fees.pdf", website_url: "https://www.53.com" },
         { id: 9, institution_id: 8, url: "https://www.lpl.com/disclosures/summary.pdf", website_url: "https://wrong.example" },
+        {
+          id: 2048, institution_id: 35, url: "https://www.amegybank.com/content/dam/zbna/scheduleoffeesconsut.pdf",
+          website_url: "https://www.zionsbancorporation.com", found_by_strategy: "discover.operator_schedule",
+        },
       ];
     }) as unknown as Parameters<typeof selectBlockedCompanions>[0];
     const rows = await selectBlockedCompanions(db, 3);
-    expect(rows.map((row) => row.id)).toEqual([2104]);
+    // A schedule given by hand on a sister brand's site (Zions' Amegy) counts.
+    expect(rows.map((row) => row.id)).toEqual([2104, 2048]);
     expect(texts[0]).toContain("ILIKE 'text/html%'");
     expect(texts[0]).toContain("'blocked_bot'");
     expect(await selectBlockedCompanions(db, 0)).toEqual([]);

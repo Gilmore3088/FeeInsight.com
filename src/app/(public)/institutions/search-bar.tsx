@@ -31,6 +31,8 @@ interface InstitutionSearchBarProps {
    */
   variant?: Variant;
   placeholder?: string;
+  /** The search already run (?q= on /institutions), so the box shows what was searched. */
+  initialQuery?: string;
 }
 
 function InstitutionSearchBarInner({
@@ -38,8 +40,9 @@ function InstitutionSearchBarInner({
   ariaLabel = "Search institutions",
   variant = "light",
   placeholder = "Search your bank or credit union...",
+  initialQuery = "",
 }: InstitutionSearchBarProps) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Result[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [loading, setLoading] = useState(false);

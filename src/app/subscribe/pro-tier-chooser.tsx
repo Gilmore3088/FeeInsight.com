@@ -38,7 +38,7 @@ export function ProTierChooser({ chosenLabel, problem = null }: ProTierChooserPr
         <button
           type="button"
           onClick={() => go(() => {})}
-          className="mt-2 text-xs font-medium text-[#A93D25] underline underline-offset-2"
+          className="mt-1 inline-flex min-h-11 items-center text-xs font-medium text-[#A93D25] underline underline-offset-2"
         >
           Change
         </button>
@@ -64,7 +64,7 @@ export function ProTierChooser({ chosenLabel, problem = null }: ProTierChooserPr
       <button
         type="button"
         onClick={() => go((params) => params.set("org", "other"))}
-        className="mt-3 text-xs font-medium text-[#5A5347] underline underline-offset-2 hover:text-[#1A1815]"
+        className="mt-2 inline-flex min-h-11 items-center text-left text-xs font-medium text-[#5A5347] underline underline-offset-2 hover:text-[#1A1815]"
       >
         I&apos;m a consultant or another organization
       </button>
