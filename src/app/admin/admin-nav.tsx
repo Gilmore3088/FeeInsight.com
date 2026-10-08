@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { ROOMS, findRoomPage, roomForPath, type RoomPage } from "@/lib/admin-rooms";
 
 function badgeFor(page: RoomPage, badges?: Record<string, number>): number {
@@ -133,55 +133,67 @@ export function AdminSidebar({ badges, footer }: { badges?: Record<string, numbe
   );
 }
 
+function isLanding(pathname: string, roomHref: string): boolean {
+  return (pathname.replace(/\/+$/, "") || "/admin") === roomHref;
+}
+
 /**
- * The same screens as a row of chips at the top of the page on a phone. It scrolls away with
- * the page, so the only bar that stays on screen is the top bar. Hidden when the room has one screen.
- * Less-used screens wait behind a "More" chip; the one you are on always shows.
+ * On a phone, a screen inside a room gets one link back to the room's landing page instead of
+ * a second row of tabs. Hidden on a room's landing page and on wider screens (they have the side menu).
  */
-export function AdminNavInline({ badges }: { badges?: Record<string, number> }) {
+export function AdminBackLink() {
   const pathname = usePathname();
   const room = roomForPath(pathname);
-  const activePage = findRoomPage(pathname)?.page;
-  const [showMore, setShowMore] = useState(false);
-  if (room.pages.length < 2) return null;
-  const { more } = splitPages(room.pages);
-  const shown = showMore ? room.pages : room.pages.filter((page) => !page.more || page === activePage);
-  const hidden = room.pages.length - shown.length;
+  if (room.pages.length < 2 || isLanding(pathname, room.href)) return null;
   return (
-    <nav
-      aria-label={`${room.label} screens`}
-      className="admin-nav-inline -mx-5 mb-4 flex min-w-0 items-center gap-1 overflow-x-auto px-5 md:hidden"
+    <Link
+      href={room.href}
+      prefetch={false}
+      className="-ml-1 mb-3 inline-flex min-h-9 items-center gap-1 px-1 text-[13px] font-semibold text-[var(--brand-primary)] md:hidden"
     >
-      {shown.map((page) => {
-        const active = page === activePage;
-        return (
-          <Link
-            key={page.href}
-            href={page.href}
-            prefetch={false}
-            aria-current={active ? "page" : undefined}
-            aria-label={`${page.label}: ${page.role}`}
-            className={`inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-full border px-3 text-[12px] font-semibold transition-colors ${
-              active
-                ? "border-gray-900 bg-gray-900 text-white dark:border-white/15 dark:bg-white/15"
-                : "border-black/[0.08] bg-white text-gray-600 hover:text-gray-900 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-300"
-            }`}
-          >
-            {page.label}
-            <Badge count={badgeFor(page, badges)} active={active} />
-          </Link>
-        );
-      })}
-      {more.length > 0 && (showMore || hidden > 0) ? (
-        <button
-          type="button"
-          onClick={() => setShowMore((open) => !open)}
-          aria-expanded={showMore}
-          className="inline-flex min-h-9 items-center whitespace-nowrap rounded-full border border-dashed border-black/[0.15] px-3 text-[12px] font-semibold text-gray-500 dark:border-white/[0.15] dark:text-gray-400"
-        >
-          {showMore ? "Fewer" : `More (${hidden})`}
-        </button>
-      ) : null}
+      <span aria-hidden="true">‹</span> {room.label}
+    </Link>
+  );
+}
+
+/**
+ * On a phone, a room's landing page ends with its other screens as cards, so every screen is one
+ * tap from the room. Screens the page already shows as cards (the agents) are left out, and the
+ * less-used ones sit in a second group.
+ */
+export function AdminRoomScreens({ badges }: { badges?: Record<string, number> }) {
+  const pathname = usePathname();
+  const room = roomForPath(pathname);
+  if (room.pages.length < 2 || !isLanding(pathname, room.href)) return null;
+  const listed = room.pages.filter((page) => page.href !== room.href && !page.card);
+  const { main, more } = splitPages(listed);
+  const group = (title: string, pages: RoomPage[]) =>
+    pages.length === 0 ? null : (
+      <div>
+        <p className="admin-section-title">{title}</p>
+        <ul className="mt-2 grid grid-cols-2 gap-2">
+          {pages.map((page) => (
+            <li key={page.href}>
+              <Link
+                href={page.href}
+                prefetch={false}
+                className="flex h-full min-h-14 items-center gap-2 rounded-lg border border-black/[0.08] px-3 py-2 dark:border-white/[0.1]"
+              >
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block truncate text-[13px] font-semibold text-gray-900 dark:text-gray-100">{page.label}</span>
+                  <span className="block truncate text-[11px] text-gray-500">{page.role}</span>
+                </span>
+                <Badge count={badgeFor(page, badges)} active={false} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  return (
+    <nav aria-label={`${room.label} screens`} className="mt-10 space-y-5 md:hidden">
+      {group(`More in ${room.label}`, main)}
+      {group("Less used", more)}
     </nav>
   );
 }

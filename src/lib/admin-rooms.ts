@@ -17,6 +17,8 @@ export interface RoomPage {
   activePrefixes?: string[];
   /** Shown under the room menu's "More" instead of in the main list: real screens, used less often. */
   more?: boolean;
+  /** Reached from its card on the room's landing page (the agent cards), so the phone screen list leaves it out. */
+  card?: boolean;
   /** Key into the layout's badge counts. */
   badgeKey?: string;
 }
@@ -48,18 +50,19 @@ export const ROOMS: Room[] = [
     pages: [
       { href: "/admin/agents", label: "Overview", role: "All six agents", exact: true },
       { href: "/admin/live", label: "Live board", role: "Banks moving through" },
-      { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls" },
+      { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls", card: true },
       { href: "/admin/states", label: "State lanes", role: "State queues", more: true },
-      { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", activePrefixes: ["/admin/coverage"] },
-      { href: "/admin/rosetta", label: "Rosetta", role: "2 Read" },
+      { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", activePrefixes: ["/admin/coverage"], card: true },
+      { href: "/admin/rosetta", label: "Rosetta", role: "2 Read", card: true },
       {
         href: "/admin/knox",
         label: "Knox",
         role: "3 Extract",
+        card: true,
         badgeKey: "knoxPending",
         activePrefixes: ["/admin/review", "/admin/agents/knox"],
       },
-      { href: "/admin/darwin", label: "Darwin", role: "4 Verify" },
+      { href: "/admin/darwin", label: "Darwin", role: "4 Verify", card: true },
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
       { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },

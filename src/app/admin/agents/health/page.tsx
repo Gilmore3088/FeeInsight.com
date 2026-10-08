@@ -62,7 +62,7 @@ export default async function AgentsHealthPage() {
     <section className="flex flex-col gap-4 pb-10">
       <ScreenHeader
         title="Agent health"
-        lede="Every step each agent finished or failed in the last seven days, from the run log. Green is done, red is failed. The colour dot judges the last two days."
+        lede="Every step each agent finished or failed in the last seven days, from the run log. Green is done, red is failed. An agent shows Failing when a step's newest run failed; a step that has worked again since shows grey."
       />
       {!health ? <Unreadable what="The agent run log" /> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -70,11 +70,11 @@ export default async function AgentsHealthPage() {
           const meta = crewMember(agent.agent);
           const tone = TONE[agent.tone];
           return (
-            <article key={agent.agent} className="admin-card min-w-0 px-4 py-4">
+            <Link key={agent.agent} href={meta?.href ?? "/admin/agents"} prefetch={false} className="admin-card block min-w-0 px-4 py-4 transition-colors hover:border-gray-300 dark:hover:border-white/20">
               <div className="flex items-baseline justify-between gap-2">
-                <Link href={meta?.href ?? "/admin/agents"} prefetch={false} className="text-sm font-bold text-gray-900 hover:underline dark:text-gray-100">
+                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
                   {meta?.name ?? agent.agent}
-                </Link>
+                </span>
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">
                   <span aria-hidden="true" className={`size-2 rounded-full ${tone.dot}`} />
                   {tone.label}
@@ -88,17 +88,26 @@ export default async function AgentsHealthPage() {
               <DayBars health={agent} />
               {agent.failing.length > 0 ? (
                 <ul className="mt-3 space-y-0.5 border-t border-black/[0.05] pt-2 text-xs dark:border-white/[0.06]">
-                  {agent.failing.slice(0, 4).map((step) => (
+                  {agent.failing.slice(0, 5).map((step) => (
                     <li key={step.stepKey} className="flex justify-between gap-2">
-                      <span className="truncate text-gray-700 dark:text-gray-300">{stepName(step.stepKey)}</span>
-                      <span className="shrink-0 tabular-nums text-red-700 dark:text-red-400">
-                        {step.failed} of {step.failed + step.done} failed
+                      <span className="min-w-0">
+                        <span className={`block truncate ${step.stillFailing ? "font-semibold text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"}`}>
+                          {stepName(step.stepKey)}
+                        </span>
+                        <span className="block text-[11px] text-gray-500">
+                          {step.stillFailing
+                            ? `Still failing · last failed ${step.lastFailedAt ? formatAdminDateTime(step.lastFailedAt) : "recently"}`
+                            : `Working again since ${step.lastDoneAt ? formatAdminDateTime(step.lastDoneAt) : "its last run"}`}
+                        </span>
+                      </span>
+                      <span className={`shrink-0 tabular-nums ${step.stillFailing ? "font-semibold text-red-700 dark:text-red-400" : "text-gray-500"}`}>
+                        {step.failed} of {step.failed + step.done}
                       </span>
                     </li>
                   ))}
                 </ul>
               ) : null}
-            </article>
+            </Link>
           );
         })}
       </div>

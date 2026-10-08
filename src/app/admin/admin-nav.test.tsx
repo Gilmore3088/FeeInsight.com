@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminNav, AdminNavInline, AdminRoomTabs } from "./admin-nav";
+import { AdminBackLink, AdminNav, AdminRoomScreens, AdminRoomTabs } from "./admin-nav";
 
 const navigationState = vi.hoisted(() => ({
   pathname: "/admin/states",
@@ -69,26 +69,35 @@ describe("AdminNav", () => {
   });
 });
 
-describe("AdminNavInline", () => {
-  it("uses the same screens on a phone", () => {
-    render(<AdminNavInline />);
-    expect(screen.getByRole("link", { name: /State lanes/ })).toHaveAttribute("href", "/admin/states");
+describe("AdminBackLink", () => {
+  it("leads back to the room on a phone", () => {
+    render(<AdminBackLink />);
+    expect(screen.getByRole("link", { name: /Agents/ })).toHaveAttribute("href", "/admin/agents");
   });
 
-  it("keeps less-used screens behind a More chip until you tap it", () => {
+  it("is absent on the room's own page", () => {
     navigationState.pathname = "/admin/agents";
-    render(<AdminNavInline />);
-    expect(screen.getByRole("link", { name: /Knox/ })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Lineage/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "More (7)" }));
+    const { container } = render(<AdminBackLink />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("AdminRoomScreens", () => {
+  it("lists the room's screens as cards, leaving agents to their own cards", () => {
+    navigationState.pathname = "/admin/agents";
+    render(<AdminRoomScreens />);
+    expect(screen.getByRole("link", { name: /Live board/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Lineage/ })).toHaveAttribute("href", "/admin/agents/lineage");
-    expect(screen.getByRole("button", { name: "Fewer" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("link", { name: /^Knox/ })).not.toBeInTheDocument();
   });
 
-  it("hides when the room has a single screen", () => {
-    navigationState.pathname = "/admin";
-    const { container } = render(<AdminNavInline />);
+  it("shows nothing off a room's landing page or in a one-screen room", () => {
+    const { container, unmount } = render(<AdminRoomScreens />);
     expect(container).toBeEmptyDOMElement();
+    unmount();
+    navigationState.pathname = "/admin";
+    const second = render(<AdminRoomScreens />);
+    expect(second.container).toBeEmptyDOMElement();
   });
 });
 

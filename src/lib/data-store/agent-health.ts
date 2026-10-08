@@ -29,6 +29,10 @@ export interface FailingStep {
   stepKey: string;
   failed: number;
   done: number;
+  lastFailedAt: string | null;
+  lastDoneAt: string | null;
+  /** The newest run of this step failed: it is broken now, not just earlier this week. */
+  stillFailing: boolean;
 }
 
 export interface AgentHealth {
@@ -77,23 +81,31 @@ export function summarizeAgentHealth(rows: StepCountRow[], now: Date): AgentHeal
       }
       if (row.status !== "completed" && row.status !== "failed") continue;
       const bucket = byDay.get(row.day);
-      const step = bySteps.get(row.stepKey) ?? { stepKey: row.stepKey, failed: 0, done: 0 };
+      const step = bySteps.get(row.stepKey) ?? {
+        stepKey: row.stepKey, failed: 0, done: 0, lastFailedAt: null, lastDoneAt: null, stillFailing: false,
+      };
       if (row.status === "completed") {
         if (bucket) bucket.done += row.count;
         step.done += row.count;
         if (row.lastAt && (!lastDoneAt || row.lastAt > lastDoneAt)) lastDoneAt = row.lastAt;
+        if (row.lastAt && (!step.lastDoneAt || row.lastAt > step.lastDoneAt)) step.lastDoneAt = row.lastAt;
       } else {
         if (bucket) bucket.failed += row.count;
         step.failed += row.count;
+        if (row.lastAt && (!step.lastFailedAt || row.lastAt > step.lastFailedAt)) step.lastFailedAt = row.lastAt;
       }
       bySteps.set(row.stepKey, step);
     }
     const dayCounts = [...byDay.values()];
     const done = dayCounts.reduce((sum, day) => sum + day.done, 0);
     const failed = dayCounts.reduce((sum, day) => sum + day.failed, 0);
-    const failing = [...bySteps.values()].filter((step) => step.failed > 0).sort((a, b) => b.failed - a.failed);
+    const failing = [...bySteps.values()]
+      .filter((step) => step.failed > 0)
+      .map((step) => ({ ...step, stillFailing: Boolean(step.lastFailedAt && (!step.lastDoneAt || step.lastFailedAt > step.lastDoneAt)) }))
+      .sort((a, b) => Number(b.stillFailing) - Number(a.stillFailing) || b.failed - a.failed);
     const recent = dayCounts.slice(-2);
-    const tone = healthTone(
+    // A step whose newest run failed is broken now, whatever the share says.
+    const tone = failing.some((step) => step.stillFailing) ? "bad" : healthTone(
       recent.reduce((sum, day) => sum + day.done, 0),
       recent.reduce((sum, day) => sum + day.failed, 0),
     );
@@ -106,7 +118,7 @@ export async function getAgentHealth(now = new Date()): Promise<AgentHealth[]> {
     SELECT agent_name, step_key, status,
            to_char((COALESCE(completed_at, updated_at, queued_at) AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day,
            COUNT(*)::int AS count,
-           MAX(completed_at) AS last_at
+           MAX(COALESCE(completed_at, updated_at)) AS last_at
       FROM agent_run_steps
      WHERE queued_at > NOW() - interval '8 days'
      GROUP BY 1, 2, 3, 4

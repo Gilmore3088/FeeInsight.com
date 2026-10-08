@@ -44,7 +44,26 @@ describe("agent health", () => {
     ).filter((agent) => agent.agent === "rosetta");
     expect(rosetta).toMatchObject({ done: 740, failed: 60, waiting: 2, tone: "good", lastDoneAt: "2026-10-08T08:55:00Z" });
     expect(rosetta.days.find((day) => day.day === "2026-10-03")).toEqual({ day: "2026-10-03", done: 40, failed: 60 });
-    expect(rosetta.failing).toEqual([{ stepKey: "read", failed: 60, done: 740 }]);
+    expect(rosetta.failing).toEqual([
+      { stepKey: "read", failed: 60, done: 740, lastFailedAt: null, lastDoneAt: "2026-10-08T08:55:00Z", stillFailing: false },
+    ]);
+  });
+
+  it("calls an agent failing when a step's newest run failed, even if the share is small", () => {
+    const [, , , , , hamilton] = summarizeAgentHealth(
+      [
+        row({ agent: "hamilton", stepKey: "publish", day: "2026-10-08", count: 200, lastAt: "2026-10-08T12:01:00Z" }),
+        row({ agent: "hamilton", stepKey: "publish", day: "2026-10-08", status: "failed", count: 4, lastAt: "2026-10-08T12:15:00Z" }),
+        row({ agent: "hamilton", stepKey: "pro.thesis", day: "2026-10-05", status: "failed", count: 6, lastAt: "2026-10-06T00:10:00Z" }),
+        row({ agent: "hamilton", stepKey: "pro.thesis", day: "2026-10-06", count: 5, lastAt: "2026-10-06T07:13:00Z" }),
+      ],
+      NOW,
+    );
+    expect(hamilton.tone).toBe("bad");
+    expect(hamilton.failing.map((step) => [step.stepKey, step.stillFailing])).toEqual([
+      ["publish", true],
+      ["pro.thesis", false],
+    ]);
   });
 
   it("lists every pipeline agent, quiet when the log has nothing for it", () => {
