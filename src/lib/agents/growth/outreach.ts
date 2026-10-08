@@ -1,7 +1,7 @@
 import { SITE_DOMAIN } from "@/lib/constants";
 import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
-import { contactConfidence, contactsSchemaReady, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
+import { contactConfidence, contactsSchemaReady, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
 
 /**
@@ -29,6 +29,12 @@ export const OUTREACH_REPEAT_DAYS = 60;
 /** Prospects whose snapshot is read before a run stops, so one run stays within its time. */
 export const OUTREACH_MAX_CANDIDATES = 120;
 export const OUTREACH_CAMPAIGN = "outreach-launch";
+/**
+ * CAN-SPAM: a commercial email carries a valid postal address (a PO box or mail-forwarding
+ * address counts) and a way to opt out. The site's mailing address stays blank by James's rule,
+ * so the draft holds a placeholder he fills before sending; nothing is invented.
+ */
+export const OUTREACH_POSTAL_ADDRESS = "[postal address: James to add before sending]";
 /** The plan's segments: $500M-$2B first, then $100M-$500M (asset_size is in thousands). */
 export const OUTREACH_FIRST_SEGMENT_K = [500_000, 2_000_000] as const;
 export const OUTREACH_SECOND_SEGMENT_K = [100_000, 500_000] as const;
@@ -138,6 +144,10 @@ export function buildOutreachDraft(
     "Best,",
     "James",
     "Fee Insight",
+    "",
+    "--",
+    `Fee Insight LLC · ${OUTREACH_POSTAL_ADDRESS}`,
+    `If you'd rather not hear from me again, reply "no thanks" and I won't follow up.`,
   ];
 
   const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
@@ -195,14 +205,14 @@ export async function loadOutreachCandidates(db: SqlTag, limit: number): Promise
       candidate = { institutionId: id, assetsK: row.asset_size === null ? null : Number(row.asset_size), contacts: [] };
       byInstitution.set(id, candidate);
     }
-    candidate.contacts.push({
+    candidate.contacts.push(normalizeContact({
       email: String(row.email),
       kind: row.kind as ContactKind,
       name: row.name === null ? null : String(row.name),
       title: row.title === null ? null : String(row.title),
       role: row.role as ContactRole,
       source_url: String(row.source_url),
-    });
+    }));
   }
   return [...byInstitution.values()];
 }

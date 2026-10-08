@@ -235,13 +235,18 @@ export async function loadMarketSnapshot(
   return { ...market, fees: categories.map((category) => buildSnapshotFee(category, institutionId, rows)) };
 }
 
-/** A short market name for a subject line: "Waco, TX" from "Waco, TX", "New York" from "New York-Newark-Jersey City, NY-NJ-PA". */
+/**
+ * A short market name for a subject line: "Waco, TX" from "Waco, TX"; a metro that spans
+ * several cities keeps its first two ("New York-Newark" from "New York-Newark-Jersey City,
+ * NY-NJ-PA"), so a New Jersey bank isn't told its market is New York, NY.
+ */
 export function marketLabel(institution: Pick<SnapshotInstitution, "cbsaName" | "city" | "stateCode">): string {
   if (institution.cbsaName) {
     const [cities, states] = institution.cbsaName.split(",").map((part) => part.trim());
-    const city = cities.split("-")[0].trim();
+    const names = cities.split("-").map((name) => name.trim()).filter(Boolean);
+    if (names.length > 1) return names.slice(0, 2).join("-");
     const state = states ? states.split("-")[0].trim() : null;
-    return state ? `${city}, ${state}` : city;
+    return state ? `${names[0]}, ${state}` : names[0];
   }
   if (institution.city) return institution.stateCode ? `${institution.city}, ${institution.stateCode}` : institution.city;
   return "your market";

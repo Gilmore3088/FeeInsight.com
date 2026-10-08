@@ -56,8 +56,8 @@ const PAGE_HINTS: Array<{ pattern: RegExp; rank: number }> = [
 
 /** A role from a title or a mailbox name; the first match wins, so "SVP Marketing" is marketing. */
 const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
-  { role: "marketing", pattern: /market|brand|communications|\bcmo\b/i },
-  { role: "retail", pattern: /retail|deposit|product|consumer bank|branch|member experience|member services/i },
+  { role: "marketing", pattern: /\bmarketing\b|brand|communications|\bcmo\b/i },
+  { role: "retail", pattern: /retail|deposit|product|consumer bank|member experience|member services/i },
   { role: "finance", pattern: /\bcfo\b|chief financial|finance|treasurer|controller/i },
   { role: "executive", pattern: /\bceo\b|chief executive|president/i },
   { role: "operations", pattern: /\bcoo\b|chief operating|operations/i },
@@ -137,8 +137,56 @@ export function belongsToSite(email: string, websiteHost: string): boolean {
   return brandLabel(domain) === brandLabel(websiteHost);
 }
 
+/** "Vice President" is a rank, not the president: it is read past before the roles are matched. */
+const VICE_PRESIDENT = /\b(?:senior\s+|executive\s+|assistant\s+|first\s+)?vice[\s-]+president\b/gi;
+/** A title that names a buyer outright, so a lending word in it doesn't rule it out ("SVP, Chief Retail Officer"). */
+const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|marketing|retail|operating|deposit|experience)|\bmarketing\b|\bretail\b(?! lending)|\bdeposits?\b/i;
+/**
+ * Titles that sell or service rather than buy a fee study: lenders, mortgage and loan staff,
+ * business development, relationship and cash management, wealth and trust, branch staff.
+ */
+const NOT_BUYER_TITLE =
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+
 export function roleFor(text: string): ContactRole {
-  return ROLE_PATTERNS.find(({ pattern }) => pattern.test(text))?.role ?? "other";
+  const title = text.replace(VICE_PRESIDENT, " ");
+  if (!BUYER_TITLE.test(title) && NOT_BUYER_TITLE.test(title)) return "other";
+  return ROLE_PATTERNS.find(({ pattern }) => pattern.test(title))?.role ?? "other";
+}
+
+/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ..."). */
+const NOT_A_TITLE = /message|branches served|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+/** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
+const NOT_A_NAME =
+  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general)\b/i;
+
+/** A printed name we can greet, or null for a label that sits where a name would. */
+export function cleanContactName(name: string | null): string | null {
+  if (!name) return null;
+  const trimmed = name.trim();
+  if (NOT_A_NAME.test(trimmed) || trimmed === trimmed.toUpperCase()) return null;
+  return trimmed;
+}
+
+/** A printed title, or null for a heading that only looks like one. */
+export function cleanContactTitle(title: string | null): string | null {
+  if (!title) return null;
+  const trimmed = title.trim().replace(/[,&|*]+\s*$/, "").trim();
+  return trimmed && !NOT_A_TITLE.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * A saved contact read with today's rules: its name and title checked again and its role
+ * re-read from the title, so rows saved before a rule changed are judged the same way.
+ */
+export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind }>(contact: T): T {
+  const title = cleanContactTitle(contact.title);
+  return {
+    ...contact,
+    name: cleanContactName(contact.name),
+    title,
+    role: contact.kind === "person" ? (title ? roleFor(title) : "other") : contact.role,
+  };
 }
 
 function looksLikeTitle(line: string): boolean {
@@ -165,8 +213,8 @@ export function extractContacts(html: string, pageUrl: string, websiteHost: stri
       const kind: ContactKind = GENERAL_MAILBOX.test(local) ? "general" : "person";
       const window = lines.slice(Math.max(0, index - 3), index + 1);
       const before = window.map((text) => text.replace(raw, "").trim()).filter(Boolean);
-      const title = kind === "person" ? ([...before].reverse().find(looksLikeTitle) ?? null) : null;
-      const name = kind === "person" ? ([...before].reverse().find(looksLikeName) ?? null) : null;
+      const title = kind === "person" ? cleanContactTitle([...before].reverse().find(looksLikeTitle) ?? null) : null;
+      const name = kind === "person" ? cleanContactName([...before].reverse().find(looksLikeName) ?? null) : null;
       found.set(email, {
         email,
         kind,
@@ -178,7 +226,10 @@ export function extractContacts(html: string, pageUrl: string, websiteHost: stri
       });
     }
   });
-  return [...found.values()];
+  // A "name" printed beside several different addresses is a heading ("North Pointe"), not a person.
+  const nameUses = new Map<string, number>();
+  for (const contact of found.values()) if (contact.name) nameUses.set(contact.name, (nameUses.get(contact.name) ?? 0) + 1);
+  return [...found.values()].map((contact) => (contact.name && (nameUses.get(contact.name) ?? 0) > 1 ? { ...contact, name: null } : contact));
 }
 
 /** Same-site links that look like leadership, about or contact pages, best first. */
@@ -447,7 +498,7 @@ export async function listProspectContacts(db: SqlTag = sql): Promise<ProspectCo
       JOIN institution_sources s ON s.id = c.institution_id
      ORDER BY s.state_code, s.institution_name, (c.kind = 'person') DESC, c.role, c.email
   `;
-  return rows.map((row) => ({
+  return rows.map((row) => normalizeContact({
     institution_id: Number(row.institution_id),
     institution_name: String(row.institution_name),
     charter_type: row.charter_type === null ? null : String(row.charter_type),

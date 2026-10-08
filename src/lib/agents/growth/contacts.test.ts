@@ -8,6 +8,7 @@ import {
   contactConfidence,
   contactsCsv,
   extractContacts,
+  normalizeContact,
   rankContacts,
   roleFor,
   runContactFinder,
@@ -64,6 +65,38 @@ describe("reading a page", () => {
     expect(roleFor("Deposit Product Manager")).toBe("retail");
     expect(roleFor("President and CEO")).toBe("executive");
     expect(roleFor("Loan Officer")).toBe("other");
+  });
+
+  it("doesn't take lenders, branch staff or a vice president's rank for a buyer (prod, Oct 8)", () => {
+    expect(roleFor("Vice President, Cash Management")).toBe("other");
+    expect(roleFor("Vice President, Senior Business Banker, Indiana Market")).toBe("other");
+    expect(roleFor("Retail Lending Coordinator")).toBe("other");
+    expect(roleFor("AVP, Branch Manager")).toBe("other");
+    expect(roleFor("Senior Vice President, Chief Lending Officer")).toBe("other");
+    expect(roleFor("SVP, Chief Retail Officer")).toBe("retail");
+    expect(roleFor("VP of Retail & Business Development")).toBe("retail");
+    expect(roleFor("President & CEO*")).toBe("executive");
+    expect(roleFor("Vice President, Chief Financial Officer & Treasurer")).toBe("finance");
+  });
+
+  it("re-reads saved contacts: labels aren't names and headings aren't titles", () => {
+    const saved = { kind: "person" as const, role: "executive" as const };
+    expect(normalizeContact({ ...saved, name: "Accessibility Statement", title: null })).toMatchObject({ name: null, role: "other" });
+    expect(normalizeContact({ ...saved, name: "Commercial Lender", title: "Vice President" })).toMatchObject({ name: null, role: "other" });
+    expect(normalizeContact({ ...saved, name: "SEND EMAIL", title: null }).name).toBeNull();
+    expect(normalizeContact({ ...saved, name: null, title: "President’s Message March 2026" })).toMatchObject({ title: null, role: "other" });
+    expect(normalizeContact({ ...saved, name: "Patrick B. Thorpe", title: "President & CEO*" })).toMatchObject({
+      name: "Patrick B. Thorpe",
+      title: "President & CEO",
+      role: "executive",
+    });
+  });
+
+  it("drops a name printed beside several addresses", () => {
+    const html = "<p>North Pointe</p><p>SVP, Chief Financial Officer</p><p>ecoop@sbw.bank</p><p>North Pointe</p><p>SVP, Chief Risk Officer</p><p>rrice@sbw.bank</p>";
+    const contacts = extractContacts(html, "https://www.sbw.bank/about/our-people/", "sbw.bank");
+    expect(contacts.map((contact) => contact.name)).toEqual([null, null]);
+    expect(contacts[0]).toMatchObject({ title: "SVP, Chief Financial Officer", role: "finance" });
   });
 
   it("follows same-site leadership pages first, then about, then contact", () => {

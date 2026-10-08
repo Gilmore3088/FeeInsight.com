@@ -75,7 +75,8 @@ describe("market snapshot", () => {
   });
 
   it("shortens the market name for the subject line", () => {
-    expect(marketLabel({ cbsaName: "New York-Newark-Jersey City, NY-NJ-PA", city: null, stateCode: null })).toBe("New York, NY");
+    expect(marketLabel({ cbsaName: "New York-Newark-Jersey City, NY-NJ-PA", city: null, stateCode: null })).toBe("New York-Newark");
+    expect(marketLabel({ cbsaName: "St. Louis, MO-IL", city: null, stateCode: null })).toBe("St. Louis, MO");
     expect(marketLabel({ cbsaName: null, city: "Waco", stateCode: "TX" })).toBe("Waco, TX");
   });
 });
@@ -96,6 +97,9 @@ describe("buildOutreachDraft", () => {
     expect(draft.caption).toContain("does your team handle competitive fee reviews internally, or do you use an outside research provider?");
     const [email, audit] = draft.caption.split("--- For your audit");
     expect(email).not.toContain("Peer 99");
+    // CAN-SPAM: a postal address James fills in, and a way to opt out.
+    expect(email).toContain("Fee Insight LLC · [postal address: James to add before sending]");
+    expect(email).toContain("reply \"no thanks\" and I won't follow up.");
     expect(audit).toContain("Left out as unverified");
     expect(audit).toContain("- Peer 99: $40");
     expect(audit).toContain('Schedule line: "Overdraft Fee $30.00 per item"');
