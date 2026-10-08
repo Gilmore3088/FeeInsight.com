@@ -32,7 +32,7 @@ const getCachedPipelineFunnel = unstable_cache(getPipelineFunnel, ["admin", "atl
   tags: [ADMIN_ATLAS_COMMAND_CENTER_CACHE_TAG],
 });
 
-/** The Agents room: pipeline health, the run buttons, the six agents live, and what each costs. */
+/** The Agents room: pipeline health, the run buttons, the pipeline crew and the marketing team, and what each costs. */
 export default async function AgentsRoomPage() {
   await requireAuth("view");
   const [center, health, funnel, crew, feed, spend, marketing] = await Promise.all([
@@ -66,7 +66,7 @@ export default async function AgentsRoomPage() {
   return (
     <div className="space-y-8 pb-10">
       <RoomHeader room="agents">
-        <Link href="/admin/live" prefetch={false} className="text-xs font-semibold text-[var(--brand-primary)]">
+        <Link href="/admin/live" prefetch={false} className="hidden text-xs font-semibold text-[var(--brand-primary)] md:inline">
           Watch banks move through the agents
         </Link>
       </RoomHeader>

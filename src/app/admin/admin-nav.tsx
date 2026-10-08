@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ROOMS, findRoomPage, roomForPath, type RoomPage } from "@/lib/admin-rooms";
 
 function badgeFor(page: RoomPage, badges?: Record<string, number>): number {
@@ -192,18 +193,18 @@ export function AdminRoomMenu({ badges }: { badges?: Record<string, number> }) {
         {waiting ? <span aria-label="Something is waiting" className="size-2 rounded-full bg-amber-500" /> : null}
         <span aria-hidden="true" className={`text-xs text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
       </button>
-      {open ? (
+      {open && typeof document !== "undefined" ? createPortal(
         <>
           <button
             type="button"
             aria-label="Close the room list"
             onClick={() => setOpen(false)}
-            className="fixed inset-x-0 bottom-0 top-[var(--admin-nav-h)] z-40 bg-black/30"
+            className="fixed inset-x-0 bottom-0 top-[var(--admin-nav-h)] z-50 bg-black/30 md:hidden"
           />
           <nav
             id="admin-room-menu"
             aria-label="Choose a room"
-            className="fixed inset-x-0 top-[var(--admin-nav-h)] z-50 max-h-[calc(100vh-var(--admin-nav-h))] overflow-y-auto border-b border-black/[0.06] bg-white shadow-lg dark:border-white/[0.08] dark:bg-[oklch(0.18_0_0)]"
+            className="fixed inset-x-0 top-[var(--admin-nav-h)] z-[60] max-h-[calc(100vh-var(--admin-nav-h))] overflow-y-auto border-b border-black/[0.06] bg-white shadow-lg dark:border-white/[0.08] dark:bg-[oklch(0.18_0_0)] md:hidden"
           >
             <ul className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
               {ROOMS.map((candidate) => {
@@ -230,7 +231,8 @@ export function AdminRoomMenu({ badges }: { badges?: Record<string, number> }) {
               })}
             </ul>
           </nav>
-        </>
+        </>,
+        document.body,
       ) : null}
     </div>
   );
@@ -241,7 +243,16 @@ export function AdminRoomMenu({ badges }: { badges?: Record<string, number> }) {
  * every screen is one tap from the room without a second row of tabs. Screens the page already
  * shows as cards (the agents) are left out, and the less-used ones come last.
  */
-export function AdminRoomScreens({ badges }: { badges?: Record<string, number> }) {
+/** Review counts from the layout, for screens drawn inside a page (the phone screen list). */
+const AdminBadges = createContext<Record<string, number> | undefined>(undefined);
+
+export function AdminBadgesProvider({ badges, children }: { badges: Record<string, number>; children: ReactNode }) {
+  return <AdminBadges.Provider value={badges}>{children}</AdminBadges.Provider>;
+}
+
+export function AdminRoomScreens({ badges: given }: { badges?: Record<string, number> }) {
+  const context = useContext(AdminBadges);
+  const badges = given ?? context;
   const pathname = usePathname();
   const room = roomForPath(pathname);
   if (room.pages.length < 2 || !isLanding(pathname, room.href)) return null;

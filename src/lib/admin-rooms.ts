@@ -45,10 +45,10 @@ export const ROOMS: Room[] = [
   {
     key: "agents",
     label: "Agents",
-    question: "Are the six agents doing the right work at the right cost?",
+    question: "Are the agents doing the right work at the right cost?",
     href: "/admin/agents",
     pages: [
-      { href: "/admin/agents", label: "Overview", role: "All six agents", exact: true },
+      { href: "/admin/agents", label: "Overview", role: "Pipeline and marketing agents", exact: true },
       { href: "/admin/live", label: "Live board", role: "Banks moving through" },
       { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls", card: true },
       { href: "/admin/states", label: "State lanes", role: "State queues", more: true },
@@ -63,6 +63,7 @@ export const ROOMS: Room[] = [
         activePrefixes: ["/admin/review", "/admin/agents/knox"],
       },
       { href: "/admin/darwin", label: "Darwin", role: "4 Verify", card: true },
+      { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents", card: true },
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
       { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },

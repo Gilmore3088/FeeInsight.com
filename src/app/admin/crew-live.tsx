@@ -123,7 +123,7 @@ export function CrewLive({
               id="crew-log-filter"
               value={filter ?? ""}
               onChange={(event) => setFilter((event.target.value || null) as AdminAgent | null)}
-              className="rounded-md border border-black/15 bg-white px-2 py-1 text-xs text-gray-800 dark:border-white/15 dark:bg-transparent dark:text-gray-200"
+              className="min-h-11 rounded-md border border-black/15 bg-white px-2 py-1 text-sm text-gray-800 sm:min-h-0 sm:text-xs dark:border-white/15 dark:bg-transparent dark:text-gray-200"
             >
               <option value="">Everyone</option>
               {crew.map((member) => (

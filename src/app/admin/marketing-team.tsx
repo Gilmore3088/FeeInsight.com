@@ -18,7 +18,7 @@ export function MarketingTeam({ team }: { team: MarketingMember[] }) {
           return (
             <li key={member.agent}>
               <Link
-                href={`/admin/growth?view=team&agent=${member.agent}`}
+                href={`/admin/agents/marketing?view=team&agent=${member.agent}`}
                 prefetch={false}
                 className="block h-full rounded-lg border border-black/[0.08] px-4 py-3 transition-colors hover:border-black/20 dark:border-white/[0.1] dark:hover:border-white/25"
               >
