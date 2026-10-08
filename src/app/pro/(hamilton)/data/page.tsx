@@ -13,7 +13,7 @@ import { TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
 import { Figure, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = {
-  title: "Find an institution",
+  title: "Institutions",
 };
 
 interface PageProps {
@@ -87,11 +87,11 @@ export default async function ProDataPage({ searchParams }: PageProps) {
   return (
     <MemoPage>
       <MemoHeader
-        kicker="Institutions"
-        title="Find any bank or credit union"
+        kicker="Reference"
+        title="Institutions"
         dek={
           <>
-            {stats.total_institutions.toLocaleString()} institutions have{" "}
+            Find any bank or credit union. {stats.total_institutions.toLocaleString()} institutions have{" "}
             {stats.total_observations.toLocaleString()} verified, published fees in the Bank Fee Index.
             Open any one to see its fees beside its peers.
           </>
@@ -174,7 +174,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-warm-300 bg-warm-150 text-warm-700">
-                  <th scope="col" className="px-4 py-2.5 font-medium">Institution</th>
+                  <th scope="col" className="sticky left-0 z-10 bg-warm-150 px-4 py-2.5 font-medium">Institution</th>
                   <th scope="col" className="hidden px-4 py-2.5 font-medium sm:table-cell">State</th>
                   <th scope="col" className="hidden px-4 py-2.5 font-medium md:table-cell">Charter</th>
                   <th scope="col" className="hidden px-4 py-2.5 font-medium lg:table-cell">Asset size</th>
@@ -190,36 +190,40 @@ export default async function ProDataPage({ searchParams }: PageProps) {
                   </tr>
                 ) : (
                   results.rows.map((r) => (
-                    <tr key={r.id} className="hover:bg-warm-100">
-                      <td className="px-4 py-2.5">
+                    <tr key={r.id} className="group hover:bg-warm-100">
+                      <td className="sticky left-0 z-10 bg-warm-50 px-4 group-hover:bg-warm-100">
                         <Link
                           href={`/pro/research?instId=${r.id}`}
-                          className="font-medium text-warm-900 hover:text-terra-text"
+                          className="flex min-h-11 flex-wrap items-center gap-x-2 py-2 font-medium text-warm-900 no-underline hover:text-terra-text"
                         >
                           {r.institution_name}
+                          {r.state_code ? <span className="text-xs font-normal text-warm-600 sm:hidden">{r.state_code}</span> : null}
                         </Link>
-                        <span className="ml-2 text-xs text-warm-600 sm:hidden">{r.state_code}</span>
                       </td>
-                      <td className="hidden px-4 py-2.5 text-warm-700 sm:table-cell">
+                      <td className="hidden px-4 py-3 text-warm-700 sm:table-cell">
                         {r.state_code ? (
-                          <Link href={`/research/state/${r.state_code}`} className="hover:text-terra-text">
+                          <Link
+                            href={`/pro/data?state=${r.state_code}`}
+                            title={`Every institution in ${STATE_NAMES[r.state_code] ?? r.state_code}`}
+                            className="hover:text-terra-text"
+                          >
                             {STATE_NAMES[r.state_code] ?? r.state_code}
                           </Link>
                         ) : (
                           <span className="text-warm-600">Not recorded</span>
                         )}
                       </td>
-                      <td className="hidden px-4 py-2.5 text-warm-700 md:table-cell">
+                      <td className="hidden px-4 py-3 text-warm-700 md:table-cell">
                         {r.charter_type === "bank" ? "Bank" : "Credit union"}
                       </td>
-                      <td className="hidden px-4 py-2.5 text-warm-700 lg:table-cell">
+                      <td className="hidden px-4 py-3 text-warm-700 lg:table-cell">
                         {r.asset_size_tier ? (
                           FDIC_TIER_LABELS[r.asset_size_tier] ?? r.asset_size_tier
                         ) : (
                           <span className="text-warm-600">Not recorded</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-right [font-variant-numeric:tabular-nums]">
+                      <td className="px-4 py-3 text-right [font-variant-numeric:tabular-nums]">
                         {r.published_fee_count > 0 ? (
                           <span className="text-warm-900">{r.published_fee_count}</span>
                         ) : (
@@ -256,15 +260,15 @@ export default async function ProDataPage({ searchParams }: PageProps) {
       <MemoSection title="More ways into the data">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "Fee categories", desc: `All ${TAXONOMY_COUNT} fee types`, href: "/fees" },
-            { label: "National benchmarks", desc: "Medians and ranges", href: "/research/national-fee-index" },
+            { label: "Fee categories", desc: `All ${TAXONOMY_COUNT} fee types and their medians`, href: "/pro/categories" },
+            { label: "National benchmarks", desc: "Your fees against the nation, in My fees", href: "/pro/research?layer=national" },
             { label: "Ask Hamilton", desc: "Questions about any institution", href: "/pro/analyze" },
-            { label: "State reports", desc: `${statesData.length} states`, href: "/research" },
+            { label: "State reports", desc: `${statesData.length} states, on the public site`, href: "/research" },
           ].map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="group rounded-lg border border-warm-300 bg-warm-50 px-4 py-3 no-underline hover:border-warm-500"
+              className="group block min-h-11 rounded-lg border border-warm-300 bg-warm-50 px-4 py-3 no-underline hover:border-warm-500"
             >
               <span className="block text-base text-warm-900 group-hover:text-terra-text" style={SERIF}>
                 {item.label}

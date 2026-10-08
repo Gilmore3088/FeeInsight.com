@@ -155,7 +155,7 @@ const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|market
  * business development, relationship and cash management, wealth and trust, branch staff.
  */
 const NOT_BUYER_TITLE =
-  /loan|lend|mortgage|underwrit|business banker|business banking|business development|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|business services|business product|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
 
 /**
  * Member services and member experience are retail only at a decision maker's rank (PR 652's
