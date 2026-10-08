@@ -30,6 +30,19 @@ the last two days). Learning now shows worked / nothing there / failed. Waiting 
 **Lesson:** an admin screen that reads a rollup table must show where the rollup's newest row is.
 Count "nothing to do" apart from failures wherever a success rate is shown.
 
+## 2026-10-08: CFPB refuses bursts with 429, then 403, and one refusal killed a whole year
+**What happened:** `registry-cfpb` failed 10 of 39 steps from Oct 3 to Oct 8 (agent_run_steps,
+read 09:10 UTC Oct 8): six HTTP 403, three HTTP 429, one older timeout. They came while the parser
+v2 bump re-loaded all 15 years back to back (about 300 requests a year, 8 in flight). 14 years
+re-loaded; 2015 failed four times, twice within a second of starting.
+**Cause:** the source refusing us, set off by our own request rate. `registryFetch` retried 429
+three times over 7 seconds and treated 403 as final, so one refused request among ~300 failed the
+year. Not a parser bug: every completed step wrote rows.
+**Fix:** this PR. CFPB requests retry 403 and 429 four times with 4-32 s backoff, honouring
+Retry-After (capped at 30 s). Proof is the next 2015 run on prod.
+**Lesson:** a public API that answers bursts with 403 needs that status in its retry list; a
+parser-version bump re-runs every partition, so expect a burst after each one.
+
 ## 2026-10-08: A new agent or pause needs database rows, not only a code list
 **Owner:** the GrowthOS thread (growth agent, build-plan phase 1).
 **What happened:** adding agent `growth` and a `marketing` pause looked like code-only changes
@@ -83,7 +96,9 @@ answers a missing key with a 200 page, which the step treated as a failure.
 under an older parser is due at once, so a parser bump retries its failures on the next tick.
 `ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
 partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
-completes instead of failing. Other non-data replies still fail.
+is marked "skipped" instead of failing. Other non-data replies still fail. (Until Oct 8 the step
+showed "completed", which made unloaded data look green on Health; a worker can now return
+`skipped`.)
 **Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
 
 ## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
@@ -1175,6 +1190,19 @@ flattens into a digit. The table and family specialists (pass 2) already strippe
 **Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
 merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
 **Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+**Follow-up (2026-10-08):** issue 163 was run on Oct 6 (155 to 0), but by 08:40 UTC Oct 8, 22 live
+fees at 14 institutions had the digit again, 19 of them published after the fix. In a dot-leader
+line ("Check Cashing Fee1. . . . $5.00") the digit isn't at the end of the name until the leaders
+are removed, and that happens later, in `tidyFeeName`. Fix: `tidyFeeName` strips the footnote
+number in each cell after the leaders are gone. The live repair now runs in the pipeline: Knox
+name retidy v2 counts a footnoted name as messy and renames it (logged per row in
+`pipeline_feedback`), so no hand SQL is needed. A dry run on the live rows renamed all 22 and
+skipped none. At 11:11 UTC, 13 of those 22 were renamed. The other 9 live footnoted names sit at 5
+institutions: 4 of those institutions are later in the retidy sweep (it goes by institution id,
+40 per step). The fifth has a 14-word name that the run-on limit kept as it was, which retidy v3
+fixes.
+**Lesson 2:** a cleanup that keys on "end of the name" has to run after every other step that
+trims the name.
 
 ## 2026-10-05: Public pages showed different counts and medians on the same day
 **What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
@@ -3080,6 +3108,14 @@ Rows already on file gain the fields only when Knox reads their document again.
   higher NSF fee on the same schedule; 72 had the NSF fee's own price; 154 had no NSF line. Guard
   v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
   `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
+- **Follow-up (v24, same day).** WCU's $5 "Statement Copy Fee" was live as overdraft because Knox
+  kept the section heading in its name ("OVERDRAFT & NSF FEES: Statement Copy Fee"), and a
+  $5 "Returned Item Photocopy" was live as NSF. Guard v24 rejects statement copies, photocopies,
+  "copy fee" and "copy of" names under overdraft and NSF; these 2 are the only live matches.
+- **Follow-up (review v13, same day).** The 20-fee check of v12 releases scored 18 right, 1 wrong,
+  1 arguable; both misses had names cut from the middle of a line ("/hr incl. reproduction",
+  "account research fee may apply)"). Release review v13 keeps such names held. 117 live fees carry
+  names of that shape, almost all read by Knox; Knox should take the row's first cell as the name.
 
 
 ## 2026-10-08: Every Stripe webhook failed

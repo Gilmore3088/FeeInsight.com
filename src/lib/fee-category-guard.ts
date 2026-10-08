@@ -18,6 +18,8 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
+import { foldRetiredCategory } from "@/lib/fee-fold";
+
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
 /** What a caller knows about the fee besides its name; enables the rate check. */
@@ -76,7 +78,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   overdraft: {
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege)/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b|\bat least\b|or equal to|is positive|^.{0,20}\bfee on$)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|annual fee|or less\b|\bat least\b|or equal to|is positive|^.{0,20}\bfee on$)/i,
     // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
     // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
     excludeUnless: { pattern: /return/i, unless: OVERDRAFT_AND_RETURNED, outsideNotes: true },
@@ -85,7 +87,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
     exclude:
-      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|written to you|re-?route)/i,
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route)/i,
   },
   // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
   // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
@@ -93,15 +95,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // A deposit or an inquiry is its own fee, except in one row that also prices withdrawals or
   // transfers at an ATM the bank does not own ("Deposits/Withdrawals at an ATM we do not own
   // or operate", "Inquiries/Transfers at an ATM we do not own"; Pathfinder, Oct 7).
+  // v25 (top-50 fold): a balance inquiry at an ATM is filed here, so "Balance Inquiry" under an
+  // ATM heading passes; one by phone or with a person does not.
   atm_non_network: {
-    include: /(atm|allpoint|network machine)/i,
+    include: /(atm|allpoint|network machine|machines?\b|shazam|cajero|balance inquir)/i,
     excludeUnless: {
-      pattern: /(deposit|inquir)/i,
+      pattern: /deposit/i,
       unless:
         /^(?=.*(\b(deposit|inquir)\w*\s*(\/|&|\band\b|\bor\b)\s*(withdraw|w\/d|transfer|transaction)|\b(withdraw|w\/d|transfer|transaction)\w*\s*(\/|&|\band\b|\bor\b)\s*(balance\s+)?(deposit|inquir)))(?=.*(do(es)?\s+not\s+(own|operate)|don['’]t\s+(own|operate)|not\s+owned|\bnon[- ]?[\w.]+([- ]owned)?\s+atms?\b|\bnon[- ]?proprietary\s+atms?\b|\bforeign\s+atms?\b|\batms?\s+foreign\b|\b(all\s+)?other\s+networks?\b|\bother\s+(banks?|institutions?|financial\s+institutions?)['’]?\s+atms?\b|out[- ]of[- ](our\s+)?network|not\s+(in|within)\s+(our\s+)?network))/i,
     },
     exclude:
-      /(replace|statement|card fee|annual|\bpin\b|denied|declin|between accounts|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
+      /(replace|statement|card fee|annual|\bpin\b|denied|declin|between accounts|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/i,
   },
   wire_domestic_outgoing: {
     include: /wire/i,
@@ -150,10 +154,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /^(?!.*\b(fee|charge) of\s*$).*(to open|to obtain|to earn|\bapy\b|annual percentage yield|requirements?\b(?! fee)|balance required|required to|you must deposit|to avoid)/i,
   },
-  // Buying a gift or prepaid card. Its reload, replacement and inactivity fees are other fees.
+  // Buying or loading a gift, prepaid or travel card (v25: reloads folded in from the retired
+  // prepaid-reload category). Its replacement and inactivity fees are other fees.
   gift_card_purchase: {
-    include: /(gift|prepaid|reloadable|travel card)/i,
-    exclude: /(inactiv|dormant|monthly|non-?use|replac|lost|stolen|reload(?!able)|maintenance)/i,
+    include: /(gift|pre-?\s?paid|re-?\s?load|travel ?(money )?card|travelmoney|cu ?money|everyday spend|access card)/i,
+    exclude: /(inactiv|dormant|non-?use|replac|lost|stolen|maintenance)/i,
   },
   // A chargeback on a deposited item or a loan is not a card dispute.
   card_dispute: {
@@ -207,7 +212,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 23;
+export const CATEGORY_GUARD_VERSION = 25;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -273,8 +278,14 @@ function plainQuotes(name: string): string {
 export function refileCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
+  /** Schedule text just before the fee's line (`foldContext`), when the caller has it. */
+  context?: string | null,
 ): string | null {
   if (!canonicalFeeKey) return null;
+  return foldedInto(refiledCategory(canonicalFeeKey, feeName), feeName, context);
+}
+
+function refiledCategory(canonicalFeeKey: string, feeName: string | null | undefined): string {
   if (checkFeeCategory(canonicalFeeKey, feeName).ok) return canonicalFeeKey;
   const name = plainQuotes(feeName ?? "");
   const rule = REFILE_RULES.find(
@@ -285,6 +296,16 @@ export function refileCategory(
       checkFeeCategory(candidate.to, name).ok,
   );
   return rule ? rule.to : canonicalFeeKey;
+}
+
+/**
+ * A fee under a category retired by the top-50 fold goes where its wording places it
+ * (`fee-fold.ts`), when that category's guard accepts the name. One with no home keeps
+ * the retired key, which Hamilton never publishes.
+ */
+function foldedInto(key: string, feeName: string | null | undefined, context?: string | null): string {
+  const target = foldRetiredCategory(key, feeName, context)?.to;
+  return target && checkFeeCategory(target, feeName).ok ? target : key;
 }
 
 export const PLAIN_RETURNED_ITEM = /^\s*return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?\s*:?\s*$/i;

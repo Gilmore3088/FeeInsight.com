@@ -680,6 +680,8 @@ describe("registry dispatch", () => {
       "federal-register",
       "federal-bills",
       "state-bills",
+      "state-reg-news",
+      "state-bill-news",
       "state-regulators",
       "enforcement",
       "state-enforcement",
@@ -695,5 +697,16 @@ describe("registry dispatch", () => {
       status: "skipped",
       detail: { missing_partition: true },
     });
+  });
+
+  it("shows a Census vintage skipped for a missing key as a skipped step, not a completed one", async () => {
+    const { db } = createDb([]);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Missing Key</html>", { status: 200 })));
+    try {
+      const outcome = await runRegistryStep({ stepKey: "registry-census-acs", runId: 1, partitionKey: "2024", dryRun: false, db });
+      expect(outcome).toMatchObject({ status: "skipped", detail: { skipped_no_key: true } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

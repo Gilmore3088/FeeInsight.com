@@ -33,6 +33,8 @@ import { SEC_FILINGS_SOURCE, SEC_LINKS_PARTITION, SEC_LINKS_SOURCE, runRegistryS
 import { ENFORCEMENT_PARTITION, ENFORCEMENT_SOURCE, runRegistryEnforcement } from "./enforcement";
 import { STATE_ENFORCEMENT_PARTITION, STATE_ENFORCEMENT_SOURCE, runRegistryStateEnforcement } from "./state-enforcement";
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
+import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNews } from "./state-reg-news";
+import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
@@ -59,6 +61,8 @@ export interface RegistryStepOutcome {
 interface WorkerOutput {
   summary: string;
   detail: Record<string, unknown>;
+  /** True when the worker could not load anything (e.g. a missing key); the step shows as skipped, not completed. */
+  skipped?: boolean;
 }
 
 export interface RegistrySourceDefinition {
@@ -262,6 +266,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           ? `Census has not published the ${r.partitionKey} ACS 5-year estimates yet; will check again.`
           : `Magellan loaded ${r.partitionKey} ACS household income for ${n(r.counts.state)} states, ${n(r.counts.county)} counties, ${n(r.counts.zcta)} ZIP areas and ${n(r.counts.tract)} tracts; ${n(r.withIncome)} have a median income${dry(r.dryRun)}.`,
         detail: { year: r.year, counts: r.counts, with_income: r.withIncome, upserted_rows: r.upsertedRows, empty: r.empty, skipped_no_key: Boolean(r.skippedNoKey) },
+        skipped: Boolean(r.skippedNoKey),
       };
     },
   },
@@ -472,6 +477,58 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     },
   },
   {
+    source: STATE_REG_NEWS_SOURCE,
+    stepKey: "registry-state-reg-news",
+    title: "Pull state banking regulators' news",
+    fixedPartition: STATE_REG_NEWS_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryStateRegNews({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      const by = (m: string) => r.agencies.filter((a) => a.mode === m);
+      const read = by("feed").length + by("page").length;
+      const missed = [...by("none"), ...by("failed")].map((a) => a.state);
+      return {
+        summary: `Magellan read news from ${read} of ${r.agencies.length} state regulator sites (${by("feed").length} by feed, ${by("page").length} by news page): ${n(r.fetched)} items, ${n(r.feeRelated)} about fees; stored ${r.stored}${mode}${dry(r.dryRun)}.${missed.length > 0 ? ` Nothing read for ${[...new Set(missed)].join(", ")}.` : ""}`,
+        detail: {
+          fetched: r.fetched,
+          fee_related: r.feeRelated,
+          stored: r.stored,
+          shadow: r.shadow,
+          read,
+          agencies: r.agencies.length,
+          by_mode: Object.fromEntries(["feed", "page", "none", "failed", "no_website", "not_reached"].map((m) => [m, by(m).map((a) => a.state)])),
+        },
+      };
+    },
+  },
+  {
+    source: STATE_BILL_NEWS_SOURCE,
+    stepKey: "registry-state-bill-news",
+    title: "Pull news about state bank fee bills",
+    fixedPartition: STATE_BILL_NEWS_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryStateBillNews({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const mode = r.shadow ? " (shadow mode: nothing stored)" : "";
+      const billsWithNews = r.queries.filter((q) => q.kind === "bill" && q.items > 0).length;
+      const statesWithNews = r.queries.filter((q) => q.kind === "state" && q.items > 0).map((q) => q.state);
+      const limited = r.rateLimited ? " Google News limited the run; the rest wait for tomorrow." : "";
+      return {
+        summary: `Magellan searched news for ${r.bills} state fee bills (${billsWithNews} with coverage) and fee legislation in ${r.states.length} states (${statesWithNews.length} with stories): ${n(r.fetched)} stories; stored ${r.stored}${mode}${dry(r.dryRun)}.${limited}`,
+        detail: {
+          bills: r.bills,
+          bills_with_news: billsWithNews,
+          states: r.states,
+          states_with_news: statesWithNews,
+          fetched: r.fetched,
+          stored: r.stored,
+          not_reached: r.notReached,
+          rate_limited: r.rateLimited,
+          shadow: r.shadow,
+        },
+      };
+    },
+  },
+  {
     source: STATE_REGULATORS_SOURCE,
     stepKey: "registry-state-regulators",
     title: "Sync the state regulator registry",
@@ -543,7 +600,7 @@ export async function runRegistryStep(input: RegistryStepInput): Promise<Registr
   }
   const output = await definition.run({ ...input, partitionKey });
   return {
-    status: "completed",
+    status: output.skipped ? "skipped" : "completed",
     summary: output.summary,
     detail: { registry_source: definition.source, partition_key: partitionKey, dry_run: input.dryRun, ...output.detail },
   };
