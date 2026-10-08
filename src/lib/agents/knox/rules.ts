@@ -181,7 +181,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // to a total of $500") it describes another fee or a limit.
   {
     key: "overdraft",
-    pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
+    pattern: /\b(overdraft|courtesy pay|privilege pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
   },
   {
     key: "nsf",
@@ -462,7 +462,7 @@ export function classifyPatternKey(value: string): string | null {
   if (
     key === "overdraft" &&
     /^\W*(?:NSF|non[-\s]?sufficient|insufficient funds)\b/i.test(text) &&
-    !/\b(?:overdraft|courtesy|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
+    !/\b(?:overdraft|courtesy|privilege|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
   ) {
     return "nsf";
   }
@@ -494,6 +494,9 @@ export function classifyPatternKey(value: string): string | null {
  */
 export function nearestFeeText(prefix: string): string {
   const cells = prefix.split(CELL_SEPARATOR).filter((cell) => /[a-z]{3,}/i.test(cell));
+  // v38: a cell holding only a threshold's comparison word, cut off from its figure
+  // ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse), names no fee.
+  while (cells.length > 1 && THRESHOLD_WORD_CELL.test(cells.at(-1) ?? "")) cells.pop();
   for (let start = cells.length - 1; start >= 0; start -= 1) {
     const text = cells.slice(start).join(CELL_SEPARATOR);
     // A cell that names a fee of its own owns the price, even when no rule knows it.
@@ -501,6 +504,9 @@ export function nearestFeeText(prefix: string): string {
   }
   return cells.join(CELL_SEPARATOR);
 }
+
+const THRESHOLD_WORD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than|up\s+to)\s*$/i;
+const THRESHOLD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/i;
 
 export function classifyNearest(prefix: string): string | null {
   return classifyFeeText(nearestFeeText(prefix));
@@ -1000,6 +1006,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // v38: a threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32")
+  // stays in the name with its figure: "Courtesy Pay (over $5)".
+  const thresholdCell = cells?.find((cell, index) => index > 0 && THRESHOLD_CELL.test(cell));
+  if (cells && thresholdCell && hint && usableName(nameFrom(cells[0])) && segment.indexOf(thresholdCell) < feeAmounts[0].start) {
+    feeName = `${nameFrom(cells[0])} (${thresholdCell.trim().replace(/\s+/g, " ").toLowerCase()})`;
+  }
   // v32: two fees' names in one row before one price ("Returned Check | Verification of
   // Deposit | $20", a two-column page): the price is the nearest name's, and so is the name.
   if (cells && hint && feeAmounts[0] === firstAmount) {
