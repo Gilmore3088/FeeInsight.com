@@ -727,4 +727,15 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Courtesy Pay Overdraft Protection", { amount: 10 })).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "Overdraft Fee", { amount: 10 })).toEqual({ ok: true });
   });
+
+  it("v41 moves charge-off fees out of overdraft and check cashing (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Overdraft Charge-off negative balance account").ok).toBe(false);
+    expect(refileCategory("overdraft", "Overdraft Charge-off negative balance account")).toBe("account_research");
+    for (const name of ["Charge off deposit collection fee", "Deposit Charge off Collection Fee", "Charge-off collection fee"]) {
+      expect(checkFeeCategory("check_cashing", name).ok, name).toBe(false);
+      expect(refileCategory("check_cashing", name), name).toBe("account_research");
+    }
+    expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("check_cashing", "Collection Item (Incoming)")).toEqual({ ok: true });
+  });
 });
