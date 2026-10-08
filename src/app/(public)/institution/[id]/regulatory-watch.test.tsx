@@ -94,3 +94,16 @@ describe("state exhibit", () => {
   });
 });
 
+
+describe("state banking-department orders on the timeline", () => {
+  it("names state enforcement in the headline and exhibit once a state order is shown", () => {
+    const watch: RegulatoryWatch = {
+      ...WATCH,
+      agencies_loaded: ["OCC", "FRB", "STATE_TX"],
+      peer_actions: [action({ peer_id: 6, peer_name: "Herring Bank", agency: "STATE_TX", party_name: "Herring Bank", action_type: "Consent order", subject: null, consumer_law: false, theme: "other", penalty_amount: null, document_url: null })],
+    };
+    render(<RegulatoryWatchSection watch={watch} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/drew federal or state enforcement since/);
+    expect(screen.getByText(/^Federal and state enforcement against your largest local competitors/)).toBeInTheDocument();
+  });
+});

@@ -106,17 +106,17 @@ export function spendVitals(total: SpendLine | null): Vital[] {
 
 export function VitalsRow({ vitals }: { vitals: Vital[] }) {
   return (
-    <section aria-label="Vitals" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <section aria-label="Vitals" className="grid grid-cols-3 gap-2 sm:gap-3">
       {vitals.map((vital) => (
         <Link
           key={vital.label}
           href={vital.href}
           prefetch={false}
-          className="admin-card block px-4 py-3 transition-colors hover:border-gray-300 dark:hover:border-white/15"
+          className="admin-card block min-w-0 px-3 py-3 transition-colors sm:px-4 hover:border-gray-300 dark:hover:border-white/15"
         >
           <p className="text-xs text-gray-500 dark:text-gray-400">{vital.label}</p>
           <p
-            className={`mt-1 font-mono text-2xl font-medium tabular-nums ${
+            className={`mt-1 truncate font-mono text-lg font-medium tabular-nums sm:text-2xl ${
               vital.value === null ? "text-gray-400" : "text-gray-900 dark:text-gray-100"
             }`}
           >

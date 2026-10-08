@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
+import { linkPreview } from "@/lib/link-preview";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -32,9 +33,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const name = DISTRICT_NAMES[districtId];
   if (!name) return { title: "District Not Found" };
 
+  const title = `Federal Reserve District ${districtId} (${name}) - Fee Analysis`;
+  const description = `Bank and credit union fee analysis for Federal Reserve District ${districtId} (${name}). District vs. national fee benchmarks with economic context from the Beige Book.`;
   return {
-    title: `Federal Reserve District ${districtId} (${name}) - Fee Analysis`,
-    description: `Bank and credit union fee analysis for Federal Reserve District ${districtId} (${name}). District vs. national fee benchmarks with economic context from the Beige Book.`,
+    title,
+    description,
+    ...linkPreview({ title, description, path: `/research/district/${districtId}` }),
     keywords: [
       `Federal Reserve District ${districtId}`,
       `${name} bank fees`,
