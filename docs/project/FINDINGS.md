@@ -13,6 +13,19 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: The taxonomy fold wrote a generated column and stopped every Hamilton publish
+**What happened:** after PR 560 merged at 12:01 UTC, Hamilton's publish step failed on every
+state run (IA and AL at 12:06, MS at 12:08, KS at 12:15, atlas job #2877) with `column
+"fee_category" can only be updated to DEFAULT`.
+**Cause:** the fold's `applyMoves` set `verified_fee_observations.fee_category` as well as
+`canonical_fee_key`. On prod `fee_category` is `GENERATED ALWAYS AS (canonical_fee_key) STORED`
+(`20260406_report_jobs.sql`), so the UPDATE is refused, and the publish transaction rolls back.
+Unit tests use a fake database and never ran the SQL.
+**Fix:** this PR drops the `fee_category` assignment; the column follows `canonical_fee_key`.
+**Lesson:** before writing a column on a tier table, check `information_schema.columns.is_generated`
+on prod. New SQL inside the publish transaction can stop all publishing, so read the first
+publish step on prod right after such a merge.
+
 ## 2026-10-08: CFPB refuses bursts with 429, then 403, and one refusal killed a whole year
 **What happened:** `registry-cfpb` failed 10 of 39 steps from Oct 3 to Oct 8 (agent_run_steps,
 read 09:10 UTC Oct 8): six HTTP 403, three HTTP 429, one older timeout. They came while the parser
