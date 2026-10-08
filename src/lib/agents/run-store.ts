@@ -2313,6 +2313,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
+  // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
+  "registry-state-reg-news": 170_000,
+  "registry-state-bill-news": 120_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,

@@ -680,6 +680,8 @@ describe("registry dispatch", () => {
       "federal-register",
       "federal-bills",
       "state-bills",
+      "state-reg-news",
+      "state-bill-news",
       "state-regulators",
       "enforcement",
       "state-enforcement",
