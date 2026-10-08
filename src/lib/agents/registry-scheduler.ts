@@ -11,7 +11,7 @@ import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry
 import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
 import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
-import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
+import { SEC_FILINGS_SOURCE, SEC_LINKS_PARSER_VERSION, SEC_LINKS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
 import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
@@ -60,6 +60,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [STATE_BILL_NEWS_SOURCE]: STATE_NEWS_PARSER_VERSION,
   [CENSUS_ACS_SOURCE]: CENSUS_ACS_PARSER_VERSION,
   [CFPB_SOURCE]: CFPB_PARSER_VERSION,
+  [SEC_LINKS_SOURCE]: SEC_LINKS_PARSER_VERSION,
   [FFIEC_OVERDRAFT_SOURCE]: FFIEC_OVERDRAFT_PARSER_VERSION,
 };
 

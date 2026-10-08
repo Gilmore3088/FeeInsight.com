@@ -416,7 +416,10 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </details>
             <p className="mt-3">{correctionNote}</p>
           </section>
-          <HamiltonClose competitors={analysis.readiness.competitorsWithData} />
+          <HamiltonClose
+            competitors={analysis.readiness.competitorsWithData}
+            institutionId={data.subject.institution_id}
+          />
         </>
       )}
     </>

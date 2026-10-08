@@ -44,7 +44,8 @@ export interface PublicInstitutionProfileLinks {
 
 /**
  * Links for the public institution profile. Pro actions route anonymous
- * viewers to `/subscribe?from=<profile path>` instead of the login wall.
+ * viewers to the Pro plans with `from=<that Pro screen>`, so after checkout they land on the
+ * brief, question or scenario they clicked rather than back on the profile.
  */
 export function buildPublicInstitutionProfileLinks({
   institutionId,
@@ -52,9 +53,8 @@ export function buildPublicInstitutionProfileLinks({
   isAuthenticated,
 }: PublicInstitutionProfileLinkParams): PublicInstitutionProfileLinks {
   const instId = String(institutionId);
-  const profilePath = `/institution/${instId}`;
-  const subscribeHref = `/subscribe?from=${encodeURIComponent(profilePath)}`;
-  const gate = (proHref: string) => (isAuthenticated ? proHref : subscribeHref);
+  const gate = (proHref: string) =>
+    isAuthenticated ? proHref : `/subscribe?from=${encodeURIComponent(proHref)}#pro`;
   const reportContext = new URLSearchParams({ institution: instId, name: institutionName, src: "profile" });
   return {
     correctSourceHref: `/submit-fees?institution=${instId}`,
