@@ -473,6 +473,9 @@ export function classifyPatternKey(value: string): string | null {
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
+  // v43: one price for the paid and the returned item ("NSF Paid Item Fee/Returned Item Fee
+  // (items over $10)", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft".
+  if (key === "nsf" && PAID_AND_RETURNED_ITEM.test(text)) return "overdraft";
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
   // v34: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd).
@@ -520,6 +523,7 @@ export function nearestFeeText(prefix: string): string {
   return cells.join(CELL_SEPARATOR);
 }
 
+const PAID_AND_RETURNED_ITEM = /\bpaid items?(?: fees?)?\s*\/\s*(?:nsf\s+)?return(?:ed)? items?\b|\breturn(?:ed)? items?(?: fees?)?\s*\/\s*(?:nsf\s+)?paid items?\b/i;
 const COVERAGE_CELL = /^\s*(?:for|includes?|including)\b|,[^,]*,/i;
 const THRESHOLD_WORD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than|up\s+to)\s*$/i;
 const THRESHOLD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/i;
