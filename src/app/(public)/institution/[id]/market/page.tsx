@@ -61,9 +61,11 @@ function Status({ value }: { value: SnapshotValue }) {
   );
 }
 
-function FeeSection({ fee, subjectName, names }: { fee: SnapshotFee; subjectName: string; names: Map<number, string> }) {
+function FeeSection({ fee, subjectName, names, verifiedOnly = false }: { fee: SnapshotFee; subjectName: string; names: Map<number, string>; verifiedOnly?: boolean }) {
   const label = getDisplayName(fee.category);
   const own = fee.subject;
+  const peers = verifiedOnly ? fee.peers.filter((peer) => peer.verified) : fee.peers;
+  const leftOut = fee.peers.length - peers.length;
   return (
     <div className="space-y-3 px-4 py-4 sm:px-5">
       <p className="text-[15px] leading-relaxed">
@@ -88,7 +90,7 @@ function FeeSection({ fee, subjectName, names }: { fee: SnapshotFee; subjectName
           <SourceLink value={own} category={fee.category} />
         </p>
       )}
-      {fee.peers.length > 0 && (
+      {peers.length > 0 && (
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-[#E0D7C9] text-left text-xs uppercase tracking-wide text-[#6B6358]">
@@ -98,7 +100,7 @@ function FeeSection({ fee, subjectName, names }: { fee: SnapshotFee; subjectName
             </tr>
           </thead>
           <tbody>
-            {fee.peers.map((peer) => (
+            {peers.map((peer) => (
               <tr key={peer.institutionId} className="border-b border-[#EFE8DC] align-top">
                 <td className="py-2 pr-2">
                   <Link
@@ -123,9 +125,17 @@ function FeeSection({ fee, subjectName, names }: { fee: SnapshotFee; subjectName
           </tbody>
         </table>
       )}
+      {leftOut > 0 && (
+        <p className="text-xs text-[#6B6358]">
+          {leftOut} more local figure{leftOut === 1 ? "" : "s"} did not trace to {leftOut === 1 ? "its" : "their"} schedule&apos;s text and {leftOut === 1 ? "is" : "are"} left out.
+        </p>
+      )}
     </div>
   );
 }
+
+/** Comparisons the free preview shows in full. */
+const PREVIEW_COMPARISONS = 5;
 
 export default async function MarketSnapshotPage({ params }: PageProps) {
   const { id } = await params;
@@ -137,11 +147,16 @@ export default async function MarketSnapshotPage({ params }: PageProps) {
   const { subject } = snapshot;
   const market = marketLabel(subject);
   const names = new Map(snapshot.peers.map((peer) => [peer.id, peer.name]));
-  // Fees with a verified figure for the institution and a verified local median are shown open,
-  // in the snapshot's order: these are the comparisons an outreach email quotes. The rest stay
-  // folded, and a fee nobody in the market publishes is left out.
-  const comparable = snapshot.fees.filter((fee) => fee.subject?.verified && fee.verifiedMedian !== null);
-  const rest = snapshot.fees.filter((fee) => !comparable.includes(fee) && (fee.subject !== null || fee.peers.length > 0));
+  // A preview, not the report (James's outreach audit, 22:34 UTC Oct 8): up to PREVIEW_COMPARISONS
+  // fees where the institution and enough local institutions verify are shown in full, in the
+  // order outreach quotes them (overdraft, NSF, then the most verified peers). The institution's
+  // other published fees are listed with its own figure only; their comparisons are in the report.
+  const lead = (category: string) => (category === "overdraft" ? 0 : category === "nsf" ? 1 : 2);
+  const comparable = snapshot.fees
+    .filter((fee) => fee.subject?.verified && fee.verifiedMedian !== null)
+    .sort((a, b) => lead(a.category) - lead(b.category) || b.verifiedPeerCount - a.verifiedPeerCount || a.category.localeCompare(b.category))
+    .slice(0, PREVIEW_COMPARISONS);
+  const rest = snapshot.fees.filter((fee) => !comparable.includes(fee) && fee.subject !== null);
   const reportHref = `/for-institutions?${new URLSearchParams({ institution: String(subject.id), name: subject.name, src: "snapshot" }).toString()}#report`;
 
   return (
@@ -154,36 +169,39 @@ export default async function MarketSnapshotPage({ params }: PageProps) {
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-[#4A443C]">
           Each fee sits beside the other institutions in the {subject.cbsaName ?? market} area that publish a fee schedule. Every figure
-          links to the schedule it was read from. A figure marked unverified did not trace to its schedule&apos;s text, so it is left out of
-          the local median.
+          links to the schedule it was read from. Only figures that trace to their schedule&apos;s text are shown and counted in the local
+          median.
         </p>
 
         {comparable.map((fee) => (
           <section key={fee.category} className="mt-6 border border-[#E0D7C9] bg-white">
             <h2 className="border-b border-[#E0D7C9] px-4 py-3 text-lg font-semibold sm:px-5">{getDisplayName(fee.category)}</h2>
-            <FeeSection fee={fee} subjectName={subject.name} names={names} />
+            <FeeSection fee={fee} subjectName={subject.name} names={names} verifiedOnly />
           </section>
         ))}
 
         {rest.length > 0 && (
-          <h2 className="mt-8 text-base font-semibold">Other published fees</h2>
+          <section className="mt-8">
+            <h2 className="text-base font-semibold">{subject.name}&apos;s other published fees</h2>
+            <p className="mt-1 text-sm text-[#4A443C]">The local comparison for each of these is in the market report.</p>
+            <table className="mt-3 w-full border-collapse text-sm">
+              <tbody>
+                {rest.map((fee) => (
+                  <tr key={fee.category} className="border-b border-[#EFE8DC] align-top">
+                    <td className="py-2 pr-2">{getDisplayName(fee.category)}</td>
+                    <td className="whitespace-nowrap py-2 pr-2 text-right tabular-nums">
+                      {money(fee.subject!.value)}
+                      <Status value={fee.subject!} />
+                    </td>
+                    <td className="py-2 text-xs">
+                      <SourceLink value={fee.subject!} category={fee.category} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
         )}
-        <div className="mt-3 space-y-3">
-          {rest.map((fee) => (
-            <details key={fee.category} className="border border-[#E0D7C9] bg-white">
-              <summary
-                className="cursor-pointer px-4 py-3 text-base font-semibold sm:px-5"
-                data-snapshot-event="fee_view"
-                data-snapshot-detail={fee.category}
-              >
-                {getDisplayName(fee.category)}
-                {fee.subject ? <span className="ml-2 font-normal text-[#4A443C]">{money(fee.subject.value)}</span> : null}
-                <span className="float-right text-sm font-normal text-[#8A3B12]">Compare</span>
-              </summary>
-              <FeeSection fee={fee} subjectName={subject.name} names={names} />
-            </details>
-          ))}
-        </div>
 
         <section className="mt-8 border-t border-[#E0D7C9] pt-6">
           <h2 className="text-lg font-semibold">The full competitive review</h2>
