@@ -53,6 +53,8 @@ export function regulatoryFacts(input: {
   complaints: InstitutionComplaintYear[];
   /** Reviewed state rules for this institution (stateFeeLawsFor); none until reviewed. */
   stateRules?: readonly StateRule[];
+  /** The day the regulator record was read, for its source date. */
+  readOn?: string;
 }): Fact[] {
   const out: Fact[] = [];
   const rules = rulesForInstitution(input.stateRules);
@@ -74,6 +76,7 @@ export function regulatoryFacts(input: {
       source: {
         label: input.regulators?.source === "ncua" ? "NCUA credit union records" : "FDIC BankFind institution records",
         table: "institution_sources",
+        ...(input.readOn ? { asOf: input.readOn } : {}),
       },
     });
   }

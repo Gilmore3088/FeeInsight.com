@@ -79,7 +79,7 @@ describe("storyline", () => {
     const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
     expect(story.kind).toBe("structure");
     const matrix = story.exhibits[0];
-    expect(matrix.actionTitle).toBe("Of 6 peers, 4 also publish an NSF fee, 2 a transfer fee and 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 6 peers: 4 publish an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows[0]).toMatchObject({ name: "Example Valley Credit Union", own: true, cells: ["$32", "$32", null, null, null] });
       expect(matrix.exhibit.rows).toHaveLength(7);
@@ -156,7 +156,7 @@ describe("storyline", () => {
     // The table already lists every member at its price; no second exhibit repeats it.
     expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
     expect(story.lenses.market.map((f) => f.text)).toEqual([
-      "2 of 6 $10B+ institutions price below your $32; lowest are Big Bank 2 ($0) and Big Bank 1 ($10).",
+      "2 of 6 $10B+ institutions charge less than your $32; the lowest is Big Bank 2 ($0).",
       "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
       "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
       "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
@@ -190,5 +190,26 @@ describe("local competitors carry their market deposits", () => {
     if (exhibit.kind !== "competitor_range") throw new Error("expected competitor_range");
     expect(exhibit.items.find((i) => i.name === "Peer 101")?.deposits).toBe(1_200_000_000);
     expect(exhibit.items.find((i) => i.name === "Peer 102")?.deposits).toBeNull();
+  });
+});
+
+describe("storyline for a regulation question", () => {
+  const regulation = [
+    { text: "An overdraft fee may be charged on ATM and one-time debit card transactions only after the consumer opts in.", source: { label: "Regulation E overdraft opt-in, 12 CFR 1005.17" } },
+    { text: "Overdraft fees on transactions authorized against a sufficient balance can be an unfair practice.", source: { label: "Unanticipated overdraft fees, CFPB Circular 2022-06" } },
+    { text: "The OCC charters and supervises you as a national bank.", source: { label: "FDIC BankFind institution records", table: "institution_sources", asOf: "2026-10-08" } },
+  ];
+  const research = { ...overdraftResearch(), regulation };
+
+  it("names the bank's own regulator in the finance lens, ahead of the rules", () => {
+    const question = "What regulation applies to our overdraft fee?";
+    const finance = buildAskResponse({ question, intent: parseAsk(question), research, memory: [] }).answer?.storyline?.lenses.finance ?? [];
+    expect(finance[0]?.text).toBe("The OCC charters and supervises you as a national bank.");
+  });
+
+  it("leaves the regulator out of a price question's finance lens when two rules apply", () => {
+    const question = "How does our overdraft fee compare?";
+    const finance = buildAskResponse({ question, intent: parseAsk(question), research, memory: [] }).answer?.storyline?.lenses.finance ?? [];
+    expect(finance.map((f) => f.text)).not.toContain("The OCC charters and supervises you as a national bank.");
   });
 });
