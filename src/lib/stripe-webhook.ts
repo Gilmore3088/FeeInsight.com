@@ -99,8 +99,26 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<Str
  */
 async function applyReportPayment(tx: Tx, session: Stripe.Checkout.Session, effects: StripeEventEffects): Promise<void> {
   if (session.mode !== "payment" || session.payment_status !== "paid") return;
-  const leadId = Number(session.metadata?.lead_id);
+  await markReportPaid(tx, { leadId: Number(session.metadata?.lead_id), ref: session.id, cents: session.amount_total ?? 0 }, effects);
+}
+
+/**
+ * An institution report paid on a Stripe invoice (/pay/report "Get an invoice"): bank
+ * transfer or card on Stripe's invoice page. The invoice id stands where a checkout id would.
+ */
+async function applyReportInvoicePayment(tx: Tx, invoice: Stripe.Invoice, effects: StripeEventEffects): Promise<void> {
+  if (invoice.status !== "paid" || !invoice.id) return;
+  await markReportPaid(tx, { leadId: Number(invoice.metadata?.lead_id), ref: invoice.id, cents: invoice.amount_paid ?? 0 }, effects);
+}
+
+async function markReportPaid(
+  tx: Tx,
+  payment: { leadId: number; ref: string; cents: number },
+  effects: StripeEventEffects,
+): Promise<void> {
+  const { leadId, ref } = payment;
   if (!Number.isSafeInteger(leadId) || leadId <= 0) return;
+  const session = { id: ref, amount_total: payment.cents };
   const paid = await tx<Array<{ id: string | number; name: string; email: string; quote_institution_id: string | number | null }>>`
     UPDATE leads
     SET paid_at = NOW(), status = 'paid', stripe_checkout_session_id = ${session.id}
@@ -216,8 +234,16 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       return;
     }
 
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) await applyReportInvoicePayment(tx, invoice, effects);
+      return;
+    }
+
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
+      // A report invoice is not a subscription; a failed bank transfer never touches Pro.
+      if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) return;
       const customerId = customerIdOf(invoice.customer as string | { id: string } | null);
       if (customerId) {
         await tx`
