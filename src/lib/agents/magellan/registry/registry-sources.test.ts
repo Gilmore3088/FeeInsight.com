@@ -752,6 +752,7 @@ describe("registry dispatch", () => {
       "state-regulators",
       "enforcement",
       "state-enforcement",
+      "wire-research",
     ]);
   });
 

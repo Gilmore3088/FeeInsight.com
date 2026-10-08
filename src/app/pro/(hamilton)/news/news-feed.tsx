@@ -1,7 +1,10 @@
 import Link from "next/link";
 import type { RegArticle } from "@/lib/data-store/news";
 import { wireHref, type PageWindow, type WireParams } from "@/lib/regulatory/wire";
-import { LABEL, SANS, WireDate, WirePager, WireSummary } from "./wire-controls";
+import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import { researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
+import { ResearchPanel } from "./research-panel";
+import { FeeChips, LABEL, SANS, WireDate, WirePager, WireSummary } from "./wire-controls";
 
 /**
  * The Regulatory Wire's Federal view: the agencies' own releases, one page at a time, with
@@ -21,6 +24,14 @@ interface NewsFeedProps {
   now: Date;
   /** Operators (admins and analysts) can pull the feeds by hand. */
   canRefreshFeeds?: boolean;
+  /** Research notes keyed by researchKey("article", guid). */
+  notes?: Map<string, ResearchNote>;
+  /** Related releases and rules, keyed by guid. */
+  related?: Map<string, RelatedItem[]>;
+  /** Preview only: notes were written by hand and are labelled EXAMPLE. */
+  exampleNotes?: boolean;
+  /** Preview only: guids whose panel renders open. */
+  openPanels?: string[];
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -80,14 +91,19 @@ export function NewsFeed({
   sourceLabels,
   now,
   canRefreshFeeds = false,
+  notes,
+  related,
+  exampleNotes = false,
+  openPanels = [],
 }: NewsFeedProps) {
-  const filtered = Boolean(params.source || params.topic || params.q);
+  const filtered = Boolean(params.source || params.topic || params.q || params.fee);
   const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
     <div className="mt-2 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_240px]">
       <div className="min-w-0">
         <WireSummary params={params} win={win} noun="federal releases" phrase={phrase} />
+        <FeeChips params={params} />
         <div className="mt-3">
           {articles.length === 0 ? (
             <div className="rounded-xl border border-warm-200 bg-white/70 px-6 py-10 text-center">
@@ -102,13 +118,15 @@ export function NewsFeed({
             </div>
           ) : (
             <ol className="divide-y divide-warm-200/60 overflow-hidden rounded-xl border border-warm-200 bg-white/70">
-              {articles.map((article) => (
+              {articles.map((article) => {
+                const fees = feeTypesOf(article.title);
+                return (
                 <li key={article.guid}>
                   <a
                     href={article.link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group block px-4 py-3.5 no-underline transition-colors hover:bg-warm-100/80"
+                    className="group block px-4 pb-3 pt-3.5 no-underline transition-colors hover:bg-warm-100/80"
                   >
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
                       <span
@@ -134,10 +152,26 @@ export function NewsFeed({
                         <span aria-hidden="true" className={`inline-block h-1.5 w-1.5 rounded-full ${TOPIC_DOTS[article.topic] ?? "bg-warm-400"}`} />
                         {topicLabels[article.topic] ?? article.topic}
                       </span>
+                      {fees.length > 0 ? (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="font-medium text-[#A93D25]">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
+                        </>
+                      ) : null}
                     </p>
                   </a>
+                  <div className="px-4">
+                    <ResearchPanel
+                      note={notes?.get(researchKey("article", article.guid)) ?? null}
+                      related={related?.get(article.guid) ?? []}
+                      example={exampleNotes}
+                      open={openPanels.includes(article.guid)}
+                      now={now}
+                    />
+                  </div>
                 </li>
-              ))}
+                );
+              })}
             </ol>
           )}
         </div>
@@ -206,8 +240,10 @@ export function NewsFeed({
           </h2>
           <p className="text-[11px] leading-relaxed text-warm-600">
             The official press releases of the Federal Reserve, FDIC, OCC and CFPB, from their
-            RSS feeds. Topics come from keywords in the headline. Dates are each release&apos;s
-            publication day (UTC).{" "}
+            RSS feeds. Topics and fee types come from keywords in the headline. Dates are each
+            release&apos;s publication day (UTC). A Research panel holds an AI summary of the
+            release&apos;s own text where one has been written, labelled as such; related items
+            are linked by docket, rule or institution name.{" "}
             {canRefreshFeeds ? "Click Refresh to pull the latest updates." : "New releases are read once a day."}
           </p>
         </div>

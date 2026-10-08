@@ -7,6 +7,7 @@ import {
   type PageWindow,
   type WireParams,
 } from "@/lib/regulatory/wire";
+import { FEE_TYPES } from "@/lib/regulatory/wire-fee-types";
 
 /**
  * The Regulatory Wire's shared controls. Both views render the same bar (search and time
@@ -43,6 +44,7 @@ export function WireControls({
         <Hidden name="source" value={states ? undefined : params.source} />
         <Hidden name="topic" value={states ? undefined : params.topic} />
         <Hidden name="range" value={params.range} />
+        <Hidden name="fee" value={params.fee} />
         {lead}
         <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-auto">
           <label htmlFor="wire-q" className="sr-only">
@@ -157,6 +159,34 @@ export function WirePager({ params, win }: { params: WireParams; win: PageWindow
           Older →
         </span>
       )}
+    </nav>
+  );
+}
+
+/**
+ * Fee-type chips, shared by both views: tags come from keywords in the headline
+ * (wire-fee-types), the same pattern the Federal view filters with in SQL. Wraps on a phone.
+ */
+export function FeeChips({ params }: { params: WireParams }) {
+  const chip = "rounded-full border px-2.5 py-1 text-[11px] font-medium no-underline transition-colors";
+  return (
+    <nav aria-label="Fee type" className="mt-3 flex flex-wrap items-center gap-1.5">
+      <span className="mr-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-warm-600">Fee type</span>
+      {[{ key: undefined, label: "All" }, ...FEE_TYPES].map((t) => {
+        const active = params.fee === t.key;
+        return (
+          <Link
+            key={t.label}
+            href={wireHref(params, { fee: t.key, page: 1 })}
+            aria-current={active ? "true" : undefined}
+            className={`${chip} ${
+              active ? "border-[#C44B2E] bg-[#C44B2E] text-white" : "border-warm-200 bg-white/70 text-warm-700 hover:border-warm-400 hover:text-warm-900"
+            }`}
+          >
+            {t.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

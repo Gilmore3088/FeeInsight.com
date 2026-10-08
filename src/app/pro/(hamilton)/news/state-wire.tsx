@@ -9,8 +9,11 @@ import {
   type WireKind,
   type WireParams,
 } from "@/lib/regulatory/wire";
+import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import { billTimeline, researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
 import { STATE_NAMES } from "@/lib/us-states";
-import { WireDate, WirePager, WireSummary } from "./wire-controls";
+import { ResearchPanel } from "./research-panel";
+import { FeeChips, WireDate, WirePager, WireSummary } from "./wire-controls";
 
 /**
  * The Regulatory Wire's States view: one chronological feed for the chosen jurisdiction,
@@ -106,7 +109,25 @@ export function BillStepper({ stage }: { stage: string | null }) {
   );
 }
 
-function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; showState: boolean }) {
+/** The key a state item's note and related items are stored under; null for older rows. */
+export function stateItemKey(item: StateWireItem): string | null {
+  if (item.kind === "bill") return item.tracker_id ?? null;
+  return item.guid ?? null;
+}
+
+function ItemRow({
+  item,
+  now,
+  showState,
+  note,
+  related,
+}: {
+  item: StateWireItem;
+  now: Date;
+  showState: boolean;
+  note: ResearchNote | null;
+  related: RelatedItem[];
+}) {
   const rail =
     item.kind === "bill"
       ? "border-solid border-[#C44B2E]"
@@ -116,6 +137,7 @@ function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; sho
   const title =
     item.kind === "bill" ? item.title : item.kind === "regulator" ? item.title : item.headline;
   const href = item.kind === "bill" ? item.url : item.link;
+  const fees = feeTypesOf(title);
   const body = (
     <>
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
@@ -124,7 +146,9 @@ function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; sho
         {item.kind === "bill" && item.identifier ? (
           <span className="font-semibold text-warm-700 [font-variant-numeric:tabular-nums]">{item.identifier}</span>
         ) : null}
-        {item.kind === "regulator" && item.fee_related ? (
+        {fees.length > 0 ? (
+          <span className="font-semibold text-[#A93D25]">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
+        ) : item.kind === "regulator" && item.fee_related ? (
           <span className="font-semibold uppercase tracking-wider text-[#A93D25]">Fees</span>
         ) : null}
       </p>
@@ -163,12 +187,21 @@ function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; sho
       {/* Official items get a solid rule, press a dashed one. */}
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-0 border-l-[3px] ${rail}`} />
       {href && /^https?:\/\//i.test(href) ? (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="group block px-4 py-3.5 no-underline transition-colors hover:bg-warm-100/80">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="group block px-4 pb-3 pt-3.5 no-underline transition-colors hover:bg-warm-100/80">
           {body}
         </a>
       ) : (
-        <div className="px-4 py-3.5">{body}</div>
+        <div className="px-4 pb-3 pt-3.5">{body}</div>
       )}
+      <div className="px-4">
+        <ResearchPanel
+          note={item.kind === "press" ? null : note}
+          related={related}
+          press={item.kind === "press"}
+          timeline={item.kind === "bill" ? billTimeline({ introducedOn: item.introduced_on, stage: item.stage, stageOn: item.stage_on }) : undefined}
+          now={now}
+        />
+      </div>
     </li>
   );
 }
@@ -189,12 +222,18 @@ export function StateWire({
   win,
   phrase,
   now,
+  notes,
+  related,
 }: {
   params: WireParams;
   wire: Pick<StateWirePage, "items" | "counts" | "failed" | "capped">;
   win: PageWindow;
   phrase: string;
   now: Date;
+  /** Research notes keyed by researchKey(kind, id). */
+  notes?: Map<string, ResearchNote>;
+  /** Related bills or press, keyed by stateItemKey. */
+  related?: Map<string, RelatedItem[]>;
 }) {
   const where = params.state ? stateName(params.state) : "any state";
   const noun = params.kind === "bills" ? "fee bills" : params.kind === "regulators" ? "regulator posts" : params.kind === "press" ? "press stories" : "items";
@@ -232,6 +271,7 @@ export function StateWire({
       </nav>
 
       <WireSummary params={params} win={win} noun={noun} phrase={phrase} />
+      <FeeChips params={params} />
 
       {wire.failed.length > 0 ? (
         <p role="status" className="mt-2 rounded-lg border border-warm-300 bg-warm-150 px-3 py-2 text-[12px] text-warm-700">
@@ -246,14 +286,20 @@ export function StateWire({
           </div>
         ) : (
           <ol className="divide-y divide-warm-200/60 overflow-hidden rounded-xl border border-warm-200 bg-white/70">
-            {wire.items.map((item) => (
-              <ItemRow
-                key={`${item.kind}:${item.kind === "bill" ? `${item.state_code}-${item.identifier ?? item.title}` : item.link}`}
-                item={item}
-                now={now}
-                showState={!params.state}
-              />
-            ))}
+            {wire.items.map((item) => {
+              const key = stateItemKey(item);
+              const note = key ? notes?.get(researchKey(item.kind === "bill" ? "tracker" : "article", key)) ?? null : null;
+              return (
+                <ItemRow
+                  key={`${item.kind}:${item.kind === "bill" ? `${item.state_code}-${item.identifier ?? item.title}` : item.link}`}
+                  item={item}
+                  now={now}
+                  showState={!params.state}
+                  note={note}
+                  related={key ? related?.get(key) ?? [] : []}
+                />
+              );
+            })}
           </ol>
         )}
       </div>
@@ -263,7 +309,9 @@ export function StateWire({
         <strong className="font-semibold text-warm-700">Bill</strong> and <strong className="font-semibold text-warm-700">Regulator</strong> items are
         official: a bill in the state legislature (from Open States) or a post by the state&apos;s banking or credit union
         regulator. <strong className="font-semibold text-warm-700">Press</strong> items are news coverage, named by outlet, and are
-        not the regulator&apos;s word. Dates are the publication day or, for bills, the latest action (UTC).
+        not the regulator&apos;s word. Dates are the publication day or, for bills, the latest action (UTC). Research
+        panels hold an AI summary of an official item&apos;s own text where one has been written, labelled as such;
+        press stories are never summarised. A story is linked to a bill when its headline names the bill.
       </p>
     </div>
   );
