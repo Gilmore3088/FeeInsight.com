@@ -16,6 +16,7 @@ import {
   releaseReviewPrompt,
   reviewPasses,
   premiumServiceMisfiled,
+  releaseHoldReason,
   runDarwinReleaseReview,
 } from "./release-review";
 
@@ -235,6 +236,21 @@ describe("Darwin held-fee release review", () => {
     expect(premiumServiceMisfiled(held("Emergency Card Replacement", "card_replacement"))).toBe(true);
     expect(premiumServiceMisfiled(held("Debit Card Rush Delivery", "rush_card"))).toBe(false);
     expect(premiumServiceMisfiled(held("Bill Pay", "bill_pay"))).toBe(false);
+  });
+
+  it("v12 keeps business-service monthly fees, small returned checks and guard rejects held (hand check, Oct 8)", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string, amount: string, sourceContext: string | null = null) => ({
+      row: row({ fee_name, held_canonical_fee_key, amount }) as unknown as HeldFeeRow,
+      sourceContext,
+    });
+    expect(releaseHoldReason(held("Monthly Fee", "monthly_maintenance", "50.00", "ITEM | FEE\nMonthly Fee | $50.00\nNight Deposit Bag | $10.00"))).toBe(
+      "business_service_monthly",
+    );
+    expect(releaseHoldReason(held("Monthly Fee", "monthly_maintenance", "10.00", "Basic Checking\nMonthly Fee | $10.00"))).toBeNull();
+    expect(releaseHoldReason(held("Returned check fee", "nsf", "5.00"))).toBe("small_returned_item");
+    expect(releaseHoldReason(held("Returned check fee", "nsf", "30.00"))).toBeNull();
+    expect(releaseHoldReason(held("NSF Fee", "nsf", "5.00"))).toBeNull();
+    expect(releaseHoldReason(held("IntraFi Network-ICS Monthly Fee (Consumer)", "monthly_maintenance", "25.00"))).toBe("category_guard");
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {
