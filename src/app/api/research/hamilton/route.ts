@@ -187,8 +187,9 @@ async function handlePOST(request: Request) {
   // identification in the response). Only injected when we actually have it
   // — for anonymous/public users this block is omitted, preserving the
   // model's current generic-mode behavior.
-  if (institutionId === null && user && (user.institution_name || user.display_name)) {
-    const inst = user.institution_name?.trim() || user.display_name;
+  // The person's own name is never an institution: with no institution on file, Hamilton asks.
+  if (institutionId === null && user && user.institution_name?.trim()) {
+    const inst = user.institution_name.trim();
     const tier = user.asset_tier ? ` (asset tier ${user.asset_tier})` : "";
     const charter = user.institution_type ? `, ${user.institution_type.replace(/_/g, " ")}` : "";
     const district = user.fed_district ? `, Fed district ${user.fed_district}` : "";

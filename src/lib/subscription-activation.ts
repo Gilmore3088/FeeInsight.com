@@ -1,6 +1,7 @@
 import type { User } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
 import { trackServerEvent } from "@/lib/analytics-server";
+import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 
 /**
  * Activation fallback for when the Stripe webhook has not landed yet: if the user's
@@ -25,6 +26,10 @@ export async function activateIfPaid(
         await sql`
           UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
           WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
+        const institutionId = paidInstitutionId(subs.data[0].metadata);
+        if (institutionId) {
+          await anchorPaidInstitution(sql, { userId: user.id, institutionId, note: `Filed at Pro checkout (${subs.data[0].id}).` });
+        }
         await trackServerEvent("pro_activated", { source: "fallback" });
         return true;
       }
