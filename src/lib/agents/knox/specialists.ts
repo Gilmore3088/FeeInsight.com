@@ -35,7 +35,7 @@ import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names"
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 37 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 40 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -61,7 +61,7 @@ const MAX_HELD_PER_DOCUMENT = 40;
 /** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
 const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
 const NSF_AND_OVERDRAFT = new RegExp(
-  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*overdrafts?\b|\boverdrafts?\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
+  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*(?:overdrafts?|OD)\b|\b(?:overdrafts?|OD)\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
   "i",
 );
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;

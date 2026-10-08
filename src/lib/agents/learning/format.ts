@@ -77,5 +77,27 @@ export function documentTypeForFormat(format: DocumentFormat): string {
 export function isLikelyScannedPdf(text: string, pageCount: number): boolean {
   const chars = text.replace(/\s+/g, "").length;
   const pages = Math.max(1, Math.floor(pageCount) || 1);
-  return chars / pages < SCANNED_PDF_CHARS_PER_PAGE;
+  return chars / pages < SCANNED_PDF_CHARS_PER_PAGE || !hasReadableWords(text);
+}
+
+const COMMON_WORDS = new Set([
+  "the", "and", "of", "to", "in", "for", "or", "on", "is", "fee", "fees", "account", "accounts", "your", "you",
+  "per", "with", "by", "be", "are", "may", "if", "at", "we", "our", "any", "each", "this", "will", "not", "from",
+  "as", "an", "no", "charge", "check", "balance", "monthly", "month", "service", "item", "transfer",
+  // A Spanish schedule ("Lista de Cargos") is readable text, not noise.
+  "de", "la", "el", "los", "las", "del", "por", "en", "y", "cuenta", "cuentas", "cargo", "cargos",
+]);
+const MIN_WORDS_TO_JUDGE = 60;
+const MIN_COMMON_WORD_SHARE = 0.02;
+
+/**
+ * A PDF whose embedded font maps its letters to other codes reads as noise ("7KH UDWHV
+ * IHHV" for "The rates fees", or control characters): the text is there but unreadable,
+ * so it is read like a scan. Text too short to judge counts as readable.
+ */
+export function hasReadableWords(text: string): boolean {
+  const words = text.replace(/[\u0000-\u001f]/g, " ").match(/[A-Za-z]+/g) ?? [];
+  if (words.length < MIN_WORDS_TO_JUDGE) return true;
+  const common = words.filter((word) => COMMON_WORDS.has(word.toLowerCase())).length;
+  return common / words.length >= MIN_COMMON_WORD_SHARE;
 }

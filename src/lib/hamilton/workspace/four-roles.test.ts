@@ -74,6 +74,16 @@ describe("four-roles eval catches each kind of failure", () => {
     expect(failuresOf(bad, "consultant").join(" ")).toContain("without its peer count");
   });
 
+  it("consultant: a cited rule or a regulator record needs a named source, not a number or peer count", () => {
+    const rule = { text: "The rule capping overdraft fees at institutions over $10 billion in assets never took effect.", source: { label: "Overdraft rule, CFPB final rule, December 2024; disapproved under the Congressional Review Act" } };
+    const regulator = { text: "The OCC charters and supervises you as a national bank.", source: { label: "FDIC BankFind institution records", table: "institution_sources", asOf: "2026-10-08" } };
+    expect(failuresOf({ ...good, claims: [...good.claims, rule, regulator] }, "consultant")).toEqual([]);
+    const undated = { ...regulator, source: { ...regulator.source, asOf: undefined } };
+    expect(failuresOf({ ...good, claims: [...good.claims, undated] }, "consultant").join(" ")).toContain("no named, dated source");
+    const plain = { text: "Overdraft fees can be an unfair practice.", source: { label: "A blog post", asOf: "2026-10-01" } };
+    expect(failuresOf({ ...good, claims: [...good.claims, plain] }, "consultant").join(" ")).toContain("Claim has no number");
+  });
+
   it("writer: a long sentence, a pipeline term and unformatted units", () => {
     const bad = {
       ...good,
@@ -105,7 +115,7 @@ describe("four-roles eval catches each kind of failure", () => {
 describe("answer edge cases", () => {
   it("asks for the current fee when the schedule has none", () => {
     const answer = buildFeeAnswer(overdraftResearch({ current: null, ownRows: [] }));
-    expect(answer.headline).toBe("Your overdraft fee is not in the index yet; the median across 16 peers is $29.50.");
+    expect(answer.headline).toBe("Your overdraft fee is not in the index yet; 16 peers' median is $29.50.");
     expect(answer.question).toMatchObject({ fieldKey: "fee.overdraft.current_amount" });
     expect(answer.exhibit?.title).toBe("The overdraft fee across 16 peers");
   });

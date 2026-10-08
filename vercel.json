@@ -62,7 +62,7 @@
     },
     {
       "path": "/api/admin/crew/answer-eval",
-      "schedule": "47 16 * * *"
+      "schedule": "47 */2 * * *"
     },
     {
       "path": "/api/admin/crew/content",
@@ -75,6 +75,14 @@
     {
       "path": "/api/admin/crew/growth-score",
       "schedule": "7 13 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/outreach",
+      "schedule": "7 14 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/learning",
+      "schedule": "37 14 * * 1"
     }
   ]
 }
