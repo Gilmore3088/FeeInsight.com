@@ -49,7 +49,9 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 11: a row with two columns' names and one price ("Stop Payment | Monthly Statement –
 // Electronic | Free") gives the price to the second name (First American Bank, Oct 7).
 // Version 12: "(greater than or equal to $0)" is a balance condition, not a $0 fee (Citizens, Oct 7).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 12 } as const;
+// Version 13: an overdraft or NSF price charged "per day after 10 business days" is a sustained
+// overdraft charge, not the per-item fee (Oct 8).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 13 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

@@ -13,6 +13,86 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: State fee bills stayed unstored for a week after going live
+**What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
+**Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
+**Fix:** a live batch now treats states last read in shadow mode as due (`runRegistryStateBillsBatch`, state-bills.ts). Merged in the PR that adds this entry.
+**Lesson:** when a shadow flag flips to live, the stored "fresh until" dates from shadow runs must not hold back the first live read. Check any other `*_TRACKER_LIVE` source for the same pattern.
+
+## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
+**What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
+"Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
+"Early Account Closure" rows. Read-only counts at 13:50 UTC, out of 63,620 live fees:
+- 417 names (329 institutions) have more "(" than ")";
+- 32 (27 institutions) repeat a word;
+- 2 have untrimmed space;
+- 912 live rows at 443 institutions repeat another live row except for frequency, for
+  example one row per_occurrence and the other unstated.
+
+Extraco has no exact twin: its second row is "Early Account Closure (by Extraco – no", which
+is a $35 fee next to the $50 one.
+**Cause:** the PDF's columns. A row label wraps onto the next line, so the parenthesis is
+never closed in the text Knox reads. A row label printed next to its own cell heading doubles
+the word ("Account Research | Research: $25.00 per hour"). The duplicate collapse partitioned
+by frequency, so "per item", "per occurrence" and an unstated frequency kept separate copies of
+one fee read from two documents.
+**Fix:** `repairNameShape` in `knox/layout.ts` ends a name before an unclosed "(" and reads a
+doubled word once (an ALL-CAPS heading word or a trailing description is dropped). It applies to
+the published name only (`publishedFeeName` in `hamilton/publish.ts`), under the category guard.
+Knox and Darwin keep the name as read, because its words are the category evidence; cutting
+"(Savings Overdraft" from a read changed the category in the re-check. Name retidy v4 renames
+the live names through the same guarded, logged path. The duplicate collapse now treats per
+item, per occurrence, per transaction and one-time as one frequency, and an unstated or "other"
+frequency as matching any; rows with two different stated frequencies stay. Closed copies get
+`rolled_back_at` with "duplicate of #id", so nothing is deleted.
+**Lesson:** fix a display problem in the name a reader sees, not in the read the category rests
+on. When a dedupe key includes a field that is often unstated, check how many twins differ only
+in that field.
+
+## 2026-10-08: Pro checkout dropped the buyer's institution
+**What happened:** the six live Pro tiers (PR 566) price checkout from the buyer's institution and send
+it to Stripe as `metadata.institution_id`, but the webhook only set `users.subscription_status`. A new
+subscriber was asked for their bank again on the welcome page (skippable, and skipped entirely when
+checkout started from a Pro page). They could land on a briefing that showed only "Choose your bank".
+Their team seats stayed locked until they found Settings, filed an institution claim by hand, and James
+approved it. With no institution on file, Hamilton's first answer used the person's display name as the
+"Institution". Checkout also granted Pro on an unpaid (delayed-payment) session. Prod had 0 subscriptions
+and 6 `price.created` events when this was found, so no buyer was affected.
+**Cause:** checkout, the webhook and onboarding were built in separate PRs, and no test followed a
+buyer from payment to their first answer.
+**Fix:** the PR after 566. The webhook and the activation fallback set the paid institution as the
+workspace bank and profile, but only when none is set, and file the claim for review. An unpaid session
+waits for `checkout.session.async_payment_succeeded`. The research route stops using the display name.
+James chose (Oct 8, 13:44) to grant the owner seat at payment, tied to the open claim; rejecting the claim revokes it.
+**Lesson:** a paid flow is one path. Trace it from the card to the first useful screen before calling it live.
+
+## 2026-10-08: Pro checkout's own error messages never reached the buyer
+**What happened:** the buyer-path audit (overnight Oct 8) found `createCheckoutSession` threw
+"Pick your bank or credit union first", the "we don't have its asset size, email us" line and
+"Not authenticated". Production builds replace a thrown server-action message with a generic one,
+so the buyer saw "Something went wrong" and a signed-out click never reached the register hand-off.
+No count of affected buyers is known (0 paid so far).
+**Cause:** server actions that throw for expected, buyer-facing outcomes.
+**Fix:** the buyer-path audit PR on branch `claude/ux-audit-9d9mdr` returns `{ url, error, needsSignIn }` instead.
+**Lesson:** a server action returns expected problems as data; throw only for real faults.
+
+## 2026-10-08: Admin Health and Learning screens read stale or misleading numbers
+**What happened:** James said the Health and Learning tabs looked "weird or not working". Health
+read `agent_health_rollup`, a rollup from the old plan that holds 57 agent names. 51 of them are
+retired `state_xx` agents frozen on 2026-08-12, plus `discoverer`, `extractor` and the old atlas,
+hamilton and magellan rows, all frozen in August. Only knox and darwin still get rows. Two of its
+five metrics (`review_latency_seconds`, `confidence_drift`) are empty in every row, prod 09:03 UTC.
+Learning scored every attempt that wasn't `ok` as a failure. So "no candidates" (a document with
+no wire fees) and "unchanged" (copy already current) drew red bars. Examples: Knox's checks family
+showed 35% when 65% of its tries simply had nothing to find, and Darwin's release step showed 28%
+with 67% unchanged.
+**Cause:** Health was never moved to the run ledger when the agents were. Learning's success
+share had no third outcome.
+**Fix:** PR 546 rebuilds Health on `agent_run_steps` (done and failed per agent per day, judged on
+the last two days). Learning now shows worked / nothing there / failed. Waiting for James to merge.
+**Lesson:** an admin screen that reads a rollup table must show where the rollup's newest row is.
+Count "nothing to do" apart from failures wherever a success rate is shown.
+
 ## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
 **What happened:** the first `registry-state-reg-news` run (12:27 UTC, PR 568) read 31 of 55 regulator
 sites and 311 items, but many were menu links ("Public Meetings and Notices"), links named by their own
@@ -45,6 +125,9 @@ deploy (`VERCEL_GIT_COMMIT_SHA`); each tick, a lane whose last run failed on a f
 runs, which the current deploy has not repeated, reruns at once with a `run.recovery_rerun` event.
 **Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
 deploy, not one success.
+**Follow-up (13:30 UTC):** the rerun fired at 13:00 for 7 states (IA, KS, LA, MO, MS, NM, NH), but
+42 lanes were due and the queue runs about 5 an hour, so none had started 30 minutes later. Woken
+lanes now go first in the due queue. Waking a lane is not a rerun until it has a slot.
 
 ## 2026-10-08: Hand-given schedules were invisible on the Gold standard queue
 **What happened:** James gave Chase's and Citi's fee schedule links, but the Knox Gold standard
@@ -3200,3 +3283,148 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
   what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
   230 s at a time).
+
+## 2026-10-08: Almost every recorded fee change pairs two different fee schedules
+**What happened:** a read-only check of prod at 13:30 UTC on Oct 8 found 22 `fee_change_records` since
+`FEE_MOVES_TRACKED_SINCE`. All 22 are past the 12-hour second look and have a Darwin-verified live
+new row. In 21 of them the old price was read from a different page than the new price. Examples:
+Tidemark FCU's business rate sheet against its consumer Truth-in-Savings disclosure, and Opportunity
+Bank's business fee schedule against its consumer one. The one same-page pair, Net FCU's stop payment
+($35 to $30), was its February 2026 schedule read twice, with the second read pairing the neighbouring
+price. None was a bank changing a price.
+**Cause:** `supersedePriorFee` in `src/lib/agents/hamilton/publish.ts` closes the live row for the same
+institution and `canonical_fee_key` whatever page it came from, and writes a change record. When a bank
+publishes separate business and consumer schedules, the newer read of one schedule takes the other
+schedule's price off the live catalog and logs the difference as a price change.
+**Fix:** none yet in publish; that rule belongs to the Hamilton publish owners. Competitor alerts (PR 430)
+pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
+alert has been raised from these records.
+**Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
+
+## 2026-10-08: Paid search answers dropped because the bank's site refused our check
+
+- **Problem.** The paid web search and the paid schedule search open the model's answer with
+  our own fetcher before keeping it. When the bank's site refused that fetch (HTTP 403), the
+  answer was dropped: the search was paid for and the bank kept no link. A 403 is not a
+  monthly-retry outcome, so the bank was never searched again. On 8 Oct, 72 such answers sat
+  in `pipeline_attempts` (53 banks with no fee link at all), among them Synchrony, Independence
+  Bank of Kentucky, Community National Bank (VT), Aloha Pacific and Alliant, all in their
+  state's top 10 by deposits with no live fee. The web search started keeping 403 answers on
+  7 Oct; the schedule search never did.
+- **Fix.** The schedule search keeps a 403 answer as a companion. `keepRefusedPaidAnswers`
+  (`refused-answers.ts`) stores each answer dropped before, once, at no cost, from the discover
+  step; the paid fetch then reads the page.
+- **Watch.** `discover.keep_refused_answer` attempts (`ok` vs `unchanged`) and, after the paid
+  fetch, live fees for the banks kept.
+
+## 2026-10-08: The paid fetch for blocked pages fell behind
+
+- **Problem.** About nine paid Magellan steps ran a day on 8 Oct, each fetching 3 blocked pages,
+  while 24 blocked pages waited (PenFed's schedule among them, never tried) and the refused
+  paid answers above were adding 72 more. Zions' hand-given schedule sits on amegybank.com,
+  which the companion selection's own-site check threw out, so it was never fetched at all.
+- **Fix.** Six pages per paid step, two kept for companions. A companion given by hand
+  (`discover.operator_schedule`) passes the own-site check.
+- **Watch.** `fetch.paid_web_fetch%` attempts a day, and Zions (35) and PenFed (4382) documents.
+
+## 2026-10-08: Banks the old crawler marked offline were never searched
+
+- **Problem.** 17 active banks (Alaska, Wyoming, Kansas) carried `document_type = 'offline'` from
+  the old crawler, which became `source_kind = 'offline'` / `read_strategy = 'manual_review'`
+  on their profile (4 Oct). Discovery skips both, so none was ever searched, although all but two
+  have a working website. Four are in their state's top 10 by deposits: First Bank, Mt. McKinley
+  Bank and Denali State Bank (AK) and The Converse County Bank (WY). Separately, 11 banks' websites
+  were stored with the scheme twice (`https://HTTP://WWW.BANKWITHCHOICE.COM`); website repair
+  rejected them and they waited a month as `needs_human`.
+- **Fix.** Discovery searches an offline-marked bank once per discovery method version (never
+  one locked by a person's correction). Website repair drops a doubled scheme, and a bank whose
+  website could not be repaired is due again after 12 hours, since that check costs no fetch.
+- **Watch.** `discover` attempts for those 17 and the 11, and their links.
+
+## 2026-10-08: Fee links on government, broker and car-price sites
+
+- **Problem.** 11 banks' fee link was a page on another site: a city's HSA agreement for Bell
+  Bank (ND top 10), CFPB card agreements for Barclays, Charter Oak, Marine FCU and Vantage West,
+  LPL's broker summary, a bankruptcy court fee schedule, the FDIC's overdraft explainer, JD Power
+  and NADA car pages. The upgrade search only looked at product pages, articles and single
+  product disclosures, so these stood as the bank's schedule.
+- **Fix.** The upgrade search also takes a link on such a host (`isOtherSiteLink`), unless the
+  host is the bank's own website, and never keeps it as a companion.
+- **Watch.** Upgrade `discover` attempts for those 11 and their new links.
+
+
+## 2026-10-08: Hamilton's studies kept old Census income after a new year landed
+**What happened:** Census ACS 2024 loaded on prod at 13:37 UTC on Oct 8. The current local income study
+(`hamilton_studies`, as of 2026-Q4) still named ACS 2022 as its income source, and the daily studies
+run would have reported it "already current" until the quarter changed.
+**Cause:** `store` in `src/lib/agents/hamilton/studies/index.ts` skipped any study whose key, method
+and quarter were already stored, without looking at the periods of the data behind it.
+**Fix:** a stored study is rebuilt when any source's period differs from the one it was built from
+(`sourcesChanged` in `store.ts`). The next daily run rebuilds local income on ACS 2024.
+**Lesson:** a study's identity is its period and its inputs' periods, not its period alone.
+
+## 2026-10-08: Bot walls keep big banks' overdraft fees off the board
+
+- **Problem.** At 13:20 UTC Oct 8, 90 active $10B+ banks had no live overdraft fee. About 30 of them
+  are trust, card or wholesale banks that publish no consumer overdraft fee. Of the retail rest, many
+  have no readable page on file because the site refuses the server:
+  - Zions answers 403.
+  - Mountain America serves an Incapsula block page.
+  - VyStar redirects to a ShieldSquare check.
+  - Arvest's and Mountain America's pages are built by JavaScript and wait for the paid finder.
+  - Golden 1, PenFed and Morgan Stanley time out.
+  - Sunflower's and BancFirst's PDFs answer 404.
+
+  In the schedules that were read, Knox missed four overdraft lines:
+  - Banc of California's "Per transaction" cell.
+  - Pinnacle's "lowered ... from $38 to $30".
+  - Park National's "You still pay a fee of $35 per item for overdrawing your account".
+  - WaFd's "Insufficient Funds Charge (Paid)".
+
+  Darwin rejected First Financial's per-item fees, which note a daily count ("Maximum of 2 Items/Day").
+- **Fix.** Guard v29 and Knox v34 (PR 580) read and accept those lines. The held re-check also
+  re-reads changed-price ranges, and renames a promoted line whose held name says nothing. New
+  operator links on other hosts or pages go to Zions, Sunflower, Golden 1, DCU, Mountain America,
+  VyStar, Popular and TowneBank.
+- **Watch.** Most of the remaining retail gap is fetch-blocked, not misread. Each new link either reads
+  or fails the same way. A bank behind a bot wall needs the paid finder or a copy fetched from
+  James's computer.
+
+## 2026-10-08: Top-10 banks without an overdraft fee waited for their state's lane
+
+- **Problem.** 349 of 510 top-10-by-deposits slots had a live overdraft fee. Of the 80 banks
+  under $10B without one, 40 had no stored document that priced an overdraft, and 20 of those
+  had never had a second-document search. The companion finder takes six banks per step from
+  the discover step's own state, and tops up only banks the catalog hides, so a live leader in a
+  state the lane had not reached waited.
+- **Fix.** Each step's companion finder gives two slots to state top-10 banks from any state
+  with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
+- **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
+  count of top-10 slots with a live overdraft fee.
+
+## 2026-10-08: Old PDF texts ran a whole schedule onto one line
+
+- **Problem.** 168 PDF texts (164 banks, read Aug 23 to Oct 4 by the first PDF reader) have no
+  line breaks. Knox's rules split a line only at wide gaps and sentence ends and drop any piece
+  over 280 characters, so these schedules gave the rules nothing; only the family specialists
+  read them. Lake City Bank's "Overdraft fee $35.00/transaction" and West Bank's "Overdraft Fee
+  (per item) ... $35.00" were lost this way. 63 of those banks have no live overdraft fee; 166
+  of the texts were never read by `read.pdf_layout`, which keeps lines (0 one-line texts of 1,964).
+- **Fix.** Rosetta treats such a text like a lost text: one read with the current PDF reader,
+  replacing the flat text only when the new one lists at least as many fees.
+- **Watch.** `read.pdf_layout` attempts on these documents, one-line legacy texts left, and new
+  Knox rows from them.
+
+## 2026-10-08: Hamilton's memo was cut off at its token cap and withheld
+
+- **Problem.** A live overdraft Ask for Space Coast (15:13 UTC) showed the storyline but no
+  memo. Both memo attempts (`ai_api_usage_events` 4898, 4899) stopped at exactly 1,800 output
+  tokens, the cap, so the JSON was cut off, neither draft parsed, and the memo was withheld as if
+  it had failed the figure checks. The withheld result recorded no reason. Separately, the Ask's
+  storyline answer had no Download PDF button, though the answer was already saved
+  (`hamilton_saved_analyses` 890dc628 at 15:12:56).
+- **Fix.** The memo cap is 4,000 tokens, a cut-off reply is named as such in the retry, and the
+  run ledger's `ask_memo` detail records `withheld_problems`. The storyline answer offers
+  Download PDF as soon as the Ask has saved it, whatever happens to the memo.
+- **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
+  with `memo_status = 'withheld'`.

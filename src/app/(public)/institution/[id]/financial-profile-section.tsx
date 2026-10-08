@@ -49,6 +49,7 @@ export function FinancialProfileSection({
   enforcement = null,
   regulatoryWatch = null,
   exportHref = null,
+  institutionName = null,
 }: {
   isPro: boolean;
   points: FinancialPoint[];
@@ -62,6 +63,8 @@ export function FinancialProfileSection({
   regulatoryWatch?: RegulatoryWatch | null;
   /** Pro: the analyst CSV of this institution's fees against peer benchmarks. */
   exportHref?: string | null;
+  /** Named in the regulatory watch, which is read about the institution, not to it. */
+  institutionName?: string | null;
 }) {
   const hasRegistryCards = Boolean(footprint || complaints || holdingCompany || enforcement || regulatoryWatch);
   if (isPro && points.length === 0 && !hasRegistryCards) return null;
@@ -100,7 +103,7 @@ export function FinancialProfileSection({
                   {enforcement && <EnforcementCard record={enforcement} />}
                   {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
                 </div>
-                {regulatoryWatch && <RegulatoryWatchSection watch={regulatoryWatch} exportHref={exportHref} />}
+                {regulatoryWatch && <RegulatoryWatchSection watch={regulatoryWatch} exportHref={exportHref} institutionName={institutionName} />}
               </div>
             )}
           </>

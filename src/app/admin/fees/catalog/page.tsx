@@ -21,6 +21,30 @@ import {
 } from "@/lib/fee-taxonomy";
 import { CatalogFilterBar } from "./catalog-filter-bar";
 import { CatalogActions } from "@/components/catalog-actions";
+import { getMarketData, type MarketIndexRow } from "@/lib/admin-queries";
+import {
+  parseSegment,
+  segmentLabel,
+  segmentParams,
+  SEGMENT_CHARTERS,
+  SEGMENT_TIERS,
+} from "./segment";
+
+function deltaPill(delta: number | null): React.ReactNode {
+  if (delta === null) return <span className="text-gray-300 dark:text-gray-600">-</span>;
+  const cls =
+    delta < 0
+      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+      : delta > 0
+        ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${cls}`}>
+      {delta > 0 ? "+" : ""}
+      {delta}%
+    </span>
+  );
+}
 
 const VALID_PER = [25, 50, 100] as const;
 
@@ -35,6 +59,9 @@ export default async function FeeCatalogPage({
     show?: string;
     page?: string;
     per?: string;
+    charter?: string;
+    tier?: string;
+    state?: string;
   }>;
 }) {
   await requireAuth("view");
@@ -48,7 +75,20 @@ export default async function FeeCatalogPage({
   const currentPage = Math.max(1, parseInt(params.page || "1", 10) || 1);
   const perPage = VALID_PER.includes(Number(params.per) as 25 | 50 | 100) ? Number(params.per) : 50;
 
+  const segment = parseSegment(params);
+
   let summaries = await getFeeCategorySummaries();
+
+  // A picked segment adds its median and the gap to national, per fee type.
+  const segmentRows = new Map<string, MarketIndexRow>();
+  if (segment) {
+    const rows = await getMarketData({
+      charter_type: segment.charter || undefined,
+      asset_tier: segment.tier || undefined,
+      state_code: segment.state || undefined,
+    });
+    for (const row of rows) segmentRows.set(row.fee_category, row);
+  }
 
   // Search always searches all categories
   if (searchTerm) {
@@ -150,7 +190,7 @@ export default async function FeeCatalogPage({
       key: "fee_category",
       label: "Fee Type",
       sortable: true,
-      className: "sticky left-0 bg-gray-50/80 dark:bg-[oklch(0.17_0_0)] z-10 min-w-[220px]",
+      className: "sticky left-0 bg-gray-50/80 dark:bg-[oklch(0.17_0_0)] z-10 min-w-[150px] sm:min-w-[220px]",
       render: (item) => {
         const family = getFeeFamily(item.fee_category);
         const colors = family ? getFamilyColor(family) : null;
@@ -171,7 +211,7 @@ export default async function FeeCatalogPage({
                 {getDisplayName(item.fee_category)}
               </Link>
               {!isFeatured && (
-                <span className="ml-1.5 text-[9px] font-semibold text-gray-300 dark:text-gray-600 uppercase tracking-wider">
+                <span className="ml-1.5 hidden text-[9px] sm:inline font-semibold text-gray-300 dark:text-gray-600 uppercase tracking-wider">
                   {tier}
                 </span>
               )}
@@ -184,6 +224,7 @@ export default async function FeeCatalogPage({
       key: "family",
       label: "Family",
       sortable: false,
+      className: "hidden sm:table-cell",
       render: (item) => {
         const family = getFeeFamily(item.fee_category);
         const colors = family ? getFamilyColor(family) : null;
@@ -321,8 +362,36 @@ export default async function FeeCatalogPage({
     },
   ];
 
+  if (segment) {
+    // Median, segment and gap sit right after the fee name, so a phone sees the comparison first.
+    const [median] = catalogColumns.splice(catalogColumns.findIndex((col) => col.key === "median_amount"), 1);
+    catalogColumns.splice(
+      1,
+      0,
+      median,
+      {
+        key: "segment_median",
+        label: "Segment",
+        sortable: false,
+        align: "right",
+        render: (item) => (
+          <span className="tabular-nums font-semibold text-gray-700 dark:text-gray-300">
+            {formatAmount(segmentRows.get(item.fee_category)?.segment_median ?? null)}
+          </span>
+        ),
+      },
+      {
+        key: "segment_delta",
+        label: "vs national",
+        sortable: false,
+        align: "right",
+        render: (item) => deltaPill(segmentRows.get(item.fee_category)?.delta_pct ?? null),
+      },
+    );
+  }
+
   // Preserve filter params for sort/pagination links
-  const filterParams: Record<string, string> = {};
+  const filterParams: Record<string, string> = { ...segmentParams(segment) };
   if (showFeatured) filterParams.show = "featured";
   if (activeFamily) filterParams.family = activeFamily;
   if (searchTerm) filterParams.search = searchTerm;
@@ -346,6 +415,7 @@ export default async function FeeCatalogPage({
             <p className="text-sm text-gray-500 mt-0.5">
               {totalCategories} fee types across{" "}
               {totalObservations.toLocaleString()} observations
+              {segment ? ` · compared with ${segmentLabel(segment)}` : ""}
             </p>
           </div>
           <CatalogActions />
@@ -425,6 +495,77 @@ export default async function FeeCatalogPage({
       <Suspense fallback={null}>
         <CatalogFilterBar families={allFamilies} />
       </Suspense>
+
+      {/* Segment comparison (formerly the separate Market page) */}
+      <details open={!!segment} className="admin-card mb-4 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {segment ? `Compared with ${segmentLabel(segment)}` : "Compare a segment"}
+          <span className="ml-2 font-normal text-gray-500 dark:text-gray-400">
+            Banks or credit unions, a size, or a state, against the national median
+          </span>
+        </summary>
+        <form action="/admin/fees/catalog" className="mt-3 flex flex-wrap items-end gap-3">
+          {showFeatured ? <input type="hidden" name="show" value="featured" /> : null}
+          {activeFamily ? <input type="hidden" name="family" value={activeFamily} /> : null}
+          {searchTerm ? <input type="hidden" name="search" value={searchTerm} /> : null}
+          <label className="text-xs text-gray-500 dark:text-gray-400">
+            Type
+            <select
+              name="charter"
+              defaultValue={segment?.charter ?? ""}
+              className="mt-1 block min-h-11 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700 sm:min-h-0 sm:py-1.5 dark:border-white/[0.12] dark:bg-[oklch(0.18_0_0)] dark:text-gray-100"
+            >
+              <option value="">All</option>
+              {SEGMENT_CHARTERS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-gray-500 dark:text-gray-400">
+            Size
+            <select
+              name="tier"
+              defaultValue={segment?.tier ?? ""}
+              className="mt-1 block min-h-11 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700 sm:min-h-0 sm:py-1.5 dark:border-white/[0.12] dark:bg-[oklch(0.18_0_0)] dark:text-gray-100"
+            >
+              <option value="">All</option>
+              {SEGMENT_TIERS.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-gray-500 dark:text-gray-400">
+            State
+            <input
+              name="state"
+              defaultValue={segment?.state ?? ""}
+              placeholder="TX"
+              maxLength={2}
+              className="mt-1 block min-h-11 w-20 rounded-md border border-gray-300 bg-white px-3 text-sm uppercase text-gray-700 sm:min-h-0 sm:py-1.5 dark:border-white/[0.12] dark:bg-[oklch(0.18_0_0)] dark:text-gray-100"
+            />
+          </label>
+          <button
+            type="submit"
+            className="min-h-11 rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 sm:min-h-0 sm:py-1.5 dark:bg-gray-100 dark:text-gray-900"
+          >
+            Compare
+          </button>
+          {segment ? (
+            <Link
+              href={`/admin/fees/catalog?${new URLSearchParams(
+                Object.fromEntries(Object.entries(filterParams).filter(([k]) => !["charter", "tier", "state"].includes(k))),
+              ).toString()}`}
+              className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              Clear
+            </Link>
+          ) : null}
+        </form>
+      </details>
 
       {/* Flat table with inline family colors */}
       <div className="admin-card overflow-hidden">

@@ -86,9 +86,9 @@ export function ProToolsSection() {
           <div className="flex flex-col justify-between rounded-xl border border-dashed border-warm-300 p-5">
             <div>
               <BarChart3 className="h-5 w-5 text-terra" aria-hidden="true" />
-              <p className="mt-3 text-[15px] font-bold text-warm-900">One seat, all five modes</p>
+              <p className="mt-3 text-[15px] font-bold text-warm-900">One plan, up to 5 people</p>
               <p className="mt-1.5 text-[14px] leading-relaxed text-warm-700">
-                Monthly or annual, same workspace. Cancel monthly seats at the end of the period.
+                Monthly or annual, same workspace. Monthly plans cancel at the end of the period.
               </p>
             </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -96,7 +96,7 @@ export function ProToolsSection() {
                 See pricing
               </Link>
               <Link href="/subscribe?plan=monthly" className={SECONDARY_BUTTON}>
-                Start monthly
+                See monthly price
               </Link>
             </div>
           </div>

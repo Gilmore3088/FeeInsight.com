@@ -1,3 +1,4 @@
+import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
 import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
@@ -13,7 +14,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -70,6 +71,8 @@ export interface VerifiedFeeRow extends RateFields {
   document_crawled_at?: string | Date | null;
   /** The document's companion page (companion-streams.ts); null for the main fee link. */
   document_stream?: string | null;
+  /** The URL that document was fetched from; names the page a price was read on. */
+  document_url?: string | null;
   institution_name?: string | null;
 }
 
@@ -78,9 +81,11 @@ interface PriorPublishedFeeRow extends RateFields {
   amount: number | string | null;
   fee_name: string;
   published_at: string | Date;
+  source_url?: string | null;
   source_document_id?: number | string | null;
   document_crawled_at?: string | Date | null;
   document_stream?: string | null;
+  document_url?: string | null;
 }
 
 export interface HamiltonPublishResult {
@@ -344,6 +349,7 @@ async function selectVerifiedFees(
              sd.crawled_at AS document_crawled_at,
              -- Read through jsonb so this works before the companion-pages migration.
              to_jsonb(sd)->>'companion_source_id' AS document_stream,
+             sd.document_url,
              inst.institution_name,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
@@ -481,7 +487,7 @@ export async function insertPublishedFee(
       ${options.row.raw_agent_event_id}::uuid,
       ${options.row.verified_by_agent_event_id}::uuid,
       ${publishEventId}::uuid,
-      ${options.row.fee_name},
+      ${publishedFeeName(options.row.fee_name, options.row.canonical_fee_key)},
       ${amount},
       ${options.row.frequency},
       ${options.row.variant_type},
@@ -512,9 +518,11 @@ async function selectLivePublishedFees(
              fp.rate_percent,
              fp.fee_name,
              fp.published_at,
+             fp.source_url,
              fr.source_document_id,
              sd.crawled_at AS document_crawled_at,
-             to_jsonb(sd)->>'companion_source_id' AS document_stream
+             to_jsonb(sd)->>'companion_source_id' AS document_stream,
+             sd.document_url
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -541,9 +549,30 @@ function documentStream(value: string | null | undefined): string {
   return value == null ? "" : String(value);
 }
 
+/** Both rows were read from the same page (two copies of it count as one). */
+function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  const rowPage = feePageKey(row.document_url ?? row.source_url);
+  const priorPage = feePageKey(prior.document_url ?? prior.source_url);
+  return rowPage != null && rowPage === priorPage;
+}
+
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 export function normalizedFeeName(name: string | null | undefined): string {
-  return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return (name ? repairNameShape(tidyFeeName(name)) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * The name a published fee shows: the verified name with a cut-off parenthesis or a doubled
+ * word repaired (`repairNameShape`). Knox and Darwin keep the name as read, since its words
+ * are the category evidence; the repair applies only when the category guard still accepts
+ * the shorter name.
+ */
+export function publishedFeeName(name: string, canonicalKey: string): string {
+  const current = name.trim();
+  const repaired = repairNameShape(current);
+  if (repaired === current) return current;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return current;
+  return repaired;
 }
 
 function documentTime(value: string | Date | null | undefined): number | null {
@@ -570,6 +599,11 @@ export type PriorFeeDecision =
  * Only documents of the same stream are compared by age: the main fee link with its own
  * earlier copies, a companion page (one account's page) with its own. Freedom Checking's
  * monthly fee never replaces or outdates Value Checking's; each is its own line.
+ *
+ * Nor does one page replace another (coordinator, 8 Oct): a newer read of a bank's
+ * consumer schedule took its business schedule's prices off the live catalog (Tidemark
+ * FCU cashier's check $8 vs $5, Opportunity Bank international wire $75 vs $100). Only a
+ * newer copy of the same page (`feePageKey`) replaces or outdates a line.
  */
 export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
   if (live.length === 0) return { kind: "new" };
@@ -580,7 +614,10 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
   const fromOtherDocuments = live.filter(
-    (prior) => !sameDocument(prior.source_document_id, row.source_document_id) && documentStream(prior.document_stream) === stream,
+    (prior) =>
+      !sameDocument(prior.source_document_id, row.source_document_id) &&
+      documentStream(prior.document_stream) === stream &&
+      samePage(row, prior),
   );
   if (rowTime == null) return { kind: "additional_line" };
   const newer = fromOtherDocuments.find((prior) => {

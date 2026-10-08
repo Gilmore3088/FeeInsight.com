@@ -1,11 +1,13 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
+import { linkPreview } from "@/lib/link-preview";
 import { notFound } from "next/navigation";
 import { isFeaturedFee } from "@/lib/fee-taxonomy";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessAllCategories } from "@/lib/access";
+import { canAccessAllCategories, canAccessPremium } from "@/lib/access";
+import { ProNextStep } from "@/components/public/pro-next-step";
 import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -62,12 +64,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const stats = await getStateStatsCached(stateCode).catch(() => null);
   const thin = stats !== null && stats.with_fees < MIN_INSTITUTIONS_FOR_MEDIAN;
 
+  const title = `${name} Bank Fees - State Fee Report`;
+  const description = `What ${name} banks and credit unions charge for overdraft, NSF, maintenance, ATM and wire fees, compared with national medians. Every figure from verified, published fee schedules.`;
   return {
-    title: `${name} Bank Fees - State Fee Report`,
+    title,
     // One URL per state: /research/state/tx and /research/state/TX both render this page.
     alternates: { canonical: `/research/state/${stateCode}` },
     ...(thin ? { robots: { index: false, follow: true } } : {}),
-    description: `What ${name} banks and credit unions charge for overdraft, NSF, maintenance, ATM and wire fees, compared with national medians. Every figure from verified, published fee schedules.`,
+    description,
+    ...linkPreview({ title, description, path: `/research/state/${stateCode}` }),
     keywords: [
       `${name} bank fees`,
       `${name} overdraft fees`,
@@ -188,7 +193,7 @@ export default async function StateReportPage({ params }: PageProps) {
           secondaryLink={
             sampleLive
               ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-              : undefined
+              : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
           }
         />
 
@@ -212,6 +217,8 @@ export default async function StateReportPage({ params }: PageProps) {
         <FullTable rows={visible} stateName={stateName} gate={gate} asOf={asOf} />
 
         <StateMethodology stateName={stateName} />
+
+        {!canAccessPremium(user) && <ProNextStep />}
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}

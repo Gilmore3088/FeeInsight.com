@@ -103,6 +103,21 @@ export const API_ROUTE_POLICIES = [
       "Sets up the six Pro tier prices in Stripe if missing (idempotent by lookup key) and opens then expires one checkout per price to prove it works; no charge.",
   },
   {
+    routeId: "api.admin.stripe.portal_check",
+    routeTemplate: "/api/admin/stripe/portal-check",
+    file: "src/app/api/admin/stripe/portal-check/route.ts",
+    surface: "admin",
+    allowedMethods: ["GET"],
+    authRequirement: "admin",
+    rateLimitBucket: "admin-read",
+    costPolicy: "none",
+    telemetryEvent: "api.admin.stripe.portal_check",
+    failBehavior: "fail_closed",
+    auditPriority: "high",
+    notes:
+      "Reads the default Stripe customer portal configuration and opens one portal session for an existing customer to prove Manage billing works; no charge, nothing changed.",
+  },
+  {
     routeId: "api.admin.flow",
     routeTemplate: "/api/admin/flow",
     file: "src/app/api/admin/flow/route.ts",

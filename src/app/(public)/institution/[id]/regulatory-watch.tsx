@@ -7,7 +7,7 @@
 import { Exhibit, ReportDesign, ReportHeader, type RdLegendItem } from "@/components/report-design";
 import { formatCompactDollars } from "@/lib/format";
 import { RD } from "@/lib/report-design/tokens";
-import { enforcementAgencyLabel, enforcementAgencyList } from "@/lib/regulatory/state-enforcement";
+import { enforcementAgencyLabel, enforcementAgencyList, isStateAgency } from "@/lib/regulatory/state-enforcement";
 import type { ActionTheme, RegulatoryWatch, WatchFeeTie, WatchPeerAction, WatchRuleChange, WatchState } from "@/lib/data-store/regulatory-watch";
 import { WATCH_ACTION_YEARS } from "@/lib/data-store/regulatory-watch";
 
@@ -192,7 +192,7 @@ function FeeVsMarket({ fees }: { fees: readonly WatchFeeTie[] }) {
               <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap" style={{ left: `${at(median)}%`, fontSize: 10, fontVariantNumeric: "tabular-nums", color: RD.inkSoft }}>
                 market {money(median)} · n={f.market_count}
               </span>
-              <span className="absolute top-[30px] h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${at(f.amount)}%`, background: color, boxShadow: `0 0 0 2px ${RD.paper}` }} title={`Your fee ${money(f.amount)}`} />
+              <span className="absolute top-[30px] h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${at(f.amount)}%`, background: color, boxShadow: `0 0 0 2px ${RD.paper}` }} title={`Its fee ${money(f.amount)}`} />
             </div>
             <div className="text-right" style={{ fontSize: 13, fontVariantNumeric: "tabular-nums", color }}>
               <span style={{ fontWeight: 600 }}>{money(f.amount)}</span>{" "}
@@ -206,7 +206,7 @@ function FeeVsMarket({ fees }: { fees: readonly WatchFeeTie[] }) {
 }
 
 const FEE_LEGEND: RdLegendItem[] = [
-  { label: "Your published fee", mark: "dot", color: RD.inkSoft },
+  { label: "Its published fee", mark: "dot", color: RD.inkSoft },
   { label: "Market median", mark: "tick", color: RD.ink },
   { label: "Higher than the market", mark: "dot", color: RD.terraText },
   { label: "Lower than the market", mark: "dot", color: RD.series[1] },
@@ -268,18 +268,18 @@ function FeeChips({ fees, allFees }: { fees: readonly WatchFeeTie[]; allFees: bo
   if (fees.length === 0 && !allFees) return null;
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <span style={small}>{allFees && fees.length === 0 ? "Covers every fee you publish" : "Your fees:"}</span>
+      <span style={small}>{allFees && fees.length === 0 ? "Covers every fee it publishes" : "Its fees:"}</span>
       {fees.map((f) => (
         <span key={f.fee_category} style={{ ...small, color: RD.ink2, border: `1px solid ${RD.rule2}`, background: RD.paper, borderRadius: 3, padding: "1px 6px" }}>
           {f.display_name} <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", color: RD.ink }}>{money(f.amount)}</span>
         </span>
       ))}
-      {allFees && fees.length > 0 ? <span style={small}>and every other fee you publish</span> : null}
+      {allFees && fees.length > 0 ? <span style={small}>and every other fee it publishes</span> : null}
     </div>
   );
 }
 
-function StateExhibit({ state, number }: { state: WatchState; number: number }) {
+function StateExhibit({ state, number, name }: { state: WatchState; number: number; name: string }) {
   const sources = [
     ...(state.laws.length > 0 ? [`${state.state_name} statutes (official text)`] : []),
     ...(state.bills.length > 0 ? [state.bills_tracked ? "Open States legislative data" : `${state.state_name} legislature`] : []),
@@ -289,14 +289,14 @@ function StateExhibit({ state, number }: { state: WatchState; number: number }) 
       exhibit={{
         key: "state",
         label: `Exhibit ${number} · ${state.state_name}`,
-        title: `${state.state_name}: state law and bills on your fees`,
+        title: `${state.state_name}: state law and bills on ${possessive(name)} fees`,
         sub: state.laws_reviewed ? null : "Draft for legal review: these citations come from research not yet reviewed by counsel, and customers will not see them until that review is done.",
         source: `Source: ${sources.join("; ")}.`,
       }}
     >
       {state.supervisor ? (
         <p style={{ fontSize: 13.5, color: RD.inkSoft, margin: "0 0 10px" }}>
-          Your charter supervisor:{" "}
+          Its charter supervisor:{" "}
           {state.supervisor.website ? (
             <a href={state.supervisor.website} target="_blank" rel="noopener noreferrer" style={{ ...linkStyle, color: RD.ink, fontWeight: 500 }}>
               {state.supervisor.agency}
@@ -357,10 +357,16 @@ function StateExhibit({ state, number }: { state: WatchState; number: number }) 
   );
 }
 
+/** "Space Coast Credit Union" -> "Space Coast Credit Union's"; a name ending in s takes a bare apostrophe. */
+const possessive = (name: string) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
+
 /** "Chicago, IL; Coral Gables, FL" -> "Chicago" for the headline; full places go in the source line. */
 const firstCity = (places: readonly string[]) => places[0]?.split(",")[0]?.trim() ?? null;
 
-export function RegulatoryWatchSection({ watch, exportHref }: { watch: RegulatoryWatch; exportHref?: string | null }) {
+export function RegulatoryWatchSection({ watch, exportHref, institutionName }: { watch: RegulatoryWatch; exportHref?: string | null; institutionName?: string | null }) {
+  // Read about the institution, never to it: the viewer may be any Pro member looking it up.
+  const name = institutionName?.trim() || "this institution";
+  const whose = possessive(name);
   const peersChecked = watch.market?.peers_checked ?? 0;
   const actions = watch.peer_actions;
   const peersWithActions = new Set(actions.map((a) => a.peer_id)).size;
@@ -370,14 +376,16 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
   const city = firstCity(watch.market?.places ?? []);
   const span = timelineWindow(watch.as_of, actions);
   const since = monthYear(new Date(span.start).toISOString());
+  // State banking-department orders join the timeline once a state's list is loaded.
+  const scope = actions.some((a) => isStateAgency(a.agency)) ? "federal or state" : "federal";
   const asOf = watch.as_of ? ` Data as of ${fullDate(watch.as_of)}.` : "";
   const deposits = `FDIC Summary of Deposits (largest by deposits in ${watch.market?.places.slice(0, 2).join("; ") ?? "the local market"})`;
   const headline =
     peersChecked === 0
       ? "No local market is on file for this institution yet."
       : actions.length === 0
-        ? `None of your ${peersChecked} largest ${city ? `${city} ` : ""}competitors has a federal enforcement action since ${since}.`
-        : `${peersWithActions} of your ${peersChecked} largest ${city ? `${city} ` : ""}competitors drew federal enforcement since ${since}${
+        ? `None of ${whose} ${peersChecked} largest ${city ? `${city} ` : ""}competitors has a ${scope} enforcement action since ${since}.`
+        : `${peersWithActions} of ${whose} ${peersChecked} largest ${city ? `${city} ` : ""}competitors drew ${scope} enforcement since ${since}${
             consumer > 0 ? `; ${plural(consumer, "action")} concerned consumer law.` : ", none of it about consumer law."
           }`;
   let n = 0;
@@ -401,7 +409,7 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
           exhibit={{
             key: "enforcement",
             label: `Exhibit ${++n} · Enforcement`,
-            title: `Federal enforcement against your largest local competitors, ${since} to now`,
+            title: `${scope === "federal" ? "Federal" : "Federal and state"} enforcement against ${whose} largest local competitors, ${since} to now`,
             sub: "Each mark is one public action, placed on the date it began. Hover or tap a mark for the agency's subject and a link to the order. FDIC and NCUA orders are not included.",
             legend: timelineLegend(actions),
             source: `Source: ${agencies} enforcement action lists; ${deposits}.${asOf}`,
@@ -415,8 +423,8 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
           exhibit={{
             key: "fees",
             label: `Exhibit ${++n} · Fees`,
-            title: "The fees consumer regulators watch most, against your market",
-            sub: "Tick: the median among your 40 largest local competitors that publish the fee (n of them shown; at least 3). Dot: your published fee.",
+            title: `The fees consumer regulators watch most, against ${whose} market`,
+            sub: "Tick: the median among its 40 largest local competitors that publish the fee (n of them shown; at least 3). Dot: its published fee.",
             legend: FEE_LEGEND,
             source: `Source: Bank Fee Index published fees; ${deposits}.${asOf}`,
           }}
@@ -424,9 +432,9 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
           <FeeVsMarket fees={watch.fee_focus} />
         </Exhibit>
       ) : null}
-      {watch.state && (watch.state.laws.length > 0 || watch.state.bills.length > 0) ? <StateExhibit state={watch.state} number={++n} /> : null}
+      {watch.state && (watch.state.laws.length > 0 || watch.state.bills.length > 0) ? <StateExhibit state={watch.state} number={++n} name={name} /> : null}
       {watch.rule_changes.length > 0 ? (
-        <Exhibit exhibit={{ key: "rules", label: `Exhibit ${++n} · Rules`, title: "Federal rule changes on your fees", source: "Source: Federal Register and Congress.gov." }}>
+        <Exhibit exhibit={{ key: "rules", label: `Exhibit ${++n} · Rules`, title: `Federal rule changes on ${whose} fees`, source: "Source: Federal Register and Congress.gov." }}>
           <RuleTable rules={watch.rule_changes.slice(0, 6)} heading="Rule or bill" />
         </Exhibit>
       ) : null}
@@ -436,7 +444,7 @@ export function RegulatoryWatchSection({ watch, exportHref }: { watch: Regulator
           className="mt-5 inline-flex items-center gap-2 rounded px-3.5 py-2"
           style={{ border: `1px solid ${RD.terra}`, color: RD.terraText, fontSize: 14, fontWeight: 500, textDecoration: "none" }}
         >
-          Download your fees and peer benchmarks (CSV)
+          Download its fees and peer benchmarks (CSV)
         </a>
       ) : null}
     </ReportDesign>
