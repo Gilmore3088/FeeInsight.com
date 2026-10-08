@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**When an agent breaks, recovery fixes it without asking first.** James, 12:26 UTC ("Fix" on the
+recovery card), after a deploy broke every Hamilton publish at 12:06 ("Hamilton is blocked. We
+need a way to automate resolution when this happens"). A scheduled recovery check finds the break,
+opens a fix PR, merges it on green, proves the failed work reran, and tells James after. Revert-only
+and alert-only were the other options. What it may and may not do is in `.claude/skills/recover/SKILL.md`.
+It never touches data with SQL, never deletes, and never makes paid calls.
+
 **Pro moves to three tiers; the monthly brief stays free; banks and credit unions get equal weight.**
 James, 11:35 UTC, after the pricing and competitive strategy pages. Pro becomes three tiers at
 $1,500, $3,000 and $5,000 a year ("If we need to bump prices later we can. 5k for an on demand
