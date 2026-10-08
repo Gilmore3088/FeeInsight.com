@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro header search did nothing and the page covered the account menu
+**What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
+nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
+**Cause:** the Search button only dispatches an open event; `SearchModal` handles it, and only the
+public layout and a few standalone pages mounted it, never `HamiltonShell`. The menu: `.hamilton-shell > *`
+runs a reveal animation with `fill-mode: both`, which leaves a transform on every shell child and
+so a stacking context each. The header's `z-40` was trapped inside its wrapper, and `<main>`, later
+in the page, painted over the menu.
+**Fix:** `HamiltonShell` (and the 404 page) mount `SearchModal`; the header wrapper carries
+`sticky top-0 z-40`. `src/components/search-trigger.test.ts` fails if a screen renders
+`<ConsumerNav />` without `<SearchModal />`.
+**Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
+not on itself.
+
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
 **Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
