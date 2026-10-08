@@ -2,7 +2,7 @@ import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 
-import { applyStripeEvent, mapStripeStatus } from "./stripe-webhook";
+import { applyStripeEvent, mapStripeStatus, recordStripeEvent } from "./stripe-webhook";
 
 const tx = vi.fn();
 const issued = () => tx.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?").replace(/\s+/g, " "));
@@ -174,5 +174,23 @@ describe("institution report payments", () => {
     tx.mockResolvedValueOnce([]).mockResolvedValueOnce([{ stripe_checkout_session_id: "cs_first" }]);
     const effects = await applyStripeEvent(tx as never, paidSession());
     expect(effects.reportDuplicate).toEqual([{ leadId: 18, cents: 30000, checkoutSessionId: "cs_test_1" }]);
+  });
+});
+
+describe("recordStripeEvent", () => {
+  beforeEach(() => tx.mockReset());
+
+  it("writes the event id to prod's stripe_event_id column", async () => {
+    tx.mockResolvedValue([{ id: 1 }]);
+    expect(await recordStripeEvent(tx as never, event("checkout.session.completed", {}))).toBe(true);
+    const [sql] = issued();
+    expect(sql).toContain("INSERT INTO stripe_events (stripe_event_id, event_type)");
+    expect(sql).toContain("ON CONFLICT (stripe_event_id) DO NOTHING");
+    expect(tx.mock.calls[0].slice(1)).toEqual(["evt_1", "checkout.session.completed"]);
+  });
+
+  it("reports a redelivered event as already processed", async () => {
+    tx.mockResolvedValue([]);
+    expect(await recordStripeEvent(tx as never, event("checkout.session.completed", {}))).toBe(false);
   });
 });

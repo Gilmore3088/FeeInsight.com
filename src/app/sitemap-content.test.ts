@@ -18,3 +18,15 @@ describe("gated research", () => {
     expect(source).not.toContain("/research/market-concentration");
   });
 });
+
+describe("sitemap speed", () => {
+  it("is served from cache rather than rebuilt on every request", () => {
+    expect(source).toMatch(/export const revalidate = \d+;/);
+    expect(source).toContain('export const dynamic = "force-static";');
+  });
+
+  it("loads city pages in one query instead of one per state", () => {
+    expect(source).not.toContain("getCitiesInState");
+    expect(source).toContain("getTopCitiesByState");
+  });
+});

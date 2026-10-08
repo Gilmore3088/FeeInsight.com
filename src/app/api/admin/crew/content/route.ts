@@ -26,16 +26,18 @@ async function handleGET(request: NextRequest) {
   }
   const day = new Date().toISOString().slice(0, 10);
   const started = await startAgentRun({
-    agent: "hamilton",
+    agent: "growth",
     kind: "workflow",
     title: `Hamilton content ${day}`,
     params: { source: "hamilton.content", day },
     triggeredBy: "hamilton.content",
     triggerSource: "schedule",
+    // Runs moved from Hamilton to growth on 2026-10-08; the key keeps its old prefix so a
+    // day already run under Hamilton is not run twice.
     idempotencyKey: `hamilton:content:${day}`,
     steps: [
-      { key: "content-market-spread", agent: "hamilton", title: "Draft this week's market-spread post" },
-      { key: "content-fee-depth", agent: "hamilton", title: "Draft the fortnightly fee-depth post" },
+      { key: "content-market-spread", agent: "growth", title: "Draft this week's market-spread post" },
+      { key: "content-fee-depth", agent: "growth", title: "Draft the fortnightly fee-depth post" },
     ],
   });
   const result = started.reused

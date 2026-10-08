@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { refileCategory } from "@/lib/fee-category-guard";
+import { foldContext } from "@/lib/fee-fold";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -69,7 +70,8 @@ export function reproducibleReads(text: string): Map<string, Set<string>> {
   const reads = new Map<string, Set<string>>();
   const add = (key: string, name: string) => reads.set(key, (reads.get(key) ?? new Set()).add(name.toLowerCase()));
   // The category Darwin files a read under, as its verify step does.
-  const filedAs = (hint: string, name: string) => refileCategory(hint, name) ?? hint;
+  // A fee under a retired category is placed by its wording and the schedule section above it.
+  const filedAs = (hint: string, name: string) => refileCategory(hint, name, foldContext(text, name)) ?? hint;
   for (const candidate of result.candidates) {
     const key = filedAs(candidate.canonicalHint, candidate.feeName);
     if (passesDarwinChecks(key, candidate.feeName, candidate.amount)) {

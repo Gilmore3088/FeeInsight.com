@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { addOperatorSchedules, OPERATOR_SCHEDULES, type OperatorSchedule } from "./operator-schedules";
+import {
+  addHandFoundLink,
+  addOperatorSchedules,
+  OPERATOR_SCHEDULE_STRATEGY,
+  OPERATOR_SCHEDULES,
+  type OperatorSchedule,
+} from "./operator-schedules";
 
 type DbMock = ReturnType<typeof vi.fn>;
 const text = (strings: unknown) => (Array.isArray(strings) ? strings.join(" ") : String(strings));
@@ -64,5 +70,37 @@ describe("schedules James found by hand", () => {
     expect(ids.slice(0, 2)).toEqual([1, 3]);
     expect(new Set(ids).size).toBe(ids.length);
     for (const schedule of OPERATOR_SCHEDULES) expect(new URL(schedule.url).protocol).toBe("https:");
+  });
+});
+
+describe("links pasted on the hit list", () => {
+  function pasteDb(name: string | null, insertReturns = [{ id: 9 }]): DbMock {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("SELECT institution_name")) return Promise.resolve(name ? [{ institution_name: name }] : []);
+      if (sqlText.includes("INSERT INTO institution_additional_sources")) return Promise.resolve(insertReturns);
+      return Promise.resolve([]);
+    });
+  }
+  const pasteAsDb = (db: DbMock) => db as unknown as NonNullable<Parameters<typeof addHandFoundLink>[0]["db"]>;
+
+  it("stores the link as a hand-found consumer schedule with no run, and records the attempt", async () => {
+    const db = pasteDb("Old National Bank");
+    const result = await addHandFoundLink({ db: pasteAsDb(db), institutionId: 41, url: " https://www.oldnational.com/fees.pdf ", givenBy: "james on the hit list" });
+    expect(result).toEqual({ ok: true, institutionName: "Old National Bank" });
+    const [insert] = inserts(db);
+    expect(insert).toContain("https://www.oldnational.com/fees.pdf");
+    expect(insert).toContain(OPERATOR_SCHEDULE_STRATEGY.strategy);
+    expect(insert).toContain(null);
+    expect(attempts(db)).toHaveLength(1);
+  });
+
+  it("refuses a non-link, an unknown institution and a link already on file", async () => {
+    expect(await addHandFoundLink({ db: pasteAsDb(pasteDb("X")), institutionId: 41, url: "fees please", givenBy: "j" })).toMatchObject({ ok: false });
+    expect(await addHandFoundLink({ db: pasteAsDb(pasteDb("X")), institutionId: 41, url: "ftp://x.com/a.pdf", givenBy: "j" })).toMatchObject({ ok: false });
+    expect(await addHandFoundLink({ db: pasteAsDb(pasteDb(null)), institutionId: 41, url: "https://x.com/a.pdf", givenBy: "j" })).toEqual({ ok: false, error: "Institution not found" });
+    const held = pasteDb("X", []);
+    expect(await addHandFoundLink({ db: pasteAsDb(held), institutionId: 41, url: "https://x.com/a.pdf", givenBy: "j" })).toMatchObject({ ok: false });
+    expect(attempts(held)).toHaveLength(0);
   });
 });

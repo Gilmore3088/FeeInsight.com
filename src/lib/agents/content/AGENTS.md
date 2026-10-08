@@ -1,6 +1,7 @@
-# Hamilton content
+# Growth content
 
-The content workflows from the 3-month content plan (Oct 7, 2026). Each one drafts LinkedIn
+The content workflows from the 3-month content plan (Oct 7, 2026), run as agent `growth` under the
+marketing pause (`../growth/AGENTS.md`). Each one drafts LinkedIn
 posts into the content queue (`content_drafts`, reviewed at `/admin/customers/content`).
 Nothing here posts or sends: James approves a draft, posts it on the Fee Insight company page
 himself, then marks it posted.
@@ -31,6 +32,8 @@ Cards for both are drawn in `cards.tsx` from the draft's stored facts.
 ## Rules
 
 - Institutions are never named on a card or in a caption; posts name markets.
+- Every caption ends with the free-report call to action, "Get a free fee report:" and a tagged
+  feeinsight.com/reports link (`freeReportLink`), not a link to a Hamilton page.
 - Wording: "lower" and "higher"; never advise a fee change; never say what Hamilton can't do.
 - Brand: Fee Insight publishes (card header), the Bank Fee Index is the source (footer), and
   Hamilton is the product. Never write Fee Insight and Bank Fee Index side by side as one name.

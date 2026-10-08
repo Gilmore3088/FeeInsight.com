@@ -492,7 +492,8 @@ export async function loadEconomy(stateCode: string | null, district: number | n
 }
 
 /** The daily cap category that goes with a per-item fee, when there is one. */
-const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "nsf_daily_cap" };
+// One daily cap covers overdraft and NSF since the top-50 fold (James, Oct 8).
+const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "od_daily_cap" };
 
 async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: AskSegment): Promise<SegmentResearch> {
   const current = base.ownValues.get(feeCategory) ?? null;

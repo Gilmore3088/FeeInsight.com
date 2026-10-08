@@ -398,7 +398,7 @@ export default async function NationalFeeIndexPage() {
         <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
           The National Fee Index is computed from published fee schedules of
           FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
-          into {TAXONOMY_COUNT} standard categories across 9 families. All
+          into {TAXONOMY_COUNT} standard categories across {Object.keys(FEE_FAMILIES).length} families. All
           statistics are based on published fee schedules. National
           medians are computed across all reporting institutions for each fee
           category.

@@ -13,6 +13,7 @@ export const FLOW_AGENTS: Array<{ agent: AdminAgent; name: string; job: string; 
   { agent: "knox", name: "Knox", job: "Pulls the fees out of the text", href: "/admin/knox" },
   { agent: "darwin", name: "Darwin", job: "Checks every fee before it counts", href: "/admin/darwin" },
   { agent: "hamilton", name: "Hamilton", job: "Publishes checked fees to the site", href: "/admin/hamilton" },
+  { agent: "growth", name: "Growth", job: "Drafts marketing posts and emails for James to approve", href: "/admin/customers/content" },
 ];
 
 export const INSTITUTION_STEPS = ["discover", "rescue", "fetch", "read", "extract", "classify", "publish"];
@@ -45,7 +46,8 @@ export interface FlowSnapshot {
   generatedAt: string;
 }
 
-export type FlowWaiting = Record<Exclude<AdminAgent, "atlas">, number> & { published: number; total: number };
+/** Institutions waiting in front of each data agent; growth handles no institutions. */
+export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth">, number> & { published: number; total: number };
 
 export type Sample = Record<string, unknown>;
 
@@ -285,6 +287,12 @@ export function nowFromSteps(rows: Array<Record<string, unknown>>): FlowNow[] {
       return runs > 0
         ? { agent, state: "working", text: `Running ${runs} pass${runs === 1 ? "" : "es"}: ${stateList(allStates)}` }
         : { agent, state: "idle", text: "No passes running" };
+    }
+    if (agent === "growth") {
+      // Marketing runs cover no state; say what the run is doing instead.
+      if (mine.some((row) => row.status === "running")) return { agent, state: "working", text: "Drafting marketing" };
+      if (mine.some((row) => row.status === "queued")) return { agent, state: "queued", text: "Marketing run queued" };
+      return { agent, state: "idle", text: "No marketing run open" };
     }
     const running = states("running");
     if (running.length > 0) return { agent, state: "working", text: `Working in ${stateList(running)}` };

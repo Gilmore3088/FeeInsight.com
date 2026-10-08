@@ -90,6 +90,13 @@ describe("caption", () => {
     expect(draft.caption).toContain("utm_campaign=w1-market-spread");
   });
 
+  it("ends on the free report, not a Hamilton page", () => {
+    const draft = draftCaption(spread({}), asOf);
+    expect(draft.link).toMatch(/^https:\/\/feeinsight\.com\/reports\?/);
+    expect(draft.caption.endsWith(`Get a free fee report: ${draft.link}`)).toBe(true);
+    expect(draft.caption).not.toMatch(/feeinsight\.com\/(fees|for-institutions|pro)\b/);
+  });
+
   it("mentions free accounts only when some charge nothing", () => {
     expect(draftCaption(spread({ zeros: 2 }), asOf).body).toContain("2 charge nothing");
     expect(draftCaption(spread({ zeros: 0 }), asOf).body).not.toContain("charge nothing");

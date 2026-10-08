@@ -343,6 +343,22 @@ National Bank Alaska's "Insufficient Funds Transfer (Savings Overdraft)" (hint o
 filed as an overdraft protection transfer), was read under the hint, failed the category
 guard there, and was taken down as unreproduced: 140 fees at 128 banks on 2026-10-07.
 
+## Taxonomy Fold (top 50, James 2026-10-08)
+
+`taxonomy-fold.ts` runs in the publish step after the off-taxonomy restore. It reads live
+and verified fees still filed under one of the 15 categories retired from `FEE_FAMILIES`
+(`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`) and re-files each by its name, and for a
+bare name by the 200 characters of schedule text before it. A move happens only when the
+category guard and amount envelope accept the fee in its new category
+(`passesDarwinChecks`); it updates the verified and published rows and writes a
+`category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
+not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
+first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
+the flag is 12 hours old, but only while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. It is off
+until James decides on the list of no-home fees (Oct 8), so they stay live and are counted
+as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
+keep hinting the retired keys. Publish skips a fee still under a retired key.
+
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every

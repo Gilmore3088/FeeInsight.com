@@ -185,6 +185,8 @@ export function narrateStepFinished(
     case "registry-federal-bills":
     case "registry-state-bills":
     case "registry-state-regulators":
+    case "registry-state-reg-news":
+    case "registry-state-bill-news":
     case "registry-enforcement":
     case "registry-state-enforcement":
       return narrateRegistryStep(stepKey, detail);
@@ -217,6 +219,18 @@ export function narrateStepFinished(
       const picked = (detail.picked ?? null) as Detail | null;
       if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a fee-depth post for ${String(picked.metro)} for James to approve.`;
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
+    }
+    case "growth-intake": {
+      if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
+      return "Filed nothing into the queue.";
+    }
+    case "growth-score": {
+      const scored = Array.isArray(detail.scored) ? detail.scored.length : 0;
+      const unscored = Array.isArray(detail.unscored) ? detail.unscored.length : 0;
+      if (detail.schemaReady === false) return "Scored nothing; the queue's score columns are not there yet.";
+      if (!scored && !unscored) return "No posted item was due a score this week.";
+      return `Scored ${count(scored, "posted item")} from tracked visits and leads${unscored ? `; ${count(unscored, "item")} had no measure and stays unscored` : ""}.`;
     }
     case "marketing-score": {
       const scored = n(detail, "scored");
@@ -339,6 +353,14 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
+    case "registry-state-reg-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Read news from ${n(detail, "read")} of ${count(n(detail, "agencies"), "state regulator site")}: ${count(n(detail, "fetched"), "item")}, ${n(detail, "fee_related")} about fees; ${stored}.`;
+    }
+    case "registry-state-bill-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "news story", "news stories")} on state fee bills (${n(detail, "bills_with_news")} of ${n(detail, "bills")} bills covered); ${stored}.`;
+    }
     case "registry-enforcement":
       return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
     case "registry-state-enforcement": {
@@ -396,12 +418,14 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "pro-digest": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
-  "content-fee-depth": "hamilton",
-  "content-market-spread": "hamilton",
-  "marketing-score": "hamilton",
-  "marketing-write": "hamilton",
-  "marketing-send": "hamilton",
-  "marketing-states": "hamilton",
+  "content-fee-depth": "growth",
+  "content-market-spread": "growth",
+  "growth-intake": "growth",
+  "growth-score": "growth",
+  "marketing-score": "growth",
+  "marketing-write": "growth",
+  "marketing-send": "growth",
+  "marketing-states": "growth",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
   "study-fee-dependence": "hamilton",
@@ -433,6 +457,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-federal-bills": "magellan",
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
+  "registry-state-reg-news": "magellan",
+  "registry-state-bill-news": "magellan",
   "registry-enforcement": "magellan",
   "registry-state-enforcement": "magellan",
   read: "rosetta",

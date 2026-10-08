@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { Newsreader, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SITE_URL } from "@/lib/constants";
+import { MarketingTouchRecorder } from "@/components/public/marketing-touch-recorder";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -37,6 +38,11 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
+  // Search Console ownership: paste Google's HTML-tag code into the
+  // GOOGLE_SITE_VERIFICATION env var in Vercel. Unset renders no tag.
+  ...(process.env.GOOGLE_SITE_VERIFICATION?.trim()
+    ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION.trim() } }
+    : {}),
 };
 
 export default function RootLayout({
@@ -59,6 +65,8 @@ export default function RootLayout({
       </head>
       <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         {children}
+        {/* Records a tracked-link visit (utm_ tags) once per session; no personal data. */}
+        <MarketingTouchRecorder />
         {/* Vercel injects /_vercel/insights only on its own platform; elsewhere the script 404s. */}
         {process.env.VERCEL ? <Analytics /> : null}
       </body>
