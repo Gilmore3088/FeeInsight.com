@@ -40,7 +40,9 @@ import {
   FEE_NAMED_LINK_SQL,
   FEE_SCHEDULE_NAME_SQL,
   isArticleLink,
+  isOtherSiteLink,
   isSingleProductDisclosureLink,
+  OTHER_SITE_LINK_SQL,
   PRODUCT_DISCLOSURE_SQL,
   PRODUCT_LINK_SQL,
   SINGLE_PRODUCT_SQL,
@@ -1050,7 +1052,8 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
 /**
  * Banks whose fee link is an account or product page, an article, blog post or news
  * item (`isArticleLink`), or one deposit product's disclosure such as a CD truth-in-savings
- * sheet (`isSingleProductDisclosureLink`), not yet searched for the real schedule at this upgrade version.
+ * sheet (`isSingleProductDisclosureLink`), or a page on another kind of site (`isOtherSiteLink`: a
+ * government, broker or car-price site), not yet searched for the real schedule at this upgrade version.
  * Their link is kept until a fee schedule is found.
  */
 async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
@@ -1081,6 +1084,11 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
              OR (lower(inst.fee_schedule_url) ~ ${SINGLE_PRODUCT_SQL}
                  AND lower(inst.fee_schedule_url) ~ ${PRODUCT_DISCLOSURE_SQL}
                  AND lower(inst.fee_schedule_url) !~ ${FEE_SCHEDULE_NAME_SQL})
+             -- A page on a government, broker or car-price site is never the bank's schedule,
+             -- unless that site is the bank's own (GSA FCU lives on gsafcu.gsa.gov).
+             OR (lower(inst.fee_schedule_url) ~ ${OTHER_SITE_LINK_SQL}
+                 AND substring(lower(inst.fee_schedule_url) from '^[a-z]+://(?:www\\.)?([^/:?#]+)')
+                     IS DISTINCT FROM substring(lower(btrim(inst.website_url)) from '^(?:[a-z]+://)?(?:www\\.)?([^/:?#]+)'))
            )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
@@ -1647,7 +1655,7 @@ export async function runMagellanDiscovery(
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
     // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
-    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url)) {
+    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url) && !isOtherSiteLink(row.fee_schedule_url, row.website_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {

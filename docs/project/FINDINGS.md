@@ -3275,3 +3275,14 @@ alert has been raised from these records.
   website could not be repaired is due again after 12 hours, since that check costs no fetch.
 - **Watch.** `discover` attempts for those 17 and the 11, and their links.
 
+## 2026-10-08: Fee links on government, broker and car-price sites
+
+- **Problem.** 11 banks' fee link was a page on another site: a city's HSA agreement for Bell
+  Bank (ND top 10), CFPB card agreements for Barclays, Charter Oak, Marine FCU and Vantage West,
+  LPL's broker summary, a bankruptcy court fee schedule, the FDIC's overdraft explainer, JD Power
+  and NADA car pages. The upgrade search only looked at product pages, articles and single
+  product disclosures, so these stood as the bank's schedule.
+- **Fix.** The upgrade search also takes a link on such a host (`isOtherSiteLink`), unless the
+  host is the bank's own website, and never keeps it as a companion.
+- **Watch.** Upgrade `discover` attempts for those 11 and their new links.
+

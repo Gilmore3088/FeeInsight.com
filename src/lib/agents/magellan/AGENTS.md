@@ -130,6 +130,9 @@ and `detail.method_version`).
   sheet, unless the name also says fee schedule) are handled the same way
   (`single_product_disclosure`): they state a rate and an early-withdrawal penalty, not the
   account fees.
+  A link on another kind of site (`isOtherSiteLink`: a government page, a broker's disclosures,
+  a car-price site) is searched the same way and never kept as a companion, unless that host
+  is the bank's own website (GSA FCU on gsafcu.gsa.gov).
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
