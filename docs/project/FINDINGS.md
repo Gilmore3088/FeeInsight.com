@@ -3200,3 +3200,20 @@ Rows already on file gain the fields only when Knox reads their document again.
 - **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
   what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
   230 s at a time).
+
+## 2026-10-08: Paid search answers dropped because the bank's site refused our check
+
+- **Problem.** The paid web search and the paid schedule search open the model's answer with
+  our own fetcher before keeping it. When the bank's site refused that fetch (HTTP 403), the
+  answer was dropped: the search was paid for and the bank kept no link. A 403 is not a
+  monthly-retry outcome, so the bank was never searched again. On 8 Oct, 72 such answers sat
+  in `pipeline_attempts` (53 banks with no fee link at all), among them Synchrony, Independence
+  Bank of Kentucky, Community National Bank (VT), Aloha Pacific and Alliant, all in their
+  state's top 10 by deposits with no live fee. The web search started keeping 403 answers on
+  7 Oct; the schedule search never did.
+- **Fix.** The schedule search keeps a 403 answer as a companion. `keepRefusedPaidAnswers`
+  (`refused-answers.ts`) stores each answer dropped before, once, at no cost, from the discover
+  step; the paid fetch then reads the page.
+- **Watch.** `discover.keep_refused_answer` attempts (`ok` vs `unchanged`) and, after the paid
+  fetch, live fees for the banks kept.
+

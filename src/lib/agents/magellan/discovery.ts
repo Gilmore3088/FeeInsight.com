@@ -46,6 +46,7 @@ import {
   SINGLE_PRODUCT_SQL,
 } from "./link-coverage";
 import { loadDemotedFinders } from "./batch-review";
+import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
 import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordSearchMisses } from "./search-misses";
@@ -393,6 +394,8 @@ export interface RunMagellanDiscoveryResult {
   secondDocuments: RunSecondDocumentFindResult | null;
   /** Fee pages put back as the main link after a blank read had swapped them out. */
   restoredFeePages: RestoreFeePagesResult | null;
+  /** Paid search answers kept although the bank's site refused our check (HTTP 403). */
+  keptRefusedAnswers: KeepRefusedAnswersResult | null;
   /** Search-miss lessons written (`magellan.search_miss`). */
   searchMisses: number;
   limit: number;
@@ -1651,6 +1654,19 @@ export async function runMagellanDiscovery(
         return null;
       })
     : null;
+  // Database work only, like the restore. Not limited to the lane's state: the answers were
+  // paid for already and each bank is kept once.
+  const keptRefusedAnswers = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => keepRefusedPaidAnswers({
+        db: scope,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("keepRefusedPaidAnswers failed:", error);
+        return null;
+      })
+    : null;
   const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
   const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
     ? await runSecondDocumentFind({
@@ -1712,6 +1728,7 @@ export async function runMagellanDiscovery(
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
     restoredFeePages,
+    keptRefusedAnswers,
     searchMisses,
     limit,
     dryRun,

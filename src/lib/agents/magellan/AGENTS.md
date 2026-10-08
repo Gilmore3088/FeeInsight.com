@@ -139,6 +139,13 @@ and `detail.method_version`).
   once per version (`discover`/`restore_fee_page` attempt, `ok` or `unchanged` with the
   reason kept); the step's `restored_fee_pages` detail lists the swaps. Rosetta's readers
   (embedded data, linked and embedded PDF viewers) decide whether it now reads.
+- Refused paid answers (`refused-answers.ts`, `KEEP_REFUSED_ANSWER_STRATEGY`): a paid web
+  search or paid schedule search answer whose fee-page check got HTTP 403 is kept once, free,
+  up to 25 per discover step in any state: as the main link when the bank has none, else as a
+  `consumer_supplement` companion. Answers off the bank's site, articles, pages it already
+  holds and non-schedule pages (CRA file, About, rates page) are logged `unchanged`. Both paid
+  searches now keep a 403 answer themselves; this pass recovers the ones dropped before. The
+  plain fetch meets the 403 and the paid fetch (`blocked-fetch.ts`) stores the page.
 - Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
   link looks out of date are searched once per version for a newer schedule
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
