@@ -4,7 +4,7 @@ import { createCheckoutSession } from "@/lib/stripe-actions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackEvent } from "@/lib/analytics";
-import type { ProPlan } from "@/lib/pro-tiers";
+import type { ProPlan, ProTier } from "@/lib/pro-tiers";
 
 interface SubscribeButtonProps {
   plan: ProPlan;
@@ -12,6 +12,8 @@ interface SubscribeButtonProps {
   institutionId?: number | null;
   /** A consultant or other organization: the non-institution tier. */
   otherOrganization?: boolean;
+  /** The size band the buyer picked for an institution with no asset size on file. */
+  pickedTier?: ProTier | null;
   label: string;
   className?: string;
   returnTo?: string;
@@ -26,6 +28,7 @@ export function SubscribeButton({
   plan,
   institutionId = null,
   otherOrganization = false,
+  pickedTier = null,
   label,
   className,
   returnTo,
@@ -44,7 +47,7 @@ export function SubscribeButton({
     setPending(true);
     setError(null);
     try {
-      const result = await createCheckoutSession({ plan, institutionId, otherOrganization, returnTo });
+      const result = await createCheckoutSession({ plan, institutionId, otherOrganization, pickedTier, returnTo });
       if (result.url) {
         window.location.href = result.url;
       } else if (result.needsSignIn) {
@@ -53,6 +56,7 @@ export function SubscribeButton({
         const back = new URLSearchParams({ plan });
         if (institutionId) back.set("inst", String(institutionId));
         else if (otherOrganization) back.set("org", "other");
+        if (pickedTier) back.set("band", pickedTier);
         if (returnTo) back.set("from", returnTo);
         const registerFrom = `/subscribe?${back.toString()}`;
         router.push(`/register?plan=${plan}&from=${encodeURIComponent(registerFrom)}`);
@@ -64,7 +68,7 @@ export function SubscribeButton({
       setError("Could not open checkout. Please try again in a moment.");
       setPending(false);
     }
-  }, [plan, institutionId, otherOrganization, returnTo, router, autoStart]);
+  }, [plan, institutionId, otherOrganization, pickedTier, returnTo, router, autoStart]);
 
   useEffect(() => {
     if (!autoStart || autoStarted.current) return;

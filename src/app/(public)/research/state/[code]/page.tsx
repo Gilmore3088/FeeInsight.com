@@ -193,7 +193,7 @@ export default async function StateReportPage({ params }: PageProps) {
           secondaryLink={
             sampleLive
               ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-              : undefined
+              : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
           }
         />
 

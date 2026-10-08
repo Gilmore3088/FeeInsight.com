@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   user: vi.fn(),
   configs: vi.fn(),
+  update: vi.fn(),
   customers: vi.fn(),
   session: vi.fn(),
 }));
@@ -10,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({
-    billingPortal: { configurations: { list: mocks.configs }, sessions: { create: mocks.session } },
+    billingPortal: { configurations: { list: mocks.configs, update: mocks.update }, sessions: { create: mocks.session } },
     customers: { list: mocks.customers },
   }),
 }));
@@ -62,6 +63,21 @@ describe("GET /api/admin/stripe/portal-check", () => {
     });
     const body = await (await GET()).json();
     expect(body.ok).toBe(false);
-    expect(mocks.customers).not.toHaveBeenCalled();
+  });
+
+  it("sets missing Privacy and Terms links and passes with no live customer yet", async () => {
+    mocks.user.mockResolvedValue({ id: 1, role: "admin", stripe_customer_id: "cus_test_mode" });
+    const bare = { ...config, business_profile: { privacy_policy_url: null, terms_of_service_url: null } };
+    mocks.configs.mockResolvedValue({ data: [bare] });
+    mocks.update.mockResolvedValue(config);
+    mocks.customers.mockResolvedValue({ data: [] });
+    const body = await (await GET()).json();
+    expect(mocks.update).toHaveBeenCalledWith("bpc_1", {
+      business_profile: { privacy_policy_url: "https://feeinsight.com/privacy", terms_of_service_url: "https://feeinsight.com/terms" },
+    });
+    expect(body.linksSet).toBe(true);
+    expect(body.portal).toHaveProperty("skipped");
+    expect(mocks.session).not.toHaveBeenCalled();
+    expect(body.ok).toBe(true);
   });
 });

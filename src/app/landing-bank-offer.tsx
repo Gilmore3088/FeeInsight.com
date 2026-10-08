@@ -30,7 +30,7 @@ export function LandingBankOffer({ sampleLive = false }: { sampleLive?: boolean 
           </h2>
           <p className="mt-3 max-w-xl text-pretty text-[15px] leading-relaxed text-[#5A5347]">
             National and Fed district reports are free. The {REPORT_OFFER.name} for your
-            institution is priced on request: we read your fee schedule and your
+            institution starts at $300: we read your fee schedule and your
             competitors&apos;, then show where you stand.
           </p>
 

@@ -182,7 +182,7 @@ export function writerPrompt({
     "- Use ONLY numbers that appear in FACTS (copy them exactly; a dollar difference between two FACTS numbers is fine). Never estimate, round differently or invent a number, percentage or date. Every number you write is checked, and any number not in FACTS rejects the email.",
     "- coverage_last_month is how many institutions stood behind each fee last month. Use it only to say coverage grew. Never describe a median as rising, falling or moving since last month: the difference mostly reflects which institutions were added, not price changes.",
     "- Never tell anyone to raise their fees. This is decision support: show where the market sits and what to ask.",
-    "- Never promise a turnaround time. The institution report is priced on request.",
+    "- Never promise a turnaround time or state a price for the institution report; link to it instead.",
     `- Don't name "${PRODUCT_NAME}"; the footer does that.`,
     "- Two subject lines that test different angles (for example a number-led subject against a question). Each under 60 characters.",
     "- Keep it short: an intro of 2 to 3 sentences, then 1 to 3 short sections.",

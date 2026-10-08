@@ -160,5 +160,5 @@ export interface StorylineMemo {
 
 export type StorylineMemoResult =
   | { status: "written"; memo: StorylineMemo }
-  | { status: "withheld"; reason: string }
+  | { status: "withheld"; reason: string; /** What the last draft failed on, for the run ledger; never shown. */ problems?: string[] }
   | { status: "unavailable"; reason: string };
