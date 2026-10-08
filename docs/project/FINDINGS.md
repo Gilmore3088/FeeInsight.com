@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Admin Health and Learning screens read stale or misleading numbers
+**What happened:** James said the Health and Learning tabs looked "weird or not working". Health
+read `agent_health_rollup`, a rollup from the old plan that holds 57 agent names. 51 of them are
+retired `state_xx` agents frozen on 2026-08-12, plus `discoverer`, `extractor` and the old atlas,
+hamilton and magellan rows, all frozen in August. Only knox and darwin still get rows. Two of its
+five metrics (`review_latency_seconds`, `confidence_drift`) are empty in every row, prod 09:03 UTC.
+Learning scored every attempt that wasn't `ok` as a failure. So "no candidates" (a document with
+no wire fees) and "unchanged" (copy already current) drew red bars. Examples: Knox's checks family
+showed 35% when 65% of its tries simply had nothing to find, and Darwin's release step showed 28%
+with 67% unchanged.
+**Cause:** Health was never moved to the run ledger when the agents were. Learning's success
+share had no third outcome.
+**Fix:** PR 546 rebuilds Health on `agent_run_steps` (done and failed per agent per day, judged on
+the last two days). Learning now shows worked / nothing there / failed. Waiting for James to merge.
+**Lesson:** an admin screen that reads a rollup table must show where the rollup's newest row is.
+Count "nothing to do" apart from failures wherever a success rate is shown.
+
 ## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
 **What happened:** the first `registry-state-reg-news` run (12:27 UTC, PR 568) read 31 of 55 regulator
 sites and 311 items, but many were menu links ("Public Meetings and Notices"), links named by their own
