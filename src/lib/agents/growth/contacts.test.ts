@@ -80,6 +80,12 @@ describe("reading a page", () => {
     expect(roleFor("Vice President, Chief Financial Officer & Treasurer")).toBe("finance");
   });
 
+  it("reads member services as retail only at a decision maker's rank", () => {
+    expect(roleFor("Member Services Manager")).toBe("other");
+    expect(roleFor("Member Service Officer")).toBe("other");
+    expect(roleFor("VP of Member Experience")).toBe("retail");
+  });
+
   it("re-reads saved contacts: labels aren't names and headings aren't titles", () => {
     const saved = { kind: "person" as const, role: "executive" as const };
     expect(normalizeContact({ ...saved, name: "Accessibility Statement", title: null })).toMatchObject({ name: null, role: "other" });
