@@ -245,6 +245,20 @@ describe("state lane scheduler", () => {
     expect(dueQuery).toContain("active.status IN ('queued', 'running', 'cancel_requested')");
   });
 
+  it("launches lanes woken by a recovery rerun ahead of every other due lane (2026-10-08)", async () => {
+    sqlMock.mockResolvedValue([]);
+    const txMock = vi.fn().mockResolvedValue([]);
+    withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
+
+    await scheduleDueStateLaneRuns({ limit: 2 });
+
+    const dueQuery = templateText(txMock.mock.calls[0][0]);
+    const order = dueQuery.slice(dueQuery.indexOf("ORDER BY"));
+    expect(order.indexOf("'run.recovery_rerun'")).toBeGreaterThan(-1);
+    expect(order.indexOf("'run.recovery_rerun'")).toBeLessThan(order.indexOf("priority_score DESC"));
+    expect(order).toContain("rerun.agent_run_id = agent_state_lanes.last_agent_run_id");
+  });
+
   it("runs only the stored-document steps after this month's full pass while a backlog remains", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
@@ -446,9 +460,9 @@ describe("state lane scheduler", () => {
     withTransactionMock.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(sqlMock));
     await scheduleDueStateLaneRuns({ now: new Date("2026-10-06T13:30:00Z") });
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("FOR UPDATE SKIP LOCKED"));
-    // Overdue lanes go first, longest overdue first, then the rest by score.
+    // After recovery reruns, overdue lanes go first, longest overdue first, then the rest by score.
     expect(query).toMatch(
-      /ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+CASE WHEN next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\s+THEN next_run_after END ASC NULLS LAST,\s+priority_score DESC/,
+      /'run\.recovery_rerun'\s+\) DESC,\s+\(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+CASE WHEN next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\s+THEN next_run_after END ASC NULLS LAST,\s+priority_score DESC/,
     );
     expect(STATE_LANE_STARVATION_HOURS).toBe(3);
   });
