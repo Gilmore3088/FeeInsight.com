@@ -6,7 +6,8 @@ import { isFeaturedFee } from "@/lib/fee-taxonomy";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessAllCategories } from "@/lib/access";
+import { canAccessAllCategories, canAccessPremium } from "@/lib/access";
+import { ProNextStep } from "@/components/public/pro-next-step";
 import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -192,7 +193,7 @@ export default async function StateReportPage({ params }: PageProps) {
           secondaryLink={
             sampleLive
               ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-              : undefined
+              : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
           }
         />
 
@@ -216,6 +217,8 @@ export default async function StateReportPage({ params }: PageProps) {
         <FullTable rows={visible} stateName={stateName} gate={gate} asOf={asOf} />
 
         <StateMethodology stateName={stateName} />
+
+        {!canAccessPremium(user) && <ProNextStep />}
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}

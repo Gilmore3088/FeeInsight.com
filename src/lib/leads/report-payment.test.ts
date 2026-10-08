@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPayToken, payPath, verifyPayToken } from "./pay-link";
+import { createPayToken, isExpiredPayToken, payPath, verifyPayToken } from "./pay-link";
 import { formatUsd, institutionIdFromUseCase, isReportRequestSource, parseQuoteCents } from "./report-payment";
 
 describe("pay links", () => {
@@ -20,6 +20,9 @@ describe("pay links", () => {
     const token = createPayToken(18, new Date("2026-10-06T12:00:00Z"))!;
     expect(verifyPayToken(token, new Date("2026-12-04T12:00:00Z"))).not.toBeNull();
     expect(verifyPayToken(token, new Date("2026-12-06T12:00:00Z"))).toBeNull();
+    expect(isExpiredPayToken(token, new Date("2026-12-06T12:00:00Z"))).toBe(true);
+    expect(isExpiredPayToken(token, new Date("2026-12-04T12:00:00Z"))).toBe(false);
+    expect(isExpiredPayToken(token.replace(/^18-/, "19-"), new Date("2026-12-06T12:00:00Z"))).toBe(false);
     vi.stubEnv("CUSTOM_REPORT_LINK_SECRET", "");
     expect(createPayToken(18)).toBeNull();
     expect(verifyPayToken(token)).toBeNull();

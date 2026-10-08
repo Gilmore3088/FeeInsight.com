@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, runHamiltonPublish } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -661,5 +661,14 @@ describe("listsBothPrices", () => {
   it("is a change when each page lists the name at one price", () => {
     const lines = [line(verifiedFee.source_document_id, verifiedFee.amount), line(prior.source_document_id, prior.amount)];
     expect(listsBothPrices(lines, verifiedFee, prior)).toBe(false);
+  });
+});
+
+describe("publishedFeeName", () => {
+  it("shows a cut-off or doubled name repaired, keeping the name the category rests on", () => {
+    expect(publishedFeeName("Account Research Research", "account_research")).toBe("Account Research");
+    expect(publishedFeeName("Early Account Closure (by Extraco – no", "early_closure")).toBe("Early Account Closure");
+    expect(publishedFeeName(" Overdraft Fee", "overdraft")).toBe("Overdraft Fee");
+    expect(publishedFeeName("Early Account Closure (by customer)", "early_closure")).toBe("Early Account Closure (by customer)");
   });
 });

@@ -29,11 +29,11 @@ export const TAXONOMY_FOLD_REASON_PREFIX = "taxonomy_fold:";
 /** Fees folded per publish step; the fifteen categories held about 1,000 live fees on Oct 8. */
 export const TAXONOMY_FOLD_LIMIT = 2_000;
 /**
- * Whether a live fee with no home is archived once its second look confirms it. Off until James
- * decides on the list of no-home fees (Oct 8: "Show me the list"); until then they are only
- * flagged and stay live.
+ * Whether a live fee with no home is archived once its second look confirms it. James saw the
+ * list of 248 (Oct 8 15:42 UTC: "drop them -- the 248"), so they are archived: rolled back and
+ * logged, never deleted.
  */
-export const TAXONOMY_FOLD_ARCHIVE_NO_HOME = false;
+export const TAXONOMY_FOLD_ARCHIVE_NO_HOME = true;
 const WRITE_CHUNK = 500;
 
 interface FoldRow {

@@ -215,11 +215,12 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // consumer schedule of fees, effective 2025-09-15.
+    // consumer schedule of fees, effective 2025-09-15, on Zions' investor-relations file
+    // host: the amegybank.com copy answered 403 (2026-10-08 11:08).
     institutionId: 35,
     institutionName: "Zions Bancorporation, N.A.",
-    url: "https://www.amegybank.com/content/dam/zbna/disclosures/localized/zfnb/rate-sheets/scheduleoffeesconsut.pdf",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://s203.q4cdn.com/215756951/files/doc_downloads/2026/03/ZFNB-Consumer-Schedule-of-Fees.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   },
   {
     // other account services, September 2025.
@@ -306,11 +307,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // personal deposit product fee schedule.
+    // overdraft privilege terms: the personal fee schedule PDF answered 404 (2026-10-08 08:53).
     institutionId: 186,
     institutionName: "Sunflower Bank, National Association",
-    url: "https://sunflowerbank.com/getmedia/e45c00b0-ab7b-4e5c-9b5e-5e7053989b75/Deposit-Product-Fee-Schedule-Personal.pdf",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://www.sunflowerbank.com/terms-and-agreements/overdraft-privilege",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   },
   {
     // 2026 service fees.
@@ -334,11 +335,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // consumer services fee schedule (C-14), 2025-07-05.
+    // Courtesy Pay disclosure (SD-84): the C-14 fee schedule timed out twice (2026-10-08 07:14).
     institutionId: 7313,
     institutionName: "The Golden 1 Federal Credit Union",
-    url: "https://www.golden1.com/-/media/Golden1/Site%20Documents/Disclosures/C-14",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://www.golden1.com/-/media/golden1/site-documents/misc-pdfs/sd-84.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
   },
   {
     // fee schedule, updated January 2026.
@@ -400,8 +401,9 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // No fee schedule link on file.
     [43, "SouthState Bank, National Association", "https://www.southstatebank.com/PersonalAccountFeeSchedule"],
     [85, "Eastern Bank", "https://www.easternbank.com/media/5301"],
-    // Checking Truth in Savings disclosure: overdraft $25 (four a day), stop payment $27.
-    [147, "BancFirst", "https://www.bancfirst.bank/BancFirst/media/Documents/NewDisclosureDocs/BancFirst-Checking-TISA.pdf"],
+    // Deposit agreement: overdraft $25 per item, $100 a day. The checking TISA answered 404
+    // (2026-10-08 03:10); this link replaced it at 2026-10-08 15:00.
+    [147, "BancFirst", "https://www.bancfirst.bank/getContentAsset/2d3ceb3f-5a36-4b96-9398-feb856ffeebd/582e10d9-e479-4901-9a67-7b8c0f57354b/depositagreement.pdf?language=en"],
     [206, "Bankers Trust Company", "https://www.bankerstrust.com/consumer-service-fee-schedule/"],
     [400, "MVB Bank, Inc", "https://mvbbanking.com/wp-content/uploads/2024/03/4.-MVB-Retail-Fee-Schedule-3.31.22-reviewed-2024.pdf"],
     [4966, "Bank Fund Staff Federal Credit Union", "https://bfsfcu.org/documents/Fee_Schedule.pdf"],
@@ -409,7 +411,6 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf"],
     [96, "Beacon Bank and Trust", "https://www.beaconbank.com/disclosures/consumer-fee-schedule"],
     [300, "Hills Bank and Trust Company", "https://www.hillsbank.com/sites/www.hillsbank.com/files/media/terms-and-conditions-fee-schedule.pdf"],
-    [7032, "Virginia Federal Credit Union", "https://www.vacu.org/portals/0/pdfs/feedisclosure.pdf"],
     [7656, "Dupaco Community Federal Credit Union", "https://www.dupaco.com/hubfs/dupaco-credit-union-fee-schedule-miscellaneous-fees-jan-15-2025.pdf?hsLang=en"],
     [8086, "Summit Federal Credit Union", "https://www.summitcreditunion.com/_docs/Consumer%20Fee%20Schedule_3-1-2025.pdf"],
   ] as const).map(([institutionId, institutionName, url]) => ({
@@ -417,6 +418,65 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName,
     url,
     givenBy: "web search for each state's top 10 by deposits, 2026-10-08 02:45",
+  })),
+  // $10B+ banks with no live overdraft fee and no readable page on file (bot walls, pages
+  // built by JavaScript). Links from search results only, so Rosetta's read is the check.
+  ...([
+    [6671, "Digital Federal Credit Union", "https://www.dcu.org/content/dam/dcu/pdfs/overdraft-payment-service-disclosure.pdf"],
+    [6881, "Mountain America Federal Credit Union", "https://macu.com/about/disclosures/overdraft-privilege"],
+    [8507, "Vystar Federal Credit Union", "https://vystarcu.org/personal/bank/checking-accounts/overdraft-protection"],
+    [46, "Banco Popular de Puerto Rico", "https://www.popular.com/assets/pdf/caracteristicas-e-account-en.pdf"],
+    [102, "TowneBank", "https://www.townebank.com/member-support/overdraft-protection/"],
+    // Search snippets show a per-item overdraft fee on each (2026-10-08 15:00).
+    [123, "NBT Bank, National Association", "https://www.nbtbank.com/assets/pdfs/PricingScheduleforProductsandServices.pdf"],
+    [41, "Old National Bank", "https://www.oldnational.com/personal/services/overdraft-solutions/"],
+    [165, "Origin Bank", "https://www.origin.bank/deposit-account-agreement-disclosures.pdf"],
+    [7559, "Idaho Central Federal Credit Union", "https://www.iccu.com/file/notices/account-agreement.pdf"],
+    [133, "Bell Bank", "https://Bell.Bank/-/media/project/bell/bank-redesign/pdf-files/banking-related-items/understanding-funds-availability-and-overdrafts-2023.pdf"],
+    [107, "Apple Bank", "https://www.applebank.com/AppleBank/media/Documents/PDFs/B-294-ClassValue-Checking.pdf"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 13:45",
+  })),  // Top-10-by-deposits banks under $10B with no live overdraft fee: each link is on the
+  // bank's own site and a search snippet showed a consumer fee schedule or overdraft
+  // disclosure (2026-10-08 15:45-15:50).
+  ...([
+    [180, "American Savings Bank, National Association", "https://www.asbhawaii.com/sites/default/files/documents/ASB-What-You-Need-Overdrafts-and-Overdraft-Fees.pdf"],
+    [184, "Pinnacle Bank", "https://www.pinnbank.com/sites/default/files/document/file/KMN%20Overdraft%20Services.pdf"],
+    [198, "b1BANK", "https://www.b1bank.com/_s3/b1bank-com/files/document/252169%20b1Bank%20M&A-b1BANK-MA-D3-Consumer-Conversion-Guide%20FINAL.pdf?VersionId=BNTMRHeDT9jVbMjPB_he64yI3Pj8M3lq"],
+    [199, "BankPlus", "https://www.bankplus.net/docs/default-source/opt-in/optindisclosure_single.pdf?sfvrsn=ad0678f2_2"],
+    [208, "Bank of Colorado", "https://www.bankofcolorado.com/sites/default/files/document/file/OD%20Services%2005.23%20-%20CO.pdf"],
+    [216, "Bangor Savings Bank", "https://www.bangor.com/getmedia/f5339c41-5c2d-49f0-9381-cd4f8c38f456/Common-Fee-Schedule.pdf"],
+    [223, "The Camden National Bank", "https://www.camdennational.bank/getContentAsset/1aee490b-c80e-41d9-82b1-3037542a77aa/3d1daacc-ebfd-47b4-a59b-db3c9d47fbc8/Disclosure-Packet.pdf?language=en"],
+    [233, "City National Bank of West Virginia", "https://www.bankatcity.com/personal-banking/avoiding-overdrafts/how-city-helps-overdrafts/"],
+    [238, "Equity Bank", "https://equitybank.com/app/uploads/2025/07/Your-Deposit-Accounts_EquityBank_072025.pdf"],
+    [256, "Choice Financial Group", "https://bankwithchoice.com/wp-content/uploads/2025.04_CashManagementFeeSchedule_Bank_Consumer_FINAL_kt.pdf"],
+    [291, "Community Bank of Mississippi", "https://communitybank.net/service-fees/"],
+    [328, "Northeast Bank", "https://www.northeastbank.com/sites/default/files/2025-12/Overdraft%20Disclosures%2011-17-25_1.pdf"],
+    [358, "Security Bank of Kansas City", "https://www.securitybankkc.com/overdraft-privilege"],
+    [396, "Red River Bank", "https://www.redriverbank.net/downloads/overdraftprotectiondisclosure.pdf"],
+    [401, "First Community Bank", "https://www.firstcommunitybank.com/overdraft-enrollment"],
+    [403, "First National Bank", "https://thefirst.com/assets/files/BWRVwFzR"],
+    [422, "BankNewport", "https://www.banknewport.com/?p=2419"],
+    [465, "Bank of New Hampshire", "https://bnh.bank/customer-support/account-services/"],
+    [643, "First American Bank", "https://www.firstamericanbanknm.com/personal-home-loans/personal-checking/overdraft-services/"],
+    [663, "Cornerstone Bank", "https://www.cornerstone.bank/wp-content/uploads/2024/04/Fees.pdf"],
+    [850, "Pinnacle Bank - Wyoming", "https://www.wypinnbank.com/sites/default/files/document/file/OD%20Services%2005.23%20-%20WY.pdf"],
+    [4575, "Hawaii State Federal Credit Union", "https://hawaiistatefcu.com/wp-content/uploads/2025/04/Account-Opening-Combined-Disclosures-20250701-Consumer.pdf"],
+    [4595, "Aloha Pacific Federal Credit Union", "https://alohapacific.com/media/sswji4jp/overdraft-privilege-odp-member-disclosure-with-a-9_apfcu_20240913.pdf"],
+    [6718, "Founders Federal Credit Union", "https://www.foundersfcu.com/founders-privilege-disclosures"],
+    [7032, "Virginia Federal Credit Union", "https://www.vacu.org/sites/default/files/2025-12/Combineddisclosure%201.1.26.pdf"],
+    [7628, "St. Mary'S Bank Federal Credit Union", "https://www.stmarysbank.com/docs/default-source/default-document-library/consumer-fee-schedule.pdf?sfvrsn=5049be1e_1"],
+    [8591, "Rogue Federal Credit Union", "https://www.roguecu.org/media/yjyb1q41/member_disclosure.pdf?cb=638749476298730000"],
+    [8638, "Desert Financial Federal Credit Union", "https://www.desertfinancial.com/globalassets/files/legal/card-overdraft-form.pdf?ver=10282025V2"],
+    [8645, "Trustone Financial Federal Credit Union", "https://trustonefinancial.org/For-You/Spend/Checking/Overdraft"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "web search for state top-10 banks under $10B with no live overdraft fee, 2026-10-08 15:50",
   })),
 ];
 

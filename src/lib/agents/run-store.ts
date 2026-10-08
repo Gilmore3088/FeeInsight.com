@@ -61,12 +61,14 @@ import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { PREVIEW_INSTITUTION_ID, runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
 import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
+import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
+import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
@@ -1573,6 +1575,24 @@ async function executeAgenticStep(
         },
       };
     }
+    case "indexnow-ping": {
+      const result = await runIndexNowPing({ dryRun: run.runKind === "dry_run" });
+      // A rejected ping fails the step (and is retried) so it shows on the run ledger.
+      if (result.error) throw new Error(summarizeIndexNow(result));
+      return {
+        status: "completed",
+        summary: summarizeIndexNow(result),
+        detail: {
+          submitted: result.submitted,
+          changed_institutions: result.changedInstitutions,
+          url_count: result.urls.length,
+          http_status: result.httpStatus,
+          skipped: result.skipped,
+          dry_run: result.dryRun,
+          sample_urls: result.urls.slice(0, 10),
+        },
+      };
+    }
     case "score-answer-key": {
       const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
@@ -1623,6 +1643,15 @@ async function executeAgenticStep(
       const lessons = await recentLessons(tx, "ernest");
       const result = await runOdByState({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: [summarizeOdByStateResult(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "growth-contacts": {
+      const result = await runContactFinder({
+        db: tx,
+        runId: run.id,
+        limit: numericRunParam(params, ["limit"]),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeContactFinder(result), detail: { ...result } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
@@ -2368,7 +2397,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
-const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "category-guard"];
+const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
 
 function isQuickStep(stepKey: string): boolean {
   return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));

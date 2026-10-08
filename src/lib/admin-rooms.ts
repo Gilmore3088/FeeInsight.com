@@ -80,7 +80,8 @@ export const ROOMS: Room[] = [
     pages: [
       { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
       { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
-      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees", "/admin/market"] },
+      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
+      { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
       {
         href: "/admin/quality",
         label: "Trust review",

@@ -117,6 +117,26 @@ describe("identity matching", () => {
     expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
   });
 
+  it("records a CFPB name with no bank word as not a match instead of waiting for review", () => {
+    const bank = (id: number, name: string, assets: number) => ({ id, name, holdingCompanyRssd: null, assetSize: assets, via: "institution_name" as const });
+    const idx: IdentityIndex = {
+      byName: new Map([
+        ["FMS", [bank(90, "FMS Bank", 324_823)]],
+        ["FIDELITY", [bank(91, "The Fidelity Bank", 4_662_244), bank(92, "Fidelity Bank", 3_298_672)]],
+        ["WEST", [bank(80, "Bank of the West", 829_755), bank(82, "West Bank", 4_029_129)]],
+        ["STERLING", [bank(93, "Sterling Bank", 1_563_784), bank(94, "Sterling Bank", 461_880)]],
+      ]),
+    };
+    const cfpb = { rejectNonBankNames: true };
+    expect(matchCompany("FMS Inc.", idx, cfpb)).toMatchObject({ status: "rejected", method: "non_bank_name" });
+    expect(matchCompany("Fidelity National Financial, Inc", idx, cfpb)).toMatchObject({ status: "rejected" });
+    // A name with a bank word still waits for a person.
+    expect(matchCompany("BANK OF THE WEST", idx, cfpb)).toMatchObject({ status: "needs_review" });
+    expect(matchCompany("STERLING BANCORP", idx, cfpb)).toMatchObject({ status: "needs_review" });
+    // SEC filers are banks by SIC code, so the SEC matcher never rejects this way.
+    expect(matchCompany("FMS Inc.", idx)).toMatchObject({ status: "needs_review" });
+  });
+
   it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
     const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
     await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
@@ -648,6 +668,18 @@ describe("registry state bills worker", () => {
     const partitions = statements.filter((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
     expect(partitions.map((s) => s.values[1])).toEqual(["AR", "AZ", "CA", "current"]);
     expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
+  });
+
+  it("treats states last read in shadow mode as due once the tracker is live", async () => {
+    for (const live of [true, false]) {
+      const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+      const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+      await runRegistryStateBillsBatch({ db, now, apiKey: "k", live, statesPerRun: 1, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+      const dueQuery = statements.find((s) => s.text.includes("FROM registry_ingest_partitions") && s.text.includes("next_attempt_after > NOW()"));
+      expect(dueQuery?.text).toContain("detail->>'shadow'");
+      // The run's own shadow flag decides whether shadow-only reads still count as fresh.
+      expect(dueQuery?.values).toContain(!live);
+    }
   });
 
   it("stops at a 429 and leaves that state due instead of failing it", async () => {

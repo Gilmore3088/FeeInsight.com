@@ -364,7 +364,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   saved: alertSubscription !== null,
                   feeCategories: alertSubscription?.fee_categories ?? null,
                 }}
-                secondaryLink={thinProfile ? undefined : { href: links.reportOfferHref, label: "Request a report against local competitors" }}
               />
 
               {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
@@ -421,6 +420,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   enforcement={enforcement}
                   regulatoryWatch={regulatoryWatch}
                   exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
+                  institutionName={inst.institution_name}
                 />
               )}
             </div>

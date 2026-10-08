@@ -221,8 +221,14 @@ export function narrateStepFinished(
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
     case "content-od-by-state": {
-      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted the overdraft-fees-by-state article for James to publish.`;
-      return `Drafted no overdraft-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
+      return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+    }
+    case "growth-contacts": {
+      if (detail.schemaReady === false) return "Read no websites; the contacts tables are not there yet.";
+      const checked = n(detail, "checked");
+      if (!checked) return "No prospect was due a contact check.";
+      return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
@@ -259,6 +265,13 @@ export function narrateStepFinished(
       return detail.alert === "sent"
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
+    }
+    case "indexnow-ping": {
+      const submitted = n(detail, "submitted");
+      if (submitted > 0) return `Told Bing about ${count(submitted, "changed page")}.`;
+      return detail.skipped === "no pages changed"
+        ? "No institution pages changed in the last day."
+        : `Did not notify Bing (${String(detail.skipped ?? "unknown")}).`;
     }
     case "briefing-refresh": {
       const stored = n(detail, "stored");
@@ -419,12 +432,14 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "indexnow-ping": "atlas",
   "pro-digest": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
   "content-fee-depth": "growth",
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
+  "growth-contacts": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",
