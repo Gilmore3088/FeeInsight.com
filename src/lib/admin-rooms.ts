@@ -101,6 +101,7 @@ export const ROOMS: Room[] = [
       { href: "/admin/leads", label: "Leads", role: "Every request", activePrefixes: ["/admin/hamilton/leads"] },
       { href: "/admin/customers/marketing", label: "Marketing", role: "Monthly emails to approve" },
       { href: "/admin/customers/content", label: "Content", role: "Posts to approve" },
+      { href: "/admin/growth", label: "Growth", role: "Marketing team approvals" },
       { href: "/admin/api-keys", label: "API keys", role: "Invited partners" },
       { href: "/admin/hamilton/research/usage", label: "Hamilton usage", role: "Who asked Hamilton", activePrefixes: ["/admin/research/usage"] },
     ],

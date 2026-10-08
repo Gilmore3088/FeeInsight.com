@@ -154,18 +154,20 @@ export interface MarketBranchFootprint {
  * hold no bank branches.
  */
 export async function getMarketBranchFootprint(countyFips: string[], sodYear: number): Promise<MarketBranchFootprint | null> {
-  if (countyFips.length === 0) return null;
+  // Compared as integers so the (county_fips, year) index is used; a text cast scanned the whole year.
+  const counties = countyFips.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (counties.length === 0) return null;
   const rows = await sql<{ institution_id: string | number | null; branches: string | number; deposits: string | number | null }[]>`
     SELECT b.institution_id, COUNT(*) AS branches, SUM(COALESCE(b.deposits, 0)) AS deposits
     FROM institution_branch_deposits b
-    WHERE b.year = ${sodYear} AND b.county_fips::text = ANY(${countyFips})
+    WHERE b.year = ${sodYear} AND b.county_fips = ANY(${counties}::int[])
     GROUP BY b.institution_id`;
   if (rows.length === 0) return null;
   const creditUnions = await sql<{ institution_id: string | number; branches: string | number }[]>`
     WITH places AS (
       SELECT DISTINCT b.state, UPPER(b.city) AS city
       FROM institution_branch_deposits b
-      WHERE b.year = ${sodYear} AND b.county_fips::text = ANY(${countyFips}) AND b.city IS NOT NULL
+      WHERE b.year = ${sodYear} AND b.county_fips = ANY(${counties}::int[]) AND b.city IS NOT NULL
     )
     SELECT c.institution_id, COUNT(*) AS branches
     FROM credit_union_branches c

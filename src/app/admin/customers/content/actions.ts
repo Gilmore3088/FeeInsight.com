@@ -3,10 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
-import { CONTENT_DRAFT_STATUSES, getContentDraft, setContentDraftStatus, updateContentDraftCaption, type ContentDraftStatus } from "@/lib/data-store/content-drafts";
+import {
+  CONTENT_DRAFT_STATUSES,
+  getContentDraft,
+  setContentDraftStatus,
+  updateContentDraftCaption,
+  updateContentDraftText,
+  type ContentDraftStatus,
+} from "@/lib/data-store/content-drafts";
 import { recordSkipLesson, withdrawSkipLesson } from "@/lib/agents/growth/lessons";
 
-const PAGE = "/admin/customers/content";
+/** Both pages read the same queue (`content_drafts`), so a change refreshes both. */
+const PAGES = ["/admin/customers/content", "/admin/growth"];
+
+function revalidateQueuePages(): void {
+  for (const page of PAGES) revalidatePath(page);
+}
 
 /**
  * Approve, skip (with an optional reason) or mark a draft posted. Changes only the queue;
@@ -22,7 +34,7 @@ export async function setDraftStatusAction(form: FormData): Promise<void> {
   const reasonText = typeof reason === "string" ? reason : null;
   await setContentDraftStatus(id, status, user.email ?? String(user.id), undefined, reasonText);
   await syncSkipLesson(id, status, reasonText);
-  revalidatePath(PAGE);
+  revalidateQueuePages();
 }
 
 /** The lesson side of a status change. Never fails the status change itself. */
@@ -45,5 +57,19 @@ export async function saveCaptionAction(form: FormData): Promise<void> {
   const caption = String(form.get("caption") ?? "").trim();
   if (!Number.isInteger(id) || !caption) return;
   await updateContentDraftCaption(id, caption, user.email ?? String(user.id));
-  revalidatePath(PAGE);
+  revalidateQueuePages();
+}
+
+/**
+ * Edits an item's title and text from `/admin/growth`. Only items still waiting for review
+ * change (the store's update is limited to `draft`); an empty title or text is ignored.
+ */
+export async function saveDraftTextAction(form: FormData): Promise<void> {
+  const user = await requireAuth("edit");
+  const id = Number(form.get("id"));
+  const title = String(form.get("title") ?? "").trim();
+  const body = String(form.get("body") ?? "").trim();
+  if (!Number.isInteger(id) || !title || !body) return;
+  await updateContentDraftText(id, title, body, user.email ?? String(user.id));
+  revalidateQueuePages();
 }

@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { isRetiredCategory } from "@/lib/fee-fold";
 import { invalidateFeeSummaryCache } from "@/lib/data-store/fee-cache";
 import {
   isExplicitZeroFee,
@@ -199,6 +200,8 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
   if (blockingFlag) return `Blocking flag: ${blockingFlag}`;
   if (!VALID_CANONICAL_KEYS.has(row.canonical_fee_key)) return "Invalid canonical fee key";
+  // A fee whose wording found no home among the top 50 (fee-fold.ts) is not published.
+  if (isRetiredCategory(row.canonical_fee_key)) return "Category folded into the top 50 with no home for this fee";
   if (!row.fee_name?.trim()) return "Missing fee name";
   if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";

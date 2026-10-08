@@ -5,6 +5,49 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**When an agent breaks, recovery fixes it without asking first.** James, 12:26 UTC ("Fix" on the
+recovery card), after a deploy broke every Hamilton publish at 12:06 ("Hamilton is blocked. We
+need a way to automate resolution when this happens"). A scheduled recovery check finds the break,
+opens a fix PR, merges it on green, proves the failed work reran, and tells James after. Revert-only
+and alert-only were the other options. What it may and may not do is in `.claude/skills/recover/SKILL.md`.
+It never touches data with SQL, never deletes, and never makes paid calls.
+
+**The institution report stays quoted on request; free instant reports lead to the paid offers.**
+James, 11:55 UTC: "I'm fine with quotes for request" (no published $300, no "from $300" anchor), and
+"I'd like to give a free instant report to upsells". Quotes keep running through /admin/leads and
+/pay/report. Which free report carries the upsell (the existing national and district reports, a new
+own-bank snapshot, or both) is the open choice in the marketing thread. Small banks sit on the $1,500
+Pro tier.
+
+**Pro moves to three tiers; the monthly brief stays free; banks and credit unions get equal weight.**
+James, 11:35 UTC, after the pricing and competitive strategy pages. Pro becomes three tiers at
+$1,500, $3,000 and $5,000 a year ("If we need to bump prices later we can. 5k for an on demand
+consultant isn't a lot"). The Stripe payments thread owns `src/app/subscribe/pricing.ts`, the Stripe
+prices, and the open tier questions (asset breakpoints, a monthly option, how the tier is picked).
+Marketing copy and the plan follow its answers. The free Fee Pulse monthly email stays free and is
+positioned against Moebs's paid news product (task 2.27). Marketing gives banks and credit unions equal
+weight. The report price is still open: it stays "Priced on request" until James answers.
+
+**Eleven marketing gaps added; the admin stays simple.** James, 08:57 UTC. After the pricing and
+competitive strategy research, he added tasks 2.25-2.35 to `growth-os/BUILD-PLAN.md`: lead follow-up,
+pricing rollout, Fee Pulse positioning, a method and accuracy page, a live sample report, a first
+case study, comparison pages, a credit union campaign, association partners, email scores and sales
+in the scoreboard. "Just ensure cleanness on the admin side. Simplicity": every admin screen for
+marketing lives inside /admin/growth, which opens on items to review with everything else in tabs.
+No new admin pages for marketing.
+
+**The taxonomy is the top 50 fee types, and every fee is fitted into them.** James, Oct 7 ("Fold
+into existing", no new categories) and Oct 8 (the About page said 61: "do the top 50 and
+try to fit everything there"; "Use extensive and comprehensive text matching"), 09:05 UTC ("Merge
+caps": the NSF daily cap joins the overdraft daily cap, and International ATM stays one of the
+50). Fifteen categories left `FEE_FAMILIES`; `src/lib/fee-fold.ts` re-files each of their fees by
+its own wording, and a bare name by the schedule section above it. At 09:47 UTC he chose to keep
+Appraisal as its own type (folding it into loan origination would move that median), and at
+11:44 UTC picked Mortgage Lien Release (with reconveyance) to fold into Other Lending Fee in its
+place. He also asked to see the fees with no home before any
+are archived, so Hamilton's fold step flags them but keeps them live
+(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
+
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
 ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on

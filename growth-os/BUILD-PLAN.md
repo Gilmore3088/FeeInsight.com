@@ -82,6 +82,24 @@ Each agent gets its steps, schedule, checks and score. All drafts land in /admin
 | 2.23 | Press, events and partners: pitch drafts, a quarterly events list, a partner list | Claude | Call 1 | First of each in the queue |
 | 2.24 | Pricing and offer framing notes for the paid report and Pro (your decisions stay yours) | Claude | none | Note in the queue |
 
+## Phase 2b: Gaps found in the Oct 8 strategy work
+
+James added these at 08:57 UTC on 2026-10-08 ("Yes all, just ensure cleanness on the admin side. Simplicity"). Any admin screen for them lives inside /admin/growth (a tab or a card), never a new admin page. Research is in `/mnt/project-files/growth/research/`.
+
+| # | Task | Who | Waits on | Done when |
+|---|---|---|---|---|
+| 2.25 | Lead follow-up: every report request gets a quote draft or a reason it can't be quoted, shown in /admin/growth | Claude | 1.9 | No request older than one business day without a quote draft or reason |
+| 2.26 | Roll out James's pricing and packaging choices (report and Pro) across site, emails and Stripe | Claude, James decides prices | James's pricing calls | Every price on the site matches his choice |
+| 2.27 | Position the free Fee Pulse monthly email against Moebs's paid news product: signup placement and promotion | Claude | James's brief call | Signup on report and research pages |
+| 2.28 | Method and accuracy page: how fees are collected and checked, with the measured rate | Claude, preview to James | Accuracy 95% with human-checked keys | Page live with the current measured rate |
+| 2.29 | Turn the live sample report on with a real, source-checked market | Claude, preview to James | 0.5 | Sample page live |
+| 2.30 | First case study after the first sale, with the buyer's written permission | Claude, James asks the buyer | First sale | Case study page live |
+| 2.31 | Comparison pages ("Moebs alternative", "RateWatch alternative") and one positioning line used across the site | ERNEST, preview to James | none | Pages live, neutral wording, every claim sourced |
+| 2.32 | Credit union campaign: CU-focused page, posts and outreach drafts | MURROW, CARNEGIE, ERNEST | 2.31 | First drafts in the queue |
+| 2.33 | League and association partner target list with a pitch draft for each | BERNAYS | 2.23 | List and drafts in the queue; James sends |
+| 2.34 | Pull email opens and clicks from MailerLite into the weekly score | NIELSEN | 1.12 | Email scores written |
+| 2.35 | Count quotes and paid sales in the weekly scoreboard | NIELSEN | 2.17 | Quotes and paid in the Monday review |
+
 ## Phase 3: Dry run, then go
 
 Nothing turns on until you say go.
