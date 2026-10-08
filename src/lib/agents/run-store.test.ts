@@ -9,6 +9,7 @@ const {
   assertAutomationEnabledMock,
   getAutomationControlMock,
   getPipelineControlMock,
+  getMarketingControlMock,
   getExecutionBackendMock,
   runDarwinVerifyMock,
   runHamiltonPublishMock,
@@ -29,6 +30,7 @@ const {
     assertAutomationEnabledMock: vi.fn(),
     getAutomationControlMock: vi.fn(),
     getPipelineControlMock: vi.fn(),
+    getMarketingControlMock: vi.fn(),
     getExecutionBackendMock: vi.fn(),
     runDarwinVerifyMock: vi.fn(),
     runHamiltonPublishMock: vi.fn(),
@@ -54,6 +56,12 @@ vi.mock("@/lib/automation-control", () => ({
   assertAutomationEnabled: assertAutomationEnabledMock,
   getAutomationControl: getAutomationControlMock,
   getPipelineControl: getPipelineControlMock,
+  getMarketingControl: getMarketingControlMock,
+}));
+
+vi.mock("@/lib/agents/content/market-spread", () => ({
+  runMarketSpread: vi.fn().mockResolvedValue({ draftId: 9, picked: { metro: "Kansas City" } }),
+  summarizeMarketSpread: vi.fn().mockReturnValue("Drafted a market-spread post for Kansas City."),
 }));
 
 vi.mock("@/lib/agents/daily-brief", () => ({
@@ -143,6 +151,7 @@ import {
   expectedMsToFirstWork,
   expectedStepMs,
   executeQueuedAgentRuns,
+  heldByPause,
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
@@ -282,6 +291,7 @@ describe("agentic run store", () => {
     assertAutomationEnabledMock.mockReset().mockResolvedValue({ enabled: true });
     getAutomationControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getPipelineControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
+    getMarketingControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getExecutionBackendMock.mockReset().mockReturnValue("disabled");
     runDarwinVerifyMock.mockReset().mockResolvedValue({
       selectedRawFees: 7,
@@ -963,6 +973,20 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
+  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+    const retry = order.indexOf("= 'failed') DESC");
+    const review = order.indexOf("::text[])) DESC");
+    expect(review).toBeGreaterThan(retry);
+    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  });
+
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
     sqlMock.mockResolvedValue([]);
 
@@ -973,11 +997,27 @@ describe("agentic run store", () => {
       .find((text) => text.includes("SELECT r.id"));
     const order = selection!.slice(selection!.indexOf("ORDER BY"));
     const underWay = order.indexOf("done.status <> 'queued'");
-    const direct = order.indexOf("COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC");
+    const direct = order.indexOf("COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false)");
     const retry = order.indexOf("= 'failed') DESC");
     expect(underWay).toBeGreaterThan(0);
     expect(direct).toBeGreaterThan(underWay);
     expect(retry).toBeGreaterThan(direct);
+  });
+
+  it("lets a waiting state lane go ahead of direct runs when no lane has started a step lately", async () => {
+    sqlMock.mockResolvedValue([]);
+
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    const selection = sqlMock.mock.calls
+      .map(([strings]) => templateText(strings as TemplateStringsArray))
+      .find((text) => text.includes("SELECT r.id"));
+    const order = selection!.slice(selection!.indexOf("ORDER BY"));
+    const direct = order.indexOf("'atlas.priority_state_research'), false)");
+    const gate = order.indexOf("lane_step.started_at > NOW() - INTERVAL '10 minutes'");
+    const retry = order.indexOf("= 'failed') DESC");
+    expect(gate).toBeGreaterThan(direct);
+    expect(retry).toBeGreaterThan(gate);
   });
 
   it("starts no further run once the tick deadline has passed, but still advances the first", async () => {
@@ -1038,6 +1078,66 @@ describe("agentic run store", () => {
     expect(withTransactionMock).not.toHaveBeenCalled();
   });
 
+  it("runs a queued growth marketing step while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const contentStep = [{ ...queuedStepRows[0], step_key: "content-market-spread", agent_name: "growth", title: "Draft post" }];
+    const contentRun = { ...runRow, agent_name: "growth", progress_total: 1 };
+    installSqlMocks({ finalRun: contentRun, finalSteps: contentStep });
+    installTxMocks(contentStep, contentRun);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+    expect(combinedTransactionSql()).toContain("step.finished");
+  });
+
+  it("leaves a growth marketing run queued while marketing is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getMarketingControlMock.mockResolvedValue({ enabled: false, reason: "Holding marketing" });
+    const contentStep = [{ ...queuedStepRows[0], step_key: "content-market-spread", agent_name: "growth", title: "Draft post" }];
+    const contentRun = { ...runRow, agent_name: "growth", progress_total: 1 };
+    installSqlMocks({ finalRun: contentRun, finalSteps: contentStep });
+    installTxMocks(contentStep, contentRun);
+
+    const result = await executeAgentRun(101);
+    expect(result).toMatchObject({ status: "queued", terminal: false, executedSteps: 0 });
+    expect(result.message).toBe("Marketing is paused: Holding marketing; run left queued.");
+  });
+
+  it("keeps running data steps while marketing is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getMarketingControlMock.mockResolvedValue({ enabled: false, reason: "Holding marketing" });
+    const discoverRunRow = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: discoverRunRow, finalSteps: queuedStepRows.slice(0, 1) });
+    installTxMocks(queuedStepRows.slice(0, 1), discoverRunRow);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+    expect(runMagellanDiscoveryMock).toHaveBeenCalled();
+  });
+
+  it("names which pause holds a step", () => {
+    const on = { enabled: true, reason: null };
+    const off = { enabled: false, reason: "why" };
+    expect(heldByPause("content-fee-depth", off, on)).toBeNull();
+    expect(heldByPause("marketing-write", on, off)).toBe("Marketing is paused: why; run left queued.");
+    expect(heldByPause("discover", on, off)).toBeNull();
+    expect(heldByPause("discover", off, on)).toBe("Pipeline is paused: why; run left queued.");
+    expect(heldByPause("daily-brief", off, off)).toBeNull();
+    // Growth's queue intake and weekly scoring are marketing steps.
+    for (const key of ["growth-intake", "growth-score"]) {
+      expect(heldByPause(key, off, on)).toBeNull();
+      expect(heldByPause(key, on, off)).toBe("Marketing is paused: why; run left queued.");
+    }
+  });
+
+  it("skips runs held by a pause when picking queued runs for the tick", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve([]));
+    await executeQueuedAgentRuns({ paused: { pipeline: true, marketing: false } });
+    const [strings, ...values] = sqlMock.mock.calls[0];
+    expect(templateText(strings)).toContain("AND NOT EXISTS");
+    expect(values).toContain(true);
+    expect(values).toContainEqual(expect.arrayContaining(["content-market-spread", "marketing-write"]));
+  });
+
   it("still sends the Atlas daily brief while the pipeline is paused", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
@@ -1074,6 +1174,37 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
     ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("starts no lower lane in a tick once a higher lane is held for the deadline", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([
+          { id: 101, run_kind: "manual_repair" },
+          { id: 102, run_kind: "workflow_lane" },
+          { id: 103, run_kind: "workflow_lane" },
+          { id: 104, run_kind: "workflow" },
+        ]);
+      }
+      if (text.includes("SELECT step_key")) {
+        // Lane 102 needs discover (110 s) first; lane 103 and the workflow need 30 s.
+        return Promise.resolve(values[0] === 102
+          ? [{ step_key: "enhance" }, { step_key: "discover" }]
+          : [{ step_key: "public-discovery" }]);
+      }
+      if (text.includes("FROM agent_runs")) {
+        // The held lane is still queued; the others are already finished, so they do nothing.
+        return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 102 ? "queued" : "completed" }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000 });
+
+    expect(result.results.map((run) => run.runId)).toEqual([101, 102, 104]);
+    expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {

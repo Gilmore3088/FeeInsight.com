@@ -13,16 +13,19 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
 // Since v17 the gate counts only reads that pass Knox's self-check; main at v16 scored 659
-// right / 48 wrong on that basis. Floors raised to main at v29 (2026-10-07).
+// right / 48 wrong on that basis. Floors raised to main at v29 (2026-10-07), and CA, GA, MN and
+// all to the top-50 fold (Oct 8: 724 right / 46 wrong, from 723 / 47).
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 130, wrong: 8 },
+  CA: { right: 130, wrong: 7 },
   FL: { right: 102, wrong: 7 },
-  GA: { right: 149, wrong: 12 },
-  IL: { right: 89, wrong: 7 },
+  GA: { right: 150, wrong: 12 },
+  // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
+  // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
+  IL: { right: 88, wrong: 7 },
   MI: { right: 114, wrong: 0 },
-  MN: { right: 93, wrong: 7 },
+  MN: { right: 97, wrong: 7 },
   NY: { right: 40, wrong: 6 },
-  all: { right: 717, wrong: 47 },
+  all: { right: 724, wrong: 46 },
 };
 
 const fixture = JSON.parse(

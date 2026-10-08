@@ -111,6 +111,8 @@ Darwin owns verification and classification.
   the category it was filed under (the prompt lists the names the taxonomy files there), and
   the amount is the price, not a cap or a misread number. Released rows carry the
   `darwin_released_hold` flag so the whole release can be found and rolled back.
+  A state lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (2026-10-07: Utah's lane had 1 while about 1,000 waited elsewhere).
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
@@ -142,6 +144,42 @@ Darwin owns verification and classification.
   v7 (2026-10-07): a hand check of 20 v6 passes had 17 right (a "Smart Safe" cash device passed
   as safe deposit box rent, a $65 box read with its footnote as $651, a bare "overdrafts $5.00"
   from jumbled rows). The prompt names all three.
+  v8 (2026-10-07): a hand check of 20 v7 passes had 17 right (an incoming wire priced "$2.95 (FEE
+  WAIVED)", an NSF check re-clear filed as NSF, an online-wire monthly fee filed as monthly maintenance).
+  The prompt names all three. `scheduleContext` no longer anchors on a bare price row ("$5.00"),
+  which had shown one item the rows around a different fee.
+  v9 (2026-10-07): a hand check of 20 v8 passes had 18 right (an "Emergency Card Replacement" passed
+  as card replacement, and a $10 rush card read from "Debit Card Replacement Rush Order | $10 $75").
+  The prompt names emergency service and two prices in one row.
+  v10 (2026-10-07): a hand check of 20 v9 passes had 18 sure right (an "Overnight Fee (Business Bill
+  Pay)" passed as bill pay; a $2.75 "Return Check Item" beside a $30 returned-check fee is unclear).
+  A fee whose name says it is the expedited, rush, overnight, emergency or same/next/second-day
+  version of a service now never passes outside a premium category such as `rush_card`
+  (`premiumServiceMisfiled`, attempt detail `premium_service`).
+  v11 (2026-10-08): releases on (`DARWIN_RELEASE_ACTS`, James, "Turn on" at 02:16 UTC) after a
+  hand check of 20 v10 passes had 19 right and 1 arguable. A passing fee becomes a verified row
+  flagged `darwin_released_hold`, so the whole release can be found and rolled back. The bump
+  has every held fee judged again with release on.
+  v13 (2026-10-08): v12 released 198 fees by 10:08 UTC (130 live). A hand check of 20 live ones
+  found 18 right, 1 wrong ("/hr incl. reproduction", Legal Process Compliance $20/hr, released as
+  document reproduction) and 1 arguable (a $5 draft copy named "account research fee may apply)").
+  A name starting with "/" or ending in an unopened ")" now stays held (`name_fragment`).
+  v12 (2026-10-08): v11 released 1,637 fees (219 live by 03:48 UTC). A hand check of 20 live ones
+  found 18 right: "Monthly Fee $50.00" above "Night Deposit Bag $10.00" passed as the account's
+  monthly fee and a $5 "Returned check fee" passed as NSF. A passing fee now stays held when the
+  category guard rejects its name, when a bare "Monthly Fee" sits among a business service's rows,
+  or when a plain returned check or item under $10 is filed as NSF (`releaseHoldReason`, attempt
+  detail `hold_reason`). Category guard v21 rejects business services' monthly fees (remote
+  deposit scanners, IntraFi/ICS, per-location fees) as monthly maintenance and deposited checks
+  coming back as NSF, so Hamilton's category guard takes the live ones down after its second look.
+  Guard v22 (2026-10-08) also fails a returned check or item under $10 filed as NSF when the same
+  schedule prices NSF separately at $15 or more (`schedule_contradicts`; Dean Co-operative Bank).
+  Guard v23 drops the $10 ceiling (any price below the schedule's NSF fee). Once Hamilton takes such
+  a fee off NSF, the classify step's `verify.schedule_refile` re-files its verified row as
+  `deposited_item_return` (flag `darwin_schedule_refiled`, attempt detail from/to), and Hamilton
+  publishes it as an RDI through its normal checks.
+  Guard v24 (2026-10-08) rejects statement-copy and photocopy fees ("Statement Copy Fee",
+  "Returned Item Photocopy", "Copy of ...") filed as overdraft or NSF, even under a section heading.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).

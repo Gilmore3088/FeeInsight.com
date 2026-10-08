@@ -7,7 +7,19 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { PeerSetManager } from "./PeerSetManager";
-import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
+import {
+  getPeerInstitutionNames,
+  getPeerSetWorkspace,
+  getSavedPeerSets,
+  type SavedPeerSet,
+} from "@/lib/data-store/saved-peers";
+import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
+import {
+  buildInstitutionPeerFilterCandidates,
+  describePeerFilters,
+  parseSavedPeerSetFilters,
+} from "@/lib/hamilton/peer-index";
+import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
   getIntelligenceSnapshot,
   getWorkspaceInstitutionClaimState,
@@ -24,8 +36,11 @@ import {
   type InstitutionWorkspaceInvitation,
 } from "@/lib/hamilton/institution-membership";
 import { WorkspaceAccessManager } from "./WorkspaceAccessManager";
+import { buildWorkspaceInvitePath, inviteLinksConfigured } from "@/lib/hamilton/workspace-invite-link";
 import { LinkButton, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 import { FeeFiguresUpload } from "@/components/hamilton/settings/FeeFiguresUpload";
+import { isCappedConsultant } from "@/lib/hamilton/report-cap";
+import { CONSULTANT_MONTHLY_REPORTS } from "@/lib/pro-tiers";
 
 export const metadata: Metadata = {
   title: "My bank and data",
@@ -66,10 +81,36 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [peerSets, snapshot] = await Promise.all([
-    getSavedPeerSets(String(user.id)).catch(() => []),
+  const [peerSetWorkspace, snapshot, cappedConsultant] = await Promise.all([
+    getPeerSetWorkspace(String(user.id)).catch(() => null),
     getIntelligenceSnapshot(),
+    isCappedConsultant(user).catch(() => false),
   ]);
+  const peerSets: SavedPeerSet[] = await getSavedPeerSets(
+    String(user.id),
+    peerSetWorkspace?.institutionId ?? null,
+  ).catch(() => []);
+  // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
+  const [peerSetCounts, peerInstitutionNames] = await Promise.all([
+    getPeerGroupCounts(
+      peerSets.map((set) => parseSavedPeerSetFilters(set)),
+      peerSetWorkspace?.institutionId ?? selectedInstitution?.id ?? null,
+    ).catch((): PeerGroupCount[] => []),
+    getPeerInstitutionNames(peerSets.flatMap((set) => set.institution_ids ?? [])).catch(
+      () => new Map<number, string>(),
+    ),
+  ]);
+  // Where a set is too thin for a fee, charts fall back to the bank's own default group.
+  const firstDefaultGroup = selectedInstitution
+    ? buildInstitutionPeerFilterCandidates({
+        institution_name: selectedInstitution.name,
+        state_code: selectedInstitution.stateCode,
+        charter_type: selectedInstitution.charterType,
+        asset_size_tier: selectedInstitution.assetTier,
+        fed_district: selectedInstitution.fedDistrict,
+      })[0]
+    : undefined;
+  const widerGroupLabel = firstDefaultGroup ? describePeerFilters(firstDefaultGroup) : "the national index";
   const [selectedClaim, selectedMembership, workspaceMembers, workspaceInvitations] = selectedInstitution
     ? await Promise.all([
         getWorkspaceInstitutionClaimState(selectedInstitution.id),
@@ -85,6 +126,20 @@ export default async function SettingsPage({
     isAdmin ||
     selectedMembership?.role === "owner" ||
     selectedMembership?.role === "admin";
+  // Signed per-invite links, computed here on the server; the secret never reaches the page.
+  const inviteLinksReady = inviteLinksConfigured();
+  const workspaceInviteLinks: Record<number, string | null> = canManageWorkspaceAccess
+    ? Object.fromEntries(
+        workspaceInvitations.map((invitation) => [
+          invitation.id,
+          buildWorkspaceInvitePath({
+            invitationId: invitation.id,
+            email: invitation.email,
+            institutionId: invitation.institutionId,
+          }),
+        ]),
+      )
+    : {};
 
   const subscriptionStatus = user.subscription_status ?? "none";
   const statusLabel =
@@ -178,7 +233,24 @@ export default async function SettingsPage({
         note="Who your fees are compared with."
       >
         <div className={`${panel} scroll-mt-24`}>
-          <PeerSetManager initialPeerSets={peerSets} />
+          <PeerSetManager
+            initialPeerSets={peerSets}
+            initialCounts={Object.fromEntries(
+              peerSets.flatMap((set, i) => (peerSetCounts[i] ? [[set.id, peerSetCounts[i]]] : [])),
+            )}
+            initialInstitutionNames={Object.fromEntries(peerInstitutionNames)}
+            workspaceName={
+              peerSetWorkspace && selectedInstitution?.id === peerSetWorkspace.institutionId
+                ? selectedInstitution.name
+                : peerSetWorkspace
+                  ? "your team"
+                  : null
+            }
+            canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
+            currentUserId={String(user.id)}
+            minPeers={MIN_PEERS_FOR_POSITION}
+            widerGroupLabel={widerGroupLabel}
+          />
         </div>
       </MemoSection>
 
@@ -193,6 +265,8 @@ export default async function SettingsPage({
             members={workspaceMembers}
             invitations={workspaceInvitations}
             canManage={canManageWorkspaceAccess}
+            inviteLinks={workspaceInviteLinks}
+            inviteLinksReady={inviteLinksReady}
           />
         </div>
       </MemoSection>
@@ -232,7 +306,9 @@ export default async function SettingsPage({
               </div>
             </dl>
             <p className="mt-4 text-sm text-warm-700">
-              Research questions, report exports, saved analyses and saved scenarios have no monthly limit on your plan.
+              {cappedConsultant
+                ? `Your plan includes ${CONSULTANT_MONTHLY_REPORTS} Hamilton reports a month. Research questions, saved analyses and saved scenarios have no monthly limit.`
+                : "Research questions, report exports, saved analyses and saved scenarios have no monthly limit on your plan."}
             </p>
             <Link
               href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/pro/analyze"}

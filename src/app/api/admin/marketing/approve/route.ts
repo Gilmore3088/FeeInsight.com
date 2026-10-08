@@ -22,14 +22,16 @@ async function handlePOST(request: NextRequest) {
     return NextResponse.json({ error: "month must be YYYY-MM" }, { status: 400 });
   }
   const started = await startAgentRun({
-    agent: "hamilton",
+    agent: "growth",
     kind: "workflow",
     title: `Hamilton marketing send ${month} (approved)`,
     params: { source: "hamilton.marketing_send", month, approved_by: user.email ?? String(user.id) },
     triggeredBy: user.email ?? String(user.id),
     triggerSource: "admin",
+    // Runs moved from Hamilton to growth on 2026-10-08; the key keeps its old prefix so a
+    // month already sent under Hamilton is never sent twice.
     idempotencyKey: `hamilton:marketing-send:${month}`,
-    steps: [{ key: "marketing-send", agent: "hamilton", title: `Send the approved ${month} campaigns` }],
+    steps: [{ key: "marketing-send", agent: "growth", title: `Send the approved ${month} campaigns` }],
   });
   if (!started.reused) await executeAgentRun(started.run.id, { maxSteps: 1 });
   return NextResponse.redirect(new URL(`/admin/customers/marketing?sent=${started.run.id}`, request.url), 303);

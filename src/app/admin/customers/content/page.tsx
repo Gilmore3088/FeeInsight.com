@@ -10,17 +10,40 @@ import { saveCaptionAction, setDraftStatusAction } from "./actions";
 const SECTIONS: { status: ContentDraftStatus; title: string; note: string }[] = [
   { status: "draft", title: "Waiting for your review", note: "Approve, edit or skip. Nothing posts from this page." },
   { status: "approved", title: "Approved, ready to post", note: "Download the card, copy the caption, post it on the company page, then mark it posted." },
-  { status: "posted", title: "Posted", note: "Scored monthly from the tracked links." },
-  { status: "skipped", title: "Skipped", note: "Not re-proposed for eight weeks." },
+  { status: "posted", title: "Posted", note: "Scored from tracked visits a week after posting, once the weekly scoring is turned on." },
+  { status: "skipped", title: "Skipped", note: "Not re-proposed for eight weeks. A skip reason becomes a lesson in that agent's next brief." },
 ];
 
 const WORKFLOW_LABELS: Record<string, string> = { "w1-market-spread": "Market spread", "w3-fee-depth": "Fee depth at work" };
 
-function StatusButton({ id, status, label, primary }: { id: number; status: ContentDraftStatus; label: string; primary?: boolean }) {
+function StatusButton({
+  id,
+  status,
+  label,
+  primary,
+  withReason,
+}: {
+  id: number;
+  status: ContentDraftStatus;
+  label: string;
+  primary?: boolean;
+  /** Adds an optional reason field (the Skip form); the reason teaches the agent what not to draft. */
+  withReason?: boolean;
+}) {
   return (
-    <form action={setDraftStatusAction}>
+    <form action={setDraftStatusAction} className={withReason ? "flex items-center gap-2" : undefined}>
       <input type="hidden" name="id" value={id} />
       <input type="hidden" name="status" value={status} />
+      {withReason ? (
+        <input
+          type="text"
+          name="reason"
+          maxLength={500}
+          placeholder="Reason (optional)"
+          aria-label="Reason for skipping (optional)"
+          className="w-44 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+        />
+      ) : null}
       <button
         type="submit"
         className={`rounded-md px-3 py-1.5 text-sm font-medium ${
@@ -65,20 +88,32 @@ function Facts({ draft }: { draft: ContentDraft }) {
 
 function DraftCard({ draft }: { draft: ContentDraft }) {
   const card = `/api/admin/content/card/${draft.id}`;
+  // Cards are drawn from the content workflows' facts; filed items (intake) have none.
+  const hasCard = draft.facts.source !== "intake";
   const editable = draft.status === "draft" || draft.status === "approved";
   return (
     <li className="rounded-lg border border-black/[0.08] bg-white p-4 dark:border-white/[0.1] dark:bg-white/[0.03]">
       <div className="flex flex-col gap-4 md:flex-row">
-        <a href={card} target="_blank" rel="noreferrer" className="shrink-0">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card} alt={`Card: ${draft.title}`} width={220} height={220} className="rounded border border-black/[0.06]" loading="lazy" />
-        </a>
+        {hasCard ? (
+          <a href={card} target="_blank" rel="noreferrer" className="shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={card} alt={`Card: ${draft.title}`} width={220} height={220} className="rounded border border-black/[0.06]" loading="lazy" />
+          </a>
+        ) : null}
         <div className="min-w-0 flex-1 space-y-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-gray-500">
-              {WORKFLOW_LABELS[draft.workflow] ?? draft.workflow} · {draft.channel} · as of {formatAdminDateTime(draft.asOf)}
+              {draft.agent} · {WORKFLOW_LABELS[draft.workflow] ?? draft.kind.replace(/_/g, " ")} · {draft.channel} · as of {formatAdminDateTime(draft.asOf)}
             </p>
             <h3 className="mt-1 text-base font-semibold text-gray-900 dark:text-gray-100">{draft.title}</h3>
+            {draft.prUrl ? (
+              <a href={draft.prUrl} target="_blank" rel="noreferrer" className="text-sm text-gray-600 underline dark:text-gray-400">
+                Pull request
+              </a>
+            ) : null}
+            {draft.score !== null ? (
+              <p className="text-xs text-gray-500">Score: {draft.score} tracked visits in the week after posting</p>
+            ) : null}
           </div>
           <Facts draft={draft} />
           {editable ? (
@@ -100,11 +135,13 @@ function DraftCard({ draft }: { draft: ContentDraft }) {
           <div className="flex flex-wrap gap-2">
             {draft.status === "draft" ? <StatusButton id={draft.id} status="approved" label="Approve" primary /> : null}
             {draft.status === "approved" ? <StatusButton id={draft.id} status="posted" label="Mark posted" primary /> : null}
-            {draft.status === "draft" || draft.status === "approved" ? <StatusButton id={draft.id} status="skipped" label="Skip" /> : null}
+            {draft.status === "draft" || draft.status === "approved" ? <StatusButton id={draft.id} status="skipped" label="Skip" withReason /> : null}
             {draft.status === "skipped" ? <StatusButton id={draft.id} status="draft" label="Back to review" /> : null}
-            <a href={card} download={`fee-insight-${draft.id}.png`} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
-              Download card
-            </a>
+            {hasCard ? (
+              <a href={card} download={`fee-insight-${draft.id}.png`} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-300">
+                Download card
+              </a>
+            ) : null}
           </div>
           {typeof draft.facts.method === "string" ? <p className="text-xs text-gray-500">Method: {draft.facts.method}</p> : null}
         </div>

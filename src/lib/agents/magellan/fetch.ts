@@ -823,6 +823,8 @@ export interface FetchLinkContext {
   strategy: { strategy: string; version: number };
   /** Paid cost of this fetch, for the attempt log. */
   costMicrousd?: number;
+  /** Extra detail for the attempt log (the paid fetch's own error). */
+  note?: string | null;
 }
 
 /**
@@ -877,6 +879,7 @@ export async function fetchAndRecordLink(
         vault: result.vaultStatus ?? (vaultOn ? null : vaultSchema ? "not_configured" : "schema_pending"),
         vault_key: result.vaultKey,
         reason: result.reason,
+        ...(ctx.note ? { note: ctx.note } : {}),
       },
     });
   }

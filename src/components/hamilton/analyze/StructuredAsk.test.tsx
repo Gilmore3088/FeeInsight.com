@@ -150,4 +150,29 @@ describe("StructuredAsk", () => {
     const table = screen.getByText("Every fee against its peers");
     expect(lead.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("answers a competitors-and-locations question with the market, never a written answer", async () => {
+    const market = {
+      institutionId: 1,
+      institutionName: "Test Credit Union",
+      charterType: "credit_union",
+      market: { label: "Testville, FL area", basis: "hq_city", sodYear: 2026, countyCount: 1 },
+      you: { branches: 3, branchesInMarket: 3, depositsInMarket: null, cities: [], fees: {} },
+      marketDeposits: null,
+      marketBranches: null,
+      competitors: [{ institutionId: 2, name: "Test Bank A", charterType: "bank", branches: 4, deposits: null, fees: {} }],
+      categories: ["overdraft"],
+      sources: [],
+      map: null,
+      colours: {},
+      network: null,
+      unmapped: 0,
+    };
+    const calls = mockFetch(market as never, {});
+    const onNoStoryline = vi.fn();
+    render(<StructuredAsk question="who are my local competitors and locations" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
+    await screen.findByText("1 institution competes with you in the Testville, FL area");
+    expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask/market"]);
+    expect(onNoStoryline).not.toHaveBeenCalled();
+  });
 });

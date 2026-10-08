@@ -3,6 +3,7 @@ import { computePercentile } from "@/lib/data-store/fees";
 import { STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { SITE_DOMAIN } from "@/lib/constants";
 import { unbackedNumbers } from "@/lib/agents/marketing/facts";
 import { themeFees } from "./calendar";
 
@@ -123,9 +124,23 @@ export function asOfLabel(date: Date): string {
   return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
 }
 
+/** Every content caption ends on the free report, not a Hamilton page. */
+export const FREE_REPORT_CTA = "Get a free fee report:";
+const FREE_REPORT_URL = `https://${SITE_DOMAIN}/reports`;
+
+/** The free reports page, tagged with the workflow and draft it came from. */
+export function freeReportLink(campaign: string, content: string): string {
+  return `${FREE_REPORT_URL}?utm_source=linkedin&utm_medium=social&utm_campaign=${campaign}&utm_content=${content}`;
+}
+
+/** The caption: the number-guarded body, then the free-report call to action and its link. */
+export function captionWithCta(body: string, link: string): string {
+  return `${body}\n\n${FREE_REPORT_CTA} ${link}`;
+}
+
 export function trackedLink(feeCategory: string, asOf: Date): string {
   const week = asOf.toISOString().slice(0, 10);
-  return `https://feeinsight.com/fees/${feeCategory}?utm_source=linkedin&utm_medium=social&utm_campaign=${MARKET_SPREAD_WORKFLOW}&utm_content=${week}`;
+  return freeReportLink(MARKET_SPREAD_WORKFLOW, `${feeCategory}-${week}`);
 }
 
 export interface MarketSpreadDraft {
@@ -152,7 +167,7 @@ export function draftCaption(spread: MarketSpread, asOf: Date): MarketSpreadDraf
     title: `${fee} in ${place}: ${money(spread.low)} to ${money(spread.high)}`,
     body,
     link,
-    caption: `${body}\n\n${link}`,
+    caption: captionWithCta(body, link),
   };
 }
 

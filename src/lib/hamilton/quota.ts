@@ -6,7 +6,9 @@ import type { User } from "@/lib/auth";
  * Daily Hamilton AI quota, counted in Postgres (research_usage) so it holds across
  * every serverless instance. Each completed Analyze answer, Simulate interpretation,
  * admin chat turn and generated report logs one row; a report counts once even though
- * it makes several model calls. Limits come from getResearchQueryLimit (Pro 50/day).
+ * it makes several model calls. Limits come from getResearchQueryLimit (Pro 50/day; team
+ * seat holders, the institution owner included, have no daily cap). The shared provider
+ * spend breaker applies to everyone either way.
  */
 
 export const HAMILTON_USAGE_AGENT_PREFIX = "hamilton";

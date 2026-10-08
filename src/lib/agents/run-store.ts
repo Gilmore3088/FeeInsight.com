@@ -1,10 +1,12 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { safeJsonb, toISO } from "@/lib/pg-helpers";
 import { getExecutionBackend } from "@/lib/execution-backend";
+import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
@@ -50,6 +52,7 @@ import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -61,8 +64,12 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
+import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
+import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
+import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
-import { assertAutomationEnabled, getAutomationControl, getPipelineControl } from "@/lib/automation-control";
+import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { runStateExpertStep } from "./state-expert/step";
 import { tallyByInstitution, type Sample } from "./flow-model";
@@ -80,8 +87,10 @@ import type {
 } from "./types";
 import {
   isProviderStep,
+  MARKETING_STEP_KEYS,
   MAX_STEP_ATTEMPTS,
   PAUSE_EXEMPT_STEP_KEYS,
+  pauseScopeForStep,
   PROVIDER_STEP_KEYS,
   STALE_RUNNING_STEP_MINUTES,
 } from "./types";
@@ -98,6 +107,15 @@ type SqlTag = typeof sql;
  * Every institution's totals for a fee step, so the live board's counts are the step's real
  * numbers rather than whatever fell into the ten sample rows. Capped to keep events small.
  */
+/**
+ * The deploy (git commit) this code runs from, or null outside Vercel. Recorded on every
+ * step failure so a failure from an old deploy can be told apart from one the current
+ * code still has (wakeLanesAfterRecovery).
+ */
+export function currentDeploy(): string | null {
+  return process.env.VERCEL_GIT_COMMIT_SHA || null;
+}
+
 function institutionResults(stepKey: string, rows: Sample[]) {
   return tallyByInstitution(stepKey, rows).slice(0, 50);
 }
@@ -128,6 +146,8 @@ export interface AgentRunExecutionResult {
   terminal: boolean;
   executedSteps: number;
   message: string;
+  /** True when the run was left queued because its first real step would not finish by the tick deadline. */
+  heldForDeadline?: boolean;
 }
 
 export interface ExecuteQueuedAgentRunsResult {
@@ -741,6 +761,14 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // A "returned check" Hamilton took off NSF beside the schedule's own NSF fee is filed as an RDI.
+      const scheduleRefile = await runDarwinScheduleRefile({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        db: tx,
+      });
       return {
         status: "completed",
         summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
@@ -761,6 +789,7 @@ async function executeAgenticStep(
             released: release.released,
             feedback_written: release.feedbackWritten,
           },
+          schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
@@ -862,6 +891,13 @@ async function executeAgenticStep(
         institutionId,
       });
       const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // The top-50 fold: fees under the fifteen retired categories move to the one their
+      // wording places them in, before any sweep judges them by category (fee-fold.ts).
+      const taxonomyFold = await foldRetiredCategories(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
@@ -1037,6 +1073,8 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              taxonomyFold.movedLive > 0 ||
+              taxonomyFold.noHomeRolledBack > 0 ||
               outlierRestores.length > 0 ||
               offTaxonomyRestores.length > 0 ||
               limitRollbacks.length > 0 ||
@@ -1058,6 +1096,10 @@ async function executeAgenticStep(
       const outlierNote =
         outlierRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
+          : "";
+      const foldNote =
+        taxonomyFold.moved + taxonomyFold.noHomeRolledBack + taxonomyFold.noHomeHeld > 0
+          ? ` ${published.dryRun ? "Would fold" : "Folded"} ${taxonomyFold.moved.toLocaleString()} fee(s) from retired categories into the top 50${taxonomyFold.noHomeRolledBack > 0 ? `; ${published.dryRun ? "would take" : "took"} down ${taxonomyFold.noHomeRolledBack.toLocaleString()} with no home there after a second look` : ""}${taxonomyFold.noHomeHeld > 0 ? `; kept ${taxonomyFold.noHomeHeld.toLocaleString()} with no home live until James decides` : ""}.`
           : "";
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0
@@ -1119,7 +1161,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1137,6 +1179,7 @@ async function executeAgenticStep(
             amount: rollback.amount,
             reason: rollback.reason,
           })),
+          taxonomy_fold: taxonomyFold,
           off_taxonomy_rollbacks: offTaxonomyRollbacks.length,
           off_taxonomy_rollback_samples: offTaxonomyRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
@@ -1544,12 +1587,25 @@ async function executeAgenticStep(
       };
     }
     case "content-market-spread": {
+      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts.
+      const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+      return { status: "completed", summary: [summarizeMarketSpread(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-fee-depth": {
+      const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
+      return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "growth-intake": {
+      const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
+      // A refused filing fails the step, so it shows red in the run ledger.
+      if (result.errors.length) throw new Error(summarizeGrowthIntake(result));
+      return { status: "completed", summary: summarizeGrowthIntake(result), detail: { ...result } };
+    }
+    case "growth-score": {
+      const result = await runGrowthScore({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeGrowthScore(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({
@@ -2046,7 +2102,7 @@ async function failAgenticStep(
       VALUES
         (${runId}, ${step.id}, 'step.failed', 'failed',
          ${message},
-         ${JSON.stringify({ step_key: step.stepKey, agent: step.agent })}::jsonb)
+         ${JSON.stringify({ step_key: step.stepKey, agent: step.agent, deploy: currentDeploy() })}::jsonb)
     `;
     await tx`
       UPDATE agent_runs
@@ -2266,6 +2322,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
+  // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
+  "registry-state-reg-news": 170_000,
+  "registry-state-bill-news": 120_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,
@@ -2308,6 +2367,26 @@ export function expectedStepMs(stepKey: string | null): number {
   if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
   if (QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix))) return QUICK_STEP_EXPECTED_MS;
   return DEFAULT_STEP_EXPECTED_MS;
+}
+
+/**
+ * Why a step must wait, or null when it may run: the marketing pause holds growth's
+ * marketing steps, the pipeline pause holds every other step except the reporting ones
+ * (`PAUSE_EXEMPT_STEP_KEYS`).
+ */
+export function heldByPause(
+  stepKey: string,
+  pipeline: Pick<AutomationControlState, "enabled" | "reason">,
+  marketing: Pick<AutomationControlState, "enabled" | "reason">,
+): string | null {
+  const scope = pauseScopeForStep(stepKey);
+  if (scope === "marketing" && !marketing.enabled) {
+    return `Marketing is paused${marketing.reason ? `: ${marketing.reason}` : ""}; run left queued.`;
+  }
+  if (scope === "pipeline" && !pipeline.enabled) {
+    return `Pipeline is paused${pipeline.reason ? `: ${pipeline.reason}` : ""}; run left queued.`;
+  }
+  return null;
 }
 
 export async function executeAgentRun(
@@ -2357,17 +2436,19 @@ export async function executeAgentRun(
     return blockRunForBackend(runId);
   }
 
-  // Deterministic work is paused only by the pipeline control. A paused run stays
-  // queued (never terminal) so it resumes on its own when the pipeline is re-enabled.
-  const pipeline = await getPipelineControl();
-  const firstQueuedStep = pipeline.enabled ? null : await peekNextQueuedStepKey(runId);
-  if (!pipeline.enabled && !(firstQueuedStep && PAUSE_EXEMPT_STEP_KEYS.includes(firstQueuedStep))) {
+  // Deterministic work is paused by the pipeline control, growth's marketing steps by the
+  // marketing control; each leaves the other's runs going. A paused run stays queued
+  // (never terminal) so it resumes on its own when its control is re-enabled.
+  const [pipeline, marketing] = await Promise.all([getPipelineControl(), getMarketingControl()]);
+  const firstQueuedStep = pipeline.enabled && marketing.enabled ? null : await peekNextQueuedStepKey(runId);
+  const held = firstQueuedStep ? heldByPause(firstQueuedStep, pipeline, marketing) : null;
+  if (held) {
     return {
       runId,
       status: existing.status,
       terminal: false,
       executedSteps: 0,
-      message: `Pipeline is paused${pipeline.reason ? `: ${pipeline.reason}` : ""}; run left queued.`,
+      message: held,
     };
   }
 
@@ -2384,6 +2465,7 @@ export async function executeAgentRun(
         terminal: false,
         executedSteps: 0,
         message: "Next substantive step cannot finish by the tick deadline; run left queued.",
+        heldForDeadline: true,
       };
     }
   }
@@ -2392,6 +2474,8 @@ export async function executeAgentRun(
     // A step that could not finish by the caller's deadline waits for the next tick; the
     // run stays queued. The tick's first step always runs so a late tick still progresses.
     const nextStepKey = await peekNextQueuedStepKey(runId);
+    // A later step under a paused control waits, even when this run's first step did not.
+    if (index > 0 && nextStepKey && heldByPause(nextStepKey, pipeline, marketing)) break;
     const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
     if (!firstOfTick && options.deadlineAt != null
       && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) break;
@@ -2492,6 +2576,7 @@ export async function executeQueuedAgentRuns({
   maxEstimatedCostMicrousd = null,
   providerRunLimit = null,
   deadlineAt,
+  paused = { pipeline: false, marketing: false },
 }: {
   runLimit?: number;
   maxStepsPerRun?: number;
@@ -2499,6 +2584,12 @@ export async function executeQueuedAgentRuns({
   budgetPolicyId?: number | null;
   maxProviderCallsPerRun?: number | null;
   maxEstimatedCostMicrousd?: number | null;
+  /**
+   * Operator pauses in force this tick. A run whose next queued step is held by one
+   * (`heldByPause`) is not selected, so held data runs cannot crowd growth's marketing
+   * runs out of the run limit while the pipeline is paused, nor the reverse.
+   */
+  paused?: { pipeline: boolean; marketing: boolean };
   /**
    * Runs that may take paid steps this tick; later runs do only free steps and leave
    * their next paid step queued. Null means every run may.
@@ -2511,7 +2602,7 @@ export async function executeQueuedAgentRuns({
   // When provider steps cannot run this tick, skip runs whose next queued step is a
   // provider step so they do not crowd deterministic work out of the run limit.
   const rows = await sql`
-    SELECT r.id
+    SELECT r.id, r.run_kind
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -2533,10 +2624,29 @@ export async function executeQueuedAgentRuns({
               )
          )
        )
+       AND NOT EXISTS (
+         SELECT 1
+           FROM agent_run_steps s
+          WHERE s.agent_run_id = r.id
+            AND s.status = 'queued'
+            AND s.sequence = (
+              SELECT MIN(s2.sequence)
+                FROM agent_run_steps s2
+               WHERE s2.agent_run_id = r.id
+                 AND s2.status = 'queued'
+            )
+            AND (
+              (${paused.marketing} AND s.step_key = ANY(${[...MARKETING_STEP_KEYS]}::text[]))
+              OR (${paused.pipeline}
+                AND NOT s.step_key = ANY(${[...MARKETING_STEP_KEYS]}::text[])
+                AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
+            )
+       )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
-     -- lane), then a retry of a failed state lane, then any run waiting over an hour,
+     -- lane), then a retry of a failed state lane, then a state whose report James is
+     -- waiting to review, then any run waiting over an hour,
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
@@ -2547,7 +2657,17 @@ export async function executeQueuedAgentRuns({
               -- Atlas's direct runs for one institution (atlas/priority-institutions.ts):
               -- a hand-found schedule or a large bank missing its overdraft fee; and its
               -- direct re-search of one state's missed banks (atlas/priority-state-research.ts).
-              COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false) DESC,
+              -- They go ahead of state lanes only while a lane has started a step in the last
+              -- ten minutes: three or four direct runs fill a tick, and a lane's first step
+              -- needs most of one, so ranking them first every tick starved every lane
+              -- (no lane started 08:52-09:25 on 2026-10-07, Tennessee included).
+              (COALESCE(r.params_json->>'source' IN ('atlas.priority_institution', 'atlas.priority_state_research'), false)
+                AND EXISTS (
+                  SELECT 1 FROM agent_run_steps lane_step
+                    JOIN agent_runs lane_run ON lane_run.id = lane_step.agent_run_id
+                   WHERE lane_run.run_kind = 'workflow_lane'
+                     AND lane_step.started_at > NOW() - INTERVAL '10 minutes'
+                )) DESC,
               -- A state whose last finished lane run failed retries ahead of routine passes.
               (r.run_kind = 'workflow_lane' AND (
                 SELECT prior.status FROM agent_runs prior
@@ -2557,6 +2677,9 @@ export async function executeQueuedAgentRuns({
                    AND prior.status IN ('completed', 'failed')
                  ORDER BY prior.id DESC LIMIT 1
               ) = 'failed') DESC,
+              -- A state whose report James is waiting to review (atlas/report-review-states.ts).
+              (r.run_kind = 'workflow_lane'
+                AND upper(btrim(r.state_code)) = ANY(${[...REPORT_REVIEW_STATES]}::text[])) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC
@@ -2568,7 +2691,13 @@ export async function executeQueuedAgentRuns({
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
+  // Once a state lane is held because its first real step would not finish this tick,
+  // no lane further down the order starts in its place: a lower lane that fits would
+  // count as under way and take the next tick ahead of it (Tennessee waited behind WY
+  // this way, 2026-10-07). Other runs can still use the rest of the tick.
+  let laneHeld = false;
   for (const row of rows) {
+    if (laneHeld && row.run_kind === "workflow_lane") continue;
     // The first run always gets a step; a later run starts a step only when that step can
     // finish by the deadline, so a larger run limit fills the tick without running past it.
     if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
@@ -2585,15 +2714,15 @@ export async function executeQueuedAgentRuns({
     }
     const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
     if (providerSlot) providerRuns += 1;
-    results.push(
-      await executeAgentRun(runId, {
-        maxSteps: maxStepsPerRun,
-        allowProviderSteps,
-        deadlineAt,
-        alwaysRunFirstStep: results.length === 0,
-        deferProviderSteps: allowProviderSteps && !providerSlot,
-      }),
-    );
+    const result = await executeAgentRun(runId, {
+      maxSteps: maxStepsPerRun,
+      allowProviderSteps,
+      deadlineAt,
+      alwaysRunFirstStep: results.length === 0,
+      deferProviderSteps: allowProviderSteps && !providerSlot,
+    });
+    results.push(result);
+    if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
   }
   return { selected: rows.length, results };
 }

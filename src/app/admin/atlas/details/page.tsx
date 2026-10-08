@@ -417,6 +417,10 @@ export default async function AtlasCommandPage() {
         pipelineReason={center.pipeline.reason}
         pipelineChangedBy={center.pipeline.changedBy}
         pipelineChangedAtLabel={dateTime(center.pipeline.changedAt)}
+        marketingEnabled={center.marketing.enabled}
+        marketingReason={center.marketing.reason}
+        marketingChangedBy={center.marketing.changedBy}
+        marketingChangedAtLabel={dateTime(center.marketing.changedAt)}
       />
 
       <details id="atlas-runs" className="group border-t border-black/[0.06] pt-4 dark:border-white/[0.06]">

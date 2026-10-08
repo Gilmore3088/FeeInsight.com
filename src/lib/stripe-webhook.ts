@@ -1,6 +1,5 @@
 import type Stripe from "stripe";
 import type { sql as sqlClient } from "@/lib/data-store/connection";
-import { acceptPendingWorkspaceInvitationsForUser } from "@/lib/hamilton/institution-membership";
 import type { User } from "@/lib/auth";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 
@@ -64,6 +63,21 @@ export interface StripeEventEffects {
   reportPaid: ReportPaidEffect[];
   /** A second paid session for a request already paid: James refunds it in Stripe. */
   reportDuplicate: Array<{ leadId: number; cents: number; checkoutSessionId: string }>;
+}
+
+/**
+ * Records the event id, returning false when it was already processed. Matches prod's
+ * stripe_events (bigint id, unique stripe_event_id, event_type, processed_at); the old
+ * insert named columns prod never had, so every delivery failed with a 500.
+ */
+export async function recordStripeEvent(tx: Tx, event: Stripe.Event): Promise<boolean> {
+  const inserted = await tx`
+    INSERT INTO stripe_events (stripe_event_id, event_type)
+    VALUES (${event.id}, ${event.type})
+    ON CONFLICT (stripe_event_id) DO NOTHING
+    RETURNING id
+  `;
+  return inserted.length > 0;
 }
 
 /**
@@ -147,7 +161,6 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
             `
           : [];
       for (const user of activated) {
-        await acceptPendingWorkspaceInvitationsForUser({ userId: user.id, email: user.email ?? email ?? "" }, tx);
         const to = user.email ?? email;
         if (to) effects.welcome.push({ email: to, name: user.display_name ?? null });
       }
@@ -163,29 +176,26 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
         await endSubscription(tx, customerId);
         return;
       }
-      const updated = status === "active"
-        ? await tx<Array<{ id: number; email: string | null }>>`
-            UPDATE users
-            SET subscription_status = 'active',
-                past_due_since = NULL,
-                role = CASE WHEN role = 'viewer' THEN 'premium' ELSE role END
-            WHERE stripe_customer_id = ${customerId}
-            RETURNING id, email
-          `
-        : await tx<Array<{ id: number; email: string | null }>>`
-            UPDATE users
-            SET subscription_status = ${status},
-                past_due_since = CASE
-                  WHEN ${status} = 'past_due' THEN COALESCE(past_due_since, NOW())
-                  ELSE NULL
-                END
-            WHERE stripe_customer_id = ${customerId}
-            RETURNING id, email
-          `;
+      // A paid subscription never accepts workspace invitations by email: a seat becomes
+      // active only through the signed invite link (/workspace-invite).
       if (status === "active") {
-        for (const user of updated) {
-          await acceptPendingWorkspaceInvitationsForUser({ userId: user.id, email: user.email }, tx);
-        }
+        await tx`
+          UPDATE users
+          SET subscription_status = 'active',
+              past_due_since = NULL,
+              role = CASE WHEN role = 'viewer' THEN 'premium' ELSE role END
+          WHERE stripe_customer_id = ${customerId}
+        `;
+      } else {
+        await tx`
+          UPDATE users
+          SET subscription_status = ${status},
+              past_due_since = CASE
+                WHEN ${status} = 'past_due' THEN COALESCE(past_due_since, NOW())
+                ELSE NULL
+              END
+          WHERE stripe_customer_id = ${customerId}
+        `;
       }
       return;
     }

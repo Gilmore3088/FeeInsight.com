@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { AlertEntry, SignalEntry } from "@/lib/hamilton/home-data";
 import { SignalFeed, deriveWhatChanged, formatChangeKind } from "./SignalFeed";
+import { parseCompetitorChangeDetail } from "@/lib/hamilton/competitor-alert-detail";
 
 const signal: SignalEntry = {
   id: "signal-1",
@@ -68,5 +69,45 @@ describe("change helpers", () => {
     expect(formatChangeKind("hamilton_scenario_drift")).toBe("Scenario drift");
     expect(formatChangeKind("hamilton_competitor_fee_change")).toBe("Competitor fee change");
     expect(formatChangeKind("source_missing")).toBe("Fee schedule source");
+  });
+
+  it("draws a competitor fee change as a report exhibit with the bank's own price", () => {
+    const competitor: SignalEntry = {
+      ...signal,
+      id: "signal-9",
+      signalType: "hamilton_competitor_fee_change",
+      severity: "medium",
+      title: "Lone Star CU raised its overdraft fee from $30.00 to $35.00",
+      body: "Home Bank charges $32.00, $3.00 lower.",
+      competitorChange: parseCompetitorChangeDetail({
+        competitor_name: "Lone Star CU",
+        bank_name: "Home Bank",
+        canonical_fee_key: "overdraft",
+        previous_amount: 30,
+        new_amount: 35,
+        own_amount: 32,
+        changed_at: "2026-10-06",
+        schedule_url: "https://lonestar.example/fees.pdf",
+      }),
+    };
+    const html = renderToStaticMarkup(<SignalFeed signals={[competitor]} />);
+
+    expect(html).toContain("Competitor watch · Overdraft");
+    expect(html).toContain("rd-table");
+    expect(html).toContain('class="rd-subject"');
+    expect(html).toContain("$30.00");
+    expect(html).toContain("$35.00");
+    expect(html).toContain("$32.00");
+    expect(html).toContain("Lone Star CU&#x27;s published fee schedule, Oct 6, 2026");
+    expect(html).toContain('href="https://lonestar.example/fees.pdf"');
+    expect(html).not.toMatch(/cheapest|cheaper|dearest|\u2014/);
+  });
+
+  it("falls back to the plain card when a competitor row has no prices", () => {
+    const html = renderToStaticMarkup(
+      <SignalFeed signals={[{ ...signal, signalType: "hamilton_competitor_fee_change", competitorChange: parseCompetitorChangeDetail({}) }]} />,
+    );
+    expect(html).not.toContain("rd-table");
+    expect(html).toContain("Overdraft rose from $32.00 to $35.00.");
   });
 });

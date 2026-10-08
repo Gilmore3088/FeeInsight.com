@@ -3,6 +3,51 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-10-07
+**Accuracy and data quality**
+- Takedowns get a second look, a decision log and a way back; nothing is deleted (#324, #320); Knox holds re-reads of fees a second look confirmed taken down (#393).
+- Knox rules v23 to v33: labeled fee cards, two-column headings, one-line PDF schedules kept whole, limits and rebates are not prices, run-on names tidied, plural wires, overdraft fees named from their heading (#307, #304, #318, #326, #332, #342, #350, #358, #404, #455); held fee groups fold into existing categories and are set aside, never deleted (#321, #336).
+- Knox learning: the lessons query loads again (#327), calibration learns only from real misreads (#337), lessons learn from restores (#353), error reviews every 500 reads (#418), answer-key gate floors raised (#346); live run-on names re-tidied with the old name kept (#402); 44 Tennessee banks below the 3-fee bar re-read (#423).
+- Source check v5 to v12: stops taking down real prices, refuses "per $100" flat fees, reads two-column pages, box-size grids, wrapped prices, semicolon splits and "up to $X" maximums, and restores wrong takedowns (#309, #341, #367, #379, #381, #387, #412, #428, #458, #466).
+- Category guard v13 to v19: loan late fees and overdraft-protection transfers aren't overdraft, a stop-payment removal isn't a stop-payment fee, only inactivity fees count as dormant (#304, #309, #361, #417, #457, #464).
+- Darwin verifies current-copy fees with two looks before a reject (#316); its held-fee release review goes from v5 to v10, learns from takedowns and restores, reads the schedule rows around a fee, scores itself against the answer keys and fills short lists from other states (#338, #347, #351, #354, #360, #392, #406, #419, #439, #448, #462, #465, #467); its paid pass runs in hourly backlog runs (#469).
+- Hamilton moves live fees to the current copy of their page (#311) and gives stale-copy fees, article pages and unchecked restores a second look (#403); pages keep their readable copy when a newer one is a bot check (#315).
+- Business-only fee schedules are left out of benchmark statistics (#366); the hand-keyed answer keys are loaded on prod (#415).
+
+**Pipeline**
+- Magellan: knows "Schedule of Charges" and a bank's corporate domain (#310); reads hand-found schedules for the largest banks (#312, #363, #365, #414, #443); paid schedule search and a paid fetch for blocked sites and timeouts (#314, #323, #444, #454); one current copy per page across address spellings (#323, #340); learns from every link and stops treating business schedules as consumer links (#348); stops re-paying for schedules that never open (#362); searches weak links sooner and reviews its errors every 50 links (#395); refuses foreign schedules (#426); seeds hidden banks (#319).
+- Each state's top 15 market leaders: a shared ranking (#355) that Magellan searches first (#356) and Atlas runs first (#359).
+- Rosetta: text PDFs to the paid pass (#331), OCR reads scanned pages upright (#371), follows schedule links without a .pdf ending (#398), reads embedded PDF viewers (#409), reviews every 50 reads (#413, #432).
+- Atlas: lane priority scores fixed (#308); queued lane runs capped and run by priority (#344); daily passes only for real backlog (#397); a direct path for hand-found schedules and big-bank overdraft gaps (#378, #408, #421, #429, #434, #438); Tennessee's lane runs next and holds its place (#431, #446, #456, #460); paid-fetch documents read without waiting for their state (#463).
+- The agents tick starts steps whenever they fit and retries failed lanes first (#368); registry loaders retry once a fix ships (#445).
+
+**Data coming in**
+- Bank overdraft and NSF income from the FFIEC call report (#369, #386, #399); readers use only FDIC and NCUA financial rows, and the real CPI bank services series (#440).
+- Census household income and IRS ZIP income (#377); FOMC minutes and the 12 Reserve Banks' publications (#380, #382).
+- Credit union branches from the NCUA file with Census geocoding (#313); Fed districts taken from FDIC, with credit unions given nearby banks' district (#330).
+- Regulation tracker in shadow mode: Federal Register rules, Open States bills and Congress.gov bills (#352, #374, #376, #384, #437); OCC and Fed enforcement actions (#372, #401, #410, #420) and state enforcement orders (#427, #449, #453, #459, #461).
+- Checking account lineups: product, balance to avoid the fee, opening deposit, waiver (#433).
+
+**Public site and Hamilton**
+- The Pro page is reworked into a neutral decision-support workspace (#89), with custom peer groups, team seats and a charted competitor answer (#435); the engine follows the bank's own peer group (#452).
+- Hamilton engine 1.8.0 to 1.10.0: fee positions and option prices (#317), regulators (#333), a missing fee never reads as no fee (#349), "Where do we stand on every fee?" (#375, #390, #394, #400), why fee income sits where it does (#385), FOMC and district Fed citations (#396), chart-ready figures (#411); voice 3.5.1 says lower/higher, never cheapest (#373).
+- Hamilton studies layer: fee dependence, price studies, inferred items paid (#388, #407, #468); a 30-question quality bar scored in CI (#383).
+- Hamilton answers: whole-sentence titles and clean Evidence rows (#389), designed visuals (#416), a multi-page briefing PDF with charts, economy and local market (#391, #405, #424); written answers cached and saved on the server (#442, #450, #451).
+- Hamilton reports: answer first, local competitors, regulation, dollar sensitivity (#93); audit fixes for advice, units and wording (#329).
+- Free-to-paid path: live sample report, peer rank, branch footprint and fee income (#306, #328); branch card with credit union offices, a map and nearby competitors (#335); the report rule falls back to Fed district peers (#302).
+- API and connector: branch locations and local market competitors (#305).
+
+**Revenue and leads**
+- Pro watchlist fee alerts and Monday digest, sending off (#325); fee alerts and the digest count only real price changes (#334); in-app competitor change alerts and quarterly briefing snapshots (#364, #422, #430).
+- CFPB fee complaints benchmarked against peers (#425); content queue with weekly and fortnightly drafts (#345).
+- Market report title-cases city names (#343); the scoreboard records the report-ready count (#322).
+
+**Admin**
+- Admin Today stops false "overdue" cards (#357); Generate is never silently off (#370).
+
+**Project and tooling**
+- Checkpoint for 2026-10-06 (#303).
+
 ## 2026-10-06
 **Accuracy and data quality**
 - Knox rules v9 to v22: prose monthly charges, caps after a price, item-amount overdraft tiers, price-first rows, free allowances not read as $0, held lines re-read with today's rules, low-balance fees, wire directions, large banks' overdraft layouts (#184, #188, #190, #207, #224, #236, #251, #256, #258, #260, #270, #297); footnote numbers dropped from fee names (#162).

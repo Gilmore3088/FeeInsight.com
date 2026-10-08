@@ -8,7 +8,8 @@ import type { AdminAgent } from "@/lib/agents/types";
 const POLL_MS = 10_000;
 
 type Data = FlowSnapshot & { waiting: FlowWaiting | null };
-type Worker = Exclude<AdminAgent, "atlas">;
+/** The data agents institutions flow through; growth (marketing) handles no institutions. */
+type Worker = Exclude<AdminAgent, "atlas" | "growth">;
 
 const WORKERS: Worker[] = ["magellan", "rosetta", "knox", "darwin", "hamilton"];
 
@@ -20,6 +21,7 @@ const AGENT_COLOR: Record<AdminAgent, { bar: string; badge: string; dot: string;
   knox: { bar: "bg-amber-500", badge: "bg-amber-600 text-white", dot: "bg-amber-500", flash: "rgb(245 158 11 / 0.18)" },
   darwin: { bar: "bg-teal-500", badge: "bg-teal-600 text-white", dot: "bg-teal-500", flash: "rgb(20 184 166 / 0.15)" },
   hamilton: { bar: "bg-[var(--brand-primary)]", badge: "bg-[var(--brand-primary)] text-white", dot: "bg-[var(--brand-primary)]", flash: "rgb(194 65 12 / 0.12)" },
+  growth: { bar: "bg-rose-500", badge: "bg-rose-600 text-white", dot: "bg-rose-500", flash: "rgb(244 63 94 / 0.15)" },
 };
 
 const TONE: Record<MoveTone, { mark: string; label: string; text: string; ring: string }> = {
@@ -254,6 +256,7 @@ export function LiveFlow({ initial }: { initial: Data }) {
 
   const nowOf = (agent: AdminAgent) => data.now.find((item) => item.agent === agent);
   const atlas = nowOf("atlas");
+  const growth = nowOf("growth");
   const working = WORKERS.filter((agent) => nowOf(agent)?.state === "working").map((agent) => meta(agent).name);
 
   return (
@@ -269,6 +272,10 @@ export function LiveFlow({ initial }: { initial: Data }) {
             <p className="text-xs text-gray-500">
               {paused ? "Paused" : "Updates every 10 seconds"} · last update {clock(data.generatedAt)}
               {failed ? " · last update failed, showing the previous one" : ""}
+            </p>
+            <p className="text-xs text-gray-500">
+              <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${AGENT_COLOR.growth.dot}`} aria-hidden />
+              Growth (marketing): {growth?.text ?? "No marketing run open"}
             </p>
           </div>
         </div>

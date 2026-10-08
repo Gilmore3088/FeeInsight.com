@@ -20,6 +20,7 @@ import type { DocumentProps } from "@react-pdf/renderer";
 import { createElement } from "react";
 import type { ReactElement, JSXElementConstructor } from "react";
 import { getCurrentUser } from "@/lib/auth";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { PdfDocument } from "@/components/hamilton/reports/PdfDocument";
 import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDocument";
 import { getHamiltonReportById } from "@/lib/hamilton/pro-tables";
@@ -76,7 +77,11 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
       : null;
     const institutionName = institution?.institution_name ?? undefined;
     // The engine's standing figures for the institution go behind the answer; a failure leaves them out.
-    const brief = record.institutionId ? await loadAnswerBrief(Number(record.institutionId)).catch(() => null) : null;
+    const briefInstitutionId = record.institutionId ? Number(record.institutionId) : null;
+    const peerSet = briefInstitutionId
+      ? await getActivePeerSet({ userId: user.id, institutionId: briefInstitutionId }).catch(() => null)
+      : null;
+    const brief = briefInstitutionId ? await loadAnswerBrief(briefInstitutionId, { peerSet }).catch(() => null) : null;
 
     try {
       const element = createElement(AnalysisPdfDocument, {

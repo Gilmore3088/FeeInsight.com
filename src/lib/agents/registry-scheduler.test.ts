@@ -10,6 +10,7 @@ vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 
 import {
   backfillStart,
+  isKeylessSkipNowKeyed,
   isParserStale,
   pickDueCandidate,
   registryCandidates,
@@ -26,7 +27,7 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 21)).toEqual([
+    expect(candidates.slice(0, 23)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
@@ -45,13 +46,15 @@ describe("registry scheduler", () => {
       "fed-publications:current",
       "reg-news:current",
       "federal-register:current",
+      "state-reg-news:current",
+      "state-bill-news:current",
       "state-regulators:current",
       "enforcement:current",
       "state-enforcement:current",
     ]);
     // Round two continues each source's history.
     // Credit union branches pull only the newest quarter, so they drop out after round one.
-    expect(candidates.slice(21, 29)).toEqual([
+    expect(candidates.slice(23, 31)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
       "ffiec-overdraft:2026Q2",
@@ -81,6 +84,13 @@ describe("registry scheduler", () => {
     expect(backfillStart("garbage")).toEqual({ year: 2010, quarter: 1 });
   });
 
+  it("makes a vintage skipped for a missing Census key due once a key is set", () => {
+    expect(isKeylessSkipNowKeyed(true, "abc123")).toBe(true);
+    expect(isKeylessSkipNowKeyed(true, undefined)).toBe(false);
+    expect(isKeylessSkipNowKeyed(true, "  ")).toBe(false);
+    expect(isKeylessSkipNowKeyed(false, "abc123")).toBe(false);
+  });
+
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {
     expect(isParserStale("ncua-financials", "succeeded", null)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 1)).toBe(true);
@@ -90,13 +100,19 @@ describe("registry scheduler", () => {
     expect(isParserStale("enforcement", "succeeded", 3)).toBe(false);
     expect(isParserStale("ncua-financials", "succeeded", 2)).toBe(true);
     expect(isParserStale("ncua-financials", "succeeded", 3)).toBe(false);
-    // A claimed or failed partition follows its normal retry time instead of looping.
-    expect(isParserStale("ncua-financials", "scheduled", 1)).toBe(false);
+    // A partition claimed under the current parser follows its normal retry time instead of looping.
+    expect(isParserStale("ncua-financials", "scheduled", 1, 3)).toBe(false);
     expect(isParserStale("ncua-financials", "failed", 1)).toBe(false);
     expect(isParserStale("fdic-financials", "succeeded", null)).toBe(false);
     // An "empty" recorded by an older parser is checked again (census v1 misread errors as unpublished).
     expect(isParserStale("census-acs", "empty", null)).toBe(true);
-    expect(isParserStale("census-acs", "empty", 2)).toBe(false);
+    expect(isParserStale("census-acs", "empty", 3)).toBe(false);
+    // A partition claimed under an older parser (its run failed) retries as soon as the fix ships.
+    expect(isParserStale("ffiec-overdraft", "scheduled", null, null)).toBe(true);
+    expect(isParserStale("ffiec-overdraft", "scheduled", null, 1)).toBe(true);
+    expect(isParserStale("ffiec-overdraft", "scheduled", null, 2)).toBe(false);
+    // Sources without a parser version keep their normal retry time.
+    expect(isParserStale("fdic-financials", "scheduled", null, null)).toBe(false);
   });
 
   it("picks the first never-attempted or due partition", () => {

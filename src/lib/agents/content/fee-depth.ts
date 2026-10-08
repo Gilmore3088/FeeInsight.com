@@ -4,7 +4,15 @@ import { STATS_ROW_FILTER } from "@/lib/data-store/fee-stats";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { unbackedNumbers } from "@/lib/agents/marketing/facts";
-import { asOfLabel, metroLabel, summarizeMarkets, type MarketRow, type MarketSpread } from "./market-spread";
+import {
+  asOfLabel,
+  captionWithCta,
+  freeReportLink,
+  metroLabel,
+  summarizeMarkets,
+  type MarketRow,
+  type MarketSpread,
+} from "./market-spread";
 
 /**
  * W3 fee depth at work (every other Friday, free, no model). Shows how a banking
@@ -138,8 +146,8 @@ export function draftDepthCaption(metro: MetroDepth, useCase: UseCase, asOf: Dat
     `Source: the Bank Fee Index, built from each institution's own published fee schedule. As of ${asOfLabel(asOf)}.`,
   ].join("\n\n");
   const week = asOf.toISOString().slice(0, 10);
-  const link = `https://feeinsight.com/for-institutions?utm_source=linkedin&utm_medium=social&utm_campaign=${FEE_DEPTH_WORKFLOW}&utm_content=${useCase.key}-${week}`;
-  return { title: `${useCase.label}: ${place}`, body, link, caption: `${body}\n\n${link}` };
+  const link = freeReportLink(FEE_DEPTH_WORKFLOW, `${useCase.key}-${week}`);
+  return { title: `${useCase.label}: ${place}`, body, link, caption: captionWithCta(body, link) };
 }
 
 export function allowedDepthNumbers(metro: MetroDepth, asOf: Date): Set<string> {

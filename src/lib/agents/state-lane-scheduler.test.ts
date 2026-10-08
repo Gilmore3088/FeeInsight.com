@@ -12,7 +12,7 @@ vi.mock("@/lib/data-store/connection", () => ({
   withTransaction: withTransactionMock,
 }));
 vi.mock("@/lib/data-store/market-leaders", () => ({ loadMarketLeaderIds: vi.fn().mockResolvedValue([117, 281]) }));
-vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
+vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock, currentDeploy: () => null }));
 vi.mock("./state-lane-memory", () => ({
   normalizeStateCode: (value: string) => value?.trim().toUpperCase() || null,
   syncStateLaneProfiles: syncStateLaneProfilesMock,
@@ -43,6 +43,7 @@ import {
   STATE_LANE_IDLE_RECHECK_HOURS,
   stateLaneCadence,
   stateLaneSteps,
+  wakeLanesAfterRecovery,
 } from "./state-lane-scheduler";
 import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
 import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
@@ -55,7 +56,7 @@ function laneUpdate(): { text: string; values: unknown[] } | undefined {
   // The priority refresh also updates every lane; the lane's own schedule update is the one wanted.
   const call = sqlMock.mock.calls.find((entry) => {
     const text = templateText(entry[0]);
-    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score");
+    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score") && !text.includes("WITH failures AS");
   });
   return call ? { text: templateText(call[0]), values: call.slice(1) } : undefined;
 }
@@ -253,7 +254,7 @@ describe("state lane scheduler", () => {
     expect(result.recheck).toBeNull();
     expect(result.idempotencyKey).toMatch(/^atlas:state-lane-backlog:PA:\d{4}-\d{2}-\d{2}T\d{2}$/);
     const args = startAgentRunMock.mock.calls[0][0];
-    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["discover", "fetch", "read", "extract", "extract-paid", "classify", "publish"]);
+    expect(args.steps.map((step: { key: string }) => step.key)).toEqual(["discover", "fetch", "read", "extract", "extract-paid", "classify", "verify-paid", "publish"]);
     expect(args.params).toMatchObject({ lane_mode: "backlog" });
     expect(args.params.recheck).toBeUndefined();
     // Magellan runs the free search and fetches links found since the last fetch; the paid
@@ -409,6 +410,14 @@ describe("state lane scheduler", () => {
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
+  it("gives a state whose report James is waiting to review the report-request weight", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  });
+
   it("puts states whose market leaders lack headline fees ahead", async () => {
     sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
     await refreshLanePriorities();
@@ -437,7 +446,10 @@ describe("state lane scheduler", () => {
     withTransactionMock.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(sqlMock));
     await scheduleDueStateLaneRuns({ now: new Date("2026-10-06T13:30:00Z") });
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("FOR UPDATE SKIP LOCKED"));
-    expect(query).toMatch(/ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+priority_score DESC/);
+    // Overdue lanes go first, longest overdue first, then the rest by score.
+    expect(query).toMatch(
+      /ORDER BY \(next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\) DESC,\s+CASE WHEN next_run_after < NOW\(\) - .* \* INTERVAL '1 hour'\s+THEN next_run_after END ASC NULLS LAST,\s+priority_score DESC/,
+    );
     expect(STATE_LANE_STARVATION_HOURS).toBe(3);
   });
 
@@ -468,5 +480,42 @@ describe("state lane scheduler", () => {
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("full_this_month"));
     expect(query).toContain("AS paid_find_due");
     expect(query).toContain("AS website_find_due");
+  });
+
+  it("reruns lanes a shared break failed once a new deploy is live, and logs why (2026-10-08)", async () => {
+    sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("WITH failures AS")) {
+        return Promise.resolve([{
+          state_code: "KS",
+          run_id: 2878,
+          step_key: "publish",
+          error: 'column "fee_category" can only be updated to DEFAULT',
+          failed_deploy: null,
+        }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    await expect(wakeLanesAfterRecovery("abc123")).resolves.toEqual(["KS"]);
+
+    const wake = sqlMock.mock.calls[0];
+    const text = templateText(wake[0]);
+    // Only failures seen in several runs count, and only while the current deploy has not repeated them.
+    expect(text).toContain("HAVING COUNT(DISTINCT agent_run_id) >=");
+    expect(text).toContain("COUNT(*) FILTER (WHERE deploy =");
+    expect(wake).toContain("abc123");
+    expect(text).toContain("run.id = lane.last_agent_run_id");
+    expect(text).toContain("lane.next_run_after > NOW()");
+    const event = sqlMock.mock.calls[1];
+    expect(templateText(event[0])).toContain("'run.recovery_rerun'");
+    expect(event).toContain(2878);
+  });
+
+  it("does nothing outside a deploy, and never lets the recovery check stop the scheduler", async () => {
+    await expect(wakeLanesAfterRecovery(null)).resolves.toEqual([]);
+    expect(sqlMock).not.toHaveBeenCalled();
+    sqlMock.mockRejectedValueOnce(new Error("statement timeout"));
+    await expect(wakeLanesAfterRecovery("abc123")).resolves.toEqual([]);
   });
 });
