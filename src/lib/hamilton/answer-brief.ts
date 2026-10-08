@@ -8,9 +8,10 @@
 
 import { getServiceChargeIntensity } from "@/lib/data-store/call-reports";
 import { ASSET_TIER_RANGES } from "./peer-index";
-import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
+import { getFeeResearch, getWorkspaceBriefing, loadDependenceSeries, loadStudyPlacements, type EnginePeerOptions } from "./workspace/research";
+import { dependenceChart, studyObservations, type DependenceChart } from "./workspace/studies";
 import { scheduleOverview } from "./workspace/schedule";
-import type { FeePositionRow, InstitutionFinancials, SchedulePosition } from "./workspace/types";
+import type { FeePositionRow, InstitutionFinancials, Observation, SchedulePosition } from "./workspace/types";
 import { loadBriefContext, type BriefContext } from "./brief-context";
 import { explainIncome, incomeSplit, type IncomeExplanation, type IncomeSplit } from "./workspace/why";
 
@@ -27,6 +28,8 @@ export interface AnswerBrief {
   income: { split: IncomeSplit; explained: IncomeExplanation } | null;
   /** The state and district economy, the local deposit market and household income there. */
   context: BriefContext | null;
+  /** Where the institution sits in Hamilton's stored studies; empty before the first studies run. */
+  studies: { items: Observation[]; dependence: DependenceChart | null };
 }
 
 export interface LocalCompetitorFee {
@@ -53,7 +56,7 @@ export function peerPhrase(charterType: string, assetTier: string): string {
 }
 
 export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOptions = {}): Promise<AnswerBrief | null> {
-  const [briefing, intensity, context] = await Promise.all([
+  const [briefing, intensity, context, studyRows, dependenceSeries] = await Promise.all([
     getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
       console.error("[answer-brief] briefing failed", error);
       return null;
@@ -66,6 +69,8 @@ export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOp
       console.error("[answer-brief] context failed", error);
       return null;
     }),
+    loadStudyPlacements(institutionId),
+    loadDependenceSeries(),
   ]);
   if (!briefing) return null;
   const overview = scheduleOverview(briefing.positions);
@@ -96,5 +101,13 @@ export async function loadAnswerBrief(institutionId: number, peers: EnginePeerOp
     financials: briefing.institutionFinancials,
     income: split ? { split, explained: explainIncome(split) } : null,
     context,
+    studies: {
+      // Fee dependence first, beside its chart; the rest most notable first.
+      items: studyObservations(studyRows).sort(
+        (a, b) =>
+          Number(b.id === "study:fee_dependence") - Number(a.id === "study:fee_dependence") || b.salience - a.salience || a.id.localeCompare(b.id),
+      ),
+      dependence: dependenceChart(studyRows, dependenceSeries),
+    },
   };
 }

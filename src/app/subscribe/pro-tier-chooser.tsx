@@ -35,6 +35,10 @@ export function ProTierChooser({ chosenLabel, problem = null }: ProTierChooserPr
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Your price is for</p>
         <p className="mt-1 font-semibold text-[#1A1815]">{chosenLabel}</p>
         {problem && <p className="mt-2 text-[#A93D25]">{problem}</p>}
+        <p className="mt-2 text-xs text-[#6B6255]">
+          Pick the organization the plan is for. If it&apos;s used for a larger one, we may move it to the right price.
+          We&apos;ll email you first.
+        </p>
         <button
           type="button"
           onClick={() => go(() => {})}

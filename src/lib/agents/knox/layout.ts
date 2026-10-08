@@ -175,7 +175,9 @@ const COMPOSABLE_WORDS = new Set(
     // "Business accounts only" under "Non-Sufficient Funds (NSF)".
     "account accounts only " +
     // "Service assisted" and "Online" under "Stop Payments".
-    "online service assisted branch series"
+    "online service assisted branch series " +
+    // v34: "Per transaction" beside "Overdraft Fee - Items Paid" (Banc of California).
+    "transaction transactions"
   ).split(" "),
 );
 
