@@ -4,8 +4,9 @@
  * record. Pure: every sentence comes from the shared reviewed rule list or a filed record.
  */
 
-import type { InstitutionComplaintYear } from "@/lib/data-store/complaints";
+import type { ComplaintBenchmark, InstitutionComplaintYear } from "@/lib/data-store/complaints";
 import type { InstitutionRegulators } from "@/lib/data-store/regulators";
+import { STATE_NAMES } from "@/lib/us-states";
 import { rulesForInstitution, stateAgency, type StateRule } from "../regulatory-context";
 import type { Fact } from "./types";
 
@@ -51,6 +52,8 @@ export function regulatoryFacts(input: {
   charterType: string | null | undefined;
   regulators: InstitutionRegulators | null;
   complaints: InstitutionComplaintYear[];
+  /** Fee complaints per $1B of deposits beside similar-size peers' (getComplaintBenchmark). */
+  complaintBenchmark?: ComplaintBenchmark | null;
   /** Reviewed state rules for this institution (stateFeeLawsFor); none until reviewed. */
   stateRules?: readonly StateRule[];
   /** The day the regulator record was read, for its source date. */
@@ -87,5 +90,42 @@ export function regulatoryFacts(input: {
       source: { label: "CFPB Consumer Complaint Database", table: "institution_complaint_records", asOf: latest.year },
     });
   }
+  const benchmark = complaintBenchmarkFact(input.complaintBenchmark);
+  if (benchmark) out.push(benchmark);
   return out;
+}
+
+/** A per-$1B rate restated per $10B, so a small rate reads as a whole number rather than "0.8". */
+function per10B(perBillion: number): string {
+  const v = perBillion * 10;
+  if (v === 0) return "0";
+  if (v < 1) return "under 1";
+  return String(Math.round(v * 10) / 10);
+}
+
+/**
+ * The bank's CFPB fee complaints beside similar-size peers', as a rate per $10B of deposits so a
+ * large bank is not judged on its size. Only for a confirmed CFPB match: no match is not proof of
+ * no complaints, and a match under review has no count yet.
+ */
+export function complaintBenchmarkFact(b: ComplaintBenchmark | null | undefined): Fact | null {
+  if (!b || b.match_status !== "matched" || b.fee_complaints === null || b.peer_count === 0) return null;
+  // Peers share the bank's charter and asset tier; the line stays within a storyline line's 20 words.
+  const where = b.peer_level === "state" ? `${STATE_NAMES[b.peer_label] ?? b.peer_label} peers` : b.peer_level === "fed_district" ? `${b.peer_label.replace(/^Fed /, "")} peers` : "peers nationwide";
+  const group = `${b.peer_count.toLocaleString("en-US")} ${where}`;
+  let text: string;
+  if (b.fee_complaints === 0) {
+    text = `You had no CFPB fee complaints in ${b.year}; ${b.peers_with_fee_complaints} of ${group} had any.`;
+  } else if (b.fee_complaints_per_billion !== null && b.peer_median_per_billion !== null) {
+    const [noun, verb] = b.fee_complaints === 1 ? ["complaint", "equals"] : ["complaints", "equal"];
+    const median = b.peer_level === "national" ? `${b.peer_count.toLocaleString("en-US")} peers' median nationwide` : `${group}' median`;
+    text = `Your ${b.fee_complaints} CFPB fee ${noun} in ${b.year} ${verb} ${per10B(b.fee_complaints_per_billion)} per $10B of deposits; ${median} is ${per10B(b.peer_median_per_billion)}.`;
+  } else {
+    return null;
+  }
+  return {
+    text,
+    source: { label: "CFPB Consumer Complaint Database, against FDIC and NCUA deposits", table: "institution_complaint_records", asOf: `${b.year}-12-31` },
+    sampleSize: b.peer_count,
+  };
 }

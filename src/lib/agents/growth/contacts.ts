@@ -13,7 +13,7 @@ import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signal
  */
 
 type SqlTag = typeof sql;
-type Fetcher = typeof fetch;
+export type Fetcher = typeof fetch;
 
 /** Institutions read per run. */
 export const CONTACTS_DEFAULT_LIMIT = 30;
@@ -172,7 +172,7 @@ export function roleFor(text: string): ContactRole {
 }
 
 /** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...", a line quoting an address). */
-const NOT_A_TITLE = /@|\be-?mail:|message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+const NOT_A_TITLE = /@|\byour\b|\be-?mail:|message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
 /** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
 const NOT_A_NAME =
   /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual)\b/i;
@@ -275,7 +275,8 @@ export function contactPageLinks(html: string, pageUrl: string, limit: number = 
   return [...ranked.entries()].sort((a, b) => a[1] - b[1]).slice(0, limit).map(([url]) => url);
 }
 
-async function fetchText(url: string, fetcher: Fetcher): Promise<{ ok: boolean; status: number | null; url: string; text: string }> {
+/** One page as text, as `FeeInsightBot (Growth)`; never throws. */
+export async function fetchText(url: string, fetcher: Fetcher): Promise<{ ok: boolean; status: number | null; url: string; text: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
