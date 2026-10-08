@@ -200,6 +200,23 @@ export function joinLabeledFeeCardText(text: string): string {
   return joinLabeledFeeCards(text.split(/\r?\n/)).join("\n");
 }
 
+/**
+ * A price alone on its line can carry the fee's footnote marks, read off their superscripts
+ * onto the baseline: Starion's "$33⁴,⁵" comes out "$334, 5". The price's last digit is the
+ * first mark when the marks count up from it (4, 5) and the text prints each one as a
+ * numbered footnote ("4. Please be aware ..."); only then are the marks dropped. A single
+ * mark ("$331") is left alone: nothing tells it from a price.
+ */
+export function stripPriceFootnoteMarks(text: string): string {
+  if (!/^\s*\$\d+, ?\d/m.test(text)) return text;
+  const notes = new Set([...text.matchAll(/^\s*(\d)\.\s+[A-Z]/gm)].map((match) => Number(match[1])));
+  return text.replace(/^(\s*)\$(\d+)(\d)((?:, ?\d)+)[ \t]*$/gm, (whole, indent: string, price: string, first: string, rest: string) => {
+    const marks = [Number(first), ...rest.split(",").slice(1).map((mark) => Number(mark.trim()))];
+    const counted = marks.every((mark, index) => index === 0 || mark === marks[index - 1] + 1);
+    return counted && marks.every((mark) => notes.has(mark)) ? `${indent}$${price}` : whole;
+  });
+}
+
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
@@ -532,8 +549,9 @@ let lastColumns: string[][] = [];
 
 function cachedSourceLines(text: string): string[] {
   if (text !== lastText) {
-    lastLines = sourceLines(text);
-    lastColumns = columnLines(text);
+    const read = stripPriceFootnoteMarks(text);
+    lastLines = sourceLines(read);
+    lastColumns = columnLines(read);
     lastText = text;
   }
   return lastLines;
