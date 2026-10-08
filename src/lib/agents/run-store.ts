@@ -14,6 +14,7 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
+import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
@@ -1064,6 +1065,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Recorded fee changes name their two rows and whether they compare one page with
+      // itself, before the restore below reopens any superseded row.
+      const changePairing = await pairFeeChangeRecords(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Live fees another page's price superseded come back through the restore bar.
       const crossPageRestore = await restoreCrossPageSupersedes(tx, {
         runId: run.id,
@@ -1268,6 +1276,14 @@ async function executeAgenticStep(
             restored: crossPageRestore.restored.length,
             failing: crossPageRestore.failing.length,
             business_left_down: crossPageRestore.businessLeftDown,
+          },
+          change_pairing: {
+            unpaired: changePairing.unpaired,
+            like_for_like: changePairing.likeForLike,
+            cross_page: changePairing.crossPage,
+            lists_both: changePairing.listsBoth,
+            no_pair: changePairing.noPair,
+            written: changePairing.written,
           },
           restore_recheck: {
             unchecked: restoreRecheck.unchecked,

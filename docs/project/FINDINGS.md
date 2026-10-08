@@ -3355,6 +3355,15 @@ schedule's price off the live catalog and logs the difference as a price change.
 pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
 alert has been raised from these records.
 **Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
+**Follow-up (8 Oct, 23:00 UTC):** PR 591 stopped publish from superseding across pages, but the 152
+change records already written stayed, and seven readers (local fee moves in Hamilton reports, the
+category page's change list, `/api/v1/fee-changes`, peer reports, the Monthly Pulse, competitor alerts,
+the movement summary) counted them as price changes. The record held no link to the two rows it
+compared, so each reader re-guessed the pair by amount. Migration `20270110000030` gives
+`fee_change_records` the two row ids and `like_for_like`; publish fills them for each new change, and
+`pairFeeChangeRecords` (`hamilton/change-pairing.ts`) fills older records in the publish step with the
+same page rule plus `listsBothPrices`. Every reader now requires `like_for_like IS TRUE`. A new reader
+of `fee_change_records` must do the same.
 
 ## 2026-10-08: Paid search answers dropped because the bank's site refused our check
 
