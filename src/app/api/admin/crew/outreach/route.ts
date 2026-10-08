@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasPermission } from "@/lib/auth";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { executeAgentRun, startAgentRun } from "@/lib/agents/run-store";
-import { CONTACTS_DEFAULT_LIMIT, CONTACTS_MAX_LIMIT } from "@/lib/agents/growth/contacts";
+import { OUTREACH_DEFAULT_LIMIT, OUTREACH_MAX_LIMIT } from "@/lib/agents/growth/outreach";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,9 +18,9 @@ async function caller(request: NextRequest): Promise<"schedule" | "admin" | null
 }
 
 /**
- * NIELSEN's contact finder (src/lib/agents/growth/contacts.ts): reads up to `?limit=` prospect
- * websites for the executive addresses they publish. Free, no model calls, nothing sends.
- * Runs Mondays from vercel.json (James turned the weekly schedules on 15:33 UTC Oct 8).
+ * CARNEGIE's first-email drafts (src/lib/agents/growth/outreach.ts): up to `?limit=` drafts in
+ * James's template, each with an audit block, into the /admin/growth queue. Free, no model
+ * calls, and nothing sends: James audits each draft and sends it himself.
  */
 async function handleGET(request: NextRequest) {
   const triggerSource = await caller(request);
@@ -28,23 +28,23 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const requested = Number(request.nextUrl.searchParams.get("limit"));
-  const limit = Number.isFinite(requested) && requested > 0 ? Math.min(Math.floor(requested), CONTACTS_MAX_LIMIT) : CONTACTS_DEFAULT_LIMIT;
+  const limit = Number.isFinite(requested) && requested > 0 ? Math.min(Math.floor(requested), OUTREACH_MAX_LIMIT) : OUTREACH_DEFAULT_LIMIT;
   const hour = new Date().toISOString().slice(0, 13);
   const started = await startAgentRun({
     agent: "growth",
     kind: "workflow",
-    title: `Prospect contacts ${hour.replace("T", " ")}:00`,
-    params: { source: "growth.contacts", agent: "nielsen", limit },
-    triggeredBy: "growth.contacts",
+    title: `Outreach drafts ${hour.replace("T", " ")}:00`,
+    params: { source: "growth.outreach", agent: "carnegie", limit },
+    triggeredBy: "growth.outreach",
     triggerSource,
-    // One run an hour, so a repeated call or a double-fired schedule doesn't read the same sites twice.
-    idempotencyKey: `growth:contacts:${hour}`,
-    steps: [{ key: "growth-contacts", agent: "growth", title: "Find published executive contacts on prospect websites" }],
+    // One run an hour, so a repeated call doesn't draft the same prospects twice.
+    idempotencyKey: `growth:outreach:${hour}`,
+    steps: [{ key: "growth-outreach", agent: "growth", title: "Draft first emails with verified local overdraft comparisons" }],
   });
   const result = started.reused
-    ? { runId: started.run.id, status: started.run.status, message: "This hour's contacts run already exists." }
+    ? { runId: started.run.id, status: started.run.status, message: "This hour's outreach run already exists." }
     : await executeAgentRun(started.run.id, { maxSteps: 1 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 
-export const GET = withApiRoutePolicy("api.admin.crew.contacts", "GET", handleGET);
+export const GET = withApiRoutePolicy("api.admin.crew.outreach", "GET", handleGET);

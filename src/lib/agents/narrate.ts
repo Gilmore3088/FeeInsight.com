@@ -232,6 +232,17 @@ export function narrateStepFinished(
       if (!checked) return "No prospect was due a contact check.";
       return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
     }
+    case "growth-outreach": {
+      if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
+      const drafted = n(detail, "drafted");
+      if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
+      return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
+    }
+    case "growth-learning": {
+      if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
+      return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
+    }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
       if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
@@ -442,6 +453,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
   "growth-contacts": "growth",
+  "growth-outreach": "growth",
+  "growth-learning": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",
