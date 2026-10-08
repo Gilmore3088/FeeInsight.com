@@ -3422,3 +3422,11 @@ and quarter were already stored, without looking at the periods of the data behi
   Download PDF as soon as the Ask has saved it, whatever happens to the memo.
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
+
+## 2026-10-08: A new API route without a policy entry fails only the Vercel build
+- **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc`, vitest and the guards all
+  passed locally; the Vercel build failed, because `getApiRoutePolicy` throws "Missing API route
+  policy" when Next loads the route to collect page data.
+- **Fix.** Add the policy entry in the same commit as the route.
+- **Watch.** Any new `withApiRoutePolicy("…")` id: grep `policies.ts` for it before pushing.
