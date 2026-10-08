@@ -16,7 +16,8 @@ import {
 } from "@/lib/hamilton/institution-membership";
 import { PRO_TIERS } from "@/lib/pro-tiers";
 import { getAccountEmails } from "./account-emails";
-import { getAccountReports, getOwnInstitution } from "./account-data";
+import { getAccountReports, getOwnInstitution, getPaidReports } from "./account-data";
+import { isEmailConfirmed } from "@/lib/email/email-confirm";
 import { AccountView, type AccountPlan } from "./account-view";
 import type { Metadata } from "next";
 
@@ -80,13 +81,15 @@ export default async function AccountPage({
     ? await getInstitutionWorkspaceSeatUsage({ institutionId: managed.institutionId }).catch(() => null)
     : null;
 
-  const [reports, ownInstitution] = await Promise.all([
+  const emailConfirmed = await isEmailConfirmed(user.id);
+  const [reports, ownInstitution, paidReports] = await Promise.all([
     isPro ? getAccountReports(user.id) : Promise.resolve(null),
     getOwnInstitution({
       institutionId: workspaceContext?.selectedInstitutionId ?? managed?.institutionId ?? null,
       profileName: user.institution_name,
       profileState: user.state_code,
     }),
+    emailConfirmed && user.email ? getPaidReports(user.email) : Promise.resolve([]),
   ]);
 
   const plan: AccountPlan = isPro
@@ -126,6 +129,8 @@ export default async function AccountPage({
             plan,
             subscriptions,
             reports,
+            emailConfirmed,
+            paidReports,
             ownInstitution,
             emails,
             profile: {

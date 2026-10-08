@@ -8,6 +8,7 @@ vi.mock("@/lib/analytics", () => ({ trackEvent: vi.fn() }));
 vi.mock("./actions", () => ({ updateProfile: vi.fn(), logoutAction: vi.fn() }));
 vi.mock("./alert-actions", () => ({ removeInstitutionAlert: vi.fn() }));
 vi.mock("./email-actions", () => ({ setAccountEmail: mocks.setEmail }));
+vi.mock("./email-confirm-actions", () => ({ resendEmailConfirmation: vi.fn() }));
 vi.mock("@/lib/stripe-actions", () => ({ createPortalSession: vi.fn() }));
 vi.mock("@/lib/access", () => ({ isInPaymentGrace: () => false }));
 
@@ -22,6 +23,8 @@ const base: AccountViewData = {
   plan: { kind: "free", fromMonthlyUsd: 150 },
   subscriptions: [],
   reports: null,
+  emailConfirmed: true,
+  paidReports: [],
   ownInstitution: null,
   emails: null,
   profile: { institution_name: "First Bank", institution_type: "bank", asset_tier: null, state_code: "TX", job_role: null },
@@ -130,6 +133,38 @@ describe("AccountView", () => {
     );
     rerender(<AccountView data={{ ...base, ownInstitution: { id: 42, name: "First Bank", publishedFeeCount: 12 } }} />);
     expect(screen.queryByText(/fee schedule yet/)).toBeNull();
+  });
+
+  it("unconfirmed email: says so, offers a new link, and hides bought reports", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          emailConfirmed: false,
+          paidReports: [{ leadId: 9, institutionName: "First Bank", paidAt: "2026-10-01T00:00:00Z", href: "/market-report/x" }],
+        }}
+      />,
+    );
+    expect(section("Sign-in")).toHaveTextContent("Not confirmed");
+    expect(within(section("Sign-in")).getByRole("button", { name: "Email me the link" })).toBeInTheDocument();
+    expect(section("Your reports")).toHaveTextContent("Confirm your email under Sign-in");
+    expect(screen.queryByText(/First Bank market report/)).toBeNull();
+  });
+
+  it("confirmed email: lists bought market reports with their private links", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          paidReports: [{ leadId: 9, institutionName: "First Bank", paidAt: "2026-10-01T00:00:00Z", href: "/market-report/x" }],
+        }}
+      />,
+    );
+    expect(within(section("Your reports")).getByRole("link", { name: "First Bank market report" })).toHaveAttribute(
+      "href",
+      "/market-report/x",
+    );
+    expect(section("Sign-in")).toHaveTextContent("Confirmed");
   });
 
   it("a pending team invite shows first", () => {

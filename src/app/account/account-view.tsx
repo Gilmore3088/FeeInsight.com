@@ -7,7 +7,8 @@ import { AccountCard } from "./account-card";
 import { AlertsPanel } from "./alerts-panel";
 import { EmailSwitch } from "./email-switch";
 import type { AccountEmailKind } from "./email-kinds";
-import { SITE_FEE_BAR, type AccountReport, type OwnInstitution } from "./account-types";
+import { SITE_FEE_BAR, type AccountReport, type OwnInstitution, type PaidReport } from "./account-types";
+import { ConfirmEmailButton } from "./confirm-email-button";
 import { LogoutButton } from "./logout-button";
 import { ManageBillingButton } from "./manage-billing-button";
 import { ProfileForm } from "./profile-form";
@@ -42,6 +43,10 @@ export interface AccountViewData {
   subscriptions: AlertSubscription[];
   /** The user's own Hamilton reports (Pro); null for free accounts. */
   reports: AccountReport[] | null;
+  /** Whether the account email is proven; paid reports show only when it is. */
+  emailConfirmed: boolean;
+  /** Market reports bought with the confirmed email. Empty when unconfirmed. */
+  paidReports: PaidReport[];
   /** The user's own bank, when known; drives the fee schedule reminder. */
   ownInstitution: OwnInstitution | null;
   /** Pro email switches; null hides them. */
@@ -196,14 +201,53 @@ function shortDate(value: string): string {
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-function ReportsCard({ reports }: { reports: AccountReport[] | null }) {
-  const boughtLine = (
+function PaidReportList({ reports }: { reports: PaidReport[] }) {
+  return (
+    <div className="mt-4">
+      <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Market reports you bought</p>
+      <ul className="mt-1 divide-y divide-[#F0EBE3]">
+        {reports.map((report) => (
+          <li key={report.leadId} className="flex items-baseline justify-between gap-4 py-3">
+            {report.href ? (
+              <Link href={report.href} className="min-w-0 text-[15px] font-medium text-[#1A1815] no-underline hover:text-[#A93D25]">
+                {report.institutionName} market report
+              </Link>
+            ) : (
+              <span className="min-w-0 text-[15px] font-medium text-[#1A1815]">
+                {report.institutionName} market report
+              </span>
+            )}
+            <span className="shrink-0 text-[12px] text-[#6B6255]">Bought {shortDate(report.paidAt)}</span>
+          </li>
+        ))}
+      </ul>
+      {reports.some((report) => !report.href) && (
+        <p className="text-[13px] text-[#6B6255]">
+          For a report without a link, email{" "}
+          <a href={`mailto:${CONTACT_EMAIL}?subject=My%20market%20report`} className="text-[#A93D25] hover:underline">
+            {CONTACT_EMAIL}
+          </a>{" "}
+          and we&rsquo;ll send it.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ReportsCard({
+  reports,
+  paidReports,
+  emailConfirmed,
+}: {
+  reports: AccountReport[] | null;
+  paidReports: PaidReport[];
+  emailConfirmed: boolean;
+}) {
+  const bought = emailConfirmed ? (
+    paidReports.length > 0 ? <PaidReportList reports={paidReports} /> : null
+  ) : (
     <p className="mt-4 text-[13px] text-[#6B6255]">
-      Bought a market report? Its private link is in the email we sent. Lost it? Email{" "}
-      <a href={`mailto:${CONTACT_EMAIL}?subject=My%20market%20report`} className="text-[#A93D25] hover:underline">
-        {CONTACT_EMAIL}
-      </a>{" "}
-      and we&rsquo;ll send it again.
+      Bought a market report? Confirm your email under Sign-in and it will show here.
     </p>
   );
 
@@ -216,7 +260,7 @@ function ReportsCard({ reports }: { reports: AccountReport[] | null }) {
         <Link href="/reports" className="mt-3 inline-block text-[14px] font-medium text-[#A93D25] hover:underline">
           Get a free report
         </Link>
-        {boughtLine}
+        {bought}
       </AccountCard>
     );
   }
@@ -258,7 +302,7 @@ function ReportsCard({ reports }: { reports: AccountReport[] | null }) {
           ))}
         </ul>
       )}
-      {boughtLine}
+      {bought}
     </AccountCard>
   );
 }
@@ -295,13 +339,24 @@ function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
   );
 }
 
-function SignInCard({ email }: { email: string }) {
+function SignInCard({ email, emailConfirmed }: { email: string; emailConfirmed: boolean }) {
   return (
     <AccountCard id="sign-in" title="Sign-in">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
         <dt className="text-[#6B6255]">Email</dt>
-        <dd className="min-w-0 break-words text-[#1A1815]">{email}</dd>
+        <dd className="min-w-0 break-words text-[#1A1815]">
+          {email}{" "}
+          {emailConfirmed ? <Pill tone="green">Confirmed</Pill> : <Pill tone="amber">Not confirmed</Pill>}
+        </dd>
       </dl>
+      {!emailConfirmed && (
+        <div className="mt-3 rounded-lg bg-[#FAF7F2] px-4 py-3">
+          <p className="text-[14px] text-[#3D3830]">
+            Confirm this address and reports you buy will show on this page. New accounts get the link by email when they sign up.
+          </p>
+          <ConfirmEmailButton />
+        </div>
+      )}
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
         <Link href="/forgot-password" className="text-[14px] font-medium text-[#A93D25] hover:underline">
           Change password
@@ -370,11 +425,11 @@ export function AccountView({ data }: { data: AccountViewData }) {
         )}
 
         <PlanCard plan={data.plan} />
-        <ReportsCard reports={data.reports} />
+        <ReportsCard reports={data.reports} paidReports={data.paidReports} emailConfirmed={data.emailConfirmed} />
         <AlertsPanel subscriptions={data.subscriptions} />
         {data.emails && <EmailsCard emails={data.emails} />}
         <ProfileForm user={data.profile} />
-        <SignInCard email={data.email} />
+        <SignInCard email={data.email} emailConfirmed={data.emailConfirmed} />
       </div>
     </div>
   );

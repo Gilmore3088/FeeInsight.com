@@ -1,7 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { getRecentHamiltonReports } from "@/lib/hamilton/pro-tables";
 
-import type { AccountReport, OwnInstitution } from "./account-types";
+import { createReportToken, reportPath } from "@/lib/custom-report/link";
+import type { AccountReport, OwnInstitution, PaidReport } from "./account-types";
 
 /** The user's own recent Hamilton reports, newest first. Empty when none or unreadable. */
 export async function getAccountReports(userId: number, limit = 5): Promise<AccountReport[]> {
@@ -44,5 +45,36 @@ export async function getOwnInstitution(params: {
     return row ? { id: Number(row.id), name: row.institution_name, publishedFeeCount: Number(row.fees) } : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Market reports paid for with this email, newest first. Call it only for a confirmed email:
+ * the private link opens the report, so it goes only to someone who proved the inbox.
+ */
+export async function getPaidReports(email: string): Promise<PaidReport[]> {
+  try {
+    const rows = await sql<{ id: number | string; institution_name: string | null; paid_at: string; institution_id: number | string }[]>`
+      SELECT l.id, inst.institution_name,
+             to_jsonb(l.*) ->> 'paid_at' AS paid_at,
+             to_jsonb(l.*) ->> 'quote_institution_id' AS institution_id
+        FROM leads l
+        LEFT JOIN institution_sources inst ON inst.id = (to_jsonb(l.*) ->> 'quote_institution_id')::bigint
+       WHERE lower(l.email) = ${email.trim().toLowerCase()}
+         AND to_jsonb(l.*) ->> 'paid_at' IS NOT NULL
+         AND to_jsonb(l.*) ->> 'quote_institution_id' IS NOT NULL
+       ORDER BY (to_jsonb(l.*) ->> 'paid_at') DESC
+       LIMIT 10`;
+    return rows.map((row) => {
+      const token = createReportToken(Number(row.institution_id));
+      return {
+        leadId: Number(row.id),
+        institutionName: row.institution_name ?? "Your institution",
+        paidAt: row.paid_at,
+        href: token ? reportPath(token) : null,
+      };
+    });
+  } catch {
+    return [];
   }
 }
