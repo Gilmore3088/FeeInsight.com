@@ -479,6 +479,8 @@ async function executeAgenticStep(
           second_documents_found: discovery.secondDocuments?.found ?? 0,
           restored_fee_pages: discovery.restoredFeePages?.restored ?? 0,
           restored_fee_page_samples: discovery.restoredFeePages?.samples ?? [],
+          kept_refused_answers: discovery.keptRefusedAnswers?.kept ?? 0,
+          kept_refused_answer_samples: discovery.keptRefusedAnswers?.samples ?? [],
           search_miss_lessons: discovery.searchMisses,
           discovery_limit: discovery.limit,
           dry_run: discovery.dryRun,

@@ -56,6 +56,29 @@ export const FEE_DOCUMENT_NAME_SQL =
   "(/([a-z0-9]+-)?(fee-?schedule|schedule-?of-?(fees|charges|service-charges)|service-?fees|fees-?and-?charges|disclosures?|truth-?in-?savings)([/.?#-]|$)|\\.pdf($|\\?))";
 
 /**
+ * Hosts that are never a bank's own fee schedule: a government site (a city's HSA agreement
+ * stood as Bell Bank's link, a CFPB card agreement as Barclays'), a broker's disclosures and
+ * car-price sites (8 Oct 2026). Matched on the link's host, lowercased.
+ */
+const OTHER_SITE_HOST = /(\.gov$|(^|\.)(lpl|nadaguides|jdpower|kbb)\.com$)/;
+/** The same test for SQL, on the lowercased link. */
+export const OTHER_SITE_LINK_SQL = "^[a-z]+://([^/?#]*\\.)?([a-z0-9-]+\\.gov|lpl\\.com|nadaguides\\.com|jdpower\\.com|kbb\\.com)([:/?#]|$)";
+
+/**
+ * True when the link is on a site that never holds a bank's own fee schedule. A bank whose own
+ * website is on such a host (GSA FCU on gsafcu.gsa.gov) keeps its link.
+ */
+export function isOtherSiteLink(url: string | null | undefined, website?: string | null): boolean {
+  if (!url) return false;
+  if (website && onBankDomain(url, website)) return false;
+  try {
+    return OTHER_SITE_HOST.test(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * True when the address is an article, blog post, news item or press release: a page
  * about fees in general ("common checking account fees to avoid", Space Coast CU; a 2021
  * Chase press release), whose amounts are national figures or old news, never the bank's
