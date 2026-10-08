@@ -7,6 +7,18 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(text, "Overnight Courier Service", 50, ".").ok).toBe(true);
   });
 
+  it("reads a price under a name whose note runs onto the next line", () => {
+    const text = [
+      "Overdraft Fee (per item, both returned or paid created by check, in person withdrawal,",
+      "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)",
+      "",
+      "$36.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee", 36, ".", "overdraft").ok).toBe(true);
+    // A note that never closes is not a qualifier: the next line may be another fee.
+    expect(checkFeeAgainstSource("Overdraft Fee (per item\nStop payment\n$36.00", "Overdraft Fee", 36, ".", "overdraft").ok).toBe(false);
+  });
+
   it("does not give a name the next fee's price", () => {
     const text = "Wire Transfer - Incoming\nWire Transfer - Outgoing\n$25.00";
     expect(checkFeeAgainstSource(text, "Wire Transfer - Incoming", 25, ".").ok).toBe(false);
