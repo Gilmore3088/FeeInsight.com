@@ -98,12 +98,14 @@ export async function runIndexNowPing(options: {
     });
     // 200 = accepted, 202 = accepted and key check pending; anything else is a failure.
     const ok = response.status === 200 || response.status === 202;
+    // The engines explain a rejection (e.g. key not verified) in a short text body.
+    const reason = ok ? "" : (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 200);
     return {
       ...base,
       httpStatus: response.status,
       submitted: ok ? urls.length : 0,
       skipped: null,
-      error: ok ? null : `IndexNow returned HTTP ${response.status}`,
+      error: ok ? null : `IndexNow returned HTTP ${response.status}${reason ? ` (${reason})` : ""}`,
     };
   } catch (error) {
     return { ...base, skipped: null, error: error instanceof Error ? error.message : String(error) };
