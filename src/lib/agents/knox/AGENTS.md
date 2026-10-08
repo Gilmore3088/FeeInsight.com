@@ -461,6 +461,9 @@ v36 (rules 36, same lane, Oct 8):
 - A price printed between a two-line name's lines ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money Markets)") is that fee at that price, when the line below only finishes the name's note (`centeredNamePrices`, Starion).
 - Footnote marks read onto a price alone on its line ("$334, 5" for "$33⁴,⁵") are dropped when they count up from the price's last digit and each is printed as a numbered footnote (`stripPriceFootnoteMarks` in `source-check.ts`, which Knox and the shared source check both apply). A single mark ("$331") stays: nothing tells it from a price.
 
+v37 (rules 37, same lane, Oct 8):
+- A sentence fee may say "a one-time fee of", "a per-item fee of" or "a flat fee of", and a cap after its clause (", not to exceed $180 per day") is cut from the name, not read as a second price in it ("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day", Guaranty).
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own
