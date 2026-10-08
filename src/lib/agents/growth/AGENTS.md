@@ -60,6 +60,17 @@ These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
 `triggered_by` values (`hamilton.content`, `hamilton.marketing`) keep their old names, so a day or
 month already run under Hamilton is not run or sent again.
 
+## The approval page
+
+`/admin/growth` (Customers room) is the one page for the whole queue: items grouped by status
+(to review, approved, done, skipped), filterable by agent and kind, with approve, skip with a
+reason, edit title and text (drafts only), mark done, and the PR link. It reuses the server
+actions in `src/app/admin/customers/content/actions.ts`. Each roster agent has a section with its
+newest growth steps from the run ledger and its standing lessons; a step is credited to an agent
+only when its run or intake item names it, or it is a `content-*` step (MURROW). The monthly
+email and the weekly scoring show under "Team work". The marketing pause and the `agent:growth`
+budget row are shown read-only (`src/lib/data-store/growth-board.ts`).
+
 ## Nothing sends or posts on its own
 
 - Content drafts wait in `content_drafts` (`/admin/customers/content`). James approves a draft,
