@@ -932,8 +932,23 @@ async function selectCandidates(
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
-       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
-       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND (
+         (COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review')
+         -- "Offline" came from the old crawler's document_type (17 banks, all with a working
+         -- website, First Bank and Denali State Bank in Alaska's top 10 among them) and kept
+         -- them out of every search. Each gets one search per discovery method version.
+         OR (
+           ${learning}::boolean
+           AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = inst.id
+                AND pa.stage = 'discover'
+                AND pa.detail @> ${currentMethod}::jsonb
+           )
+         )
+       )
        AND (
          profile.locked_by_correction IS TRUE
          OR inst.last_rescue_attempt_at IS NULL
@@ -944,7 +959,11 @@ async function selectCandidates(
          OR (
            inst.rescue_status IN ('dead', 'needs_human')
            AND (
-             inst.last_rescue_attempt_at < NOW() - CASE
+             -- An address repair can't read costs no fetch, so it is retried as repair
+             -- learns new mistakes (a scheme stored twice: 10 banks, 8 Oct 2026).
+             (COALESCE(inst.failure_reason_note, '') LIKE 'website_unrepairable:%'
+               AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours')
+             OR inst.last_rescue_attempt_at < NOW() - CASE
                WHEN COALESCE(profile.consecutive_failures, 0) >= 2 THEN INTERVAL '90 days'
                ELSE INTERVAL '30 days'
              END

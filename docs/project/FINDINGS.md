@@ -3227,3 +3227,17 @@ Rows already on file gain the fields only when Knox reads their document again.
   (`discover.operator_schedule`) passes the own-site check.
 - **Watch.** `fetch.paid_web_fetch%` attempts a day, and Zions (35) and PenFed (4382) documents.
 
+## 2026-10-08: Banks the old crawler marked offline were never searched
+
+- **Problem.** 17 active banks (Alaska, Wyoming, Kansas) carried `document_type = 'offline'` from
+  the old crawler, which became `source_kind = 'offline'` / `read_strategy = 'manual_review'`
+  on their profile (4 Oct). Discovery skips both, so none was ever searched, although all but two
+  have a working website. Four are in their state's top 10 by deposits: First Bank, Mt. McKinley
+  Bank and Denali State Bank (AK) and The Converse County Bank (WY). Separately, 11 banks' websites
+  were stored with the scheme twice (`https://HTTP://WWW.BANKWITHCHOICE.COM`); website repair
+  rejected them and they waited a month as `needs_human`.
+- **Fix.** Discovery searches an offline-marked bank once per discovery method version (never
+  one locked by a person's correction). Website repair drops a doubled scheme, and a bank whose
+  website could not be repaired is due again after 12 hours, since that check costs no fetch.
+- **Watch.** `discover` attempts for those 17 and the 11, and their links.
+
