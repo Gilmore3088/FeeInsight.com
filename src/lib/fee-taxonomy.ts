@@ -3,6 +3,11 @@
  * Single source of truth for fee families, display names, and colors in the UI.
  */
 
+/**
+ * The top 50 fee types (James, Oct 8 2026). Fifteen smaller categories were folded into
+ * these by each fee's own wording (`src/lib/fee-fold.ts`); add a category only by folding
+ * another one in.
+ */
 export const FEE_FAMILIES: Record<string, string[]> = {
   "Account Maintenance": [
     "monthly_maintenance",
@@ -11,16 +16,13 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "dormant_account",
     "account_research",
     "paper_statement",
-    "estatement_fee",
   ],
   "Overdraft & NSF": [
     "overdraft",
     "nsf",
     "continuous_od",
     "od_protection_transfer",
-    "od_line_of_credit",
     "od_daily_cap",
-    "nsf_daily_cap",
   ],
   "ATM & Card": [
     "atm_non_network",
@@ -28,7 +30,6 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "card_replacement",
     "rush_card",
     "card_foreign_txn",
-    "card_dispute",
   ],
   "Wire Transfers": [
     "wire_domestic_outgoing",
@@ -50,7 +51,6 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "ach_return",
     "bill_pay",
     "mobile_deposit",
-    "zelle_fee",
   ],
   "Cash & Deposit": [
     "coin_counting",
@@ -64,33 +64,23 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "garnishment_levy",
     "legal_process",
     "account_verification",
-    "balance_inquiry",
   ],
   "Lending Fees": [
     "late_payment",
     "loan_origination",
-    "appraisal_fee",
   ],
   "Mortgage Servicing": [
-    "mortgage_modification",
-    "mortgage_payoff",
     "mortgage_lien_release",
-    "refinance_fee",
-    "reconveyance",
   ],
   "Retirement & IRA": [
     "ira_administration",
     "ira_termination",
-    "ira_distribution",
   ],
   "Vehicle & Title": [
     "vehicle_title",
-    "duplicate_title",
-    "dmv_filing",
   ],
   "Gift & Prepaid Cards": [
     "gift_card_purchase",
-    "prepaid_card_reload",
   ],
   "Other Fees": [
     "courier_delivery",
@@ -107,22 +97,18 @@ export const DISPLAY_NAMES: Record<string, string> = {
   dormant_account: "Dormant Account",
   account_research: "Account Research",
   paper_statement: "Paper Statement",
-  estatement_fee: "E-Statement",
   // Overdraft & NSF
   overdraft: "Overdraft (OD)",
   nsf: "NSF / Returned Item",
   continuous_od: "Continuous Overdraft",
   od_protection_transfer: "OD Protection Transfer",
-  od_line_of_credit: "OD Line of Credit",
-  od_daily_cap: "OD Daily Fee Cap",
-  nsf_daily_cap: "NSF Daily Fee Cap",
+  od_daily_cap: "Daily OD & NSF Fee Cap",
   // ATM & Card
   atm_non_network: "Non-Network ATM",
   atm_international: "International ATM",
   card_replacement: "Debit Card Replacement",
   rush_card: "Rush Card Delivery",
   card_foreign_txn: "Foreign Transaction",
-  card_dispute: "Card Dispute",
   // Wire Transfers
   wire_domestic_outgoing: "Wire Transfer (Domestic Out)",
   wire_domestic_incoming: "Wire Transfer (Domestic In)",
@@ -139,9 +125,8 @@ export const DISPLAY_NAMES: Record<string, string> = {
   // Digital & Electronic
   ach_origination: "ACH Origination",
   ach_return: "ACH Return",
-  bill_pay: "Bill Pay",
+  bill_pay: "Bill Pay & Zelle",
   mobile_deposit: "Mobile Deposit",
-  zelle_fee: "Zelle",
   // Cash & Deposit
   coin_counting: "Coin Counting",
   cash_advance: "Cash Advance",
@@ -153,28 +138,18 @@ export const DISPLAY_NAMES: Record<string, string> = {
   garnishment_levy: "Garnishment/Levy",
   legal_process: "Legal Process/Subpoena",
   account_verification: "Account Verification",
-  balance_inquiry: "Balance Inquiry",
   // Lending Fees
   late_payment: "Late Payment",
   loan_origination: "Loan Origination",
-  appraisal_fee: "Appraisal",
   // Mortgage Servicing
-  mortgage_modification: "Mortgage Modification",
-  mortgage_payoff: "Mortgage Payoff",
   mortgage_lien_release: "Mortgage Lien Release",
-  refinance_fee: "Refinance",
-  reconveyance: "Reconveyance",
   // Retirement & IRA
   ira_administration: "IRA Administration",
   ira_termination: "IRA Termination",
-  ira_distribution: "IRA Distribution",
   // Vehicle & Title
   vehicle_title: "Vehicle Title",
-  duplicate_title: "Duplicate Title",
-  dmv_filing: "DMV Filing",
   // Gift & Prepaid Cards
-  gift_card_purchase: "Gift Card Purchase",
-  prepaid_card_reload: "Prepaid Card Reload",
+  gift_card_purchase: "Gift & Prepaid Card",
   // Other Fees
   courier_delivery: "Courier Delivery",
   document_reproduction: "Document Reproduction",
@@ -564,7 +539,6 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   money_order: "extended",
   wire_intl_incoming: "extended",
   continuous_od: "extended",
-  atm_international: "extended",
   garnishment_levy: "extended",
   safe_deposit_box: "extended",
   account_research: "extended",
@@ -574,27 +548,21 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   ach_return: "extended",
   rush_card: "extended",
   late_payment: "extended",
+  atm_international: "extended",
 
-  // Comprehensive (19) — rarely benchmarked, often free, or niche
+  // Comprehensive (12) — rarely benchmarked, often free, or niche
   od_daily_cap: "comprehensive",
-  nsf_daily_cap: "comprehensive",
-  od_line_of_credit: "comprehensive",
   counter_check: "comprehensive",
   check_cashing: "comprehensive",
   check_image: "comprehensive",
   bill_pay: "comprehensive",
   mobile_deposit: "comprehensive",
-  zelle_fee: "comprehensive",
   cash_advance: "comprehensive",
   night_deposit: "comprehensive",
   notary_fee: "comprehensive",
   legal_process: "comprehensive",
   account_verification: "comprehensive",
-  balance_inquiry: "comprehensive",
-  estatement_fee: "comprehensive",
   loan_origination: "comprehensive",
-  appraisal_fee: "comprehensive",
-  card_dispute: "comprehensive",
 };
 
 const FEATURED_TIERS: Set<FeeTier> = new Set(["spotlight", "core"]);

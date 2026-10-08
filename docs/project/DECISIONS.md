@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**The taxonomy is the top 50 fee types, and every fee is fitted into them.** James, Oct 7 ("Fold
+into existing", no new categories) and Oct 8 (the About page said 61: "do the top 50 and
+try to fit everything there"; "Use extensive and comprehensive text matching"), 09:05 UTC ("Merge
+caps": the NSF daily cap joins the overdraft daily cap, and International ATM stays one of the
+50). Fifteen categories left `FEE_FAMILIES`; `src/lib/fee-fold.ts` re-files each of their fees by
+its own wording, and a bare name by the schedule section above it. A fee with no home among the
+50 is archived by Hamilton's fold step after the 12-hour second look, never deleted.
+
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
 ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on
