@@ -60,6 +60,7 @@ vi.mock("@/lib/automation-control", () => ({
 }));
 
 vi.mock("@/lib/agents/content/market-spread", () => ({
+  MARKET_SPREAD_WORKFLOW: "w1-market-spread",
   runMarketSpread: vi.fn().mockResolvedValue({ draftId: 9, picked: { metro: "Kansas City" } }),
   summarizeMarketSpread: vi.fn().mockReturnValue("Drafted a market-spread post for Kansas City."),
 }));
