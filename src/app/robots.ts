@@ -9,7 +9,7 @@ export default function robots(): MetadataRoute.Robots {
         allow: "/",
         // /r/, /market-report/ and /pay/ host per-institution report and pay links; they are private by
         // token, not for indexing. /pro, /account and invites sit behind sign-in.
-        disallow: ["/admin/", "/api/", "/r/", "/market-report/", "/pay/", "/pro/", "/account", "/workspace-invite"],
+        disallow: ["/admin/", "/api/", "/r/", "/market-report/", "/pay/", "/pro/", "/account", "/workspace-invite", "/confirm-email"],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

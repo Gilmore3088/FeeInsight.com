@@ -15,7 +15,11 @@ import { HAMILTON_VOICE } from "./voice";
 import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 
-const MAX_TOKENS = 1_800;
+/**
+ * Room for the JSON memo with headroom: at 1,800 both attempts of a live overdraft memo
+ * (Oct 8) stopped mid-JSON at the cap, so neither parsed and the memo was withheld.
+ */
+const MAX_TOKENS = 4_000;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_ATTEMPTS = 2;
 /** The Ask memo spends against the Hamilton chat route's budget. */
@@ -174,6 +178,7 @@ export async function writeStorylineMemo(
   }
   const system = `${HAMILTON_VOICE.systemPrompt}\n\n${MEMO_INSTRUCTIONS}`;
   let feedback = "";
+  let lastProblems: string[] = [];
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const user = `QUESTION: ${question}\n\nDATA:\n${JSON.stringify(payload)}${feedback}`;
     let raw: string;
@@ -185,7 +190,8 @@ export async function writeStorylineMemo(
     }
     const draft = parseMemo(raw);
     if (!draft) {
-      feedback = "\n\nYour last reply was not the JSON object asked for. Return only the JSON object.";
+      lastProblems = ["The reply was not a complete JSON object."];
+      feedback = "\n\nYour last reply was not the complete JSON object asked for. Return only the JSON object, within the word limits.";
       continue;
     }
     const { problems, figureCheck } = memoProblems(draft, payload);
@@ -193,7 +199,12 @@ export async function writeStorylineMemo(
       const memo: StorylineMemo = { ...draft, model, generatedAt: (options.now ?? new Date()).toISOString(), figureCheck };
       return { status: "written", memo };
     }
+    lastProblems = problems;
     feedback = `\n\nYour last draft had these problems. Fix them and return the JSON again:\n- ${problems.join("\n- ")}`;
   }
-  return { status: "withheld", reason: "The written memo did not pass Hamilton's figure and advice checks, so only the storyline is shown." };
+  return {
+    status: "withheld",
+    reason: "The written memo did not pass Hamilton's figure and advice checks, so only the storyline is shown.",
+    problems: lastProblems,
+  };
 }
