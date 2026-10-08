@@ -62,6 +62,7 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
+import { runProSeatCheck, summarizeProSeatCheck } from "@/lib/hamilton/pro-seat-check";
 import { PREVIEW_INSTITUTION_ID, runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
 import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
@@ -1655,6 +1656,16 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeProDigest(result),
+        detail: { ...result },
+      };
+    }
+    case "pro-seat-check": {
+      const result = await runProSeatCheck({ dryRun: run.runKind === "dry_run" });
+      // A failed check fails the step, so it shows red on the run ledger.
+      if (!result.passed && !result.dryRun) throw new Error(summarizeProSeatCheck(result));
+      return {
+        status: "completed",
+        summary: summarizeProSeatCheck(result),
         detail: { ...result },
       };
     }
