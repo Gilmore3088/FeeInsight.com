@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Eight jurisdictions get no Open States search hits at all
+**What happened:** on prod (`registry_ingest_partitions`, source `state-bills`, read 22:50 UTC Oct 8), PR, SD, DE, CT, DC, IN, VA and ME each sent 3 searches ("overdraft", "insufficient funds", "deposit account fee") and got 0 results back, not even bills that fail the fee test. Every other state got 1 to 93 hits. All eight held 2025-26 sessions inside the lookback, so a quiet legislature is an unlikely reason.
+**Cause:** not yet known. The likely cause is that Open States holds no searchable bill text for these eight; the cloud can't reach Open States to check.
+**Fix:** when a state has no hits, the step now asks once more with no date limit and logs `any_date_overdraft_hits` in the partition detail (this PR). 0 confirms a coverage gap; above 0 means no fee bill action in the lookback. The next weekly reads are due Oct 14-15.
+**Lesson:** a source that returns nothing should log why, so an empty list is never mistaken for "no fee bills".
+
 ## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
 **What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
 **Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
