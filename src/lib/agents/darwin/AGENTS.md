@@ -160,6 +160,10 @@ Darwin owns verification and classification.
   hand check of 20 v10 passes had 19 right and 1 arguable. A passing fee becomes a verified row
   flagged `darwin_released_hold`, so the whole release can be found and rolled back. The bump
   has every held fee judged again with release on.
+  v13 (2026-10-08): v12 released 198 fees by 10:08 UTC (130 live). A hand check of 20 live ones
+  found 18 right, 1 wrong ("/hr incl. reproduction", Legal Process Compliance $20/hr, released as
+  document reproduction) and 1 arguable (a $5 draft copy named "account research fee may apply)").
+  A name starting with "/" or ending in an unopened ")" now stays held (`name_fragment`).
   v12 (2026-10-08): v11 released 1,637 fees (219 live by 03:48 UTC). A hand check of 20 live ones
   found 18 right: "Monthly Fee $50.00" above "Night Deposit Bag $10.00" passed as the account's
   monthly fee and a $5 "Returned check fee" passed as NSF. A passing fee now stays held when the
