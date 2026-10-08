@@ -777,4 +777,21 @@ describe("checkFeeCategory", () => {
     }
     expect(refileCategory("nsf", "NSF Fee Charge - Returned (per item)")).toBe("nsf");
   });
+
+  it("v44 fails a paired wire price filed from the wrong slot (Darwin eval, Oct 8)", () => {
+    const wire = (key: string, name: string, amount: string, excerpt: string) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    // Live rows that took the first price for the second wire.
+    expect(wire("wire_intl_outgoing", "Wire International In/Out", "10.00", "Wire International In/Out | $10/$35")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Outgoing Wire Fee: Domestic/Foreign", "15.00", "Outgoing Wire Fee | Domestic/Foreign | $15.00/$30.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Wire OUT Fee/INTERNATIONAL", "15.00", "Wire OUT Fee/INTERNATIONAL / $15.00/$35.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Bank Wire Transfers/International", "20.00", "Bank Wire Transfers/International $20.00/$40.00 | □ Premier Checking")).toBe(false);
+    expect(wire("wire_intl_incoming", "Incoming Domestic / International Wire", "20.00", "Incoming Domestic / International Wire: $20 / $30 per wire")).toBe(false);
+    expect(wire("wire_domestic_outgoing", "Wire Domestic In/Out", "10.00", "Wire Domestic In/Out | $10/$20")).toBe(false);
+    // The first slot's own price, the second slot's price, and a pair with no wire sides stay.
+    expect(wire("wire_domestic_outgoing", "Domestic Wire Transfer", "30.00", "Domestic Wire Transfer: $30.00 / $10.00 per transfer – Outgoing / Incoming")).toBe(true);
+    expect(wire("wire_domestic_outgoing", "Wire Transfer – Outgoing (domestic/int’l)", "25.00", "ATM Deposit Adjustment $20 Wire Transfer – Outgoing (domestic/int’l) $25/$50")).toBe(true);
+    expect(wire("wire_intl_outgoing", "Wire International In/Out", "35.00", "Wire International In/Out | $10/$35")).toBe(true);
+    expect(wire("wire_intl_outgoing", "International Outbound Wires (Online/Manual)", "35.00", "International Outbound Wires (Online/Manual) | $35/$75 | $35/$75")).toBe(true);
+  });
 });
