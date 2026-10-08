@@ -63,4 +63,16 @@ describe("growth's marketing workflows", () => {
     expect(input.steps).toEqual([expect.objectContaining({ key: "marketing-send", agent: "growth" })]);
     expect(input.idempotencyKey).toBe("hamilton:marketing-send:2026-11");
   });
+
+  it("starts the weekly scoring run under growth, one run a day", async () => {
+    const { GET } = await import("../growth-score/route");
+    await GET(new NextRequest("https://feeinsight.com/api/admin/crew/growth-score"));
+    const input = startAgentRunMock.mock.calls[0][0];
+    expect(input.agent).toBe("growth");
+    expect(input.triggeredBy).toBe("growth.score");
+    expect(input.triggerSource).toBe("schedule");
+    expect(input.steps).toEqual([expect.objectContaining({ key: "growth-score", agent: "growth" })]);
+    expect(input.idempotencyKey).toMatch(/^growth:score:\d{4}-\d{2}-\d{2}$/);
+    expect(executeAgentRunMock).toHaveBeenCalledWith(7, { maxSteps: 1 });
+  });
 });

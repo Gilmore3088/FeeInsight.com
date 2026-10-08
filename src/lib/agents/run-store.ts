@@ -63,6 +63,10 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
+import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
+import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
+import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
@@ -1559,12 +1563,25 @@ async function executeAgenticStep(
       };
     }
     case "content-market-spread": {
+      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts.
+      const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+      return { status: "completed", summary: [summarizeMarketSpread(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-fee-depth": {
+      const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
+      return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "growth-intake": {
+      const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
+      // A refused filing fails the step, so it shows red in the run ledger.
+      if (result.errors.length) throw new Error(summarizeGrowthIntake(result));
+      return { status: "completed", summary: summarizeGrowthIntake(result), detail: { ...result } };
+    }
+    case "growth-score": {
+      const result = await runGrowthScore({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeGrowthScore(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({

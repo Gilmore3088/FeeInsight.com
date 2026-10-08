@@ -3064,3 +3064,18 @@ Rows already on file gain the fields only when Knox reads their document again.
   v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
   `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
 
+
+## 2026-10-08: Every Stripe webhook failed
+
+- **Problem.** The webhook recorded each event with `INSERT INTO stripe_events (id, event_type,
+  stripe_customer_id, payload_json)`, the shape of the old SQLite schema
+  (`src/lib/data-store/migrations/001-payments.sql`). Prod's `stripe_events` has a bigint `id`,
+  a unique `stripe_event_id`, `event_type` and `processed_at`, so the insert errored and the
+  route answered 500 to every delivery. Prod had 0 rows in `stripe_events` on 8 Oct. A paid Pro
+  checkout only activated through the welcome-page fallback; a paid institution report was
+  never marked Paid and its link never sent; cancellations and failed payments never landed.
+- **Fix.** `recordStripeEvent` writes `stripe_event_id` and `event_type` with
+  `ON CONFLICT (stripe_event_id)`. Checkout also replaces a saved Stripe customer that the
+  current key can't find (test-mode customers after the switch to live keys, or one deleted
+  in the dashboard), which failed checkout with "No such customer".
+- **Watch.** `stripe_events` gains a row for each delivery; Stripe's webhook page shows 200s.
