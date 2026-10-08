@@ -3521,6 +3521,18 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
   name in the centered shape.
 
+## 2026-10-08: Knox rule fixes never reached the state leaders they were written for
+
+- **Problem.** Knox re-reads a stored text only when it is thin, flagged by the rules
+  re-check, from a bank of $10B or more, or last read before v26. `asset_size` is in
+  thousands, so MVB ($3.5B), Starion ($2.1B), Stride, Guaranty, Lighthouse FCU and Arkansas
+  FCU, each a state top-10 bank with no live overdraft fee, kept reads from v4 to v36. The
+  v35 to v38 fixes written for them never ran on their pages.
+- **Fix.** A priority bank or market leader with no live overdraft fee
+  (`published_fee_records`, `canonical_fee_key = 'overdraft'`) has its current page read
+  again once per rules version.
+- **Watch.** Live overdraft fees for those six banks after the next Knox passes.
+
 ## 2026-10-08: The first outreach run addressed lenders, committees and shared mailboxes
 
 - **Problem.** The first prod run of CARNEGIE (run 3021) drafted 24 first emails. 17 of them were
