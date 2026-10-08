@@ -3,6 +3,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import type { AutomationControlState } from "@/lib/automation-control";
 import type { ContentDraft, ContentDraftStatus } from "@/lib/data-store/content-drafts";
 import type { GrowthBudgetState, GrowthStep } from "@/lib/data-store/growth-board";
+import type { ContactCounts } from "@/lib/agents/growth/contacts";
 import type { GrowthLesson } from "@/lib/agents/growth/lessons";
 import { GROWTH_AGENT_ROLES, GROWTH_AGENTS, QUEUE_KINDS, type GrowthAgent } from "@/lib/agents/growth/roster";
 import { CardActions } from "./card-actions";
@@ -301,7 +302,25 @@ function AgentSection({
  * Per-agent runs and lessons. An agent with no runs and no lessons (both read, both empty)
  * folds into one line; one whose reads failed keeps its card so the failure shows.
  */
-function TeamView({ steps, lessons }: { steps: GrowthStep[] | null; lessons: Map<GrowthAgent, GrowthLesson[] | null> }) {
+/** NIELSEN's contact finder: what it has read and kept, and the CSV. Absent until its tables exist. */
+function ContactsLine({ contacts }: { contacts: ContactCounts | null | undefined }) {
+  if (contacts === undefined) return null;
+  return (
+    <p className="text-sm text-gray-700 dark:text-gray-300">
+      Prospect contacts:{" "}
+      {contacts === null
+        ? "not set up yet."
+        : `${contacts.people.toLocaleString("en-US")} published executive addresses (plus ${contacts.general.toLocaleString("en-US")} shared mailboxes) at ${contacts.withContacts.toLocaleString("en-US")} of ${contacts.checked.toLocaleString("en-US")} institutions read.`}{" "}
+      {contacts ? (
+        <a href="/api/admin/growth/contacts" className="underline">
+          Download CSV
+        </a>
+      ) : null}
+    </p>
+  );
+}
+
+function TeamView({ steps, lessons, contacts }: { steps: GrowthStep[] | null; lessons: Map<GrowthAgent, GrowthLesson[] | null>; contacts?: ContactCounts | null }) {
   const stepsFor = (agent: GrowthAgent | null) => (steps ? steps.filter((step) => step.agent === agent) : null);
   const quiet: string[] = [];
   const active: GrowthAgent[] = [];
@@ -318,6 +337,7 @@ function TeamView({ steps, lessons }: { steps: GrowthStep[] | null; lessons: Map
   return (
     <section className="space-y-4">
       <p className={MUTED}>Each agent&apos;s newest steps on the run ledger (agent growth) and the standing lessons from your skip reasons.</p>
+      <ContactsLine contacts={contacts} />
       {active.length || !teamQuiet ? (
         <div className="grid gap-4 md:grid-cols-2">
           {active.map((agent) => (
@@ -343,10 +363,12 @@ export interface GrowthBoardData {
   /** Read only for the team view; other views pass `null`, which they never draw. */
   steps: GrowthStep[] | null;
   lessons: Map<GrowthAgent, GrowthLesson[] | null>;
+  /** Contact finder counts for the team view: `null` before its tables exist, absent when not read. */
+  contacts?: ContactCounts | null;
 }
 
 /** The approval page's body, drawn from what `page.tsx` read. Only the chosen view renders. */
-export function GrowthBoard({ view, filter, ready, items, control, budget, steps, lessons }: GrowthBoardData) {
+export function GrowthBoard({ view, filter, ready, items, control, budget, steps, lessons, contacts }: GrowthBoardData) {
   const state: GrowthPageState = { view, filter };
   const shown = items ? filterQueue(items, filter) : null;
   const count = (status: ContentDraftStatus) => (shown ? shown.filter((item) => item.status === status).length : null);
@@ -393,7 +415,7 @@ export function GrowthBoard({ view, filter, ready, items, control, budget, steps
           {items && items.length >= QUEUE_LIMIT ? <p className="text-xs text-gray-500">Showing the newest {QUEUE_LIMIT} items.</p> : null}
         </section>
       ) : (
-        <TeamView steps={steps} lessons={lessons} />
+        <TeamView steps={steps} lessons={lessons} contacts={contacts} />
       )}
     </div>
   );

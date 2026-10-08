@@ -1,7 +1,7 @@
 import { SITE_DOMAIN } from "@/lib/constants";
 
-/** Agents that make outbound requests to institution websites. */
-export type CrawlerAgent = "Magellan" | "Rosetta";
+/** Agents that make outbound requests to institution websites (Growth reads leadership pages for published contacts). */
+export type CrawlerAgent = "Magellan" | "Rosetta" | "Growth";
 
 export const CRAWLER_PRODUCT_TOKEN = "FeeInsightBot";
 export const CRAWLER_INFO_URL = `https://${SITE_DOMAIN}/contact`;
