@@ -154,6 +154,18 @@ to call such an action active.
 **Lesson:** a blank field in an agency file is unknown, not a state. Before showing a status or a
 match, count how many rows it covers on prod and read a sample of them.
 
+## 2026-10-07: Saved peer groups filtered asset size by codes no institution has
+**What happened:** the Settings peer group form saved asset sizes as `a` to `f`, and the
+resolver filtered `institution_sources.asset_size_tier` by them. That column holds
+`community_small` to `super_regional` (`assetSizeTier` in `src/lib/regulatory/fdic.ts`), so any
+saved group with an asset size matched no institution and Hamilton fell back to national. How
+many saved rows carry `a`-`f` codes: none; prod `saved_peer_sets` had 0 rows (read-only, 07:20 UTC Oct 7).
+**Cause:** the form's tier list was written separately from the registry's tier vocabulary.
+**Fix:** the custom peer groups PR: the form and `PeerSetSchema` use the registry's tiers, and
+Settings shows each group's real institution count. No rows needed fixing.
+**Lesson:** a filter's values come from the column it filters; show the count a filter
+resolves to, so a group that matches nothing is visible.
+
 ## 2026-10-07: The JavaScript fallback's "37% success" was mostly fee pages that only link to their schedule
 **What happened:** the tracker counted `read.js_fallback` at 40 ok of 109 in 6 hours. Read-only
 queries on `pipeline_attempts` (05:40 UTC) split it: on pages built by script the fallback read
@@ -317,6 +329,19 @@ had 1). Daily now needs 25 banks due, or a market leader due, and fewer due runs
 schedules first, without waiting for their state's lane: Chase went live with 12 fees. The
 lane key above then only pushed 15 whole states ahead of higher-scored ones for work the
 direct runs already do, so it was removed.
+**Follow-up (08:10):** score order alone left Tennessee's lane (score 690, eighth) queued
+from 00:55 to past 08:00, while Knox re-reads and Magellan re-searches for the state waited
+on it. A state whose report James is waiting to review (`REPORT_REVIEW_STATES`) now runs
+right after failed-lane retries and carries the report-request weight in its score.
+**Follow-up (09:00):** Tennessee was then first in the order but still did not start. Each
+tick's direct institution runs used the first minutes, so Tennessee's first real step
+(enhance, state-expert, discover: about 170 seconds) no longer fit, and the next lane that
+did fit (WY at 08:48) started instead, counted as under way, and took the next tick. Once a
+lane is held for the deadline, no lower lane starts in that tick.
+**Follow-up (09:30):** with that in, no lane started at all from 08:52 to 09:25. Atlas's
+direct institution runs ranked ahead of every lane and three or four of them filled each
+tick, so a lane's first step never fit. Direct runs now go ahead of lanes only while some
+lane has started a step in the last ten minutes; otherwise the waiting lane goes first.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
@@ -2810,6 +2835,25 @@ re-pulls `empty` partitions recorded under an older parser, so 2024 runs again w
   - Tsu FCU (5080) points at a Tennessee State University tuition page.
   - SouthEast Bank (371) also holds copies of a Bangladesh bank's schedule.
 
+## 2026-10-07: Team seat invites trust an unverified email
+**What happened:** with team seats, an invitation is accepted by any signed-in account whose email
+matches, and the seat gives Pro access without payment. Registration does not verify that a person
+owns the email they sign up with (no verification step in `createUserWithSession`).
+**Cause:** invitations were tied to email when accepting also needed a paid subscription, which was
+some protection; seats remove it.
+**Fix:** closed in the same PR by signed invite links. Every grant, an existing account included,
+is now an invitation. A seat starts only when someone opens
+`/workspace-invite?i=<id>&t=<token>` signed in with the invited email. The token is
+HMAC-SHA256 of `id:email:institution`, keyed with `BFI_COOKIE_SECRET` and compared with
+`timingSafeEqual`, and the invitation must still be pending and unexpired
+(`src/lib/hamilton/workspace-invite-link.ts`). Without the secret, no link is issued or accepted.
+Accepting by email alone (`acceptPendingWorkspaceInvitationsForUser`, called from the Stripe webhook,
+the payment fallback and /account) is removed. Someone who registers with another person's
+email still cannot join without that person's link.
+**Cost:** `getCurrentUser` makes one extra query per signed-in request (`hasWorkspaceSeat`). It is
+left in place for now.
+**Lesson:** when a check stops costing money to pass, re-check what it was protecting.
+
 ## 2026-10-07: CFPB fee complaints were over-counted, cut short, and missing for big banks
 
 **What happened:** Checking the complaint data for the peer benchmark found four problems.
@@ -2847,6 +2891,29 @@ Knox (paid v2; the rules version stays v32 so the Knox thread's v32 backlog re-r
 `knox/lineup.ts`: a figure must appear in the text and a phrase must be found there, or it is null.
 Rows already on file gain the fields only when Knox reads their document again.
 
+## 2026-10-07: Overdraft pages named their fee in a heading Knox did not read
+
+- **Problem.** $10B+ banks' overdraft pages were being read, but no overdraft fee went live
+  (78 of 192). Knox took the words right before each price as the name, so it named the fee
+  "fee for each item or transaction paid" (Wilson Bank & Trust), "This" or "Maximum amount of
+  times this" (SouthEast Bank). With no category, nothing reached Darwin. SmartBank's Reg E
+  consent form, "a fee of up to $35.00 each time we pay an overdraft", gave no row at all.
+- **Fix.** Knox v33 (`knox/context-names.ts`) names a per-item price from the overdraft heading
+  above it and "this $X fee" from the term defined just above. It drops a fee the page says is
+  being eliminated, and it reads "a fee of up to $X each time we pay an overdraft".
+- **Watch.** The shared source check reads "up to $35.00" as a threshold, so the Reg E form's fee
+  is held as untraced until the accuracy thread changes `source-check.ts`. ACNB's document 20915
+  is a list of services with no overdraft price; finding its schedule is Magellan's work.
+
+## 2026-10-07: Darwin's release review only read the held fees of the lane's own state
+
+- **Problem.** `verify-paid` runs inside each state lane, and the release review picked held fees
+  from that state only. State lanes start hours after they are queued (Utah's, queued 02:05 UTC,
+  reached `verify-paid` at 08:07). At 08:25 Utah had 1 held fee waiting while about 1,000 waited
+  in other states, so release review v7 reviewed 1 fee in 90 minutes.
+- **Fix.** A lane whose state has fewer held fees than its call budget fills the rest with the
+  oldest held fees from any state (`release-review.ts`). Releases stay off; this changes only
+  which held fees get reviewed.
 ## 2026-10-07: State enforcement order pages can't be checked from the cloud sandbox
 
 - **Problem.** The cloud sandbox refuses every state banking department site (51 tried, all
@@ -2859,3 +2926,65 @@ Rows already on file gain the fields only when Knox reads their document again.
   wasn't found.
 - **Watch.** Kansas, Oklahoma, Nebraska, Iowa, Wisconsin and Indiana publish no list of bank orders.
   Their joint orders appear only in federal releases, and FDIC orders aren't loaded yet.
+
+## 2026-10-07: The paid fetch for blocked sites got only the call cap's leftovers
+
+- **Problem.** After PR 444 the paid fetch ran last in Magellan's paid step. On its first real
+  run (08:23, run 1964) the searches before it used the run's provider call cap, so it fetched
+  one bank of three (Morgan Stanley, stored for $0.018) and First Horizon waited. Separately,
+  53.com answers Fifth Third's fee PDFs with a "page doesn't exist" web page. The companion fetch
+  stored that page and Rosetta set the PDFs aside as blank reads, so nothing marked them blocked.
+- **Fix.** The paid fetch runs first in the step. The companion fetch refuses a PDF link
+  answered with a web page (`blocked_bot`), and the paid fetch also takes blocked companion pages
+  (one slot of three kept for them), including PDFs already set aside after reading that page.
+- **Watch.** `pipeline_attempts` with strategy `fetch.paid_web_fetch_companion` for Fifth Third
+  (institution 19) and `fetch.paid_web_fetch` for First Horizon (37).
+
+## 2026-10-07: Written Hamilton answers were saved only from the browser
+
+- **Problem.** The Analyze screen saved a written answer to `hamilton_saved_analyses` from the
+  browser after the stream ended, and dropped any save error. One answer on prod (the 07:36
+  `research_stream`, usage row 2928) has no saved row; every earlier answer does.
+- **Fix.** `/api/research/hamilton` saves the answer in its `onFinish` (`src/lib/hamilton/answer-save.ts`)
+  and keeps the stream running if the browser drops it. The row id goes back as message metadata
+  under `savedAnalysisId`; the screen updates that row instead of inserting another.
+- **Watch.** Until the screen reads `savedAnalysisId`, both sides insert, so each answer gets two rows.
+
+## 2026-10-07: Documents from the paid fetch waited for their own state's lane
+
+- **Problem.** Magellan's paid fetch runs in whichever state's run holds the paid step and takes
+  blocked links from every state. A state run's read step reads only its own state. By 11:20,
+  12 documents were stored for 11 banks (First Horizon, Citizens, Fifth Third, Huntington,
+  KeyBank, Flagstar and others). Only the Tennessee ones were read (First Horizon: 16 fees
+  extracted, 9 live). The rest sat unread until their state's next pass.
+- **Fix.** `priority-institutions.ts` gives a bank with an unread paid-fetched document (stored
+  in the last 7 days) a direct run, ranked right after hand-found schedules.
+- **Watch.** `agent_runs` with `params_json->>'tier' = 'paid_fetched'`, and `agent_source_texts`
+  for documents 21028 (Citizens) and 21030 (Fifth Third).
+
+## 2026-10-07: Darwin's paid pass ran only on monthly full passes
+
+- **Problem.** `verify-paid` (Claude's review of held fees and of Darwin's disagreements) was in
+  the full state-lane pass only, not the hourly backlog run. The last full passes with it were
+  queued by 02:40 UTC and drained by 14:24 UTC. After that no held fee was reviewed, so release
+  review v10 (PR 467) had nothing to run in.
+- **Fix.** `verify-paid` joins `STATE_LANE_BACKLOG_STEP_KEYS`, like Knox's `extract-paid`. It
+  reads only fees no attempt of the current version has read, so it spends nothing once they are
+  done; the Darwin and global budget caps still stop it.
+- **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
+  `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
+
+## 2026-10-08: Many large banks' fee links point at product or rates pages
+
+- **Problem.** Of the 10 largest institutions by in-state deposits in each state (510 slots),
+  412 had live fees on prod at 02:40 UTC. 48 of the 82 missing institutions had a link and
+  documents on file that were read, but fewer than 3 fee types came through. Their stored
+  `fee_schedule_url` was mostly not a fee schedule: checking product pages, rates pages, a
+  small-business page, a loan fee schedule, an Australian American Express fee sheet, and a
+  City of Cincinnati HSA document for Bell Bank. Their Atlas priority runs on 7 Oct re-read the
+  same pages, so they stayed thin. The other 34 had no link, mostly `magellan_dead` after
+  blocked or missing pages.
+- **Fix.** 12 schedules found by web search added to `OPERATOR_SCHEDULES`, which run first on
+  the priority path. The rest wait on the paid schedule search or a link found by hand.
+- **Watch.** `/mnt/project-files/coverage/gaps-2026-10-08.md` lists all 82; re-count live
+  coverage for the same 510 slots after the hand-found runs.

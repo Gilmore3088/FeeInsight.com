@@ -62,3 +62,30 @@ describe("registry-state-enforcement", () => {
     expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 });
+
+describe("registry-state-enforcement follow-up reads", () => {
+  it("follows a listing's link to the real list, drops rows the list no longer has, and records a page's shape when nothing is found", async () => {
+    const { db, statements } = createDb([]);
+    const pages: Record<string, string> = {
+      "https://nc.example/actions": `<a href="/list">State-Chartered Bank Enforcement Actions</a>`,
+      "https://nc.example/list": `<a href="/o/2025-03-04-first.pdf">First Bank - Consent Order</a>`,
+      "https://il.example/2026": `<table><tr><td>Nothing here</td></tr></table>`,
+    };
+    const result = await runRegistryStateEnforcement({
+      db,
+      sources: [
+        { state: "NC", reader: "links", follow: /state[- ]chartered bank enforcement/i, urls: () => ["https://nc.example/actions"] },
+        { state: "IL", reader: "table", urls: () => ["https://il.example/2026"] },
+      ],
+      fetchPage: async (url) => pages[url] ?? null,
+    });
+    const [nc, il] = result.byState;
+    expect([nc.pages, nc.orders, nc.sample[0]?.party_name]).toEqual([2, 1, "First Bank"]);
+    expect(il.orders).toBe(0);
+    expect(il.shape).toMatchObject({ url: "https://il.example/2026", tables: 1 });
+    const deletes = statements.filter((s) => s.text.includes("DELETE FROM institution_enforcement_actions"));
+    // NC was read in full and found orders; IL found none, so its rows are left alone.
+    expect(deletes.map((d) => d.values[0])).toEqual(["STATE_NC"]);
+  });
+});
+

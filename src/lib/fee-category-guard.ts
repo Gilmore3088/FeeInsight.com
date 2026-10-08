@@ -35,9 +35,24 @@ interface CategoryRule {
   include: RegExp;
   /** A fee name matching this describes a different fee, whatever it was filed as. */
   exclude: RegExp;
-  /** Words that describe a different fee unless the name also matches `unless`. */
-  excludeUnless?: { pattern: RegExp; unless: RegExp };
+  /**
+   * Words that describe a different fee unless the name also matches `unless`. With `outsideNotes`,
+   * `unless` reads the name without its notes: "Overdraft Return Item Fee (Fee applies to each
+   * overdraft or returned item ...)" is the return item fee, whatever the note joins.
+   */
+  excludeUnless?: { pattern: RegExp; unless: RegExp; outsideNotes?: boolean };
 }
+
+const RETURNED_ITEM = String.raw`return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?`;
+const OVERDRAFT_ITEM = String.raw`(?:paid\s+)?(?:overdraft|\bod\b)(?:\s+(?:fee|charge|item)s?)?`;
+const JOINED = String.raw`\s*(?:\/|\bor\b|\band\b|&)\s*(?:an?\s+)?`;
+// An insufficient or uncollected funds fee "Returned item/overdraft" is that fee, and "Other fees
+// such as overdraft or returned item fees may apply" names no price.
+const OVERDRAFT_AND_RETURNED = new RegExp(
+  String.raw`^(?!\s*(?:insufficient|uncollected|other fees|effective)\b)(?!.*\bmay apply\b).*(?:` +
+    `${RETURNED_ITEM}${JOINED}${OVERDRAFT_ITEM}|${OVERDRAFT_ITEM}${JOINED}${RETURNED_ITEM})`,
+  "i",
+);
 
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
@@ -57,7 +72,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   overdraft: {
     include: /(overdraft|overdrawn|\bod\b|o\/d|paid item|items? paid|paid nsf|courtesy pay|bounce protection|privilege)/i,
     exclude:
-      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|return|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b|\bat least\b|^.{0,20}\bfee on$)/i,
+      /(transfer|xfe?r\b|sweep|from (your |eligible |a )?(savings|shares?|loan|loc)\b|to loan|share to share|daily|continu|consecutive|extended|sustained|limit|line of credit|protection plan|\bcap\b|maximum|reduced to|not be (charged|assessed)|waive|night dep|notary|counter check|check images?|set ?up|dividend|(savings|share|loan|link(ed)?) overdraft protection|overdraft protection ?[-–(]+ ?(savings|loan)|loan overdraft|covered by|per advance|advances? from|annual|collection|accrual|account closed|closed in overdraft|late repayment|\blate (payment|charge|fee)\b|recurring overdraft|every \d+|beginning|threshold|cushion|overdrawn by|overdraws your account by|with approval|options|\b\d+ ?x ?\d+\b|\bbox\b|outgoing|international|\bwires?\b|check printing|annual fee|or less\b|\bat least\b|or equal to|is positive|^.{0,20}\bfee on$)/i,
+    // A returned item is the NSF fee, unless one name prices both: "Return check/overdraft
+    // charges" (First Horizon), "Overdraft or Returned Item fee", like "NSF/Overdraft" (v19).
+    excludeUnless: { pattern: /return/i, unless: OVERDRAFT_AND_RETURNED, outsideNotes: true },
   },
   nsf: {
     include:
@@ -168,6 +186,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /\S/,
     exclude: /\bopen(ing)? (an |a |new |your )?(account|membership)\b/i,
   },
+  // A dormant fee names inactivity. Other lines filed here ("Money Market Savings Account
+  // (below )" $15 beside Space Coast's real $5 dormant fee, "Telephone transfers") are
+  // neighbouring fees or fragments (v18).
+  dormant_account: {
+    include:
+      /(dorman|inac|abandon|escheat|unclaimed|no (\w+ )?(transaction |member |customer |owner |depositor )?activity|limited activity|under[- ]?utiliz|reactivat|idle|unused|non-?use)/i,
+    exclude: /(?!)/, // nothing is excluded; the include decides
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -177,7 +203,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 17;
+export const CATEGORY_GUARD_VERSION = 20;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -272,7 +298,10 @@ export function checkFeeCategory(
       reason: `"${name}" states a rate ("${rate}"), so its dollar amount is not the ${canonicalFeeKey} fee`,
     };
   }
-  const softExcluded = rule.excludeUnless && !rule.excludeUnless.unless.test(name) ? name.match(rule.excludeUnless.pattern) : null;
+  const soft = rule.excludeUnless;
+  // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
+  const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
+  const softExcluded = soft && !soft.unless.test(softName) ? name.match(soft.pattern) : null;
   const excluded = name.match(rule.exclude) ?? softExcluded;
   if (excluded) {
     return {

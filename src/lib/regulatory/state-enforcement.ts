@@ -14,12 +14,15 @@
 import { parseDocument } from "htmlparser2";
 import { parseActionDate } from "./enforcement";
 import { STATE_REGULATORS } from "./state-regulators";
+import { STATE_NAMES } from "@/lib/us-states";
 
 export type StateOrderReader = "table" | "links";
 
 export interface StateOrderSource {
   state: string;
   reader: StateOrderReader;
+  /** Links on the listing page to read as well (a page that only points to the list). */
+  follow?: RegExp;
   /** The listing pages; a source with one page per year lists each year. */
   urls: (today: Date) => string[];
 }
@@ -44,8 +47,13 @@ export const STATE_ORDER_SOURCES: readonly StateOrderSource[] = [
     urls: (today) => yearsBack(today, 2015).map((y) => `https://www.labor.maryland.gov/FINANCE/consumers/enforcement${y}.shtml`),
   },
   { state: "WA", reader: "table", urls: () => ["https://dfi.wa.gov/banks/administrative-actions"] },
-  { state: "TX", reader: "links", urls: () => ["https://www.dob.texas.gov/laws-regulations/enforcement-orders-bank"] },
-  { state: "NC", reader: "links", urls: () => ["https://nccob.nc.gov/consumer-information/enforcement-actions"] },
+  { state: "TX", reader: "table", urls: () => ["https://www.dob.texas.gov/laws-regulations/enforcement-orders-bank"] },
+  {
+    state: "NC",
+    reader: "links",
+    follow: /state[- ]chartered bank enforcement/i,
+    urls: () => ["https://nccob.nc.gov/consumer-information/enforcement-actions"],
+  },
 ];
 
 /** "STATE_NJ": the agency code stored on institution_enforcement_actions. */
@@ -192,16 +200,30 @@ export function parseOrderTables(html: string, baseUrl: string): StateOrder[] {
     const header = headerAt >= 0 ? rows[headerAt] : rows[0];
     const cols = mapColumns(cellsOf(header).map((c) => clean(textOf(c as unknown as Node))));
     if (cols.party === undefined) continue;
+    const width = cellsOf(header).length;
     for (const row of rows.slice(rows.indexOf(header) + 1)) {
-      const cells = cellsOf(row);
+      let cells = cellsOf(row);
+      // Illinois's header spans its columns (3 headings over 4 cells, one an empty spacer):
+      // a row wider than its header lines up once its empty cells are dropped.
+      if (cells.length > width) {
+        const filled = cells.filter((c) => clean(textOf(c as unknown as Node)) !== "");
+        if (filled.length === width) cells = filled;
+      }
       const cell = (k: Column) => (cols[k] !== undefined && cells[cols[k] as number] ? clean(textOf(cells[cols[k] as number] as unknown as Node)) : "");
-      const party = cell("party");
+      const located = splitPartyLocation(cleanParty(cell("party")));
+      const party = located.name;
       if (!party || !isBankParty(party)) continue;
+      const labelled = /Institution:|Type of Action:/i.test(cell("party")) ? parseLabelled(cell("party")) : null;
+      if (labelled) {
+        labelled.document_url = all(row as unknown as Node, "a").map((a) => resolve(a.attribs.href, baseUrl)).find(Boolean) ?? null;
+        orders.push(labelled);
+        continue;
+      }
       const link = all(row as unknown as Node, "a").map((a) => resolve(a.attribs.href, baseUrl)).find(Boolean) ?? null;
       const typeText = cell("type");
       orders.push({
         party_name: party,
-        party_city: cell("city") || null,
+        party_city: cell("city") || located.city,
         action_type: actionTypeOf(typeText) ?? (typeText || null),
         start_date: parseActionDate(cell("date")) ?? dateIn(cell("date")),
         termination_date: parseActionDate(cell("end")) ?? dateIn(cell("end")),
@@ -212,12 +234,91 @@ export function parseOrderTables(html: string, baseUrl: string): StateOrder[] {
   return orders;
 }
 
+/**
+ * A party name as the bank calls itself: no "In the matter of", "to", "(PDF)", or the
+ * merger and co-respondent tail ("THE BANK OF MISSOURI, successor by merger to ...").
+ */
+export function cleanParty(name: string): string {
+  return clean(
+    name
+      .replace(/\(pdf\)|\[pdf\]/gi, " ")
+      .replace(/^\s*(in the matter of|in re:?|re:|to|against)\s+/i, "")
+      .replace(/,?\s+(successor by merger|successor to|formerly|f\/k\/a|and its|et al)\b.*$/i, ""),
+  ).replace(/^[\s,;:.-]+|[\s,;:-]+$/g, "");
+}
+
+const STATE_NAME_SET = new Set(Object.values(STATE_NAMES).map((n) => n.toLowerCase()));
+
+/** "Herring Bank, Amarillo, Texas" -> name "Herring Bank", city "Amarillo". */
+export function splitPartyLocation(name: string): { name: string; city: string | null } {
+  const parts = name.split(/,\s*/);
+  if (parts.length >= 3 && STATE_NAME_SET.has(parts[parts.length - 1].trim().toLowerCase())) {
+    return { name: parts.slice(0, -2).join(", "), city: parts[parts.length - 2].trim() || null };
+  }
+  // "Highland Community Bank, Chicago": a bank's name, then its town.
+  if (parts.length === 2 && /\b(bank|trust|savings|bancorp)\b/i.test(parts[0]) && /^[A-Z][a-z]+(?: [A-Z][a-z]+){0,2}$/.test(parts[1].trim())
+      && !/^(company|corporation|association|national association|incorporated)$/i.test(parts[1].trim())) {
+    return { name: parts[0].trim(), city: parts[1].trim() };
+  }
+  return { name, city: null };
+}
+
+const LABELS = /(Institution|Bank|Name of (?:Institution|Bank)|Type of Action|Action|Effective Date|Date of (?:Action|Order)|Date|Termination Date|Terminated|Reason|City|Location):/gi;
+
+/** "Institution: X Type of Action: Y Effective Date: Z Reason: ..." as fields, or null. */
+export function parseLabelled(text: string): StateOrder | null {
+  const marks = [...text.matchAll(LABELS)];
+  if (marks.length < 2) return null;
+  const fields: Record<string, string> = {};
+  marks.forEach((m, i) => {
+    const end = i + 1 < marks.length ? (marks[i + 1].index as number) : text.length;
+    const key = m[1].toLowerCase();
+    if (!(key in fields)) fields[key] = clean(text.slice((m.index as number) + m[0].length, end));
+  });
+  const party = fields.institution ?? fields.bank ?? fields["name of institution"] ?? fields["name of bank"];
+  if (!party || !isBankParty(party)) return null;
+  const date = fields["effective date"] ?? fields["date of action"] ?? fields["date of order"] ?? fields.date ?? "";
+  const end = fields["termination date"] ?? fields.terminated ?? "";
+  const type = fields["type of action"] ?? fields.action ?? "";
+  return {
+    party_name: cleanParty(party),
+    party_city: fields.city ?? fields.location ?? null,
+    action_type: actionTypeOf(type) ?? (type || null),
+    start_date: parseActionDate(date) ?? dateIn(date),
+    termination_date: parseActionDate(end) ?? dateIn(end),
+    document_url: null,
+  };
+}
+
+/** Every labelled order block on a page ("Institution: ..."), each with its first link. */
+export function parseLabelledBlocks(html: string, baseUrl: string): StateOrder[] {
+  const doc = parseDocument(html, { decodeEntities: true });
+  const orders: StateOrder[] = [];
+  const seen = new Set<string>();
+  for (const tag of ["tr", "li", "p", "div"]) {
+    for (const el of all(doc as unknown as Node, tag)) {
+      const text = clean(textOf(el as unknown as Node));
+      if (!/Institution:|Bank:/i.test(text) || text.length > 2_000) continue;
+      // Only the innermost block that holds one order: skip a wrapper holding several.
+      if ((text.match(/Institution:|Bank:/gi) ?? []).length > 1) continue;
+      const order = parseLabelled(text);
+      if (!order) continue;
+      const key = `${order.party_name}|${order.start_date}|${order.action_type}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      order.document_url = all(el as unknown as Node, "a").map((a) => resolve(a.attribs.href, baseUrl)).find(Boolean) ?? null;
+      orders.push(order);
+    }
+  }
+  return orders;
+}
+
 /** "Piermont Bank - Consent Order" -> "Piermont Bank": the bank-named piece of a link's text. */
 function partyFromLinkText(text: string): string | null {
   const pieces = text.split(/\s+[-–—:|]\s+|\s*\(\s*|\s*\)\s*|,\s+(?=(?:consent|order|cease|written|civil)\b)/i).map(clean).filter(Boolean);
   const bankish = pieces.find((p) => isBankParty(p));
   if (!bankish) return null;
-  return clean(bankish.replace(ACTION_TYPE, "").replace(/\b(in the matter of|re:)\s*/i, "")).replace(/^[\s,;:.-]+|[\s,;:-]+$/g, "");
+  return cleanParty(bankish.replace(ACTION_TYPE, ""));
 }
 
 export function parseOrderLinks(html: string, baseUrl: string): StateOrder[] {
@@ -230,21 +331,65 @@ export function parseOrderLinks(html: string, baseUrl: string): StateOrder[] {
     if (!text || !url || seen.has(url)) continue;
     const party = partyFromLinkText(text);
     if (!party) continue;
+    // A bare "order" in a URL ("OrderListing") names no order; only a specific type there counts.
+    const urlType = actionTypeOf(decodeURIComponent(url).replace(/[-_]/g, " "));
+    const actionType = actionTypeOf(text) ?? (urlType && urlType !== "Order" ? urlType : null);
+    const date = dateIn(text) ?? dateIn(url);
+    // A menu link ("Banking and Sending Money") names no order and no date.
+    if (!actionType && !date) continue;
     seen.add(url);
-    orders.push({
-      party_name: party,
-      party_city: null,
-      action_type: actionTypeOf(text) ?? actionTypeOf(decodeURIComponent(url).replace(/[-_]/g, " ")),
-      start_date: dateIn(text) ?? dateIn(url),
-      termination_date: null,
-      document_url: url,
-    });
+    orders.push({ party_name: party, party_city: null, action_type: actionType, start_date: date, termination_date: null, document_url: url });
   }
   return orders;
 }
 
+/**
+ * The source's own reader first; a page it finds nothing on is read for labelled blocks,
+ * then (for table sources) as a list of order links, since several states moved from
+ * tables to per-order links.
+ */
 export function parseStateOrders(reader: StateOrderReader, html: string, baseUrl: string): StateOrder[] {
-  return reader === "table" ? parseOrderTables(html, baseUrl) : parseOrderLinks(html, baseUrl);
+  const first = reader === "table" ? parseOrderTables(html, baseUrl) : parseOrderLinks(html, baseUrl);
+  if (first.length > 0) return first;
+  const labelled = parseLabelledBlocks(html, baseUrl);
+  if (labelled.length > 0) return labelled;
+  return reader === "table" ? parseOrderLinks(html, baseUrl) : [];
+}
+
+/** Links on a page whose text matches, resolved (for a source's `follow`). */
+export function linksMatching(html: string, baseUrl: string, pattern: RegExp, limit = 3): string[] {
+  const doc = parseDocument(html, { decodeEntities: true });
+  const urls: string[] = [];
+  for (const a of all(doc as unknown as Node, "a")) {
+    const url = resolve(a.attribs.href, baseUrl);
+    if (url && pattern.test(clean(textOf(a as unknown as Node))) && !urls.includes(url)) urls.push(url);
+    if (urls.length >= limit) break;
+  }
+  return urls;
+}
+
+/** What a page looks like when a reader finds nothing there, for the run detail. */
+/** A row's direct children as "tag:text" (for a row whose cells the reader missed). */
+function rowOutline(row: El): string {
+  return row.children
+    .filter(isEl)
+    .map((c) => `${c.name}${c.attribs.class ? `.${c.attribs.class.split(/\s+/)[0]}` : ""}:${clean(textOf(c as unknown as Node)).slice(0, 40)}`)
+    .join(" | ")
+    .slice(0, 400);
+}
+
+export function describePage(html: string): { tables: number; rows: number; links: number; headers: string[][]; outline: string[]; text: string } {
+  const doc = parseDocument(html, { decodeEntities: true });
+  const tables = all(doc as unknown as Node, "table");
+  const main = all(doc as unknown as Node, "main")[0] ?? all(doc as unknown as Node, "body")[0];
+  return {
+    tables: tables.length,
+    rows: tables.reduce((n, t) => n + rowsOf(t).length, 0),
+    outline: tables.slice(0, 1).flatMap((t) => rowsOf(t).slice(0, 4).map(rowOutline)),
+    links: all(doc as unknown as Node, "a").length,
+    headers: tables.slice(0, 3).map((t) => rowsOf(t).slice(0, 2).flatMap((r) => cellsOf(r).map((c) => clean(textOf(c as unknown as Node)).slice(0, 60)))),
+    text: clean(main ? textOf(main as unknown as Node) : "").slice(0, 600),
+  };
 }
 
 /** One order's stable key: agency, party, date and type (the same order on two year pages is one row). */
