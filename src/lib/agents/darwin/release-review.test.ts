@@ -273,9 +273,10 @@ describe("Darwin held-fee release review", () => {
       sourceLine,
       sourceContext,
     });
-    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("charged_to_merchant");
+    // Guard v39 (merchant NSF) and v40 (overdraft protection <= $15) now hold these first.
+    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("category_guard");
     expect(releaseHoldReason(held("Charge Back (Merchant Returned Check) per item", "deposited_item_return", "10.00"))).toBeNull();
-    expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("small_overdraft_protection");
+    expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("category_guard");
     expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "30.00"))).toBeNull();
     expect(releaseHoldReason(held("Courtesy Pay Overdraft Protection (Paid Item, per presentment)", "overdraft", "14.00"))).toBeNull();
     expect(releaseHoldReason(held("Early Account Closure", "early_closure", "251.00", "(Closed Within 180 Days of Opening) ....$251 | 1"))).toBe(
