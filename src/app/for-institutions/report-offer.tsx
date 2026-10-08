@@ -25,7 +25,7 @@ export async function ReportOfferSection() {
               className="mt-3 text-warm-900 text-[28px] leading-tight"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
-              Free, instant national and Fed district reports
+              Free national reports, and a paid report on your institution
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-warm-700">
               Pick the national report or your Fed district and it opens right away: the median

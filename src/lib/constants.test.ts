@@ -31,10 +31,11 @@ describe("brand constants", () => {
 });
 
 describe("report offer", () => {
-  it("prices the institution report on request and never promises a turnaround", async () => {
+  it("shows a starting price for the institution report and never promises a turnaround", async () => {
     const { REPORT_OFFER, REPORT_OFFER_LINE } = await import("./constants");
     expect(REPORT_OFFER.priceUsd).toBe(0);
-    expect(REPORT_OFFER.priceLabel).toBe("Priced on request");
+    expect(REPORT_OFFER.priceLabel).toBe("From $300");
+    expect(REPORT_OFFER.fromPriceUsd).toBe(300);
     expect(REPORT_OFFER_LINE).toBe("National and Fed district fee reports — free and instant");
     expect(JSON.stringify(REPORT_OFFER)).not.toMatch(/48 hours/);
   });

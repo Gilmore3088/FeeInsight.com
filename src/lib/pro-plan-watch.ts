@@ -21,6 +21,8 @@ export interface PlanWatchInput {
   paidTier: ProTier | null;
   /** True for the consultant / other-organization plan, which may cover any bank. */
   otherOrganization: boolean;
+  /** The buyer picked the size band because the institution had no asset size on file. */
+  tierPickedByBuyer?: boolean;
   paidInstitution: WatchInstitution | null;
   /** Institutions this account ran Pro requests on in the look-back window, one entry each. */
   requestedInstitutions: WatchInstitution[];
@@ -61,6 +63,11 @@ export function planWatchReasons(input: PlanWatchInput): string[] {
   if (input.otherOrganization || !input.paidTier || !input.paidInstitution) return [];
   const reasons: string[] = [];
   const paid = input.paidInstitution;
+
+  if (input.tierPickedByBuyer) {
+    const band = PRO_TIERS.find((def) => def.key === input.paidTier)?.assetsLabel ?? input.paidTier;
+    reasons.push(`No asset size on file for ${paid.name}; the buyer picked "${band}"`);
+  }
 
   const mail = emailDomain(input.email);
   const site = baseDomain(paid.websiteUrl);
