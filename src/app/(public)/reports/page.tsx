@@ -33,7 +33,7 @@ export const metadata: Metadata = {
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const REQUEST_HREF = "#request";
+const REQUEST_HREF = "/reports?report=institution#request";
 
 const PRIMARY_BUTTON =
   "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:bg-[#A93D25]";
@@ -255,7 +255,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 href={REQUEST_HREF}
                 className={PRIMARY_BUTTON}
               >
-                {REPORT_OFFER.ctaLabel}
+                {REPORT_OFFER.institutionCtaLabel}
               </TrackLink>
               {sampleLive && (
                 <Link href={SAMPLE_REPORT_HREF} className={SECONDARY_BUTTON}>
@@ -449,7 +449,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               href={REQUEST_HREF}
               className={PRIMARY_BUTTON}
             >
-              {REPORT_OFFER.ctaLabel}
+              {REPORT_OFFER.institutionCtaLabel}
             </TrackLink>
             {sampleLive && (
               <Link

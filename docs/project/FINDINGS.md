@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: No search data: GA4 and Search Console are not wired in the code
+**Owner:** the GrowthOS thread.
+**What happened:** checking analytics for the marketing team, the code has Vercel Analytics only
+(24 browser events, 3 server events). There is no GA4 tag and no Search Console verification
+(no meta tag, no verification file). Search Console may still be verified by DNS; not known.
+**Cause:** analytics was built around Vercel's custom events; search data was never set up.
+**Fix:** none yet. `growth-os/metrics/analytics-inventory.md` lists what exists and what NIELSEN
+needs; Search Console waits on James's answer.
+**Lesson:** read funnel counts from our own tables (`leads`, `users`) with the time, and say
+"not measured" for search and visitor numbers until a source exists.
+
 ## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
 **Owner:** the Data inventory thread.
 **What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
@@ -63,6 +74,12 @@ SEMC rows are relabelled as medical series on the next refresh. With a BLS key t
 BLS's own catalog title and records it in the partition detail (`bls_catalog_titles`). The ids were
 checked against BLS item-code listings found by search, not against api.bls.gov (blocked from the
 sandbox); proof is the step loading both series on prod with no `missing_series`.
+**Proof (2026-10-08 04:27 UTC run):** `missing_series` is empty. `CUUR0000SS68021` holds 79
+months from 2020-01 to 2026-08 (190.234 in Aug 2026, down 1.4% on a year earlier), and
+`CUUR0000SEGD05` holds 79 months (466.442). No BLS key is set, so `bls_catalog_titles` is empty. The
+pre-2020 SEMC rows, which are outside the 7-year pull, kept the old bank label; the step now
+relabels every row of a mapped series. The bank series' units label is now plain "Index", because
+its base period was not verified.
 **Lesson:** check any external series id against its publisher's catalogue before naming it.
 
 ## 2026-10-07: ffiec rows in institution_financial_records mixed units with fdic/ncua
@@ -2973,6 +2990,19 @@ Rows already on file gain the fields only when Knox reads their document again.
   done; the Darwin and global budget caps still stop it.
 - **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
   `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
+
+## 2026-10-08: Darwin's release review passed service fees the prompt already named
+
+- **Problem.** Review v11 released 1,637 held fees. A hand check of 20 live ones found 18 right.
+  The two misses were cases the prompt already named ("a monthly charge for one service is not the
+  account's monthly maintenance fee", "returning a deposited check is not NSF"), so the model reads
+  the rule and still passes the fee. Fees held at verify were also never re-checked against the
+  category guard's newer versions.
+- **Fix.** Review v12 holds a fee by its own name, amount and rows (`releaseHoldReason`), and
+  category guard v21 adds the name patterns, which also lets Hamilton's guard take live ones down
+  after its second look. A prompt rule that a hand check shows the model ignoring becomes a code check.
+- **Watch.** `pipeline_attempts` `verify.release_review` v12 `detail.hold_reason`, and
+  `hamilton.category_guard` takedowns of `monthly_maintenance` and `nsf` after the merge.
 
 ## 2026-10-08: Many large banks' fee links point at product or rates pages
 

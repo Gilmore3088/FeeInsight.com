@@ -35,7 +35,7 @@ describe("report offer", () => {
     const { REPORT_OFFER, REPORT_OFFER_LINE } = await import("./constants");
     expect(REPORT_OFFER.priceUsd).toBe(0);
     expect(REPORT_OFFER.priceLabel).toBe("Priced on request");
-    expect(REPORT_OFFER_LINE).toBe("National and Fed district fee reports — free, and ready in a minute");
+    expect(REPORT_OFFER_LINE).toBe("National and Fed district fee reports — free and instant");
     expect(JSON.stringify(REPORT_OFFER)).not.toMatch(/48 hours/);
   });
 });

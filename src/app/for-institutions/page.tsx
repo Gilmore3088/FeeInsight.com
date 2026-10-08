@@ -19,10 +19,10 @@ const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REPORT_ANCHOR = "#report";
 
 export const metadata: Metadata = {
-  title: "For Financial Institutions",
+  title: "Bank Fee Benchmarking and Competitive Fee Reports",
   description:
-    `Free national and Fed district fee reports, institution reports, peer benchmarking, and the Hamilton ` +
-    `workspace for banking teams — built on the ${PRODUCT_NAME}.`,
+    `Compare your institution's published fees with named local competitors, line by line, with a source ` +
+    `for every figure. Start with the free national and Fed district fee reports from the ${PRODUCT_NAME}.`,
 };
 
 const HERO_BUTTON_BASE =

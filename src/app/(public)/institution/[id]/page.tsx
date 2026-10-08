@@ -98,8 +98,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
 
   return {
-    // Thin profiles (no verified fees yet) stay reachable but out of the index.
-    robots: verifiedFees.length === 0 ? { index: false, follow: true } : undefined,
+    // Thin profiles (fewer verified fees than the page's own thin threshold) stay reachable
+    // but out of the index.
+    robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
     title: buildProfileTitle(inst.institution_name, headline),
     description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, from its own fee schedule, with national benchmarks from ${SITE_NAME}.`,
     keywords: [
