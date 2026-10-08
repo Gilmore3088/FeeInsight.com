@@ -48,7 +48,23 @@ function toDate(value: string | Date | null | undefined, fallback: Date): Date {
   return Number.isNaN(d.getTime()) ? fallback : d;
 }
 
-async function loadPublishedReports(): Promise<Array<{ slug: string; published_at: string }>> {
+/** Published research articles (drafts and archived ones stay out). A failed read lists none. */
+async function loadPublishedArticles(): Promise<Array<{ slug: string; published_at: string | null; updated_at: string | null }>> {
+  try {
+    const sql = getSql();
+    return await sql<Array<{ slug: string; published_at: string | null; updated_at: string | null }>>`
+      SELECT slug, published_at, updated_at
+      FROM research_articles
+      WHERE status = 'published'
+      ORDER BY published_at DESC NULLS LAST
+      LIMIT 500
+    `;
+  } catch {
+    return [];
+  }
+}
+
+async function loadPublishedReports():Promise<Array<{ slug: string; published_at: string }>> {
   try {
     const sql = getSql();
     return await sql<Array<{ slug: string; published_at: string }>>`
@@ -131,6 +147,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   const publishedReports = dbAvailable ? await loadPublishedReports() : [];
+  const publishedArticles = dbAvailable ? await loadPublishedArticles() : [];
   const reportsPriority =
     publishedReports.length > 0 ? REPORTS_PRIORITY_WITH_CONTENT : REPORTS_PRIORITY_WHILE_EMPTY;
 
@@ -179,6 +196,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const researchPages: Entry[] = [
     entry("/research/national-fee-index", dataUpdated, "weekly", 0.9),
     entry("/research/data-sources", now, "monthly", 0.5),
+    ...publishedArticles.map((a) =>
+      entry(`/research/articles/${a.slug}`, toDate(a.updated_at ?? a.published_at, now), "monthly", 0.7),
+    ),
   ];
 
   // Consumer guides live at /guides/[slug]; professional guides at /guides/pro/[slug],
