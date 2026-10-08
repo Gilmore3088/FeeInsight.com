@@ -474,6 +474,9 @@ v39 (rules 39, from the $10B+ banks with no live overdraft fee, Oct 8):
 - "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).
 - The held re-check takes $10B+ banks' held lines first, as Knox's re-reads do; a full pass over about 19,000 held lines takes about 12 hours at 300 a step.
 
+v40 (rules 40, Collection Items, Oct 8):
+- An item sent for collection, or a foreign or Canadian check or item handled for deposit ("Collection Item", "Items Sent for Collection", "Foreign Check Processing"), files as `collection_item`, not check cashing (James, Oct 8: "Own type"). Cashing a foreign check is still check cashing and a returned one is still a returned item. The pattern is `COLLECTION_ITEM` in `src/lib/fee-fold.ts`, shared with the category guard and Hamilton's fold step.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own
