@@ -62,6 +62,10 @@ Hamilton supports the decision; it does not make it.
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
   names the institution's own regulator and a state question names its state. Read-only, no
   provider calls; the step detail lists the weakest questions and the commonest failures.
+  It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
+  ledger keeps each question and short answer; saved analyses keep the rest) through today's
+  engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
+  and lists every one that falls short. Questions stay in our own database only.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.

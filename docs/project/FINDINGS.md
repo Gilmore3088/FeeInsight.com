@@ -3641,3 +3641,18 @@ and quarter were already stored, without looking at the periods of the data behi
   stay recorded but not live.
 - **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
   publish steps.
+
+## 2026-10-08: Most real Pro questions were never kept, so nothing learned from them
+
+- **What.** On prod, 10 of the 14 Ask requests since Oct 6 came back as a question from
+  Hamilton rather than an answer, and 11 of the 14 left no saved analysis. The `pro.ask`
+  ledger row kept the response kind and fee, but not the question, so the questions Hamilton
+  could not answer were lost.
+- **Why.** Only storyline answers are filed to `hamilton_saved_analyses`; the ledger detail
+  never carried the question text.
+- **Fix.** The `pro.ask` ledger detail now keeps the question, Hamilton's short answer and the
+  engine version. The 2-hourly answer eval replays the last 90 days of real questions (ledger
+  plus saved analyses, test asks left out) and reports them in `detail.pro`.
+- **Watch.** After the next eval run, `detail.pro.questions` is above 0. After the next real
+  Ask, the newest `pro.ask` row has `params_json ? 'question'`.
+
