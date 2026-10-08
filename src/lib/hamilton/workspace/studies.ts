@@ -52,6 +52,16 @@ const PRICE_DRIVERS: Record<string, { group: string; driver: string; format: (v:
   },
 };
 
+/** "Monthly Maintenance" reads "monthly maintenance fee" mid-sentence; acronyms keep their case. */
+function feeInProse(fee: string): string {
+  const words = getDisplayName(fee)
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .split(" ")
+    .map((w) => (/^[A-Z0-9]{2,5}$/.test(w) ? w : w.toLowerCase()))
+    .join(" ");
+  return /fee/i.test(words) ? words : `${words} fee`;
+}
+
 function studySource(row: StudyPlacementRow): SourceRef {
   return { label: `Hamilton study: ${row.title}`, table: "hamilton_studies", asOf: row.asOf };
 }
@@ -147,7 +157,7 @@ function priceStudyObservation(row: StudyPlacementRow): Observation | null {
     (a, b) => spread(b.percentile) - spread(a.percentile) || Number(b.fee === "overdraft") - Number(a.fee === "overdraft"),
   )[0];
   if (!pick) return null;
-  const name = getDisplayName(pick.fee);
+  const name = feeInProse(pick.fee);
   const source = studySource(row);
   const facts = [
     {
@@ -232,4 +242,46 @@ export function withStudyPlace(ranked: Observation[], studies: Observation[], li
   if (studies.length === 0 || ranked.some((o) => o.kind === "study")) return ranked;
   const best = [...studies].sort((a, b) => b.salience - a.salience || a.id.localeCompare(b.id))[0];
   return [...ranked.slice(0, Math.max(0, limit - 1)), best];
+}
+
+/** One year of the fee dependence study for a charter: the median and middle half, in percent. */
+export interface DependenceYear {
+  year: number;
+  median: number;
+  p25: number;
+  p75: number;
+}
+
+/** The fee dependence chart: every bank (or credit union) since 2010, with the institution's own share marked. */
+export interface DependenceChart {
+  /** "banks" or "credit unions": whose median and middle half the band shows. */
+  groupLabel: string;
+  series: DependenceYear[];
+  /** The institution's own share in its first and latest study years. */
+  own: { year: number; value: number }[];
+  peerGroup: string;
+  peerMedian: number | null;
+  asOf: string;
+}
+
+/** The chart for the bank's fee dependence placement; null without a placement or a series for its charter. */
+export function dependenceChart(rows: StudyPlacementRow[], seriesByCharter: Record<string, DependenceYear[]>): DependenceChart | null {
+  const row = rows.find((r) => r.studyKey === "fee_dependence");
+  if (!row || row.value === null) return null;
+  const charter = row.detail.charter === "credit_union" ? "credit_union" : "bank";
+  const series = (seriesByCharter[charter] ?? []).filter((p) => [p.year, p.median, p.p25, p.p75].every((v) => typeof v === "number" && Number.isFinite(v)));
+  if (series.length < 2) return null;
+  const year = typeof row.detail.year === "number" ? row.detail.year : series[series.length - 1].year;
+  const own = [{ year, value: row.value }];
+  const firstYear = row.detail.first_year;
+  const firstValue = num(row.detail.first_year_value);
+  if (typeof firstYear === "number" && firstYear !== year && firstValue !== null) own.unshift({ year: firstYear, value: firstValue });
+  return {
+    groupLabel: charter === "credit_union" ? "credit unions" : "banks",
+    series,
+    own,
+    peerGroup: row.peerGroup,
+    peerMedian: row.peerMedian,
+    asOf: row.asOf,
+  };
 }

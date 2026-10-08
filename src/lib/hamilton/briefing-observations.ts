@@ -45,6 +45,8 @@ export function proseFeeName(displayName: string): string {
 }
 
 function fromObservation(o: Observation): AttentionItem {
+  // Study observations are already written in prose.
+  if (o.kind === "study") return { id: o.id, feeCategory: o.feeCategory, headline: o.headline, facts: o.facts.map((f) => f.text), note: null };
   const display = o.feeCategory ? getDisplayName(o.feeCategory) : null;
   const prose = display ? proseFeeName(display) : null;
   const tidy = (text: string) => {
