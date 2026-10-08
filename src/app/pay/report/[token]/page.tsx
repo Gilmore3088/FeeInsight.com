@@ -12,11 +12,12 @@ import { LINK_LIFETIME_DAYS } from "@/lib/custom-report/link";
 import { checkInstitutionReport } from "@/lib/custom-report/quote-check";
 import { flagQuoteNotReady, getInstitutionLabel, getReportPaymentLead } from "@/lib/data-store/report-payments";
 import { TrackView } from "@/components/track-view";
-import { verifyPayToken } from "@/lib/leads/pay-link";
+import { isExpiredPayToken, verifyPayToken } from "@/lib/leads/pay-link";
 import { privateReportUrl } from "@/lib/leads/report-paid";
 import { REPORT_PAYMENT_KIND, formatUsd } from "@/lib/leads/report-payment";
 import { getStripe } from "@/lib/stripe";
 import { startReportCheckoutAction } from "./actions";
+import { PayButton } from "./pay-button";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,27 @@ const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 const CARD = "rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6";
 const BUTTON =
   "inline-flex items-center justify-center rounded-md bg-[#C44B2E] px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[#A93D25] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1815]";
+
+/** A real pay link past its lifetime: say so and how to get a new one, rather than a bare 404. */
+function ExpiredPayLink() {
+  return (
+    <div className="min-h-screen bg-[#FAF7F2]">
+      <main className="mx-auto max-w-2xl px-4 pb-24 pt-16 sm:px-6">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
+        <h1 className="mt-2 text-[1.6rem] leading-tight text-[#1A1815]" style={SERIF}>
+          This payment link has expired
+        </h1>
+        <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
+          Nothing was charged. Write to{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
+            {CONTACT_EMAIL}
+          </a>{" "}
+          and we&apos;ll send a fresh link with your quote.
+        </p>
+      </main>
+    </div>
+  );
+}
 
 /**
  * Right after Stripe redirects back, the webhook may not have landed yet. The session id
@@ -57,7 +79,10 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
   const { token } = await params;
   const query = await searchParams;
   const verified = verifyPayToken(token);
-  if (!verified) notFound();
+  if (!verified) {
+    if (isExpiredPayToken(token)) return <ExpiredPayLink />;
+    notFound();
+  }
   const lead = await getReportPaymentLead(verified.leadId);
   if (!lead || !lead.quoteCents || !lead.quoteInstitutionId) notFound();
   const institution = await getInstitutionLabel(lead.quoteInstitutionId);
@@ -169,9 +194,7 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
               </ul>
               <form action={startReportCheckoutAction} className="mt-6">
                 <input type="hidden" name="token" value={token} />
-                <button type="submit" className={`w-full sm:w-auto ${BUTTON}`}>
-                  Pay {price} by card
-                </button>
+                <PayButton label={`Pay ${price} by card`} className={`w-full sm:w-auto ${BUTTON}`} />
               </form>
               <p className="mt-3 text-[13px] leading-relaxed text-[#6B6255]">
                 You pay on Stripe&apos;s secure checkout page; we never see your card number. Your private report link opens
