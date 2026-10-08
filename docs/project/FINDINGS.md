@@ -13,6 +13,11 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Knox's lesson reader took 53 seconds on every extract step
+**What happened:** `pg_stat_statements` on prod showed Knox's lesson query (`loadKnoxLessons`) run 538 times at a 53 s average and a 97 s worst case, against a 120 s statement timeout. Each run held a database connection for that long, during the same evening the database hit "too many clients" (22:07 UTC, 28 refusals right after a deploy).
+**Cause:** the query paired each name's wrong and right categories by joining two CTEs to themselves. Postgres estimated a few rows per CTE (there were 27,467 and 50,112), so it chose a nested loop that rescanned them.
+**Fix:** each name's categories are grouped into arrays and paired with `unnest`, which has no join to misjudge (this PR). The same prod data gives the same 107 global and 867 per-bank lessons (row hashes match), in 4.1 s.
+**Lesson:** a self-join of a CTE gets a guessed row count; when one runs slowly, check `pg_stat_statements` for its mean time and prefer grouping over a self-join.
 ## 2026-10-08: Hand-found schedules waited hours for their state's lane
 **What happened:** the schedules added at 17:03 UTC for Comerica, Cadence, FirstBank (CO), Stock Yards and First Tech were still unfetched at 22:50 (`institution_additional_sources.last_fetched_at` null). ConnectOne's listed fee page was never added at all.
 **Cause:** companion fetch only takes pages in the running lane's state, and the TX, MS, CO, KY and CA lanes did not come round. ConnectOne's page counted as already held because a copy was stored in March 2026, though the bank has no current link.
@@ -3657,6 +3662,21 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
   publish steps.
 
+## Publish only runs inside state lanes, so a verified row waits for its own state (2026-10-08)
+
+- **What.** 70 minutes after PR 677 deployed, 10 of the 110 eligible re-filed rows were live and
+  99 had not been looked at, although 555 `publish.rules` attempts ran in that time. The
+  selectable publish queue held 4,036 rows across 1,454 banks.
+- **Why.** Every publish step runs inside an Atlas state-lane run (`stateCode`) or a single-bank
+  "Read now" run (`institutionId`); there is no publish pass over the whole queue. The 100 rows
+  sat in 37 states, and a lane publishes only its own state's rows, 0 to 44 per run, so a row
+  waits for its state's lane to come round.
+- **Fix.** A state lane whose own queue is shorter than its limit fills the rest with the oldest
+  eligible rows from any state (`runHamiltonPublish`), the way the release review already fills a
+  lane's short list. Single-bank reads stay scoped to their bank.
+- **Watch.** The 100 re-filed rows live within a few lane runs; the selectable queue (4,036 at
+  22:50 UTC) falling by about the lane limit (500) per run.
+
 ## 2026-10-08: Most real Pro questions were never kept, so nothing learned from them
 
 - **What.** On prod, 10 of the 14 Ask requests since Oct 6 came back as a question from
@@ -3689,3 +3709,20 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
   them live from another bank's host after that.
 
+
+## 2026-10-08: The failure-streak alert went quiet mid-break
+- **What happened.** Replaying the admin alerts on prod against the 12:06-12:36 publish break:
+  the streak alert was up from 12:08 (3 failed in a row) to 12:25, then went quiet when one
+  publish (run 2883) succeeded at 12:25:46. Two more publishes failed with the same error
+  (12:27, 12:32) with no alert, because the streak was 2 and 8 of ~35 publishes in two hours
+  was under the 50% rate bar.
+- **Why.** The streak resets on any success, and a run with nothing to write can succeed
+  while every run that writes fails.
+- **Fix.** A shared-failure alert (`sharedFailureAlerts`): one step type failing with the same
+  error in 3 or more runs within 24 hours, with no success of that step type since the
+  latest of them. Replayed every 15 minutes from Oct 7 00:00 to Oct 8 23:20, it fires only on
+  four real breaks (discover-paid syntax error Oct 7 01:30, FFIEC `text = date` 06:30,
+  FFIEC HTTP 403 15:15-20:45, publish `fee_category` Oct 8) and is quiet now.
+- **Watch.** Alerts are computed live for the admin home page and the daily brief, not stored,
+  so there is no row to count. The next break shows on the admin home page as soon as a third
+  run fails with the same error.

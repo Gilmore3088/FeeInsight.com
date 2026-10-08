@@ -30,6 +30,12 @@ export const INTEL_WORKFLOW = "intel";
 export const MAX_FINDINGS = 3;
 export const MIN_INSTITUTIONS = 10;
 export const REPEAT_DAYS = 14;
+/**
+ * A feed first read today can carry releases from months ago (prod, Oct 8: of 252 items first
+ * seen in a day, 4 were dated October and 52 had no date). Only a release dated in the last
+ * `FRESH_DAYS` days is news.
+ */
+export const FRESH_DAYS = 14;
 const LOOKBACK_HOURS = 26;
 const MAX_FETCHES = 30;
 const LINES_PER_PAGE = 40;
@@ -183,12 +189,17 @@ export async function runMarketIntel(input: {
   const cited = await recentlyCitedLinks(INTEL_WORKFLOW, REPEAT_DAYS, input.db);
 
   // 1. Regulator releases and bills about consumer deposit fees.
-  const items = await listNewRegulatorItems(LOOKBACK_HOURS, 200, input.db);
+  const items = await listNewRegulatorItems(LOOKBACK_HOURS, 500, input.db);
   result.regulatorItemsRead = items.length;
   const feeItems = items.filter((item) => isFeeTopic(item.title));
   result.feeItems = feeItems.length;
   for (const item of feeItems) {
     if (result.findings.length >= MAX_FINDINGS) break;
+    const age = item.publishedOn ? (now.getTime() - Date.parse(item.publishedOn)) / 86_400_000 : null;
+    if (age === null || Number.isNaN(age) || age > FRESH_DAYS) {
+      result.skipped.push({ what: item.title, reason: item.publishedOn ? `released ${item.publishedOn}, not news` : "no release date" });
+      continue;
+    }
     if (cited.has(item.link)) {
       result.skipped.push({ what: item.title, reason: `already in a brief in the last ${REPEAT_DAYS} days` });
       continue;

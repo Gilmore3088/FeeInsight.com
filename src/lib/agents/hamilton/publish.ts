@@ -1111,6 +1111,15 @@ export async function runHamiltonPublish(
     options.institutionId,
     options.stateCode,
   );
+  // Publish runs only inside state lanes and single-bank reads, so a verified row used to wait
+  // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
+  // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
+  // rest with the oldest eligible rows from any state, as the release review does.
+  if (options.stateCode && !options.institutionId && selected.length < limit) {
+    const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
+    const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);
+    selected.push(...others.filter((row) => !taken.has(Number(row.fee_verified_id))));
+  }
   const depthByInstitution = minInstitutionFees > 1
     ? await institutionFeeDepth(
         db,
