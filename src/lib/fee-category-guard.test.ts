@@ -624,4 +624,22 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
     }
   });
+
+  it("v33 keeps worked examples, waiver thresholds and page text out of the overdraft and NSF fees (Oct 8)", () => {
+    for (const name of [
+      "charged for Wednesday’s Overdraft Item",
+      "but you will be charged an Overdraft Fee because your Available Balance was not sufficient at the time of payment to cov",
+      " We may charge you an overdraft fee for your third or subsequent occurrence, unless the total overdraft is",
+      "Account Services Reorder Checks Complete my Overdraft Authorization Form Contact Us View My Benefits Account Minimum ope",
+      "Hometown No Overdraft Checking",
+      "Suncoast Visa credit card as overdraft protection",
+    ]) {
+      expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("nsf", "Return Item Fee: 03 x 10").ok).toBe(false);
+    for (const name of ["You will be charged the overdraft fee of", "Overdraft Privilege: Wise Checking", "We may charge you an Overdraft Fee"]) {
+      expect(checkFeeCategory("overdraft", name), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("nsf", "You will be charged an NSF fee of")).toEqual({ ok: true });
+  });
 });
