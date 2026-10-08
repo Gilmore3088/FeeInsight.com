@@ -22,6 +22,7 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import {
   ANNUAL_PRICE_LABEL,
   MONTHLY_PRICE_LABEL,
+  PLAN_TEAM_LABEL,
   isProPlan,
   proFeatureList,
   type ProPlan,
@@ -30,7 +31,7 @@ import {
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro seats (monthly or annual), and the Competitive Fee Position Report.",
+    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro (monthly or annual, for up to 5 people), and the Competitive Fee Position Report.",
 };
 
 const MONTHLY_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID || "";
@@ -145,7 +146,7 @@ export default async function SubscribePage({
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
             Free lookup and national reports → Institution report (priced on request) → {SITE_NAME} Pro ({MONTHLY_PRICE_LABEL}/mo
-            per seat, or {ANNUAL_PRICE_LABEL}/yr) → {SITE_NAME} Advisory (custom)
+            or {ANNUAL_PRICE_LABEL}/yr, {PLAN_TEAM_LABEL}) → {SITE_NAME} Advisory (custom)
           </p>
         </div>
 

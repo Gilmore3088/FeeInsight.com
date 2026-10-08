@@ -129,11 +129,11 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes. Monthly seats cancel at the end of the current billing period; no long-term commitment.",
+      answer: "Yes. Monthly plans cancel at the end of the current billing period; no long-term commitment.",
     },
     {
       question: "Do you invoice or accept POs?",
-      answer: `Yes, for annual seats. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
+      answer: `Yes, for annual plans. Email ${CONTACT_EMAIL} and we will send an invoice or work from your PO.`,
     },
     {
       question: "How do seats work?",
