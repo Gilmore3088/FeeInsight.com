@@ -56,6 +56,12 @@ Hamilton supports the decision; it does not make it.
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
+- The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
+  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  of real banks and credit unions (two per charter and asset tier) through the Ask path,
+  scores each with the quality bar and four-roles eval, and checks that a regulation answer
+  names the institution's own regulator and a state question names its state. Read-only, no
+  provider calls; the step detail lists the weakest questions and the commonest failures.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
@@ -360,9 +366,9 @@ category guard and amount envelope accept the fee in its new category
 `category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
 not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
 first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
-the flag is 12 hours old, but only while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. It is off
-until James decides on the list of no-home fees (Oct 8), so they stay live and are counted
-as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
+the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James turned it on
+after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
+counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 ## Source Check

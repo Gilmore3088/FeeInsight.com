@@ -16,6 +16,8 @@ export interface ProTierSelection {
   tier: ProTier;
   institutionId: number | null;
   otherOrganization: boolean;
+  /** The buyer picked the size band because the institution has no asset size on file. */
+  tierPicked?: boolean;
 }
 
 interface ProPlanCardsProps {
@@ -61,6 +63,7 @@ export function ProPlanCards({
           plan={plan}
           institutionId={chosen.institutionId}
           otherOrganization={chosen.otherOrganization}
+          pickedTier={chosen.tierPicked ? chosen.tier : null}
           returnTo={returnTo}
           label={autoStart ? "Continue to checkout" : label}
           className={className}

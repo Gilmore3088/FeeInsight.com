@@ -13,7 +13,7 @@ import { cikBatch, runRegistrySecLinks } from "./sec";
 import { runRegistryRegNews } from "./reg-news";
 import { runRegistryFederalRegister } from "./federal-register";
 import { runRegistryStateRegulators } from "./state-regulators";
-import { runRegistryStateBills, runRegistryStateBillsBatch } from "./state-bills";
+import { runRegistryStateBills, runRegistryStateBillsBatch, STATE_BILLS_TAGGING_VERSION } from "./state-bills";
 import { runRegistryFederalBills } from "./federal-bills";
 import { runRegistryFedPublications } from "./fed-publications";
 
@@ -656,6 +656,33 @@ describe("registry state bills worker", () => {
     expect(rows[0]).toMatchObject({ id: "ocd-bill/1", state_code: "CA", stage: "passed_chamber", stage_date: "2026-05-01" });
   });
 
+  it("clears the topics of a stored bill the bank fee test now rejects, without deleting it", async () => {
+    const { db, statements } = createDb([
+      ["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))],
+      ["UPDATE reg_tracker_items", () => [{ external_id: "ocd-bill/9" }]],
+    ]);
+    const water = { ...bill, id: "ocd-bill/9", identifier: "AB 1520", title: "Public resources: conservation.", abstracts: [{ abstract: "Critically overdrafted basins." }] };
+    const fetchImpl = vi.fn().mockImplementation(async () => json({ results: [bill, water], pagination: { max_page: 1 } }));
+    const result = await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ fetched: 1, stored: 1, untagged: 1 });
+    const update = statements.find((s) => s.text.includes("UPDATE reg_tracker_items"));
+    expect(update?.text).toContain("topics = '{}'");
+    expect(update?.values).toEqual(expect.arrayContaining(["CA", ["ocd-bill/9"]]));
+    expect(statements.some((s) => /DELETE/i.test(s.text))).toBe(false);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
+    expect(JSON.parse(detail)).toMatchObject({ tagging_version: STATE_BILLS_TAGGING_VERSION, untagged: 1 });
+  });
+
+  it("re-reads states whose stored bills were tagged under older rules", async () => {
+    const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    await runRegistryStateBillsBatch({ db, now, apiKey: "k", live: true, statesPerRun: 1, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+    const dueQuery = statements.find((s) => s.text.includes("FROM registry_ingest_partitions") && s.text.includes("next_attempt_after > NOW()"));
+    expect(dueQuery?.text).toContain("detail->>'tagging_version'");
+    expect(dueQuery?.values).toContain(STATE_BILLS_TAGGING_VERSION);
+  });
+
   it("reads the next states that are due in one run and records each state plus the batch", async () => {
     const { db, statements } = createDb([["FROM registry_ingest_partitions", () => [{ partition_key: "AK" }, { partition_key: "AL" }]]]);
     const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
@@ -668,6 +695,18 @@ describe("registry state bills worker", () => {
     const partitions = statements.filter((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
     expect(partitions.map((s) => s.values[1])).toEqual(["AR", "AZ", "CA", "current"]);
     expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
+  });
+
+  it("treats states last read in shadow mode as due once the tracker is live", async () => {
+    for (const live of [true, false]) {
+      const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+      const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+      await runRegistryStateBillsBatch({ db, now, apiKey: "k", live, statesPerRun: 1, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+      const dueQuery = statements.find((s) => s.text.includes("FROM registry_ingest_partitions") && s.text.includes("next_attempt_after > NOW()"));
+      expect(dueQuery?.text).toContain("detail->>'shadow'");
+      // The run's own shadow flag decides whether shadow-only reads still count as fresh.
+      expect(dueQuery?.values).toContain(!live);
+    }
   });
 
   it("stops at a 429 and leaves that state due instead of failing it", async () => {

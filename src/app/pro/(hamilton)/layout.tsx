@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { HamiltonShell } from "@/components/hamilton/layout/HamiltonShell";
+import { sessionChromeFor } from "@/lib/session-chrome";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
   getHamiltonArtifactContextLookup,
@@ -130,6 +131,7 @@ async function HamiltonLayoutInner({
   return (
     <HamiltonShell
       isAdmin={isAdmin}
+      session={sessionChromeFor(user)}
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}

@@ -94,7 +94,7 @@ export default async function NewsPage({
       getStatesWithNews(),
     ]);
     return (
-      <div className="mx-auto max-w-7xl px-6 py-10">
+      <div>
         <h1
           className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
           style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
@@ -117,12 +117,12 @@ export default async function NewsPage({
 
   return (
     <div>
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div>
       {/* Header */}
       <div className="flex items-center gap-2 mb-1">
         <span className="h-px w-8 bg-[#C44B2E]/40" />
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
-          Live Feed
+          Updated daily
         </span>
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -136,7 +136,7 @@ export default async function NewsPage({
         Regulatory Wire
       </h1>
       <p className="mt-1 text-[13px] text-[#6B6255]">
-        Real-time regulatory updates from the Federal Reserve, FDIC, OCC, and CFPB.
+        Regulatory releases from the Federal Reserve, FDIC, OCC and CFPB, read once a day.
       </p>
       {viewSwitch}
 

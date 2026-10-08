@@ -24,7 +24,11 @@ Rosetta owns source text normalization.
   row is one line with cells joined by ` | `, definition lists pair term and
   description, layout tables read as blocks. PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
-  line. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
+  line. A page set in columns of running prose (a deposit agreement in three columns) is
+  read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
+  sentence took its price from the next column's sentence. Fee tables, and fee lists set
+  side by side, keep the row-by-row reading. A PDF text an older layout read across its
+  columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
@@ -56,6 +60,14 @@ Rosetta owns source text normalization.
     a page that still reads poorly is probed at the other quarter turns and read in the
     one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
     version rejected or found empty gets one read with the current version.
+  - A PDF whose embedded text is noise (its font maps letters to control codes or shifted
+    letters, "7KH UDWHV" for "The rates") is read like a scan: `hasReadableWords` in
+    `learning/format.ts` finds under 2% common English or Spanish words among at least 60.
+    Free OCR finds no page images in such a PDF, so it lands `needs_ocr` for pass 3.
+    Texts stored before this check (17 PDF texts with control codes near the top, 5 of
+    them noise, TruStone's fee schedule among them) are reopened once each
+    (`reopenUnreadablePdfTexts`, step detail `reopened_unreadable_pdfs`); a readable one
+    is logged `rejected` and never checked again.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
@@ -124,6 +136,10 @@ Rosetta owns source text normalization.
     on the same bytes ends it. A web page has no paid rung; a legacy text the current
     reader could not improve stays as it is. Step detail: `texts_held_up`,
     `texts_lost_fees`, `reader_escalations`, `reader_escalations_used`.
+  - A legacy PDF text (no reader recorded) longer than `FLAT_TEXT_MIN_CHARS` with no line
+    break counts like a lost text. The first PDF reader ran whole schedules onto one line,
+    which Knox's rules cannot split; the current reader reads it once, and its text replaces
+    the flat one under the same no-thinner rule.
   - Scans and JavaScript pages an older reader version gave up on (`needs_ocr`, `empty`)
     are read once more when `ROSETTA_READ_VERSION` is bumped. Auxiliary strategies
     (`AUXILIARY_READ_STRATEGIES`) never settle a read or block re-selection.

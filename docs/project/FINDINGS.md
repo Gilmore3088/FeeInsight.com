@@ -13,6 +13,61 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
+**What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
+**Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
+**Fix:** Knox now takes the $10B+ banks with no live overdraft fee first, then the page its rules read longest ago (this PR).
+**Lesson:** a queue that restarts on each version needs a stalest-first order, or the tail starves whenever versions move faster than one pass.
+
+## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
+**What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
+is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
+returned, and kept it if the fetch failed (the RC's minimized Chrome showed exactly that). On phones
+the Account menu is hidden (`hidden lg:block`) and the drawer offered only "Account", so My bank
+and data, All changes and the Reference pages had no way in.
+**Cause:** the header was built for static public pages and never took the session from a server
+layout that already had it; the phone drawer was written before the Pro account menu existed.
+**Fix:** `sessionChromeFor` (`src/lib/session-chrome.ts`) builds the header's session for both
+/api/session and the Hamilton layout, which seeds it through `SessionChromeProvider`; a failed fetch
+no longer overwrites a known session. The phone drawer lists the account menu's items for Pro readers.
+**Lesson:** a server layout that knows the user should hand it to client chrome rather than let the
+chrome guess.
+
+## 2026-10-08: PDFs set in prose columns were read across the page
+**What happened:** Origin Bank's deposit agreement went live with seven overdraft rows: the right $35 overdraft item charge under sentence-fragment names, and $10 rows that are really its overdrawn-account fee. On prod, 251 of 1,981 PDF texts (23 at $10B+ banks) show the same pattern, at least 25 joins of running prose with a " | " cell break (Origin's text has 687).
+**Cause:** `read.pdf_layout` builds one line per baseline across the whole page. On a page in three prose columns each line joined its neighbour columns' lines, and lines whose baselines sat a little apart interleaved, so a sentence took its price from another column's sentence.
+**Fix:** layout version 2 reads a page set in prose columns column by column (fee tables keep the row reading), and texts an older layout read across their columns are read once more. Separately, Knox missed "OD Privilege" lines entirely (Knox v39, same PR).
+**Lesson:** a reader change needs a re-read rule for the texts it would have read differently; the version bump alone re-reads only texts with under 5 Knox fees.
+
+## 2026-10-08: Pro header search did nothing and the page covered the account menu
+**What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
+nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
+**Cause:** the Search button only dispatches an open event; `SearchModal` handles it, and only the
+public layout and a few standalone pages mounted it, never `HamiltonShell`. The menu: `.hamilton-shell > *`
+runs a reveal animation with `fill-mode: both`, which leaves a transform on every shell child and
+so a stacking context each. The header's `z-40` was trapped inside its wrapper, and `<main>`, later
+in the page, painted over the menu.
+**Fix:** `HamiltonShell` (and the 404 page) mount `SearchModal`; the header wrapper carries
+`sticky top-0 z-40`. `src/components/search-trigger.test.ts` fails if a screen renders
+`<ConsumerNav />` without `<SearchModal />`.
+**Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
+not on itself.
+
+## 2026-10-08: A California groundwater bill was stored as an overdraft fee bill
+**What happened:** the first live state-bills runs (17:13 UTC Oct 8) stored CA AB 1520, "Public resources: conservation." (signed), with the topic `overdraft_nsf`, so it would list as a fee bill on the California Wire. The text the tagging reads matched on "overdraft", which almost certainly comes from California water law ("critically overdrafted basins"); Open States can't be reached from the cloud to confirm.
+**Cause:** the bank fee test and topic tags matched the bare word "overdraft". Also, a re-read only upserted the bills that still matched, so a tagging fix would never reach a row already stored.
+**Fix:** groundwater overdraft phrases are removed before the tests. A re-read clears the topics of a stored bill that no longer passes (the row is kept, never deleted). States with bills tagged under older rules are due again (`STATE_BILLS_TAGGING_VERSION`). Merged in the PR that adds this entry.
+**Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
+**Follow-up (19:17 UTC):** CA was re-read under version 2 at 18:17 and AB 1520 still matched, because its digest words groundwater overdraft some other way and the abstract isn't stored. Version 3 drops every "overdraft" from a bill that never mentions banking when the bill is about water or names no fee or charge. A guess at one wording isn't enough: when the source text can't be read, make the rule contextual.
+
+**Follow-up (20:50 UTC):** The 20:27 re-read under version 3 still kept AB 1520 tagged overdraft_nsf with no "fees" topic, so a banking or fee word somewhere else in the digest was vouching for the whole text (or the hit was budget wording such as "insufficient funds"). Version 4 judges each sentence on its own: overdraft and insufficient funds terms count only in a sentence that names banking, or names a fee or charge without being about water. Each state read now also stores the matched words per bill (`detail.matches`), so the next false positive can be diagnosed from the partition row instead of guessed at.
+
+## 2026-10-08: State fee bills stayed unstored for a week after going live
+**What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
+**Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
+**Fix:** a live batch now treats states last read in shadow mode as due (`runRegistryStateBillsBatch`, state-bills.ts). Merged in the PR that adds this entry.
+**Lesson:** when a shadow flag flips to live, the stored "fresh until" dates from shadow runs must not hold back the first live read. Check any other `*_TRACKER_LIVE` source for the same pattern.
+
 ## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
 **What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
 "Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
@@ -3395,3 +3450,194 @@ and quarter were already stored, without looking at the periods of the data behi
   with no live overdraft fee (`LEADER_SLOTS`), largest first, still once per 30 days each.
 - **Watch.** `discover.second_document` attempts on top-10 banks, companions kept, and the
   count of top-10 slots with a live overdraft fee.
+
+## 2026-10-08: Old PDF texts ran a whole schedule onto one line
+
+- **Problem.** 168 PDF texts (164 banks, read Aug 23 to Oct 4 by the first PDF reader) have no
+  line breaks. Knox's rules split a line only at wide gaps and sentence ends and drop any piece
+  over 280 characters, so these schedules gave the rules nothing; only the family specialists
+  read them. Lake City Bank's "Overdraft fee $35.00/transaction" and West Bank's "Overdraft Fee
+  (per item) ... $35.00" were lost this way. 63 of those banks have no live overdraft fee; 166
+  of the texts were never read by `read.pdf_layout`, which keeps lines (0 one-line texts of 1,964).
+- **Fix.** Rosetta treats such a text like a lost text: one read with the current PDF reader,
+  replacing the flat text only when the new one lists at least as many fees.
+- **Watch.** `read.pdf_layout` attempts on these documents, one-line legacy texts left, and new
+  Knox rows from them.
+
+## 2026-10-08: Hamilton's memo was cut off at its token cap and withheld
+
+- **Problem.** A live overdraft Ask for Space Coast (15:13 UTC) showed the storyline but no
+  memo. Both memo attempts (`ai_api_usage_events` 4898, 4899) stopped at exactly 1,800 output
+  tokens, the cap, so the JSON was cut off, neither draft parsed, and the memo was withheld as if
+  it had failed the figure checks. The withheld result recorded no reason. Separately, the Ask's
+  storyline answer had no Download PDF button, though the answer was already saved
+  (`hamilton_saved_analyses` 890dc628 at 15:12:56).
+- **Fix.** The memo cap is 4,000 tokens, a cut-off reply is named as such in the retry, and the
+  run ledger's `ask_memo` detail records `withheld_problems`. The storyline answer offers
+  Download PDF as soon as the Ask has saved it, whatever happens to the memo.
+- **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
+  with `memo_status = 'withheld'`.
+
+## 2026-10-08: The source check passes some overdraft lines that are another figure
+
+- **Problem.** Running the first outreach drafts against live overdraft fees in the New
+  York-Newark metro, the shared source check (`checkFeeAgainstSource`) accepted two New Jersey
+  fees whose matched line is not an overdraft price: Provident Bank $40 (a debit purchase amount
+  in a worked example; the real fee is $35) and OceanFirst $50 (a "2 x 10" safe deposit box size;
+  the real fee is $30). The Accuracy thread confirmed both and is archiving them after the 12-hour
+  look. NewBank $25 and Haven Savings $30, flagged at the same time, are correct. The catalog's
+  `conditions` field also carries Knox's provenance ("Knox deterministic extraction from Rosetta
+  artifact #...; text_hash=..."), not conditions.
+- **Fix so far.** The market snapshot and the outreach audit leave pipeline provenance out of a
+  fee's notes, and every outreach draft lists each peer's schedule line so James audits it
+  before sending.
+- **Watch.** Peer lines in outreach audit blocks that read as a worked example or a box size.
+
+## 2026-10-08: Fee names that wrap onto a second line lost their price
+
+- **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
+  a second line and print the price alone below it: "Overdraft Fee (per item, both returned
+  or paid created by check, in person withdrawal," / "ATM withdrawal, ... Maximum of 6 fees per
+  day.)" / "$36.00". Knox reads a price beside its name or under a one-line name, so neither
+  MVB's overdraft nor its NSF fee was found. The shared source check would also have rejected
+  them: the run-on note sat between the name and the price. 13 stored texts have a priced
+  overdraft line in this shape, 6 of them at banks with no live overdraft fee.
+- **Fix.** Knox v35 joins a name line that opens a note to the lines that close it and the
+  price below (`wrappedNamePrices`), and names the fee by its first line. The source check
+  reads such a run-on note as a qualifier between the name and its price.
+- **Watch.** MVB's overdraft and NSF fees, and Knox v35 rows from the other 12 texts.
+
+## 2026-10-08: A new API route without a policy entry fails only the Vercel build
+- **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
+  full vitest run (`policies.test.ts`, which was not run before the push) and the Vercel build
+  catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
+- **Fix.** Add the policy entry in the same commit as the route.
+- **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
+
+## 2026-10-08: Footnote marks read onto a price made it a different price
+
+- **Problem.** Starion's schedule prints its overdraft and NSF price as "$33" with superscript
+  footnote marks 4 and 5, and the PDF reader puts them on the baseline: "$334, 5". The price
+  also sits between the two lines of the fee's name ("Overdraft Fee³ - All Checking and
+  Savings Accounts" / "$334, 5" / "(Including Money Markets)"), a shape Knox never joined. So
+  Starion, a North Dakota top-10 bank, had no live overdraft fee.
+- **Fix.** Knox v36 joins a name line, a price alone below it and a line that only finishes
+  the name's note (`centeredNamePrices`). `stripPriceFootnoteMarks` drops marks glued to a
+  price-only line when they count up from its last digit and each is a printed numbered
+  footnote; Knox and the shared source check both apply it. A single mark ("$331") is left as
+  written, since it can't be told from a price.
+- **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
+  name in the centered shape.
+
+## 2026-10-08: Knox rule fixes never reached the state leaders they were written for
+
+- **Problem.** Knox re-reads a stored text only when it is thin, flagged by the rules
+  re-check, from a bank of $10B or more, or last read before v26. `asset_size` is in
+  thousands, so MVB ($3.5B), Starion ($2.1B), Stride, Guaranty, Lighthouse FCU and Arkansas
+  FCU, each a state top-10 bank with no live overdraft fee, kept reads from v4 to v36. The
+  v35 to v38 fixes written for them never ran on their pages.
+- **Fix.** A priority bank or market leader with no live overdraft fee
+  (`published_fee_records`, `canonical_fee_key = 'overdraft'`) has its current page read
+  again once per rules version.
+- **Watch.** Live overdraft fees for those six banks after the next Knox passes.
+
+## 2026-10-08: The first outreach run addressed lenders, committees and shared mailboxes
+
+- **Problem.** The first prod run of CARNEGIE (run 3021) drafted 24 first emails. 17 of them were
+  addressed to people who don't buy a fee study: mortgage and loan officers, business
+  development and cash management staff, supervisory committees, and shared mailboxes
+  (member_serv@, treasurysupport@, e-statements@). One had a phone line where the title belongs.
+  The draft rule accepted any "medium" contact (a person's address with a name or a title), and
+  medium never required a buying role.
+- **Fix.** A first email goes only to `isDecisionMaker`: a person's own address (not
+  `isSharedMailbox`) under a buying-role title. A phone number is not a title. Each outreach
+  run withdraws unreviewed drafts that fail the test and lets their institutions be drafted again.
+  Checked against the 24 prod drafts: 7 stay (First Federal KC, Quaint Oak, Holy Rosary,
+  BankGloucester, Gateway, State Bank, Drake) and 17 are withdrawn.
+- **Watch.** The outreach step's "Withdrew N" line, and To: lines on new drafts.
+- **Second miss (run 3102).** 2 of 4 new drafts went to boardofdirectors@ (name "Annual Meeting",
+  title a sentence quoting another address) and visa@ (title "Member Services: ...@TheQ.org").
+  A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
+  board and card-line mailboxes are shared. The next run withdraws both.
+
+## 2026-10-08: Outreach quoted a neighbouring schedule line with the same price
+- **Problem.** Outreach run 3148's drafts quoted, as each bank's overdraft fee, the first schedule
+  line that carried the same amount (`checkFeeAgainstSource` returns the first match). Four drafts
+  showed the wrong line beside a correct fee: First Federal KC ("Insufficient Funds Fee $25" for its
+  $25 overdraft row), NIH FCU ("Returned Unpaid NSF Items" for its paid-NSF row), Bluestone FCU
+  ("Returned" for "Honored") and Saco & Biddeford ("Business account $35", the business tier). Two
+  rows were miscategorised in the catalog (Tri City's $50 charge-off, BankGloucester's $5 transfer)
+  and are taken down by PR 682.
+- **Fix.** The snapshot quotes the catalog row's own excerpt and name, compares the consumer tier when
+  a business tier is also printed, and drafts record `quote_rule`. The outreach run withdraws
+  unreviewed drafts quoted under the old rule, and their institutions are drafted again.
+- **Watch.** The audit block's "Fee:" and "Schedule line:" should name the same charge.
+
+## 2026-10-08: A session user's id is a string, not a number
+- **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
+  `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email
+  confirmation token checked `Number.isSafeInteger(userId)`, made no token, and every
+  "Email me the link" (and the signup send) returned "The email didn't send" without calling Resend.
+- **Fix.** `src/lib/email/email-confirm.ts` accepts a numeric string or a number (`toUserId`).
+- **Watch.** Any new check on `user.id` must not assume a number (`Number(user.id)` first).
+
+## 2026-10-08: Some fee schedule PDFs read as noise and were kept as text
+
+- **Problem.** TruStone Financial (a Minnesota top-10 credit union) has a live overdraft fee
+  verified, but it is held by the 3-fee rule because its fee schedule PDF reads as noise.
+  The PDF's font maps letters to control codes, and Hfs FCU's maps them to letters shifted
+  by three ("7KH UDWHV" for "The rates"). The embedded text was long enough to pass the
+  scan check, so Rosetta stored it as a text (completed, or judged not a fee page) and
+  never tried another reader. 17 stored PDF texts have control codes near the top; 5 of
+  them are noise.
+- **Fix.** A PDF whose text has under 2% common English or Spanish words (at least 60
+  words) is read like a scan, and the stored ones are reopened once each. Free OCR reads
+  only page images, so these PDFs go on to the paid transcription pass under its budget.
+- **Watch.** TruStone's fee schedule read into words, and TruStone's fees going live.
+
+## 2026-10-08: Requested banks never got a rules fix, and paid NSF items were filed as NSF
+
+- **Problem.** Marketing's outreach batch had 8 institutions with no live overdraft fee. 6 of
+  their current fee pages print the overdraft line, but Knox misread it: a paid NSF item
+  ("Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)") was filed as NSF or dropped,
+  a long name was cut to the note inside it (BankIowa's overdraft became an NSF row named
+  "5 max total OD or Returned Item fees daily"), a description cell listing debit card
+  channels filed Los Angeles FCU's courtesy pay as an ATM fee, and a threshold row under a
+  priceless fee line had no name (NIH FCU). Even after a fix, a requested institution's
+  read-now run did not read its unchanged page again, so the fix never reached it.
+- **Fix.** Knox v42 and category guard v34 read all six lines. A run for one institution reads
+  its current page again once per rules version while it has no live overdraft fee. The
+  batch is first on Atlas's request list, and Quantum's personal fee schedule is a hand link
+  (Magellan held only its business schedule).
+- **Watch.** The 7 read-now runs and their overdraft fees going live. Hatboro Federal
+  Savings' Feb 2026 schedule lists no overdraft fee (only a $25 NSF return fee and a $5
+  transfer protection fee).
+
+## 2026-10-08: A held line renamed onto a row of the same page failed Knox's extract step
+
+- **Problem.** Two Knox extract steps failed with `duplicate key value violates unique
+  constraint "raw_fee_observations_knox_agentic_dedup_idx"`: Guaranty Bank and Trust's
+  read-now run (19:55 UTC) and a state lane run (20:00 UTC). The step left no rows for
+  Guaranty's new page. The held-line re-check gives a promoted row today's name for the fee.
+  It did that with no check that the same page already had a row with that name and price,
+  which the dedupe index forbids. The rate re-check in the same file already had that check.
+- **Fix.** A promotion now skips a held line whose new name and price already exist on the
+  same page and keeps it on hold, since that fee is already read.
+- **Watch.** No `knox_agentic_dedup_idx` failures in extract steps, and Guaranty's next
+  read-now run completing.
+
+## 2026-10-08: Returned-check fees Darwin re-filed as RDI never went live again
+- **What happened.** Hamilton's second look took 116 "Returned Check" fees off NSF between
+  19:58 and 20:52 UTC, and Darwin's `verify.schedule_refile` re-filed all 116 verified rows as
+  `deposited_item_return` by 20:58. None of them was live again at 21:20, though publish steps
+  kept running.
+- **Why.** Publish skips any verified row that already has a `publish.rules` v2 attempt, so a
+  row it never needs to see twice can't fill every batch. 105 of the 116 had that attempt from
+  when they were published as NSF, so the new filing was never looked at.
+- **Fix.** For a row flagged `darwin_schedule_refiled`, an attempt made under a different
+  `canonical_fee_key` no longer counts. Read-only count on prod: 110 rows become eligible. The
+  other 6 are legacy rows without `agentic_darwin_verified`, which publish never selects; they
+  stay recorded but not live.
+- **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
+  publish steps.
