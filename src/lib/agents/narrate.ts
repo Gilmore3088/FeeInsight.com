@@ -185,6 +185,8 @@ export function narrateStepFinished(
     case "registry-federal-bills":
     case "registry-state-bills":
     case "registry-state-regulators":
+    case "registry-state-reg-news":
+    case "registry-state-bill-news":
     case "registry-enforcement":
     case "registry-state-enforcement":
       return narrateRegistryStep(stepKey, detail);
@@ -351,6 +353,14 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
+    case "registry-state-reg-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Read news from ${n(detail, "read")} of ${count(n(detail, "agencies"), "state regulator site")}: ${count(n(detail, "fetched"), "item")}, ${n(detail, "fee_related")} about fees; ${stored}.`;
+    }
+    case "registry-state-bill-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "news story", "news stories")} on state fee bills (${n(detail, "bills_with_news")} of ${n(detail, "bills")} bills covered); ${stored}.`;
+    }
     case "registry-enforcement":
       return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
     case "registry-state-enforcement": {
@@ -447,6 +457,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-federal-bills": "magellan",
   "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
+  "registry-state-reg-news": "magellan",
+  "registry-state-bill-news": "magellan",
   "registry-enforcement": "magellan",
   "registry-state-enforcement": "magellan",
   read: "rosetta",
