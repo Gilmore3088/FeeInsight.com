@@ -194,7 +194,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     primaryCategory: "nsf",
     // `overdraft` is declared because the guide's central comparison cites its median.
     // A guide may only cite fees it declares — see guides.test.ts.
-    relatedCategories: ["nsf_daily_cap", "deposited_item_return", "overdraft"],
+    relatedCategories: ["od_daily_cap", "deposited_item_return", "overdraft"],
     family: "Overdraft & NSF",
     featured: true,
     relatedSlugs: ["overdraft-fees", "check-fees", "digital-banking-fees"],
@@ -232,7 +232,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Where a daily cap exists, the median is {{nsf_daily_cap.median}}. Caps matter more for NSF than for overdraft, because a single failed payment is often retried by the merchant two or three times, and an uncapped bank can charge you on every attempt.",
+            text: "Where a bank caps its overdraft and NSF charges per day, the median cap is {{od_daily_cap.median}}. Caps matter more for NSF than for overdraft, because a single failed payment is often retried by the merchant two or three times, and an uncapped bank can charge you on every attempt.",
           },
         ],
       },
@@ -335,7 +335,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "Why one ATM withdrawal can carry two separate fees, what banks and credit unions charge, and how to stop paying to reach your own money.",
     primaryCategory: "atm_non_network",
-    relatedCategories: ["atm_international", "balance_inquiry"],
+    relatedCategories: ["atm_international"],
     family: "ATM & Card",
     featured: true,
     relatedSlugs: ["foreign-transaction-fees", "monthly-maintenance-fees", "overdraft-fees"],
@@ -376,7 +376,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "warning",
-            text: "Some banks charge for a balance inquiry at an out-of-network machine — a median {{balance_inquiry.median}} to be told a number you can see for free in your app. Check your balance before you leave, not at the ATM.",
+            text: "Some banks also charge for a balance inquiry at an out-of-network machine, to be told a number you can see for free in your app. Check your balance before you leave, not at the ATM.",
           },
           {
             type: "paragraph",
@@ -1073,7 +1073,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "Which electronic banking services still carry a charge, what a returned electronic payment costs, and how to move money without paying for it.",
     primaryCategory: "ach_origination",
-    relatedCategories: ["ach_return", "bill_pay", "mobile_deposit", "zelle_fee"],
+    relatedCategories: ["ach_return", "bill_pay", "mobile_deposit"],
     family: "Digital Banking",
     featured: false,
     relatedSlugs: ["wire-transfer-fees", "nsf-fees", "monthly-maintenance-fees"],
@@ -1106,9 +1106,8 @@ export const CONSUMER_GUIDES: Guide[] = [
             items: [
               "Sending an ACH transfer: median {{ach_origination.median}}, and free at most institutions",
               "Returned ACH payment: median {{ach_return.median}} — by far the most expensive item here",
-              "Bill pay: median {{bill_pay.median}}, generally included at no charge",
+              "Bill pay and person-to-person payments such as Zelle: median {{bill_pay.median}}, generally included at no charge",
               "Mobile deposit: median {{mobile_deposit.median}}, though some banks charge for expedited availability",
-              "Person-to-person payment: median {{zelle_fee.median}}",
             ],
           },
           {
