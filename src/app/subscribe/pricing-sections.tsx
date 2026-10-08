@@ -130,7 +130,7 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes. Monthly plans cancel at the end of the current billing period; no long-term commitment.",
+      answer: "Yes. Every plan cancels at the end of its current billing period, from your account's billing page. Annual plans cancelled within 14 days of the first annual payment are refunded in full; after that, an annual plan runs to the end of its paid year. Monthly plans aren't refunded.",
     },
     {
       question: "Do you invoice or accept POs?",
