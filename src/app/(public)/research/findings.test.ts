@@ -21,7 +21,7 @@ describe("computeFindings", () => {
     expect(byKey.overdraft.figure).toBe("$25.00");
     expect(byKey["charter-gap"].figure).toBe("$10.00");
     expect(byKey["charter-gap"].headline).toBe("Credit unions charge less for overdraft");
-    expect(byKey["charter-gap"].detail).toContain("cheaper on 3 of 3");
+    expect(byKey["charter-gap"].detail).toContain("lower on 3 of 3");
     expect(byKey.spread.figure).toBe("4.5×");
     expect(byKey.free.figure).toBe("30%");
   });
