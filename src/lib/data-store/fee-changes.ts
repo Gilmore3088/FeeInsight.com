@@ -46,8 +46,9 @@ export async function getFeeChangeEvents(
 ): Promise<FeeChangeEvent[]> {
   const sql = getSql();
 
-  // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts).
-  const conditions: string[] = ["fce.like_for_like IS TRUE"];
+  // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts)
+  // and whose new price is still live: a price taken down as misread takes its change with it.
+  const conditions: string[] = ["fce.like_for_like IS TRUE", "EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))"];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
