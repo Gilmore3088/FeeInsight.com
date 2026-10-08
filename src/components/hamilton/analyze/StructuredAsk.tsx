@@ -87,6 +87,60 @@ async function postMemo(body: AskBody): Promise<MemoState> {
   }
 }
 
+/**
+ * The saved answer as a PDF. The Ask files the answer when it returns, so the download is
+ * offered at once and never waits on the memo, which may be withheld.
+ */
+function DownloadAnswerPdf({ analysisId }: { analysisId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const download = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const res = await fetch("/api/pro/report-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "analysis", analysisId }),
+      });
+      if (!res.ok) {
+        setFailed(true);
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hamilton-answer-${new Date().toISOString().split("T")[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy}
+        className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50"
+      >
+        {busy ? "Preparing the PDF…" : "Download PDF"}
+      </button>
+      {failed ? (
+        <span role="alert" className="text-sm text-terra-text">
+          The PDF couldn&apos;t be created. Please try again.
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 /** The fees offered as one-tap answers when Hamilton asks which fee. */
 const FEE_CHOICES = getSpotlightCategories().map((c) => ({ key: c, label: getDisplayName(c).replace(/\s*\([^)]*\)/g, "") }));
 
@@ -253,6 +307,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
 
 export function StructuredAsk({
   question,
+  nonce = 0,
   institutionId,
   modelHrefFor,
   researchHrefFor,
@@ -260,6 +315,8 @@ export function StructuredAsk({
 }: {
   /** The question just asked; a new value asks again. */
   question: string | null;
+  /** Bumped on every ask, so the same question asked again (or Try again) runs again. */
+  nonce?: number;
   institutionId: string | null;
   modelHrefFor: (feeCategory: string, tested: number) => string;
   /** My fees for a fee, where the full market picture lives. */
@@ -274,6 +331,7 @@ export function StructuredAsk({
   const [busy, setBusy] = useState(false);
   const decisionId = useRef<string | undefined>(undefined);
   const lastQuestion = useRef<string | null>(null);
+  const lastNonce = useRef<number | null>(null);
   const [memo, setMemo] = useState<MemoState | undefined>(undefined);
   // An answer Hamilton could not use: it asks again, and the card says why.
   const [notFound, setNotFound] = useState<string | null>(null);
@@ -315,14 +373,17 @@ export function StructuredAsk({
       if (res?.question && res.question.fieldKey !== "ask.fee_category") return;
       // The engine's own answer stands; a second, model-written answer would bury it.
       if (res && !res.question && engineAnswered(res)) return;
+      // The written answer takes over, so a failed engine call is not shown above it as an error.
+      setError(null);
       onNoStoryline?.(asked);
     },
     [institutionId, onNoStoryline],
   );
 
   useEffect(() => {
-    if (!question || question === lastQuestion.current) return;
+    if (!question || (question === lastQuestion.current && nonce === lastNonce.current)) return;
     lastQuestion.current = question;
+    lastNonce.current = nonce;
     memoFor.current = null;
     setMemo(undefined);
     setResponse(null);
@@ -345,7 +406,7 @@ export function StructuredAsk({
       if (res) setResponse(res);
       follow(asked, res);
     })();
-  }, [question, run, follow, institutionId]);
+  }, [question, nonce, run, follow, institutionId]);
 
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
     setNotFound(null);
@@ -420,6 +481,7 @@ export function StructuredAsk({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
+                {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} /> : null}
               </>
             ) : null
           }
@@ -434,6 +496,7 @@ export function StructuredAsk({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
+                {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} /> : null}
               </>
             ) : null
           }

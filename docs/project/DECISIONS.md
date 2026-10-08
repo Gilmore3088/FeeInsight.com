@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**A paying Pro buyer holds their bank's owner seat at checkout, before claim review.** James, 13:44
+UTC ("Grant at checkout" on the decision card). The plan sells 5 seats, so they work the moment the
+buyer pays. The claim is still filed for James to review, and rejecting it revokes that seat
+(`src/lib/pro-checkout-institution.ts`, `rejectInstitutionClaim`). The other option was to unlock
+seats only after review.
+
 **When an agent breaks, recovery fixes it without asking first.** James, 12:26 UTC ("Fix" on the
 recovery card), after a deploy broke every Hamilton publish at 12:06 ("Hamilton is blocked. We
 need a way to automate resolution when this happens"). A scheduled recovery check finds the break,
@@ -46,7 +52,9 @@ Appraisal as its own type (folding it into loan origination would move that medi
 11:44 UTC picked Mortgage Lien Release (with reconveyance) to fold into Other Lending Fee in its
 place. He also asked to see the fees with no home before any
 are archived, so Hamilton's fold step flags them but keeps them live
-(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
+(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. At 15:42 UTC, after seeing the list
+of 248, he said "drop them -- the 248", so the switch is on: they are archived (rolled back with
+reason `taxonomy_fold:`, logged) once their 12-hour second look passes. Nothing is deleted.
 
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
@@ -467,3 +475,32 @@ tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton
 to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The site sets up its own Stripe prices by lookup key (James 12:53: "you can do
 everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
 (`src/lib/pro-tiers.ts`).
+
+**Outreach is founder-led: agents draft, James sends, after the site is launch-ready.** 2026-10-08.
+James chose "Yes, 75 a week" (15:15 UTC) for personal outreach emails that the agents draft and
+he sends from Outlook; "agents DRAFT, never send these" (15:14). Sends start only once the site
+passes the launch-ready check in the Q4 go-to-market plan (James 15:16: "ONCE we get the site
+ready to launch"). Contacts come from the same process as fee schedules, aimed at executive
+emails the institution publishes (`src/lib/agents/growth/contacts.ts`); nothing is guessed.
+
+**Month one is a sales experiment; the free snapshot launches Oct 13.** 2026-10-08. James's two
+reviews of the go-to-market plan (about 15:25 and 15:33 UTC) replaced 75 emails a week with 25 to
+40 personalized emails, scaling only on qualified replies. The Nov 6 floor is 5 qualified
+conversations and 2 explicit purchase discussions (10 is the stretch). Every number in outreach
+and paid deliverables is checked against the bank's current schedule for value, account type,
+effective date and conditions, and a person audits each comparison in the first 25 to 40 emails.
+The market report and annual Pro are separate products. Consultants may share reports with
+clients with Fee Insight attribution; white-label is a separate premium offer; reselling the
+database is not allowed. Founding customers get a two-year price lock; Pro trials are 14 days by
+hand; LinkedIn is 2 posts a week; growth budget $0; free channels only. The weekly growth
+schedules (scores, prospect contacts) are on. Gates: a free snapshot needs the source and
+contact checks; charging also needs checkout, security, legal and data quality.
+
+**The paid report shows "From $300"; banks with no asset size pick their own Pro band.** James,
+15:24 to 15:25 UTC 8 Oct, UAT thread, agreeing with the executive and marketing teams' picks on
+calls A to E and choosing $300 on the card. Each report is still quoted per institution
+(`REPORT_OFFER.fromPriceUsd`). "Free" no longer describes the paid report. For a bank with no
+asset size on file, the buyer picks the size band at checkout; the subscription carries
+`tier_picked_by_buyer` and the Customers room's "Plans to check" lists it. Assets on file always
+set the tier when they exist. Also agreed: a pay-by-invoice option for the report, and the Pro
+price picker first on phones (design, waits for James's review).

@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import type { sql as sqlClient } from "@/lib/data-store/connection";
 import type { User } from "@/lib/auth";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
+import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 
 type Tx = typeof sqlClient;
 export type SubscriptionStatus = User["subscription_status"];
@@ -98,8 +99,26 @@ export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<Str
  */
 async function applyReportPayment(tx: Tx, session: Stripe.Checkout.Session, effects: StripeEventEffects): Promise<void> {
   if (session.mode !== "payment" || session.payment_status !== "paid") return;
-  const leadId = Number(session.metadata?.lead_id);
+  await markReportPaid(tx, { leadId: Number(session.metadata?.lead_id), ref: session.id, cents: session.amount_total ?? 0 }, effects);
+}
+
+/**
+ * An institution report paid on a Stripe invoice (/pay/report "Get an invoice"): bank
+ * transfer or card on Stripe's invoice page. The invoice id stands where a checkout id would.
+ */
+async function applyReportInvoicePayment(tx: Tx, invoice: Stripe.Invoice, effects: StripeEventEffects): Promise<void> {
+  if (invoice.status !== "paid" || !invoice.id) return;
+  await markReportPaid(tx, { leadId: Number(invoice.metadata?.lead_id), ref: invoice.id, cents: invoice.amount_paid ?? 0 }, effects);
+}
+
+async function markReportPaid(
+  tx: Tx,
+  payment: { leadId: number; ref: string; cents: number },
+  effects: StripeEventEffects,
+): Promise<void> {
+  const { leadId, ref } = payment;
   if (!Number.isSafeInteger(leadId) || leadId <= 0) return;
+  const session = { id: ref, amount_total: payment.cents };
   const paid = await tx<Array<{ id: string | number; name: string; email: string; quote_institution_id: string | number | null }>>`
     UPDATE leads
     SET paid_at = NOW(), status = 'paid', stripe_checkout_session_id = ${session.id}
@@ -130,7 +149,9 @@ async function applyReportPayment(tx: Tx, session: Stripe.Checkout.Session, effe
 
 async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffects): Promise<void> {
   switch (event.type) {
-    case "checkout.session.completed": {
+    case "checkout.session.completed":
+    // A delayed payment method (bank debit) completes checkout unpaid, then sends this once the money clears.
+    case "checkout.session.async_payment_succeeded": {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.metadata?.kind === REPORT_PAYMENT_KIND) {
         await applyReportPayment(tx, session, effects);
@@ -142,6 +163,8 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       if (!customerId) return;
       // Pro is a subscription; a completed one-time payment must never grant it.
       if (session.mode !== "subscription") return;
+      // Pro starts when the money does: an unpaid session waits for async_payment_succeeded.
+      if (session.payment_status === "unpaid") return;
 
       // Prefer the user id checkout was started for; fall back to the email for sessions
       // created before user ids were attached.
@@ -160,9 +183,13 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
               RETURNING id, email, display_name
             `
           : [];
+      const institutionId = paidInstitutionId(session.metadata);
       for (const user of activated) {
         const to = user.email ?? email;
         if (to) effects.welcome.push({ email: to, name: user.display_name ?? null });
+        if (institutionId) {
+          await anchorPaidInstitution(tx, { userId: user.id, institutionId, note: `Filed at Pro checkout (${session.id}).` });
+        }
       }
       return;
     }
@@ -207,8 +234,16 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       return;
     }
 
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) await applyReportInvoicePayment(tx, invoice, effects);
+      return;
+    }
+
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
+      // A report invoice is not a subscription; a failed bank transfer never touches Pro.
+      if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) return;
       const customerId = customerIdOf(invoice.customer as string | { id: string } | null);
       if (customerId) {
         await tx`

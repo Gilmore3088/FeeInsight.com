@@ -13,7 +13,8 @@ Before editing account actions that touch Hamilton context or institution author
 ## Shared Rules
 
 - Preserve sanitized internal `from` paths through login, registration, Subscribe, checkout, Account, and Welcome so institution-specific Hamilton journeys resume after activation.
-- Display selected institution context with source labels when available, and route quick actions into Hamilton with the selected `instId`.
+- /account is a short settings page in plain language: plan and billing (with team seats), banks followed, Pro email switches, organization, sign-in. Hamilton tools, claims and workspace context live in Hamilton (`/pro/settings`), not here. "Open Hamilton" carries the selected `instId`.
+- `AccountView` is pure; `page.tsx` loads everything, so the view renders in tests without a database or Stripe.
 - Keep active institution authority separate from pending invitations, profile institution text, and public claim requests. Authority comes from active membership records scoped to numeric `users.id`.
 - Pending workspace invitations may help users activate or register, but they must not be treated as active authority until matched to an active Pro user.
 - Keep managed account API keys explicitly manual/disabled until key lifecycle, ownership, and rate limiting are implemented. Do not add self-serve key controls that imply an active key-management workflow.

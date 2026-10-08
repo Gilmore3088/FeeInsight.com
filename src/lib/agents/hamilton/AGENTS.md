@@ -56,6 +56,12 @@ Hamilton supports the decision; it does not make it.
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
+- The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
+  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  of real banks and credit unions (two per charter and asset tier) through the Ask path,
+  scores each with the quality bar and four-roles eval, and checks that a regulation answer
+  names the institution's own regulator and a state question names its state. Read-only, no
+  provider calls; the step detail lists the weakest questions and the commonest failures.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
@@ -158,6 +164,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   the main fee link with its own earlier copies, each companion page (one account's page,
   a courtesy pay PDF) with its own. A fee from Freedom Checking's page never supersedes or
   outdates Value Checking's line, or the main schedule's; it publishes beside them.
+- Within a stream, only a newer copy of the same page supersedes or outdates a line
+  (`feePageKey` in `page-key.ts`: host without "www.", path without dates and version
+  words). A consumer schedule's price never replaces the business schedule's. Rows a
+  different page superseded before 8 Oct come back through the restore bar
+  (`cross-page-restore.ts`, each publish step), unless they are business-schedule fees
+  beside a live consumer fee, which the business-schedule rule keeps down.
 - Each publish step rolls back live fees read from companion pages Magellan retired as not
   a consumer fee page (`companion-retire.ts`, reason `companion_page_retired`, up to 500 a
   step) and rejects their verified rows, so they never publish again. Pages retired for a
@@ -354,9 +366,9 @@ category guard and amount envelope accept the fee in its new category
 `category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
 not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
 first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
-the flag is 12 hours old, but only while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. It is off
-until James decides on the list of no-home fees (Oct 8), so they stay live and are counted
-as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
+the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James turned it on
+after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
+counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 ## Source Check

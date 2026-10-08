@@ -16,6 +16,8 @@ export interface ProTierSelection {
   tier: ProTier;
   institutionId: number | null;
   otherOrganization: boolean;
+  /** The buyer picked the size band because the institution has no asset size on file. */
+  tierPicked?: boolean;
 }
 
 interface ProPlanCardsProps {
@@ -61,6 +63,7 @@ export function ProPlanCards({
           plan={plan}
           institutionId={chosen.institutionId}
           otherOrganization={chosen.otherOrganization}
+          pickedTier={chosen.tierPicked ? chosen.tier : null}
           returnTo={returnTo}
           label={autoStart ? "Continue to checkout" : label}
           className={className}
@@ -107,7 +110,7 @@ export function ProPlanCards({
                 eyebrow="Monthly"
                 priceLabel={tierAmountLabel(selection.tier, "monthly")}
                 priceSuffix={`/mo ${PLAN_TEAM_LABEL}`}
-                note="Cancel at the end of any billing period"
+                note="Renews monthly until you cancel; cancel at the end of any billing period"
                 highlighted={highlightedPlan === "monthly"}
                 cta={ctaFor("monthly", selection, "Start monthly", SECONDARY_BUTTON)}
               />
@@ -116,7 +119,7 @@ export function ProPlanCards({
                 eyebrow="Annual"
                 priceLabel={tierAmountLabel(selection.tier, "annual")}
                 priceSuffix={`/yr ${PLAN_TEAM_LABEL}`}
-                note={`${annualMonthsFree(selection.tier)} months free against paying monthly`}
+                note={`${annualMonthsFree(selection.tier)} months free against paying monthly; renews yearly until you cancel`}
                 badge="Best value"
                 highlighted={highlightedPlan === "annual"}
                 cta={ctaFor("annual", selection, "Start annual", PRIMARY_BUTTON)}

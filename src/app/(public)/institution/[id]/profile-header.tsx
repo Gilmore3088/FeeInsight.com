@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Building2, CalendarCheck, ExternalLink, FileText, Landmark, MapPin, type LucideIcon } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
@@ -24,8 +25,11 @@ export interface ProfileHeaderProps {
   status: FeePublicationStatus;
   segmentLabel: string | null;
   locationLabel: string | null;
+  /** The location tag's parts, each linked to its fee page; `locationLabel` is shown when absent. */
+  location?: LocationPart[];
   charterLabel: string;
   districtName: string | null;
+  districtHref?: string | null;
   websiteUrl: string | null;
   feeScheduleUrl: string | null;
   collectedOn: string | null;
@@ -41,6 +45,23 @@ function FactTag({ icon: Icon, children }: { icon: LucideIcon; children: React.R
   );
 }
 
+export interface LocationPart {
+  label: string;
+  href: string | null;
+}
+
+const TAG_LINK_CLASS = "underline decoration-[#D5CBBF] underline-offset-2 hover:text-[#A93D25] hover:decoration-[#C44B2E]";
+
+function TagText({ label, href }: LocationPart) {
+  return href ? (
+    <Link href={href} className={TAG_LINK_CLASS}>
+      {label}
+    </Link>
+  ) : (
+    <>{label}</>
+  );
+}
+
 const LINK_CLASS =
   "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#D5CBBF] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
 
@@ -49,8 +70,10 @@ export function ProfileHeader({
   status,
   segmentLabel,
   locationLabel,
+  location,
   charterLabel,
   districtName,
+  districtHref,
   websiteUrl,
   feeScheduleUrl,
   collectedOn,
@@ -77,9 +100,24 @@ export function ProfileHeader({
           </h1>
           {/* Every key fact as a small tag: no separate facts box, no sentences. */}
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {locationLabel && <FactTag icon={MapPin}>{locationLabel}</FactTag>}
+            {location && location.length > 0 ? (
+              <FactTag icon={MapPin}>
+                {location.map((part, i) => (
+                  <span key={part.label}>
+                    {i > 0 && ", "}
+                    <TagText {...part} />
+                  </span>
+                ))}
+              </FactTag>
+            ) : (
+              locationLabel && <FactTag icon={MapPin}>{locationLabel}</FactTag>
+            )}
             <FactTag icon={Building2}>{charterLabel}</FactTag>
-            {districtName && <FactTag icon={Landmark}>{districtName} Fed district</FactTag>}
+            {districtName && (
+              <FactTag icon={Landmark}>
+                <TagText label={`${districtName} Fed district`} href={districtHref ?? null} />
+              </FactTag>
+            )}
             {collectedOn && <FactTag icon={CalendarCheck}>Fees collected {collectedOn}</FactTag>}
             {financialsAsOf && <FactTag icon={CalendarCheck}>Financials {financialsAsOf}</FactTag>}
           </div>

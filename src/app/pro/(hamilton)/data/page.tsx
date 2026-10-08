@@ -44,7 +44,8 @@ export default async function ProDataPage({ searchParams }: PageProps) {
   const query = params.q || "";
   const stateCode = params.state || "";
   const charterType = params.charter || "";
-  const page = parseInt(params.page || "1", 10);
+  // A bad ?page= (letters, 0, negative) opens page 1 rather than an empty NaN page.
+  const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
   const pageSize = 50;
 
   const stats = await getPublicStats();
@@ -192,7 +193,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
                     <tr key={r.id} className="hover:bg-warm-100">
                       <td className="px-4 py-2.5">
                         <Link
-                          href={`/pro/analyze?instId=${r.id}&intent=institution`}
+                          href={`/pro/research?instId=${r.id}`}
                           className="font-medium text-warm-900 hover:text-terra-text"
                         >
                           {r.institution_name}

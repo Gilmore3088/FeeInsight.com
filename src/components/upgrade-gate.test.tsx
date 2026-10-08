@@ -26,7 +26,7 @@ describe("UpgradeGate", () => {
     const text = document.body.textContent ?? "";
     expect(text).toContain("Everything above stays free");
     expect(text).not.toMatch(/CSV|district|API/i);
-    expect(screen.getByRole("link", { name: /See pricing/ })).toHaveAttribute("href", "/subscribe");
+    expect(screen.getByRole("link", { name: /See pricing/ })).toHaveAttribute("href", "/subscribe#pro");
   });
 
   it("keeps the professional pitch by default", async () => {
@@ -39,7 +39,7 @@ describe("UpgradeGate", () => {
     render(await UpgradeGate({ message: "Market concentration" }));
     expect(screen.getByRole("link", { name: /See pricing/ })).toHaveAttribute(
       "href",
-      "/subscribe?from=%2Fresearch%2Fmarket-concentration",
+      "/subscribe?from=%2Fresearch%2Fmarket-concentration#pro",
     );
     headerPath.value = null;
   });
@@ -48,7 +48,7 @@ describe("UpgradeGate", () => {
     render(await UpgradeGate({ from: "/fees/overdraft", locked: "Overdraft by asset size." }));
     expect(document.body.textContent).toContain("Overdraft by asset size.");
     expect(document.body.textContent).not.toContain("CSV exports");
-    expect(screen.getByRole("link", { name: /See pricing/ })).toHaveAttribute("href", "/subscribe?from=%2Ffees%2Foverdraft");
+    expect(screen.getByRole("link", { name: /See pricing/ })).toHaveAttribute("href", "/subscribe?from=%2Ffees%2Foverdraft#pro");
   });
 });
 

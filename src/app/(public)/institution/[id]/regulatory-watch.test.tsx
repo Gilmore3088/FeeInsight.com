@@ -32,9 +32,9 @@ const WATCH: RegulatoryWatch = {
 
 describe("RegulatoryWatchSection", () => {
   it("leads with the headline and figures, then the timeline, fee and rule exhibits", () => {
-    const { container } = render(<RegulatoryWatchSection watch={WATCH} exportHref="/api/v1/institutions?id=12&view=benchmark&format=csv" />);
+    const { container } = render(<RegulatoryWatchSection watch={WATCH} institutionName="Lone Star Bank" exportHref="/api/v1/institutions?id=12&view=benchmark&format=csv" />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "2 of your 20 largest Austin competitors drew federal enforcement since Oct 2023; 1 action concerned consumer law.",
+      "2 of Lone Star Bank's 20 largest Austin competitors drew federal enforcement since Oct 2023; 1 action concerned consumer law.",
     );
     expect(screen.getByText("2 of 20")).toBeInTheDocument();
     expect(screen.getAllByText(/^\$20(\.0)?M$/).length).toBe(2);
@@ -48,12 +48,12 @@ describe("RegulatoryWatchSection", () => {
     expect(screen.getByText("−$5.00")).toBeInTheDocument();
     expect(screen.getByText("In effect")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/\bactive\b/i);
-    expect(screen.getByRole("link", { name: /Download your fees and peer benchmarks/ })).toHaveAttribute("href", "/api/v1/institutions?id=12&view=benchmark&format=csv");
+    expect(screen.getByRole("link", { name: /Download its fees and peer benchmarks/ })).toHaveAttribute("href", "/api/v1/institutions?id=12&view=benchmark&format=csv");
   });
 
   it("drops empty exhibits and says when no competitor has an action", () => {
     render(<RegulatoryWatchSection watch={{ ...WATCH, peer_actions: [], rule_changes: [], fee_focus: [] }} />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("None of your 20 largest Austin competitors has a federal enforcement action since Oct 2023.");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("None of this institution's 20 largest Austin competitors has a federal enforcement action since Oct 2023.");
     expect(screen.queryByText(/Exhibit/)).toBeNull();
   });
 });
@@ -79,8 +79,8 @@ describe("state exhibit", () => {
   };
 
   it("shows the state's laws on the bank's fees with its charter supervisor", () => {
-    const { container } = render(<RegulatoryWatchSection watch={{ ...WATCH, state }} />);
-    expect(screen.getByText("Illinois: state law and bills on your fees")).toBeInTheDocument();
+    const { container } = render(<RegulatoryWatchSection watch={{ ...WATCH, state }} institutionName="First Illinois Bank" />);
+    expect(screen.getByText("Illinois: state law and bills on First Illinois Bank's fees")).toBeInTheDocument();
     expect(screen.getByText("Illinois Department of Financial and Professional Regulation")).toBeInTheDocument();
     expect(screen.getByText("$10.00").parentElement?.textContent).toBe("Dormant Account $10.00");
     expect(container.textContent).not.toMatch(/not yet legally reviewed/i);
@@ -94,3 +94,24 @@ describe("state exhibit", () => {
   });
 });
 
+
+describe("state banking-department orders on the timeline", () => {
+  it("names state enforcement in the headline and exhibit once a state order is shown", () => {
+    const watch: RegulatoryWatch = {
+      ...WATCH,
+      agencies_loaded: ["OCC", "FRB", "STATE_TX"],
+      peer_actions: [action({ peer_id: 6, peer_name: "Herring Bank", agency: "STATE_TX", party_name: "Herring Bank", action_type: "Consent order", subject: null, consumer_law: false, theme: "other", penalty_amount: null, document_url: null })],
+    };
+    render(<RegulatoryWatchSection watch={watch} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/drew federal or state enforcement since/);
+    expect(screen.getByText(/^Federal and state enforcement against this institution's largest local competitors/)).toBeInTheDocument();
+  });
+});
+
+describe("who the watch speaks to", () => {
+  it("names the institution and never addresses the reader as it", () => {
+    const { container } = render(<RegulatoryWatchSection watch={WATCH} institutionName="Space Coast Credit Union" exportHref="#" />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/^2 of Space Coast Credit Union's 20 largest Austin competitors/);
+    expect(container.textContent).not.toMatch(/\byour?\b/i);
+  });
+});

@@ -22,18 +22,27 @@ function methodName(strategy: string): string {
   return bare.charAt(0).toUpperCase() + bare.slice(1);
 }
 
-function share(row: MethodRow): number {
-  return row.attempts > 0 ? row.ok / row.attempts : 0;
+/** Worked, found nothing to do, and failed, as shares of all attempts. */
+function shares(row: MethodRow): { worked: number; nothing: number; failed: number } {
+  if (row.attempts <= 0) return { worked: 0, nothing: 0, failed: 0 };
+  const worked = row.ok / row.attempts;
+  const nothing = row.nothing / row.attempts;
+  return { worked, nothing, failed: Math.max(0, 1 - worked - nothing) };
 }
 
 function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function tone(value: number): string {
-  if (value >= 0.7) return "bg-emerald-500";
-  if (value >= 0.3) return "bg-amber-400";
-  return "bg-red-500";
+function OutcomeBar({ row }: { row: MethodRow }) {
+  const { worked, nothing, failed } = shares(row);
+  return (
+    <div className="flex h-2 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]" role="presentation">
+      <div className="h-full bg-emerald-500" style={{ width: `${worked * 100}%` }} />
+      <div className="h-full bg-gray-300 dark:bg-white/25" style={{ width: `${nothing * 100}%` }} />
+      <div className="h-full bg-red-500" style={{ width: `${failed * 100}%` }} />
+    </div>
+  );
 }
 
 /** The Learning screen: for every agent, which methods worked this week and which didn't. */
@@ -57,6 +66,11 @@ export default async function LearningPage() {
           Every method each agent tried in the last 7 days, from the attempt log the agents read before choosing what to try next.
           A method that keeps failing on a bank is not tried there again until it changes version.
         </p>
+        <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
+          <span><span aria-hidden="true" className="mr-1 inline-block size-2 rounded-full bg-emerald-500" />Worked</span>
+          <span><span aria-hidden="true" className="mr-1 inline-block size-2 rounded-full bg-gray-300 dark:bg-white/25" />Nothing there or already up to date (not a failure)</span>
+          <span><span aria-hidden="true" className="mr-1 inline-block size-2 rounded-full bg-red-500" />Failed</span>
+        </p>
         {scorecard ? <p className="mt-2 text-[11px] text-gray-500">Read {formatAdminDateTime(scorecard.readAt)}</p> : null}
       </header>
 
@@ -79,7 +93,7 @@ export default async function LearningPage() {
             <ul className="mt-3 space-y-3">
               {methods.map((method) => {
                 const current = method.current;
-                const rate = share(current);
+                const split = shares(current);
                 return (
                   <li key={method.strategy} className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_auto]">
                     <p className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">
@@ -89,18 +103,18 @@ export default async function LearningPage() {
                       </span>
                     </p>
                     <div className="min-w-0 self-center">
-                      <div className="h-2 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/[0.08]">
-                        <div className={`h-full rounded-full ${tone(rate)}`} style={{ width: `${Math.max(rate * 100, current.ok > 0 ? 1.5 : 0)}%` }} />
-                      </div>
+                      <OutcomeBar row={current} />
                       {method.older.length > 0 ? (
                         <p className="mt-1 text-[11px] text-gray-500">
-                          Earlier: {method.older.slice(0, 3).map((row) => `v${row.version} ${pct(share(row))} of ${row.attempts.toLocaleString("en-US")}`).join(" · ")}
+                          Earlier: {method.older.slice(0, 3).map((row) => `v${row.version} ${pct(shares(row).worked)} worked of ${row.attempts.toLocaleString("en-US")}`).join(" · ")}
                         </p>
                       ) : null}
                     </div>
                     <p className="text-xs tabular-nums text-gray-600 dark:text-gray-300 sm:text-right">
-                      <span className="font-semibold text-gray-900 dark:text-gray-100">{pct(rate)}</span> worked ·{" "}
-                      {current.ok.toLocaleString("en-US")} of {current.attempts.toLocaleString("en-US")}
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">{pct(split.worked)}</span> worked ·{" "}
+                      {pct(split.nothing)} nothing there ·{" "}
+                      <span className={split.failed >= 0.1 ? "font-semibold text-red-700 dark:text-red-400" : undefined}>{pct(split.failed)} failed</span>
+                      <span className="block text-[11px] text-gray-500">of {current.attempts.toLocaleString("en-US")} tries</span>
                       {current.costUsd > 0 ? (
                         <span className="block text-[11px] text-gray-500">
                           ${current.costUsd.toFixed(2)} spent

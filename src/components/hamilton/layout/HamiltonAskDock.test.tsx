@@ -14,4 +14,15 @@ describe("HamiltonAskDock", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close Ask Hamilton" }));
     expect(screen.queryByRole("search")).toBeNull();
   });
+
+  it("keeps a typed question when the bar is closed, and Escape hands focus back to the button", () => {
+    render(<HamiltonAskDock selectedInstitutionId="7" />);
+    fireEvent.click(screen.getByRole("button", { name: /Ask Hamilton/ }));
+    fireEvent.change(screen.getByLabelText("Ask Hamilton", { selector: "input" }), { target: { value: "What about wires?" } });
+    fireEvent.keyDown(screen.getByRole("search"), { key: "Escape" });
+    expect(screen.queryByRole("search")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Ask Hamilton/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Ask Hamilton/ }));
+    expect((screen.getByLabelText("Ask Hamilton", { selector: "input" }) as HTMLInputElement).value).toBe("What about wires?");
+  });
 });

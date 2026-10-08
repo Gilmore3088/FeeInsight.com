@@ -80,7 +80,7 @@ and `detail.method_version`).
 | 1 | `discover.common_paths` | Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Version 2. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
-| 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop: banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
+| 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop: two of each step's six slots go first to a state top-10 bank from any state with no live overdraft fee (`LEADER_SLOTS`); then banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
 | 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; the other 3 rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". One attempt row per query (`detail.query`, `candidates`, `kept`; not folded into the playbook): `ok` when a page it found was kept, `rejected` when its hits were all dropped, `no_candidates` when it linked to nothing useful. |
 | 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
 | 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, once a month per bank. |
@@ -130,6 +130,9 @@ and `detail.method_version`).
   sheet, unless the name also says fee schedule) are handled the same way
   (`single_product_disclosure`): they state a rate and an early-withdrawal penalty, not the
   account fees.
+  A link on another kind of site (`isOtherSiteLink`: a government page, a broker's disclosures,
+  a car-price site) is searched the same way and never kept as a companion, unless that host
+  is the bank's own website (GSA FCU on gsafcu.gsa.gov).
 - Restored fee pages (`restore-fee-page.ts`, `RESTORE_FEE_PAGE_VERSION`): a bank whose page
   named as the fee schedule (`namesFeeSchedulePage`) was set aside by Rosetta for reading no
   amounts or needing JavaScript, and whose link is now a weaker page (not fee-named, not a
@@ -139,6 +142,13 @@ and `detail.method_version`).
   once per version (`discover`/`restore_fee_page` attempt, `ok` or `unchanged` with the
   reason kept); the step's `restored_fee_pages` detail lists the swaps. Rosetta's readers
   (embedded data, linked and embedded PDF viewers) decide whether it now reads.
+- Refused paid answers (`refused-answers.ts`, `KEEP_REFUSED_ANSWER_STRATEGY`): a paid web
+  search or paid schedule search answer whose fee-page check got HTTP 403 is kept once, free,
+  up to 25 per discover step in any state: as the main link when the bank has none, else as a
+  `consumer_supplement` companion. Answers off the bank's site, articles, pages it already
+  holds and non-schedule pages (CRA file, About, rates page) are logged `unchanged`. Both paid
+  searches now keep a 403 answer themselves; this pass recovers the ones dropped before. The
+  plain fetch meets the 403 and the paid fetch (`blocked-fetch.ts`) stores the page.
 - Freshness search (`FRESHNESS_SEARCH_VERSION`): after the upgrade searches, banks whose
   link looks out of date are searched once per version for a newer schedule
   (`detail.freshness_search`, with `stale_link` and `stale_reason`). Stale means the
@@ -282,7 +292,7 @@ A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refu
 403), or timed out with at least `BLOCKED_TIMEOUT_MIN_FAILURES` (2) failures in a row (First
 Horizon), gets one paid server-side fetch in the `discover-paid` step:
 Anthropic's `web_fetch` tool, `max_uses` 1, `allowed_domains` the link's host. Up to
-`BLOCKED_FETCH_PER_RUN` (3) banks a step, largest first, each at most once per
+`BLOCKED_FETCH_PER_RUN` (6) pages a step, largest first, each at most once per
 `BLOCKED_FETCH_RETRY_DAYS` (7). The page text or PDF it returns goes through the same
 fetch path as any fetch (`fetchAndRecordLink`: document row, vault copy, attempt with
 strategy `fetch.paid_web_fetch` and its cost), and Rosetta reads it next. A refused link on
@@ -294,7 +304,8 @@ The paid fetch runs first in `discover-paid`, before the paid searches: run last
 what the run's provider call cap left. Companion pages blocked the same way get it too
 (strategy `fetch.paid_web_fetch_companion`, stored through `fetchAndRecordCompanion`): a page
 whose last companion fetch was refused, timed out twice, or was a PDF link answered with a web
-page. One of the three slots is kept for a companion. The companion fetch no longer stores a
+page. Two of the six slots are kept for companions. A companion given by hand
+(`discover.operator_schedule`) counts on a sister brand's site (Zions' schedule on amegybank.com). The companion fetch no longer stores a
 PDF link answered with a web page (outcome `blocked_bot`): 53.com served Fifth Third's fee PDFs
 as a "page doesn't exist" page, which Rosetta then set aside as a blank read. Copies stored that
 way before the check (a set-aside PDF link whose copy is a web page) are picked as well, and a

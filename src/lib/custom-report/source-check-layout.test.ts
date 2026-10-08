@@ -1,10 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { checkFeeAgainstSource, joinLabeledFeeCards } from "./source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCards, stripPriceFootnoteMarks } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
   it("reads a price printed under its fee's name", () => {
     const text = "Overnight Courier Service\n$50.00\n/Item";
     expect(checkFeeAgainstSource(text, "Overnight Courier Service", 50, ".").ok).toBe(true);
+  });
+
+  it("reads a price under a name whose note runs onto the next line", () => {
+    const text = [
+      "Overdraft Fee (per item, both returned or paid created by check, in person withdrawal,",
+      "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)",
+      "",
+      "$36.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee", 36, ".", "overdraft").ok).toBe(true);
+    // A note that never closes is not a qualifier: the next line may be another fee.
+    expect(checkFeeAgainstSource("Overdraft Fee (per item\nStop payment\n$36.00", "Overdraft Fee", 36, ".", "overdraft").ok).toBe(false);
+  });
+
+  it("reads a price whose footnote marks were read onto it", () => {
+    const text = [
+      "Overdraft Fee³ - All Checking and Savings Accounts",
+      "$334, 5",
+      "(Including Money Markets)",
+      "4. Please be aware that an item may be presented multiple times.",
+      "5. Maximum of six (6) Overdraft Fees and/or NSF Fees combined may be charged per day.",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee - All Checking and Savings Accounts", 33, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource(text, "Overdraft Fee - All Checking and Savings Accounts", 334, ".", "overdraft").ok).toBe(false);
+    // With no footnotes printed, the figure stays as written.
+    expect(stripPriceFootnoteMarks("Overdraft Fee\n$334, 5")).toBe("Overdraft Fee\n$334, 5");
   });
 
   it("does not give a name the next fee's price", () => {
@@ -385,6 +411,20 @@ describe("checkFeeAgainstSource daily caps", () => {
     const usb = "(excluding the Overdraft Paid Fees and\nincluding immediate and same day deposits), is at least $0 we will waive Overdraft Paid Fee(s) charged.";
     expect(checkFeeAgainstSource(usb, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0, ".").ok).toBe(false);
     expect(checkFeeAgainstSource("Overdraft Fee | $0", "Overdraft Fee", 0, ".").ok).toBe(true);
+  });
+
+  it("never reads a per-day charge after an account stays overdrawn as the per-item fee (Oct 8)", () => {
+    const text = [
+      "Notary Fee ........ $15.00 per signature",
+      "Overdraft Fee .......... $5.00 per day after 10 business day",
+      "Courtesy Pay Fee | $30.00 per item",
+      "Sustained Overdraft | $5.00/day after 7th day",
+    ].join("\n");
+    expect(checkFeeAgainstSource(text, "Overdraft Fee", 5, ".", "overdraft").ok).toBe(false);
+    expect(checkFeeAgainstSource(text, "Courtesy Pay Fee", 30, ".", "overdraft").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overdraft | $30.00 per day, per account", "Overdraft", 30, ".", "overdraft").ok).toBe(true);
+    // Only the per-item categories: a sustained-overdraft fee keeps its own row.
+    expect(checkFeeAgainstSource(text, "Sustained Overdraft", 5, ".", "od_sustained").ok).toBe(true);
   });
 
   it("never reads a balance \"greater than or equal to $0\" as a $0 fee (Citizens, Oct 7)", () => {

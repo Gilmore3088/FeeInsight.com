@@ -23,7 +23,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.12.1";
+export const WORKSPACE_ENGINE_VERSION = "1.14.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -57,7 +57,7 @@ export interface Fact {
   sampleSize?: number;
 }
 
-export type ObservationKind = "market_position" | "competitor_move" | "rule_change" | "revenue_shift";
+export type ObservationKind = "market_position" | "competitor_move" | "rule_change" | "revenue_shift" | "study";
 
 export type ObservationAction = "compare_competitors" | "research_fee" | "model_price" | "ask";
 

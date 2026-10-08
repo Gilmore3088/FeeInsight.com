@@ -8,6 +8,7 @@ import {
   type IdentityReviewItem,
   type RegistryPartitionStats,
 } from "@/lib/data-store/registry-profile";
+import { decideIdentityLinksAction } from "./actions";
 import { QueueRegistryButton } from "./queue-button";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default async function RegistryPage() {
   await requireAuth("view");
   const [stats, review] = await Promise.all([
     getRegistryPartitionStats().catch((): RegistryPartitionStats[] => []),
-    getIdentityLinksNeedingReview().catch((): IdentityReviewItem[] => []),
+    getIdentityLinksNeedingReview(200).catch((): IdentityReviewItem[] => []),
   ]);
   const bySource = new Map(stats.map((row) => [row.source, row]));
   const expected = new Map(registryPartitionsBySource(new Date()).map((entry) => [entry.source, entry.partitions.length]));
@@ -82,36 +83,48 @@ export default async function RegistryPage() {
       </section>
 
       <section className="admin-card">
-        <h2 className="text-base font-semibold">Identity matches waiting for review</h2>
+        <h2 className="text-base font-semibold">Identity matches waiting for review ({review.length})</h2>
         <p className="mt-1 text-sm text-[#6B6255]">
-          CFPB company names and SEC filers that match more than one institution. They are not used for any data until
-          accepted.
+          CFPB company names and SEC filers that could be more than one institution. They are not used for any data
+          until accepted. Tick the rows, then choose once for all of them.
         </p>
         {review.length === 0 ? (
           <p className="mt-3 text-sm text-[#6B6255]">Nothing waiting.</p>
         ) : (
-          <table className="mt-3 w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-[#6B6255]">
-              <tr>
-                <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2">External name</th>
-                <th className="px-3 py-2">Best candidate</th>
-                <th className="px-3 py-2">Method</th>
-              </tr>
-            </thead>
-            <tbody>
-              {review.map((item) => (
-                <tr key={`${item.link_type}:${item.external_key}`} className="border-t border-black/5">
-                  <td className="px-3 py-2 text-xs">{item.link_type}</td>
-                  <td className="px-3 py-2">{item.external_name ?? item.external_key}</td>
-                  <td className="px-3 py-2">
-                    {item.institution_id ? <a className="underline" href={`/admin/institution/${item.institution_id}`}>{item.institution_name ?? `#${item.institution_id}`}</a> : "None"}
-                  </td>
-                  <td className="px-3 py-2 text-xs">{item.method} ({Math.round(item.confidence * 100)}%)</td>
+          <form action={decideIdentityLinksAction} className="mt-3">
+            <div className="flex gap-2">
+              <button type="submit" name="decision" value="accepted" className="rounded-md border border-[var(--admin-border,#E0D7C9)] px-2 py-1 text-xs font-medium hover:bg-black/5">
+                Same bank
+              </button>
+              <button type="submit" name="decision" value="rejected" className="rounded-md border border-[var(--admin-border,#E0D7C9)] px-2 py-1 text-xs font-medium hover:bg-black/5">
+                Not a match
+              </button>
+            </div>
+            <table className="mt-3 w-full text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-[#6B6255]">
+                <tr>
+                  <th className="px-3 py-2" />
+                  <th className="px-3 py-2">External name</th>
+                  <th className="px-3 py-2">Best candidate</th>
+                  <th className="px-3 py-2">Type</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {review.map((item) => (
+                  <tr key={`${item.link_type}:${item.external_key}`} className="border-t border-black/5">
+                    <td className="px-3 py-2">
+                      <input type="checkbox" name="link" value={`${item.link_type}|${item.external_key}`} aria-label={`Select ${item.external_name ?? item.external_key}`} />
+                    </td>
+                    <td className="px-3 py-2">{item.external_name ?? item.external_key}</td>
+                    <td className="px-3 py-2">
+                      {item.institution_id ? <a className="underline" href={`/admin/institution/${item.institution_id}`}>{item.institution_name ?? `#${item.institution_id}`}</a> : "None"}
+                    </td>
+                    <td className="px-3 py-2 text-xs">{item.link_type === "sec_cik" ? "SEC" : "CFPB"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </form>
         )}
       </section>
     </div>

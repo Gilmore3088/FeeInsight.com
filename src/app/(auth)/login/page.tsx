@@ -5,15 +5,14 @@ import { LoginForm } from "./login-form";
 import type { Metadata } from "next";
 import { resolvePostLoginRedirect, sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import Link from "next/link";
-import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
+import { SITE_NAME } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 
 export const metadata: Metadata = {
   title: "Sign In",
 };
 
-// No self-service reset flow exists yet; route reset requests to the inbox.
-const FORGOT_PASSWORD_HREF = `mailto:${CONTACT_EMAIL}?subject=Password%20reset`;
+const FORGOT_PASSWORD_HREF = "/forgot-password";
 
 export default async function LoginPage({
   searchParams,
@@ -32,6 +31,12 @@ export default async function LoginPage({
   const registerHref = params.from
     ? `/register?from=${encodeURIComponent(params.from)}`
     : "/register";
+  // Signed-out visitors to /pro land here. A prospect who has never paid needs the way to
+  // the plans, not only a sign-in form.
+  const proPlansHref =
+    destination === "/pro" || destination.startsWith("/pro/") || destination.startsWith("/pro?")
+      ? `/subscribe?from=${encodeURIComponent(destination)}#pro`
+      : null;
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
@@ -124,6 +129,14 @@ export default async function LoginPage({
                 Create one
               </Link>
             </p>
+            {proPlansHref && (
+              <p className="mt-2 text-center text-sm text-[#6B6255]">
+                New to Pro?{" "}
+                <Link href={proPlansHref} className="text-[#A93D25] font-medium hover:underline">
+                  See plans and prices
+                </Link>
+              </p>
+            )}
             <p className="mt-6 text-center text-sm">
               <Link href="/" className="text-[#6B6255] hover:text-[#1A1815] hover:underline">
                 ← Back to {SITE_NAME}

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, runHamiltonPublish } from "./publish";
+import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -84,6 +85,7 @@ const priorPublishedFee = {
   amount: "30.00",
   fee_name: "Overdraft fee",
   published_at: "2026-07-01T00:00:00.000Z",
+  source_url: "https://testbank.example/fees",
   source_document_id: 12,
   document_crawled_at: "2026-07-01T00:00:00.000Z",
 };
@@ -592,9 +594,52 @@ describe("decidePriorFee", () => {
     expect(decidePriorFee(freedom, [earlier])).toEqual({ kind: "supersede", prior: earlier });
   });
 
+  it("never lets one schedule replace or outdate another schedule's price (Tidemark, Opportunity Bank)", () => {
+    const consumer = {
+      ...row,
+      fee_name: "Cashier’s Check",
+      amount: "5.00",
+      document_url: "https://www.tidemarkfcu.org/wp-content/uploads/2026/05/Truth-in-Savings-Disclosure-2026.05.05.pdf",
+    };
+    const business = live({
+      fee_published_id: 612,
+      fee_name: "Cashier’s Check",
+      amount: "8.00",
+      document_url: "https://www.tidemarkfcu.org/wp-content/uploads/2025/10/Business Rate and Fee Schedule 2025.10.30.pdf",
+    });
+    expect(decidePriorFee(consumer, [business])).toEqual({ kind: "additional_line" });
+    const newerBusiness = { ...business, document_crawled_at: "2026-10-04T00:00:00.000Z" };
+    expect(decidePriorFee(consumer, [newerBusiness])).toEqual({ kind: "additional_line" });
+    // A line whose page is unknown is never replaced either.
+    expect(decidePriorFee(row, [live({ source_url: null })])).toEqual({ kind: "additional_line" });
+  });
+
+  it("replaces the line from an older dated copy of the same schedule", () => {
+    const current = { ...row, document_url: "https://nhfcu.org/wp-content/uploads/2026/07/NHFCU.Fee_.Schedule.-08.15.2026-final.pdf" };
+    const older = live({ fee_published_id: 613, document_url: "https://nhfcu.org/wp-content/uploads/2024/08/NHFCU.Fee_.Schedule.Oct_.1.2024.pdf" });
+    expect(decidePriorFee(current, [older])).toEqual({ kind: "supersede", prior: older });
+  });
+
   it("does not record a change when either document's date is unknown", () => {
     expect(decidePriorFee({ ...row, document_crawled_at: null }, [live({})])).toEqual({ kind: "additional_line" });
     expect(decidePriorFee(row, [live({ document_crawled_at: null })])).toEqual({ kind: "additional_line" });
+  });
+});
+
+describe("feePageKey", () => {
+  it("treats dated copies and URL spellings of one page as the same page", () => {
+    expect(feePageKey("https://www.ccuky.org/assets/files/DSnXlX1j/43405479_5-22-2025_savings_rate_and_fee_disclosure.pdf")).toBe(
+      feePageKey("https://ccuky.org/assets/files/DSnXlX1j/r/43405479_10-1-2026_savings_rate_and_fee_disclosure.pdf"),
+    );
+    expect(feePageKey("http://www.cpfcu.com:443/Fees/")).toBe(feePageKey("https://cpfcu.com/fees"));
+  });
+
+  it("keeps business and consumer schedules apart", () => {
+    expect(feePageKey("https://opportunitybank.com/content/files/BUSINESS-FEE-SCHEDULE.pdf")).not.toBe(
+      feePageKey("https://opportunitybank.com/content/files/Consumer-Fee-Schedule.pdf"),
+    );
+    expect(feePageKey(null)).toBeNull();
+    expect(feePageKey("not a url")).toBeNull();
   });
 });
 
@@ -616,5 +661,19 @@ describe("listsBothPrices", () => {
   it("is a change when each page lists the name at one price", () => {
     const lines = [line(verifiedFee.source_document_id, verifiedFee.amount), line(prior.source_document_id, prior.amount)];
     expect(listsBothPrices(lines, verifiedFee, prior)).toBe(false);
+  });
+});
+
+describe("publishedFeeName", () => {
+  it("shows a cut-off or doubled name repaired, keeping the name the category rests on", () => {
+    expect(publishedFeeName("Account Research Research", "account_research")).toBe("Account Research");
+    expect(publishedFeeName("Early Account Closure (by Extraco – no", "early_closure")).toBe("Early Account Closure");
+    expect(publishedFeeName(" Overdraft Fee", "overdraft")).toBe("Overdraft Fee");
+    expect(publishedFeeName("Early Account Closure (by customer)", "early_closure")).toBe("Early Account Closure (by customer)");
+  });
+
+  it("drops a footnote number from a read made before the Knox tidy stripped it", () => {
+    expect(publishedFeeName("ATM Inquiry1", "atm_non_network")).toBe("ATM Inquiry");
+    expect(publishedFeeName("Safe Deposit Box 10x10", "safe_deposit_box")).toBe("Safe Deposit Box 10x10");
   });
 });

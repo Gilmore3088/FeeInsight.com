@@ -12,6 +12,8 @@
  */
 
 import { getSql } from "@/lib/data-store/connection";
+import { FEDERAL_RELEASES_ONLY } from "@/lib/data-store/news";
+import { getStateNews, type StateNews } from "@/lib/data-store/state-news";
 import { loadConfirmedFeeChanges, type PulseChange } from "./monthly-pulse";
 
 /** Days of releases and fee changes a report covers. */
@@ -173,11 +175,11 @@ export async function loadDevelopments(now = new Date(), days = DEVELOPMENTS_WIN
   const rows = (await sql.unsafe(
     `SELECT source, title, link, topic, published_at, created_at
        FROM reg_articles
-      WHERE published_at >= $1
+      WHERE published_at >= $1 AND ${FEDERAL_RELEASES_ONLY}
       ORDER BY published_at DESC`,
     [start],
   )) as unknown as RawReleaseRow[];
-  const [fetched] = (await sql.unsafe(`SELECT MAX(created_at) AS last_fetched FROM reg_articles`)) as unknown as Array<{
+  const [fetched] = (await sql.unsafe(`SELECT MAX(created_at) AS last_fetched FROM reg_articles WHERE ${FEDERAL_RELEASES_ONLY}`)) as unknown as Array<{
     last_fetched: string | Date | null;
   }>;
   const items = buildDevelopments(rows, start, end);
@@ -217,15 +219,36 @@ async function orNull<T>(label: string, read: () => Promise<T>): Promise<T | nul
   }
 }
 
-/** Fee changes, agency releases and the state regulator for the State report. */
+/** Bills stay on the list for a year: a session's fee bill matters until it is signed or dies. */
+const STATE_BILL_WINDOW_DAYS = 365;
+
+/** The state's regulator posts and press stories in the report window, and its fee bills. */
+export async function loadStateNews(stateCode: string, now = new Date()): Promise<StateNews> {
+  const { start } = windowFor(now, DEVELOPMENTS_WINDOW_DAYS);
+  const news = await getStateNews({ stateCode, since: windowFor(now, STATE_BILL_WINDOW_DAYS).start, limit: 30 });
+  const recent = (published: string | null) => published !== null && published >= start;
+  return {
+    regulator_posts: news.regulator_posts.filter((p) => recent(p.published_at)),
+    press: news.press.filter((s) => recent(s.published_at)),
+    bills: news.bills,
+  };
+}
+
+/** Fee changes, agency releases, the state regulator and the state's own news for the State report. */
 export async function loadStateReportContext(
   stateCode: string,
   now = new Date(),
-): Promise<{ feeChanges: FeeChangesBlock | null; developments: DevelopmentsBlock | null; regulator: StateRegulatorRef | null }> {
-  const [feeChanges, developments, regulator] = await Promise.all([
+): Promise<{
+  feeChanges: FeeChangesBlock | null;
+  developments: DevelopmentsBlock | null;
+  regulator: StateRegulatorRef | null;
+  stateNews: StateNews | null;
+}> {
+  const [feeChanges, developments, regulator, stateNews] = await Promise.all([
     orNull("fee changes", () => loadFeeChanges(now)),
     orNull("agency releases", () => loadDevelopments(now)),
     orNull("state regulator", () => loadStateRegulator(stateCode)),
+    orNull("state news", () => loadStateNews(stateCode, now)),
   ]);
-  return { feeChanges, developments, regulator };
+  return { feeChanges, developments, regulator, stateNews };
 }

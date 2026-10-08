@@ -200,6 +200,23 @@ export function joinLabeledFeeCardText(text: string): string {
   return joinLabeledFeeCards(text.split(/\r?\n/)).join("\n");
 }
 
+/**
+ * A price alone on its line can carry the fee's footnote marks, read off their superscripts
+ * onto the baseline: Starion's "$33⁴,⁵" comes out "$334, 5". The price's last digit is the
+ * first mark when the marks count up from it (4, 5) and the text prints each one as a
+ * numbered footnote ("4. Please be aware ..."); only then are the marks dropped. A single
+ * mark ("$331") is left alone: nothing tells it from a price.
+ */
+export function stripPriceFootnoteMarks(text: string): string {
+  if (!/^\s*\$\d+, ?\d/m.test(text)) return text;
+  const notes = new Set([...text.matchAll(/^\s*(\d)\.\s+[A-Z]/gm)].map((match) => Number(match[1])));
+  return text.replace(/^(\s*)\$(\d+)(\d)((?:, ?\d)+)[ \t]*$/gm, (whole, indent: string, price: string, first: string, rest: string) => {
+    const marks = [Number(first), ...rest.split(",").slice(1).map((mark) => Number(mark.trim()))];
+    const counted = marks.every((mark, index) => index === 0 || mark === marks[index - 1] + 1);
+    return counted && marks.every((mark) => notes.has(mark)) ? `${indent}$${price}` : whole;
+  });
+}
+
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
@@ -447,6 +464,15 @@ function feeRow(lines: string[], index: number): string {
   // An "Area | Per | Fee" table flattened one cell per line prints the unit between the name
   // and its price ("Wire Fees - Domestic Outgoing" / "Wire" / "$20.00").
   const perColumn = hasPerColumn(lines, index);
+  // A note the name line leaves open runs on until it closes ("Overdraft Fee (per item, ...
+  // in person withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per
+  // day.)" / "$36.00"); it carries no price of its own.
+  const openNote =
+    /\([^()]*$/.test(line) &&
+    between.length > 0 &&
+    /\)\s*\.?\s*$/.test(between.at(-1) ?? "") &&
+    between.every((next) => moneyTokens(next).length === 0 && !ZERO_WORDS.test(next));
+  if (openNote) return `${line} | ${price}`;
   return between.every(
     (next) =>
       /^\s*(\/|per\b)/i.test(next) ||
@@ -523,8 +549,9 @@ let lastColumns: string[][] = [];
 
 function cachedSourceLines(text: string): string[] {
   if (text !== lastText) {
-    lastLines = sourceLines(text);
-    lastColumns = columnLines(text);
+    const read = stripPriceFootnoteMarks(text);
+    lastLines = sourceLines(read);
+    lastColumns = columnLines(read);
     lastText = text;
   }
   return lastLines;
@@ -559,6 +586,23 @@ function columnLines(text: string): string[][] {
  * category (`canonicalFeeKey` in DAILY_CAP_CATEGORIES) that does not trace as a price is
  * read once more as a cap on its fee's row, so the cap can only gain a trace, never lose one.
  */
+/** Fees charged per item, never per day of a lasting overdraft. */
+const PER_ITEM_CATEGORIES: ReadonlySet<string> = new Set(["overdraft", "nsf"]);
+
+/** "$5.00 per day after 10 business days", "$5.00/day after 7th day": a sustained overdraft charge. */
+const SUSTAINED_AFTER =
+  /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b)/i;
+
+/**
+ * The fee's price on its own row is charged by the day once an account stays overdrawn
+ * ("Overdraft Fee .... $5.00 per day after 10 business day", Oct 8): a sustained overdraft
+ * charge, not the per-item overdraft or NSF fee. Every mention of the price on the row must say so.
+ */
+function chargedOnceOverdrawnDays(row: string, amount: number): boolean {
+  const prices = moneyTokens(row).filter((token) => Math.abs(token.value - amount) < 0.005);
+  return prices.length > 0 && prices.every((token) => SUSTAINED_AFTER.test(row.slice(token.end, token.end + 60)));
+}
+
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
@@ -569,9 +613,10 @@ export function checkFeeAgainstSource(
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
   const pages = [cachedSourceLines(text), ...lastColumns];
   const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
+  const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);
   let first: SourceCheckResult | null = null;
   for (const lines of pages) {
-    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false);
+    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
     if (asPrice.ok) return asPrice;
     first ??= asPrice;
     if (!asCap) continue;
@@ -587,6 +632,7 @@ function checkAgainstLines(
   amount: number,
   categoryPattern: string,
   dailyCap: boolean,
+  perItem = false,
 ): SourceCheckResult {
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
   const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
@@ -657,6 +703,7 @@ function checkAgainstLines(
       amountProblem = null;
     }
     if (!amountProblem && !dailyCap && pricedPerAmount(row, rounded)) amountProblem = "priced_per_amount";
+    if (!amountProblem && perItem && chargedOnceOverdrawnDays(row, rounded)) amountProblem = "amount_not_the_fee";
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
