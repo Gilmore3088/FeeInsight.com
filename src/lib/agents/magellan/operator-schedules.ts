@@ -457,33 +457,82 @@ export async function addOperatorSchedules(options: {
   for (const schedule of schedules) {
     if (names.get(schedule.institutionId) !== sameName(schedule.institutionName)) continue;
     if (known.has(`${schedule.institutionId}:${urlIdentity(schedule.url)}`)) continue;
-    const reason = `Consumer fee schedule given by ${schedule.givenBy}`;
-    const inserted = await db`
-      INSERT INTO institution_additional_sources
-        (institution_id, url, document_type, document_role, found_by_strategy, strategy_version, agent_run_id, reason)
-      VALUES
-        (${schedule.institutionId}, ${schedule.url}, ${looksLikePdfUrl(schedule.url) ? "pdf" : "html"}, 'consumer_supplement',
-         ${OPERATOR_SCHEDULE_STRATEGY.strategy}, ${OPERATOR_SCHEDULE_STRATEGY.version}, ${options.runId}, ${reason})
-      ON CONFLICT (institution_id, url) DO NOTHING
-      RETURNING id
-    `;
-    if (inserted.length === 0) continue;
+    if (!(await insertHandFoundSchedule(db, schedule, { runId: options.runId, stepId: options.stepId ?? null }))) continue;
     known.add(`${schedule.institutionId}:${urlIdentity(schedule.url)}`);
     result.added.push({ institutionId: schedule.institutionId, url: schedule.url });
-    await recordAttempt(db, {
-      institutionId: schedule.institutionId,
-      stage: "discover",
-      strategy: OPERATOR_SCHEDULE_STRATEGY.strategy,
-      version: OPERATOR_SCHEDULE_STRATEGY.version,
-      fingerprint: urlIdentity(schedule.url),
-      outcome: "ok",
-      yieldCount: 1,
-      costMicrousd: 0,
-      durationMs: 0,
-      runId: options.runId,
-      stepId: options.stepId ?? null,
-      detail: { url: schedule.url, given_by: schedule.givenBy, reason },
-    });
   }
   return result;
+}
+
+/** Stores one hand-found schedule as a consumer companion, with its discover attempt. */
+async function insertHandFoundSchedule(
+  db: SqlTag,
+  schedule: Pick<OperatorSchedule, "institutionId" | "url" | "givenBy">,
+  run: { runId: number | null; stepId: number | null },
+): Promise<boolean> {
+  const reason = `Consumer fee schedule given by ${schedule.givenBy}`;
+  const inserted = await db`
+    INSERT INTO institution_additional_sources
+      (institution_id, url, document_type, document_role, found_by_strategy, strategy_version, agent_run_id, reason)
+    VALUES
+      (${schedule.institutionId}, ${schedule.url}, ${looksLikePdfUrl(schedule.url) ? "pdf" : "html"}, 'consumer_supplement',
+       ${OPERATOR_SCHEDULE_STRATEGY.strategy}, ${OPERATOR_SCHEDULE_STRATEGY.version}, ${run.runId}, ${reason})
+    ON CONFLICT (institution_id, url) DO NOTHING
+    RETURNING id
+  `;
+  if (inserted.length === 0) return false;
+  await recordAttempt(db, {
+    institutionId: schedule.institutionId,
+    stage: "discover",
+    strategy: OPERATOR_SCHEDULE_STRATEGY.strategy,
+    version: OPERATOR_SCHEDULE_STRATEGY.version,
+    fingerprint: urlIdentity(schedule.url),
+    outcome: "ok",
+    yieldCount: 1,
+    costMicrousd: 0,
+    durationMs: 0,
+    runId: run.runId,
+    stepId: run.stepId,
+    detail: { url: schedule.url, given_by: schedule.givenBy, reason },
+  });
+  return true;
+}
+
+export type HandFoundLinkResult =
+  | { ok: true; institutionName: string }
+  | { ok: false; error: string };
+
+/**
+ * A schedule link a person pasted on the hit list. It is stored like an OPERATOR_SCHEDULES
+ * entry, so Atlas's priority path (`priority-institutions.ts`, tier hand_found) fetches,
+ * reads, verifies and publishes that one institution on its next tick.
+ */
+export async function addHandFoundLink(options: {
+  db?: SqlTag;
+  institutionId: number;
+  url: string;
+  givenBy: string;
+}): Promise<HandFoundLinkResult> {
+  const db = options.db ?? sql;
+  if (!Number.isInteger(options.institutionId) || options.institutionId < 1) return { ok: false, error: "Invalid institution" };
+  let url: string;
+  try {
+    const parsed = new URL(options.url.trim());
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return { ok: false, error: "Link must start with https://" };
+    url = parsed.toString();
+  } catch {
+    return { ok: false, error: "That is not a link" };
+  }
+  const [institution] = await db`
+    SELECT institution_name FROM institution_sources WHERE id = ${options.institutionId}
+  `;
+  if (!institution) return { ok: false, error: "Institution not found" };
+  const institutionName = String(institution.institution_name);
+  const added = await insertHandFoundSchedule(
+    db,
+    { institutionId: options.institutionId, url, givenBy: options.givenBy },
+    { runId: null, stepId: null },
+  );
+  if (!added) return { ok: false, error: "That link is already on file for this institution" };
+  return { ok: true, institutionName };
 }

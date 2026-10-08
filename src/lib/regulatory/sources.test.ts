@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { aggregationBuckets, fetchCfpbCompanyBreakdown, fullCompanyKey, normalizeCompanyName, subIssueBuckets } from "./cfpb";
 import { parseFdicSod } from "./fdic";
+import { retryAfterMs } from "./http";
 import { isFredNativeSeries, parseBeigeBookPage, parseBeigeBookReleaseCodes, parseFredCsv } from "./fed";
 import { blankUnreportedFeeIncome, ncuaZipUrl, parseCsv, parseNcuaFinancial, parseNcuaInstitution, readNcuaArchive } from "./ncua";
 import { parseSecCompanyFacts, parseSecSubmissions } from "./sec";
@@ -200,6 +201,28 @@ describe("CFPB", () => {
     expect(url.searchParams.get("company")).toBe("JPMORGAN CHASE & CO.");
     expect(url.searchParams.get("date_received_min")).toBe("2025-01-01");
     expect(result).toMatchObject({ total: 24458, products: [{ key: "Checking or savings account", doc_count: 8937 }] });
+  });
+
+  it("retries the 403 and 429 CFPB sends after a burst, and still fails on other refusals", async () => {
+    const ok = () => new Response(JSON.stringify({ hits: { total: 1 }, aggregations: {} }));
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response("", { status: 403 }))
+      .mockResolvedValueOnce(new Response("", { status: 429, headers: { "Retry-After": "2" } }))
+      .mockResolvedValueOnce(ok());
+    await expect(fetchCfpbCompanyBreakdown("ALLY FINANCIAL INC.", 2015, { fetchImpl, backoffMs: 0 })).resolves.toMatchObject({ total: 1 });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+
+    const notFound = vi.fn().mockResolvedValue(new Response("", { status: 404 }));
+    await expect(fetchCfpbCompanyBreakdown("ALLY FINANCIAL INC.", 2015, { fetchImpl: notFound, backoffMs: 0 })).rejects.toThrow("HTTP 404");
+    expect(notFound).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps a Retry-After wait so one request cannot use up a run", () => {
+    expect(retryAfterMs("2")).toBe(2_000);
+    expect(retryAfterMs("600")).toBe(30_000);
+    expect(retryAfterMs(new Date(10_000).toUTCString(), 4_000)).toBe(6_000);
+    expect(retryAfterMs(null)).toBeNull();
+    expect(retryAfterMs("soon")).toBeNull();
   });
 });
 

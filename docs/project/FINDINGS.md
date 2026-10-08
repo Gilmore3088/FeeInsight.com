@@ -13,6 +13,80 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Generic state news readers picked up menus, other agencies' feeds and other states' stories
+**What happened:** the first `registry-state-reg-news` run (12:27 UTC, PR 568) read 31 of 55 regulator
+sites and 311 items, but many were menu links ("Public Meetings and Notices"), links named by their own
+path, and Delaware's statewide feed (news.delaware.gov) instead of the Bank Commissioner. Nine sites
+answered HTTP 403 to the crawler (AK, AZ, CO, KS credit unions, MA, MI, NH, RI) and Ohio's listed URL
+answered 404. The first `registry-state-bill-news` run (12:32) kept 52 stories; most bill searches
+returned other states' bills or sports scores ("SB 79" is also a California housing law, "A 117" a box score).
+**Cause:** the readers were written without reaching any of these sites from the cloud sandbox, so the
+first prod run was their first test. Search engines match words anywhere in a story, not in the headline.
+**Fix:** the follow-up PR keeps feeds on the agency's own host (read from the redirected URL), drops
+nav/header/footer links and path-named links, prefers links under the news page's path, decodes entities,
+and keeps a story only when its headline names the state (or bill) and is about bank fees or banking.
+The 403 sites and Ohio's URL are not fixed.
+**Lesson:** a generic reader for many sites is a first draft; its first prod run's per-site detail is
+the test. Filter search results on the headline, with the publisher removed.
+
+## 2026-10-08: A deploy broke every Hamilton publish and the failure alert stayed quiet
+**What happened:** after PR 560 merged at 12:01 UTC, every Hamilton `publish` step failed with
+`column "fee_category" can only be updated to DEFAULT` (IA, AL, MS, KS, LA, MO, NM from 12:06 to
+12:27; agent_run_steps read 12:27 UTC). James saw "Hamilton is blocked" before any alert did: the
+two-hour failure share was 5 of 43 (12%), under the 50% bar, because 38 publishes from before the
+deploy were still in the window. One MO publish with nothing to publish "completed" at 12:25 in the
+middle of the break, so a step success is not proof a break is fixed.
+**Cause:** the taxonomy fold writes a generated column (owned and fixed by the Top 50 thread, PR
+569). The alert only measured a rate, so a fresh break hid behind older successes, and each failed
+lane waited an hour for its retry after the fix.
+**Fix:** this PR. `getFailureAlerts` also raises a step type whose last 3 finished steps all
+failed (the 12:06 break would have shown on Today at the third failure). Step failures record the
+deploy (`VERCEL_GIT_COMMIT_SHA`); each tick, a lane whose last run failed on a failure shared by 3+
+runs, which the current deploy has not repeated, reruns at once with a `run.recovery_rerun` event.
+**Lesson:** judge "broken" by the latest steps, not a window's share, and judge "fixed" by a new
+deploy, not one success.
+
+## 2026-10-08: Hand-given schedules were invisible on the Gold standard queue
+**What happened:** James gave Chase's and Citi's fee schedule links, but the Knox Gold standard
+queue (`/admin/knox?queue=gold`) showed both as "No URL". A read-only query on prod (12:55 UTC)
+found both links stored and fetched: Chase `ABSF-en.pdf` and Citi `CDAA.pdf`. Fifth Third was the
+same. U.S. Bank's main link is an investing-fees page while its hand-found link is the right
+overdraft disclosure.
+**Cause:** `OPERATOR_SCHEDULES` and hit-list links are stored as `consumer_supplement` rows in
+`institution_additional_sources`, never on `institution_sources.fee_schedule_url`. The Gold
+standard queries (`getGoldStandardCandidates` / `getGoldStandardCandidate`) read only the main link.
+**Fix:** this PR reads the newest non-rejected consumer companion (fetched first) as
+`hand_schedule_url` and shows it beside the main link on the queue and the verify page.
+**Lesson:** a bank's schedule can live in three places (`institution_sources.fee_schedule_url`,
+`source_documents`, `institution_additional_sources`). Any admin view that says "No URL" must
+check all of them. The institution page (`/admin/institution/[id]`) still reads only the main link.
+
+## 2026-10-08: The taxonomy fold wrote a generated column and stopped every Hamilton publish
+**What happened:** after PR 560 merged at 12:01 UTC, Hamilton's publish step failed on every
+state run (IA and AL at 12:06, MS at 12:08, KS at 12:15, atlas job #2877) with `column
+"fee_category" can only be updated to DEFAULT`.
+**Cause:** the fold's `applyMoves` set `verified_fee_observations.fee_category` as well as
+`canonical_fee_key`. On prod `fee_category` is `GENERATED ALWAYS AS (canonical_fee_key) STORED`
+(`20260406_report_jobs.sql`), so the UPDATE is refused, and the publish transaction rolls back.
+Unit tests use a fake database and never ran the SQL.
+**Fix:** this PR drops the `fee_category` assignment; the column follows `canonical_fee_key`.
+**Lesson:** before writing a column on a tier table, check `information_schema.columns.is_generated`
+on prod. New SQL inside the publish transaction can stop all publishing, so read the first
+publish step on prod right after such a merge.
+
+## 2026-10-08: CFPB refuses bursts with 429, then 403, and one refusal killed a whole year
+**What happened:** `registry-cfpb` failed 10 of 39 steps from Oct 3 to Oct 8 (agent_run_steps,
+read 09:10 UTC Oct 8): six HTTP 403, three HTTP 429, one older timeout. They came while the parser
+v2 bump re-loaded all 15 years back to back (about 300 requests a year, 8 in flight). 14 years
+re-loaded; 2015 failed four times, twice within a second of starting.
+**Cause:** the source refusing us, set off by our own request rate. `registryFetch` retried 429
+three times over 7 seconds and treated 403 as final, so one refused request among ~300 failed the
+year. Not a parser bug: every completed step wrote rows.
+**Fix:** this PR. CFPB requests retry 403 and 429 four times with 4-32 s backoff, honouring
+Retry-After (capped at 30 s). Proof is the next 2015 run on prod.
+**Lesson:** a public API that answers bursts with 403 needs that status in its retry list; a
+parser-version bump re-runs every partition, so expect a burst after each one.
+
 ## 2026-10-08: A new agent or pause needs database rows, not only a code list
 **Owner:** the GrowthOS thread (growth agent, build-plan phase 1).
 **What happened:** adding agent `growth` and a `marketing` pause looked like code-only changes
@@ -66,7 +140,9 @@ answers a missing key with a 200 page, which the step treated as a failure.
 under an older parser is due at once, so a parser bump retries its failures on the next tick.
 `ffiec-overdraft` is now parser v2 and records `parser_version`. Census v3 records a "no key"
 partition as empty with `no_key: true` and a plain reason, checks again daily, and the step
-completes instead of failing. Other non-data replies still fail.
+is marked "skipped" instead of failing. Other non-data replies still fail. (Until Oct 8 the step
+showed "completed", which made unloaded data look green on Health; a worker can now return
+`skipped`.)
 **Lesson:** when a loader fix ships, bump its parser version so its failed partitions retry.
 
 ## 2026-10-07: Written Hamilton answers re-sent every tool result on every step
@@ -388,6 +464,16 @@ tick, so a lane's first step never fit. Direct runs now go ahead of lanes only w
 lane has started a step in the last ten minutes; otherwise the waiting lane goes first.
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
+
+## 2026-10-08: Seven state lanes waited since Oct 7 although overdue lanes go first
+**What happened:** at 12:17 UTC Oct 8 Admin Today showed 7 lanes more than 6 hours overdue:
+GA (due since 03:57 Oct 7), PR, CT, KY, VI, DC and GU. The scheduler puts any lane overdue
+3 hours ahead of the rest, but busy lanes come back due every hour and, with three lane runs
+at a time, also wait past 3 hours. Inside the overdue group lanes were still ranked by
+priority score, so the busy ones (scores around 700) kept winning and these seven (scores
+102 to 352) never ran.
+**Fix:** overdue lanes now run longest overdue first; score orders only the rest.
+**Lesson:** an anti-starvation rule must order by age, not by the score it overrides.
 
 ## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
 **What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
@@ -1158,6 +1244,19 @@ flattens into a digit. The table and family specialists (pass 2) already strippe
 **Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
 merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
 **Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+**Follow-up (2026-10-08):** issue 163 was run on Oct 6 (155 to 0), but by 08:40 UTC Oct 8, 22 live
+fees at 14 institutions had the digit again, 19 of them published after the fix. In a dot-leader
+line ("Check Cashing Fee1. . . . $5.00") the digit isn't at the end of the name until the leaders
+are removed, and that happens later, in `tidyFeeName`. Fix: `tidyFeeName` strips the footnote
+number in each cell after the leaders are gone. The live repair now runs in the pipeline: Knox
+name retidy v2 counts a footnoted name as messy and renames it (logged per row in
+`pipeline_feedback`), so no hand SQL is needed. A dry run on the live rows renamed all 22 and
+skipped none. At 11:11 UTC, 13 of those 22 were renamed. The other 9 live footnoted names sit at 5
+institutions: 4 of those institutions are later in the retidy sweep (it goes by institution id,
+40 per step). The fifth has a 14-word name that the run-on limit kept as it was, which retidy v3
+fixes.
+**Lesson 2:** a cleanup that keys on "end of the name" has to run after every other step that
+trims the name.
 
 ## 2026-10-05: Public pages showed different counts and medians on the same day
 **What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
@@ -3058,4 +3157,46 @@ Rows already on file gain the fields only when Knox reads their document again.
   least $15 and twice its price, fails. Hamilton's guard reads that price from both raw readers'
   rows for the same document, logs each to `pipeline_feedback`, and takes it down after the second look.
 - **Watch.** `hamilton.category_guard` byCode `schedule_contradicts`; Knox still misses split NSF rows.
+- **Follow-up (v23, same day).** James: a returned check fee is a return deposited item (RDI),
+  not NSF. Of 382 live plain "Returned check/item" fees filed as NSF, 130 sat beside a separate,
+  higher NSF fee on the same schedule; 72 had the NSF fee's own price; 154 had no NSF line. Guard
+  v23 fails the first group at any price and accepts plain "Returned check" names as RDI; Darwin's
+  `verify.schedule_refile` re-files each one Hamilton takes off NSF as an RDI instead of losing it.
+- **Follow-up (v24, same day).** WCU's $5 "Statement Copy Fee" was live as overdraft because Knox
+  kept the section heading in its name ("OVERDRAFT & NSF FEES: Statement Copy Fee"), and a
+  $5 "Returned Item Photocopy" was live as NSF. Guard v24 rejects statement copies, photocopies,
+  "copy fee" and "copy of" names under overdraft and NSF; these 2 are the only live matches.
+- **Follow-up (review v13, same day).** The 20-fee check of v12 releases scored 18 right, 1 wrong,
+  1 arguable; both misses had names cut from the middle of a line ("/hr incl. reproduction",
+  "account research fee may apply)"). Release review v13 keeps such names held. 117 live fees carry
+  names of that shape, almost all read by Knox; Knox should take the row's first cell as the name.
 
+
+## 2026-10-08: Every Stripe webhook failed
+
+- **Problem.** The webhook recorded each event with `INSERT INTO stripe_events (id, event_type,
+  stripe_customer_id, payload_json)`, the shape of the old SQLite schema
+  (`src/lib/data-store/migrations/001-payments.sql`). Prod's `stripe_events` has a bigint `id`,
+  a unique `stripe_event_id`, `event_type` and `processed_at`, so the insert errored and the
+  route answered 500 to every delivery. Prod had 0 rows in `stripe_events` on 8 Oct. A paid Pro
+  checkout only activated through the welcome-page fallback; a paid institution report was
+  never marked Paid and its link never sent; cancellations and failed payments never landed.
+- **Fix.** `recordStripeEvent` writes `stripe_event_id` and `event_type` with
+  `ON CONFLICT (stripe_event_id)`. Checkout also replaces a saved Stripe customer that the
+  current key can't find (test-mode customers after the switch to live keys, or one deleted
+  in the dashboard), which failed checkout with "No such customer".
+- **Watch.** `stripe_events` gains a row for each delivery; Stripe's webhook page shows 200s.
+
+## 2026-10-08: The local competitors answer scanned every SOD branch row twice
+
+- **Problem.** "Who are my local competitors" took about a minute for James at 12:17 UTC Oct 8.
+  `institution_branch_deposits` (1.5M rows) had no index on `institution_id`. So the bank's own
+  branches (2.6 s) and its latest-year branches for the county map (1.6 s, figures from
+  `pg_stat_statements`) were full scans. They ran one after the other, because the map waited for
+  the branch list. The market footprint compared `county_fips::text`, which skipped the county
+  index.
+- **Fix.** Migration `20270110000026` adds `(institution_id, year)`. `getLocalMarketAnswer` starts
+  every read at once. The footprint compares integers.
+- **Watch.** The measured reads explain seconds, not a minute. If the answer is still slow, check
+  what else is loading the database at the same moment (`api.admin.agents.tick` runs for 170 to
+  230 s at a time).

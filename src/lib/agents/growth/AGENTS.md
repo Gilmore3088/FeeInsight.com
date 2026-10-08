@@ -12,11 +12,64 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Weekly LinkedIn drafts | `/api/admin/crew/content`, Sundays 13:37 UTC | `content-market-spread`, `content-fee-depth` | `../content/AGENTS.md` |
 | Monthly marketing email | `/api/admin/crew/marketing`, the 1st at 14:07 UTC | `marketing-score`, `marketing-write` (paid), `marketing-states` | `../marketing/AGENTS.md` |
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
+| Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
+| Weekly scores | `/api/admin/crew/growth-score`, **not scheduled** (planned Mondays 13:07 UTC) | `growth-score` | below |
+
+### Queue intake (`intake.ts`)
+
+A scheduled Claude Code session files a draft or a PR it opened with
+`POST /api/admin/growth/intake` and the cron secret (`Authorization: Bearer $CRON_SECRET`):
+`{ "agent", "kind", "title", "body", "pr_url"?, "subject_key"? }`.
+
+- `agent` is one of the marketing agents (`GROWTH_AGENTS` in `roster.ts`); `kind` is one of
+  `QUEUE_KINDS` (a `pull_request` needs its `pr_url`, a GitHub PR link).
+- No personal data: those are the only fields (anything else is refused), and a title or body
+  naming an email address outside our own domains (`CONTACT_EMAIL`'s and `SITE_DOMAIN` in
+  `src/lib/constants.ts`) is refused.
+- Each filing is a growth run with one `growth-intake` step, so it is on the run ledger and held
+  by the marketing pause (the run stays queued and files when marketing is turned back on).
+- The item lands in `content_drafts` as a draft (`workflow` `intake:<agent>`, `facts.source`
+  `intake`, no card). The same agent, kind and subject filed again within 30 days is not queued
+  twice.
+
+### Weekly scores (`score.ts`)
+
+The `growth-score` step scores each posted item with no score whose post date is at least 7
+days old, over the 7 days after posting: tracked visits from `marketing_touches` (same
+`utm_campaign` and `utm_content` as its link) and leads whose `first_utm_*` match. The score is
+the visit count; leads sit beside it in the step result. Emails (opens and clicks are not read
+into the app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
+no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
+step's event. Nothing is estimated.
+
+**Not turned on.** The route exists and is on the publishing calendar as "not turned on yet";
+there is no cron for it in `vercel.json`. Nothing runs on a schedule until James says go. An admin
+can start it by hand meanwhile.
+
+### Lessons from skip reasons (`lessons.ts`)
+
+Skipping a queue item with a reason at `/admin/customers/content` writes a `pipeline_feedback`
+row: `reported_by` growth, `about_stage` marketing, `about_strategy` the item's agent, signal
+`wrong`, kind `skipped_by_james`, dedupe key `growth.skip:draft:<id>`. Sending it back to review
+marks it `restored`. `recentLessons(db, agent)` returns the standing ones (90 days, newest 10):
+the weekly content steps read MURROW's before drafting and list them in their step result, and a
+scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
 
 These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
 (`hamilton:content:<day>`, `hamilton:marketing:<month>`, `hamilton:marketing-send:<month>`) and
 `triggered_by` values (`hamilton.content`, `hamilton.marketing`) keep their old names, so a day or
 month already run under Hamilton is not run or sent again.
+
+## The approval page
+
+`/admin/growth` (Customers room) is the one page for the whole queue: items grouped by status
+(to review, approved, done, skipped), filterable by agent and kind, with approve, skip with a
+reason, edit title and text (drafts only), mark done, and the PR link. It reuses the server
+actions in `src/app/admin/customers/content/actions.ts`. Each roster agent has a section with its
+newest growth steps from the run ledger and its standing lessons; a step is credited to an agent
+only when its run or intake item names it, or it is a `content-*` step (MURROW). The monthly
+email and the weekly scoring show under "Team work". The marketing pause and the `agent:growth`
+budget row are shown read-only (`src/lib/data-store/growth-board.ts`).
 
 ## Nothing sends or posts on its own
 
@@ -63,5 +116,6 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   with their `hamilton.marketing:*` dedupe keys.
 - Drafts from every growth agent go to `content_drafts`, one queue: each row has `agent` (default
   `murrow`), `kind` (default `linkedin_post`), and can carry `skip_reason` (from the Skip form),
-  `pr_url` and `score` / `scored_at` (migration `20270110000025`).
+  `pr_url` and `score` / `scored_at` (migration `20270110000025`). Scheduled sessions file into
+  it through the intake route above.
 - No other tables for marketing results.

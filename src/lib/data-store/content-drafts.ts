@@ -170,6 +170,96 @@ export async function setContentDraftStatus(
   `;
 }
 
+/** True once migration 20270110000025 (agent, kind, skip_reason, pr_url, score, scored_at) is applied. */
+export async function queueSchemaReady(db: SqlTag = sql): Promise<boolean> {
+  const [row] = await db`
+    SELECT COUNT(*)::int AS n FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'content_drafts'
+       AND column_name IN ('agent', 'kind', 'pr_url', 'score', 'scored_at')
+  `;
+  return Number(row?.n ?? 0) === 5;
+}
+
+/** The newest item an agent filed with this kind and subject in the last `days` days, so a retried filing is not queued twice. */
+export async function findRecentQueueItem(
+  agent: string,
+  kind: string,
+  subjectKey: string,
+  days: number,
+  db: SqlTag = sql,
+): Promise<number | null> {
+  const [row] = await db`
+    SELECT id FROM content_drafts
+     WHERE agent = ${agent} AND kind = ${kind} AND subject_key = ${subjectKey}
+       AND created_at >= now() - make_interval(days => ${days}::int)
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1
+  `;
+  return row ? Number(row.id) : null;
+}
+
+/**
+ * Posted items with no score whose post date is at least `days` days old: the ones the weekly
+ * scoring measures. `postedAt` falls back to the review time for rows marked posted before
+ * posted_at was kept.
+ */
+export async function listUnscoredPosted(days: number, limit: number, db: SqlTag = sql): Promise<ContentDraft[]> {
+  const rows = await db`
+    SELECT * FROM content_drafts
+     WHERE status = 'posted' AND score IS NULL AND scored_at IS NULL
+       AND COALESCE(posted_at, reviewed_at, created_at) <= now() - make_interval(days => ${days}::int)
+     ORDER BY COALESCE(posted_at, reviewed_at, created_at) ASC, id ASC
+     LIMIT ${limit}
+  `;
+  return rows.map((row) => toDraft(row as Record<string, unknown>));
+}
+
+/** Items older than `days` days that were never posted, by status (they have nothing to score yet). */
+export async function countUnpostedOlderThan(days: number, db: SqlTag = sql): Promise<Record<string, number>> {
+  const rows = await db`
+    SELECT status, COUNT(*)::int AS n FROM content_drafts
+     WHERE status <> 'posted' AND score IS NULL
+       AND created_at <= now() - make_interval(days => ${days}::int)
+     GROUP BY status
+  `;
+  return Object.fromEntries(rows.map((row) => [String(row.status), Number(row.n)]));
+}
+
+/** Writes a measured score once; a row already scored keeps its first score. */
+export async function setContentDraftScore(id: number, score: number, db: SqlTag = sql): Promise<void> {
+  await db`UPDATE content_drafts SET score = ${score}, scored_at = now() WHERE id = ${id} AND score IS NULL`;
+}
+
+/**
+ * Marks an item checked with no measure for its kind: `scored_at` set, `score` left null.
+ * The reason is in that scoring run's step event. It is not checked again each week; when a
+ * measure for its kind is built, clearing `scored_at` puts it back in line.
+ */
+export async function markContentDraftUnmeasured(id: number, db: SqlTag = sql): Promise<void> {
+  await db`UPDATE content_drafts SET scored_at = now() WHERE id = ${id} AND score IS NULL AND scored_at IS NULL`;
+}
+
+/** Longest title kept (the intake limit). */
+export const DRAFT_TITLE_MAX_LENGTH = 200;
+
+/**
+ * Edits a draft's title and text from the growth approval page. Only items still waiting for
+ * review (`draft`) change; an approved, posted or skipped item keeps what James decided on.
+ */
+export async function updateContentDraftText(
+  id: number,
+  title: string,
+  caption: string,
+  reviewer: string,
+  db: SqlTag = sql,
+): Promise<void> {
+  await db`
+    UPDATE content_drafts
+       SET title = ${title.trim().slice(0, DRAFT_TITLE_MAX_LENGTH)}, caption = ${caption}, reviewed_by = ${reviewer}, reviewed_at = now()
+     WHERE id = ${id} AND status = 'draft'
+  `;
+}
+
 export async function updateContentDraftCaption(id: number, caption: string, reviewer: string, db: SqlTag = sql): Promise<void> {
   await db`
     UPDATE content_drafts SET caption = ${caption}, reviewed_by = ${reviewer}, reviewed_at = now()

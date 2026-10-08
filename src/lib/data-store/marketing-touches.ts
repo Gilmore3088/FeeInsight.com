@@ -39,3 +39,39 @@ export async function recordLeadFirstTouch(leadId: number, touch: MarketingTouch
     RETURNING id`;
   return rows.length > 0;
 }
+
+type SqlTag = typeof sql;
+
+/** True once marketing_touches and the leads.first_utm_* columns exist (migration 20270110000022). */
+export async function touchSchemaReady(db: SqlTag = sql): Promise<boolean> {
+  const [row] = await db`
+    SELECT to_regclass('public.marketing_touches') IS NOT NULL AS touches,
+           (SELECT COUNT(*)::int FROM information_schema.columns
+             WHERE table_schema = 'public' AND table_name = 'leads'
+               AND column_name IN ('first_utm_campaign', 'first_utm_content')) AS lead_columns
+  `;
+  return row?.touches === true && Number(row?.lead_columns ?? 0) === 2;
+}
+
+/**
+ * Tracked visits and leads for one link (campaign and content) in a window: sessions that
+ * landed from it, and leads whose first tracked source was it.
+ */
+export async function countTrackedOutcomes(
+  campaign: string,
+  content: string,
+  from: Date,
+  to: Date,
+  db: SqlTag = sql,
+): Promise<{ visits: number; leads: number }> {
+  const [row] = await db`
+    SELECT
+      (SELECT COUNT(*)::int FROM marketing_touches
+        WHERE utm_campaign = ${campaign} AND utm_content = ${content}
+          AND created_at >= ${from.toISOString()} AND created_at < ${to.toISOString()}) AS visits,
+      (SELECT COUNT(*)::int FROM leads
+        WHERE first_utm_campaign = ${campaign} AND first_utm_content = ${content}
+          AND created_at >= ${from.toISOString()} AND created_at < ${to.toISOString()}) AS leads
+  `;
+  return { visits: Number(row?.visits ?? 0), leads: Number(row?.leads ?? 0) };
+}

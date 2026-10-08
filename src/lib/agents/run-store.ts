@@ -6,6 +6,7 @@ import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
+import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
@@ -51,6 +52,7 @@ import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -62,6 +64,10 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
+import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
+import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
+import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
@@ -101,6 +107,15 @@ type SqlTag = typeof sql;
  * Every institution's totals for a fee step, so the live board's counts are the step's real
  * numbers rather than whatever fell into the ten sample rows. Capped to keep events small.
  */
+/**
+ * The deploy (git commit) this code runs from, or null outside Vercel. Recorded on every
+ * step failure so a failure from an old deploy can be told apart from one the current
+ * code still has (wakeLanesAfterRecovery).
+ */
+export function currentDeploy(): string | null {
+  return process.env.VERCEL_GIT_COMMIT_SHA || null;
+}
+
 function institutionResults(stepKey: string, rows: Sample[]) {
   return tallyByInstitution(stepKey, rows).slice(0, 50);
 }
@@ -746,6 +761,14 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // A "returned check" Hamilton took off NSF beside the schedule's own NSF fee is filed as an RDI.
+      const scheduleRefile = await runDarwinScheduleRefile({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        db: tx,
+      });
       return {
         status: "completed",
         summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
@@ -766,6 +789,7 @@ async function executeAgenticStep(
             released: release.released,
             feedback_written: release.feedbackWritten,
           },
+          schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
@@ -867,6 +891,13 @@ async function executeAgenticStep(
         institutionId,
       });
       const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // The top-50 fold: fees under the fifteen retired categories move to the one their
+      // wording places them in, before any sweep judges them by category (fee-fold.ts).
+      const taxonomyFold = await foldRetiredCategories(tx, {
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
@@ -1042,6 +1073,8 @@ async function executeAgenticStep(
               published.publishedFees > 0 ||
               outlierRollbacks.length > 0 ||
               offTaxonomyRollbacks.length > 0 ||
+              taxonomyFold.movedLive > 0 ||
+              taxonomyFold.noHomeRolledBack > 0 ||
               outlierRestores.length > 0 ||
               offTaxonomyRestores.length > 0 ||
               limitRollbacks.length > 0 ||
@@ -1063,6 +1096,10 @@ async function executeAgenticStep(
       const outlierNote =
         outlierRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
+          : "";
+      const foldNote =
+        taxonomyFold.moved + taxonomyFold.noHomeRolledBack + taxonomyFold.noHomeHeld > 0
+          ? ` ${published.dryRun ? "Would fold" : "Folded"} ${taxonomyFold.moved.toLocaleString()} fee(s) from retired categories into the top 50${taxonomyFold.noHomeRolledBack > 0 ? `; ${published.dryRun ? "would take" : "took"} down ${taxonomyFold.noHomeRolledBack.toLocaleString()} with no home there after a second look` : ""}${taxonomyFold.noHomeHeld > 0 ? `; kept ${taxonomyFold.noHomeHeld.toLocaleString()} with no home live until James decides` : ""}.`
           : "";
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0
@@ -1124,7 +1161,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1142,6 +1179,7 @@ async function executeAgenticStep(
             amount: rollback.amount,
             reason: rollback.reason,
           })),
+          taxonomy_fold: taxonomyFold,
           off_taxonomy_rollbacks: offTaxonomyRollbacks.length,
           off_taxonomy_rollback_samples: offTaxonomyRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
@@ -1549,12 +1587,25 @@ async function executeAgenticStep(
       };
     }
     case "content-market-spread": {
+      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts.
+      const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeMarketSpread(result), detail: { ...result } };
+      return { status: "completed", summary: [summarizeMarketSpread(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-fee-depth": {
+      const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
       const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeFeeDepth(result), detail: { ...result } };
+      return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "growth-intake": {
+      const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
+      // A refused filing fails the step, so it shows red in the run ledger.
+      if (result.errors.length) throw new Error(summarizeGrowthIntake(result));
+      return { status: "completed", summary: summarizeGrowthIntake(result), detail: { ...result } };
+    }
+    case "growth-score": {
+      const result = await runGrowthScore({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeGrowthScore(result), detail: { ...result } };
     }
     case "marketing-score": {
       const result = await runMarketingScore({
@@ -2051,7 +2102,7 @@ async function failAgenticStep(
       VALUES
         (${runId}, ${step.id}, 'step.failed', 'failed',
          ${message},
-         ${JSON.stringify({ step_key: step.stepKey, agent: step.agent })}::jsonb)
+         ${JSON.stringify({ step_key: step.stepKey, agent: step.agent, deploy: currentDeploy() })}::jsonb)
     `;
     await tx`
       UPDATE agent_runs
@@ -2271,6 +2322,9 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
+  // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
+  "registry-state-reg-news": 170_000,
+  "registry-state-bill-news": 120_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,

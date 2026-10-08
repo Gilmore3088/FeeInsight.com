@@ -19,6 +19,11 @@ export interface Publication {
   /** Freshness key from getReportFreshness. */
   freshnessKey: string;
   next: (now: Date) => Date;
+  /**
+   * False for a schedule that is built but not yet registered in vercel.json (waiting on
+   * James's go). It is listed with its planned cadence and has no next date.
+   */
+  scheduled?: boolean;
 }
 
 function nextDaily(hourUtc: number, minute: number) {
@@ -50,7 +55,7 @@ function nextMonthly(day: number, hourUtc: number, minute: number, months?: numb
   };
 }
 
-/** Keep in step with vercel.json. */
+/** Keep in step with vercel.json (every entry but `scheduled: false` ones has a cron there). */
 export const PUBLICATIONS: Publication[] = [
   {
     key: "national_index",
@@ -108,6 +113,18 @@ export const PUBLICATIONS: Publication[] = [
     freshnessKey: "run:hamilton.marketing",
     next: nextMonthly(1, 14, 7),
   },
+  {
+    // Growth scores posted queue items from tracked visits and leads. Built, but the cron
+    // (/api/admin/crew/growth-score, planned "7 13 * * 1") is not in vercel.json until James says go.
+    key: "growth_scores",
+    name: "Weekly growth scores",
+    audience: "You",
+    cadence: "Weekly, Mondays (not turned on yet)",
+    href: "/admin/customers/content",
+    freshnessKey: "run:growth.score",
+    next: nextWeekly(1, 13, 7),
+    scheduled: false,
+  },
 ];
 
 export interface CalendarRow {
@@ -116,7 +133,8 @@ export interface CalendarRow {
   lastStatus: string | null;
   lastError: string | null;
   count: number | null;
-  nextAt: string;
+  /** Null when the schedule is not turned on yet (`scheduled: false`). */
+  nextAt: string | null;
 }
 
 export function buildPublishingCalendar(reports: ReportFreshness[], now = new Date()): CalendarRow[] {
@@ -128,7 +146,7 @@ export function buildPublishingCalendar(reports: ReportFreshness[], now = new Da
       lastStatus: freshness?.lastStatus ?? null,
       lastError: freshness?.lastError ?? null,
       count: freshness?.count ?? null,
-      nextAt: publication.next(now).toISOString(),
+      nextAt: publication.scheduled === false ? null : publication.next(now).toISOString(),
     };
   });
 }

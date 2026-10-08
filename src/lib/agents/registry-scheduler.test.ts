@@ -10,6 +10,7 @@ vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
 
 import {
   backfillStart,
+  isKeylessSkipNowKeyed,
   isParserStale,
   pickDueCandidate,
   registryCandidates,
@@ -26,7 +27,7 @@ describe("registry scheduler", () => {
 
   it("round-robins sources, identity syncs first, newest partition of each source first", () => {
     const candidates = registryCandidates(now, { year: 2025, quarter: 4 }).map((c) => `${c.source}:${c.partitionKey}`);
-    expect(candidates.slice(0, 21)).toEqual([
+    expect(candidates.slice(0, 23)).toEqual([
       "fdic-universe:current",
       "fdic-financials:2026Q2",
       "ncua-financials:2026Q2",
@@ -45,13 +46,15 @@ describe("registry scheduler", () => {
       "fed-publications:current",
       "reg-news:current",
       "federal-register:current",
+      "state-reg-news:current",
+      "state-bill-news:current",
       "state-regulators:current",
       "enforcement:current",
       "state-enforcement:current",
     ]);
     // Round two continues each source's history.
     // Credit union branches pull only the newest quarter, so they drop out after round one.
-    expect(candidates.slice(21, 29)).toEqual([
+    expect(candidates.slice(23, 31)).toEqual([
       "fdic-financials:2026Q1",
       "ncua-financials:2026Q1",
       "ffiec-overdraft:2026Q2",
@@ -79,6 +82,13 @@ describe("registry scheduler", () => {
     expect(backfillStart(undefined)).toEqual({ year: 2010, quarter: 1 });
     expect(backfillStart("2005Q3")).toEqual({ year: 2005, quarter: 3 });
     expect(backfillStart("garbage")).toEqual({ year: 2010, quarter: 1 });
+  });
+
+  it("makes a vintage skipped for a missing Census key due once a key is set", () => {
+    expect(isKeylessSkipNowKeyed(true, "abc123")).toBe(true);
+    expect(isKeylessSkipNowKeyed(true, undefined)).toBe(false);
+    expect(isKeylessSkipNowKeyed(true, "  ")).toBe(false);
+    expect(isKeylessSkipNowKeyed(false, "abc123")).toBe(false);
   });
 
   it("re-pulls succeeded NCUA quarters recorded under an older parser", () => {

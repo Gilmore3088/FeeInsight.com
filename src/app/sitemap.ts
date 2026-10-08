@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { STATE_CODES } from "@/lib/us-states";
 import {
-  getCitiesInState,
   getDataFreshness,
   getInstitutionIdsWithFeeDates,
   getStatesWithFeeData,
+  getTopCitiesByState,
 } from "@/lib/data-store";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { getPublicSnapshot } from "@/lib/public-stats";
@@ -15,6 +15,11 @@ import { SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
 
+
+// Serve a cached copy and rebuild it in the background at most once an hour. Rendered per
+// request it took ~6 s (Google Search Console reported "Couldn't fetch").
+export const dynamic = "force-static";
+export const revalidate = 3600;
 
 const BASE_URL = SITE_URL;
 const SAMPLE_REPORT_PATH = "/reports/sample-competitive-fee-position";
@@ -91,22 +96,18 @@ async function loadIndexableStates(): Promise<Set<string> | null> {
 }
 
 async function loadCityPages(dataUpdated: Date): Promise<Entry[]> {
-  const pages: Entry[] = [];
-  for (const code of STATE_CODES) {
-    try {
-      const cities = await getCitiesInState(code);
-      const indexable = cities
-        .filter((c) => c.with_fees >= MIN_INDEXABLE_CITY_INSTITUTIONS)
-        .slice(0, TOP_CITIES_PER_STATE);
-      for (const c of indexable) {
+  const listedStates = new Set<string>(STATE_CODES);
+  try {
+    const cities = await getTopCitiesByState(MIN_INDEXABLE_CITY_INSTITUTIONS, TOP_CITIES_PER_STATE);
+    return cities
+      .filter((c) => listedStates.has(c.state_code))
+      .map((c) => {
         const citySlug = encodeURIComponent(c.city.toLowerCase());
-        pages.push(entry(`/fees/city/${code.toLowerCase()}/${citySlug}`, dataUpdated, "weekly", 0.6));
-      }
-    } catch {
-      // Skip states with no data
-    }
+        return entry(`/fees/city/${c.state_code.toLowerCase()}/${citySlug}`, dataUpdated, "weekly", 0.6);
+      });
+  } catch {
+    return [];
   }
-  return pages;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -122,7 +123,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     institutions = await getInstitutionIdsWithFeeDates();
     const freshness = await getDataFreshness().catch(() => null);
     dataUpdated = toDate(freshness?.last_fee_extracted_at, now);
-  } catch {
+  } catch (error) {
+    // At runtime, fail the background rebuild so the last full cached copy keeps serving
+    // instead of being replaced by a partial sitemap. At build, emit the partial one.
+    if (process.env.NEXT_PHASE !== "phase-production-build") throw error;
     dbAvailable = false;
   }
 
