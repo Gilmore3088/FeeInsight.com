@@ -41,7 +41,7 @@ export default async function ProMarketPage() {
         day: "numeric",
         year: "numeric",
       })
-    : "---";
+    : "Date not recorded";
 
   const spotlightEntries = SPOTLIGHT_CATS
     .map((cat) => allEntries.find((e) => e.fee_category === cat))
@@ -331,11 +331,11 @@ export default async function ProMarketPage() {
             </p>
             <div className="space-y-2">
               {[
-                { label: "Peer Builder", href: "/pro/peers" },
+                { label: "Peer group", href: "/pro/settings" },
                 { label: "All Categories", href: "/pro/categories" },
                 { label: "District Intelligence", href: "/pro/districts" },
                 { label: "Institution Database", href: "/pro/data" },
-                { label: "Hamilton Analyze", href: "/pro/analyze" },
+                { label: "Ask Hamilton", href: "/pro/analyze" },
               ].map((link) => (
                 <Link
                   key={link.href}

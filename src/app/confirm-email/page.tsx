@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
+import { SearchModal } from "@/components/public/search-modal";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { markEmailConfirmed, verifyEmailConfirmToken } from "@/lib/email/email-confirm";
 
@@ -82,6 +83,7 @@ export default async function ConfirmEmailPage({
         </p>
       </main>
       <CustomerFooter />
+      <SearchModal />
     </div>
   );
 }

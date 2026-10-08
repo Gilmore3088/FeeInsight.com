@@ -205,6 +205,8 @@ export function narrateStepFinished(
       const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
       return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
     }
+    case "hamilton-answer-eval":
+      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
@@ -461,6 +463,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-states": "growth",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
+  "hamilton-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

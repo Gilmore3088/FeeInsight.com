@@ -127,25 +127,26 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
   }
 
   if (signalType === "hamilton_competitor_fee_change") {
+    // The fee that moved, against the institutions in your counties.
+    const fee = signal.competitorChange?.feeKey;
+    if (fee) {
+      const params = new URLSearchParams({ fee, layer: "local" });
+      if (hasInstitutionId) params.set("instId", institutionId);
+      return { href: `/pro/research?${params.toString()}`, label: "Compare your market" };
+    }
     return { href: "/pro/market", label: "Compare your market" };
   }
 
   if (signalType === "darwin_verification_completed") {
-    const params = new URLSearchParams({ intent: "verification-refresh" });
-    if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/analyze?${params.toString()}`, label: "See the evidence" };
+    return { href: hasInstitutionId ? `/pro/research?instId=${institutionId}` : "/pro/research", label: "See its fees" };
   }
 
   if (signalType === "darwin_verification_needs_review") {
-    const params = new URLSearchParams({ intent: "verification-review" });
-    if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/analyze?${params.toString()}`, label: "See the evidence" };
+    return { href: hasInstitutionId ? `/pro/research?instId=${institutionId}` : "/pro/research", label: "See its fees" };
   }
 
   if (signalType === "knox_extraction_completed") {
-    const params = new URLSearchParams({ intent: "extraction-review" });
-    if (hasInstitutionId) params.set("instId", institutionId);
-    return { href: `/pro/analyze?${params.toString()}`, label: "See the evidence" };
+    return { href: hasInstitutionId ? `/pro/research?instId=${institutionId}` : "/pro/research", label: "See its fees" };
   }
 
   if (signalType === "knox_extraction_needs_review") {
