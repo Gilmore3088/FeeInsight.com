@@ -114,16 +114,26 @@ export const PUBLICATIONS: Publication[] = [
     next: nextMonthly(1, 14, 7),
   },
   {
-    // Growth scores posted queue items from tracked visits and leads. Built, but the cron
-    // (/api/admin/crew/growth-score, planned "7 13 * * 1") is not in vercel.json until James says go.
+    // Growth scores posted queue items from tracked visits and leads. Turned on by James
+    // ("Weekly agent schedules: Enable", 15:33 UTC Oct 8).
     key: "growth_scores",
     name: "Weekly growth scores",
     audience: "You",
-    cadence: "Weekly, Mondays (not turned on yet)",
+    cadence: "Weekly, Mondays",
     href: "/admin/customers/content",
     freshnessKey: "run:growth.score",
     next: nextWeekly(1, 13, 7),
-    scheduled: false,
+  },
+  {
+    // NIELSEN reads prospects' published leadership and contact pages. Nothing sends:
+    // the contacts feed outreach drafts James sends himself.
+    key: "prospect_contacts",
+    name: "Prospect contacts",
+    audience: "You",
+    cadence: "Weekly, Mondays (up to 60 prospect websites)",
+    href: "/admin/growth?view=team",
+    freshnessKey: "run:growth.contacts",
+    next: nextWeekly(1, 12, 37),
   },
 ];
 

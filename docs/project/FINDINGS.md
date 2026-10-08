@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: State fee bills stayed unstored for a week after going live
+**What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
+**Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
+**Fix:** a live batch now treats states last read in shadow mode as due (`runRegistryStateBillsBatch`, state-bills.ts). Merged in the PR that adds this entry.
+**Lesson:** when a shadow flag flips to live, the stored "fresh until" dates from shadow runs must not hold back the first live read. Check any other `*_TRACKER_LIVE` source for the same pattern.
+
 ## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
 **What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
 "Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
@@ -3422,3 +3428,11 @@ and quarter were already stored, without looking at the periods of the data behi
   Download PDF as soon as the Ask has saved it, whatever happens to the memo.
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
+
+## 2026-10-08: A new API route without a policy entry fails only the Vercel build
+- **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
+  full vitest run (`policies.test.ts`, which was not run before the push) and the Vercel build
+  catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
+- **Fix.** Add the policy entry in the same commit as the route.
+- **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.

@@ -22,6 +22,7 @@ describe("state news shaping", () => {
       "2026-09-17 Electronic Bulletin",
       "Kansas Office of the State Bank Commissioner Closes Small Business Bank, Lenexa, Kansas, Appoints Federal Deposit Insurance Corporation as Receiver",
       "Don’t let scammers steal your holiday spirit",
+      "New York State Department of Financial Services and Wyoming Division of Banking Sign MOU to Enable Coordinated Oversight of Virtual Currency and Digital Asset Activities",
     ])expect(isBankingPost(kept), kept).toBe(true);
     for (const dropped of [
       "Jobs in the 605 Statewide Virtual Hiring Event",
@@ -29,6 +30,9 @@ describe("state news shaping", () => {
       "RESIDENTS URGED TO FILE INSURANCE CLAIMS AFTER SEVERE WEATHER",
       "Department of Financial Services Announces 2027 Health Insurance Premium Rates, Saving New Yorkers $1.6 Billion",
       "FREE EMISSIONS FIX AVAILABLE FOR AFFECTED MERCEDES-BENZ DIESEL OWNERS IN HAWAIʻI",
+      "NYSIF Collaborates with Cities for Financial Empowerment Fund to Expand Safe Banking Access for Injured Workers",
+      // The agency's name alone does not make a post about banking (prod, Oct 8 2026).
+      "Department of Financial Services Announces Return of Painting to Heirs of Family Persecuted by Nazi Regime",
     ]) expect(isBankingPost(dropped), dropped).toBe(false);
   });
 

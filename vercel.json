@@ -63,6 +63,14 @@
     {
       "path": "/api/admin/crew/content",
       "schedule": "37 13 * * 0"
+    },
+    {
+      "path": "/api/admin/crew/contacts?limit=60",
+      "schedule": "37 12 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/growth-score",
+      "schedule": "7 13 * * 1"
     }
   ]
 }
