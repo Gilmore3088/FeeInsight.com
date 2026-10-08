@@ -1,6 +1,7 @@
-# Hamilton content
+# Growth content
 
-The content workflows from the 3-month content plan (Oct 7, 2026). Each one drafts LinkedIn
+The content workflows from the 3-month content plan (Oct 7, 2026), run as agent `growth` under the
+marketing pause (`../growth/AGENTS.md`). Each one drafts LinkedIn
 posts into the content queue (`content_drafts`, reviewed at `/admin/customers/content`).
 Nothing here posts or sends: James approves a draft, posts it on the Fee Insight company page
 himself, then marks it posted.

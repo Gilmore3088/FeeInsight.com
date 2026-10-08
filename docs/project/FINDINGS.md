@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: A new agent or pause needs database rows, not only a code list
+**Owner:** the GrowthOS thread (growth agent, build-plan phase 1).
+**What happened:** adding agent `growth` and a `marketing` pause looked like code-only changes
+(`AdminAgent`, `automation-control.ts`). The schema says otherwise: `agent_runs.agent_name` and
+`agent_run_steps.agent_name` reference `agent_registry(agent_name)` (in
+`20260406_report_jobs.sql`), `automation_control.control_key` is checked against
+`('global', 'pipeline')`, and `automation_control_audit.action` against a fixed list. A growth run
+or a marketing pause would have failed on insert in prod.
+**Cause:** these lists live only in the database; no test compares them with the code.
+**Fix:** migration `20270110000023_growth_agent.sql` (this PR) inserts the `growth` registry row
+and widens both checks. Not applied yet.
+**Lesson:** before adding an agent name, control key or audit action, grep `supabase/migrations`
+for the table's CHECK and FOREIGN KEY constraints, and widen them in the same PR.
+
 ## 2026-10-08: Credit union charter numbers matched banks' FDIC certs in the market loader
 **What happened:** the custom report market loader (`loadMarketCounties` in
 `src/lib/data-store/custom-report-market.ts`) matched `institution_sources.cert_number` against

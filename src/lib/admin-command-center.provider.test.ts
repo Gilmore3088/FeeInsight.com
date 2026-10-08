@@ -5,6 +5,7 @@ vi.mock("./automation-control", () => ({
   findOpenProviderCreditFailure: vi.fn(),
   getAutomationControl: vi.fn(),
   getPipelineControl: vi.fn(),
+  getMarketingControl: vi.fn(),
 }));
 
 import { buildProviderReadiness } from "./admin-command-center";
