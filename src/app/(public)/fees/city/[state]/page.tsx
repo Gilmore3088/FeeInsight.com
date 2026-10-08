@@ -18,10 +18,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   return {
     title: `Bank Fees by City in ${stateName} - Local Fee Comparison`,
-    description: `Compare bank fees by city in ${stateName}. Find the cheapest banks and credit unions in your area. Overdraft fees, monthly charges, and more.`,
+    description: `Compare bank fees by city in ${stateName}. Find banks and credit unions with lower fees in your area. Overdraft fees, monthly charges, and more.`,
     keywords: [
       `${stateName} bank fees by city`,
-      `${stateName} cheapest banks`,
+      `${stateName} banks with lower fees`,
       `${stateName} bank fee comparison`,
       `${stateName} credit union fees`,
     ],
@@ -113,7 +113,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href={`/research/state/${stateCode.toLowerCase()}`}
+            href={`/research/state/${stateCode}`}
             className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
           >
             {stateName} Fee Report

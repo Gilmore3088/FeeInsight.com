@@ -5,7 +5,10 @@ import {
   getCitiesInState,
   getDataFreshness,
   getInstitutionIdsWithFeeDates,
+  getStatesWithFeeData,
 } from "@/lib/data-store";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { getPublicSnapshot } from "@/lib/public-stats";
 import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
@@ -52,6 +55,37 @@ async function loadPublishedReports(): Promise<Array<{ slug: string; published_a
   } catch {
     // No published_reports table yet or DB unavailable
     return [];
+  }
+}
+
+/**
+ * Fee categories with at least MIN_INSTITUTIONS_FOR_MEDIAN institutions, from the public
+ * snapshot. Null when the counts can't be read, so the caller lists every category as before.
+ */
+async function loadIndexableCategories(): Promise<Set<string> | null> {
+  try {
+    const { categories } = await getPublicSnapshot();
+    if (categories.length === 0) return null;
+    return new Set(
+      categories
+        .filter((c) => c.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN)
+        .map((c) => c.fee_category),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** States with at least MIN_INSTITUTIONS_FOR_MEDIAN institutions with published fees; null when unreadable. */
+async function loadIndexableStates(): Promise<Set<string> | null> {
+  try {
+    const rows = await getStatesWithFeeData();
+    if (rows.length === 0) return null;
+    return new Set(
+      rows.filter((r) => r.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN).map((r) => r.state_code),
+    );
+  } catch {
+    return null;
   }
 }
 
@@ -118,13 +152,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7)] : []),
   ];
 
+  // Category and state pages below the median floor are noindexed (thin), so they stay out
+  // of the sitemap. When the counts can't be read, every page is listed as before.
+  const [indexableCategories, indexableStates] = dbAvailable
+    ? await Promise.all([loadIndexableCategories(), loadIndexableStates()])
+    : [null, null];
+
   const categoryPages: Entry[] = Object.values(FEE_FAMILIES)
     .flat()
+    .filter((category) => !indexableCategories || indexableCategories.has(category))
     .map((category) => entry(`/fees/${category}`, dataUpdated, "weekly", 0.8));
 
-  const statePages: Entry[] = STATE_CODES.map((code) =>
-    entry(`/research/state/${code}`, dataUpdated, "weekly", 0.7),
-  );
+  const statePages: Entry[] = STATE_CODES.filter(
+    (code) => !indexableStates || indexableStates.has(code),
+  ).map((code) => entry(`/research/state/${code}`, dataUpdated, "weekly", 0.7));
 
   const districtPages: Entry[] = Array.from({ length: FED_DISTRICT_COUNT }, (_, i) =>
     entry(`/research/district/${i + 1}`, dataUpdated, "weekly", 0.7),

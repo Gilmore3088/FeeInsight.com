@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: No search data: GA4 and Search Console are not wired in the code
+**Owner:** the GrowthOS thread.
+**What happened:** checking analytics for the marketing team, the code has Vercel Analytics only
+(24 browser events, 3 server events). There is no GA4 tag and no Search Console verification
+(no meta tag, no verification file). Search Console may still be verified by DNS; not known.
+**Cause:** analytics was built around Vercel's custom events; search data was never set up.
+**Fix:** none yet. `growth-os/metrics/analytics-inventory.md` lists what exists and what NIELSEN
+needs; Search Console waits on James's answer.
+**Lesson:** read funnel counts from our own tables (`leads`, `users`) with the time, and say
+"not measured" for search and visitor numbers until a source exists.
+
 ## 2026-10-07: Fixed registry loaders waited 6 hours to retry; Census needs a key
 **Owner:** the Data inventory thread.
 **What happened:** `registry-ffiec-overdraft` failed with "text = date" for 2025Q1-2026Q2
