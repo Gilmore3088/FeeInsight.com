@@ -83,16 +83,7 @@ export async function getPipelineControl(): Promise<AutomationControlState> {
       FROM automation_control
      WHERE control_key = 'pipeline'
   `;
-  if (!row) {
-    return {
-      enabled: true,
-      reason: null,
-      changedBy: "default",
-      changedAt: new Date(0).toISOString(),
-      revision: 0,
-    };
-  }
-  return mapControl(row);
+  return row ? mapControl(row) : defaultEnabledControl();
 }
 
 export async function assertPipelineEnabled(context: string): Promise<AutomationControlState> {
@@ -103,18 +94,28 @@ export async function assertPipelineEnabled(context: string): Promise<Automation
   return control;
 }
 
-export async function setPipelineEnabled(
+/** The state a missing operator-pause row stands for: enabled, never changed. */
+function defaultEnabledControl(): AutomationControlState {
+  return {
+    enabled: true,
+    reason: null,
+    changedBy: "default",
+    changedAt: new Date(0).toISOString(),
+    revision: 0,
+  };
+}
+
+/** Upserts one operator-pause row and audits the change, in one transaction. */
+async function setOperatorControl(
+  controlKey: "pipeline" | "marketing",
   actor: string,
   enabled: boolean,
-  reason: string,
+  normalizedReason: string,
 ): Promise<AutomationControlState> {
-  const normalizedReason = reason.trim().slice(0, 500)
-    || (enabled ? "Pipeline resumed by an administrator" : "Pipeline paused by an administrator");
-
   return withTransaction(async (tx) => {
     const [row] = await tx`
       INSERT INTO automation_control (control_key, enabled, reason, changed_by, changed_at, revision)
-      VALUES ('pipeline', ${enabled}, ${normalizedReason}, ${actor}, NOW(), 1)
+      VALUES (${controlKey}, ${enabled}, ${normalizedReason}, ${actor}, NOW(), 1)
       ON CONFLICT (control_key) DO UPDATE
          SET enabled = EXCLUDED.enabled,
              reason = EXCLUDED.reason,
@@ -127,10 +128,44 @@ export async function setPipelineEnabled(
       INSERT INTO automation_control_audit
         (action, reason, actor, active_job_count)
       VALUES
-        (${enabled ? "pipeline_resume" : "pipeline_pause"}, ${normalizedReason}, ${actor}, 0)
+        (${`${controlKey}_${enabled ? "resume" : "pause"}`}, ${normalizedReason}, ${actor}, 0)
     `;
     return mapControl(row);
   });
+}
+
+export async function setPipelineEnabled(
+  actor: string,
+  enabled: boolean,
+  reason: string,
+): Promise<AutomationControlState> {
+  const normalizedReason = reason.trim().slice(0, 500)
+    || (enabled ? "Pipeline resumed by an administrator" : "Pipeline paused by an administrator");
+  return setOperatorControl("pipeline", actor, enabled, normalizedReason);
+}
+
+/**
+ * Operator pause for growth's marketing steps (`MARKETING_STEP_KEYS`: content drafts and
+ * the monthly email). Separate from the pipeline pause: each leaves the other's runs
+ * going. A missing row means marketing is enabled, so code can deploy before any row.
+ */
+export async function getMarketingControl(): Promise<AutomationControlState> {
+  const [row] = await sql`
+    SELECT enabled, reason, changed_by, changed_at, revision
+      FROM automation_control
+     WHERE control_key = 'marketing'
+  `;
+  return row ? mapControl(row) : defaultEnabledControl();
+}
+
+export async function setMarketingEnabled(
+  actor: string,
+  enabled: boolean,
+  reason: string,
+): Promise<AutomationControlState> {
+  const normalizedReason = reason.trim().slice(0, 500)
+    || (enabled ? "Marketing resumed by an administrator" : "Marketing paused by an administrator");
+  return setOperatorControl("marketing", actor, enabled, normalizedReason);
 }
 
 /**

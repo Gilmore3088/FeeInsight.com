@@ -47,7 +47,7 @@ export const MISSING_ANTHROPIC_API_KEY_MESSAGE =
  * the Anthropic Console shows and caps spend per agent. An agent without its own key
  * uses the shared ANTHROPIC_API_KEY.
  */
-export const PROVIDER_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton"] as const;
+export const PROVIDER_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth"] as const;
 export type ProviderAgent = (typeof PROVIDER_AGENTS)[number];
 
 export function anthropicApiKeyEnvName(agent: ProviderAgent): string {

@@ -62,4 +62,12 @@ describe("draftDepthCaption", () => {
       expect(draft.body).not.toMatch(/can't|cannot|raise|cheap|should/i);
     }
   });
+
+  it("ends on the free report, not a Hamilton page", () => {
+    const draft = draftDepthCaption(metro({}), USE_CASES[0], asOf);
+    expect(draft.link).toMatch(/^https:\/\/feeinsight\.com\/reports\?/);
+    expect(draft.link).toContain("utm_campaign=w3-fee-depth");
+    expect(draft.caption.endsWith(`Get a free fee report: ${draft.link}`)).toBe(true);
+    expect(draft.caption).not.toMatch(/feeinsight\.com\/(fees|for-institutions|pro)\b/);
+  });
 });

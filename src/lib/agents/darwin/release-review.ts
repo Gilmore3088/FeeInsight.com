@@ -13,7 +13,7 @@ import {
 } from "@/lib/agents/paid-pass";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
+import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 import {
@@ -51,12 +51,24 @@ type SqlTag = typeof sql;
 // Correction Notice" (a business cash device) passed as safe deposit box rent, a box price read
 // with its footnote marker ("$651" among $85 and $100 boxes) passed, and a bare "overdrafts | $5.00"
 // from jumbled rows passed. The prompt now names all three.
+// Version 11 (2026-10-08): releases on (James, "Turn on", 02:16 UTC). Same prompt and checks as
+// v10; the bump has every held fee judged again with release on, since v10's 1,305 passes were
+// recorded as verdicts only and a fee is reviewed once per version.
 // Version 10 (2026-10-07): a hand check of 20 v9 passes found "Overnight Fee (Business Bill Pay)"
 // passed as bill pay, the fourth premium-service miss since v5. A fee whose own name says it is the
 // faster version of a service now never passes outside a premium category (`premiumServiceMisfiled`).
+// Version 12 (2026-10-08): a hand check of 20 released v11 fees found "Monthly Fee $50.00" above
+// "Night Deposit Bag $10.00" released as the account's monthly fee and a $5 "Returned check fee"
+// released as NSF. A fee now stays held when today's category guard rejects its name, when a bare
+// "Monthly Fee" sits among a business service's rows, or when a plain returned check or item under
+// $10 is filed as NSF (`releaseHoldReason`).
+// Version 13 (2026-10-08): a hand check of 20 released v12 fees found "/hr incl. reproduction"
+// (Legal Process Compliance $20/hr) released as document reproduction, and "account research fee
+// may apply)" (a $5 draft copy). A name cut from the middle of a line, starting with "/" or ending
+// in an unopened ")", now stays held (`name_fragment`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 10,
+  version: 13,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -104,6 +116,35 @@ const PREMIUM_SERVICE = /\b(expedit\w*|rush|overnight|emergency|same[- ]day|next
 export function premiumServiceMisfiled({ row }: Pick<ReleaseReviewCandidate, "row">): boolean {
   const key = row.held_canonical_fee_key;
   return !PREMIUM_CATEGORIES.has(key) && PREMIUM_SERVICE.test(row.fee_name ?? "");
+}
+
+const BARE_MONTHLY_NAME = /^\s*(monthly\s+)?(service\s+)?(fee|charge)\s*$/i;
+const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit|scanner|positive pay)/i;
+const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
+/** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
+const SMALL_NSF_AMOUNT = 10;
+/** A name cut from the middle of a line: "/hr incl. reproduction", "account research fee may apply)". */
+const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$/;
+
+export type ReleaseHoldReason = "category_guard" | "business_service_monthly" | "small_returned_item" | "name_fragment";
+
+/**
+ * Why a fee the model passed still stays held, or null. Each is a miss a hand check found after the
+ * prompt already named it, so the fee's own name, amount and rows now decide.
+ */
+export function releaseHoldReason({ row, sourceContext }: Pick<ReleaseReviewCandidate, "row" | "sourceContext">): ReleaseHoldReason | null {
+  const key = row.held_canonical_fee_key;
+  const name = row.fee_name ?? "";
+  if (!checkFeeCategory(key, name, row).ok) return "category_guard";
+  if (NAME_FRAGMENT.test(name)) return "name_fragment";
+  if (key === "monthly_maintenance" && BARE_MONTHLY_NAME.test(name) && BUSINESS_SERVICE_ROWS.test(sourceContext ?? "")) {
+    return "business_service_monthly";
+  }
+  const amount = row.amount == null ? null : Number(row.amount);
+  if (key === "nsf" && PLAIN_RETURNED_ITEM.test(name) && amount != null && amount < SMALL_NSF_AMOUNT) {
+    return "small_returned_item";
+  }
+  return null;
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -393,7 +434,7 @@ export interface ReleaseReviewResult extends PaidPassResult {
 
 /** Review up to `calls` batches of release candidates; release the ones that pass when acting. */
 export async function runDarwinReleaseReview(
-  options: PaidStepOptions & { create?: PaidMessageCreator; calls: number },
+  options: PaidStepOptions & { create?: PaidMessageCreator; calls: number; acts?: boolean },
 ): Promise<ReleaseReviewResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
@@ -419,7 +460,7 @@ export async function runDarwinReleaseReview(
     return result;
   }
 
-  const acts = DARWIN_RELEASE_ACTS;
+  const acts = options.acts ?? DARWIN_RELEASE_ACTS;
   const model = PAID_PASS_MODELS.verify();
   // Fees judged before the release step stored their schedule's surrounding rows read them now.
   const missing = candidates.filter((candidate) => !candidate.sourceContext && candidate.row.source_document_id != null);
@@ -518,7 +559,8 @@ export async function runDarwinReleaseReview(
       result.succeeded += 1;
       const refilesTo = lineRefilesTo(candidate);
       const premium = premiumServiceMisfiled(candidate);
-      const passes = reviewPasses(verdict) && refilesTo == null && !premium;
+      const holdReason = releaseHoldReason(candidate);
+      const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null;
       if (passes) result.passed += 1;
       let feeVerifiedId: number | null = null;
       if (passes && acts) {
@@ -541,6 +583,7 @@ export async function runDarwinReleaseReview(
           source_context: candidate.sourceContext ?? null,
           refiles_to: refilesTo,
           premium_service: premium,
+          hold_reason: holdReason,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
           amount_is_price: verdict.amountIsPrice,

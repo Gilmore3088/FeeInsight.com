@@ -11,6 +11,13 @@ import { registryFetchJson, type RegistryFetchOptions } from "./http";
 export const CFPB_API = "https://www.consumerfinance.gov/data-research/consumer-complaints/search/api/v1/";
 export const CFPB_FIRST_YEAR = 2012;
 
+/**
+ * CFPB answers bursts with HTTP 429 and then, for a while, HTTP 403. During the October 2026
+ * re-load (15 years back to back) 9 of 39 runs died on one such answer after 1-7 s of retries.
+ * Both are retried with a longer backoff (4, 8, 16, 32 s, or Retry-After) before a run fails.
+ */
+export const CFPB_FETCH_DEFAULTS: RegistryFetchOptions = { retries: 4, backoffMs: 4_000, retryStatuses: [403] };
+
 interface Bucket {
   key: string;
   doc_count: number;
@@ -79,7 +86,7 @@ export async function fetchCfpbCompanyCounts(
 ): Promise<{ companies: Bucket[]; url: string }> {
   const { min, max } = yearRange(year);
   const url = buildUrl({ date_received_min: min, date_received_max: max });
-  const body = await registryFetchJson<CfpbAggResponse>(url, { timeoutMs: 120_000, ...options });
+  const body = await registryFetchJson<CfpbAggResponse>(url, { ...CFPB_FETCH_DEFAULTS, timeoutMs: 120_000, ...options });
   return { companies: aggregationBuckets(body, "company"), url };
 }
 
@@ -98,7 +105,7 @@ export async function fetchCfpbCompanyBreakdown(
 ): Promise<CfpbCompanyBreakdown> {
   const { min, max } = yearRange(year);
   const url = buildUrl({ company, date_received_min: min, date_received_max: max });
-  const body = await registryFetchJson<CfpbAggResponse>(url, options);
+  const body = await registryFetchJson<CfpbAggResponse>(url, { ...CFPB_FETCH_DEFAULTS, ...options });
   const total = typeof body.hits?.total === "number" ? body.hits.total : Number(body.hits?.total?.value ?? 0);
   return {
     company,
@@ -126,7 +133,7 @@ export async function fetchCfpbCompanyProductIssues(
 ): Promise<CfpbProductIssues> {
   const { min, max } = yearRange(year);
   const url = buildUrl({ company, date_received_min: min, date_received_max: max }, { product: products });
-  const body = await registryFetchJson<CfpbAggResponse>(url, options);
+  const body = await registryFetchJson<CfpbAggResponse>(url, { ...CFPB_FETCH_DEFAULTS, ...options });
   const total = typeof body.hits?.total === "number" ? body.hits.total : Number(body.hits?.total?.value ?? 0);
   return { company, total, issues: aggregationBuckets(body, "issue"), subIssues: subIssueBuckets(body), url };
 }

@@ -3,7 +3,83 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-08
+
+**Pro moves to three tiers; the monthly brief stays free; banks and credit unions get equal weight.**
+James, 11:35 UTC, after the pricing and competitive strategy pages. Pro becomes three tiers at
+$1,500, $3,000 and $5,000 a year ("If we need to bump prices later we can. 5k for an on demand
+consultant isn't a lot"). The Stripe payments thread owns `src/app/subscribe/pricing.ts`, the Stripe
+prices, and the open tier questions (asset breakpoints, a monthly option, how the tier is picked).
+Marketing copy and the plan follow its answers. The free Fee Pulse monthly email stays free and is
+positioned against Moebs's paid news product (task 2.27). Marketing gives banks and credit unions equal
+weight. The report price is still open: it stays "Priced on request" until James answers.
+
+**Eleven marketing gaps added; the admin stays simple.** James, 08:57 UTC. After the pricing and
+competitive strategy research, he added tasks 2.25-2.35 to `growth-os/BUILD-PLAN.md`: lead follow-up,
+pricing rollout, Fee Pulse positioning, a method and accuracy page, a live sample report, a first
+case study, comparison pages, a credit union campaign, association partners, email scores and sales
+in the scoreboard. "Just ensure cleanness on the admin side. Simplicity": every admin screen for
+marketing lives inside /admin/growth, which opens on items to review with everything else in tabs.
+No new admin pages for marketing.
+
+**The taxonomy is the top 50 fee types, and every fee is fitted into them.** James, Oct 7 ("Fold
+into existing", no new categories) and Oct 8 (the About page said 61: "do the top 50 and
+try to fit everything there"; "Use extensive and comprehensive text matching"), 09:05 UTC ("Merge
+caps": the NSF daily cap joins the overdraft daily cap, and International ATM stays one of the
+50). Fifteen categories left `FEE_FAMILIES`; `src/lib/fee-fold.ts` re-files each of their fees by
+its own wording, and a bare name by the schedule section above it. At 09:47 UTC he chose to keep
+Appraisal as its own type (folding it into loan origination would move that median), and at
+11:44 UTC picked Mortgage Lien Release (with reconveyance) to fold into Other Lending Fee in its
+place. He also asked to see the fees with no home before any
+are archived, so Hamilton's fold step flags them but keeps them live
+(`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
+
+**One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
+automated loop that extends the existing content and email workflows and runs on the same run
+ledger as the data agents (`growth-os/BUILD-PLAN.md`). Approvals happen in an admin page and on
+GitHub. Free reports are described as "instant". At 07:20 he approved the plan with its
+recommended answers: a new agent, BERNAYS, owns press, events and partners; 3 LinkedIn drafts a
+week; agents that change code run as scheduled Claude Code sessions that open PRs; the growth
+budget is $5 a day and $60 a month; 3 follow-up email drafts after a free report; loop
+infrastructure is built before the agents; and each task is a GitHub issue labeled `growth`.
+Nothing is scheduled until he says go after a two-week dry run. Lesson for Claude: ask him when a
+choice changes scope, rather than picking a default.
+
+**A second agent team for marketing: GrowthOS.** James, 02:26 UTC, proposed a marketing team built
+from the Marketing Skills library (MIT, copied into `.agents/skills/`). Week 1 is in `growth-os/`:
+the manager is DRAPER (Atlas is already the pipeline orchestrator), SHERLOCK does market
+intelligence, GitHub issues labeled `growth` are the work queue, and nothing is scheduled until
+James says go. The team runs as Claude Code routines because its output is GitHub issues and PRs;
+any app-side paid step gets its own `ANTHROPIC_API_KEY_GROWTH` slot and `agent:growth` budget.
+Every public number passes `growth-os/context/editorial-policy.md`. James asked (04:20 UTC) where
+SEO and social were: ERNEST (SEO) moved up to start with the first run, and MURROW (social) was
+added to own LinkedIn through the existing content workflow, not a second pipeline.
+
+**Darwin releases held fees that pass Claude's review.** James, 02:16 UTC, tapped "Turn on" on the
+held-fees card. The bar he set was his own word plus at least 19 of 20 passes right in a hand
+check; review v10 met it (19 right, 1 arguable; earlier rounds 17, 18, 18). Released fees carry the
+`darwin_released_hold` flag so the release can be found and rolled back; a fee taken down later
+is archived, never deleted.
+
 ## 2026-10-07
+
+**Hamilton gets the new market study and the merger screen.** James, 07:24 UTC ("Go on market",
+"Go on merger") after the previews. The Improving Hamilton thread builds both; open PRs 441 and
+447 carry them.
+
+**The 13,215 bad FFIEC rows leave the live call-report table.** James, 07:18 UTC, typed "Archive
+the 13,215 FFIEC financial rows." Written by an old loader on Aug 10, their service charges were
+about a million times too large and most duplicated good FDIC and NCUA rows. They move to a
+restorable archive table; readers use only `fdic` and `ncua` rows (#440). Bank overdraft income now
+comes from the FFIEC bulk call report step instead (#369, #386).
+
+**Every state report gets the Tennessee-style map and detail.** James, 07:11 UTC ("I love the state
+map... Need that for every state"). Open PR 436 carries it.
+
+**Each state's 10 to 15 largest institutions come first.** James, 03:07 UTC: find all fees for the
+largest institutions in every state, which likely hold over half the deposits and have pricing
+power. A shared ranking of each state's top 15 (#355) now goes first in Magellan's search (#356)
+and Atlas's state order (#359).
 
 **Taking a fee down is a last resort: a second look, a decision log, and a way back.** James,
 01:20 UTC (Live board cleanup thread): "we need to constantly learn from fees we pass or scrap...
@@ -358,3 +434,10 @@ Already-live thin institutions stay live but stay queued for re-review.
 
 **Crawl each state monthly with a quarterly re-check, with a state expert agent per state.** James.
 Built in PR 75 (state experts, monthly full pass, quarterly re-check).
+
+## 2026-10-08
+
+**Pro is described as one plan for up to 5 people, not per seat.** James, 08:19 UTC, Stripe
+thread. One checkout ($499.99 a month or $5,000 a year) already gives an institution account 5
+logins (`WORKSPACE_SEAT_LIMIT`), so the site now says "for up to 5 people" instead of "per
+seat". Prices and Stripe are unchanged. Answers build-plan task 0.11.

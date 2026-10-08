@@ -1,5 +1,6 @@
-import { REPORT_OFFER } from "@/lib/constants";
+import { REPORT_INCLUDES, REPORT_OFFER } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 
 export type ProPlan = "monthly" | "annual";
 
@@ -21,15 +22,17 @@ const EXACT_DOLLARS = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-/** "$499.99" — the billed monthly seat price, never floored. */
+/** "$499.99" — the billed monthly price, never floored. */
 export const MONTHLY_PRICE_LABEL = EXACT_DOLLARS.format(MONTHLY_PRICE_USD);
 /** "Monthly" / "Annual" for copy that names the plan. */
 export const PLAN_DISPLAY_NAME: Record<ProPlan, string> = { monthly: "Monthly", annual: "Annual" };
-/** "$499.99/mo per seat" / "$5,000/yr per seat". */
+/** One subscription covers the whole team (James, 8 Oct 2026): "for up to 5 people". */
+export const PLAN_TEAM_LABEL = `for up to ${WORKSPACE_SEAT_LIMIT} people`;
+/** "$499.99/mo for up to 5 people" / "$5,000/yr for up to 5 people". */
 export function planPriceLine(plan: ProPlan): string {
   return plan === "monthly"
-    ? `${MONTHLY_PRICE_LABEL}/mo per seat`
-    : `${ANNUAL_PRICE_LABEL}/yr per seat`;
+    ? `${MONTHLY_PRICE_LABEL}/mo ${PLAN_TEAM_LABEL}`
+    : `${ANNUAL_PRICE_LABEL}/yr ${PLAN_TEAM_LABEL}`;
 }
 /** "$5,000" */
 export const ANNUAL_PRICE_LABEL = WHOLE_DOLLARS.format(ANNUAL_PRICE_USD);
@@ -58,9 +61,5 @@ export function proFeatureList(summary: PublicStatsSummary): string[] {
   ];
 }
 
-export const REPORT_BULLETS = [
-  "15 headline fees vs your true peer cohort",
-  "Named competitors on the same lines",
-  "Outlier flags and a source citation for every figure",
-  "A board-ready PDF for your pricing committee",
-];
+/** The institution report's contents, worded the same as every other page that lists them. */
+export const REPORT_BULLETS: readonly string[] = REPORT_INCLUDES;

@@ -5,6 +5,12 @@ export const SITE_URL =
 export const SITE_NAME = "Fee Insight";
 export const PRODUCT_NAME = "Bank Fee Index";
 export const SITE_DOMAIN = "feeinsight.com";
+// The legal entity behind the site: formed in Washington, approved by the state Oct 7 2026.
+export const LEGAL_ENTITY_NAME = "Fee Insight LLC";
+export const LEGAL_ENTITY_STATE = "Washington";
+export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} limited liability company`;
+// Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
+export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
@@ -29,6 +35,8 @@ export const REPORT_OFFER = {
   priceUsd: 0,
   priceLabel: "Priced on request",
   ctaLabel: "Get a free fee report",
+  /** Label for links that open the request form on the paid institution report. */
+  institutionCtaLabel: "Request your institution report",
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
 } as const;
@@ -48,7 +56,7 @@ export const REPORT_INCLUDES = [
   "A source for every figure: the document, the page, the date",
 ] as const;
 
-export const REPORT_OFFER_LINE = "National and Fed district fee reports — free, and ready in a minute";
+export const REPORT_OFFER_LINE = "National and Fed district fee reports — free and instant";
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =

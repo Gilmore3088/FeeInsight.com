@@ -1,0 +1,39 @@
+name: Growth task
+description: Add a job to the GrowthOS marketing queue (growth-os/workflows/work-queue.md).
+title: "Growth: "
+labels: ["growth", "growth:new"]
+body:
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A link, a screenshot, or what you saw. Agents add the prod query and its time.
+    validations:
+      required: true
+  - type: input
+    id: job
+    attributes:
+      label: Job
+      description: One sentence, verb first.
+    validations:
+      required: true
+  - type: dropdown
+    id: kpi
+    attributes:
+      label: KPI it should move
+      options:
+        - Qualified institutional visitors
+        - Free report requests
+        - Qualified report requests
+        - Paid report orders
+        - Pro subscriptions
+        - Institution plans
+        - Not sure
+  - type: dropdown
+    id: review
+    attributes:
+      label: Review level
+      options:
+        - Automatic (research, drafts, internal reports)
+        - Review required (site change, article, offer wording)
+        - Explicit authorization (sending, spending, pricing, fee data)

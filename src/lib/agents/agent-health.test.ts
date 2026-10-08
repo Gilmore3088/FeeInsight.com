@@ -5,6 +5,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import {
   atlasRules,
   darwinRules,
+  growthRules,
   healthChanges,
   knoxRules,
   magellanRules,
@@ -58,6 +59,17 @@ describe("agent health", () => {
       ["no_failed_steps", false, "12 failed of 100"],
       ["no_repeat_failures", false, "4 fee links did"],
     ]);
+  });
+
+  it("checks Growth's failed steps and its spend against the agent:growth daily cap", () => {
+    expect(growthRules({ stepsCompleted: 3, stepsFailed: 0, spendUsd: 1.2, dailyCapUsd: 5 }).every((rule) => rule.ok)).toBe(true);
+    const over = growthRules({ stepsCompleted: 3, stepsFailed: 1, spendUsd: 6, dailyCapUsd: 5 });
+    expect(over.map((rule) => [rule.key, rule.ok, rule.detail])).toEqual([
+      ["no_failed_steps", false, "1 failed of 4"],
+      ["within_daily_cap", false, "$6.00 of $5.00"],
+    ]);
+    // A disabled policy has no cap to break.
+    expect(growthRules({ stepsCompleted: 0, stepsFailed: 0, spendUsd: 0, dailyCapUsd: null })[1]).toMatchObject({ ok: true, detail: "$0.00 of no cap" });
   });
 
   it("flags numbers that moved more than a quarter since yesterday", () => {

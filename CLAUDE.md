@@ -73,9 +73,10 @@ Most are enforced by `scripts/ci-guards.sh` (`npm run guard:legacy` runs them al
 - Every agent action creates or updates a visible agent run/step/event.
 - No public prelaunch proxy gate that serves a parallel static site instead of the App Router pages.
 - Never read `extracted_fees` (archived; `fee-read-model-kill`). Read `published_fee_catalog`.
-- Two controls gate agent work (`src/lib/automation-control.ts`): the `global` provider stop
+- Three controls gate agent work (`src/lib/automation-control.ts`): the `global` provider stop
   blocks only provider steps (`PROVIDER_STEP_KEYS` in `src/lib/agents/types.ts`, paid model
-  calls); the `pipeline` control pauses deterministic steps. The tick checks the provider budget
+  calls); the `pipeline` control pauses deterministic data steps; the `marketing` control pauses
+  growth (marketing) steps (`MARKETING_STEP_KEYS`), and neither pause holds the other's work. The tick checks the provider budget
   only when a provider step is queued. Don't gate deterministic work on provider budget.
 - Don't query historical `crawl_*` source tables from app code (`source-read-model-kill`).
 - Document agents use `institution_id`, `source_document_id`, and `agent_source_texts`
