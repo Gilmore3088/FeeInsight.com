@@ -167,6 +167,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /wire/i,
     exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection)`, "i"),
   },
+  // v44: guarded so Hamilton reads it for a paired price ("$20 / $30") in the wrong slot.
+  wire_intl_incoming: { include: /\S/, exclude: /(?!)/ },
   wire_domestic_incoming: {
     include: /wire/i,
     exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
@@ -314,7 +316,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v42: v40 and v41 are Accuracy's (PR 682).
 // v43: PR 682's rules ship after Magellan's v42 (PR 684): v40 cheap overdraft protection, v41
 // charge-off fees, and names cut from another fee's note plus a reload fee filed as bill pay.
-export const CATEGORY_GUARD_VERSION = 43;
+// v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
+export const CATEGORY_GUARD_VERSION = 44;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -523,7 +526,52 @@ export function checkFeeCategory(
   if (protectionReason) return { ok: false, code: "name_contradicts", reason: protectionReason };
   const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
+  const slotReason = pairedPriceSlot(canonicalFeeKey, context);
+  if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
   return { ok: true };
+}
+
+const PAIRED_PRICES = /\$\s?(\d[\d,]*(?:\.\d{2})?)\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/;
+const SLASH_PAIR = /([A-Za-z'’]+)\s*\/\s*([A-Za-z'’]+)/g;
+const WIRE_SIDES: ReadonlyArray<{ pattern: RegExp; value: string }> = [
+  { pattern: /^(international|foreign|intl|int['’]l)$/i, value: "intl" },
+  { pattern: /^domestic$/i, value: "domestic" },
+  { pattern: /^(out|outgoing|outbound)$/i, value: "out" },
+  { pattern: /^(in|incoming|inbound)$/i, value: "in" },
+];
+const WIRE_DIMENSIONS: Record<string, ReadonlyArray<string>> = { geo: ["intl", "domestic"], dir: ["out", "in"] };
+
+/**
+ * v44: a wire row that prints two prices for two named wires ("Wire International In/Out |
+ * $10/$35", "Outgoing Domestic/Foreign | $25.00/$45.00") takes the price in its own slot.
+ * Darwin's eval found the first price filed under the second wire's name; 11 of 15 live paired
+ * wire rows had it. The words either side of a slash in the excerpt name the slots; a side that
+ * names nothing on that dimension is the other value ("Bank Wire Transfers/International").
+ */
+function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext | undefined): string | null {
+  if (!canonicalFeeKey.startsWith("wire_") || context?.amount == null || context.amount === "") return null;
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  const prices = excerpt?.match(PAIRED_PRICES);
+  if (!excerpt || !prices) return null;
+  const first = Number(prices[1].replace(/,/g, ""));
+  const second = Number(prices[2].replace(/,/g, ""));
+  const amount = Number(context.amount);
+  if (first === second || Math.abs(amount - first) >= 0.005) return null;
+  const words = excerpt.replace(prices[0], " ");
+  const keyValues = [canonicalFeeKey.includes("_intl_") ? "intl" : "domestic", canonicalFeeKey.endsWith("_outgoing") ? "out" : "in"];
+  for (const pair of words.matchAll(SLASH_PAIR)) {
+    const left = WIRE_SIDES.find((side) => side.pattern.test(pair[1]))?.value ?? null;
+    const right = WIRE_SIDES.find((side) => side.pattern.test(pair[2]))?.value ?? null;
+    for (const values of Object.values(WIRE_DIMENSIONS)) {
+      const l = left && values.includes(left) ? left : null;
+      const r = right && values.includes(right) ? right : null;
+      if (l === r || (l == null && r == null)) continue;
+      const own = keyValues.find((value) => values.includes(value))!;
+      const slot = l === own || (l == null && r !== own) ? 1 : 2;
+      return slot === 2 ? `"${pair[0]}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
+    }
+  }
+  return null;
 }
 
 const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [
