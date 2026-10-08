@@ -80,6 +80,12 @@ describe("reading a page", () => {
     expect(roleFor("Vice President, Chief Financial Officer & Treasurer")).toBe("finance");
   });
 
+  it("reads member services as retail only at a decision maker's rank", () => {
+    expect(roleFor("Member Services Manager")).toBe("other");
+    expect(roleFor("Member Service Officer")).toBe("other");
+    expect(roleFor("VP of Member Experience")).toBe("retail");
+  });
+
   it("re-reads saved contacts: labels aren't names and headings aren't titles", () => {
     const saved = { kind: "person" as const, role: "executive" as const };
     expect(normalizeContact({ ...saved, name: "Accessibility Statement", title: null })).toMatchObject({ name: null, role: "other" });
@@ -222,6 +228,14 @@ describe("shared mailboxes and phone lines", () => {
     expect(normalizeContact({ name: null, title: "Member Services: 800.742.5582 or", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
     expect(normalizeContact({ name: null, title: "Main Branch Line: (360) 685-8477", role: "other", kind: "person" }).title).toBeNull();
     expect(normalizeContact({ name: null, title: "By mail to Generations FCU, ATTN: Marketing Dept., P.O. Box 791870", role: "marketing", kind: "person" })).toMatchObject({ title: null, role: "other" });
+  });
+
+  it("drops a line that quotes an address, and the board and card mailboxes", () => {
+    expect(normalizeContact({ name: "Annual Meeting", title: "To contact our leadership directly, Email: President-CEO@lafcu.org or  .", role: "executive", kind: "person" })).toMatchObject({ name: null, title: null, role: "other" });
+    expect(normalizeContact({ name: null, title: "Member Services: MemberServices@TheQ.org", role: "retail", kind: "person" })).toMatchObject({ title: null, role: "other" });
+    for (const email of ["boardofdirectors@lafcu.org", "visa@theq.org", "board@x.org"]) expect(isSharedMailbox(email)).toBe(true);
+    expect(isSharedMailbox("ceo@nihfcu.org")).toBe(false);
+    expect(normalizeContact({ name: "Sarah Gonneville", title: "VP, Retail Branch Administrator", role: "retail", kind: "person" })).toMatchObject({ title: "VP, Retail Branch Administrator", role: "retail" });
   });
 });
 

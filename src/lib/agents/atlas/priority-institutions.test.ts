@@ -98,6 +98,8 @@ describe("priority institutions", () => {
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
     expect(select).toContain("CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END");
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
+    // A request by name does not wait out the retry window of an earlier overdraft-gap run.
+    expect(select).toContain("c.tier <> 2 OR r.params_json->>'tier' = 'requested'");
   });
 
   it("runs only free steps, each scoped to the one institution", () => {
