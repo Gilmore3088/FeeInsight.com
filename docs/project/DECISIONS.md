@@ -11,8 +11,9 @@ try to fit everything there"; "Use extensive and comprehensive text matching"), 
 caps": the NSF daily cap joins the overdraft daily cap, and International ATM stays one of the
 50). Fifteen categories left `FEE_FAMILIES`; `src/lib/fee-fold.ts` re-files each of their fees by
 its own wording, and a bare name by the schedule section above it. At 09:47 UTC he chose to keep
-Appraisal as its own type (folding it into loan origination would move that median), so Vehicle
-Title folds into Other Lending Fee instead. He also asked to see the fees with no home before any
+Appraisal as its own type (folding it into loan origination would move that median), and at
+11:44 UTC picked Mortgage Lien Release (with reconveyance) to fold into Other Lending Fee in its
+place. He also asked to see the fees with no home before any
 are archived, so Hamilton's fold step flags them but keeps them live
 (`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. Nothing is deleted either way.
 
