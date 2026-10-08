@@ -88,13 +88,11 @@ export function WelcomeSteps({
   workspaceMemberships,
 }: WelcomeStepsProps) {
   // Someone who already told us their organization skips that step, except Pro members:
-  // Hamilton needs a real institution picked from the list, not a typed name. A Pro buyer
-  // who chose their bank at checkout already holds its seat, so they are not asked again.
-  const checkoutBank = isPro ? workspaceMemberships[0]?.institutionName ?? null : null;
-  const [step, setStep] = useState((user.institution_name && !isPro) || checkoutBank ? 2 : 1);
+  // Hamilton needs a real institution picked from the list, not a typed name.
+  const [step, setStep] = useState(user.institution_name && !isPro ? 2 : 1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedInstitution, setSavedInstitution] = useState<string | null>(checkoutBank);
+  const [savedInstitution, setSavedInstitution] = useState<string | null>(null);
   const [pickedInstitution, setPickedInstitution] = useState(false);
   const [notAnInstitution, setNotAnInstitution] = useState(
     !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
