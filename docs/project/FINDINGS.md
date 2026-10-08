@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: PDFs set in prose columns were read across the page
+**What happened:** Origin Bank's deposit agreement went live with seven overdraft rows: the right $35 overdraft item charge under sentence-fragment names, and $10 rows that are really its overdrawn-account fee. On prod, 251 of 1,981 PDF texts (23 at $10B+ banks) show the same pattern, at least 25 joins of running prose with a " | " cell break (Origin's text has 687).
+**Cause:** `read.pdf_layout` builds one line per baseline across the whole page. On a page in three prose columns each line joined its neighbour columns' lines, and lines whose baselines sat a little apart interleaved, so a sentence took its price from another column's sentence.
+**Fix:** layout version 2 reads a page set in prose columns column by column (fee tables keep the row reading), and texts an older layout read across their columns are read once more. Separately, Knox missed "OD Privilege" lines entirely (Knox v39, same PR).
+**Lesson:** a reader change needs a re-read rule for the texts it would have read differently; the version bump alone re-reads only texts with under 5 Knox fees.
+
+## 2026-10-08: Pro header search did nothing and the page covered the account menu
+**What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
+nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
+**Cause:** the Search button only dispatches an open event; `SearchModal` handles it, and only the
+public layout and a few standalone pages mounted it, never `HamiltonShell`. The menu: `.hamilton-shell > *`
+runs a reveal animation with `fill-mode: both`, which leaves a transform on every shell child and
+so a stacking context each. The header's `z-40` was trapped inside its wrapper, and `<main>`, later
+in the page, painted over the menu.
+**Fix:** `HamiltonShell` (and the 404 page) mount `SearchModal`; the header wrapper carries
+`sticky top-0 z-40`. `src/components/search-trigger.test.ts` fails if a screen renders
+`<ConsumerNav />` without `<SearchModal />`.
+**Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
+not on itself.
+
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
 **Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
@@ -3428,3 +3448,63 @@ and quarter were already stored, without looking at the periods of the data behi
   Download PDF as soon as the Ask has saved it, whatever happens to the memo.
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
+
+## 2026-10-08: The source check passes some overdraft lines that are another figure
+
+- **Problem.** Running the first outreach drafts against live overdraft fees in the New
+  York-Newark metro, the shared source check (`checkFeeAgainstSource`) accepted two New Jersey
+  fees whose matched line is not an overdraft price: Provident Bank $40 (a debit purchase amount
+  in a worked example; the real fee is $35) and OceanFirst $50 (a "2 x 10" safe deposit box size;
+  the real fee is $30). The Accuracy thread confirmed both and is archiving them after the 12-hour
+  look. NewBank $25 and Haven Savings $30, flagged at the same time, are correct. The catalog's
+  `conditions` field also carries Knox's provenance ("Knox deterministic extraction from Rosetta
+  artifact #...; text_hash=..."), not conditions.
+- **Fix so far.** The market snapshot and the outreach audit leave pipeline provenance out of a
+  fee's notes, and every outreach draft lists each peer's schedule line so James audits it
+  before sending.
+- **Watch.** Peer lines in outreach audit blocks that read as a worked example or a box size.
+
+## 2026-10-08: Fee names that wrap onto a second line lost their price
+
+- **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
+  a second line and print the price alone below it: "Overdraft Fee (per item, both returned
+  or paid created by check, in person withdrawal," / "ATM withdrawal, ... Maximum of 6 fees per
+  day.)" / "$36.00". Knox reads a price beside its name or under a one-line name, so neither
+  MVB's overdraft nor its NSF fee was found. The shared source check would also have rejected
+  them: the run-on note sat between the name and the price. 13 stored texts have a priced
+  overdraft line in this shape, 6 of them at banks with no live overdraft fee.
+- **Fix.** Knox v35 joins a name line that opens a note to the lines that close it and the
+  price below (`wrappedNamePrices`), and names the fee by its first line. The source check
+  reads such a run-on note as a qualifier between the name and its price.
+- **Watch.** MVB's overdraft and NSF fees, and Knox v35 rows from the other 12 texts.
+
+## 2026-10-08: A new API route without a policy entry fails only the Vercel build
+- **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
+  but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
+  full vitest run (`policies.test.ts`, which was not run before the push) and the Vercel build
+  catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
+- **Fix.** Add the policy entry in the same commit as the route.
+- **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
+
+## 2026-10-08: Footnote marks read onto a price made it a different price
+
+- **Problem.** Starion's schedule prints its overdraft and NSF price as "$33" with superscript
+  footnote marks 4 and 5, and the PDF reader puts them on the baseline: "$334, 5". The price
+  also sits between the two lines of the fee's name ("Overdraft Fee³ - All Checking and
+  Savings Accounts" / "$334, 5" / "(Including Money Markets)"), a shape Knox never joined. So
+  Starion, a North Dakota top-10 bank, had no live overdraft fee.
+- **Fix.** Knox v36 joins a name line, a price alone below it and a line that only finishes
+  the name's note (`centeredNamePrices`). `stripPriceFootnoteMarks` drops marks glued to a
+  price-only line when they count up from its last digit and each is a printed numbered
+  footnote; Knox and the shared source check both apply it. A single mark ("$331") is left as
+  written, since it can't be told from a price.
+- **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
+  name in the centered shape.
+
+## 2026-10-08: A session user's id is a string, not a number
+- **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
+  `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email
+  confirmation token checked `Number.isSafeInteger(userId)`, made no token, and every
+  "Email me the link" (and the signup send) returned "The email didn't send" without calling Resend.
+- **Fix.** `src/lib/email/email-confirm.ts` accepts a numeric string or a number (`toUserId`).
+- **Watch.** Any new check on `user.id` must not assume a number (`Number(user.id)` first).

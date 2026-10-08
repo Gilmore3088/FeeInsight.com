@@ -66,9 +66,9 @@ describe("IndexNow", () => {
 
   it("reports a rejected ping as an error", async () => {
     vi.stubEnv("VERCEL_ENV", "production");
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 403 }));
+    const fetchImpl = vi.fn(async () => new Response("Key not valid", { status: 403 }));
     const result = await runIndexNowPing({ now: NOW, siteUrl: SITE, fetchImpl, loadInstitutions: async () => institutions });
     expect(result.submitted).toBe(0);
-    expect(result.error).toBe("IndexNow returned HTTP 403");
+    expect(result.error).toBe("IndexNow returned HTTP 403 (Key not valid)");
   });
 });
