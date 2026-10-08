@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: State fee bills stayed unstored for a week after going live
+**What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
+**Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
+**Fix:** a live batch now treats states last read in shadow mode as due (`runRegistryStateBillsBatch`, state-bills.ts). Merged in the PR that adds this entry.
+**Lesson:** when a shadow flag flips to live, the stored "fresh until" dates from shadow runs must not hold back the first live read. Check any other `*_TRACKER_LIVE` source for the same pattern.
+
 ## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
 **What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
 "Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
