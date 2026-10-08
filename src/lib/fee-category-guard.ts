@@ -279,7 +279,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 35;
+// v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
+export const CATEGORY_GUARD_VERSION = 36;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
