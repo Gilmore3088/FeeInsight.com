@@ -30,7 +30,8 @@ const MORE_LINKS = [
 /**
  * The four tabs on a phone, where the site header folds its links into a drawer: one row of
  * equal segments under the header, always in reach, plus "More" for everything outside them
- * (Ask, the Wire, the bank and its data, Reference). Desktop keeps the tabs in the header.
+ * (Ask, the Wire, the bank and its data, Reference). It sticks just under the sticky header
+ * (h-14 plus its border). Desktop keeps the tabs in the header.
  */
 export function HamiltonTabStrip() {
   const pathname = usePathname();
@@ -46,7 +47,7 @@ export function HamiltonTabStrip() {
   const withBank = (href: string) => (instId ? `${href}?instId=${encodeURIComponent(instId)}` : href);
 
   return (
-    <nav aria-label="Hamilton" className="sticky top-0 z-30 border-b border-warm-300 bg-warm-50/95 backdrop-blur-sm lg:hidden print:hidden">
+    <nav aria-label="Hamilton" className="sticky top-[57px] z-30 border-b border-warm-300 bg-warm-50/95 backdrop-blur-sm lg:hidden print:hidden">
       <div className="mx-auto flex max-w-6xl">
         {TABS.map((t) => {
           const current = active === t.href;

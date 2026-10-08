@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro header search did nothing and the page covered the account menu
+**What happened:** James, 15:31 UTC, on /pro/news: the header Search box (with its Cmd+K hint) did
+nothing, and "Account and billing" and "Sign out" were drawn under the page text below the menu.
+**Cause:** the Search button only dispatches an open event; `SearchModal` handles it, and only the
+public layout and a few standalone pages mounted it, never `HamiltonShell`. The menu: `.hamilton-shell > *`
+runs a reveal animation with `fill-mode: both`, which leaves a transform on every shell child and
+so a stacking context each. The header's `z-40` was trapped inside its wrapper, and `<main>`, later
+in the page, painted over the menu.
+**Fix:** `HamiltonShell` (and the 404 page) mount `SearchModal`; the header wrapper carries
+`sticky top-0 z-40`. `src/components/search-trigger.test.ts` fails if a screen renders
+`<ConsumerNav />` without `<SearchModal />`.
+**Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
+not on itself.
+
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
 **Cause:** the batch skipped any state with a future `next_attempt_after`, even when that read was a shadow read that stored nothing.
@@ -3429,6 +3443,20 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** `storyline_memo` rows at the cap (`output_tokens = 4000`) and `ask_memo` records
   with `memo_status = 'withheld'`.
 
+## 2026-10-08: Fee names that wrap onto a second line lost their price
+
+- **Problem.** Some schedules (MVB's "Compliance Systems" layout) wrap a long fee name onto
+  a second line and print the price alone below it: "Overdraft Fee (per item, both returned
+  or paid created by check, in person withdrawal," / "ATM withdrawal, ... Maximum of 6 fees per
+  day.)" / "$36.00". Knox reads a price beside its name or under a one-line name, so neither
+  MVB's overdraft nor its NSF fee was found. The shared source check would also have rejected
+  them: the run-on note sat between the name and the price. 13 stored texts have a priced
+  overdraft line in this shape, 6 of them at banks with no live overdraft fee.
+- **Fix.** Knox v35 joins a name line that opens a note to the lines that close it and the
+  price below (`wrappedNamePrices`), and names the fee by its first line. The source check
+  reads such a run-on note as a qualifier between the name and its price.
+- **Watch.** MVB's overdraft and NSF fees, and Knox v35 rows from the other 12 texts.
+
 ## 2026-10-08: A new API route without a policy entry fails only the Vercel build
 - **Problem.** PR 627 added `/api/admin/stripe/webhook-check` wrapped in `withApiRoutePolicy`
   but with no entry in `src/lib/api-hardening/policies.ts`. `tsc` and the guards passed; only the
@@ -3436,3 +3464,18 @@ and quarter were already stored, without looking at the periods of the data behi
   catch it, because `getApiRoutePolicy` throws "Missing API route policy" when the route loads.
 - **Fix.** Add the policy entry in the same commit as the route.
 - **Watch.** Run the full vitest suite (or `src/lib/api-hardening`) before pushing a new route.
+
+## 2026-10-08: Footnote marks read onto a price made it a different price
+
+- **Problem.** Starion's schedule prints its overdraft and NSF price as "$33" with superscript
+  footnote marks 4 and 5, and the PDF reader puts them on the baseline: "$334, 5". The price
+  also sits between the two lines of the fee's name ("Overdraft Fee³ - All Checking and
+  Savings Accounts" / "$334, 5" / "(Including Money Markets)"), a shape Knox never joined. So
+  Starion, a North Dakota top-10 bank, had no live overdraft fee.
+- **Fix.** Knox v36 joins a name line, a price alone below it and a line that only finishes
+  the name's note (`centeredNamePrices`). `stripPriceFootnoteMarks` drops marks glued to a
+  price-only line when they count up from its last digit and each is a printed numbered
+  footnote; Knox and the shared source check both apply it. A single mark ("$331") is left as
+  written, since it can't be told from a price.
+- **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
+  name in the centered shape.

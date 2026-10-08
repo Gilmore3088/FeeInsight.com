@@ -2,6 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -1193,10 +1194,67 @@ export function columnContinuations(text: string): string[] {
   return joined;
 }
 
-export function extractCandidatesFromText(text: string): ExtractionRulesResult {
+/**
+ * v35: a fee name that wraps onto a second or third line, with its price alone on the line
+ * after ("Overdraft Fee (per item, both returned or paid created by check, in person
+ * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
+ * "$36.00", MVB). The name's first line must name a fee and open a note that the line above
+ * the price closes; no line before the price may hold an amount. The fee is named by its
+ * first line without the open note. Only these lines are returned: a price beside its name
+ * is read by the line rules.
+ */
+export function wrappedNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    // The earliest line that names a fee and opens a note the last line before the price
+    // closes, with no amount from it to the price.
+    for (let start = Math.max(0, index - 3); start < index - 1; start += 1) {
+      const name = lines.slice(start, index);
+      if (name.some((line) => amountsIn(line).length > 0 || !/[a-z]{3,}/i.test(line))) continue;
+      if (!/^[A-Z]/.test(lines[start]) || classifyPatternKey(lines[start]) === null) continue;
+      if (!/\([^()]*$/.test(lines[start]) || !/\)\s*\.?\s*$/.test(name.at(-1) ?? "")) continue;
+      // The name is its first line; a note that runs on past it ("(per item, both ...") is
+      // dropped, as a price beside a one-line name would read.
+      const title = lines[start].replace(/\s*\([^)]*$/, "").trim();
+      joined.push(`${title || name.join(" ")} ${lines[index]}`);
+      break;
+    }
+  }
+  return joined;
+}
+
+/**
+ * v36: a two-line name cell with its price printed level with the gap between the lines
+ * ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money
+ * Markets)", Starion). The line above the price must name a fee and the line below must only
+ * finish its note: open a parenthesis the name line left closed, or close the one it opened.
+ */
+export function centeredNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 1; index < lines.length - 1; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    const name = lines[index - 1];
+    const tail = lines[index + 1];
+    if (amountsIn(name).length > 0 || amountsIn(tail).length > 0 || name.includes(CELL_SEPARATOR)) continue;
+    if (!/^[A-Z]/.test(name) || classifyPatternKey(name) === null) continue;
+    const opens = /\([^()]*$/.test(name);
+    const finishes = opens ? /^[^()]*\)\s*\.?$/.test(tail) : /^\([^()]*\)\s*\.?$/.test(tail);
+    if (!finishes) continue;
+    const title = name.replace(/\s*\([^)]*$/, "").replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, "").trim();
+    joined.push(`${title} ${lines[index]}`);
+  }
+  return joined;
+}
+
+export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+  const text = stripPriceFootnoteMarks(raw);
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  const continued = columnContinuations(text).flatMap((line) => extractFromSegment(line).candidates);
+  const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
+  const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;

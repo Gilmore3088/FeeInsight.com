@@ -92,6 +92,23 @@ export interface AnswerKeyListRow extends AnswerKeyInstitution {
   score: AnswerKeyBankScore | null;
 }
 
+/**
+ * Who keyed a bank without a person checking it. Claude threads confirmed 62 banks as
+ * `knox-hand-key` (Oct 5-6); those still need a person, and only a person's confirmation
+ * counts toward the human-checked accuracy number.
+ */
+export const MACHINE_ANSWER_KEYERS: ReadonlySet<string> = new Set(["knox-hand-key"]);
+
+/** True when a person (not a Claude thread) confirmed the bank's key. */
+export function isPersonChecked(row: Pick<AnswerKeyInstitution, "status" | "confirmed_by">): boolean {
+  return row.status === "confirmed" && !MACHINE_ANSWER_KEYERS.has(row.confirmed_by ?? "");
+}
+
+/** Banks a person still has to check, shortest key first, so each one is a quick read. */
+export function banksToCheck<T extends Pick<AnswerKeyInstitution, "status" | "confirmed_by" | "fee_count" | "id">>(rows: readonly T[]): T[] {
+  return rows.filter((row) => !isPersonChecked(row)).sort((a, b) => a.fee_count - b.fee_count || a.id - b.id);
+}
+
 /** True once the answer-key migration is applied (the app runs fine before it). */
 export async function answerKeySchemaReady(db: SqlTag = sql): Promise<boolean> {
   const [row] = await db`
