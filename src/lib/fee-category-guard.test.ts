@@ -543,4 +543,14 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Item on Lifeline 18/65 Checking or Statement Savings \"Overdraft Fee\"")).toEqual({ ok: true });
     expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
   });
+  it("v28 keeps notary, card and payment fees out of cash advance and temporary checks out of check printing (Oct 8)", () => {
+    expect(checkFeeCategory("cash_advance", "Remote Online Notary").ok).toBe(false);
+    expect(checkFeeCategory("cash_advance", "VISA Credit Card Payment by Phone").ok).toBe(false);
+    expect(checkFeeCategory("cash_advance", "Cash Advance Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("cash_advance", "Cargo por adelantos en efectivo con tarjeta de crédito")).toEqual({ ok: true });
+    expect(checkFeeCategory("check_printing", "ACH Payment").ok).toBe(false);
+    expect(checkFeeCategory("check_printing", "Temporary Check Printing").ok).toBe(false);
+    expect(checkFeeCategory("check_printing", "Check Printing (varies by style)")).toEqual({ ok: true });
+    expect(refileCategory("check_printing", "Temporary Share Drafts (4 per page)")).toBe("counter_check");
+  });
 });
