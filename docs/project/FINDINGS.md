@@ -3561,6 +3561,22 @@ and quarter were already stored, without looking at the periods of the data behi
   A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
   board and card-line mailboxes are shared. The next run withdraws both.
 
+## 2026-10-08: The overdraft category holds other charges, and the highest tier picks them
+- **Problem.** Outreach run 3148 quoted Tri City National Bank's overdraft fee as $50. The schedule
+  line was "Overdraft Charge-off negative balance account $50.00". A check of all 23 unreviewed
+  drafts found 5 more where the quoted line was another charge. Three were returned or NSF items
+  (First Federal KC, NIH FCU, Bluestone FCU), one an overdraft-protection transfer (BankGloucester),
+  and one a bare "Business account | $35.00" (Saco & Biddeford). Each passed `checkFeeAgainstSource`
+  because the amount is on the line. The catalog files these rows under overdraft, and the overdraft
+  rule (highest tier) chose the charge-off over the real fee.
+- **Fix.** The market snapshot leaves out an overdraft row whose verified line prints another
+  charge (`isOverdraftChargeLine`: no overdraft, courtesy pay or paid-item wording, or a returned
+  item, charge-off or transfer). The outreach run withdraws unreviewed drafts that quoted such a line,
+  and their institutions are read again. The catalog rows themselves are still wrong; they go to the
+  accuracy work as wrong-category fees.
+- **Watch.** Overdraft rows in `published_fee_catalog` whose source line says returned, unpaid,
+  charge-off or transfer.
+
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
   `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email

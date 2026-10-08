@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
+import { buildSnapshotFee, isOverdraftChargeLine, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type StateComparison } from "./market-snapshot";
 import { buildFollowUpDraft, buildOutreachDraft, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
@@ -67,6 +67,20 @@ describe("market snapshot", () => {
     expect(fee.verifiedPeerCount).toBe(5);
     expect(fee.verifiedMedian).toBe(30);
     expect(fee.peers.find((peer) => peer.institutionId === 99)).toMatchObject({ verified: false, sourceLine: null });
+  });
+
+  it("never takes a returned item, a charge-off or a transfer as the overdraft fee", () => {
+    const chargeOff = { ...odRow(1, 50, "Overdraft Charge-off negative balance account $50.00 per charged off account"), fee_name: "Overdraft Charge-off" };
+    const fee = buildSnapshotFee("overdraft", 1, [chargeOff, odRow(1, 30), ...rows.slice(1)]);
+    expect(fee.subject).toMatchObject({ value: 30, verified: true });
+    const onlyReturned = buildSnapshotFee("overdraft", 1, [{ ...odRow(1, 30, "5 Returned Unpaid NSF Items (consumer) | $30 per item"), fee_name: "Returned Unpaid NSF Items" }]);
+    expect(onlyReturned.subject).toBeNull();
+    for (const line of ["Insufficient Funds Fee (item $10.01 or greater) $25", "Business account | $35.00", "NSF Share Draft (Returned) | $25.00 per item", "Overdraft Protection Fee (per pre-authorized automatic transfer) $5.00"]) {
+      expect(isOverdraftChargeLine(line)).toBe(false);
+    }
+    for (const line of ["Courtesy Pay | $30", "Paid Item | $29.00", "Overdraft Paid NSF item: Checking | $23.00 per item", "Overdraft (OD) or Non-sufficient Funds (NSF) item | $30.00 per item", "Debit Card Overdraft Protection (Opt-In)* | $10.00"]) {
+      expect(isOverdraftChargeLine(line)).toBe(true);
+    }
   });
 
   it("gives no median below the site's minimum of verified institutions", () => {
@@ -199,13 +213,15 @@ describe("withdrawing drafts made before the decision-maker rule", () => {
           { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" } } },
           { id: 16, facts: JSON.stringify({ to: { email: "cpouliot@x.org", name: "Carlynne Pouliot", title: "VP of Retail & Business Development", role: "retail" } }) },
           { id: 13, facts: { to: { email: "supervisorycommittee@x.org", name: "Ivan Shefrin", title: null, role: "other" } } },
+          { id: 37, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, overdraft_line: "Overdraft Charge-off negative balance account $50.00 per charged off account" } },
+          { id: 23, facts: { to: { email: "kday@x.bank", name: "Kevin Day", title: "CEO/President", role: "executive" }, overdraft_line: "Overdraft (each overdraft paid) $ 35.00" } },
         ]);
       }
       updates.push(values);
       return Promise.resolve([]);
     }) as never;
-    expect(await withdrawNonBuyerDrafts(db)).toBe(2);
-    expect(updates.map((values) => values.at(-1))).toEqual([7, 13]);
+    expect(await withdrawNonBuyerDrafts(db)).toBe(3);
+    expect(updates.map((values) => values.at(-1))).toEqual([7, 13, 37]);
   });
 });
 

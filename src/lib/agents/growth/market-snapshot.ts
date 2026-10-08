@@ -100,12 +100,37 @@ function notesFor(rows: SnapshotFeeRow[]): string[] {
   return [...notes];
 }
 
+/** Words an overdraft-paid charge is printed under. */
+const OVERDRAFT_CHARGE = /overdraft|overdrawn|courtesy pay|paid item|bounce|\bod\b|paid nsf/i;
+/**
+ * Charges the overdraft category picks up that are for something else: a returned or unpaid
+ * item, a charged-off account, a transfer from another account (outreach run 3148, Oct 8).
+ */
+const NOT_AN_OVERDRAFT_CHARGE = /charge[\s-]?off|charged[\s-]off|returned|unpaid|\btransfer/i;
+
+/** True when a schedule line prints an overdraft-paid charge rather than another fee. */
+export function isOverdraftChargeLine(line: string): boolean {
+  return OVERDRAFT_CHARGE.test(line) && !NOT_AN_OVERDRAFT_CHARGE.test(line);
+}
+
+const checkRow = (row: SnapshotFeeRow) =>
+  checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key);
+
 /**
  * One institution's value for one fee (the catalog's own rule: overdraft at its highest tier,
  * otherwise the median of its amounts), verified only when every row at that value traces to
- * its source text. When the value is a midpoint of two amounts, every row is checked.
+ * its source text. When the value is a midpoint of two amounts, every row is checked. An overdraft
+ * row whose schedule line prints another charge (a returned item, a charge-off, a transfer) is
+ * left out before the value is chosen, so the highest tier is never that other charge.
  */
-export function institutionValue(rows: SnapshotFeeRow[]): SnapshotValue | null {
+export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | null {
+  const rows =
+    allRows[0]?.fee_category === "overdraft"
+      ? allRows.filter((row) => {
+          const result = checkRow(row);
+          return !(result.ok && !isOverdraftChargeLine(result.sourceLine));
+        })
+      : allRows;
   if (rows.length === 0) return null;
   const id = Number(rows[0].institution_id);
   const value = valuePerInstitution(
@@ -114,9 +139,7 @@ export function institutionValue(rows: SnapshotFeeRow[]): SnapshotValue | null {
   if (value === undefined) return null;
   const atValue = rows.filter((row) => cents(Number(row.amount)) === cents(value));
   const checked = atValue.length > 0 ? atValue : rows;
-  const results = checked.map((row) =>
-    checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key),
-  );
+  const results = checked.map(checkRow);
   const verified = results.every((result) => result.ok);
   const firstOk = results.find((result) => result.ok);
   const lead = checked[0];
