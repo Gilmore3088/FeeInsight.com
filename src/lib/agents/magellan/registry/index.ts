@@ -59,6 +59,8 @@ export interface RegistryStepOutcome {
 interface WorkerOutput {
   summary: string;
   detail: Record<string, unknown>;
+  /** True when the worker could not load anything (e.g. a missing key); the step shows as skipped, not completed. */
+  skipped?: boolean;
 }
 
 export interface RegistrySourceDefinition {
@@ -262,6 +264,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           ? `Census has not published the ${r.partitionKey} ACS 5-year estimates yet; will check again.`
           : `Magellan loaded ${r.partitionKey} ACS household income for ${n(r.counts.state)} states, ${n(r.counts.county)} counties, ${n(r.counts.zcta)} ZIP areas and ${n(r.counts.tract)} tracts; ${n(r.withIncome)} have a median income${dry(r.dryRun)}.`,
         detail: { year: r.year, counts: r.counts, with_income: r.withIncome, upserted_rows: r.upsertedRows, empty: r.empty, skipped_no_key: Boolean(r.skippedNoKey) },
+        skipped: Boolean(r.skippedNoKey),
       };
     },
   },
@@ -543,7 +546,7 @@ export async function runRegistryStep(input: RegistryStepInput): Promise<Registr
   }
   const output = await definition.run({ ...input, partitionKey });
   return {
-    status: "completed",
+    status: output.skipped ? "skipped" : "completed",
     summary: output.summary,
     detail: { registry_source: definition.source, partition_key: partitionKey, dry_run: input.dryRun, ...output.detail },
   };

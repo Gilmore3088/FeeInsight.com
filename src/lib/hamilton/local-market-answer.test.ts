@@ -34,17 +34,18 @@ describe("local market answer", () => {
     expect(ranked.map((r) => r.name)).toEqual(["Test Credit Union B", "Test Bank C", "Test Bank A", "Test Bank E"]);
   });
 
-  it("groups branches by city, most first, with tidy names", () => {
+  it("groups branches by city, most first, with tidy names, placed at their located branches", () => {
     expect(
       citiesOf([
-        { city: "MELBOURNE", state: "FL" },
+        { city: "MELBOURNE", state: "FL", latitude: 28, longitude: -80.5 },
         { city: "Palm Bay", state: "FL" },
-        { city: "melbourne", state: "FL" },
+        { city: "melbourne", state: "FL", latitude: 28.5, longitude: -80.75 },
+        { city: "Melbourne", state: "FL", latitude: null, longitude: null },
         { city: null, state: "FL" },
       ]),
     ).toEqual([
-      { city: "Melbourne", state: "FL", branches: 2 },
-      { city: "Palm Bay", state: "FL", branches: 1 },
+      { city: "Melbourne", state: "FL", branches: 3, lat: 28.25, lon: -80.625 },
+      { city: "Palm Bay", state: "FL", branches: 1, lat: null, lon: null },
     ]);
   });
 });

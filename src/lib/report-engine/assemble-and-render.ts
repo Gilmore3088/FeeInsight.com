@@ -29,6 +29,8 @@ import { renderPeerCompetitiveReport } from '@/lib/report-templates/templates/pe
 import { runEditorReview } from '@/lib/report-engine/editor';
 import type { SectionOutput, ThesisOutput, ValidatedSection } from '@/lib/hamilton/types';
 import { loadStateReportContext } from '@/lib/report-assemblers/developments';
+import { getStateVisualsData } from '@/lib/data-store/state-visuals';
+import { getStateEconomicContext } from '@/lib/data-store/economic-context';
 import type { ReportType } from '@/lib/report-engine/types';
 
 // ─── Fallback Narrative ────────────────────────────────────────────────────────
@@ -307,11 +309,25 @@ export async function assembleAndRender(
         const data = await loadStateReportData(stateCode, {
           includeAllCategories: params.include_all_categories === true,
         });
-        const [context, regulatory] = await Promise.all([
+        const district = STATE_TO_DISTRICT[stateCode] ?? null;
+        // The charts' reads degrade to "not loaded" notices rather than failing the report.
+        const optional = <T,>(label: string, read: Promise<T>): Promise<T | null> =>
+          read.catch((err) => {
+            console.warn(`[assembleAndRender] state ${label} unavailable:`, err instanceof Error ? err.message : String(err));
+            return null;
+          });
+        const [context, regulatory, visualsData, economy] = await Promise.all([
           loadStateReportContext(stateCode),
-          assembleRegulatoryContext({ stateCode, district: STATE_TO_DISTRICT[stateCode] ?? null }),
+          assembleRegulatoryContext({ stateCode, district }),
+          optional('chart data', getStateVisualsData(stateCode)),
+          optional('economy', getStateEconomicContext(stateCode, district)),
         ]);
-        return renderStateFeeIndexReport({ data, generatedAt: new Date().toISOString().slice(0, 10), context: { ...context, regulatory } });
+        return renderStateFeeIndexReport({
+          data,
+          generatedAt: new Date().toISOString().slice(0, 10),
+          context: { ...context, regulatory },
+          visuals: { data: visualsData, economy },
+        });
       }
 
       case 'monthly_pulse': {

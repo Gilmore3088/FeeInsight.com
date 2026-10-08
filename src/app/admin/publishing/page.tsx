@@ -80,7 +80,8 @@ export default async function PublishingRoomPage() {
                 </thead>
                 <tbody>
                   {calendar.map((row) => {
-                    const last = lastLine(row.lastAt, row.lastStatus);
+                    const off = row.publication.scheduled === false;
+                    const last = off && !row.lastAt ? { text: "Not turned on", bad: false } : lastLine(row.lastAt, row.lastStatus);
                     return (
                       <tr key={row.publication.key} className="border-b border-black/[0.04] last:border-0 dark:border-white/[0.04]">
                         <td className="px-4 py-2.5">
@@ -99,7 +100,7 @@ export default async function PublishingRoomPage() {
                           {last.text}
                           {row.count !== null ? <span className="text-gray-500"> · {row.count} total</span> : null}
                         </td>
-                        <td className="px-4 py-2.5 tabular-nums text-gray-700 dark:text-gray-200">{formatAdminDateTime(row.nextAt)}</td>
+                        <td className="px-4 py-2.5 tabular-nums text-gray-700 dark:text-gray-200">{row.nextAt ? formatAdminDateTime(row.nextAt) : "Off until you turn it on"}</td>
                       </tr>
                     );
                   })}

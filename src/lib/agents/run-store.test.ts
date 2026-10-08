@@ -9,6 +9,7 @@ const {
   assertAutomationEnabledMock,
   getAutomationControlMock,
   getPipelineControlMock,
+  getMarketingControlMock,
   getExecutionBackendMock,
   runDarwinVerifyMock,
   runHamiltonPublishMock,
@@ -29,6 +30,7 @@ const {
     assertAutomationEnabledMock: vi.fn(),
     getAutomationControlMock: vi.fn(),
     getPipelineControlMock: vi.fn(),
+    getMarketingControlMock: vi.fn(),
     getExecutionBackendMock: vi.fn(),
     runDarwinVerifyMock: vi.fn(),
     runHamiltonPublishMock: vi.fn(),
@@ -54,6 +56,12 @@ vi.mock("@/lib/automation-control", () => ({
   assertAutomationEnabled: assertAutomationEnabledMock,
   getAutomationControl: getAutomationControlMock,
   getPipelineControl: getPipelineControlMock,
+  getMarketingControl: getMarketingControlMock,
+}));
+
+vi.mock("@/lib/agents/content/market-spread", () => ({
+  runMarketSpread: vi.fn().mockResolvedValue({ draftId: 9, picked: { metro: "Kansas City" } }),
+  summarizeMarketSpread: vi.fn().mockReturnValue("Drafted a market-spread post for Kansas City."),
 }));
 
 vi.mock("@/lib/agents/daily-brief", () => ({
@@ -143,6 +151,7 @@ import {
   expectedMsToFirstWork,
   expectedStepMs,
   executeQueuedAgentRuns,
+  heldByPause,
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
@@ -282,6 +291,7 @@ describe("agentic run store", () => {
     assertAutomationEnabledMock.mockReset().mockResolvedValue({ enabled: true });
     getAutomationControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getPipelineControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
+    getMarketingControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getExecutionBackendMock.mockReset().mockReturnValue("disabled");
     runDarwinVerifyMock.mockReset().mockResolvedValue({
       selectedRawFees: 7,
@@ -1066,6 +1076,66 @@ describe("agentic run store", () => {
     expect(result.results[1]).toMatchObject({ runId: 102, terminal: false, executedSteps: 0 });
     expect(result.results[1].message).toContain("left queued");
     expect(withTransactionMock).not.toHaveBeenCalled();
+  });
+
+  it("runs a queued growth marketing step while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const contentStep = [{ ...queuedStepRows[0], step_key: "content-market-spread", agent_name: "growth", title: "Draft post" }];
+    const contentRun = { ...runRow, agent_name: "growth", progress_total: 1 };
+    installSqlMocks({ finalRun: contentRun, finalSteps: contentStep });
+    installTxMocks(contentStep, contentRun);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+    expect(combinedTransactionSql()).toContain("step.finished");
+  });
+
+  it("leaves a growth marketing run queued while marketing is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getMarketingControlMock.mockResolvedValue({ enabled: false, reason: "Holding marketing" });
+    const contentStep = [{ ...queuedStepRows[0], step_key: "content-market-spread", agent_name: "growth", title: "Draft post" }];
+    const contentRun = { ...runRow, agent_name: "growth", progress_total: 1 };
+    installSqlMocks({ finalRun: contentRun, finalSteps: contentStep });
+    installTxMocks(contentStep, contentRun);
+
+    const result = await executeAgentRun(101);
+    expect(result).toMatchObject({ status: "queued", terminal: false, executedSteps: 0 });
+    expect(result.message).toBe("Marketing is paused: Holding marketing; run left queued.");
+  });
+
+  it("keeps running data steps while marketing is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getMarketingControlMock.mockResolvedValue({ enabled: false, reason: "Holding marketing" });
+    const discoverRunRow = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: discoverRunRow, finalSteps: queuedStepRows.slice(0, 1) });
+    installTxMocks(queuedStepRows.slice(0, 1), discoverRunRow);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+    expect(runMagellanDiscoveryMock).toHaveBeenCalled();
+  });
+
+  it("names which pause holds a step", () => {
+    const on = { enabled: true, reason: null };
+    const off = { enabled: false, reason: "why" };
+    expect(heldByPause("content-fee-depth", off, on)).toBeNull();
+    expect(heldByPause("marketing-write", on, off)).toBe("Marketing is paused: why; run left queued.");
+    expect(heldByPause("discover", on, off)).toBeNull();
+    expect(heldByPause("discover", off, on)).toBe("Pipeline is paused: why; run left queued.");
+    expect(heldByPause("daily-brief", off, off)).toBeNull();
+    // Growth's queue intake and weekly scoring are marketing steps.
+    for (const key of ["growth-intake", "growth-score"]) {
+      expect(heldByPause(key, off, on)).toBeNull();
+      expect(heldByPause(key, on, off)).toBe("Marketing is paused: why; run left queued.");
+    }
+  });
+
+  it("skips runs held by a pause when picking queued runs for the tick", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve([]));
+    await executeQueuedAgentRuns({ paused: { pipeline: true, marketing: false } });
+    const [strings, ...values] = sqlMock.mock.calls[0];
+    expect(templateText(strings)).toContain("AND NOT EXISTS");
+    expect(values).toContain(true);
+    expect(values).toContainEqual(expect.arrayContaining(["content-market-spread", "marketing-write"]));
   });
 
   it("still sends the Atlas daily brief while the pipeline is paused", async () => {

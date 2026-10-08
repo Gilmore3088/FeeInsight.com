@@ -105,7 +105,7 @@ says whether it turned out right.
 | `about_stage`, `about_strategy`, `about_version`, `about_attempt_id` | The output being judged and the attempt that produced it. |
 | `signal` | `wrong`, `right`, `missed` or `restored`. |
 | `kind` | Why, e.g. `wrong_category`, `threshold`, `unreproduced`, `answer_key`, `produced_live_fees`, `thin_link`, `dead_link` (list in `feedback.ts`). |
-| `reported_by`, `check_name` | Which agent judged it and with which check. |
+| `reported_by`, `check_name` | Which agent judged it (`FEEDBACK_REPORTERS`, growth included) and with which check. `about_stage` may also be `marketing` for Growth's posts, emails and PRs (`FEEDBACK_STAGES`). |
 | `institution_id`, `source_document_id`, `source_url`, `fee_raw_id`, `fee_verified_id`, `fee_published_id`, `canonical_fee_key`, `amount` | What it is about. Join a document on `source_document_id`, a fee on `fee_raw_id` / `fee_published_id`, a link on `source_url`. |
 | `weight`, `evidence` | 1 by default (a link's live-fee count, below 1 when not proof); the line or numbers the judgement rests on. |
 | `dedupe_key` | Unique; writers upsert, so a re-judgement replaces the row. |

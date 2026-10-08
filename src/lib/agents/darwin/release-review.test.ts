@@ -15,6 +15,8 @@ import {
   parseReleaseReviews,
   releaseReviewPrompt,
   reviewPasses,
+  premiumServiceMisfiled,
+  releaseHoldReason,
   runDarwinReleaseReview,
 } from "./release-review";
 
@@ -181,7 +183,6 @@ describe("Darwin held-fee release review", () => {
   });
 
   it("records a review per fee and publishes nothing while release is off", async () => {
-    expect(DARWIN_RELEASE_ACTS).toBe(false);
     const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
     const create = vi.fn(async () => reply({
       verdicts: [
@@ -190,7 +191,7 @@ describe("Darwin held-fee release review", () => {
       ],
     }));
 
-    const result = await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+    const result = await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2, acts: false });
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(trackAnthropicRequest.mock.calls.at(-1)?.[0]).toMatchObject({ agent: "darwin", operation: "release_review" });
@@ -204,12 +205,63 @@ describe("Darwin held-fee release review", () => {
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
   });
 
+  it("publishes only the fees that pass once release is on", async () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(true);
+    const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
+    const create = vi.fn(async () => reply({
+      verdicts: [
+        { id: 1, is_fee: true, category_fits: true, amount_is_price: true, reason: "stop payment price" },
+        { id: 2, is_fee: true, category_fits: true, amount_is_price: false, reason: "amount is the cap" },
+      ],
+    }));
+
+    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+
+    const inserts = db.mock.calls.filter(([strings]) => templateText(strings).includes("INSERT INTO verified_fee_observations"));
+    expect(inserts).toHaveLength(1);
+    expect(attempts(db).map((attempt) => attempt.detail.acted)).toEqual([true, true]);
+  });
+
   it("spends nothing on a dry run or with no calls left", async () => {
     const db = createDbMock([row()]);
     const create = vi.fn();
     expect((await runDarwinReleaseReview({ runId: 5, dryRun: true, db: asDb(db), create, calls: 2 })).selected).toBe(1);
     expect((await runDarwinReleaseReview({ runId: 5, db: asDb(db), create, calls: 0 })).selected).toBe(0);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("keeps a premium version of a service held outside a premium category", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string) => ({ row: row({ fee_name, held_canonical_fee_key }) as unknown as HeldFeeRow });
+    expect(premiumServiceMisfiled(held("Overnight Fee (Business Bill Pay)", "bill_pay"))).toBe(true);
+    expect(premiumServiceMisfiled(held("Emergency Card Replacement", "card_replacement"))).toBe(true);
+    expect(premiumServiceMisfiled(held("Debit Card Rush Delivery", "rush_card"))).toBe(false);
+    expect(premiumServiceMisfiled(held("Bill Pay", "bill_pay"))).toBe(false);
+  });
+
+  it("v12 keeps business-service monthly fees, small returned checks and guard rejects held (hand check, Oct 8)", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string, amount: string, sourceContext: string | null = null) => ({
+      row: row({ fee_name, held_canonical_fee_key, amount }) as unknown as HeldFeeRow,
+      sourceContext,
+    });
+    expect(releaseHoldReason(held("Monthly Fee", "monthly_maintenance", "50.00", "ITEM | FEE\nMonthly Fee | $50.00\nNight Deposit Bag | $10.00"))).toBe(
+      "business_service_monthly",
+    );
+    expect(releaseHoldReason(held("Monthly Fee", "monthly_maintenance", "10.00", "Basic Checking\nMonthly Fee | $10.00"))).toBeNull();
+    expect(releaseHoldReason(held("Returned check fee", "nsf", "5.00"))).toBe("small_returned_item");
+    expect(releaseHoldReason(held("Returned check fee", "nsf", "30.00"))).toBeNull();
+    expect(releaseHoldReason(held("NSF Fee", "nsf", "5.00"))).toBeNull();
+    expect(releaseHoldReason(held("IntraFi Network-ICS Monthly Fee (Consumer)", "monthly_maintenance", "25.00"))).toBe("category_guard");
+  });
+
+  it("v13 keeps names cut from the middle of a line held (hand check, Oct 8)", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string) => ({
+      row: row({ fee_name, held_canonical_fee_key, amount: "5.00" }) as unknown as HeldFeeRow,
+      sourceContext: null,
+    });
+    expect(releaseHoldReason(held("/hr incl. reproduction", "document_reproduction"))).toBe("name_fragment");
+    expect(releaseHoldReason(held("account research fee may apply)", "account_research"))).toBe("name_fragment");
+    expect(releaseHoldReason(held("Account Research (per 15 minutes)", "account_research"))).toBeNull();
+    expect(releaseHoldReason(held("Undeliverable Mail / Locator fee", "account_research"))).toBeNull();
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {
