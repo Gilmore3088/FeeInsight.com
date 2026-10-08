@@ -36,7 +36,7 @@ import { frequencyFromLine } from "@/lib/fee-frequency";
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 44 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 45 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -145,6 +145,11 @@ export function tidyFeeName(raw: string): string {
     .replace(/[\s:;,\-–|/]+$/, "")
     .trim();
   name = trimEnd(name);
+  // v45: "Normal bank fees and charges, including returned item charge/overdraft item charge of"
+  // (Origin Bank): the fee is what the sentence lists after "including".
+  const listed = name.match(/,\s+including\s+(.+)$/i)?.[1];
+  // A name at the 120-character cap may end mid-word, so it keeps its words.
+  if (listed && raw.trim().length < 120 && listed.split(" ").length <= MAX_TITLE_WORDS) name = `${listed.charAt(0).toUpperCase()}${listed.slice(1)}`;
   // The words that led into the price ("Replacement Card Fee of", "ATM Fee for",
   // "Debit Card Replacement A fee of") and an article in front ("A minimum balance fee").
   // A sentence keeps its ending: "required to avoid a minimum balance fee of" is how the
