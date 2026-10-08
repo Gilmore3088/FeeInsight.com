@@ -128,6 +128,10 @@ Rosetta owns source text normalization.
     on the same bytes ends it. A web page has no paid rung; a legacy text the current
     reader could not improve stays as it is. Step detail: `texts_held_up`,
     `texts_lost_fees`, `reader_escalations`, `reader_escalations_used`.
+  - A legacy PDF text (no reader recorded) longer than `FLAT_TEXT_MIN_CHARS` with no line
+    break counts like a lost text. The first PDF reader ran whole schedules onto one line,
+    which Knox's rules cannot split; the current reader reads it once, and its text replaces
+    the flat one under the same no-thinner rule.
   - Scans and JavaScript pages an older reader version gave up on (`needs_ocr`, `empty`)
     are read once more when `ROSETTA_READ_VERSION` is bumped. Auxiliary strategies
     (`AUXILIARY_READ_STRATEGIES`) never settle a read or block re-selection.

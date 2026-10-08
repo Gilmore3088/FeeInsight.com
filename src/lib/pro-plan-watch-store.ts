@@ -35,6 +35,7 @@ export async function getPlanWatchList(): Promise<PlanWatchRow[]> {
         user,
         tier,
         otherOrganization: metadata.organization === "other",
+        tierPickedByBuyer: metadata.tier_picked_by_buyer === "true",
         institutionId: Number.isSafeInteger(institutionId) && institutionId > 0 ? institutionId : null,
       };
     }),
@@ -56,6 +57,7 @@ export async function getPlanWatchList(): Promise<PlanWatchRow[]> {
       email: plan.user.email,
       paidTier: plan.tier,
       otherOrganization: plan.otherOrganization,
+      tierPickedByBuyer: plan.tierPickedByBuyer,
       paidInstitution,
       requestedInstitutions: (requests.get(plan.user.id) ?? []).flatMap(lookup),
     });

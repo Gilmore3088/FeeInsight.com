@@ -49,3 +49,12 @@ export function payPath(token: string): string {
   return `/pay/report/${token}`;
 }
 
+
+/** True for a genuine pay link that has run out, so the page can say so instead of a 404. */
+export function isExpiredPayToken(token: string, now: Date = new Date()): boolean {
+  if (verifyPayToken(token, now)) return false;
+  const match = typeof token === "string" ? TOKEN_PATTERN.exec(token) : null;
+  if (!match) return false;
+  const issuedOn = new Date(`${match[2].slice(0, 4)}-${match[2].slice(4, 6)}-${match[2].slice(6, 8)}T00:00:00Z`);
+  return !Number.isNaN(issuedOn.getTime()) && verifyPayToken(token, issuedOn) !== null;
+}

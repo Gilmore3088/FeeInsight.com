@@ -400,7 +400,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       model: result.status === "written" ? result.memo.model : null,
       saved_analysis_id: savedId,
       memo_saved: memoSaved,
+      withheld_problems: result.status === "withheld" ? (result.problems ?? []) : null,
     },
   });
-  return { status: 200, body: result };
+  return { status: 200, body: result.status === "withheld" ? { status: "withheld", reason: result.reason } : result };
 }

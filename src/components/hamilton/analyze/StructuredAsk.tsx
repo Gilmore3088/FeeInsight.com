@@ -87,6 +87,60 @@ async function postMemo(body: AskBody): Promise<MemoState> {
   }
 }
 
+/**
+ * The saved answer as a PDF. The Ask files the answer when it returns, so the download is
+ * offered at once and never waits on the memo, which may be withheld.
+ */
+function DownloadAnswerPdf({ analysisId }: { analysisId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const download = async () => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const res = await fetch("/api/pro/report-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "analysis", analysisId }),
+      });
+      if (!res.ok) {
+        setFailed(true);
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hamilton-answer-${new Date().toISOString().split("T")[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy}
+        className="rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm text-warm-800 hover:border-warm-500 disabled:opacity-50"
+      >
+        {busy ? "Preparing the PDF…" : "Download PDF"}
+      </button>
+      {failed ? (
+        <span role="alert" className="text-sm text-terra-text">
+          The PDF couldn&apos;t be created. Please try again.
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 /** The fees offered as one-tap answers when Hamilton asks which fee. */
 const FEE_CHOICES = getSpotlightCategories().map((c) => ({ key: c, label: getDisplayName(c).replace(/\s*\([^)]*\)/g, "") }));
 
@@ -420,6 +474,7 @@ export function StructuredAsk({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
+                {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} /> : null}
               </>
             ) : null
           }
@@ -434,6 +489,7 @@ export function StructuredAsk({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
+                {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} /> : null}
               </>
             ) : null
           }

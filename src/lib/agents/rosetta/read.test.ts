@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
 import {
+  FLAT_TEXT_MIN_CHARS,
   REREAD_MAX_KNOX_FEES,
   ROSETTA_READ_MAX_LIMIT,
   ROSETTA_READ_VERSION,
@@ -889,6 +890,16 @@ describe("Rosetta agentic read", () => {
         expect(sqlText).toContain("INSERT INTO agent_source_texts");
       });
 
+      it("replaces a legacy PDF text run onto one line with the layout reader's lines", async () => {
+        const flat = "Notary $2.00/document Overdraft fee $35.00/transaction paid up to three per day Postdated Check Fee $35.00/transaction Stop Payment Order fee $35.00";
+        const db = specialistDb([{ ...textPdf, last_reader: "legacy.pdf", last_text_lost: false, last_lost_text: flat }]);
+
+        await runRosettaRead({ runId: 728, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: layout() });
+
+        const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+        expect(sqlText).toContain("INSERT INTO agent_source_texts");
+      });
+
       it("scores texts once a day and selects lost texts for one read a rung up", async () => {
         const db = specialistDb([]);
         const base = db.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
@@ -910,6 +921,9 @@ describe("Rosetta agentic read", () => {
         expect(query).toContain("AS last_reader");
         expect(query).toContain("AS last_text_lost");
         expect(query).toContain("AS reader_record");
+        // A legacy PDF text run onto one line is read once with the current reader.
+        expect(query).toContain("strpos(adt.normalized_text, chr(10)) = 0");
+        expect(selection?.[1]).toEqual(expect.arrayContaining([FLAT_TEXT_MIN_CHARS]));
         expect(selection?.[1]).toEqual(expect.arrayContaining(["rosetta.text_survival", "read.html_dom", "read.js_fallback"]));
         // OCR is no rung for a lost text: its only use here is the one re-read of a scan an
         // older OCR version gave up on.

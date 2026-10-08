@@ -248,10 +248,13 @@ export async function runRegistryStateBillsBatch(
     return result;
   }
 
+  // A live run treats a state last read in shadow mode as due: those reads stored nothing, so
+  // waiting out their weekly date would leave the bills unstored for up to a week after going live.
   const fresh = await db<Array<{ partition_key: string }>>`
     SELECT partition_key FROM registry_ingest_partitions
      WHERE source = ${STATE_BILLS_SOURCE} AND partition_key <> ${STATE_BILLS_PARTITION}
        AND next_attempt_after > NOW()
+       AND (${result.shadow}::boolean OR COALESCE(detail->>'shadow', 'false') <> 'true')
   `;
   const notDue = new Set(fresh.map((row) => row.partition_key));
   const due = STATE_BILL_JURISDICTIONS.filter((code) => !notDue.has(code));

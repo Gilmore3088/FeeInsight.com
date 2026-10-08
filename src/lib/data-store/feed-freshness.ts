@@ -59,6 +59,7 @@ export const SCHEDULED_REPORT_TRIGGERS = [
   "hamilton.content",
   "hamilton.marketing",
   "growth.score",
+  "growth.contacts",
 ] as const;
 
 export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[]> {

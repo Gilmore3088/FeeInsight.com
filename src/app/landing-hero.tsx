@@ -159,7 +159,7 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
             <p className="text-pretty text-[16px] leading-relaxed text-[#1A1815]">
               See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
               take to your pricing committee. Start with a free national or Fed district report;
-              the report for your institution is priced on request.
+              the report for your institution starts at $300.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <TrackLink
