@@ -3738,3 +3738,14 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** Alerts are computed live for the admin home page and the daily brief, not stored,
   so there is no row to count. The next break shows on the admin home page as soon as a third
   run fails with the same error.
+
+## 2026-10-08: Bank and credit union numbers share one namespace
+- **What happened.** 314 credit unions in `institution_sources` have the same `cert_number` as
+  an FDIC bank (NCUA charter numbers and FDIC certificate numbers are separate series). The
+  quarterly revenue snapshot counted institutions with `COUNT(DISTINCT ct.cert_number)`, so
+  each pair counted once: on prod, quarter 2026-06 has 8,548 institutions with filings but
+  only 8,246 distinct numbers.
+- **Fix.** Count institutions by `ct.id`. Registry joins and upserts were already keyed by
+  `source` plus `cert_number`, so they are unaffected.
+- **Watch.** A lookup by `cert_number` alone can match the wrong institution; always add
+  `source` (or `charter_type`).
