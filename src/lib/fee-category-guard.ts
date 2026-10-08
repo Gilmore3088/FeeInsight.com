@@ -63,9 +63,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
     // account's monthly fee by the balance that waives it.
     include: /(maintenance|monthly service|service charge|monthly fee|(minimum|balance)\b.{0,80}\bavoid\b.{0,30}\bservice fee)/i,
-    // A per-transaction charge or an earnings-credit note is not the account's monthly fee.
+    // A per-transaction charge or an earnings-credit note is not the account's monthly fee, nor a
+    // business service's own monthly charge (remote deposit scanners, IntraFi/ICS sweeps, a fee per
+    // location) or a sentence about waiving it ("Waiving the Monthly Service Fee") (v21).
     exclude:
-      /(savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -81,7 +83,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
     exclude:
-      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing)/i,
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|written to you|re-?route)/i,
   },
   // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
   // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
@@ -157,7 +159,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(charge-?back (on )?(loan|deposit)|charge-?back (items?|message)\b|return\/charge-?back)/i,
   },
   deposited_item_return: {
-    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b)/i,
+    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you)/i,
     exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
@@ -203,7 +205,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 20;
+export const CATEGORY_GUARD_VERSION = 21;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -246,7 +248,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   },
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
   { from: "nsf", to: "overdraft", when: /(paid nsf|nsf[- ]paid|items? paid)/i },
-  { from: "nsf", to: "deposited_item_return", when: /deposit/i },
+  // "Returned Item fee (written to you)" is a check the customer deposited coming back.
+  { from: "nsf", to: "deposited_item_return", when: /(deposit|written to you)/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
