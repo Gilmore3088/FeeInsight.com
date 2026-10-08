@@ -6,8 +6,11 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import {
   answerKeySchemaReady,
+  banksToCheck,
   getLatestAnswerKeyScoreRun,
+  isPersonChecked,
   listAnswerKeyInstitutions,
+  MACHINE_ANSWER_KEYERS,
   type AnswerKeyListRow,
 } from "@/lib/data-store/answer-key";
 import { importAnswerKeyAction } from "./actions";
@@ -48,8 +51,8 @@ export default async function AnswerKeyPage({
   const [rows, latest] = ready
     ? await Promise.all([listAnswerKeyInstitutions(), getLatestAnswerKeyScoreRun()])
     : [[] as AnswerKeyListRow[], null];
-  const confirmed = rows.filter((row) => row.status === "confirmed").length;
-  const firstUnconfirmed = rows.find((row) => row.status !== "confirmed");
+  const personChecked = rows.filter(isPersonChecked).length;
+  const firstUnconfirmed = banksToCheck(rows)[0];
 
   return (
     <div className="space-y-6 pb-10">
@@ -75,7 +78,7 @@ export default async function AnswerKeyPage({
         <>
           <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
             <Stat label="Banks" value={rows.length.toLocaleString()} />
-            <Stat label="Confirmed" value={`${confirmed} of ${rows.length}`} />
+            <Stat label="Checked by a person" value={`${personChecked} of ${rows.length}`} />
             <Stat label="Precision (end to end)" value={pct(latest?.precision)} />
             <Stat label="Recall (end to end)" value={pct(latest?.recall)} />
           </div>
@@ -85,7 +88,7 @@ export default async function AnswerKeyPage({
               href={`/admin/answer-key/${firstUnconfirmed.id}`}
               className="inline-flex rounded-md bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
             >
-              Check the next unconfirmed bank
+              Check the next bank (shortest first)
             </Link>
           ) : null}
 
@@ -115,10 +118,12 @@ export default async function AnswerKeyPage({
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500">{DOC_LABELS[row.document_type] ?? row.document_type}</td>
                     <td className="px-3 py-2 text-xs">
-                      {row.status === "confirmed" ? (
+                      {isPersonChecked(row) ? (
                         <span className="text-emerald-700 dark:text-emerald-400" title={row.confirmed_at ? `by ${row.confirmed_by} ${formatAdminDateTime(row.confirmed_at)}` : undefined}>
-                          confirmed
+                          checked by {row.confirmed_by}
                         </span>
+                      ) : row.status === "confirmed" && MACHINE_ANSWER_KEYERS.has(row.confirmed_by ?? "") ? (
+                        <span className="text-amber-700 dark:text-amber-400">keyed by Claude, needs a person</span>
                       ) : (
                         <span className="text-amber-700 dark:text-amber-400">
                           prefilled{row.uncertain_fee_count > 0 ? ` (${row.uncertain_fee_count} unsure)` : ""}
