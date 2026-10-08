@@ -45,7 +45,7 @@ import {
   revenueShiftObservation,
   type FeeChangeInput,
 } from "./observations";
-import { studyObservations, withStudyPlace, type StudyPlacementRow } from "./studies";
+import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
 import { buildSegmentResearch } from "./segment";
@@ -306,8 +306,29 @@ async function loadServiceChargeRows(institutionId: number): Promise<ServiceChar
   }));
 }
 
+/** The current fee dependence study's yearly median and middle half, per charter; empty before its first run. */
+export async function loadDependenceSeries(): Promise<Record<string, DependenceYear[]>> {
+  try {
+    const [row] = await sql`
+      SELECT findings->'series' AS series FROM hamilton_studies WHERE study_key = 'fee_dependence' AND is_current`;
+    const series = row?.series && typeof row.series === "object" ? (row.series as Record<string, unknown[]>) : {};
+    return Object.fromEntries(
+      Object.entries(series).map(([charter, points]) => [
+        charter,
+        (Array.isArray(points) ? points : []).map((p) => {
+          const v = p as Record<string, unknown>;
+          return { year: Number(v.year), median: Number(v.median), p25: Number(v.p25), p75: Number(v.p75) };
+        }),
+      ]),
+    );
+  } catch (error) {
+    console.error("[workspace] dependence series failed", error);
+    return {};
+  }
+}
+
 /** The institution's placements in Hamilton's current studies; none before the first studies run. */
-async function loadStudyPlacements(institutionId: number): Promise<StudyPlacementRow[]> {
+export async function loadStudyPlacements(institutionId: number): Promise<StudyPlacementRow[]> {
   try {
     const rows = await sql`
       SELECT s.study_key, s.title, s.as_of, s.n, s.findings->>'headline' AS study_headline,

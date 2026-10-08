@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 
 export const SESSION_COOKIE = "fsh_session";
@@ -9,7 +10,8 @@ export const SESSION_COOKIE = "fsh_session";
 /** Keep in step with the `interval '30 days'` renewal in `getCurrentUser`. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_RENEW_BELOW_MS = 15 * 24 * 60 * 60 * 1000;
-function getCookieSecret(): string {
+/** The secret that signs session cookies and password-reset links. */
+export function getCookieSecret(): string {
   const secret = process.env.BFI_COOKIE_SECRET;
   if (!secret && process.env.NODE_ENV === "production") {
     throw new Error("BFI_COOKIE_SECRET must be set in production");
@@ -166,6 +168,23 @@ function isUniqueViolation(error: unknown): boolean {
  * transaction, then the cookie. No Stripe call — a customer is created lazily the first
  * time the user reaches checkout or billing (see `ensureStripeCustomer`).
  */
+/**
+ * Emails the new account its confirmation link after the response is sent, so signup never
+ * waits on it or fails because of it. Confirmation gates only what needs a proven inbox.
+ */
+function queueEmailConfirmation(userId: number, email: string): void {
+  const send = async () => {
+    const { sendEmailConfirmation } = await import("@/lib/email/email-confirm");
+    await sendEmailConfirmation(userId, email);
+  };
+  try {
+    after(send);
+  } catch {
+    // Outside a request (scripts, tests): send now and ignore the outcome.
+    void send().catch(() => undefined);
+  }
+}
+
 export async function createUserWithSession(input: NewUserInput): Promise<CreateUserResult> {
   const { hashPassword } = await import("@/lib/passwords");
   const email = input.email.trim().toLowerCase();
@@ -188,6 +207,7 @@ export async function createUserWithSession(input: NewUserInput): Promise<Create
       return { userId, signed: session.signed };
     });
     await setSessionCookie(signed);
+    queueEmailConfirmation(userId, email);
     return { ok: true, userId };
   } catch (error) {
     if (isUniqueViolation(error)) {

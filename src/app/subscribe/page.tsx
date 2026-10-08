@@ -18,7 +18,7 @@ import { HAMILTON_CANONICAL, PRO_SECTION_TITLE, PRO_SUBHEAD } from "@/app/for-in
 import { ProPlanCards, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_ANNUAL_RANGE_LABEL, proTier, tierForAssets } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_ANNUAL_RANGE_LABEL, PRO_TIERS, isProTier, proTier, tierForAssets } from "@/lib/pro-tiers";
 import { AdvisoryCard, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
@@ -50,6 +50,8 @@ interface SubscribeSearchParams {
   inst?: string;
   /** "other": a consultant or other organization (NON_INSTITUTION_TIER). */
   org?: string;
+  /** The size band the buyer picked when the institution has no asset size on file. */
+  band?: string;
   /** "1" when the buyer backed out of Stripe Checkout. */
   canceled?: string;
 }
@@ -65,6 +67,7 @@ function buildSubscribeReturnPath(options: {
   if (options.returnTo && options.returnTo !== WELCOME_PATH) params.set("from", options.returnTo);
   if (options.plan) params.set("plan", options.plan);
   if (options.selection?.institutionId) params.set("inst", String(options.selection.institutionId));
+  if (options.selection?.tierPicked) params.set("band", options.selection.tier);
   else if (options.selection?.otherOrganization) params.set("org", "other");
   const query = params.toString();
   return query ? `/subscribe?${query}` : "/subscribe";
@@ -117,6 +120,8 @@ export default async function SubscribePage({
   let selection: ProTierSelection | null = null;
   let chosenLabel: string | null = null;
   let chooserProblem: string | null = null;
+  // No asset size on file: the buyer picks the band (James, 8 Oct 2026); "Plans to check" lists it.
+  let needsBand = false;
   if (pricingInstitution) {
     const tier = tierForAssets(pricingInstitution.assetsThousands);
     const place = [pricingInstitution.city, pricingInstitution.stateCode].filter(Boolean).join(", ");
@@ -124,8 +129,13 @@ export default async function SubscribePage({
     if (tier) {
       selection = { tier, institutionId: pricingInstitution.id, otherOrganization: false };
       chosenLabel = `${chosenLabel} · ${proTier(tier).assetsLabel}`;
+    } else if (isProTier(params.band)) {
+      selection = { tier: params.band, institutionId: pricingInstitution.id, otherOrganization: false, tierPicked: true };
+      chosenLabel = `${chosenLabel} · ${proTier(params.band).assetsLabel} (your pick)`;
+      needsBand = true;
     } else {
-      chooserProblem = `We don't have its asset size on file yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`;
+      chooserProblem = `We don't have its asset size on file yet. Pick its size, or email ${CONTACT_EMAIL}.`;
+      needsBand = true;
     }
   } else if (params.org === "other") {
     selection = { tier: NON_INSTITUTION_TIER, institutionId: null, otherOrganization: true };
@@ -136,8 +146,11 @@ export default async function SubscribePage({
     const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
     return `/register?plan=${plan}&from=${encodeURIComponent(back)}`;
   };
+  // A returning subscriber who already picked a plan goes straight on to Stripe after
+  // signing in, the same hand-off a new signup gets.
+  const loginBack = buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection });
   const loginHref = `/login?from=${encodeURIComponent(
-    buildSubscribeReturnPath({ inviteMode, returnTo, plan: requestedPlan, selection }),
+    requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
   return (
@@ -183,7 +196,7 @@ export default async function SubscribePage({
             Simple, transparent pricing
           </h1>
           <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Fee lookup and the national reports are free, and an institution report is priced on request.{" "}
+            Fee lookup and the national reports are free, and an institution report starts at $300.{" "}
             {SITE_NAME} Pro is {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}, and{" "}
             {SITE_NAME} Advisory is custom work.
           </p>
@@ -212,7 +225,14 @@ export default async function SubscribePage({
             <ProPlanCards
               features={features}
               isLoggedIn={isLoggedIn}
-              chooser={<ProTierChooser chosenLabel={chosenLabel} problem={chooserProblem} />}
+              chooser={
+                <ProTierChooser
+                  chosenLabel={chosenLabel}
+                  problem={chooserProblem}
+                  bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
+                  pickedBand={selection?.tierPicked ? selection.tier : null}
+                />
+              }
               selection={selection}
               returnTo={returnTo ?? undefined}
               registerHrefFor={registerHrefFor}

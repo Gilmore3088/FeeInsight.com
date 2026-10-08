@@ -24,7 +24,7 @@ interface NewsFeedProps {
   activeSource?: string;
   activeTopic?: string;
   activeRange: string;
-  /** Feed ingestion is an operator task: only admins see the Refresh control. */
+  /** Feed ingestion is an operator task: only admins and analysts see the Refresh control. */
   canRefreshFeeds?: boolean;
 }
 
@@ -122,7 +122,7 @@ export function NewsFeed({
                   : "text-warm-600 hover:text-warm-900 hover:bg-warm-100"
               }`}
             >
-              {range === "today" ? "24h" : range === "week" ? "7d" : range === "month" ? "30d" : "All"}
+              {range === "today" ? "Today" : range === "week" ? "7d" : range === "month" ? "30d" : "All"}
             </button>
           ))}
         </div>
@@ -163,8 +163,10 @@ export function NewsFeed({
           {articles.length === 0 ? (
             <div className="rounded-xl border border-warm-200 bg-white/70 px-6 py-12 text-center">
               <p className="text-[14px] text-warm-600">No articles found.</p>
-              <p className="mt-1 text-[12px] text-warm-500">
-                Click Refresh to fetch the latest regulatory news.
+              <p className="mt-1 text-[12px] text-warm-600">
+                {canRefreshFeeds
+                  ? "Click Refresh to fetch the latest regulatory news."
+                  : "Nothing matches these filters. Try a longer time range or all sources and topics."}
               </p>
             </div>
           ) : (
@@ -304,7 +306,7 @@ export function NewsFeed({
             <p className="text-[11px] leading-relaxed text-warm-600">
               Aggregated from official RSS feeds of the Federal Reserve, FDIC,
               OCC, and CFPB. Articles are classified by topic using keyword
-              analysis. Click Refresh to pull the latest updates.
+              analysis. {canRefreshFeeds ? "Click Refresh to pull the latest updates." : "New releases are read once a day."}
             </p>
           </div>
         </aside>

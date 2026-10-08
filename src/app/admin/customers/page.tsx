@@ -7,6 +7,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { LEAD_STATUS_LABELS, isLeadOverdue, isLeadStatus, isRequestLead, type LeadStatus } from "@/lib/leads/lead-status";
 import { countInstitutionsPassingReportRule, getMarketReadiness } from "@/lib/data-store/market-readiness";
 import { getProAccounts, type ProAccount } from "@/lib/data-store/pro-accounts";
+import { getPlanWatchList, type PlanWatchRow } from "@/lib/pro-plan-watch-store";
 import { RoomHeader, Unreadable } from "../room-hub";
 
 /** Board columns, left to right, in the order a request moves. */
@@ -46,7 +47,7 @@ function LeadCard({ lead, now }: { lead: LeadRow; now: Date }) {
 /** The Customers room: requests as a board by stage, plus who could get a report today. */
 export default async function CustomersRoomPage() {
   await requireAuth("view");
-  const [leads, markets, proAccounts] = await Promise.all([
+  const [leads, markets, proAccounts, planWatch] = await Promise.all([
     getLeads(500),
     getMarketReadiness().catch((error) => {
       console.error("Customers room market readiness failed", error);
@@ -54,6 +55,10 @@ export default async function CustomersRoomPage() {
     }),
     getProAccounts().catch((error) => {
       console.error("Customers room Pro accounts failed", error);
+      return null;
+    }),
+    getPlanWatchList().catch((error) => {
+      console.error("Customers room plan watch list failed", error);
       return null;
     }),
   ]);
@@ -116,6 +121,8 @@ export default async function CustomersRoomPage() {
         </div>
       </section>
 
+      {planWatch === null ? <Unreadable what="Plan watch list" /> : <PlanWatch rows={planWatch} />}
+
       {proAccounts ? <ProAccounts accounts={proAccounts} /> : <Unreadable what="Pro accounts" />}
 
       {markets === null ? <Unreadable what="Market readiness" /> : null}
@@ -132,6 +139,35 @@ function Stat({ label, value, note }: { label: string; value: string | null; not
       </p>
       <p className="mt-1 text-[11.5px] leading-snug text-gray-500 dark:text-gray-400">{note}</p>
     </div>
+  );
+}
+
+/** Paid plans that may be on the wrong price. Shown only when there is one to look at. */
+function PlanWatch({ rows }: { rows: PlanWatchRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <section aria-label="Plans to check">
+      <p className="admin-section-title">Plans to check</p>
+      <p className="mt-1 text-xs text-gray-500">
+        Pro is priced by the bank picked at checkout. These plans have signs they cover a larger one. Nothing changes
+        unless you move the plan in Stripe.
+      </p>
+      <ul className="mt-2 space-y-2">
+        {rows.map((row) => (
+          <li key={row.userId} className="admin-card px-4 py-3 text-sm">
+            <p className="font-semibold text-gray-900 dark:text-gray-100">
+              {row.name} <span className="font-normal text-gray-500">{row.email ?? "No email"}</span>
+            </p>
+            <p className="text-xs text-gray-500">Paid for {row.paidFor}</p>
+            <ul className="mt-1 list-disc pl-5 text-gray-700 dark:text-gray-200">
+              {row.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
