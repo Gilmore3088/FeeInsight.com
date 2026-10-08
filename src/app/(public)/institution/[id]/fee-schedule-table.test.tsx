@@ -23,6 +23,11 @@ describe("describeMedianDelta", () => {
     expect(describeMedianDelta(32.5, 32.5)).toEqual({ text: "At the national median", tone: "at" });
   });
 
+  it("names the state for the home-state comparison", () => {
+    expect(describeMedianDelta(30, 32.5, "Texas")).toEqual({ text: "$2.50 below the Texas median", tone: "below" });
+    expect(describeMedianDelta(32.5, 32.5, "Texas")).toEqual({ text: "At the Texas median", tone: "at" });
+  });
+
   it("says nothing when either side is missing", () => {
     expect(describeMedianDelta(null, 30)).toBeNull();
     expect(describeMedianDelta(30, null)).toBeNull();
