@@ -62,9 +62,13 @@ type SqlTag = typeof sql;
 // released as NSF. A fee now stays held when today's category guard rejects its name, when a bare
 // "Monthly Fee" sits among a business service's rows, or when a plain returned check or item under
 // $10 is filed as NSF (`releaseHoldReason`).
+// Version 13 (2026-10-08): a hand check of 20 released v12 fees found "/hr incl. reproduction"
+// (Legal Process Compliance $20/hr) released as document reproduction, and "account research fee
+// may apply)" (a $5 draft copy). A name cut from the middle of a line, starting with "/" or ending
+// in an unopened ")", now stays held (`name_fragment`).
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 12,
+  version: 13,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -119,8 +123,10 @@ const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit
 const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
 /** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
 const SMALL_NSF_AMOUNT = 10;
+/** A name cut from the middle of a line: "/hr incl. reproduction", "account research fee may apply)". */
+const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$/;
 
-export type ReleaseHoldReason = "category_guard" | "business_service_monthly" | "small_returned_item";
+export type ReleaseHoldReason = "category_guard" | "business_service_monthly" | "small_returned_item" | "name_fragment";
 
 /**
  * Why a fee the model passed still stays held, or null. Each is a miss a hand check found after the
@@ -130,6 +136,7 @@ export function releaseHoldReason({ row, sourceContext }: Pick<ReleaseReviewCand
   const key = row.held_canonical_fee_key;
   const name = row.fee_name ?? "";
   if (!checkFeeCategory(key, name, row).ok) return "category_guard";
+  if (NAME_FRAGMENT.test(name)) return "name_fragment";
   if (key === "monthly_maintenance" && BARE_MONTHLY_NAME.test(name) && BUSINESS_SERVICE_ROWS.test(sourceContext ?? "")) {
     return "business_service_monthly";
   }
