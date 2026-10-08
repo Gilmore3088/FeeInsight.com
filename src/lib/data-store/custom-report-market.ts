@@ -116,13 +116,16 @@ async function loadMarketCounties(subject: {
       ORDER BY deposits DESC
       LIMIT ${MAX_MARKET_COUNTIES}
     ),
+    -- A city can span more than 3 counties: keep the ones holding most of its branches, then
+    -- most of its deposits, then the lowest county code, so repeat runs pick the same counties.
     hq AS (
-      SELECT DISTINCT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state
+      SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state
       FROM institution_branch_deposits b, latest
       WHERE NOT EXISTS (SELECT 1 FROM own)
         AND b.year = latest.y AND b.state = ${subject.state_code} AND UPPER(b.city) = UPPER(${subject.city ?? ""})
         AND b.county_fips IS NOT NULL
       GROUP BY b.county_fips, b.year
+      ORDER BY COUNT(*) DESC, SUM(COALESCE(b.deposits, 0)) DESC, b.county_fips::text
       LIMIT ${MAX_MARKET_COUNTIES}
     )
     SELECT county_fips, year, city, state, 'branch_counties' AS basis FROM own
