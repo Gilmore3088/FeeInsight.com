@@ -118,6 +118,21 @@ export const API_ROUTE_POLICIES = [
       "Reads the default Stripe customer portal configuration and opens one portal session for an existing customer to prove Manage billing works; no charge, nothing changed.",
   },
   {
+    routeId: "api.admin.stripe.webhook_check",
+    routeTemplate: "/api/admin/stripe/webhook-check",
+    file: "src/app/api/admin/stripe/webhook-check/route.ts",
+    surface: "admin",
+    allowedMethods: ["GET"],
+    authRequirement: "admin",
+    rateLimitBucket: "admin-read",
+    costPolicy: "none",
+    telemetryEvent: "api.admin.stripe.webhook_check",
+    failBehavior: "fail_closed",
+    auditPriority: "high",
+    notes:
+      "Lists the Stripe webhook endpoints that point at this site and the handled events each one does not send; read-only, nothing changed.",
+  },
+  {
     routeId: "api.admin.flow",
     routeTemplate: "/api/admin/flow",
     file: "src/app/api/admin/flow/route.ts",
