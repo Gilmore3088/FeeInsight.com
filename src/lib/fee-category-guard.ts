@@ -113,6 +113,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
     exclude:
       /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|\b\d+ ?x ?\d+\b)/i, // v33: "03 x 10" is a worked sum
+    // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
+    // of Rosemount) is the per-item fee; its note states the daily cap.
+    capInNotes: {
+      cap: /^(daily max|maximum|\bcap\b)$/i,
+      item: /\b(nsf|insufficient|non[- ]?sufficient|returned item)/i,
+    },
   },
   // The surcharge a bank charges other banks' customers at its own ATMs ("Non-Member ATM
   // Fee", "Non-OMNI Card used at OMNI ATM") and use of its own or in-network ATMs are not
@@ -266,7 +272,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
 export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
-export const CATEGORY_GUARD_VERSION = 34;
+export const CATEGORY_GUARD_VERSION = 35;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -387,7 +393,7 @@ function returnBesideNsf(canonicalFeeKey: string, name: string, context: Categor
 const COUNT_IN_NOTE = /(\b\d{1,2}\b|\b(one|two|three|four|five|six|seven|eight|nine|ten)\b)/i;
 
 /** True when every `exclude` word in the name is a daily-count cap inside a per-item fee's note. */
-function capOnlyInNotes(rule: CategoryRule, name: string): boolean {
+function capOnlyInNotes(rule: CategoryRule, name: string, context: CategoryGuardContext | undefined): boolean {
   const capped = rule.capInNotes;
   if (!capped) return false;
   const notes = name.match(/\([^()]*(?:\)|$)/g);
@@ -396,8 +402,12 @@ function capOnlyInNotes(rule: CategoryRule, name: string): boolean {
   if (rule.exclude.test(outside) || !capped.item.test(outside)) return false;
   const noteText = notes.join(" ");
   // The note must count the items ("Maximum of 5", "4 per day"); "(maximum charge per day)"
-  // prices the cap itself. A dollar figure in the note may be the cap's amount.
-  if (/\$\s?\d/.test(noteText) || !COUNT_IN_NOTE.test(noteText)) return false;
+  // prices the cap itself. A dollar figure in the note may be the cap's amount, unless the row's
+  // own price is known and below it: "(maximum of $100 per day)" beside $25 is the item's cap (v35).
+  const dollars = [...noteText.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)].map((m) => Number(m[1].replace(/,/g, "")));
+  const amount = context?.amount == null ? NaN : Number(context.amount);
+  const capAboveItem = dollars.length > 0 && amount > 0 && dollars.every((cap) => cap > amount);
+  if (dollars.length > 0 ? !capAboveItem : !COUNT_IN_NOTE.test(noteText)) return false;
   const words = noteText.match(new RegExp(rule.exclude.source, "gi")) ?? [];
   return words.length > 0 && words.every((word) => capped.cap.test(word));
 }
@@ -421,8 +431,11 @@ export function checkFeeCategory(
   const soft = rule.excludeUnless;
   // A note runs to its closing parenthesis, or to the end of a name cut mid-note.
   const softName = soft?.outsideNotes ? name.replace(/\([^()]*(?:\)|$)/g, " ") : name;
-  const softExcluded = soft && !soft.unless.test(softName) ? name.match(soft.pattern) : null;
-  const excluded = (capOnlyInNotes(rule, name) ? null : name.match(rule.exclude)) ?? softExcluded;
+  const capOnly = capOnlyInNotes(rule, name, context);
+  // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
+  // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
+  const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
+  const excluded = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded;
   if (excluded) {
     return {
       ok: false,
