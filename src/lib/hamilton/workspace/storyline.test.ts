@@ -157,7 +157,7 @@ describe("storyline", () => {
     expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
     expect(story.lenses.market.map((f) => f.text)).toEqual([
       "2 of 6 $10B+ institutions charge less than your $32; the lowest is Big Bank 2 ($0).",
-      "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
+      "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 faces.",
       "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
       "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
     ]);
