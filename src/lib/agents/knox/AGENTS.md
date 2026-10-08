@@ -472,6 +472,10 @@ v38 (rules 38, same lane, Oct 8):
 - A threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse) no longer hides the fee's name from the classifier, and stays in the name with its figure ("Courtesy Pay (over $5)"), which is how the shared source check tells it from a tier.
 - "Privilege Pay" is an overdraft name, so one price for "NSF, Privilege Pay, & Uncollected Funds Fee" (Arkansas FCU) files as the overdraft fee, like "NSF/Overdraft".
 
+v39 (rules 39, same lane, Oct 8):
+- "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
+- A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own
