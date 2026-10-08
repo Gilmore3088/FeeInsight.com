@@ -163,12 +163,23 @@ export function planCompetitorAlerts(input: {
 
 async function loadWorkspaceBanks(onlyInstitutionId: number | null): Promise<WorkspaceBank[]> {
   const rows = await sql<{ institution_id: number | string; user_ids: Array<number | string> }[]>`
-    SELECT m.institution_id, array_agg(DISTINCT m.user_id) AS user_ids
-      FROM institution_workspace_memberships m
-     WHERE m.membership_status = 'active'
-       AND (${onlyInstitutionId}::bigint IS NULL OR m.institution_id = ${onlyInstitutionId}::bigint)
-     GROUP BY m.institution_id
-     ORDER BY m.institution_id
+    SELECT b.institution_id, array_agg(DISTINCT b.user_id) AS user_ids
+      FROM (
+        SELECT m.institution_id::bigint AS institution_id, m.user_id::bigint AS user_id
+          FROM institution_workspace_memberships m
+         WHERE m.membership_status = 'active'
+        UNION
+        -- A Pro reader's saved bank counts too, so the bank they work on gets these before
+        -- anyone holds a seat on it (no institution has a paid seat yet).
+        SELECT c.selected_institution_id::bigint, c.user_id::bigint
+          FROM hamilton_workspace_contexts c
+          JOIN users u ON u.id = c.user_id
+         WHERE c.selected_institution_id IS NOT NULL AND u.is_active = TRUE
+           AND (u.role IN ('admin', 'analyst', 'premium') OR u.subscription_status IN ('active', 'past_due'))
+      ) b
+     WHERE (${onlyInstitutionId}::bigint IS NULL OR b.institution_id = ${onlyInstitutionId}::bigint)
+     GROUP BY b.institution_id
+     ORDER BY b.institution_id
   `;
   return rows.map((row) => ({
     institutionId: Number(row.institution_id),
@@ -214,30 +225,25 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-         WHERE fp.institution_id = c.institution_id
-           AND fp.canonical_fee_key = COALESCE(c.canonical_fee_key, c.fee_category)
-           AND fp.amount = c.new_amount
+         -- The pair publish recorded (hamilton/change-pairing.ts), not one guessed by amount.
+         WHERE fp.fee_published_id = c.new_fee_published_id
            AND fp.rolled_back_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
-         ORDER BY fp.published_at DESC
-         LIMIT 1
       ) n ON TRUE
       LEFT JOIN LATERAL (
         SELECT fp.fee_name, fp.source_url, fr.source_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-         WHERE fp.institution_id = c.institution_id
-           AND fp.canonical_fee_key = COALESCE(c.canonical_fee_key, c.fee_category)
-           AND fp.amount = COALESCE(c.old_amount::float8, c.previous_amount)
-           AND fp.rolled_back_reason LIKE 'superseded%'
-         ORDER BY fp.rolled_back_at DESC NULLS LAST
-         LIMIT 1
+         WHERE fp.fee_published_id = c.previous_fee_published_id
       ) o ON TRUE
      WHERE c.institution_id = ANY(${competitorIds}::bigint[])
        AND COALESCE(c.canonical_fee_key, c.fee_category) = ANY(${categories}::text[])
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
        AND c.detected_at <= ${agedBefore}::timestamptz
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f

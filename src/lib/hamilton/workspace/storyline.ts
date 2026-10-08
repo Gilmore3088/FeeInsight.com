@@ -523,10 +523,14 @@ function complication(research: FeeResearch, name: string): Fact[] {
 function financeLens(research: FeeResearch, answer: HamiltonAnswer, intent: StoryIntent): Fact[] {
   const money = answer.claims.filter((c) => c.source.table === "institution_financial_records" || /call report|5300|filing/i.test(c.source.label));
   const rules = research.regulation.filter((r) => r.source.table !== "reg_articles");
-  // A regulation question names who regulates the bank before the rules; otherwise the rules lead.
-  const regulator = intent.regulation ? rules.filter((r) => r.source.table === "institution_sources") : [];
-  const others = rules.filter((r) => !regulator.includes(r));
-  return [...regulator, ...money.slice(0, intent.regulation ? 1 : 4), ...others.slice(0, 2)].slice(0, 4);
+  // A regulation question names who regulates the bank, then its fee complaints against peers', then the rules.
+  if (intent.regulation) {
+    const regulator = rules.filter((r) => r.source.table === "institution_sources");
+    const complaints = rules.filter((r) => r.source.table === "institution_complaint_records" && r.sampleSize !== undefined);
+    const others = rules.filter((r) => !regulator.includes(r) && r.source.table !== "institution_complaint_records");
+    return [...regulator, ...complaints, ...others.slice(0, 2), ...money.slice(0, 1)].slice(0, 4);
+  }
+  return [...money.slice(0, 4), ...rules.slice(0, 2)].slice(0, 4);
 }
 
 /** The group a customer would compare the bank against: the segment asked about, the local market, or peers. */

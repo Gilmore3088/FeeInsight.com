@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("./ask-service", () => ({ scheduleFor: vi.fn(), incomeWhyFor: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, summarizeEval, type EvalResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, pickProQuestions, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { AskResponse } from "./workspace/types";
 
@@ -43,5 +44,29 @@ describe("answer eval", () => {
     expect(s.topFailures).toEqual([{ failure: "does not name its state (…)", count: 2 }]);
     expect(s.byQuestion[0]).toMatchObject({ questionId: "q17", passed: 0, total: 2 });
     expect(failureShape('reads as advice: "you should lower"')).toBe('reads as advice: "…"');
+  });
+
+  it("replays readers' own questions, newest first, leaving out test asks", async () => {
+    const rows = [
+      { institution_id: "8109", question: "How does our overdraft fee compare to peers?", asked_at: "2026-10-08T16:07:00Z" },
+      { institution_id: "6561", question: "TEST journey audit please ignore.", asked_at: "2026-10-07T00:00:00Z" },
+      { institution_id: "8109", question: "talk to me about all 10B and up instititions for od fees", asked_at: "2026-10-06T00:00:00Z" },
+    ];
+    const db = (async () => rows) as unknown as SqlTag;
+    expect((await pickProQuestions(db, 5)).map((q) => q.question)).toEqual([
+      "How does our overdraft fee compare to peers?",
+      "talk to me about all 10B and up instititions for od fees",
+    ]);
+    expect(await pickProQuestions(db, 1)).toHaveLength(1);
+  });
+
+  it("counts the real questions Hamilton still asks back on, and lists every one that falls short", () => {
+    const row = (question: string, kind: string, failures: string[]): ProQuestionResult => ({ institutionId: 8109, question, askedAt: "2026-10-08", kind, shortAnswer: "", failures });
+    const s = summarizeProReplay([
+      row("How does our overdraft fee compare to peers?", "answer", []),
+      row("talk to me about all 10B and up instititions for od fees", "clarifying_question", ['asked back instead of answering: "Which fee?"']),
+    ]);
+    expect(s).toMatchObject({ questions: 2, passed: 1, askedBack: 1, topFailures: [{ failure: 'asked back instead of answering: "…"', count: 1 }] });
+    expect(s.failing.map((f) => f.question)).toEqual(["talk to me about all 10B and up instititions for od fees"]);
   });
 });

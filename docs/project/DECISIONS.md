@@ -524,3 +524,13 @@ corrupted amount, without the 12-hour second look, still needs his explicit yes.
 when a prospect's metro has fewer than 5 verified competitors with an overdraft fee, the first
 email compares it with the verified institutions across its state and says so ("across Nebraska").
 The same source check and 5-institution minimum apply statewide. Local stays first whenever it has enough.
+
+**Outreach sells research, not a median gap, and every link must work.** James, 22:23 and 22:34 UTC
+8 Oct, Marketing thread (feedback, then a full audit grading the campaign C-). Fee Insight does not
+advise institutions to change their fees; being above or below a median is not a sales reason; a
+statewide group is not a prospect's competitors; every email needs a verified, working destination
+that delivers what it promises. The first emails are a 30-prospect pilot in three campaigns: A
+research efficiency (no figures, no link), B personalized research (names local institutions, no
+figures, no link), C one tier-A comparison with a link checked live. James approves every first
+email. This supersedes the 21:31 statewide fallback. The 21 single-fee drafts from run 3157 were held
+and are withdrawn by the next run. Plan: https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c

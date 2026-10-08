@@ -95,6 +95,10 @@ and `detail.method_version`).
   rejected as `product_page` and belongs to the companion finder as an account page.
   A business-only schedule (its address or its own heading names business/commercial and
   nothing names personal or consumer accounts) is rejected as `business_schedule`.
+- A found link on another institution's own website (`other-bank-host.ts`: its host is another
+  bank's `website_url` host and not this bank's) is never saved. The search is recorded as
+  `retry_after` with code `other_bank_host`, and the link joins the bank's rejected sources.
+  Peoples Bank of Rock Valley IA had been given Peoples Bank of Bellingham WA's PDF (Oct 8).
 - Link coverage (`link-coverage.ts`), one shared rule for "is the stored page the
   consumer fee schedule?": not when the link is business-only, when none of the bank's
   stored texts prices an overdraft or NSF item (`hasOverdraftPrice`: the word, then $10+

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksIncomeWhy, explainIncome, incomeSplit, priceIndex, withIncomeSplit } from "./why";
+import { asksIncomeLevel, asksIncomeWhy, explainIncome, incomeSplit, priceIndex, withIncomeSplit } from "./why";
 import type { FeePositionRow } from "./types";
 
 // Fixture rows for tests only; no figure here is live data.
@@ -25,6 +25,13 @@ describe("asksIncomeWhy", () => {
     expect(asksIncomeWhy("What is driving our service charge revenue?")).toBe(true);
     expect(asksIncomeWhy("Why is our overdraft fee where it is?")).toBe(false);
     expect(asksIncomeWhy("How has our overdraft fee income trended?")).toBe(false);
+  });
+
+  it("catches questions about where fee income stands against peers", () => {
+    expect(asksIncomeLevel("How does Space Coast's service-charge income compare with only credit unions over $1 billion?")).toBe(true);
+    expect(asksIncomeLevel("What is the income level on service charges for the peer group")).toBe(true);
+    expect(asksIncomeLevel("How has our overdraft fee income trended?")).toBe(false);
+    expect(asksIncomeLevel("How does our overdraft fee compare?")).toBe(false);
   });
 });
 
