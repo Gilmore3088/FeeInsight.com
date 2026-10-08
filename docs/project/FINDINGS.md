@@ -3598,3 +3598,16 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** The 7 read-now runs and their overdraft fees going live. Hatboro Federal
   Savings' Feb 2026 schedule lists no overdraft fee (only a $25 NSF return fee and a $5
   transfer protection fee).
+
+## 2026-10-08: A held line renamed onto a row of the same page failed Knox's extract step
+
+- **Problem.** Two Knox extract steps failed with `duplicate key value violates unique
+  constraint "raw_fee_observations_knox_agentic_dedup_idx"`: Guaranty Bank and Trust's
+  read-now run (19:55 UTC) and a state lane run (20:00 UTC). The step left no rows for
+  Guaranty's new page. The held-line re-check gives a promoted row today's name for the fee.
+  It did that with no check that the same page already had a row with that name and price,
+  which the dedupe index forbids. The rate re-check in the same file already had that check.
+- **Fix.** A promotion now skips a held line whose new name and price already exist on the
+  same page and keeps it on hold, since that fee is already read.
+- **Watch.** No `knox_agentic_dedup_idx` failures in extract steps, and Guaranty's next
+  read-now run completing.
