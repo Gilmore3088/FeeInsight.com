@@ -1,6 +1,6 @@
 import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, usableName } from "@/lib/agents/knox/rules";
+import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
 
 /**
  * Layout helpers shared by Knox's pass 2 specialists (`table-rows.ts`, `families.ts`).
@@ -114,7 +114,8 @@ export function tidyFeeName(raw: string): string {
     .replace(LEADERS, " ")
     .replace(/::/g, ":")
     .split(/\s+\|\s+|\s*\|\s*/)
-    .map((cell) => cell.replace(/\s+/g, " ").trim())
+    // A footnote number left behind once the dot leaders are gone ("Check Cashing Fee1. . . $5").
+    .map((cell) => stripFootnoteMarks(cell.replace(/\s+/g, " ").trim()))
     .filter(Boolean);
   // A unit cell at either end is the price's qualifier or the next row's, not the name.
   // So is the end of the previous row's sentence ("than 22 years. | Out-of-Network ATMs",

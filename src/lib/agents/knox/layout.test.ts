@@ -64,3 +64,11 @@ describe("readsAMeasuredAmount (v32)", () => {
     expect(readsAMeasuredAmount("Overdraft fee $34", "Overdraft fee", 34)).toBe(false);
   });
 });
+
+describe("tidyFeeName footnote numbers", () => {
+  it("drops a footnote number left once the dot leaders are gone", () => {
+    expect(tidyFeeName("Check Cashing Fee1. . . . . . . . . . . . . .")).toBe("Check Cashing Fee");
+    expect(tidyFeeName("OVERDRAFT & NSF FEES | Statement Copy Fee8 . . . . . . .")).toBe("OVERDRAFT & NSF FEES: Statement Copy Fee");
+    expect(tidyFeeName("Safe Deposit Box 10x10")).toBe("Safe Deposit Box 10x10");
+  });
+});

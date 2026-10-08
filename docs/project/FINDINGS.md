@@ -1158,6 +1158,16 @@ flattens into a digit. The table and family specialists (pass 2) already strippe
 **Fix:** Knox rules v8 strips it in `nameFrom`, so every extractor gets clean names (fix PR off main,
 merged once green). The 155 names already live need a one-time rename: a `sql-to-run` issue.
 **Lesson:** when two extractors share a cleanup, put it in the shared helper, not in one of them.
+**Follow-up (2026-10-08):** issue 163 was run on Oct 6 (155 to 0), but by 08:40 UTC Oct 8, 22 live
+fees at 14 institutions had the digit again, 19 of them published after the fix. In a dot-leader
+line ("Check Cashing Fee1. . . . $5.00") the digit isn't at the end of the name until the leaders
+are removed, and that happens later, in `tidyFeeName`. Fix: `tidyFeeName` strips the footnote
+number in each cell after the leaders are gone. The live repair now runs in the pipeline: Knox
+name retidy v2 counts a footnoted name as messy and renames it (logged per row in
+`pipeline_feedback`), so no hand SQL is needed. A dry run on the live rows renamed all 22 and
+skipped none.
+**Lesson 2:** a cleanup that keys on "end of the name" has to run after every other step that
+trims the name.
 
 ## 2026-10-05: Public pages showed different counts and medians on the same day
 **What happened:** an outside audit saw the homepage say 2,115 institutions, 58 fee types and a $28
