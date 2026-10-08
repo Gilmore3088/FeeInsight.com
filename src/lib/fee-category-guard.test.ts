@@ -490,7 +490,11 @@ describe("checkFeeCategory", () => {
     const context = (amount: string, document_nsf_amount: string | null) => ({ amount, document_nsf_amount });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", null))).toEqual({ ok: true });
-    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toEqual({ ok: true });
+    // v23: at any price below the schedule's NSF fee; at the NSF fee's own price it is that fee.
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("30.00", "35.00"))).toMatchObject({ ok: false, code: "schedule_contradicts" });
+    expect(checkFeeCategory("nsf", "Returned Check Fee", context("35.00", "35.00"))).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Check Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("deposited_item_return", "Returned Item Charge")).toEqual({ ok: true });
     expect(checkFeeCategory("nsf", "NSF Fee", context("7.00", "35.00"))).toEqual({ ok: true });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "10.00"))).toEqual({ ok: true });
   });
