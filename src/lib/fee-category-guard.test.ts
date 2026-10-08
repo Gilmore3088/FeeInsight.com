@@ -594,6 +594,23 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Overdraft Transfer Fee (maximum of 3 per day)").ok).toBe(false);
     expect(checkFeeCategory("overdraft", "Overdraft (maximum 5 per day)").ok).toBe(false);
   });
+  it("v35 accepts a per-item fee whose note states the daily cap (BankIowa, First State Bank of Rosemount, Oct 8)", () => {
+    expect(
+      checkFeeCategory(
+        "overdraft",
+        "Overdraft Fee - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)",
+      ),
+    ).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft NSF Paid Item(s) Charge (maximum of $100 per day)", { amount: 25 })).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)", { amount: "25.00" })).toEqual({ ok: true });
+    expect(checkFeeCategory("nsf", "NSF Fee (maximum 5 per day)")).toEqual({ ok: true });
+    // The cap's own row, a cap with no known item price, and a returned item named outside the note stay out.
+    expect(checkFeeCategory("overdraft", "Overdraft NSF Paid Item(s) Charge (maximum of $100 per day)", { amount: 100 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft NSF Paid Item(s) Charge (maximum of $100 per day)").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "NSF Daily Maximum (maximum of $100 per day)", { amount: 25 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Return Item Fee (5 max per day)").ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Fee (Returned)").ok).toBe(false);
+  });
   it("v30 keeps worked examples and cut-off headers out of the overdraft fee (Provident, OceanFirst, Oct 8)", () => {
     expect(checkFeeCategory("overdraft", "the transaction, the Bank will honor that final payment request and not charge an Overdraft Fee that otherwise would be").ok).toBe(false);
     expect(checkFeeCategory("overdraft", "Overdraft Protection Via").ok).toBe(false);

@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
+**What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
+**Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
+**Fix:** Knox now takes the $10B+ banks with no live overdraft fee first, then the page its rules read longest ago (this PR).
+**Lesson:** a queue that restarts on each version needs a stalest-first order, or the tail starves whenever versions move faster than one pass.
+
 ## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
 **What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
 is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
@@ -52,6 +58,7 @@ not on itself.
 **Cause:** the bank fee test and topic tags matched the bare word "overdraft". Also, a re-read only upserted the bills that still matched, so a tagging fix would never reach a row already stored.
 **Fix:** groundwater overdraft phrases are removed before the tests. A re-read clears the topics of a stored bill that no longer passes (the row is kept, never deleted). States with bills tagged under older rules are due again (`STATE_BILLS_TAGGING_VERSION`). Merged in the PR that adds this entry.
 **Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
+**Follow-up (19:17 UTC):** CA was re-read under version 2 at 18:17 and AB 1520 still matched, because its digest words groundwater overdraft some other way and the abstract isn't stored. Version 3 drops every "overdraft" from a bill that never mentions banking when the bill is about water or names no fee or charge. A guess at one wording isn't enough: when the source text can't be read, make the rule contextual.
 
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
@@ -3547,6 +3554,10 @@ and quarter were already stored, without looking at the periods of the data behi
   Checked against the 24 prod drafts: 7 stay (First Federal KC, Quaint Oak, Holy Rosary,
   BankGloucester, Gateway, State Bank, Drake) and 17 are withdrawn.
 - **Watch.** The outreach step's "Withdrew N" line, and To: lines on new drafts.
+- **Second miss (run 3102).** 2 of 4 new drafts went to boardofdirectors@ (name "Annual Meeting",
+  title a sentence quoting another address) and visa@ (title "Member Services: ...@TheQ.org").
+  A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
+  board and card-line mailboxes are shared. The next run withdraws both.
 
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
