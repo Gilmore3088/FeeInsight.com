@@ -260,6 +260,13 @@ export function narrateStepFinished(
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
     }
+    case "indexnow-ping": {
+      const submitted = n(detail, "submitted");
+      if (submitted > 0) return `Told Bing about ${count(submitted, "changed page")}.`;
+      return detail.skipped === "no pages changed"
+        ? "No institution pages changed in the last day."
+        : `Did not notify Bing (${String(detail.skipped ?? "unknown")}).`;
+    }
     case "briefing-refresh": {
       const stored = n(detail, "stored");
       const quarter = String(detail.quarter ?? "this quarter");
@@ -419,6 +426,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "indexnow-ping": "atlas",
   "pro-digest": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
