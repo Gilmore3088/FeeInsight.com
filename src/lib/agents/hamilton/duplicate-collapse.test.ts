@@ -48,7 +48,13 @@ describe("Hamilton duplicate collapse", () => {
     expect(query).toContain("rolled_back_at IS NULL");
     expect(query).toContain("PARTITION BY fp.institution_id");
     expect(query).toContain("lower(btrim(fp.fee_name))");
-    expect(query).toContain("ORDER BY fp.published_at DESC, fp.fee_published_id DESC");
+    // A copy with a stated frequency is kept over one without, then the newest.
+    expect(query).toContain("ORDER BY (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
+    // Frequency is not part of the line: "per item", "per occurrence" and unstated are one fee,
+    // while two different stated frequencies keep both rows.
+    expect(query).not.toContain("COALESCE(fp.frequency, '')");
+    expect(query).toContain("WHEN fp.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'");
+    expect(query).toContain("ranked.min_class IS NULL OR ranked.min_class = ranked.max_class");
     expect(query).toContain("'duplicate of #' || dup.kept_fee_published_id::text");
     expect(params).toEqual([500, "agentic-run-120"]);
     expect(JSON.stringify(db.mock.calls)).toContain("hamilton.duplicates_collapsed");

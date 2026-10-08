@@ -13,6 +13,36 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Live fee names cut off mid-parenthesis, doubled words, and twin rows
+**What happened:** at about 13:35 UTC the UX audit found these on Extraco (TX, institution 496):
+"Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10", and two
+"Early Account Closure" rows. Read-only counts at 13:50 UTC, out of 63,620 live fees:
+- 417 names (329 institutions) have more "(" than ")";
+- 32 (27 institutions) repeat a word;
+- 2 have untrimmed space;
+- 912 live rows at 443 institutions repeat another live row except for frequency, for
+  example one row per_occurrence and the other unstated.
+
+Extraco has no exact twin: its second row is "Early Account Closure (by Extraco – no", which
+is a $35 fee next to the $50 one.
+**Cause:** the PDF's columns. A row label wraps onto the next line, so the parenthesis is
+never closed in the text Knox reads. A row label printed next to its own cell heading doubles
+the word ("Account Research | Research: $25.00 per hour"). The duplicate collapse partitioned
+by frequency, so "per item", "per occurrence" and an unstated frequency kept separate copies of
+one fee read from two documents.
+**Fix:** `repairNameShape` in `knox/layout.ts` ends a name before an unclosed "(" and reads a
+doubled word once (an ALL-CAPS heading word or a trailing description is dropped). It applies to
+the published name only (`publishedFeeName` in `hamilton/publish.ts`), under the category guard.
+Knox and Darwin keep the name as read, because its words are the category evidence; cutting
+"(Savings Overdraft" from a read changed the category in the re-check. Name retidy v4 renames
+the live names through the same guarded, logged path. The duplicate collapse now treats per
+item, per occurrence, per transaction and one-time as one frequency, and an unstated or "other"
+frequency as matching any; rows with two different stated frequencies stay. Closed copies get
+`rolled_back_at` with "duplicate of #id", so nothing is deleted.
+**Lesson:** fix a display problem in the name a reader sees, not in the read the category rests
+on. When a dedupe key includes a field that is often unstated, check how many twins differ only
+in that field.
+
 ## 2026-10-08: Pro checkout dropped the buyer's institution
 **What happened:** the six live Pro tiers (PR 566) price checkout from the buyer's institution and send
 it to Stripe as `metadata.institution_id`, but the webhook only set `users.subscription_status`. A new
