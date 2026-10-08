@@ -394,6 +394,30 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://smartbank.com/wp-content/uploads/OverdraftConsentform.pdf",
     givenBy: "web search for the Tennessee report's deposit leaders, 2026-10-07 07:35",
   },
+  // Top 10 by in-state deposits with no live fees (coverage/gaps-2026-10-08.md). Links from
+  // search results only: bank sites refuse this network, so Rosetta's read is the check.
+  ...([
+    // No fee schedule link on file.
+    [43, "SouthState Bank, National Association", "https://www.southstatebank.com/PersonalAccountFeeSchedule"],
+    [85, "Eastern Bank", "https://www.easternbank.com/media/5301"],
+    // Checking Truth in Savings disclosure: overdraft $25 (four a day), stop payment $27.
+    [147, "BancFirst", "https://www.bancfirst.bank/BancFirst/media/Documents/NewDisclosureDocs/BancFirst-Checking-TISA.pdf"],
+    [206, "Bankers Trust Company", "https://www.bankerstrust.com/consumer-service-fee-schedule/"],
+    [400, "MVB Bank, Inc", "https://mvbbanking.com/wp-content/uploads/2024/03/4.-MVB-Retail-Fee-Schedule-3.31.22-reviewed-2024.pdf"],
+    [4966, "Bank Fund Staff Federal Credit Union", "https://bfsfcu.org/documents/Fee_Schedule.pdf"],
+    // Link on file was a product, rates or loan page.
+    [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf"],
+    [96, "Beacon Bank and Trust", "https://www.beaconbank.com/disclosures/consumer-fee-schedule"],
+    [300, "Hills Bank and Trust Company", "https://www.hillsbank.com/sites/www.hillsbank.com/files/media/terms-and-conditions-fee-schedule.pdf"],
+    [7032, "Virginia Federal Credit Union", "https://www.vacu.org/portals/0/pdfs/feedisclosure.pdf"],
+    [7656, "Dupaco Community Federal Credit Union", "https://www.dupaco.com/hubfs/dupaco-credit-union-fee-schedule-miscellaneous-fees-jan-15-2025.pdf?hsLang=en"],
+    [8086, "Summit Federal Credit Union", "https://www.summitcreditunion.com/_docs/Consumer%20Fee%20Schedule_3-1-2025.pdf"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "web search for each state's top 10 by deposits, 2026-10-08 02:45",
+  })),
 ];
 
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
