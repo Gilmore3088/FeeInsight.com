@@ -93,19 +93,23 @@ interface MarketCountyRow {
  * The counties that make up an institution's local market: up to MAX_MARKET_COUNTIES of
  * its own branch counties (in the state holding most of its deposits), or, for an
  * institution not in the Summary of Deposits (credit unions), its headquarters city's counties.
+ * A credit union's stored number is its NCUA charter, which can equal an unrelated bank's FDIC
+ * cert, so a credit union never matches SOD branches by number.
  */
 async function loadMarketCounties(subject: {
   cert_number: string | null;
+  charter_type: string | null;
   state_code: string | null;
   city: string | null;
 }): Promise<MarketCountyRow[]> {
+  const fdicCert = subject.charter_type === "credit_union" ? null : subject.cert_number;
   return sql<MarketCountyRow[]>`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits),
     own_all AS (
       SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state,
              SUM(COALESCE(b.deposits, 0)) AS deposits
       FROM institution_branch_deposits b, latest
-      WHERE ${subject.cert_number}::text IS NOT NULL AND b.cert::text = ${subject.cert_number}::text
+      WHERE ${fdicCert}::text IS NOT NULL AND b.cert::text = ${fdicCert}::text
         AND b.year = latest.y AND b.county_fips IS NOT NULL
       GROUP BY b.county_fips, b.year
     ),
@@ -154,8 +158,10 @@ export interface LocalMarketMembers {
  * Null when the institution has no market counties on file.
  */
 export async function getLocalMarketMembers(institutionId: number): Promise<LocalMarketMembers | null> {
-  const [subject] = await sql<{ id: number; city: string | null; state_code: string | null; cert_number: string | null }[]>`
-    SELECT id, city, state_code, cert_number::text AS cert_number FROM institution_sources WHERE id = ${institutionId}`;
+  const [subject] = await sql<
+    { id: number; city: string | null; state_code: string | null; cert_number: string | null; charter_type: string | null }[]
+  >`
+    SELECT id, city, state_code, cert_number::text AS cert_number, charter_type FROM institution_sources WHERE id = ${institutionId}`;
   if (!subject) return null;
   const counties = await loadMarketCounties(subject);
   if (counties.length === 0) return null;

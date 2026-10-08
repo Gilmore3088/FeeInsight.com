@@ -30,4 +30,19 @@ describe("market counties", () => {
     const hq = countyQuery().split("hq AS (")[1];
     expect(hq).toMatch(/ORDER BY COUNT\(\*\) DESC, SUM\(COALESCE\(b\.deposits, 0\)\) DESC, b\.county_fips::text LIMIT \?/);
   });
+
+  it("never matches a credit union's charter number against FDIC branch certs", async () => {
+    replies.push([{ id: 7, city: "Fairmont", state_code: "WV", cert_number: "6672", charter_type: "credit_union" }], []);
+    await getLocalMarketMembers(7);
+    const county = calls.find((call) => call.text.includes("hq AS ("));
+    expect(county?.values.slice(0, 2)).toEqual([null, null]);
+    expect(county?.values).not.toContain("6672");
+  });
+
+  it("matches a bank's own branches by its FDIC cert", async () => {
+    replies.push([{ id: 19, city: "Cincinnati", state_code: "OH", cert_number: "6672", charter_type: "bank" }], []);
+    await getLocalMarketMembers(19);
+    const county = calls.find((call) => call.text.includes("hq AS ("));
+    expect(county?.values.slice(0, 2)).toEqual(["6672", "6672"]);
+  });
 });
