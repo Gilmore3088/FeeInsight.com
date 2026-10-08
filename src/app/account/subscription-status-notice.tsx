@@ -2,13 +2,14 @@ import Link from "next/link";
 import type { User } from "@/lib/auth";
 import { SITE_NAME } from "@/lib/constants";
 import { ManageBillingButton } from "./manage-billing-button";
+import { isInPaymentGrace } from "@/lib/access";
 
 /**
  * Says why Pro is not active when a subscription has lapsed. Without it a past-due or
  * cancelled subscriber saw the free upsell with no explanation. Staff accounts never
  * depend on a subscription and never see it.
  */
-export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "subscription_status" | "stripe_customer_id"> }) {
+export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "subscription_status" | "stripe_customer_id" | "past_due_since"> }) {
   if (user.role === "admin" || user.role === "analyst") return null;
 
   if (user.subscription_status === "past_due") {
@@ -16,7 +17,9 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
       <div role="status" className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
         <p className="text-[14px] font-semibold">Your {SITE_NAME} Pro payment is past due.</p>
         <p className="mt-1 text-[13px]">
-          Pro features are paused until the payment goes through. Update your card to pick up where you left off.
+          {isInPaymentGrace(user as User)
+            ? "Your last payment did not go through. Pro stays open while the card is retried; update it to keep Pro running."
+            : "Pro features are paused until the payment goes through. Update your card to pick up where you left off."}
         </p>
         {user.stripe_customer_id && (
           <div className="mt-3">

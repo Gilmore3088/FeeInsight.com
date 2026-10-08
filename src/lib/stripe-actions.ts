@@ -76,6 +76,10 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer: customerId,
+    // Banks pay against an invoice that names the institution and its address.
+    billing_address_collection: "required",
+    customer_update: { address: "auto", name: "auto" },
+    allow_promotion_codes: true,
     success_url: `${origin}/account/welcome?${successParams.toString()}`,
     cancel_url: `${origin}${cancelPath}`,
     metadata: {
@@ -98,7 +102,11 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
   return { url: session.url };
 }
 
-export async function createPortalSession(): Promise<void> {
+/**
+ * Opens the Stripe billing portal and comes back to `returnPath` (an internal path; anything
+ * else falls back to /account), so a customer returns to the page they started from.
+ */
+export async function createPortalSession(returnPath = "/account"): Promise<void> {
   const user = await getCurrentUser();
   if (!user || !user.stripe_customer_id) {
     throw new Error("No billing account found");
@@ -109,7 +117,7 @@ export async function createPortalSession(): Promise<void> {
 
   const session = await stripe.billingPortal.sessions.create({
     customer: user.stripe_customer_id,
-    return_url: `${origin}/pro/settings`,
+    return_url: `${origin}${sanitizeInternalRedirect(returnPath, "/account")}`,
   });
 
   redirect(session.url);
