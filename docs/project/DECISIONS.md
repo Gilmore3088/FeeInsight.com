@@ -519,3 +519,15 @@ corrupted amount, without the 12-hour second look, still needs his explicit yes.
 when a prospect's metro has fewer than 5 verified competitors with an overdraft fee, the first
 email compares it with the verified institutions across its state and says so ("across Nebraska").
 The same source check and 5-institution minimum apply statewide. Local stays first whenever it has enough.
+
+**Outreach shows research depth, not one overdraft comparison, and every link must work.** James,
+22:23 UTC 8 Oct, Marketing thread: stop building outreach around isolated above/below-median
+overdraft comparisons; prioritize institutions where the data supports several meaningful findings,
+using their published schedules and named competitors; every email needs a verified, working
+destination that delivers what it promises; Fee Insight does not advise institutions to change their
+fees. So a first email needs at least 3 fees where the prospect and at least 5 named local
+competitors all verify against their own schedules, names the competitors, states that it is not a
+pricing recommendation, and is drafted only after its snapshot link is fetched and shows every
+quoted name and amount. This supersedes the 21:31 statewide fallback for drafting, because the
+snapshot page is local and could not show a statewide comparison. The 21 single-fee drafts from
+run 3157 were held and are withdrawn by the next run.
