@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   billNewsQuery,
+  cleanTitle,
+  headlineNamesBill,
+  headlineNamesState,
+  isBillStory,
+  isStateFeeStory,
   dateInText,
   discoverFeedLinks,
   discoverNewsPage,
@@ -68,6 +73,25 @@ describe("news page reader", () => {
     expect(items[0]).toMatchObject({ source: "state:XX", link: "https://dfi.example.gov/news/2026/commissioner-announces-overdraft-guidance" });
   });
 
+  it("leaves out menus, links named by their own path, and links outside the news list", () => {
+    const html = `
+      <nav><a href="/news/public-meetings-and-notices">Public Meetings and Notices for Applicants</a></nav>
+      <div class="side"><a href="/news/securities-registrations">Securities Registrations &amp; Filings Index</a></div>
+      <main>
+        <a href="/news/press-releases/2026/one">Division Approves Charter Conversion of Lakeside Savings Bank</a>
+        <a href="/news/press-releases/2026/two">Commissioner Issues Bulletin on Overdraft Fee Disclosures to Banks</a>
+        <a href="/news/press-releases/2026/three">State Joins Multistate Settlement With Mortgage Servicer</a>
+        <a href="/news/press-releases/2026/four">/Pages/About/NewsEvents/NewsReleases/20261006.aspx</a>
+      </main>
+      <footer><a href="/news/privacy-and-legal-disclaimer">Privacy and legal disclaimer for this site</a></footer>`;
+    const items = parseNewsPage(html, "https://dfi.example.gov/news/press-releases", "state:XX");
+    expect(items.map((i) => i.title)).toEqual([
+      "Division Approves Charter Conversion of Lakeside Savings Bank",
+      "Commissioner Issues Bulletin on Overdraft Fee Disclosures to Banks",
+      "State Joins Multistate Settlement With Mortgage Servicer",
+    ]);
+  });
+
   it("reads written and numeric dates", () => {
     expect(dateInText("Posted Oct. 3, 2026 by staff")?.slice(0, 10)).toBe("2026-10-03");
     expect(dateInText("2026-07-01 release")?.slice(0, 10)).toBe("2026-07-01");
@@ -98,13 +122,39 @@ describe("news coverage", () => {
   it("builds one-year search URLs and queries", () => {
     const url = new URL(googleNewsSearchUrl(billNewsQuery("AB 1520", "California")));
     expect(url.origin + url.pathname).toBe("https://news.google.com/rss/search");
-    expect(url.searchParams.get("q")).toBe(`"AB 1520" California bill when:1y`);
+    expect(url.searchParams.get("q")).toBe(`"AB 1520" "California" (bank OR "credit union" OR fee OR overdraft OR loan) when:1y`);
   });
 
-  it("reads bill labels and fee headlines", () => {
+  it("reads bill labels and bank fee headlines", () => {
     expect(parseBillLabel("AB 1520 (signed)")).toEqual({ identifier: "AB 1520", stage: "signed" });
     expect(parseBillLabel("HB 1046")).toEqual({ identifier: "HB 1046", stage: null });
     expect(isFeeHeadline("Lawmakers advance overdraft fee cap")).toBe(true);
     expect(isFeeHeadline("Bank opens new branch downtown")).toBe(false);
+    // "Junk fee" alone is cable bills and rent, not banking.
+    expect(isFeeHeadline("Tong expands junk fee suit against Optimum")).toBe(false);
+  });
+
+  // Headlines the first prod run (Oct 8, 2026) returned for these searches.
+  it("keeps a bill's stories only when the headline names the state or bill and is on topic", () => {
+    expect(isBillStory("Colorado lawmakers face a familiar question as they consider new financial regs: Is a paycheck advance a loan? - The Denver Post", "HB 1046", "Colorado")).toBe(true);
+    expect(isBillStory("Trouble Ahead: SB 79 Comes for South Pasadena – What the New Statewide ‘Transit Housing Law’ Actually Is - South Pasadena News", "SB 79", "Colorado")).toBe(false);
+    expect(isBillStory("Newsom signs AB 1520, capping overdraft fees - Los Angeles Times", "AB 1520", "California")).toBe(true);
+    expect(isBillStory("Will California legislators make changes to contentious new housing law? - Sacramento Bee", "SB 79", "Colorado")).toBe(false);
+    expect(isBillStory("Bills beat Browns 23-20 after a 117-yard, 2-TD performance by James Cook - NBC 4 New York", "A 117", "New York")).toBe(false);
+    expect(headlineNamesBill("Newsom signs A.B. 1520 on overdraft", "AB 1520")).toBe(true);
+  });
+
+  it("keeps a state's stories only when the headline names the state and is about bank fees", () => {
+    expect(isStateFeeStory("Arkansas Federal Credit Union class action alleges improper overdraft fees - Top Class Actions", "Arkansas")).toBe(true);
+    expect(isStateFeeStory("Why Some Banks Still Charge High Overdraft Fees - The New York Times", "New York")).toBe(false);
+    expect(isStateFeeStory("What’s Working: The fees Colorado consumers still face after “junk fee” law has taken effect - The Colorado Sun", "Connecticut")).toBe(false);
+    expect(headlineNamesState("West Virginia bank fees rise", "Virginia")).toBe(false);
+    expect(headlineNamesState("West Virginia bank fees rise", "West Virginia")).toBe(true);
+  });
+
+  it("decodes numeric and double-encoded entities in feed titles", () => {
+    expect(cleanTitle("Holiday Schedule &#8211; 10-01-2026")).toBe("Holiday Schedule – 10-01-2026");
+    expect(cleanTitle("&amp;#34;The Quarter&amp;#34; Newsletter")).toBe('"The Quarter" Newsletter');
+    expect(cleanTitle("Add protection to your &ldquo;Admin Night&rdquo;")).toBe("Add protection to your “Admin Night”");
   });
 });
