@@ -224,6 +224,12 @@ export function narrateStepFinished(
       if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
       return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
     }
+    case "growth-contacts": {
+      if (detail.schemaReady === false) return "Read no websites; the contacts tables are not there yet.";
+      const checked = n(detail, "checked");
+      if (!checked) return "No prospect was due a contact check.";
+      return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
+    }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
       if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
@@ -433,6 +439,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "content-fee-depth": "growth",
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
+  "growth-contacts": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",

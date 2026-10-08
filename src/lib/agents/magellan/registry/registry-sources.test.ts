@@ -670,6 +670,18 @@ describe("registry state bills worker", () => {
     expect(partitions[1].values).toEqual(expect.arrayContaining(["state-bills", "AZ", "failed"]));
   });
 
+  it("treats states last read in shadow mode as due once the tracker is live", async () => {
+    for (const live of [true, false]) {
+      const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
+      const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+      await runRegistryStateBillsBatch({ db, now, apiKey: "k", live, statesPerRun: 1, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0, retries: 0 } });
+      const dueQuery = statements.find((s) => s.text.includes("FROM registry_ingest_partitions") && s.text.includes("next_attempt_after > NOW()"));
+      expect(dueQuery?.text).toContain("detail->>'shadow'");
+      // The run's own shadow flag decides whether shadow-only reads still count as fresh.
+      expect(dueQuery?.values).toContain(!live);
+    }
+  });
+
   it("stops at a 429 and leaves that state due instead of failing it", async () => {
     const { db, statements } = createDb([["FROM registry_ingest_partitions", () => []]]);
     const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
