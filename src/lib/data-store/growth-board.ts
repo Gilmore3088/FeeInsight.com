@@ -57,6 +57,7 @@ export function growthAgentForStep(stepKey: string, runParams: unknown, stepInpu
   if (stepKey === "content-od-by-state") return "ernest";
   if (stepKey === "growth-contacts") return "nielsen";
   if (stepKey === "growth-outreach") return "carnegie";
+  if (stepKey === "growth-learning") return "draper";
   if (stepKey.startsWith("content-")) return "murrow";
   return null;
 }

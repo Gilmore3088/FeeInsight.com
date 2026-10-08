@@ -75,6 +75,10 @@
     {
       "path": "/api/admin/crew/outreach",
       "schedule": "7 14 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/learning",
+      "schedule": "37 14 * * 1"
     }
   ]
 }

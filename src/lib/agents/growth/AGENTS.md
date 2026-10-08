@@ -16,6 +16,7 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
 | Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
+| What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
 
 ### Prospect contacts (`contacts.ts`)
 
@@ -53,6 +54,15 @@ no personal data). Marking an outreach draft done records "sent"; James records 
 next (replied, conversation, report requested, proposal, bought, declined with the reason) on the
 done item in `/admin/growth` (`outreach_outcomes`). No email-open tracking. The team view shows
 the funnel.
+
+### What we learned (`learning.ts`)
+
+DRAPER's weekly report (James, 15:33 Oct 8) for the Monday-to-Monday week just ended: outreach
+drafted and sent, snapshot events, leads from outreach links, the outcomes James recorded with
+his notes, every decline reason to date, and the plan's sales metrics to date (qualified
+conversations per 100 contacts, share reaching a proposal, proposal to paid, median days from
+email to purchase) against the month-one floor. Counts and James's own notes only; a metric with
+no data says so. It lands in the queue as DRAPER's `brief` (channel `internal`), once per week.
 
 ### Queue intake (`intake.ts`)
 

@@ -145,6 +145,16 @@ export const PUBLICATIONS: Publication[] = [
     freshnessKey: "run:growth.outreach",
     next: nextWeekly(1, 14, 7),
   },
+  {
+    // DRAPER's weekly report from what buyers did and said. Read by James only.
+    key: "learning_report",
+    name: "What we learned",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.learning",
+    next: nextWeekly(1, 14, 37),
+  },
 ];
 
 export interface CalendarRow {

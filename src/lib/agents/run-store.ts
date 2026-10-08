@@ -70,6 +70,7 @@ import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
 import { runOutreachDrafts, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
@@ -1662,6 +1663,10 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
       });
       return { status: "completed", summary: summarizeOutreach(result), detail: { ...result } };
+    }
+    case "growth-learning": {
+      const result = await runLearningReport({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeLearning(result), detail: { ...result } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
