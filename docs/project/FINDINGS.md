@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Hand-found schedules waited hours for their state's lane
+**What happened:** the schedules added at 17:03 UTC for Comerica, Cadence, FirstBank (CO), Stock Yards and First Tech were still unfetched at 22:50 (`institution_additional_sources.last_fetched_at` null). ConnectOne's listed fee page was never added at all.
+**Cause:** companion fetch only takes pages in the running lane's state, and the TX, MS, CO, KY and CA lanes did not come round. ConnectOne's page counted as already held because a copy was stored in March 2026, though the bank has no current link.
+**Fix:** a hand-found schedule is fetched by the next lane of any state until its first fetch, and a stored copy counts as held only if stored in the last 30 days (this PR).
+**Lesson:** work added by hand should not queue behind a rotation built for routine refreshes; check `last_fetched_at` an hour after adding a link.
+
 ## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
 **What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
 **Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
@@ -3650,3 +3656,36 @@ and quarter were already stored, without looking at the periods of the data behi
   stay recorded but not live.
 - **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
   publish steps.
+
+## 2026-10-08: Most real Pro questions were never kept, so nothing learned from them
+
+- **What.** On prod, 10 of the 14 Ask requests since Oct 6 came back as a question from
+  Hamilton rather than an answer, and 11 of the 14 left no saved analysis. The `pro.ask`
+  ledger row kept the response kind and fee, but not the question, so the questions Hamilton
+  could not answer were lost.
+- **Why.** Only storyline answers are filed to `hamilton_saved_analyses`; the ledger detail
+  never carried the question text.
+- **Fix.** The `pro.ask` ledger detail now keeps the question, Hamilton's short answer and the
+  engine version. The 2-hourly answer eval replays the last 90 days of real questions (ledger
+  plus saved analyses, test asks left out) and reports them in `detail.pro`.
+- **Watch.** After the next eval run, `detail.pro.questions` is above 0. After the next real
+  Ask, the newest `pro.ask` row has `params_json ? 'question'`.
+
+## 2026-10-08: Banks published another bank's fee schedule
+- **What happened.** Peoples Bank of Rock Valley, Iowa showed 22 live fees read from Peoples
+  Bank of Bellingham, Washington's PDF on peoplesbank-wa.com (James found it). On prod, 62 stored
+  documents at 44 institutions sit on another institution's own website. 16 of those
+  institutions had 323 live fees from them; 15 of the 16 (308 fees) have no sign the document
+  is theirs. Most are same-name banks: Peoples Bank IN and IA, First Bank VA and First United OK
+  (first.bank), Cornerstone ND, Farmers State IA, First Community SC, Central Bank UT, and
+  River Bank WI (Charles River Bank).
+- **Why.** Discovery accepted any off-site PDF a search returned for the bank's name, and
+  nothing compared the document's host with the bank's own website.
+- **Fix.** Discovery refuses a link on another institution's website (`other-bank-host.ts`).
+  Hamilton takes down live fees from such a document on the first run (no 12-hour wait, James
+  Oct 8), unless the text names
+  the bank's own website or city, and sends the link back to discovery
+  (`hamilton/other-bank-document.ts`).
+- **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
+  them live from another bank's host after that.
+

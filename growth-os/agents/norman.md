@@ -1,6 +1,6 @@
 # NORMAN: conversion and UX
 
-Status: not active. Week 2.
+Status: built and scheduled, not yet proven on prod. The weekly conversion check runs as the `growth-conversion` step (`src/lib/agents/growth/norman.ts`).
 
 - Objective: more qualified report requests from the homepage, `/for-institutions`, institution
   pages and the report request form.

@@ -9,12 +9,14 @@ import {
   dateInText,
   discoverFeedLinks,
   discoverNewsPage,
+  emptyHeadlineLabel,
   googleNewsSearchUrl,
   isFeeHeadline,
   isFeedXml,
   parseBillLabel,
   parseNewsPage,
   parseStateFeed,
+  readableHeadline,
   splitPublisher,
 } from "./state-news";
 
@@ -156,5 +158,26 @@ describe("news coverage", () => {
     expect(cleanTitle("Holiday Schedule &#8211; 10-01-2026")).toBe("Holiday Schedule – 10-01-2026");
     expect(cleanTitle("&amp;#34;The Quarter&amp;#34; Newsletter")).toBe('"The Quarter" Newsletter');
     expect(cleanTitle("Add protection to your &ldquo;Admin Night&rdquo;")).toBe("Add protection to your “Admin Night”");
+  });
+});
+
+describe("headline readability", () => {
+  it("sets all-caps headlines in title case, keeping acronyms and hyphenated names", () => {
+    expect(readableHeadline("STATE WARNS PUBLIC ABOUT MISLEADING DOOR-TO-DOOR SOLAR SALES")).toBe(
+      "State Warns Public About Misleading Door-to-Door Solar Sales",
+    );
+    expect(readableHeadline("DCCA DISCIPLINARY ACTIONS (THROUGH AUGUST 2026)")).toBe("DCCA Disciplinary Actions (Through August 2026)");
+    expect(readableHeadline("FREE EMISSIONS FIX FOR MERCEDES-BENZ OWNERS")).toBe("Free Emissions Fix for Mercedes-Benz Owners");
+    // Mixed case and short labels are the publisher's own and are left alone.
+    expect(readableHeadline("DFS proposes limits on bank overdraft fees")).toBe("DFS proposes limits on bank overdraft fees");
+    expect(readableHeadline("HB 1046")).toBe("HB 1046");
+  });
+
+  it("spots headlines that are only a publication and a date", () => {
+    expect(emptyHeadlineLabel("2026-09-17 Electronic Bulletin")).toBe("Electronic bulletin");
+    expect(emptyHeadlineLabel("2025-11-26 - Electronic Bulletin")).toBe("Electronic bulletin");
+    expect(emptyHeadlineLabel("September 2026 Newsletter")).toBe("Newsletter");
+    expect(emptyHeadlineLabel("Report to Agency on Proposed Bulletin")).toBeNull();
+    expect(emptyHeadlineLabel("Banking Commissioner Announces 2026 Deposit Index")).toBeNull();
   });
 });
