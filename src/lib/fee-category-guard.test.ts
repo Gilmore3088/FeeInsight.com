@@ -561,7 +561,7 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("overdraft", "Insufficient Funds Charge (Returned)").ok).toBe(false);
   });
 
-  it("v31 files paid and honored NSF items as the overdraft fee (Saco & Biddeford, Bluestone, NIH, Oct 8)", () => {
+  it("v32 files paid and honored NSF items as the overdraft fee (Saco & Biddeford, Bluestone, NIH, Oct 8)", () => {
     for (const name of [
       "Paid nonsufficient funds (NSF)*: Consumer account",
       "NSF Share Draft (Honored)",
