@@ -11,6 +11,7 @@ import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
 import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
+import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
@@ -72,7 +73,7 @@ import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
-import { runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
@@ -960,6 +961,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // The complete-record eval's critical rows (down now, James Oct 8) and the two name
+      // shapes they taught: a rebate published as an ATM fee, a "no fee for" sentence as a fee.
+      const evalVerdicts = await retireEvalVerdictFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A fee read from an article (a blog post quoting a national average), not a schedule.
       const articlePage = await retireArticlePageFees(tx, {
         runId: run.id,
@@ -1174,6 +1183,10 @@ async function executeAgenticStep(
         otherBank.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website.`
           : "";
+      const evalVerdictNote =
+        evalVerdicts.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${evalVerdicts.rolledBack.length.toLocaleString()} fee(s) the complete-record eval or a name rule found wrong.`
+          : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
@@ -1227,7 +1240,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1269,6 +1282,19 @@ async function executeAgenticStep(
             waiting: otherBank.waiting,
             rolled_back: otherBank.rolledBack.length,
             links_cleared: otherBank.linksCleared,
+          },
+          eval_verdict: {
+            eval_matched: evalVerdicts.evalMatched,
+            eval_changed: evalVerdicts.evalChanged,
+            rule_failing: evalVerdicts.ruleFailing,
+            flagged: evalVerdicts.flagged,
+            waiting: evalVerdicts.waiting,
+            rolled_back: evalVerdicts.rolledBack.length,
+            samples: evalVerdicts.rolledBack.slice(0, 11).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              fee_name: fee.feeName,
+              reason: fee.reason,
+            })),
           },
           cross_page_restore: {
             superseded: crossPageRestore.superseded,
@@ -1733,6 +1759,7 @@ async function executeAgenticStep(
         runId: run.id,
         limit: numericRunParam(params, ["limit"]),
         dryRun: run.runKind === "dry_run",
+        campaigns: outreachCampaignsFromEnv(process.env.OUTREACH_CAMPAIGNS),
       });
       const followUpLine = followUps.due ? ` ${followUps.drafted} follow-ups drafted (day 6 and final day 13).` : "";
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
