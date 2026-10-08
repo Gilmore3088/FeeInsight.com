@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
+**What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
+is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
+returned, and kept it if the fetch failed (the RC's minimized Chrome showed exactly that). On phones
+the Account menu is hidden (`hidden lg:block`) and the drawer offered only "Account", so My bank
+and data, All changes and the Reference pages had no way in.
+**Cause:** the header was built for static public pages and never took the session from a server
+layout that already had it; the phone drawer was written before the Pro account menu existed.
+**Fix:** `sessionChromeFor` (`src/lib/session-chrome.ts`) builds the header's session for both
+/api/session and the Hamilton layout, which seeds it through `SessionChromeProvider`; a failed fetch
+no longer overwrites a known session. The phone drawer lists the account menu's items for Pro readers.
+**Lesson:** a server layout that knows the user should hand it to client chrome rather than let the
+chrome guess.
+
 ## 2026-10-08: PDFs set in prose columns were read across the page
 **What happened:** Origin Bank's deposit agreement went live with seven overdraft rows: the right $35 overdraft item charge under sentence-fragment names, and $10 rows that are really its overdrawn-account fee. On prod, 251 of 1,981 PDF texts (23 at $10B+ banks) show the same pattern, at least 25 joins of running prose with a " | " cell break (Origin's text has 687).
 **Cause:** `read.pdf_layout` builds one line per baseline across the whole page. On a page in three prose columns each line joined its neighbour columns' lines, and lines whose baselines sat a little apart interleaved, so a sentence took its price from another column's sentence.
