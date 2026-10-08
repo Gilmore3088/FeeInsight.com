@@ -2973,3 +2973,18 @@ Rows already on file gain the fields only when Knox reads their document again.
   done; the Darwin and global budget caps still stop it.
 - **Watch.** `agent_run_steps` with `step_key = 'verify-paid'` in backlog runs, and
   `pipeline_attempts` with `strategy = 'verify.release_review'` and `strategy_version = 10`.
+
+## 2026-10-08: Many large banks' fee links point at product or rates pages
+
+- **Problem.** Of the 10 largest institutions by in-state deposits in each state (510 slots),
+  412 had live fees on prod at 02:40 UTC. 48 of the 82 missing institutions had a link and
+  documents on file that were read, but fewer than 3 fee types came through. Their stored
+  `fee_schedule_url` was mostly not a fee schedule: checking product pages, rates pages, a
+  small-business page, a loan fee schedule, an Australian American Express fee sheet, and a
+  City of Cincinnati HSA document for Bell Bank. Their Atlas priority runs on 7 Oct re-read the
+  same pages, so they stayed thin. The other 34 had no link, mostly `magellan_dead` after
+  blocked or missing pages.
+- **Fix.** 12 schedules found by web search added to `OPERATOR_SCHEDULES`, which run first on
+  the priority path. The rest wait on the paid schedule search or a link found by hand.
+- **Watch.** `/mnt/project-files/coverage/gaps-2026-10-08.md` lists all 82; re-count live
+  coverage for the same 510 slots after the hand-found runs.
