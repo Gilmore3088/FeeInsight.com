@@ -498,4 +498,13 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("nsf", "NSF Fee", context("7.00", "35.00"))).toEqual({ ok: true });
     expect(checkFeeCategory("nsf", "Returned Check Fee", context("7.00", "10.00"))).toEqual({ ok: true });
   });
+
+  it("v24 keeps statement and photocopy fees off overdraft and NSF (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "OVERDRAFT & NSF FEES: Statement Copy Fee8").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "Returned Item Photocopy").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "Copy of returned check").ok).toBe(false);
+    expect(checkFeeCategory("nsf", "per copy Nonsufficient funds (NSF) (each debit or check returned)")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Item on Lifeline 18/65 Checking or Statement Savings \"Overdraft Fee\"")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "statement; (b.) Check overdraft")).toEqual({ ok: true });
+  });
 });
