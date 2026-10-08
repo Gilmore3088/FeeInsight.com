@@ -3494,3 +3494,18 @@ and quarter were already stored, without looking at the periods of the data behi
   written, since it can't be told from a price.
 - **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
   name in the centered shape.
+
+## 2026-10-08: The first outreach run addressed lenders, committees and shared mailboxes
+
+- **Problem.** The first prod run of CARNEGIE (run 3021) drafted 24 first emails. 17 of them were
+  addressed to people who don't buy a fee study: mortgage and loan officers, business
+  development and cash management staff, supervisory committees, and shared mailboxes
+  (member_serv@, treasurysupport@, e-statements@). One had a phone line where the title belongs.
+  The draft rule accepted any "medium" contact (a person's address with a name or a title), and
+  medium never required a buying role.
+- **Fix.** A first email goes only to `isDecisionMaker`: a person's own address (not
+  `isSharedMailbox`) under a buying-role title. A phone number is not a title. Each outreach
+  run withdraws unreviewed drafts that fail the test and lets their institutions be drafted again.
+  Checked against the 24 prod drafts: 7 stay (First Federal KC, Quaint Oak, Holy Rosary,
+  BankGloucester, Gateway, State Bank, Drake) and 17 are withdrawn.
+- **Watch.** The outreach step's "Withdrew N" line, and To: lines on new drafts.

@@ -1,8 +1,8 @@
 import { SITE_DOMAIN } from "@/lib/constants";
 import { sql } from "@/lib/data-store/connection";
-import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
+import { contentSchemaReady, insertContentDraft, setContentDraftStatus } from "@/lib/data-store/content-drafts";
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
-import { contactConfidence, contactsSchemaReady, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
+import { contactConfidence, contactsSchemaReady, isSharedMailbox, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
 
 /**
@@ -83,6 +83,15 @@ export interface OutreachDraft {
   link: string;
 }
 
+/**
+ * A first email goes only to a person whose printed title is a buying role (marketing, retail
+ * and deposits, the executive team, finance, operations, compliance). A person's address with a
+ * lender's, branch or committee title, or with a name and no title, is not a decision-maker.
+ */
+export function isDecisionMaker(contact: Pick<OutreachContact, "kind" | "role" | "email">): boolean {
+  return contact.kind === "person" && contact.role !== "other" && !isSharedMailbox(contact.email);
+}
+
 export type OutreachSkip =
   | "no_contact"
   | "no_market"
@@ -110,7 +119,7 @@ export function buildOutreachDraft(
   snapshot: MarketSnapshot,
   contacts: OutreachContact[],
 ): { draft: OutreachDraft } | { skip: OutreachSkip } {
-  const ranked = rankContacts(contacts).filter((contact) => contactConfidence(contact) !== "low");
+  const ranked = rankContacts(contacts).filter(isDecisionMaker);
   if (ranked.length === 0) return { skip: "no_contact" };
   if (!snapshot.subject.cbsaCode) return { skip: "no_market" };
   const overdraft = snapshot.fees.find((fee) => fee.category === "overdraft");
@@ -225,7 +234,47 @@ export interface OutreachRunResult {
   drafted: number;
   draftIds: number[];
   skipped: Partial<Record<OutreachSkip | "drafted_recently", number>>;
+  /** Unreviewed drafts taken back because their addressee is not a decision-maker. */
+  withdrawn?: number;
   reason: string | null;
+}
+
+/** Who withdrew a draft, and why, as the skip shows it on /admin/growth. */
+export const OUTREACH_WITHDRAWN_BY = "carnegie";
+export const OUTREACH_WITHDRAWN_REASON = "Withdrawn by CARNEGIE: the addressee is not a decision-maker (lender, branch, committee or shared mailbox).";
+
+/**
+ * Takes back first emails still waiting for review whose addressee no longer passes
+ * `isDecisionMaker` (drafts made before the rule). Only unreviewed drafts: anything James
+ * approved, marked sent or skipped himself stays as he left it. Returns how many.
+ */
+export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
+  const rows = await db`
+    SELECT id, facts FROM content_drafts
+     WHERE workflow = ${OUTREACH_WORKFLOW} AND kind = 'outreach_email' AND status = 'draft'
+  `;
+  let withdrawn = 0;
+  for (const row of rows) {
+    const facts = (typeof row.facts === "string" ? JSON.parse(row.facts) : row.facts) as { to?: { email?: string; name?: string | null; title?: string | null; role?: ContactRole } } | null;
+    const to = facts?.to;
+    if (!to?.email) continue;
+    const contact = normalizeContact({ name: to.name ?? null, title: to.title ?? null, role: to.role ?? "other", kind: "person" as ContactKind });
+    if (isDecisionMaker({ ...contact, email: to.email })) continue;
+    await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, OUTREACH_WITHDRAWN_REASON);
+    withdrawn++;
+  }
+  return withdrawn;
+}
+
+/** Institutions drafted in the last OUTREACH_REPEAT_DAYS days, except drafts CARNEGIE withdrew. */
+async function recentOutreachSubjects(db: SqlTag): Promise<Set<string>> {
+  const rows = await db`
+    SELECT DISTINCT subject_key FROM content_drafts
+     WHERE workflow = ${OUTREACH_WORKFLOW}
+       AND created_at >= now() - make_interval(days => ${OUTREACH_REPEAT_DAYS}::int)
+       AND NOT (status = 'skipped' AND reviewed_by = ${OUTREACH_WITHDRAWN_BY})
+  `;
+  return new Set(rows.map((row) => String(row.subject_key)));
 }
 
 export async function runOutreachDrafts(input: {
@@ -244,7 +293,8 @@ export async function runOutreachDrafts(input: {
     return { ...result, reason: "content_drafts or prospect_contacts is missing" };
   }
   result.schemaReady = true;
-  const recent = await recentSubjects(OUTREACH_WORKFLOW, OUTREACH_REPEAT_DAYS, db);
+  if (!dryRun) result.withdrawn = await withdrawNonBuyerDrafts(db);
+  const recent = await recentOutreachSubjects(db);
   const candidates = await loadOutreachCandidates(db, OUTREACH_MAX_CANDIDATES);
   const skip = (key: OutreachSkip | "drafted_recently") => {
     result.skipped[key] = (result.skipped[key] ?? 0) + 1;
@@ -307,7 +357,7 @@ export async function runOutreachDrafts(input: {
 
 const SKIP_LABELS: Record<OutreachSkip | "drafted_recently", string> = {
   drafted_recently: "drafted in the last 60 days",
-  no_contact: "no named contact",
+  no_contact: "no decision-maker contact",
   no_market: "no local market",
   own_fee_missing: "no overdraft fee",
   own_fee_unverified: "own overdraft fee didn't verify",
@@ -320,7 +370,8 @@ export function summarizeOutreach(result: OutreachRunResult): string {
     .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently"]}`)
     .join(", ");
   const head = `${result.dryRun ? "Would draft" : "Drafted"} ${result.drafted} first emails for James to audit and send himself (${result.considered} prospects read).`;
-  return skipped ? `${head} Passed over: ${skipped}.` : head;
+  const withdrawn = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts addressed to someone who isn't a decision-maker.` : "";
+  return (skipped ? `${head} Passed over: ${skipped}.` : head) + withdrawn;
 }
 
 /** The plan's one follow-up (GTM timeline, day 7): a week after "sent" with nothing heard back. */
