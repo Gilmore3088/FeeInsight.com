@@ -121,15 +121,14 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
     ],
     otherwise: null,
   },
-  // A reconveyance releases the deed of trust, the lien release of trust-deed states.
-  reconveyance: { family: "Mortgage Servicing", rules: [], otherwise: "mortgage_lien_release" },
+  // Releasing a lien or a deed of trust is another lending fee (James, Oct 8: Appraisal kept its
+  // own type, so Mortgage Lien Release gave up its spot).
+  mortgage_lien_release: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
+  reconveyance: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
   mortgage_payoff: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
   refinance_fee: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
-  // Vehicle title work is done for a car loan (James, Oct 8: Appraisal kept its own type, so
-  // Vehicle Title gave up its spot).
-  vehicle_title: { family: "Vehicle & Title", rules: [], otherwise: "other_lending_fee" },
-  duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "other_lending_fee" },
-  dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "other_lending_fee" },
+  duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
+  dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   // A distribution closes out (part of) the IRA.
   ira_distribution: { family: "Retirement & IRA", rules: [], otherwise: "ira_termination" },
 };

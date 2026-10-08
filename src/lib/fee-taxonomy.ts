@@ -70,12 +70,12 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "loan_origination",
     "appraisal_fee",
   ],
-  "Mortgage Servicing": [
-    "mortgage_lien_release",
-  ],
   "Retirement & IRA": [
     "ira_administration",
     "ira_termination",
+  ],
+  "Vehicle & Title": [
+    "vehicle_title",
   ],
   "Gift & Prepaid Cards": [
     "gift_card_purchase",
@@ -140,11 +140,11 @@ export const DISPLAY_NAMES: Record<string, string> = {
   late_payment: "Late Payment",
   loan_origination: "Loan Origination",
   appraisal_fee: "Appraisal",
-  // Mortgage Servicing
-  mortgage_lien_release: "Mortgage Lien Release",
   // Retirement & IRA
   ira_administration: "IRA Administration",
   ira_termination: "IRA Termination",
+  // Vehicle & Title
+  vehicle_title: "Vehicle Title",
   // Gift & Prepaid Cards
   gift_card_purchase: "Gift & Prepaid Card",
   // Other Fees

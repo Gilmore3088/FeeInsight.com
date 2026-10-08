@@ -97,14 +97,14 @@ describe("top-50 fold", () => {
     expect(to("prepaid_card_reload", "ACH Account Changes")).toBeNull();
   });
 
-  test("lending: appraisal keeps its own type; modifications and titles are other lending, liens fold in", () => {
+  test("lending: appraisal keeps its own type; modifications and lien releases are other lending, titles fold in", () => {
     expect(to("appraisal_fee", "Home Equity Appraisal Fee")).toBeUndefined();
     expect(to("mortgage_modification", "Loan Modification Fee")).toBe("other_lending_fee");
     expect(to("mortgage_modification", "Mortgage loan modification charge (re-amortize)")).toBe("other_lending_fee");
     expect(to("mortgage_modification", "Cargo por reamortización hipotecaria")).toBe("other_lending_fee");
-    expect(to("reconveyance", "Real Estate Reconveyance")).toBe("mortgage_lien_release");
-    expect(to("dmv_filing", "DMV Title Changes")).toBe("other_lending_fee");
-    expect(to("vehicle_title", "Duplicate Vehicle Title")).toBe("other_lending_fee");
+    expect(to("reconveyance", "Real Estate Reconveyance")).toBe("other_lending_fee");
+    expect(to("mortgage_lien_release", "Lien Release Fee")).toBe("other_lending_fee");
+    expect(to("dmv_filing", "DMV Title Changes")).toBe("vehicle_title");
     expect(to("od_line_of_credit", "Overdraft Loan Transfer")).toBe("od_protection_transfer");
     expect(to("od_line_of_credit", "Overdraft Protection (interest rate based on credit score)")).toBeNull();
   });
