@@ -69,7 +69,6 @@ describe("checkFeeCategory", () => {
     ["stop_payment", "Removal of Stop Payment"],
     ["stop_payment", "Remove Stop Payment"],
     ["stop_payment", "Stop Payment Fee (removal)"],
-    ["atm_non_network", "Foreign ATM Balance Inquiry"],
   ])("flags %s: %s as filed under the wrong category", (key, name) => {
     expect(checkFeeCategory(key, name)).toMatchObject({ ok: false, code: "name_contradicts" });
   });
@@ -171,7 +170,8 @@ describe("checkFeeCategory", () => {
     for (const name of ["VISA Chargeback", "Chargeback for debit card transactions", "Loan Payment Chargeback Fee", "Chargeback on Loan"]) {
       expect(checkFeeCategory("deposited_item_return", name).ok).toBe(false);
     }
-    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("card_dispute");
+    // card_dispute folded into account_research (top 50, Oct 8).
+    expect(refileCategory("deposited_item_return", "ATM/Debit Card Chargeback – Each")).toBe("account_research");
   });
 
   it("v13 keeps a loan's late fee out of overdraft and an Int'l wire out of domestic wires (live rows, Oct 6)", () => {
@@ -296,16 +296,16 @@ describe("checkFeeCategory", () => {
     }
   });
 
-  it("keeps a gift card's reload, replacement and inactivity fees out of its purchase price", () => {
+  // v25: prepaid card reloads folded into gift_card_purchase (top 50, Oct 8).
+  it("keeps a gift card's replacement and inactivity fees out of its purchase price", () => {
     for (const name of [
-      "Visa Gift Card Reload Fee",
       "Gift Card Monthly Inactivity Fee (after 12 mo. non-use)",
       "Monthly Share Account Fee",
       "Card delivery",
     ]) {
       expect(checkFeeCategory("gift_card_purchase", name).ok).toBe(false);
     }
-    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card"]) {
+    for (const name of ["Visa Gift Card", "Gift Card Purchase Fee", "Prepaid Gift Cards", "Reloadable Prepaid Card", "Visa Gift Card Reload Fee"]) {
       expect(checkFeeCategory("gift_card_purchase", name)).toEqual({ ok: true });
     }
     expect(checkFeeCategory("card_replacement", "Replacement VISA® Gift Card Fee").ok).toBe(false);
@@ -446,6 +446,20 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("keeps savings withdrawal limits and lobby ATMs out of out-of-network ATM fees (seven-state misses, Oct 8)", () => {
+    for (const name of [
+      "ATM Savings Withdrawal",
+      "ATM Share Savings Withdrawal (over 3x per month)",
+      "Reg-D Savings Withdrawal Fee (In excess of six per month, excluding ATM or in-person)",
+      "Lobby ATM",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    for (const name of ["ATM Surcharge", "Non-Network ATM Withdrawal", "Foreign ATM Fee"]) {
+      expect(checkFeeCategory("atm_non_network", name), name).toEqual({ ok: true });
+    }
+  });
+
   it("accepts a deposit or inquiry priced in one row with withdrawals or transfers at ATMs the bank does not own (Pathfinder, Oct 7)", () => {
     for (const name of [
       "Deposits/Withdrawals at an ATM we do not own or operate",
@@ -454,17 +468,18 @@ describe("checkFeeCategory", () => {
       "Foreign ATM Inquiry or Transfer Fee",
       "ATM Withdrawal/Inquiry on all other networks",
       "Inquiry or transactions at non-Seacoast ATMs",
+      // v25: a balance inquiry at an ATM is an ATM fee (top 50, Oct 8).
+      "Foreign ATM Balance Inquiry",
+      "ATM Foreign Transaction Fee - Balance Inquiry",
+      "Balance Inquiry at non-Pathfinder ATM",
+      "ATM Balance Inquiry (other bank ATM) per transaction",
     ]) {
       expect(checkFeeCategory("atm_non_network", name)).toEqual({ ok: true });
     }
     for (const name of [
-      "Foreign ATM Balance Inquiry",
-      "ATM Foreign Transaction Fee - Balance Inquiry",
       "ATM Foreign Transaction Fee - Deposit",
       "ATM Deposit Correction",
       "Non-Member ATM Deposit/Withdrawal",
-      "Balance Inquiry at non-Pathfinder ATM",
-      "ATM Balance Inquiry (other bank ATM) per transaction",
     ]) {
       expect(checkFeeCategory("atm_non_network", name)).toMatchObject({ ok: false, code: "name_contradicts" });
     }

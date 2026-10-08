@@ -1,4 +1,5 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
+import { retiredKeysInFamilies } from "@/lib/fee-fold";
 import { CANONICAL_KEY_MAP, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   AMOUNT_PATTERN,
@@ -49,8 +50,10 @@ export interface FamilyExpert {
   patterns: Array<{ key: string; pattern: RegExp }>;
 }
 
+// A family still reads the categories folded out of it into the top 50; `refileCategory`
+// places those reads among the 50 before Darwin and Hamilton see them.
 function familyKeys(...families: string[]): ReadonlySet<string> {
-  return new Set(families.flatMap((family) => FEE_FAMILIES[family] ?? []));
+  return new Set([...families.flatMap((family) => FEE_FAMILIES[family] ?? []), ...retiredKeysInFamilies(families)]);
 }
 
 /** The five fee families with their own expert; every other family goes to `services`. */
