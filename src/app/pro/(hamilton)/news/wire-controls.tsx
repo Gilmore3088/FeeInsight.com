@@ -189,7 +189,7 @@ export function WireHeader({ params }: { params: WireParams }) {
       <p className="mt-1 text-[13px] text-[#6B6255]">
         {states
           ? "State fee bills, state banking regulators' own posts, and the press coverage of them, in one feed."
-          : "Official releases from the Federal Reserve, FDIC, OCC and CFPB, read once a day."}
+          : "Federal rulemaking with its comment deadlines and effective dates, and the agencies' own releases."}
       </p>
       <nav aria-label="Wire view" className="mt-4 inline-flex overflow-hidden rounded-lg border border-warm-200 bg-white/70 text-[12px]">
         {([

@@ -11,6 +11,7 @@ import {
   TOPIC_LABELS,
   SOURCE_LABELS,
 } from "@/lib/data-store/news";
+import { getFederalRuleTracker } from "@/lib/data-store/federal-rules";
 import { getStateWire, getStatesWithNews } from "@/lib/data-store/state-news";
 import {
   WIRE_PAGE_SIZE,
@@ -85,10 +86,11 @@ export default async function NewsPage({
   const win = pageWindow(params.page, total);
   const shown = { ...params, page: win.page };
   const canRefreshFeeds = user?.role === "admin" || user?.role === "analyst";
-  const [articles, topicCounts, sourceCounts] = await Promise.all([
+  const [articles, topicCounts, sourceCounts, tracker] = await Promise.all([
     getArticles({ ...filter, limit: WIRE_PAGE_SIZE, offset: win.offset }),
     getTopicCounts(since, params.q || undefined),
     getSourceCounts(since, params.q || undefined),
+    getFederalRuleTracker({ now, q: params.q, source: params.source }),
   ]);
 
   return (
@@ -100,6 +102,7 @@ export default async function NewsPage({
       <NewsFeed
         params={shown}
         articles={articles}
+        tracker={tracker}
         win={win}
         phrase={phrase}
         topicCounts={topicCounts}
