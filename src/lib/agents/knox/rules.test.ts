@@ -603,8 +603,16 @@ describe("Knox extract.rules", () => {
       ["Paid Item Fee", 30, "overdraft"],
       ["Return Item Fee", 30, "nsf"],
     ]);
-    // A combined paid/returned NSF fee stays with NSF.
-    expect(classifyFeeText("NSF Paid Item Fee/NSF Returned Item Fee")).toBe("nsf");
+    // One price for the paid and the returned NSF item is the overdraft price too (v43).
+    expect(classifyFeeText("NSF Paid Item Fee/NSF Returned Item Fee")).toBe("overdraft");
+  });
+
+  it("v43 reads one price for the paid and the returned NSF item as the overdraft price (Pinnacle Bank Wyoming)", () => {
+    expect(fees("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32.00")).toEqual([
+      ["NSF Paid Item Fee/Returned Item Fee (items over $10)", 32, "overdraft"],
+    ]);
+    expect(classifyFeeText("Returned Item Fee/Paid Item Fee")).toBe("overdraft");
+    expect(classifyFeeText("NSF Returned Item Fee")).toBe("nsf");
   });
 
   it("v42 reads the overdraft lines of Marketing's outreach batch", () => {

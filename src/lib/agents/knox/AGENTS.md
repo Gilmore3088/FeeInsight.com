@@ -489,6 +489,9 @@ v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 5
 - A price row named only by its threshold ("Per Item greater than $10.01 | $30 per item") belongs to the priceless fee line just above it (NIH FCU).
 - A run for one institution (Atlas's read-now runs) reads its current page again once per rules version while it has no live overdraft fee, as state leaders' runs do since v40.
 
+v43 (rules 43, Oct 8):
+- One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own

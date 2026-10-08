@@ -571,6 +571,9 @@ describe("checkFeeCategory", () => {
       expect(refileCategory("nsf", name)).toBe("overdraft");
     }
     expect(refileCategory("nsf", "NSF Share Draft (Returned)")).toBe("nsf");
+    // One price for the paid and the returned item (Pinnacle Bank Wyoming).
+    expect(checkFeeCategory("overdraft", "NSF Paid Item Fee/Returned Item Fee (items over $10)").ok).toBe(true);
+    expect(refileCategory("nsf", "NSF Paid Item Fee/NSF Returned Item Fee")).toBe("overdraft");
     expect(checkFeeCategory("overdraft", "NSF Share Draft (Returned)").ok).toBe(false);
   });
 

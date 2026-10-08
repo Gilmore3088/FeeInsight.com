@@ -49,6 +49,8 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     [4522, "Los Angeles Federal Credit Union"],
     [3331, "The First State Bank of Rosemount"],
     [4779, "National Institutes Of Health Federal Credit Union"],
+    // Wyoming top-10 bank: one $32 price for the paid and the returned item (Knox v43).
+    [850, "Pinnacle Bank - Wyoming"],
   ] as const).map(([institutionId, institutionName]) => ({
     institutionId,
     institutionName,
