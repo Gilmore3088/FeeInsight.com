@@ -6,7 +6,7 @@ import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory } from "./fee-cate
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
-    expect(checkFeeCategory("coin_counting", "Anything at all")).toEqual({ ok: true });
+    expect(checkFeeCategory("notary_fee", "Anything at all")).toEqual({ ok: true });
     expect(checkFeeCategory(null, "Overdraft")).toEqual({ ok: true });
   });
 
@@ -443,6 +443,27 @@ describe("checkFeeCategory", () => {
       "excluding the overdraft fees, is positive (greater than or equal to",
     ]) {
       expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
+    }
+  });
+
+  it("keeps bare card names, other fees and fragments out of ATM, coin, ACH return and overdraft fees (Oct 8)", () => {
+    for (const name of ["ATM or Debit Card", "ATM/Debit Cards", "Debit/ATM Card", "ATM or Visa Debit Card", "ATM and Debit Card"]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(false);
+    }
+    expect(checkFeeCategory("atm_non_network", "ATM/Debit Card withdrawals at ATMs out of network")).toEqual({ ok: true });
+    expect(checkFeeCategory("coin_counting", "Consumer Negative Balance Fee, per statement cycle").ok).toBe(false);
+    expect(checkFeeCategory("coin_counting", "Coin Counting - Non-Customer")).toEqual({ ok: true });
+    expect(checkFeeCategory("ach_return", "Hold Mail Request, monthly").ok).toBe(false);
+    expect(checkFeeCategory("ach_return", "Redeposited item")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "ADVANTAGE OVERDRAFT: would not apply; however").ok).toBe(false);
+  });
+
+  it("keeps sustained charges and de minimis lines out of the NSF fee (Oct 8)", () => {
+    for (const name of ["Insufficient Funds after 5 consecutive days", "per day. De Minimis--OD/NSF fee amount of"]) {
+      expect(checkFeeCategory("nsf", name).ok, name).toBe(false);
+    }
+    for (const name of ["NSF Fee (Returned Item) ( 5 per day)", "Non-Sufficient Funds (NSF) Items (up to 4 per day)"]) {
+      expect(checkFeeCategory("nsf", name), name).toEqual({ ok: true });
     }
   });
 
