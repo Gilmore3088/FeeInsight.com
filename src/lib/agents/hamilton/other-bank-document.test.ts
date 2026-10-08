@@ -48,15 +48,16 @@ describe("retireOtherBankDocumentFees", () => {
     expect(otherBankFeesSql(false)).not.toContain("$1");
   });
 
-  it("only logs another bank's fee the first time, keeping it live", async () => {
+  it("archives another bank's fee on the first run that sees it, with its first look logged (James, Oct 8)", async () => {
     const db = createDb(null);
     const result = await retireOtherBankDocumentFees(db, options);
-    expect(result).toMatchObject({ otherBankFees: 2, namesOwnBank: 1, flagged: 1, rolledBack: [] });
-    expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    expect(result).toMatchObject({ otherBankFees: 2, namesOwnBank: 1, flagged: 1 });
+    expect(result.rolledBack.map((fee) => fee.feePublishedId)).toEqual([1]);
+    expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(true);
     expect(JSON.stringify(db.mock.calls)).toContain("takedown_pending");
   });
 
-  it("archives it on its second look, sends the link back to discovery and teaches Magellan", async () => {
+  it("archives it, sends the link back to discovery and teaches Magellan", async () => {
     const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() });
     const result = await retireOtherBankDocumentFees(db, options);
     expect(result.rolledBack.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[1, "other_bank_document: peoplesbank-wa.com"]]);

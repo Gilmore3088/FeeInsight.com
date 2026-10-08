@@ -3653,9 +3653,10 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Why.** Discovery accepted any off-site PDF a search returned for the bank's name, and
   nothing compared the document's host with the bank's own website.
 - **Fix.** Discovery refuses a link on another institution's website (`other-bank-host.ts`).
-  Hamilton takes down live fees from such a document on its second look, unless the text names
+  Hamilton takes down live fees from such a document on the first run (no 12-hour wait, James
+  Oct 8), unless the text names
   the bank's own website or city, and sends the link back to discovery
   (`hamilton/other-bank-document.ts`).
-- **Watch.** First looks logged on the next publish steps (308 fees). Takedowns 12 hours later,
-  and none of the 15 banks still live from another bank's host after that.
+- **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
+  them live from another bank's host after that.
 

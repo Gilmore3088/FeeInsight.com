@@ -11,9 +11,11 @@ type SqlTag = typeof sql;
  * Another bank's fees (James, Oct 8). A live fee read from a document on another
  * institution's own website (`magellan/other-bank-host.ts`) is that bank's price: Peoples Bank
  * of Rock Valley, Iowa showed 22 fees read from Peoples Bank of Bellingham, Washington's PDF.
- * It comes down on its second look (`second-look.ts`, check `hamilton.other_bank_document`)
+ * It comes down on the first run that sees it (James, Oct 8: "fix the problem immediately"),
  * unless the document's text names this bank's own website or city (a schedule a sister
- * charter or an acquirer hosts for it).
+ * charter or an acquirer hosts for it). The host match is a fact about the stored address, not
+ * a reading a fixed rule could clear, so there is no 12-hour second look; the first look is
+ * still logged (`second-look.ts`, check `hamilton.other_bank_document`).
  *
  * Archived, never deleted: `rolled_back_reason = 'other_bank_document: <host>'` and the
  * verified row rejected with the `other_bank_document` flag, so it is not republished. The
@@ -176,10 +178,11 @@ export async function retireOtherBankDocumentFees(
   }
   result.namesOwnBank = passing.length;
 
+  // Logged like every takedown, then taken down now: no wait for a second look.
   const look = await secondLook(db, { check: OTHER_BANK_DOCUMENT_CHECK, runId: options.runId, failing, passing, dryRun: options.dryRun });
   result.flagged = look.flagged;
   result.waiting = look.waiting;
-  const confirmed = look.confirmed.slice(0, limit);
+  const confirmed = failing.slice(0, limit);
   if (options.dryRun) {
     result.rolledBack = confirmed;
     return result;
