@@ -1,6 +1,7 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
+import { STATE_NEWS_SOURCE_PATTERNS } from "./news";
 
 /**
  * Economic and regulatory context for a state report, read from the tables the registry
@@ -203,6 +204,7 @@ async function loadRegulatory(): Promise<RegulatoryItem[]> {
       SELECT source, title, link, topic, published_at
         FROM reg_articles
        WHERE topic = ANY(${REGULATORY_TOPICS}::text[])
+         AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
        ORDER BY published_at DESC NULLS LAST, created_at DESC
        LIMIT ${REGULATORY_LIMIT}
     ` as RegulatoryItem[];
