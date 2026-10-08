@@ -1,7 +1,9 @@
 /**
  * The content queue (content_drafts): posts the content workflows draft for James to
  * approve, edit or skip. Nothing here posts anywhere; "posted" is set by hand after
- * James posts an approved draft himself.
+ * James posts an approved draft himself. Since migration 20270110000025 it is one queue
+ * for every growth agent: each row names its `agent` and `kind`, and can carry a skip
+ * reason, a PR link and a score.
  */
 
 import { sql } from "./connection";
@@ -11,8 +13,16 @@ type SqlTag = typeof sql;
 export type ContentDraftStatus = "draft" | "approved" | "skipped" | "posted";
 export const CONTENT_DRAFT_STATUSES: readonly ContentDraftStatus[] = ["draft", "approved", "skipped", "posted"];
 
+/** Defaults the database gives rows that name no agent or kind (every row before 2026-10-08). */
+export const DEFAULT_DRAFT_AGENT = "murrow";
+export const DEFAULT_DRAFT_KIND = "linkedin_post";
+
 export interface ContentDraft {
   id: number;
+  /** The agent that drafted it, e.g. `murrow` for the LinkedIn workflows. */
+  agent: string;
+  /** What it is, e.g. `linkedin_post`, `email`, `pull_request`. */
+  kind: string;
   workflow: string;
   channel: string;
   subjectKey: string;
@@ -26,9 +36,21 @@ export interface ContentDraft {
   reviewedAt: string | null;
   postedAt: string | null;
   createdAt: string;
+  /** Why James skipped it, when he said. */
+  skipReason: string | null;
+  /** The pull request an agent opened for it. */
+  prUrl: string | null;
+  score: number | null;
+  scoredAt: string | null;
 }
 
 export interface NewContentDraft {
+  /** Defaults to `murrow` in the database. */
+  agent?: string;
+  /** Defaults to `linkedin_post` in the database. */
+  kind?: string;
+  /** For a draft that is a code change. */
+  prUrl?: string | null;
   workflow: string;
   channel?: string;
   subjectKey: string;
@@ -47,6 +69,8 @@ function iso(value: unknown): string | null {
 function toDraft(row: Record<string, unknown>): ContentDraft {
   return {
     id: Number(row.id),
+    agent: row.agent ? String(row.agent) : DEFAULT_DRAFT_AGENT,
+    kind: row.kind ? String(row.kind) : DEFAULT_DRAFT_KIND,
     workflow: String(row.workflow),
     channel: String(row.channel),
     subjectKey: String(row.subject_key),
@@ -60,6 +84,10 @@ function toDraft(row: Record<string, unknown>): ContentDraft {
     reviewedAt: iso(row.reviewed_at),
     postedAt: iso(row.posted_at),
     createdAt: iso(row.created_at) ?? "",
+    skipReason: row.skip_reason ? String(row.skip_reason) : null,
+    prUrl: row.pr_url ? String(row.pr_url) : null,
+    score: row.score === null || row.score === undefined ? null : Number(row.score),
+    scoredAt: iso(row.scored_at),
   };
 }
 
@@ -69,6 +97,18 @@ export async function contentSchemaReady(db: SqlTag = sql): Promise<boolean> {
 }
 
 export async function insertContentDraft(draft: NewContentDraft, db: SqlTag = sql): Promise<number> {
+  // The queue columns are written only when a caller sets them, so the LinkedIn workflows
+  // keep working before migration 20270110000025 is applied (the database defaults fill them after).
+  if (draft.agent !== undefined || draft.kind !== undefined || draft.prUrl != null) {
+    const [row] = await db`
+      INSERT INTO content_drafts (workflow, channel, subject_key, title, caption, facts, as_of, agent_run_id, agent, kind, pr_url)
+      VALUES (${draft.workflow}, ${draft.channel ?? "linkedin"}, ${draft.subjectKey}, ${draft.title}, ${draft.caption},
+              ${JSON.stringify(draft.facts)}::jsonb, ${draft.asOf.toISOString()}, ${draft.agentRunId},
+              ${draft.agent ?? DEFAULT_DRAFT_AGENT}, ${draft.kind ?? DEFAULT_DRAFT_KIND}, ${draft.prUrl ?? null})
+      RETURNING id
+    `;
+    return Number(row.id);
+  }
   const [row] = await db`
     INSERT INTO content_drafts (workflow, channel, subject_key, title, caption, facts, as_of, agent_run_id)
     VALUES (${draft.workflow}, ${draft.channel ?? "linkedin"}, ${draft.subjectKey}, ${draft.title}, ${draft.caption},
@@ -97,7 +137,29 @@ export async function getContentDraft(id: number, db: SqlTag = sql): Promise<Con
   return row ? toDraft(row as Record<string, unknown>) : null;
 }
 
-export async function setContentDraftStatus(id: number, status: ContentDraftStatus, reviewer: string, db: SqlTag = sql): Promise<void> {
+/** Longest skip reason kept. */
+export const SKIP_REASON_MAX_LENGTH = 500;
+
+export async function setContentDraftStatus(
+  id: number,
+  status: ContentDraftStatus,
+  reviewer: string,
+  db: SqlTag = sql,
+  /** Why James skipped it; stored only with a skip. */
+  skipReason?: string | null,
+): Promise<void> {
+  const reason = status === "skipped" ? (skipReason ?? "").trim().slice(0, SKIP_REASON_MAX_LENGTH) : "";
+  if (reason) {
+    await db`
+      UPDATE content_drafts
+         SET status = ${status},
+             skip_reason = ${reason},
+             reviewed_by = ${reviewer},
+             reviewed_at = now()
+       WHERE id = ${id}
+    `;
+    return;
+  }
   await db`
     UPDATE content_drafts
        SET status = ${status},
