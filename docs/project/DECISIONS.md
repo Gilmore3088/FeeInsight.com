@@ -504,3 +504,8 @@ asset size on file, the buyer picks the size band at checkout; the subscription 
 `tier_picked_by_buyer` and the Customers room's "Plans to check" lists it. Assets on file always
 set the tier when they exist. Also agreed: a pay-by-invoice option for the report, and the Pro
 price picker first on phones (design, waits for James's review).
+
+**Small-metro banks are compared with their state.** James, 21:31 UTC 8 Oct, Marketing thread card:
+when a prospect's metro has fewer than 5 verified competitors with an overdraft fee, the first
+email compares it with the verified institutions across its state and says so ("across Nebraska").
+The same source check and 5-institution minimum apply statewide. Local stays first whenever it has enough.
