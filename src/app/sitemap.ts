@@ -13,6 +13,7 @@ import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
 
 
 const BASE_URL = SITE_URL;
@@ -189,10 +190,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ),
   ];
 
-  // Only institutions with at least one verified fee; lastmod is the latest observation.
-  const institutionPages: Entry[] = institutions.map((inst) =>
-    entry(`/institution/${inst.id}`, toDate(inst.last_fee_at, dataUpdated), "weekly", 0.6),
-  );
+  // Profiles with fewer than MIN_VERIFIED_FEES_FOR_OFFER verified fees are noindexed (thin), so
+  // they stay out; a profile whose count can't be read is listed as before. lastmod is the
+  // latest observation.
+  const institutionPages: Entry[] = institutions
+    .filter((inst) => inst.verified_fee_count == null || inst.verified_fee_count >= MIN_VERIFIED_FEES_FOR_OFFER)
+    .map((inst) => entry(`/institution/${inst.id}`, toDate(inst.last_fee_at, dataUpdated), "weekly", 0.6));
 
   const stateCityDirPages: Entry[] = STATE_CODES.map((code) =>
     entry(`/fees/city/${code.toLowerCase()}`, dataUpdated, "weekly", 0.7),

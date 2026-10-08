@@ -619,4 +619,43 @@ describe("POST /api/leads", () => {
       expect(captureNotifyMock).not.toHaveBeenCalled();
     });
   });
+
+  describe("first tracked source", () => {
+    const firstTouch = {
+      utm_source: "linkedin",
+      utm_medium: "social",
+      utm_campaign: "market-spread",
+      utm_content: "tampa",
+      landing_path: "/for-institutions",
+    };
+    const firstTouchCalls = () =>
+      sqlMock.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("").includes("first_utm_source ="));
+
+    it("saves the session's first touch on a contact request, guarded so first touch wins", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 77 }]).mockResolvedValue([{ id: 77 }]);
+      const res = await post({ name: "Ann", email: "ann@bank.example", source: "contact_general", firstTouch });
+      expect(res.status).toBe(200);
+      const [call] = firstTouchCalls();
+      const [strings, ...values] = call as [TemplateStringsArray, ...unknown[]];
+      expect(strings.join("?")).toContain("first_utm_source IS NULL");
+      expect(values).toEqual(["linkedin", "social", "market-spread", "tampa", "/for-institutions", 77]);
+    });
+
+    it("saves nothing when the form sends no tracked source", async () => {
+      sqlMock.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 78 }]).mockResolvedValue([]);
+      await post({ name: "Ann", email: "ann@bank.example", source: "contact_general", firstTouch: { utm_content: "x" } });
+      await post({ name: "Ann", email: "ann@bank.example", source: "contact_general" });
+      expect(firstTouchCalls()).toHaveLength(0);
+    });
+
+    it("still accepts the form when saving the touch fails", async () => {
+      sqlMock
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 79 }])
+        .mockRejectedValueOnce(new Error("column missing"))
+        .mockResolvedValue([]);
+      const res = await post({ name: "Ann", email: "ann@bank.example", source: "contact_general", firstTouch });
+      expect(res.status).toBe(200);
+    });
+  });
 });
