@@ -376,6 +376,17 @@ async function executeAgenticStep(
     });
   }
 
+  // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
+  if (step.stepKey === "hamilton-answer-eval") {
+    const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 2 });
+    return {
+      status: "completed",
+      summary: `Answered ${result.answers} questions for ${result.institutions} institutions; ${result.passed} met the bar.${result.timedOut ? " Stopped at the time budget." : ""}`,
+      detail: { ...result },
+    };
+  }
+
   // Hamilton's studies (study-*) share one dispatcher in hamilton/studies.
   if (isStudyStep(step.stepKey)) {
     const result = await runStudyStep(step.stepKey, {

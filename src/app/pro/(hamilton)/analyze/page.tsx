@@ -53,6 +53,7 @@ export default async function AnalyzePage({
       institutionId={institutionId}
       initialAnalysis={initialAnalysisRecord?.responseJson ?? null}
       initialAnalysisId={initialAnalysisRecord?.id ?? null}
+      initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
       selectedInstitution={selectedInstitution}
       initialIntent={params.intent ?? null}
       initialQuestion={params.q ? params.q.slice(0, 500) : null}

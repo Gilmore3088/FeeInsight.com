@@ -12,6 +12,12 @@ const FEATURES = [
     description: "Where your fees sit against peer medians, with the number of institutions behind each one.",
   },
   {
+    key: "my_fees",
+    label: "My fees",
+    href: "/pro/research",
+    description: "One fee at a time against your peers, your state and the nation, with the filings behind it.",
+  },
+  {
     key: "analysis",
     label: "Ask Hamilton",
     href: "/pro/analyze",
@@ -21,7 +27,7 @@ const FEATURES = [
     key: "scenario_modeling",
     label: "Try a price",
     href: "/pro/simulate",
-    description: "See where a different fee would land among your peers, and save it for a board summary.",
+    description: "See where a different fee would land among your peers, and the notice and approvals a change takes.",
   },
   {
     key: "reports",
