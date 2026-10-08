@@ -101,6 +101,7 @@ describe("createCheckoutSession", () => {
         line_items: [{ price: "price_mid_annual", quantity: 1 }],
         cancel_url: "https://feeinsight.com/subscribe?org=other",
         metadata: expect.objectContaining({ organization: "other", pro_tier: "mid" }),
+        subscription_data: { metadata: { pro_tier: "mid", organization: "other" } },
       }),
     );
   });

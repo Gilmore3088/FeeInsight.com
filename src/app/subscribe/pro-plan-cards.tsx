@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { TrackLink } from "@/components/track-link";
 import {
-  NON_INSTITUTION_TIER,
+  CONSULTANT_PRICE_NOTE,
   PRO_TIERS,
   annualMonthsFree,
   tierAmountLabel,
@@ -158,8 +158,7 @@ function TierTable({ highlighted }: { highlighted: ProTier | null }) {
         </tbody>
       </table>
       <p className="border-t border-[#E0D7C9] px-3 py-2 text-xs text-[#6B6255]">
-        Every tier is {PLAN_TEAM_LABEL}. Consultants and other organizations pay{" "}
-        {tierPriceLabel(NON_INSTITUTION_TIER, "monthly")} or {tierPriceLabel(NON_INSTITUTION_TIER, "annual")}.
+        Every tier is {PLAN_TEAM_LABEL}. {CONSULTANT_PRICE_NOTE}
       </p>
     </div>
   );

@@ -87,6 +87,13 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
       ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
       ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
     },
+    // Kept on the subscription itself so the consultant report cap can tell who it covers.
+    subscription_data: {
+      metadata: {
+        pro_tier: tier,
+        ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
+      },
+    },
   });
 
   return { url: session.url };

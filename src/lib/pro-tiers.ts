@@ -31,6 +31,13 @@ export const PRO_TIERS: readonly ProTierDef[] = [
 /** The tier for consultants and other organizations that are not a bank or credit union. */
 export const NON_INSTITUTION_TIER: ProTier = "mid";
 
+/**
+ * Hamilton reports a month on the consultant plan (James, 8 Oct 2026). Past it, a consultant
+ * moves to CONSULTANT_UPGRADE_TIER's price, which has no monthly report cap.
+ */
+export const CONSULTANT_MONTHLY_REPORTS = 20;
+export const CONSULTANT_UPGRADE_TIER: ProTier = "large";
+
 const WHOLE_DOLLARS = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -95,3 +102,12 @@ export function proPriceEnvVar(tier: ProTier, plan: ProPlan): string {
 export function proPriceId(tier: ProTier, plan: ProPlan): string | null {
   return process.env[proPriceEnvVar(tier, plan)]?.trim() || null;
 }
+
+/** "Consultants and other organizations pay $300/mo or $3,000/yr, including 20 Hamilton reports a month; ..." */
+export const CONSULTANT_PRICE_NOTE = `Consultants and other organizations pay ${tierPriceLabel(
+  NON_INSTITUTION_TIER,
+  "monthly",
+)} or ${tierPriceLabel(NON_INSTITUTION_TIER, "annual")}, including ${CONSULTANT_MONTHLY_REPORTS} Hamilton reports a month; for more, it's ${tierPriceLabel(
+  CONSULTANT_UPGRADE_TIER,
+  "annual",
+)} with no monthly report limit.`;

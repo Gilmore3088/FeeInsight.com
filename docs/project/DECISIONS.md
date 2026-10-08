@@ -419,5 +419,7 @@ $3,000, over $2B $5,000. Monthly is offered too; annual equals about 10 monthly 
 monthly is $150 / $300 / $500 (James 12:03: "10 at 150"). A bank's tier comes
 from its own assets (`institution_sources.asset_size`), worked out again at checkout; with no
 asset size on file, the buyer is asked to email. Consultants and other non-banks pay the middle
-tier (James said yes to the preview at 12:02). Each tier's Stripe price is its own Vercel variable
+tier (James 12:03: "consultants should have 3k"), with a monthly cap of Hamilton reports
+(James chose a report cap 12:04; `CONSULTANT_MONTHLY_REPORTS`, 20 pending his pick); past it they move
+to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). Each tier's Stripe price is its own Vercel variable
 (`src/lib/pro-tiers.ts`); a tier stays closed until its variable is set.
