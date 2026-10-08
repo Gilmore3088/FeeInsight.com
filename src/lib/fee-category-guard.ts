@@ -303,6 +303,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(check|draft|order|print|book|style|box|design|cheque)/i,
     exclude: /\btemporar/i,
   },
+  // v45: a fee printed under a "closed within 90 days" heading is that heading's own fee only
+  // when the row names no other: Koin's "Accounts closed within 90 days: International Wire" $45
+  // (closure is $30), a rush card shipment, a reinstatement. A club's early withdrawal is filed
+  // here on purpose (fee-taxonomy.ts).
+  early_closure: {
+    include: /\S/,
+    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat)/i,
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -317,7 +325,9 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v43: PR 682's rules ship after Magellan's v42 (PR 684): v40 cheap overdraft protection, v41
 // charge-off fees, and names cut from another fee's note plus a reload fee filed as bill pay.
 // v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
-export const CATEGORY_GUARD_VERSION = 44;
+// v45: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
+// reinstatement fee filed as early closure under a "closed within 90 days" heading.
+export const CATEGORY_GUARD_VERSION = 45;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -559,17 +569,32 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
   if (first === second || Math.abs(amount - first) >= 0.005) return null;
   const words = excerpt.replace(prices[0], " ");
   const keyValues = [canonicalFeeKey.includes("_intl_") ? "intl" : "domestic", canonicalFeeKey.endsWith("_outgoing") ? "out" : "in"];
-  for (const pair of words.matchAll(SLASH_PAIR)) {
-    const left = WIRE_SIDES.find((side) => side.pattern.test(pair[1]))?.value ?? null;
-    const right = WIRE_SIDES.find((side) => side.pattern.test(pair[2]))?.value ?? null;
-    for (const values of Object.values(WIRE_DIMENSIONS)) {
-      const l = left && values.includes(left) ? left : null;
-      const r = right && values.includes(right) ? right : null;
-      if (l === r || (l == null && r == null)) continue;
-      const own = keyValues.find((value) => values.includes(value))!;
-      const slot = l === own || (l == null && r !== own) ? 1 : 2;
-      return slot === 2 ? `"${pair[0]}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
-    }
+  // v45: a spaced slash between two named wires ("Wire Out / Wire Out Foreign | $25.00 /
+  // $45.00") names each slot by its whole phrase; the word next to the slash ("Out") is shared.
+  const phrasePairs = words
+    .split(/[|:–—]/)
+    .map((cell) => cell.split(/\s\/\s/))
+    .filter((sides) => sides.length === 2 && sides.every((side) => /[A-Za-z]/.test(side)))
+    .map((sides) => ({ text: sides.join(" / ").trim(), sides: sides.map((side) => side.match(/[A-Za-z'’]+/g) ?? []) }));
+  const pairs = phrasePairs.length > 0
+    ? phrasePairs
+    : [...words.matchAll(SLASH_PAIR)].map((pair) => ({ text: pair[0], sides: [[pair[1]], [pair[2]]] }));
+  for (const pair of pairs) {
+    const named = pair.sides.map((side) => side.map((word) => WIRE_SIDES.find((wire) => wire.pattern.test(word))?.value).filter(Boolean) as string[]);
+    const dimensions = Object.values(WIRE_DIMENSIONS)
+      .map((values) => named.map((found) => {
+        const hits = [...new Set(found.filter((value) => values.includes(value)))];
+        return hits.length === 1 ? hits[0] : null;
+      }))
+      .map(([l, r], index) => ({ l, r, values: Object.values(WIRE_DIMENSIONS)[index] }))
+      .filter(({ l, r }) => l !== r)
+      // A dimension both sides name decides before one only a side names.
+      .sort((a, b) => Number(b.l != null && b.r != null) - Number(a.l != null && a.r != null));
+    const decider = dimensions[0];
+    if (!decider) continue;
+    const own = keyValues.find((value) => decider.values.includes(value))!;
+    const slot = decider.l === own || (decider.l == null && decider.r !== own) ? 1 : 2;
+    return slot === 2 ? `"${pair.text}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
   }
   return null;
 }
