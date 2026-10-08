@@ -11,6 +11,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
+import { frequencyFromLine } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -35,7 +36,7 @@ import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names"
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 40 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 45 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -140,7 +141,9 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     let selfCheckFailed = 0;
     for (const read of found.candidates) {
       if (candidates.length >= MAX_FEES_PER_DOCUMENT) break;
-      const candidate = { ...read, feeName: tidyFeeName(read.feeName) };
+      // v44: a fee with no frequency takes the one its own line states right after its price
+      // ("$6.00 each", "| $28.00 | Per request"); Darwin's eval found 48% of live fees blank.
+      const candidate = { ...read, feeName: tidyFeeName(read.feeName), frequency: read.frequency ?? frequencyFromLine(read.excerpt, read.amount) };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU

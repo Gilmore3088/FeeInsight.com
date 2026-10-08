@@ -98,6 +98,10 @@ vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
 }));
 
+vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
+  pairFeeChangeRecords: vi.fn(async () => ({ unpaired: 0, likeForLike: 0, crossPage: 0, listsBoth: 0, noPair: 0, written: 0, dryRun: false })),
+}));
+
 vi.mock("@/lib/agents/knox/extract", () => ({
   runKnoxExtract: runKnoxExtractMock,
 }));

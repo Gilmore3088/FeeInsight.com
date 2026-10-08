@@ -38,9 +38,44 @@ const BANK_FEE_PATTERN =
 const WATER_OVERDRAFT =
   /\b(critically\s+)?overdraft(ed)?\s+(groundwater\s+)?(sub)?basins?\b|\b(groundwater|aquifer|basin)\s+overdraft\b|\boverdraft\s+(of|in)\s+(the\s+)?(groundwater|aquifers?|(sub)?basins?)\b|\boverdraft\s+conditions?\b/gi;
 
-/** The bill's text with groundwater "overdraft" phrases taken out. */
+/** Words that place a bill in water law. */
+const WATER_CONTEXT = /\b(groundwater|aquifers?|water years?|water code|sustainability agenc(y|ies)|(sub)?basins?)\b/i;
+/** Words that place a bill in consumer banking. */
+const BANKING_CONTEXT =
+  /\b(banks?|banking|credit unions?|financial institutions?|depository|checking|deposit accounts?|debit cards?|account ?holders?|consumers?)\b/i;
+
+const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies))\b/i;
+
+/** The overdraft and insufficient funds terms that set the overdraft_nsf topic. */
+const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient funds|nsf|returned (check|item)s?)\b/gi;
+
+/**
+ * The bill's text with non-banking overdraft and insufficient funds wording taken out. Known water
+ * phrases always go. Then each sentence (the title is its own) keeps its overdraft or insufficient
+ * funds terms only when that sentence names a bank, account holder or consumer, or names a fee or
+ * charge without being about water. Budget language ("if insufficient funds are appropriated") and
+ * groundwater "overdraft" fall out. Tagging v3 judged the whole text at once and kept CA AB 1520
+ * ("Public resources: conservation.") on its 2026-10-08 20:27 UTC re-read, because a banking or
+ * fee word somewhere else in its digest vouched for an unrelated sentence.
+ */
 export function withoutWaterOverdraft(text: string): string {
-  return text.replace(WATER_OVERDRAFT, " ");
+  const stripped = text.replace(WATER_OVERDRAFT, " ");
+  return stripped
+    .split(/(?<=[.;:!?])\s+/)
+    .map((sentence) =>
+      BANKING_CONTEXT.test(sentence) || (FEE_WORDS.test(sentence) && !WATER_CONTEXT.test(sentence))
+        ? sentence
+        : sentence.replace(OVERDRAFT_TERMS, " "),
+    )
+    .join(" ");
+}
+
+/** About 80 characters around the first bank fee term, so a stored tag can be checked without the abstract. */
+export function bankFeeMatch(text: string): string | null {
+  const hit = BANK_FEE_PATTERN.exec(text);
+  if (!hit) return null;
+  const from = Math.max(0, hit.index - 40);
+  return text.slice(from, hit.index + hit[0].length + 40).replace(/\s+/g, " ").trim();
 }
 
 export type BillStage = "introduced" | "in_committee" | "passed_chamber" | "passed_legislature" | "signed" | "vetoed" | "failed";
@@ -59,6 +94,8 @@ export interface StateBillItem {
   /** Date of the action that set the stage. */
   stage_date: string | null;
   topics: string[];
+  /** The words that made it a bank fee bill (diagnostics only, not stored on the row). */
+  match: string | null;
 }
 
 interface RawAction {
@@ -153,6 +190,7 @@ export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillI
     stage,
     stage_date: date,
     topics: topicsFor(text),
+    match: bankFeeMatch(text),
   };
 }
 

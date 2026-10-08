@@ -13,7 +13,7 @@ import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signal
  */
 
 type SqlTag = typeof sql;
-type Fetcher = typeof fetch;
+export type Fetcher = typeof fetch;
 
 /** Institutions read per run. */
 export const CONTACTS_DEFAULT_LIMIT = 30;
@@ -57,7 +57,7 @@ const PAGE_HINTS: Array<{ pattern: RegExp; rank: number }> = [
 /** A role from a title or a mailbox name; the first match wins, so "SVP Marketing" is marketing. */
 const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
   { role: "marketing", pattern: /\bmarketing\b|brand|communications|\bcmo\b/i },
-  { role: "retail", pattern: /retail|deposit|product|consumer bank|member experience|member services/i },
+  { role: "retail", pattern: /retail|deposit|product|consumer bank/i },
   { role: "finance", pattern: /\bcfo\b|chief financial|finance|treasurer|controller/i },
   { role: "executive", pattern: /\bceo\b|chief executive|president/i },
   { role: "operations", pattern: /\bcoo\b|chief operating|operations/i },
@@ -68,8 +68,8 @@ const ROLE_PATTERNS: Array<{ role: ContactRole; pattern: RegExp }> = [
 const GENERAL_MAILBOX =
   /^(info|contact|contactus|customerservice|customer\.?service|service|services|support|help|hello|questions|webmaster|web|mail|online|onlinebanking|ebanking|loans?|lending|mortgages?|cards?|fraud|security|careers|jobs|hr|humanresources|privacy|deposits?|accounting|bsa|compliance|memberservices?|members?|marketing|media|press|news|investor|investors|ir|noreply|no-reply|donotreply)$/i;
 
-/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees. */
-const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|^members?[._-]/i;
+/** Mailboxes the pattern above misses: "member_serv", "treasurysupport", "web-executive-dl", committees, the board, card lines. */
+const SHARED_MAILBOX_PART = /(?:^|[._-])(?:serv|support|admin|statements?|insurance|dl)(?:$|[._-])|support$|admin$|supervisory|committee|boardof|directors|^members?[._-]|^(?:visa|debit|mastercard|board)$/i;
 
 /** True when an address is a shared mailbox, not one person's. */
 export function isSharedMailbox(email: string): boolean {
@@ -155,19 +155,30 @@ const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|market
  * business development, relationship and cash management, wealth and trust, branch staff.
  */
 const NOT_BUYER_TITLE =
-  /loan|lend|mortgage|underwrit|business banker|business banking|business development|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|business services|business product|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+
+/**
+ * Member services and member experience are retail only at a decision maker's rank (PR 652's
+ * decision-maker rule): "VP of Member Experience" buys a fee study, a "Member Services Manager" doesn't.
+ */
+const MEMBER_ROLE = /member (?:experience|services?)/i;
+const DECISION_MAKER_RANK = /\b(?:vp|svp|evp|vice[\s-]+president|director|chief|head)\b/i;
 
 export function roleFor(text: string): ContactRole {
   const title = text.replace(VICE_PRESIDENT, " ");
   if (!BUYER_TITLE.test(title) && NOT_BUYER_TITLE.test(title)) return "other";
-  return ROLE_PATTERNS.find(({ pattern }) => pattern.test(title))?.role ?? "other";
+  const seniorMember = MEMBER_ROLE.test(title) && DECISION_MAKER_RANK.test(text);
+  return ROLE_PATTERNS.find(({ role, pattern }) => pattern.test(title) || (role === "retail" && seniorMember))?.role ?? "other";
 }
 
-/** Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ..."). */
-const NOT_A_TITLE = /message|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
-/** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL"). */
+/**
+ * Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...",
+ * a line quoting an address, "CEO For questions or concerns not resolved by staff").
+ */
+const NOT_A_TITLE = /@|\byour\b|\be-?mail:|message|\bquestions?\b|\bconcerns?\b|\bnot resolved\b|\bmailing\b|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+/** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL", "Mailing Address"). */
 const NOT_A_NAME =
-  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general)\b/i;
+  /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual|mailing|address|questions?|concerns?|hours|location|phone|fax|office)\b/i;
 
 /** A printed name we can greet, or null for a label that sits where a name would. */
 export function cleanContactName(name: string | null): string | null {
@@ -180,19 +191,42 @@ export function cleanContactName(name: string | null): string | null {
 /** A printed title, or null for a heading that only looks like one. */
 export function cleanContactTitle(title: string | null): string | null {
   if (!title) return null;
-  const trimmed = title.trim().replace(/[,&|*]+\s*$/, "").trim();
+  const trimmed = title.trim().replace(/[,&|*:]+\s*$/, "").trim();
   return trimmed && !NOT_A_TITLE.test(trimmed) ? trimmed : null;
+}
+
+/** Mailbox names that belong to a role, so any printed name beside them may be the person in it. */
+const ROLE_MAILBOX = /ceo|president|cfo|coo|cmo|marketing|retail|deposit|operations|exec/i;
+
+/**
+ * False when a personal address can't be the printed name's ("Claire Speedling" beside
+ * dawns@...): the name and title on the page belong to someone else, so neither is used.
+ */
+export function nameFitsEmail(name: string | null, email: string): boolean {
+  if (!name) return true;
+  const local = email.split("@")[0].toLowerCase().replace(/[^a-z]/g, "");
+  if (ROLE_MAILBOX.test(local)) return true;
+  const words = name.toLowerCase().replace(/[^a-z\s-]/g, " ").split(/[\s-]+/).filter((word) => word.length >= 2);
+  if (words.some((word) => word.length >= 3 && local.includes(word))) return true;
+  const first = words[0];
+  const last = words.at(-1);
+  if (!first || !last || words.length < 2) return false;
+  // Truncated mailboxes ("tjcollin" for Tim Collins) keep the surname's first five letters.
+  return local.startsWith(`${first[0]}${last.slice(0, 3)}`) || (last.length >= 5 && local.includes(last.slice(0, 5)));
 }
 
 /**
  * A saved contact read with today's rules: its name and title checked again and its role
- * re-read from the title, so rows saved before a rule changed are judged the same way.
+ * re-read from the title, so rows saved before a rule changed are judged the same way. A
+ * name that can't own the contact's personal address drops, with its title.
  */
-export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind }>(contact: T): T {
-  const title = cleanContactTitle(contact.title);
+export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind; email?: string }>(contact: T): T {
+  const name = cleanContactName(contact.name);
+  const owned = contact.email === undefined || nameFitsEmail(name, contact.email);
+  const title = owned ? cleanContactTitle(contact.title) : null;
   return {
     ...contact,
-    name: cleanContactName(contact.name),
+    name: owned ? name : null,
     title,
     role: contact.kind === "person" ? (title ? roleFor(title) : "other") : contact.role,
   };
@@ -267,7 +301,8 @@ export function contactPageLinks(html: string, pageUrl: string, limit: number = 
   return [...ranked.entries()].sort((a, b) => a[1] - b[1]).slice(0, limit).map(([url]) => url);
 }
 
-async function fetchText(url: string, fetcher: Fetcher): Promise<{ ok: boolean; status: number | null; url: string; text: string }> {
+/** One page as text, as `FeeInsightBot (Growth)`; never throws. */
+export async function fetchText(url: string, fetcher: Fetcher): Promise<{ ok: boolean; status: number | null; url: string; text: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {

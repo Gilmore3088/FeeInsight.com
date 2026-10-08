@@ -243,6 +243,19 @@ export function narrateStepFinished(
       if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
       return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
     }
+    case "growth-intel": {
+      if (detail.schemaReady === false) return "Wrote no market brief; the queue is not there yet.";
+      const findings = Array.isArray(detail.findings) ? detail.findings.length : 0;
+      if (!findings) return "Read the regulator feeds and competitor pages; nothing new worth a brief.";
+      return `Filed a market brief with ${count(findings, "finding")} for James to read.`;
+    }
+    case "growth-conversion": {
+      if (detail.schemaReady === false) return "Wrote no conversion check; the queue is not there yet.";
+      const broken = Array.isArray(detail.broken) ? detail.broken.length : 0;
+      return broken
+        ? `Found ${count(broken, "broken destination")} and filed the week's conversion check.`
+        : "Checked every destination and the week's funnel, and filed the conversion check.";
+    }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
       if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
@@ -455,6 +468,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-contacts": "growth",
   "growth-outreach": "growth",
   "growth-learning": "growth",
+  "growth-intel": "growth",
+  "growth-conversion": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",

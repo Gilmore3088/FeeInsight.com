@@ -50,9 +50,44 @@ describe("Open States client", () => {
     ]) {
       expect(parseOpenStatesBill({ ...base, title: "Public resources: conservation.", abstracts: [{ abstract }] }, "ca"), abstract).toBeNull();
     }
+    // Water bills word it many ways; with no banking words, any "overdraft" is the water kind.
+    for (const abstract of [
+      "Redefines the water year for groundwater investigations in basins subject to overdraft.",
+      "Requires the department to report on groundwater overdraft-related subsidence.",
+      // No water words at all, but no bank, account or fee either: not a bank fee bill.
+      "Authorizes surety bonds as security and addresses overdraft in specified regions.",
+    ]) {
+      expect(parseOpenStatesBill({ ...base, title: "Public resources: conservation.", abstracts: [{ abstract }] }, "ca"), abstract).toBeNull();
+    }
     // A bill that names both keeps its bank fee reading.
     expect(
       parseOpenStatesBill({ ...base, title: "Overdraft fees on checking accounts", abstracts: [{ abstract: "Also funds critically overdrafted basins." }] }, "ca"),
     ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
+    expect(
+      parseOpenStatesBill({ ...base, title: "Bank overdraft fees", abstracts: [{ abstract: "Applies to banks and credit unions; also amends the Water Code." }] }, "ca"),
+    ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
+  });
+
+  it("counts overdraft and insufficient funds only in a sentence about banking or fees (tagging v4)", () => {
+    const base = { id: "x", identifier: "AB 1520", openstates_url: "https://openstates.org/x" };
+    for (const abstract of [
+      // Budget wording: a banking or fee word elsewhere no longer vouches for it.
+      "If there are insufficient funds in the account, the board shall prorate grants. Consumers may apply for a fee waiver.",
+      "Requires reporting on overdraft. Imposes a penalty on banks of ore tailings.",
+      "The conservancy may decline projects for which insufficient funds are appropriated.",
+    ]) {
+      expect(parseOpenStatesBill({ ...base, title: "Public resources: conservation.", abstracts: [{ abstract }] }, "ca"), abstract).toBeNull();
+    }
+    const ewa = parseOpenStatesBill(
+      {
+        ...base,
+        identifier: "HB 1046",
+        title: "Regulate Earned-Wage Access Services",
+        abstracts: [{ abstract: "A provider may not charge a consumer overdraft fees or nonsufficient funds fees for a declined repayment." }],
+      },
+      "co",
+    );
+    expect(ewa).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
+    expect(ewa?.match).toContain("overdraft");
   });
 });

@@ -56,7 +56,7 @@ export function HamiltonShell({
       >
         {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
         {isAdmin && (
-          <div className="bg-gray-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs print:hidden">
+          <div className="bg-warm-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs print:hidden">
             <span className="text-gray-400">
               {viewAsCustomer
                 ? "Viewing as a customer: Hamilton answers exactly as a paying customer sees it"

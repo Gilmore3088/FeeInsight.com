@@ -39,6 +39,9 @@ Knox owns conservative raw fee extraction.
 - Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
   once per rules version, ahead of other texts. The rules re-check only reaches documents
   with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
+  Among them, a bank with no live overdraft fee goes first, then the page Knox read longest
+  ago: ordered by newest text alone, each version bump (ten on Oct 8) restarted the same banks
+  and the tail, GreenState among them, was never reached.
 - A priority bank (`KNOX_PRIORITY_REREAD_IDS`) or state market leader with no live overdraft
   fee has its current page re-read once per rules version too, so a rules fix for a missed
   overdraft reaches it. `asset_size` is in thousands, so the $10B floor misses most state
@@ -481,6 +484,19 @@ v39 (rules 39, from the $10B+ banks with no live overdraft fee, Oct 8):
 v40 (rules 40, from the state top-10 banks with no live overdraft fee, Oct 8):
 - "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
 - A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
+
+v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 50 branch):
+- A paid NSF item is the overdraft fee: "Paid nonsufficient funds (NSF)" (Saco & Biddeford), "NSF Share Draft (Honored)" (Bluestone FCU), "Paid Consumer & Business NSF Items" (NIH FCU). A returned or unpaid one stays NSF.
+- A long name that ends in a note keeps its title: "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)" was named "5 max total OD or Returned Item fees daily" and filed as NSF (BankIowa).
+- In a table row, a last text cell that only lists what an overdraft covers ("Checks (Share Drafts), Online Payments, & ACH", "For Debit Card Transactions including ATM, POS") does not name the price; the overdraft cell before it does (Los Angeles FCU).
+- A price row named only by its threshold ("Per Item greater than $10.01 | $30 per item") belongs to the priceless fee line just above it (NIH FCU).
+- A run for one institution (Atlas's read-now runs) reads its current page again once per rules version while it has no live overdraft fee, as state leaders' runs do since v40.
+
+v43 (rules 43, Oct 8):
+- One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
+
+v45 (rules 45, Collection Items, Oct 8):
+- An item sent for collection, or a foreign or Canadian check or item handled for deposit ("Collection Item", "Items Sent for Collection", "Foreign Check Processing"), files as `collection_item`, not check cashing (James, Oct 8: "Own type"). Cashing a foreign check is still check cashing and a returned one is still a returned item. The pattern is `COLLECTION_ITEM` in `src/lib/fee-fold.ts`, shared with the category guard and Hamilton's fold step.
 
 ## Fees named by page context (`context-names.ts`, v33)
 

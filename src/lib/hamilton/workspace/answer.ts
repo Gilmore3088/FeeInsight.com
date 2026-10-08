@@ -127,7 +127,8 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   const out: Fact[] = [];
   const line = research.revenueLine;
   if (line) {
-    const combined = line.combinedWith ? `, combined with ${line.combinedWith},` : "";
+    // One filing line covers both fees: "NSF / returned item and overdraft income".
+    const combined = line.combinedWith ? ` and ${line.combinedWith}` : "";
     out.push({
       text: `Your filing reports ${formatDollarsInWords(line.annualIncome)} in ${name} income${combined} over the four quarters to ${longDate(line.quarterEnd)}.`,
       source: { ...line.source, asOf: line.quarterEnd },

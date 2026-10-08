@@ -21,6 +21,7 @@ import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, typ
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 
 type SqlTag = typeof sql;
 
@@ -313,15 +314,22 @@ async function selectVerifiedFees(
   }
   if (learning) {
     // A row this rule version already decided on (published, skipped as identical, or
-    // rejected) is never selected again, so skipped rows cannot starve the batch.
+    // rejected) is never selected again, so skipped rows cannot starve the batch. The one
+    // exception is a row Darwin re-filed after a takedown (verify.schedule_refile): a decision
+    // made under its old category does not count, so the new filing goes through publish.
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
+    const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
               AND pa.strategy = ${strategyParam}
               AND pa.strategy_version = ${versionParam}
+              AND NOT (
+                fv.outlier_flags ? ${refiledParam}
+                AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
+              )
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -641,14 +649,14 @@ export function feeValue(row: RateFields & { amount: number | string | null }): 
   return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
-interface ListedFeeLine {
+export interface ListedFeeLine {
   source_document_id: number | string | null;
   fee_name: string | null;
   amount: number | string | null;
 }
 
 /** Every line Knox read from these documents, for the same-name price check below. */
-async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
   const ids = documentIds.filter((id) => id != null).map(Number);
   if (ids.length === 0) return [];
   try {
@@ -668,7 +676,9 @@ async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | stri
  * fee name twice ("Returned Deposit Fee $10" and "Returned Deposit Fee $3" for two
  * accounts) has two lines, not a price change, whichever document is newer.
  */
-export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+export type ListedPrice = RateFields & Pick<VerifiedFeeRow, "fee_name" | "amount" | "source_document_id">;
+
+export function listsBothPrices(lines: ListedFeeLine[], row: ListedPrice, prior: ListedPrice): boolean {
   // Knox's listed lines carry no rate here, so two rates are never read as two lines.
   if (isPercentFee(row) || isPercentFee(prior)) return false;
   const name = normalizedFeeName(row.fee_name);
@@ -727,7 +737,10 @@ async function supersedePriorFee(
         new_amount,
         change_type,
         detected_at,
-        changed_at
+        changed_at,
+        previous_fee_published_id,
+        new_fee_published_id,
+        like_for_like
       )
       VALUES (
         ${Number(options.row.institution_id)},
@@ -738,7 +751,10 @@ async function supersedePriorFee(
         ${newAmount},
         ${changeType},
         NOW(),
-        NOW()
+        NOW(),
+        ${priorId},
+        ${options.feePublishedId},
+        ${samePage(options.row, options.prior)}
       )
     `;
     return true;

@@ -66,7 +66,7 @@ describe("storyline", () => {
   it("sorts peers into the four pricing groups and places the bank", () => {
     const story = buildFeeAnswer(research()).storyline!;
     const map = story.exhibits.find((e) => e.exhibit.kind === "archetype_map")!;
-    expect(map.actionTitle).toBe("Of 16 peers, 11 charge $15.01 to $30 and 5 charge over $30.");
+    expect(map.actionTitle).toBe("Of 16 peers: 11 at $15.01–$30 and 5 over $30.");
     if (map.exhibit.kind === "archetype_map") {
       expect(map.exhibit.archetypes.map((a) => a.count)).toEqual([0, 0, 11, 5]);
       expect(map.exhibit.ownKey).toBe("premium");
@@ -157,7 +157,7 @@ describe("storyline", () => {
     expect(story.exhibits.some((e) => e.exhibit.kind === "competitor_range")).toBe(false);
     expect(story.lenses.market.map((f) => f.text)).toEqual([
       "2 of 6 $10B+ institutions charge less than your $32; the lowest is Big Bank 2 ($0).",
-      "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 competes against.",
+      "1 of them publishes a $0 overdraft fee (Big Bank 2), the claim your $32 faces.",
       "2 of 6 in the group price a transfer from savings, typically $10; your schedule in the index shows none.",
       "In Tennessee, 1 decrease and 1 increase in 180 days; latest Peer 9, $29 to $32 on Sep 15.",
     ]);
@@ -205,6 +205,24 @@ describe("storyline for a regulation question", () => {
     const question = "What regulation applies to our overdraft fee?";
     const finance = buildAskResponse({ question, intent: parseAsk(question), research, memory: [] }).answer?.storyline?.lenses.finance ?? [];
     expect(finance[0]?.text).toBe("The OCC charters and supervises you as a national bank.");
+  });
+
+  it("puts fee complaints against peers' right after the regulator, and the rules still follow", () => {
+    const complaints = {
+      text: "Your 12 CFPB fee complaints in 2025 equal 34 per $10B of deposits; 42 Tennessee peers' median is 8.",
+      source: { label: "CFPB Consumer Complaint Database, against FDIC and NCUA deposits", table: "institution_complaint_records", asOf: "2025-12-31" },
+      sampleSize: 42,
+    };
+    const question = "What regulation applies to our overdraft fee?";
+    const withComplaints = { ...research, regulation: [...regulation, complaints] };
+    const response = buildAskResponse({ question, intent: parseAsk(question), research: withComplaints, memory: [] });
+    expect((response.answer?.storyline?.lenses.finance ?? []).map((f) => f.source.label)).toEqual([
+      "FDIC BankFind institution records",
+      "CFPB Consumer Complaint Database, against FDIC and NCUA deposits",
+      "Regulation E overdraft opt-in, 12 CFR 1005.17",
+      "Unanticipated overdraft fees, CFPB Circular 2022-06",
+    ]);
+    expect(response.answer ? evaluateFourRoles(response.answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
   });
 
   it("leaves the regulator out of a price question's finance lens when two rules apply", () => {

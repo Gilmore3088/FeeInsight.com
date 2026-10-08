@@ -671,7 +671,7 @@ describe("registry state bills worker", () => {
     expect(statements.some((s) => /DELETE/i.test(s.text))).toBe(false);
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
     const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
-    expect(JSON.parse(detail)).toMatchObject({ tagging_version: 2, untagged: 1 });
+    expect(JSON.parse(detail)).toMatchObject({ tagging_version: STATE_BILLS_TAGGING_VERSION, untagged: 1 });
   });
 
   it("re-reads states whose stored bills were tagged under older rules", async () => {

@@ -13,6 +13,23 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Knox's lesson reader took 53 seconds on every extract step
+**What happened:** `pg_stat_statements` on prod showed Knox's lesson query (`loadKnoxLessons`) run 538 times at a 53 s average and a 97 s worst case, against a 120 s statement timeout. Each run held a database connection for that long, during the same evening the database hit "too many clients" (22:07 UTC, 28 refusals right after a deploy).
+**Cause:** the query paired each name's wrong and right categories by joining two CTEs to themselves. Postgres estimated a few rows per CTE (there were 27,467 and 50,112), so it chose a nested loop that rescanned them.
+**Fix:** each name's categories are grouped into arrays and paired with `unnest`, which has no join to misjudge (this PR). The same prod data gives the same 107 global and 867 per-bank lessons (row hashes match), in 4.1 s.
+**Lesson:** a self-join of a CTE gets a guessed row count; when one runs slowly, check `pg_stat_statements` for its mean time and prefer grouping over a self-join.
+## 2026-10-08: Hand-found schedules waited hours for their state's lane
+**What happened:** the schedules added at 17:03 UTC for Comerica, Cadence, FirstBank (CO), Stock Yards and First Tech were still unfetched at 22:50 (`institution_additional_sources.last_fetched_at` null). ConnectOne's listed fee page was never added at all.
+**Cause:** companion fetch only takes pages in the running lane's state, and the TX, MS, CO, KY and CA lanes did not come round. ConnectOne's page counted as already held because a copy was stored in March 2026, though the bank has no current link.
+**Fix:** a hand-found schedule is fetched by the next lane of any state until its first fetch, and a stored copy counts as held only if stored in the last 30 days (this PR).
+**Lesson:** work added by hand should not queue behind a rotation built for routine refreshes; check `last_fetched_at` an hour after adding a link.
+
+## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
+**What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
+**Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
+**Fix:** Knox now takes the $10B+ banks with no live overdraft fee first, then the page its rules read longest ago (this PR).
+**Lesson:** a queue that restarts on each version needs a stalest-first order, or the tail starves whenever versions move faster than one pass.
+
 ## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
 **What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
 is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
@@ -52,6 +69,9 @@ not on itself.
 **Cause:** the bank fee test and topic tags matched the bare word "overdraft". Also, a re-read only upserted the bills that still matched, so a tagging fix would never reach a row already stored.
 **Fix:** groundwater overdraft phrases are removed before the tests. A re-read clears the topics of a stored bill that no longer passes (the row is kept, never deleted). States with bills tagged under older rules are due again (`STATE_BILLS_TAGGING_VERSION`). Merged in the PR that adds this entry.
 **Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
+**Follow-up (19:17 UTC):** CA was re-read under version 2 at 18:17 and AB 1520 still matched, because its digest words groundwater overdraft some other way and the abstract isn't stored. Version 3 drops every "overdraft" from a bill that never mentions banking when the bill is about water or names no fee or charge. A guess at one wording isn't enough: when the source text can't be read, make the rule contextual.
+
+**Follow-up (20:50 UTC):** The 20:27 re-read under version 3 still kept AB 1520 tagged overdraft_nsf with no "fees" topic, so a banking or fee word somewhere else in the digest was vouching for the whole text (or the hit was budget wording such as "insufficient funds"). Version 4 judges each sentence on its own: overdraft and insufficient funds terms count only in a sentence that names banking, or names a fee or charge without being about water. Each state read now also stores the matched words per bill (`detail.matches`), so the next false positive can be diagnosed from the partition row instead of guessed at.
 
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
@@ -3340,6 +3360,15 @@ schedule's price off the live catalog and logs the difference as a price change.
 pass the old row's page to `confirmFeeChange`, which drops a pair from two different pages, so no
 alert has been raised from these records.
 **Lesson:** a superseded row is not an older edition of the same fee unless it came from the same page.
+**Follow-up (8 Oct, 23:00 UTC):** PR 591 stopped publish from superseding across pages, but the 152
+change records already written stayed, and seven readers (local fee moves in Hamilton reports, the
+category page's change list, `/api/v1/fee-changes`, peer reports, the Monthly Pulse, competitor alerts,
+the movement summary) counted them as price changes. The record held no link to the two rows it
+compared, so each reader re-guessed the pair by amount. Migration `20270110000030` gives
+`fee_change_records` the two row ids and `like_for_like`; publish fills them for each new change, and
+`pairFeeChangeRecords` (`hamilton/change-pairing.ts`) fills older records in the publish step with the
+same page rule plus `listsBothPrices`. Every reader now requires `like_for_like IS TRUE`. A new reader
+of `fee_change_records` must do the same.
 
 ## 2026-10-08: Paid search answers dropped because the bank's site refused our check
 
@@ -3547,6 +3576,23 @@ and quarter were already stored, without looking at the periods of the data behi
   Checked against the 24 prod drafts: 7 stay (First Federal KC, Quaint Oak, Holy Rosary,
   BankGloucester, Gateway, State Bank, Drake) and 17 are withdrawn.
 - **Watch.** The outreach step's "Withdrew N" line, and To: lines on new drafts.
+- **Second miss (run 3102).** 2 of 4 new drafts went to boardofdirectors@ (name "Annual Meeting",
+  title a sentence quoting another address) and visa@ (title "Member Services: ...@TheQ.org").
+  A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
+  board and card-line mailboxes are shared. The next run withdraws both.
+
+## 2026-10-08: Outreach quoted a neighbouring schedule line with the same price
+- **Problem.** Outreach run 3148's drafts quoted, as each bank's overdraft fee, the first schedule
+  line that carried the same amount (`checkFeeAgainstSource` returns the first match). Four drafts
+  showed the wrong line beside a correct fee: First Federal KC ("Insufficient Funds Fee $25" for its
+  $25 overdraft row), NIH FCU ("Returned Unpaid NSF Items" for its paid-NSF row), Bluestone FCU
+  ("Returned" for "Honored") and Saco & Biddeford ("Business account $35", the business tier). Two
+  rows were miscategorised in the catalog (Tri City's $50 charge-off, BankGloucester's $5 transfer)
+  and are taken down by PR 682.
+- **Fix.** The snapshot quotes the catalog row's own excerpt and name, compares the consumer tier when
+  a business tier is also printed, and drafts record `quote_rule`. The outreach run withdraws
+  unreviewed drafts quoted under the old rule, and their institutions are drafted again.
+- **Watch.** The audit block's "Fee:" and "Schedule line:" should name the same charge.
 
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
@@ -3569,3 +3615,82 @@ and quarter were already stored, without looking at the periods of the data behi
   words) is read like a scan, and the stored ones are reopened once each. Free OCR reads
   only page images, so these PDFs go on to the paid transcription pass under its budget.
 - **Watch.** TruStone's fee schedule read into words, and TruStone's fees going live.
+
+## 2026-10-08: Requested banks never got a rules fix, and paid NSF items were filed as NSF
+
+- **Problem.** Marketing's outreach batch had 8 institutions with no live overdraft fee. 6 of
+  their current fee pages print the overdraft line, but Knox misread it: a paid NSF item
+  ("Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)") was filed as NSF or dropped,
+  a long name was cut to the note inside it (BankIowa's overdraft became an NSF row named
+  "5 max total OD or Returned Item fees daily"), a description cell listing debit card
+  channels filed Los Angeles FCU's courtesy pay as an ATM fee, and a threshold row under a
+  priceless fee line had no name (NIH FCU). Even after a fix, a requested institution's
+  read-now run did not read its unchanged page again, so the fix never reached it.
+- **Fix.** Knox v42 and category guard v34 read all six lines. A run for one institution reads
+  its current page again once per rules version while it has no live overdraft fee. The
+  batch is first on Atlas's request list, and Quantum's personal fee schedule is a hand link
+  (Magellan held only its business schedule).
+- **Watch.** The 7 read-now runs and their overdraft fees going live. Hatboro Federal
+  Savings' Feb 2026 schedule lists no overdraft fee (only a $25 NSF return fee and a $5
+  transfer protection fee).
+
+## 2026-10-08: A held line renamed onto a row of the same page failed Knox's extract step
+
+- **Problem.** Two Knox extract steps failed with `duplicate key value violates unique
+  constraint "raw_fee_observations_knox_agentic_dedup_idx"`: Guaranty Bank and Trust's
+  read-now run (19:55 UTC) and a state lane run (20:00 UTC). The step left no rows for
+  Guaranty's new page. The held-line re-check gives a promoted row today's name for the fee.
+  It did that with no check that the same page already had a row with that name and price,
+  which the dedupe index forbids. The rate re-check in the same file already had that check.
+- **Fix.** A promotion now skips a held line whose new name and price already exist on the
+  same page and keeps it on hold, since that fee is already read.
+- **Watch.** No `knox_agentic_dedup_idx` failures in extract steps, and Guaranty's next
+  read-now run completing.
+
+## 2026-10-08: Returned-check fees Darwin re-filed as RDI never went live again
+- **What happened.** Hamilton's second look took 116 "Returned Check" fees off NSF between
+  19:58 and 20:52 UTC, and Darwin's `verify.schedule_refile` re-filed all 116 verified rows as
+  `deposited_item_return` by 20:58. None of them was live again at 21:20, though publish steps
+  kept running.
+- **Why.** Publish skips any verified row that already has a `publish.rules` v2 attempt, so a
+  row it never needs to see twice can't fill every batch. 105 of the 116 had that attempt from
+  when they were published as NSF, so the new filing was never looked at.
+- **Fix.** For a row flagged `darwin_schedule_refiled`, an attempt made under a different
+  `canonical_fee_key` no longer counts. Read-only count on prod: 110 rows become eligible. The
+  other 6 are legacy rows without `agentic_darwin_verified`, which publish never selects; they
+  stay recorded but not live.
+- **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
+  publish steps.
+
+## 2026-10-08: Most real Pro questions were never kept, so nothing learned from them
+
+- **What.** On prod, 10 of the 14 Ask requests since Oct 6 came back as a question from
+  Hamilton rather than an answer, and 11 of the 14 left no saved analysis. The `pro.ask`
+  ledger row kept the response kind and fee, but not the question, so the questions Hamilton
+  could not answer were lost.
+- **Why.** Only storyline answers are filed to `hamilton_saved_analyses`; the ledger detail
+  never carried the question text.
+- **Fix.** The `pro.ask` ledger detail now keeps the question, Hamilton's short answer and the
+  engine version. The 2-hourly answer eval replays the last 90 days of real questions (ledger
+  plus saved analyses, test asks left out) and reports them in `detail.pro`.
+- **Watch.** After the next eval run, `detail.pro.questions` is above 0. After the next real
+  Ask, the newest `pro.ask` row has `params_json ? 'question'`.
+
+## 2026-10-08: Banks published another bank's fee schedule
+- **What happened.** Peoples Bank of Rock Valley, Iowa showed 22 live fees read from Peoples
+  Bank of Bellingham, Washington's PDF on peoplesbank-wa.com (James found it). On prod, 62 stored
+  documents at 44 institutions sit on another institution's own website. 16 of those
+  institutions had 323 live fees from them; 15 of the 16 (308 fees) have no sign the document
+  is theirs. Most are same-name banks: Peoples Bank IN and IA, First Bank VA and First United OK
+  (first.bank), Cornerstone ND, Farmers State IA, First Community SC, Central Bank UT, and
+  River Bank WI (Charles River Bank).
+- **Why.** Discovery accepted any off-site PDF a search returned for the bank's name, and
+  nothing compared the document's host with the bank's own website.
+- **Fix.** Discovery refuses a link on another institution's website (`other-bank-host.ts`).
+  Hamilton takes down live fees from such a document on the first run (no 12-hour wait, James
+  Oct 8), unless the text names
+  the bank's own website or city, and sends the link back to discovery
+  (`hamilton/other-bank-document.ts`).
+- **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
+  them live from another bank's host after that.
+
