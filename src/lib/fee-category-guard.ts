@@ -70,6 +70,10 @@ const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
 /** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
 const EXPRESS_CARD = String.raw`\bexpress\b(?!\s*chip)|\bpriority\s+(deliver|ship|mail)|\bpriority\s*$|\b(two|2)[- ]day deliver|\bnext[- ]day\b`;
+/** Closing an account soon after opening it: the early closure fee, not a balance fee. */
+const EARLY_CLOSE = String.raw`\bearly (account )?(clos|terminat)|\bclos(e|ed|ing|ure)( of)? account|\baccount (clos|terminat)`;
+/** A fee for an account with no activity: the dormant account fee, not a balance fee. */
+const INACTIVE = String.raw`inactiv|no activity|dorman`;
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
@@ -196,8 +200,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // amount is not a fee; "...required to avoid a minimum balance fee of" ends on the fee.
   minimum_balance: {
     include: /(minimum|min\.?\b|low balance|below|falls|drops|less than|under)/i,
-    exclude:
-      /^(?!.*\b(fee|charge) of\s*$).*(to open|to obtain|to earn|\bapy\b|annual percentage yield|requirements?\b(?! fee)|balance required|required to|you must deposit|to avoid)/i,
+    // v37: closing an account within months of opening it ("Closed Account (less than 6 months)",
+    // 9 live rows) is the early closure fee and an inactive-account fee is the dormant fee;
+    // "No minimum balance... Monthly service charge is", "You must maintain a minimum balance
+    // of", "Membership requires... a minimum balance of" and "Minimum Balance Transfer" are not it.
+    exclude: new RegExp(
+      `^(?!.*\\b(fee|charge) of\\s*$).*(to open|to obtain|to earn|\\bapy\\b|annual percentage yield|requirements?\\b(?! fee)|balance required|required to|you must deposit|to avoid)|${EARLY_CLOSE}|${INACTIVE}|\\bno minimum balance\\b|\\bmust maintain a minimum balance of( at least)?\\s*$|^membership requires|\\btransfer\\s*$`,
+      "i",
+    ),
   },
   // Buying or loading a gift, prepaid or travel card (v25: reloads folded in from the retired
   // prepaid-reload category). Its replacement and inactivity fees are other fees.
@@ -280,7 +290,7 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
 // v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
-export const CATEGORY_GUARD_VERSION = 36;
+export const CATEGORY_GUARD_VERSION = 37;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -331,6 +341,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
+  { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
+  { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
 ];
 
