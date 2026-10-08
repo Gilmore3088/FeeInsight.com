@@ -12,6 +12,7 @@
  */
 
 import { getSql } from "@/lib/data-store/connection";
+import { FEDERAL_RELEASES_ONLY } from "@/lib/data-store/news";
 import { loadConfirmedFeeChanges, type PulseChange } from "./monthly-pulse";
 
 /** Days of releases and fee changes a report covers. */
@@ -173,11 +174,11 @@ export async function loadDevelopments(now = new Date(), days = DEVELOPMENTS_WIN
   const rows = (await sql.unsafe(
     `SELECT source, title, link, topic, published_at, created_at
        FROM reg_articles
-      WHERE published_at >= $1
+      WHERE published_at >= $1 AND ${FEDERAL_RELEASES_ONLY}
       ORDER BY published_at DESC`,
     [start],
   )) as unknown as RawReleaseRow[];
-  const [fetched] = (await sql.unsafe(`SELECT MAX(created_at) AS last_fetched FROM reg_articles`)) as unknown as Array<{
+  const [fetched] = (await sql.unsafe(`SELECT MAX(created_at) AS last_fetched FROM reg_articles WHERE ${FEDERAL_RELEASES_ONLY}`)) as unknown as Array<{
     last_fetched: string | Date | null;
   }>;
   const items = buildDevelopments(rows, start, end);

@@ -1,8 +1,8 @@
 /**
  * This month's "things worth your attention", built from the Hamilton engine's Briefing (PR 170):
  * fees far from their peer group, competitors in the bank's state that changed a fee it charges,
- * and a large move in its service charge income. Overdraft, Hamilton's flagship, always leads when
- * the bank publishes it. Deterministic and neutral: it says what is unusual, never what to do.
+ * a large move in its service charge income, and where it sits in one of Hamilton's studies (kept
+ * in the last place). Overdraft, Hamilton's flagship, always leads when the bank publishes it. Deterministic and neutral: it says what is unusual, never what to do.
  */
 import { STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -45,6 +45,8 @@ export function proseFeeName(displayName: string): string {
 }
 
 function fromObservation(o: Observation): AttentionItem {
+  // Study observations are already written in prose.
+  if (o.kind === "study") return { id: o.id, feeCategory: o.feeCategory, headline: o.headline, facts: o.facts.map((f) => f.text), note: null };
   const display = o.feeCategory ? getDisplayName(o.feeCategory) : null;
   const prose = display ? proseFeeName(display) : null;
   const tidy = (text: string) => {
@@ -93,6 +95,10 @@ export function buildAttentionItems(
   if (!briefing) return [];
   const flagged = briefing.observations.find((o) => o.feeCategory === FLAGSHIP_FEE && o.kind === "market_position");
   const lead = flagged ? fromObservation(flagged) : overdraft ? overdraftItem(overdraft) : null;
-  const rest = briefing.observations.filter((o) => o !== flagged).map(fromObservation);
-  return [...(lead ? [lead] : []), ...rest].slice(0, limit);
+  const rest = briefing.observations.filter((o) => o !== flagged);
+  const items = [...(lead ? [lead] : []), ...rest.map(fromObservation)].slice(0, limit);
+  // Every briefing places the bank in a study when it has one: it keeps the last place.
+  const study = rest.find((o) => o.kind === "study");
+  if (study && limit > 0 && !items.some((i) => i.id === study.id)) items.splice(Math.max(0, limit - 1), 1, fromObservation(study));
+  return items;
 }
