@@ -592,6 +592,21 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("v40 names a sentence fee by its own title and reads Paid Item Fee as an overdraft (Northeast Bank)", () => {
+    // Text 19354: the Paid Item Fee line was held unclassified, and the Return Item Fee kept
+    // the sentence around it as its name.
+    expect(fees([
+      "We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your",
+      "Ledger Balance. We may charge you a Return Item Fee of $30.00 if we return an",
+      "item unpaid due to an insufficient Ledger Balance.",
+    ].join("\n"))).toEqual([
+      ["Paid Item Fee", 30, "overdraft"],
+      ["Return Item Fee", 30, "nsf"],
+    ]);
+    // A combined paid/returned NSF fee stays with NSF.
+    expect(classifyFeeText("NSF Paid Item Fee/NSF Returned Item Fee")).toBe("nsf");
+  });
+
   it("v38 keeps a threshold cell in the name, and reads Privilege Pay as an overdraft", () => {
     // Lighthouse FCU (text 15165): "Over $5" is the smallest item charged, not a tier.
     expect(fees("Courtesy Pay | Over $5 | Per occurrence | $32 | Courtesy Pay fee")).toEqual([

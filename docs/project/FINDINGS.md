@@ -13,6 +13,20 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Pro readers saw the public nav first, and lost the account menu on phones
+**What happened:** the Pro page thread, reading the source at 16:15 UTC: the shared header learns who
+is signed in only from a client fetch of /api/session, so Pro screens drew the public nav until it
+returned, and kept it if the fetch failed (the RC's minimized Chrome showed exactly that). On phones
+the Account menu is hidden (`hidden lg:block`) and the drawer offered only "Account", so My bank
+and data, All changes and the Reference pages had no way in.
+**Cause:** the header was built for static public pages and never took the session from a server
+layout that already had it; the phone drawer was written before the Pro account menu existed.
+**Fix:** `sessionChromeFor` (`src/lib/session-chrome.ts`) builds the header's session for both
+/api/session and the Hamilton layout, which seeds it through `SessionChromeProvider`; a failed fetch
+no longer overwrites a known session. The phone drawer lists the account menu's items for Pro readers.
+**Lesson:** a server layout that knows the user should hand it to client chrome rather than let the
+chrome guess.
+
 ## 2026-10-08: PDFs set in prose columns were read across the page
 **What happened:** Origin Bank's deposit agreement went live with seven overdraft rows: the right $35 overdraft item charge under sentence-fragment names, and $10 rows that are really its overdrawn-account fee. On prod, 251 of 1,981 PDF texts (23 at $10B+ banks) show the same pattern, at least 25 joins of running prose with a " | " cell break (Origin's text has 687).
 **Cause:** `read.pdf_layout` builds one line per baseline across the whole page. On a page in three prose columns each line joined its neighbour columns' lines, and lines whose baselines sat a little apart interleaved, so a sentence took its price from another column's sentence.
@@ -32,6 +46,12 @@ in the page, painted over the menu.
 `<ConsumerNav />` without `<SearchModal />`.
 **Lesson:** a dropdown under an animated or transformed ancestor needs the z-index on that ancestor,
 not on itself.
+
+## 2026-10-08: A California groundwater bill was stored as an overdraft fee bill
+**What happened:** the first live state-bills runs (17:13 UTC Oct 8) stored CA AB 1520, "Public resources: conservation." (signed), with the topic `overdraft_nsf`, so it would list as a fee bill on the California Wire. The text the tagging reads matched on "overdraft", which almost certainly comes from California water law ("critically overdrafted basins"); Open States can't be reached from the cloud to confirm.
+**Cause:** the bank fee test and topic tags matched the bare word "overdraft". Also, a re-read only upserted the bills that still matched, so a tagging fix would never reach a row already stored.
+**Fix:** groundwater overdraft phrases are removed before the tests. A re-read clears the topics of a stored bill that no longer passes (the row is kept, never deleted). States with bills tagged under older rules are due again (`STATE_BILLS_TAGGING_VERSION`). Merged in the PR that adds this entry.
+**Lesson:** a keyword tagger needs a way to correct rows it already wrote; version the rules and make older reads due again.
 
 ## 2026-10-08: State fee bills stayed unstored for a week after going live
 **What happened:** James set `STATE_BILLS_TRACKER_LIVE=true` at 13:20 UTC on Oct 8. At 15:35, `reg_tracker_items` still had 0 Open States rows. All 53 `state-bills` partitions had last run at 02:13 UTC Oct 8 with `detail.shadow=true`. The 11 fee bills in NY, CO, CA, IL and NC were not due again until Oct 14, so the Pro Wire showed "No fee bills stored". The manual run route accepts only the batch partition "current", so per-state reruns returned 400.
@@ -3501,6 +3521,18 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** Starion's overdraft and NSF fees at $33. About 3 stored texts have an overdraft
   name in the centered shape.
 
+## 2026-10-08: Knox rule fixes never reached the state leaders they were written for
+
+- **Problem.** Knox re-reads a stored text only when it is thin, flagged by the rules
+  re-check, from a bank of $10B or more, or last read before v26. `asset_size` is in
+  thousands, so MVB ($3.5B), Starion ($2.1B), Stride, Guaranty, Lighthouse FCU and Arkansas
+  FCU, each a state top-10 bank with no live overdraft fee, kept reads from v4 to v36. The
+  v35 to v38 fixes written for them never ran on their pages.
+- **Fix.** A priority bank or market leader with no live overdraft fee
+  (`published_fee_records`, `canonical_fee_key = 'overdraft'`) has its current page read
+  again once per rules version.
+- **Watch.** Live overdraft fees for those six banks after the next Knox passes.
+
 ## 2026-10-08: The first outreach run addressed lenders, committees and shared mailboxes
 
 - **Problem.** The first prod run of CARNEGIE (run 3021) drafted 24 first emails. 17 of them were
@@ -3523,3 +3555,17 @@ and quarter were already stored, without looking at the periods of the data behi
   "Email me the link" (and the signup send) returned "The email didn't send" without calling Resend.
 - **Fix.** `src/lib/email/email-confirm.ts` accepts a numeric string or a number (`toUserId`).
 - **Watch.** Any new check on `user.id` must not assume a number (`Number(user.id)` first).
+
+## 2026-10-08: Some fee schedule PDFs read as noise and were kept as text
+
+- **Problem.** TruStone Financial (a Minnesota top-10 credit union) has a live overdraft fee
+  verified, but it is held by the 3-fee rule because its fee schedule PDF reads as noise.
+  The PDF's font maps letters to control codes, and Hfs FCU's maps them to letters shifted
+  by three ("7KH UDWHV" for "The rates"). The embedded text was long enough to pass the
+  scan check, so Rosetta stored it as a text (completed, or judged not a fee page) and
+  never tried another reader. 17 stored PDF texts have control codes near the top; 5 of
+  them are noise.
+- **Fix.** A PDF whose text has under 2% common English or Spanish words (at least 60
+  words) is read like a scan, and the stored ones are reopened once each. Free OCR reads
+  only page images, so these PDFs go on to the paid transcription pass under its budget.
+- **Watch.** TruStone's fee schedule read into words, and TruStone's fees going live.

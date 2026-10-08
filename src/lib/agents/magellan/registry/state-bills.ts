@@ -40,6 +40,12 @@ export const STATE_START_CUTOFF_MS = 60_000;
 const STATE_FAILED_RETRY_HOURS = 6;
 const BATCH_BACKLOG_RETRY_HOURS = 1;
 const BATCH_IDLE_RETRY_HOURS = 24;
+/**
+ * Version of the bill tagging rules, recorded on each state read. A state with stored bills
+ * read under an older version is due again, so a tagging fix reaches bills already stored.
+ * 2: groundwater "overdraft" is no longer an overdraft fee (2026-10-08).
+ */
+export const STATE_BILLS_TAGGING_VERSION = 2;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.STATE_BILLS_TRACKER_LIVE === "true";
@@ -54,6 +60,8 @@ export interface RegistryStateBillsResult {
   requests: number;
   fetched: number;
   stored: number;
+  /** Stored bills that no longer pass the bank fee test and had their topics cleared. */
+  untagged: number;
   stages: Record<BillStage, number>;
   shadow: boolean;
   dryRun: boolean;
@@ -96,6 +104,7 @@ export async function runRegistryStateBills(
     requests: 0,
     fetched: 0,
     stored: 0,
+    untagged: 0,
     stages,
     shadow,
     dryRun: Boolean(options.dryRun),
@@ -116,7 +125,7 @@ export async function runRegistryStateBills(
     return result;
   }
 
-  const { items, searched, requests } = await fetchStateFeeBills(
+  const { items, rejectedIds, searched, requests } = await fetchStateFeeBills(
     stateCode,
     since,
     apiKey,
@@ -155,6 +164,17 @@ export async function runRegistryStateBills(
     `;
     result.stored = stored.length;
   }
+  if (!shadow && rejectedIds.length > 0) {
+    // A bill an earlier tagging rule stored as a fee bill but the current rule rejects: clear its
+    // topics so the Wire stops listing it. The row stays, logged here, and is never deleted.
+    const untagged = await db<Array<{ external_id: string }>>`
+      UPDATE reg_tracker_items SET topics = '{}', updated_at = now()
+       WHERE source = 'open_states' AND jurisdiction = ${stateCode}
+         AND external_id = ANY(${rejectedIds}::text[]) AND cardinality(topics) > 0
+      RETURNING external_id
+    `;
+    result.untagged = untagged.length;
+  }
   await recordRegistryPartition(db, {
     source: STATE_BILLS_SOURCE,
     partitionKey: stateCode,
@@ -170,6 +190,8 @@ export async function runRegistryStateBills(
       searched,
       requests,
       shadow,
+      tagging_version: STATE_BILLS_TAGGING_VERSION,
+      untagged: result.untagged,
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
     },
   });
@@ -187,6 +209,7 @@ export interface RegistryStateBillsBatchResult {
   remaining: number;
   fetched: number;
   stored: number;
+  untagged: number;
   stages: Record<BillStage, number>;
   shadow: boolean;
   dryRun: boolean;
@@ -229,6 +252,7 @@ export async function runRegistryStateBillsBatch(
     remaining: 0,
     fetched: 0,
     stored: 0,
+    untagged: 0,
     stages,
     shadow: !(options.live ?? stateBillsLive()),
     dryRun: Boolean(options.dryRun),
@@ -250,11 +274,13 @@ export async function runRegistryStateBillsBatch(
 
   // A live run treats a state last read in shadow mode as due: those reads stored nothing, so
   // waiting out their weekly date would leave the bills unstored for up to a week after going live.
+  // A state with bills read under older tagging rules is due too, so a tagging fix reaches them.
   const fresh = await db<Array<{ partition_key: string }>>`
     SELECT partition_key FROM registry_ingest_partitions
      WHERE source = ${STATE_BILLS_SOURCE} AND partition_key <> ${STATE_BILLS_PARTITION}
        AND next_attempt_after > NOW()
        AND (${result.shadow}::boolean OR COALESCE(detail->>'shadow', 'false') <> 'true')
+       AND (row_count = 0 OR COALESCE((detail->>'tagging_version')::int, 1) >= ${STATE_BILLS_TAGGING_VERSION})
   `;
   const notDue = new Set(fresh.map((row) => row.partition_key));
   const due = STATE_BILL_JURISDICTIONS.filter((code) => !notDue.has(code));
@@ -271,6 +297,7 @@ export async function runRegistryStateBillsBatch(
       const one = await runRegistryStateBills({ ...options, partitionKey: stateCode, apiKey, db });
       result.fetched += one.fetched;
       result.stored += one.stored;
+      result.untagged += one.untagged;
       for (const key of Object.keys(stages) as BillStage[]) stages[key] += one.stages[key];
       batch.push(stateCode);
     } catch (error) {
@@ -322,6 +349,7 @@ export async function runRegistryStateBillsBatch(
       failed: errors,
       rate_limited: result.rateLimited,
       remaining: result.remaining,
+      untagged: result.untagged,
       stages,
       shadow: result.shadow,
     },
