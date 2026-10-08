@@ -21,6 +21,8 @@ const base: AccountViewData = {
   invitations: [],
   plan: { kind: "free", fromMonthlyUsd: 150 },
   subscriptions: [],
+  reports: null,
+  ownInstitution: null,
   emails: null,
   profile: { institution_name: "First Bank", institution_type: "bank", asset_tier: null, state_code: "TX", job_role: null },
 };
@@ -51,7 +53,7 @@ describe("AccountView", () => {
   it("free: plan, banks, organization and sign-in in that order, with the lowest Pro price", () => {
     render(<AccountView data={base} />);
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Your plan", "Banks you follow", "Your organization", "Sign-in"]);
+    expect(headings).toEqual(["Your plan", "Your reports", "Banks you follow", "Your organization", "Sign-in"]);
     expect(section("Your plan")).toHaveTextContent("From $150 a month");
     expect(within(section("Your plan")).getByRole("link", { name: "See Pro plans" })).toHaveAttribute(
       "href",
@@ -94,6 +96,40 @@ describe("AccountView", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("That didn't save"));
     expect(digest).toHaveAttribute("aria-checked", "true");
     expect(mocks.setEmail).toHaveBeenCalledWith("pro_digest", false);
+  });
+
+  it("pro: lists the user's reports with links", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          reports: [{ id: "r1", title: "Overdraft position vs Texas peers", createdAt: "2026-10-07T12:00:00Z", href: "/pro/reports?report_id=r1" }],
+        }}
+      />,
+    );
+    const reports = section("Your reports");
+    expect(within(reports).getByRole("link", { name: /Overdraft position vs Texas peers/ })).toHaveAttribute(
+      "href",
+      "/pro/reports?report_id=r1",
+    );
+    expect(within(reports).getByRole("link", { name: "All reports" })).toHaveAttribute("href", "/pro/reports");
+  });
+
+  it("asks for the fee schedule only when the bank is under the 3-fee bar", () => {
+    const { rerender } = render(
+      <AccountView data={{ ...base, ownInstitution: { id: 42, name: "First Bank", publishedFeeCount: 0 } }} />,
+    );
+    const reminder = screen.getByRole("region", { name: "We don’t have First Bank’s fee schedule yet" });
+    expect(within(reminder).getByRole("link", { name: "Send the link" })).toHaveAttribute(
+      "href",
+      "/submit-fees?institutionId=42&institutionName=First%20Bank",
+    );
+    expect(within(reminder).getByRole("link", { name: "Email it to us" }).getAttribute("href")).toContain(
+      "subject=Fee%20schedule%20for%20First%20Bank",
+    );
+    rerender(<AccountView data={{ ...base, ownInstitution: { id: 42, name: "First Bank", publishedFeeCount: 12 } }} />);
+    expect(screen.queryByText(/fee schedule yet/)).toBeNull();
   });
 
   it("a pending team invite shows first", () => {

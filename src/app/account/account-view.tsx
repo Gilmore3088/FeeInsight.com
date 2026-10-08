@@ -7,6 +7,7 @@ import { AccountCard } from "./account-card";
 import { AlertsPanel } from "./alerts-panel";
 import { EmailSwitch } from "./email-switch";
 import type { AccountEmailKind } from "./email-kinds";
+import { SITE_FEE_BAR, type AccountReport, type OwnInstitution } from "./account-types";
 import { LogoutButton } from "./logout-button";
 import { ManageBillingButton } from "./manage-billing-button";
 import { ProfileForm } from "./profile-form";
@@ -39,6 +40,10 @@ export interface AccountViewData {
   invitations: { id: number; institutionName: string; role: string }[];
   plan: AccountPlan;
   subscriptions: AlertSubscription[];
+  /** The user's own Hamilton reports (Pro); null for free accounts. */
+  reports: AccountReport[] | null;
+  /** The user's own bank, when known; drives the fee schedule reminder. */
+  ownInstitution: OwnInstitution | null;
   /** Pro email switches; null hides them. */
   emails: Record<AccountEmailKind, boolean> | null;
   profile: {
@@ -187,6 +192,109 @@ function EmailsCard({ emails }: { emails: Record<AccountEmailKind, boolean> }) {
   );
 }
 
+function shortDate(value: string): string {
+  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+function ReportsCard({ reports }: { reports: AccountReport[] | null }) {
+  const boughtLine = (
+    <p className="mt-4 text-[13px] text-[#6B6255]">
+      Bought a market report? Its private link is in the email we sent. Lost it? Email{" "}
+      <a href={`mailto:${CONTACT_EMAIL}?subject=My%20market%20report`} className="text-[#A93D25] hover:underline">
+        {CONTACT_EMAIL}
+      </a>{" "}
+      and we&rsquo;ll send it again.
+    </p>
+  );
+
+  if (reports === null) {
+    return (
+      <AccountCard id="reports" title="Your reports">
+        <p className="text-[14px] text-[#3D3830]">
+          Free benchmark reports for the nation and each Fed district, ready to read now.
+        </p>
+        <Link href="/reports" className="mt-3 inline-block text-[14px] font-medium text-[#A93D25] hover:underline">
+          Get a free report
+        </Link>
+        {boughtLine}
+      </AccountCard>
+    );
+  }
+
+  return (
+    <AccountCard
+      id="reports"
+      title="Your reports"
+      action={
+        reports.length > 0 ? (
+          <Link href="/pro/reports" className="shrink-0 text-[14px] font-medium text-[#A93D25] hover:underline">
+            All reports
+          </Link>
+        ) : undefined
+      }
+    >
+      {reports.length === 0 ? (
+        <>
+          <p className="text-[14px] text-[#3D3830]">You haven&rsquo;t made a Hamilton report yet.</p>
+          <Link
+            href="/pro/reports/new"
+            className="mt-3 inline-flex min-h-11 items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 text-[14px] font-medium text-[#1A1815] no-underline hover:border-[#1A1815]"
+          >
+            Make a report
+          </Link>
+        </>
+      ) : (
+        <ul className="-my-3 divide-y divide-[#F0EBE3]">
+          {reports.map((report) => (
+            <li key={report.id}>
+              <Link
+                href={report.href}
+                className="flex items-baseline justify-between gap-4 py-3 text-[#1A1815] no-underline hover:text-[#A93D25]"
+              >
+                <span className="min-w-0 text-[15px] font-medium">{report.title}</span>
+                <span className="shrink-0 text-[12px] text-[#6B6255]">{shortDate(report.createdAt)}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {boughtLine}
+    </AccountCard>
+  );
+}
+
+function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
+  const submitHref = `/submit-fees?institutionId=${institution.id}&institutionName=${encodeURIComponent(institution.name)}`;
+  const mailHref = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Fee schedule for ${institution.name}`)}`;
+  return (
+    <section
+      aria-labelledby="fee-schedule-heading"
+      className="rounded-xl border border-[#E8C9B8] bg-[#FBF1EA] p-5"
+    >
+      <h2 id="fee-schedule-heading" className="text-[15px] font-semibold text-[#1A1815]">
+        We don&rsquo;t have {institution.name}&rsquo;s fee schedule yet
+      </h2>
+      <p className="mt-1 text-[14px] text-[#3D3830]">
+        Send us the link to it, or email us the PDF. Your bank page, benchmarks and reports start from it.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          href={submitHref}
+          className="inline-flex min-h-11 items-center rounded-md bg-[#C44B2E] px-4 text-[14px] font-semibold text-white no-underline hover:bg-[#A93D25]"
+        >
+          Send the link
+        </Link>
+        <a
+          href={mailHref}
+          className="inline-flex min-h-11 items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 text-[14px] font-medium text-[#1A1815] no-underline hover:border-[#1A1815]"
+        >
+          Email it to us
+        </a>
+      </div>
+    </section>
+  );
+}
+
 function SignInCard({ email }: { email: string }) {
   return (
     <AccountCard id="sign-in" title="Sign-in">
@@ -213,8 +321,9 @@ function SignInCard({ email }: { email: string }) {
 
 /**
  * The account page body. Pure: the page loads everything, so this renders without a
- * database or Stripe. Order is what needs the reader first: payment problems and invites,
- * then the plan, the banks they follow, emails, organization and sign-in.
+ * database or Stripe. Order is what needs the reader first: payment problems, invites and
+ * a missing fee schedule, then the plan, reports, the banks they follow, emails,
+ * organization and sign-in.
  */
 export function AccountView({ data }: { data: AccountViewData }) {
   return (
@@ -256,7 +365,12 @@ export function AccountView({ data }: { data: AccountViewData }) {
           </div>
         )}
 
+        {data.ownInstitution && data.ownInstitution.publishedFeeCount < SITE_FEE_BAR && (
+          <FeeScheduleReminder institution={data.ownInstitution} />
+        )}
+
         <PlanCard plan={data.plan} />
+        <ReportsCard reports={data.reports} />
         <AlertsPanel subscriptions={data.subscriptions} />
         {data.emails && <EmailsCard emails={data.emails} />}
         <ProfileForm user={data.profile} />
