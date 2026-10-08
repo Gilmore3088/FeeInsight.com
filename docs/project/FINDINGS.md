@@ -3628,3 +3628,18 @@ and quarter were already stored, without looking at the periods of the data behi
   stay recorded but not live.
 - **Watch.** The 110 live in `published_fee_catalog` as `deposited_item_return` after the next
   publish steps.
+
+## Publish only runs inside state lanes, so a verified row waits for its own state (2026-10-08)
+
+- **What.** 70 minutes after PR 677 deployed, 10 of the 110 eligible re-filed rows were live and
+  99 had not been looked at, although 555 `publish.rules` attempts ran in that time. The
+  selectable publish queue held 4,036 rows across 1,454 banks.
+- **Why.** Every publish step runs inside an Atlas state-lane run (`stateCode`) or a single-bank
+  "Read now" run (`institutionId`); there is no publish pass over the whole queue. The 100 rows
+  sat in 37 states, and a lane publishes only its own state's rows, 0 to 44 per run, so a row
+  waits for its state's lane to come round.
+- **Fix.** A state lane whose own queue is shorter than its limit fills the rest with the oldest
+  eligible rows from any state (`runHamiltonPublish`), the way the release review already fills a
+  lane's short list. Single-bank reads stay scoped to their bank.
+- **Watch.** The 100 re-filed rows live within a few lane runs; the selectable queue (4,036 at
+  22:50 UTC) falling by about the lane limit (500) per run.
