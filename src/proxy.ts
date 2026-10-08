@@ -41,6 +41,16 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url, permanentRedirectStatus(request.method));
   }
 
+  // Every route name is lowercase; /INSTITUTION/496 rendered a duplicate page with an
+  // uppercase canonical. Only the first segment is folded: later ones can be real values
+  // such as the state code in /research/state/TX.
+  const firstSegment = pathname.split("/")[1] ?? "";
+  if (firstSegment !== firstSegment.toLowerCase() && !firstSegment.includes(".")) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${firstSegment.toLowerCase()}${pathname.slice(firstSegment.length + 1)}`;
+    return NextResponse.redirect(url, permanentRedirectStatus(request.method));
+  }
+
   const legacyTarget = LEGACY_PATH_REDIRECTS[pathname];
   if (legacyTarget) {
     const url = new URL(legacyTarget, request.url);

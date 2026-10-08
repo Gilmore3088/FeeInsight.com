@@ -18,14 +18,28 @@ import { median } from "@/lib/hamilton/fee-scenario";
 
 type SqlTag = typeof sql;
 
-/** The fees a snapshot compares, overdraft first because the first email leads with it. */
+/**
+ * The fees a snapshot compares: the everyday consumer fees most local schedules print, so a
+ * prospect's snapshot (and the first email, which quotes several of them) has depth (James,
+ * 22:23 UTC Oct 8: "prioritize institutions where our dataset supports multiple meaningful
+ * findings"). Wire fees are left out: Darwin's 200-fee check found column errors in wire tables.
+ */
 export const SNAPSHOT_FEE_KEYS = [
   "overdraft",
   "nsf",
+  "stop_payment",
+  "cashiers_check",
+  "account_research",
+  "card_replacement",
+  "deposited_item_return",
+  "dormant_account",
+  "money_order",
   "monthly_maintenance",
   "atm_non_network",
-  "stop_payment",
-  "wire_domestic_outgoing",
+  "paper_statement",
+  "od_protection_transfer",
+  "document_reproduction",
+  "early_closure",
 ] as const;
 
 /** A local median needs as many verified institutions as any other median on the site. */
@@ -42,6 +56,8 @@ export interface SnapshotInstitution {
 }
 
 export interface SnapshotFeeRow {
+  /** The live published row (`published_fee_catalog.fee_published_id`), when loaded. */
+  fee_published_id?: number | string | null;
   institution_id: number | string;
   fee_category: string;
   fee_name: string;
@@ -60,12 +76,16 @@ export interface SnapshotValue {
   institutionId: number;
   value: number;
   verified: boolean;
+  /** The catalog row's own name for the fee. */
+  feeName: string;
   /** The schedule line the value was traced to, when verified. */
   sourceLine: string | null;
   documentUrl: string | null;
   readAt: string | null;
   /** Conditions, account type and waiver wording from the rows behind the value. */
   notes: string[];
+  /** The published rows behind the value, so a draft quoting it can be withdrawn if one is taken down. */
+  publishedIds: number[];
 }
 
 export interface SnapshotFee {
@@ -100,12 +120,36 @@ function notesFor(rows: SnapshotFeeRow[]): string[] {
   return [...notes];
 }
 
+/** The schedule line the pipeline read this row from (`excerpt="..."` in its conditions), if stored. */
+export function rowExcerpt(row: Pick<SnapshotFeeRow, "conditions">): string | null {
+  const match = row.conditions?.match(/excerpt="((?:[^"\\]|\\.)*)"/);
+  return match ? match[1].replace(/\\"/g, "\"").trim() || null : null;
+}
+
+/** A business account tier; "per business day" in a consumer line is not one. */
+const BUSINESS_TIER = /\b(?:business|commercial)\b(?!\s+days?\b)/i;
+const isBusinessRow = (row: SnapshotFeeRow) =>
+  BUSINESS_TIER.test(row.fee_name) || BUSINESS_TIER.test(row.account_product_type ?? "") || BUSINESS_TIER.test(rowExcerpt(row) ?? "");
+/** A price for people who don't bank there ("Cashier's check, non-customer $15"): not the institution's customer fee. */
+const NON_CUSTOMER = /\bnon-?\s?(?:customers?|members?|depositors?|account\s?holders?)\b/i;
+const isNonCustomerRow = (row: SnapshotFeeRow) => NON_CUSTOMER.test(row.fee_name) || NON_CUSTOMER.test(rowExcerpt(row) ?? "");
+
+const checkRow = (row: SnapshotFeeRow) =>
+  checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key);
+
 /**
  * One institution's value for one fee (the catalog's own rule: overdraft at its highest tier,
  * otherwise the median of its amounts), verified only when every row at that value traces to
- * its source text. When the value is a midpoint of two amounts, every row is checked.
+ * its source text. When the value is a midpoint of two amounts, every row is checked. A business
+ * account's tier is left out when the institution also prints a consumer one (the snapshot compares
+ * consumer fees), and a price for non-customers is never used. The line quoted is the row's own excerpt, not the first schedule line that happens
+ * to carry the same price (Accuracy, run 3148: "Insufficient Funds Fee $25" sat next to the $25
+ * overdraft row).
  */
-export function institutionValue(rows: SnapshotFeeRow[]): SnapshotValue | null {
+export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | null {
+  const customer = allRows.filter((row) => !isNonCustomerRow(row));
+  const consumer = customer.filter((row) => !isBusinessRow(row));
+  const rows = consumer.length > 0 ? consumer : customer;
   if (rows.length === 0) return null;
   const id = Number(rows[0].institution_id);
   const value = valuePerInstitution(
@@ -114,20 +158,21 @@ export function institutionValue(rows: SnapshotFeeRow[]): SnapshotValue | null {
   if (value === undefined) return null;
   const atValue = rows.filter((row) => cents(Number(row.amount)) === cents(value));
   const checked = atValue.length > 0 ? atValue : rows;
-  const results = checked.map((row) =>
-    checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key),
-  );
+  const results = checked.map(checkRow);
   const verified = results.every((result) => result.ok);
   const firstOk = results.find((result) => result.ok);
   const lead = checked[0];
+  const excerpt = rowExcerpt(lead);
   return {
     institutionId: id,
     value: cents(value),
     verified,
-    sourceLine: verified && firstOk && firstOk.ok ? firstOk.sourceLine : null,
+    feeName: lead.fee_name,
+    sourceLine: verified ? (excerpt ?? (firstOk && firstOk.ok ? firstOk.sourceLine : null)) : null,
     documentUrl: lead.document_url,
     readAt: iso(lead.read_at),
     notes: notesFor(checked),
+    publishedIds: checked.map((row) => Number(row.fee_published_id)).filter((id) => Number.isInteger(id) && id > 0),
   };
 }
 
@@ -199,7 +244,7 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
 export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], categories: readonly string[]): Promise<SnapshotFeeRow[]> {
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
+    `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
             ef.conditions, ef.account_product_type, ef.waiver_text,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,

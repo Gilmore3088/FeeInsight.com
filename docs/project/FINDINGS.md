@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-08: Hand-found schedules waited hours for their state's lane
+**What happened:** the schedules added at 17:03 UTC for Comerica, Cadence, FirstBank (CO), Stock Yards and First Tech were still unfetched at 22:50 (`institution_additional_sources.last_fetched_at` null). ConnectOne's listed fee page was never added at all.
+**Cause:** companion fetch only takes pages in the running lane's state, and the TX, MS, CO, KY and CA lanes did not come round. ConnectOne's page counted as already held because a copy was stored in March 2026, though the bank has no current link.
+**Fix:** a hand-found schedule is fetched by the next lane of any state until its first fetch, and a stored copy counts as held only if stored in the last 30 days (this PR).
+**Lesson:** work added by hand should not queue behind a rotation built for routine refreshes; check `last_fetched_at` an hour after adding a link.
+
 ## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
 **What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
 **Cause:** the re-read queue took $10B+ banks first, then the newest text. Every bump restarted from the same newest texts, and the next bump came before the queue reached the tail.
@@ -3561,6 +3567,19 @@ and quarter were already stored, without looking at the periods of the data behi
   A title that contains an address or "Email:" is not a title, "Annual Meeting" is not a name, and
   board and card-line mailboxes are shared. The next run withdraws both.
 
+## 2026-10-08: Outreach quoted a neighbouring schedule line with the same price
+- **Problem.** Outreach run 3148's drafts quoted, as each bank's overdraft fee, the first schedule
+  line that carried the same amount (`checkFeeAgainstSource` returns the first match). Four drafts
+  showed the wrong line beside a correct fee: First Federal KC ("Insufficient Funds Fee $25" for its
+  $25 overdraft row), NIH FCU ("Returned Unpaid NSF Items" for its paid-NSF row), Bluestone FCU
+  ("Returned" for "Honored") and Saco & Biddeford ("Business account $35", the business tier). Two
+  rows were miscategorised in the catalog (Tri City's $50 charge-off, BankGloucester's $5 transfer)
+  and are taken down by PR 682.
+- **Fix.** The snapshot quotes the catalog row's own excerpt and name, compares the consumer tier when
+  a business tier is also printed, and drafts record `quote_rule`. The outreach run withdraws
+  unreviewed drafts quoted under the old rule, and their institutions are drafted again.
+- **Watch.** The audit block's "Fee:" and "Schedule line:" should name the same charge.
+
 ## 2026-10-08: A session user's id is a string, not a number
 - **Problem.** `users.id` is a bigint, and postgres.js returns bigints as strings, so
   `getCurrentUser().id` is `"17"` even though the `User` type says `number`. The email
@@ -3643,3 +3662,22 @@ and quarter were already stored, without looking at the periods of the data behi
   lane's short list. Single-bank reads stay scoped to their bank.
 - **Watch.** The 100 re-filed rows live within a few lane runs; the selectable queue (4,036 at
   22:50 UTC) falling by about the lane limit (500) per run.
+
+## 2026-10-08: Banks published another bank's fee schedule
+- **What happened.** Peoples Bank of Rock Valley, Iowa showed 22 live fees read from Peoples
+  Bank of Bellingham, Washington's PDF on peoplesbank-wa.com (James found it). On prod, 62 stored
+  documents at 44 institutions sit on another institution's own website. 16 of those
+  institutions had 323 live fees from them; 15 of the 16 (308 fees) have no sign the document
+  is theirs. Most are same-name banks: Peoples Bank IN and IA, First Bank VA and First United OK
+  (first.bank), Cornerstone ND, Farmers State IA, First Community SC, Central Bank UT, and
+  River Bank WI (Charles River Bank).
+- **Why.** Discovery accepted any off-site PDF a search returned for the bank's name, and
+  nothing compared the document's host with the bank's own website.
+- **Fix.** Discovery refuses a link on another institution's website (`other-bank-host.ts`).
+  Hamilton takes down live fees from such a document on the first run (no 12-hour wait, James
+  Oct 8), unless the text names
+  the bank's own website or city, and sends the link back to discovery
+  (`hamilton/other-bank-document.ts`).
+- **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
+  them live from another bank's host after that.
+

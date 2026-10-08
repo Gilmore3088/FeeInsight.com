@@ -14,6 +14,7 @@ import {
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { checkFeeCategory, neighbourCategories, refileCategory } from "@/lib/fee-category-guard";
+import { PER_ITEM_WORDING, PERIODIC_WORDING, wordsAfterPrice } from "@/lib/fee-frequency";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 import {
@@ -171,21 +172,6 @@ const LAST_DIGIT_ONE_PRICE = /^\d+1$/;
 
 const PERIODIC_FREQUENCIES = new Set(["monthly", "annual", "quarterly"]);
 const PER_ITEM_FREQUENCIES = new Set(["per_item", "per_transaction", "per_occurrence"]);
-const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))\b/i;
-const PERIODIC_WORDING = /\b(per (month|year|quarter)|monthly|annual(ly)?|quarterly|\/\s?(mo|month|yr|year)\b|a month|a year)/i;
-
-/** The words right after the fee's own price on its line ("$5.00 each after 6"), else the whole line. */
-function wordsAfterPrice(sourceLine: string, amount: number | null): string {
-  if (amount == null) return sourceLine;
-  for (const match of sourceLine.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)/g)) {
-    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) < 0.005) {
-      const start = (match.index ?? 0) + match[0].length;
-      return sourceLine.slice(start, start + 40).split(/[|;]/)[0];
-    }
-  }
-  return sourceLine;
-}
-
 /**
  * The fee's frequency says the opposite of its schedule line: "$5.00 each after 6" filed as
  * monthly, or "$5.00 per month" filed per item. The words after the fee's own price decide, so
