@@ -404,6 +404,16 @@ lane has started a step in the last ten minutes; otherwise the waiting lane goes
 **Lesson:** budget a serial worker by what each step needs, not one flat cut-off. Read the
 tick latency in `api_route_audit_events` before guessing where the time goes.
 
+## 2026-10-08: Seven state lanes waited since Oct 7 although overdue lanes go first
+**What happened:** at 12:17 UTC Oct 8 Admin Today showed 7 lanes more than 6 hours overdue:
+GA (due since 03:57 Oct 7), PR, CT, KY, VI, DC and GU. The scheduler puts any lane overdue
+3 hours ahead of the rest, but busy lanes come back due every hour and, with three lane runs
+at a time, also wait past 3 hours. Inside the overdue group lanes were still ranked by
+priority score, so the busy ones (scores around 700) kept winning and these seven (scores
+102 to 352) never ran.
+**Fix:** overdue lanes now run longest overdue first; score orders only the rest.
+**Lesson:** an anti-starvation rule must order by age, not by the score it overrides.
+
 ## 2026-10-07: Lane runs waited 1h40m in launch order, so lane priority never applied
 **What happened:** at 02:32 UTC Oct 7, 40 state-lane runs were queued and 1 was running.
 MN was queued at 00:40 and started at 02:21. NE, queued at 00:40, had not started at 02:35.
