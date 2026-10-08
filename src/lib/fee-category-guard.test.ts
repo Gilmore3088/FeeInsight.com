@@ -717,4 +717,14 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
     }
   });
+
+  it("v40 files a cheap overdraft protection fee out of the overdraft fee by its amount (Oct 8)", () => {
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee", { amount: "5.00" }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection", { amount: 0 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Flat Usage Fee", { amount: 15 }).ok).toBe(false);
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee", { amount: "30.00" })).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Protection Fee")).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Courtesy Pay Overdraft Protection", { amount: 10 })).toEqual({ ok: true });
+    expect(checkFeeCategory("overdraft", "Overdraft Fee", { amount: 10 })).toEqual({ ok: true });
+  });
 });

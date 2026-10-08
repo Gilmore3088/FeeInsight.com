@@ -302,7 +302,7 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
 // v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
-export const CATEGORY_GUARD_VERSION = 39;
+export const CATEGORY_GUARD_VERSION = 40;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -408,6 +408,24 @@ export const PLAIN_RETURNED_ITEM = /^\s*return(?:ed)?\s+(?:check|item)s?(?:\s+(?
 const SCHEDULE_NSF_MIN = 15;
 
 /**
+ * v40: an "Overdraft Protection Fee" of $15 or less that names no paid item is the linked-account
+ * transfer's fee, not the overdraft fee: First Pioneers' $5 "Overdraft Protection Fee" sits beside
+ * its $25 Courtesy Pay (Darwin hand check, Oct 8). Of 83 live overdraft fees named "overdraft
+ * protection", the 41 at $15 or less are mostly transfers or $0 notes; most at $20 or more are
+ * the overdraft fee itself, so the amount decides.
+ */
+const OVERDRAFT_PROTECTION_MAX = 15;
+const PAID_ITEM_WORDS = /(courtesy|\bpaid\b|opt|privilege|bounce|presentment|honou?r|\bitems?\b|\bnsf\b)/i;
+
+function cheapOverdraftProtection(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "overdraft" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  if (!Number.isFinite(amount) || amount > OVERDRAFT_PROTECTION_MAX) return null;
+  if (!/overdraft protection/i.test(name) || PAID_ITEM_WORDS.test(name)) return null;
+  return `"${name}" at $${amount.toFixed(2)} is an overdraft protection transfer's fee, not the overdraft fee`;
+}
+
+/**
  * A plain "Returned Check Fee" filed as NSF, on a schedule whose NSF or insufficient-funds fee is
  * a separate, higher price, is the return deposited item (RDI) fee: Dean Co-operative Bank's
  * "Returned Check Fee $7" beside "Insufficient Funds Fee (Paid or Returned) $35.00" (v22, Oct 8).
@@ -486,5 +504,7 @@ export function checkFeeCategory(
   }
   const scheduleReason = returnBesideNsf(canonicalFeeKey, name, context);
   if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
+  const protectionReason = cheapOverdraftProtection(canonicalFeeKey, name, context);
+  if (protectionReason) return { ok: false, code: "name_contradicts", reason: protectionReason };
   return { ok: true };
 }
