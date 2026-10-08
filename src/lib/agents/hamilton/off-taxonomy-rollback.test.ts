@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees, taxonomyFeeKeys } from "./off-taxonomy-rollback";
+import { RETIRED_CATEGORY_KEYS } from "@/lib/fee-fold";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -24,9 +25,11 @@ const offTaxonomy = {
 };
 
 describe("Hamilton off-taxonomy rollback", () => {
-  it("keeps exactly the taxonomy's fee categories", () => {
+  // The 15 categories folded into the top 50 stay valid here: the fold step re-files them, and
+  // a fee with no home goes through its second look rather than this rollback.
+  it("keeps exactly the taxonomy's fee categories and the folded ones", () => {
     const keys = taxonomyFeeKeys();
-    expect(new Set(keys)).toEqual(new Set(Object.values(FEE_FAMILIES).flat()));
+    expect(new Set(keys)).toEqual(new Set([...Object.values(FEE_FAMILIES).flat(), ...RETIRED_CATEGORY_KEYS]));
     expect(keys).not.toContain("zipper_bags");
   });
 

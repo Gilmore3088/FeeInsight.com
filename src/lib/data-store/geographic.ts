@@ -85,21 +85,30 @@ export interface InstitutionFeeFreshness {
   id: number;
   /** Most recent approved fee observation for the institution (ISO string). */
   last_fee_at: string | null;
+  /**
+   * Approved published dollar fees: the rows the institution profile counts as verified
+   * (`isVerifiedFee`). Null when the count can't be read.
+   */
+  verified_fee_count: number | null;
 }
 
-/** Institutions with verified fees plus their latest observation date (sitemap lastmod). */
+/** Institutions with verified fees, their latest observation date (sitemap lastmod) and verified fee count. */
 export async function getInstitutionIdsWithFeeDates(): Promise<InstitutionFeeFreshness[]> {
   const rows = await sql`
-    SELECT institution_id as id, MAX(created_at) as last_fee_at
+    SELECT institution_id as id, MAX(created_at) as last_fee_at, COUNT(*) as verified_fee_count
     FROM published_fee_catalog
     WHERE review_status = 'approved'
     GROUP BY institution_id
     ORDER BY institution_id
-  ` as { id: number | string; last_fee_at: string | Date | null }[];
-  return rows.map((r) => ({
-    id: Number(r.id),
-    last_fee_at: r.last_fee_at instanceof Date ? r.last_fee_at.toISOString() : r.last_fee_at,
-  }));
+  ` as { id: number | string; last_fee_at: string | Date | null; verified_fee_count: number | string | null }[];
+  return rows.map((r) => {
+    const count = r.verified_fee_count == null ? NaN : Number(r.verified_fee_count);
+    return {
+      id: Number(r.id),
+      last_fee_at: r.last_fee_at instanceof Date ? r.last_fee_at.toISOString() : r.last_fee_at,
+      verified_fee_count: Number.isFinite(count) ? count : null,
+    };
+  });
 }
 
 // --- City-level queries ---
@@ -230,6 +239,44 @@ export async function getCitiesInState(stateCode: string): Promise<CitySummary[]
     GROUP BY LOWER(ct.city), ct.city, ct.state_code
     HAVING COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) > 0
     ORDER BY COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) DESC, COUNT(*) DESC
+  ` as RawCitySummaryRow[];
+
+  return rows.map(normalizeCitySummaryRow);
+}
+
+/**
+ * Top cities per state with at least `minWithFees` institutions carrying approved fees,
+ * in one query. Same ranking as getCitiesInState; the sitemap uses it instead of one
+ * query per state.
+ */
+export async function getTopCitiesByState(
+  minWithFees: number,
+  perState: number,
+): Promise<CitySummary[]> {
+  const rows = await sql`
+    WITH fc AS (
+      SELECT institution_id, COUNT(*) as fee_count
+      FROM published_fee_catalog WHERE review_status = 'approved'
+      GROUP BY institution_id
+    ), cities AS (
+      SELECT ct.city, ct.state_code,
+             COUNT(*) as institution_count,
+             COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
+      FROM institution_sources ct
+      LEFT JOIN fc ON ct.id = fc.institution_id
+      WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
+      GROUP BY LOWER(ct.city), ct.city, ct.state_code
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY state_code ORDER BY with_fees DESC, institution_count DESC
+      ) as rn
+      FROM cities
+      WHERE with_fees >= ${minWithFees}
+    )
+    SELECT city, state_code, institution_count, with_fees
+    FROM ranked
+    WHERE rn <= ${perState}
+    ORDER BY state_code, rn
   ` as RawCitySummaryRow[];
 
   return rows.map(normalizeCitySummaryRow);

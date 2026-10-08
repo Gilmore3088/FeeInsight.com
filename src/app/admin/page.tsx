@@ -171,6 +171,10 @@ export default async function TodayPage() {
         pipelineReason={center.pipeline.reason}
         pipelineChangedBy={center.pipeline.changedBy}
         pipelineChangedAtLabel={dateTime(center.pipeline.changedAt)}
+        marketingEnabled={center.marketing.enabled}
+        marketingReason={center.marketing.reason}
+        marketingChangedBy={center.marketing.changedBy}
+        marketingChangedAtLabel={dateTime(center.marketing.changedAt)}
       />
     </div>
   );

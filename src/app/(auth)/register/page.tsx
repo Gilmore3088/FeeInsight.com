@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SITE_NAME } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { PLAN_DISPLAY_NAME, isProPlan, planPriceLine, type ProPlan } from "@/app/subscribe/pricing";
+import { PLAN_DISPLAY_NAME, PLAN_TEAM_LABEL, isProPlan, type ProPlan } from "@/app/subscribe/pricing";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { registerCategoryFor, registerDestinationFor, registerVariantFor } from "./register-destination";
 
@@ -85,13 +85,13 @@ export default async function RegisterPage({
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif", fontStyle: "italic" }}
           >
             {plan
-              ? `Finish setting up ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}, ${planPriceLine(plan)}`
+              ? `Finish setting up ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
               : "Create your free account"}
           </p>
 
           <p className="text-sm text-[#6B6255] leading-relaxed mb-10">
             {plan
-              ? "Create your account, then continue straight to checkout. Your seat is active as soon as payment clears."
+              ? "Create your account, then continue straight to checkout. Your plan is active as soon as payment clears."
               : feeLabel
                 ? `Next you'll pick your bank or credit union. We'll email you when its ${feeLabel} changes.`
                 : `Published fees for ${summary.institutionsLabel} U.S. banks and credit unions. An account keeps your place and opens the path to ${SITE_NAME} Pro.`}

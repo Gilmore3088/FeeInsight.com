@@ -1,6 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 
-import type { AttemptStage } from "./outcomes";
+import { ATTEMPT_STAGES } from "./outcomes";
 
 type SqlTag = typeof sql;
 
@@ -17,7 +17,20 @@ type SqlTag = typeof sql;
  */
 
 export type FeedbackSignal = "wrong" | "right" | "missed" | "restored";
-export type FeedbackReporter = "atlas" | "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "human";
+/**
+ * Who may judge an output. Mirrors `pipeline_feedback_reported_by_check`
+ * (migration 20270110000024); a test keeps the two lists equal.
+ */
+export const FEEDBACK_REPORTERS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth", "human"] as const;
+export type FeedbackReporter = (typeof FEEDBACK_REPORTERS)[number];
+
+/**
+ * The stage an output came from: a pipeline stage (`ATTEMPT_STAGES`), or `marketing` for
+ * growth's posts, emails and PRs. Mirrors `pipeline_feedback_about_stage_check`
+ * (migration 20270110000024). `pipeline_attempts` keeps the pipeline stages only.
+ */
+export const FEEDBACK_STAGES = [...ATTEMPT_STAGES, "marketing"] as const;
+export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
 
 /**
  * Known kinds. Writers may add new ones; keep them snake_case and list them here.
@@ -57,7 +70,7 @@ export type FeedbackKind =
 
 export interface FeedbackRow {
   /** Stage and strategy that produced the output being judged. */
-  aboutStage: AttemptStage;
+  aboutStage: FeedbackStage;
   aboutStrategy?: string | null;
   aboutVersion?: number | null;
   /** The `pipeline_attempts.id` that produced it, when known. */

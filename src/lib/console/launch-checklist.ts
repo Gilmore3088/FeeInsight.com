@@ -17,7 +17,7 @@ export interface LaunchCheck {
 }
 
 /** Agents that make paid model calls, each meant to have its own key (ANTHROPIC_API_KEY_<AGENT>). */
-export const PAID_AGENTS = ["magellan", "rosetta", "knox", "darwin", "hamilton"] as const;
+export const PAID_AGENTS = ["magellan", "rosetta", "knox", "darwin", "hamilton", "growth"] as const;
 
 export interface LaunchInputs {
   env: Record<string, string | undefined>;
@@ -74,7 +74,7 @@ export function buildLaunchChecklist({ env, spend, readyMarkets, libraryReports 
     detail: !anyKey
       ? "No Anthropic key is set, so paid steps can't run."
       : shared.length === 0
-        ? "All five paid agents use their own key."
+        ? `All ${PAID_AGENTS.length} paid agents use their own key.`
         : `Using the shared key: ${shared.map((agent) => agent[0].toUpperCase() + agent.slice(1)).join(", ")}.`,
   });
 

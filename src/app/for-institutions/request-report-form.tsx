@@ -8,6 +8,7 @@ import { trackEvent } from "@/lib/analytics";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { readFirstTouch } from "@/lib/marketing-touch";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
@@ -18,6 +19,8 @@ const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
+/** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
+const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
 const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
@@ -175,6 +178,7 @@ function RequestReportFormInner({
       source: REPORT_SOURCE,
       institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
 
@@ -207,6 +211,7 @@ function RequestReportFormInner({
       source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
       district: reportType === "district" ? district : undefined,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
     };
     try {
@@ -292,6 +297,13 @@ function RequestReportFormInner({
             </label>
           ))}
         </div>
+        <p className="mt-2 text-[13px] text-[#6B6255]">
+          Want your own bank or credit union right now?{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+            Look it up free
+          </Link>{" "}
+          to see its published fees against state and national medians.
+        </p>
       </fieldset>
 
       {reportType === "district" && (

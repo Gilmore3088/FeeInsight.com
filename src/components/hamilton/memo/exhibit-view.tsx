@@ -3,8 +3,10 @@
  * sourced claims, the Economist's drivers, the one exhibit and the one clarifying question.
  * The engine returns data only (`HamiltonAnswer`, `Exhibit`); every chart decision lives here.
  */
+import { RD } from "@/lib/report-design/tokens";
 import type { CSSProperties, ReactNode } from "react";
 import { Callout, More, QuestionCard, SERIF, fmtMoney } from "./memo";
+import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
 import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 
 export type ExhibitSpec = Exhibit;
@@ -63,34 +65,45 @@ function sourceLine(sources: readonly SourceRef[]): ReactNode {
   ));
 }
 
+/**
+ * One exhibit in the shared report look (src/lib/report-design): label, a headline that says
+ * what the data shows, the chart, then the source line. The stylesheet is hoisted once per page
+ * however many exhibits render.
+ */
 export function ExhibitFrame({
   title,
   sources,
   note,
   number,
+  topic,
+  sub,
   children,
 }: {
   title: string;
   sources: readonly SourceRef[];
   note?: string;
   number?: number;
+  /** The label's second half: "Exhibit 2 · Fees". */
+  topic?: string;
+  /** An italic line under the headline. */
+  sub?: string;
   children: ReactNode;
 }) {
+  const label = [number != null ? `Exhibit ${number}` : "Exhibit", topic].filter(Boolean).join(" · ");
   return (
-    <figure className="relative overflow-hidden rounded-xl border border-warm-300 bg-white p-5 shadow-[0_1px_2px_rgba(26,24,21,0.04)] break-inside-avoid sm:p-6 print:shadow-none">
-      <span aria-hidden className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-terra via-terra/50 to-transparent" />
-      <figcaption className="mb-5 flex flex-col gap-1">
-        {number != null ? (
-          <span className="inline-flex w-fit items-center rounded-full bg-terra-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span>
-        ) : null}
-        <span className="text-lg leading-snug text-warm-900" style={SERIF}>
-          {title}
-        </span>
-      </figcaption>
-      {children}
-      {note ? <p className="mt-3 text-xs leading-relaxed text-warm-700">{note}</p> : null}
-      {sources.length > 0 ? <p className="mt-3 border-t border-warm-200 pt-2 text-xs text-warm-600">Source: {sourceLine(sources)}</p> : null}
-    </figure>
+    <div className="rd">
+      <style href="report-design" precedence="medium">
+        {REPORT_DESIGN_CSS}
+      </style>
+      <section className="rd-exhibit">
+        <div className="rd-label">{label}</div>
+        <h2>{title}</h2>
+        {sub ? <p className="rd-sub">{sub}</p> : null}
+        {children}
+        {note ? <p className="rd-source not-italic">{note}</p> : null}
+        {sources.length > 0 ? <div className="rd-source">Source: {sourceLine(sources)}</div> : null}
+      </section>
+    </div>
   );
 }
 
@@ -332,7 +345,7 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
   const hi = vMax + span * 0.3;
   const px = (d: string) => pad.l + (dates.indexOf(d) / (dates.length - 1)) * (W - pad.l - pad.r);
   const py = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
-  const strokes = ["#C44B2E", "#5A5347", "#A09788"];
+  const strokes = [RD.terra, RD.inkSoft, RD.muted];
   const label = (d: string) => shortDate(d) ?? d;
   const [own, peer] = x.series;
   const paired = own && peer && own.points.length > 1 && peer.points.length > 1;
@@ -359,16 +372,16 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-3xl" role="img" aria-label={x.title}>
         <defs>
           <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#C44B2E" stopOpacity={0.28} />
-            <stop offset="100%" stopColor="#C44B2E" stopOpacity={0.06} />
+            <stop offset="0%" stopColor={RD.terra} stopOpacity={0.28} />
+            <stop offset="100%" stopColor={RD.terra} stopOpacity={0.06} />
           </linearGradient>
         </defs>
         {[0, 0.5, 1].map((f) => {
           const v = lo + (hi - lo) * f;
           return (
             <g key={f}>
-              <line x1={pad.l} x2={W - pad.r} y1={py(v)} y2={py(v)} stroke="#E0D7C9" strokeDasharray={f === 0 ? undefined : "2 4"} />
-              <text x={pad.l - 6} y={py(v) + 4} fontSize="11" fill="#6B6255" textAnchor="end">
+              <line x1={pad.l} x2={W - pad.r} y1={py(v)} y2={py(v)} stroke={RD.rule2} strokeDasharray={f === 0 ? undefined : "2 4"} />
+              <text x={pad.l - 6} y={py(v) + 4} fontSize="11" fill={RD.inkSoft} textAnchor="end">
                 {fmtTrendValue(v, x.unit)}
               </text>
             </g>
@@ -390,9 +403,9 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
           const y2 = py(Math.min(g.a, g.b));
           return (
             <g key={g.d}>
-              <path d={`M ${xg - (k === 0 ? 4 : -4)} ${y1} H ${xg} V ${y2} H ${xg - (k === 0 ? 4 : -4)}`} fill="none" stroke="#1A1815" strokeWidth={1} />
+              <path d={`M ${xg - (k === 0 ? 4 : -4)} ${y1} H ${xg} V ${y2} H ${xg - (k === 0 ? 4 : -4)}`} fill="none" stroke={RD.ink} strokeWidth={1} />
               {y2 - y1 > 14 ? (
-                <text x={xg + (k === 0 ? 5 : -5)} y={(y1 + y2) / 2 + 4} fontSize="11" fontWeight={600} fill="#1A1815" textAnchor={k === 0 ? "start" : "end"}>
+                <text x={xg + (k === 0 ? 5 : -5)} y={(y1 + y2) / 2 + 4} fontSize="11" fontWeight={600} fill={RD.ink} textAnchor={k === 0 ? "start" : "end"}>
                   gap {fmtTrendValue(Math.abs(g.a - g.b), x.unit)}
                 </text>
               ) : null}
@@ -420,7 +433,7 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
                 cy={py(p.value)}
                 r={k === s.points.length - 1 ? (i === 0 ? 5 : 3.5) : 2.5}
                 fill={strokes[i % strokes.length]}
-                stroke="#fff"
+                stroke={RD.paper}
                 strokeWidth={1.5}
               />
             ) : null,
@@ -428,18 +441,18 @@ function Trend({ x }: { x: Extract<ExhibitSpec, { kind: "trend" }> }) {
         )}
         {endLabels.map((e) => (
           <g key={`label-${e.s.label}`}>
-            <text x={W - pad.r + 12} y={e.y} fontSize="15" fontWeight={600} fill={e.i === 0 ? "#A93D25" : "#1A1815"}>
+            <text x={W - pad.r + 12} y={e.y} fontSize="15" fontWeight={600} fill={e.i === 0 ? RD.terraText : RD.ink}>
               {fmtTrendValue(e.last!.value, x.unit)}
             </text>
-            <text x={W - pad.r + 12} y={e.y + 13} fontSize="10.5" fill="#6B6255">
+            <text x={W - pad.r + 12} y={e.y + 13} fontSize="10.5" fill={RD.inkSoft}>
               {e.i === 0 ? e.s.label : e.s.label.length > 20 ? "Peer median" : e.s.label}
             </text>
           </g>
         ))}
-        <text x={pad.l} y={H - 6} fontSize="11" fill="#6B6255">
+        <text x={pad.l} y={H - 6} fontSize="11" fill={RD.inkSoft}>
           {label(dates[0])}
         </text>
-        <text x={W - pad.r} y={H - 6} fontSize="11" fill="#6B6255" textAnchor="end">
+        <text x={W - pad.r} y={H - 6} fontSize="11" fill={RD.inkSoft} textAnchor="end">
           {label(dates[dates.length - 1])}
         </text>
       </svg>

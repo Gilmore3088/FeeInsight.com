@@ -66,6 +66,21 @@ export interface StripeEventEffects {
 }
 
 /**
+ * Records the event id, returning false when it was already processed. Matches prod's
+ * stripe_events (bigint id, unique stripe_event_id, event_type, processed_at); the old
+ * insert named columns prod never had, so every delivery failed with a 500.
+ */
+export async function recordStripeEvent(tx: Tx, event: Stripe.Event): Promise<boolean> {
+  const inserted = await tx`
+    INSERT INTO stripe_events (stripe_event_id, event_type)
+    VALUES (${event.id}, ${event.type})
+    ON CONFLICT (stripe_event_id) DO NOTHING
+    RETURNING id
+  `;
+  return inserted.length > 0;
+}
+
+/**
  * Applies one verified, not-yet-seen Stripe event inside the caller's transaction.
  * `past_due_since` starts the 7-day payment grace window on the first failure (never
  * reset by later failures) and clears whenever the subscription is active or ends.

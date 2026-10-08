@@ -2,15 +2,19 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import { CAMPAIGN_NAME_PREFIX, formatBrief, parseCampaignName, scoreCampaign } from "@/lib/agents/marketing/formats";
+import { CAMPAIGN_NAME_PREFIX, CAMPAIGNS_PER_MONTH, formatBrief, parseCampaignName, scoreCampaign } from "@/lib/agents/marketing/formats";
 import { listCampaigns, listGroups, mailerLiteConfigured, nationalGroupId, toStateGroups, type AgentCampaign } from "@/lib/agents/marketing/mailerlite-campaigns";
 import { mailingAddress } from "@/lib/agents/marketing/monthly";
 import { STATE_EDITION_FORMAT } from "@/lib/agents/marketing/state-edition";
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
 
+const NUMBER_WORDS = ["no", "one", "two", "three", "four", "five"];
+/** "one format" / "two formats", from the number planMonth actually picks. */
+const formatsPicked = `${NUMBER_WORDS[CAMPAIGNS_PER_MONTH] ?? CAMPAIGNS_PER_MONTH} format${CAMPAIGNS_PER_MONTH === 1 ? "" : "s"}`;
+
 async function load() {
-  if (!mailerLiteConfigured()) return { error: "MAILERLITE_API_KEY is not set, so Hamilton can't read campaigns." } as const;
+  if (!mailerLiteConfigured()) return { error: "MAILERLITE_API_KEY is not set, so Growth can't read campaigns." } as const;
   try {
     const [drafts, sent, groups] = await Promise.all([
       listCampaigns("draft", CAMPAIGN_NAME_PREFIX),
@@ -37,7 +41,7 @@ function byMonth(campaigns: AgentCampaign[]) {
   return [...months.entries()].sort((a, b) => b[0].localeCompare(a[0]));
 }
 
-/** Hamilton's monthly marketing: this month's drafts to approve, and how past campaigns scored. */
+/** Growth's monthly marketing: this month's drafts to approve, and how past campaigns scored. */
 export default async function MarketingPage({ searchParams }: { searchParams: Promise<{ sent?: string }> }) {
   await requireAuth("view");
   const params = await searchParams;
@@ -52,8 +56,8 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
         </p>
         <h1 className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">Monthly marketing</h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          On the 1st, Hamilton scores last month&apos;s emails, picks two formats it hasn&apos;t used in three months,
-          writes them from live data and drafts each as an A/B subject test in MailerLite. Readers who picked a state also get
+          On the 1st, Growth scores last month&apos;s emails, picks {formatsPicked} it hasn&apos;t used in three months,
+          writes {CAMPAIGNS_PER_MONTH === 1 ? "it" : "them"} from live data and drafts {CAMPAIGNS_PER_MONTH === 1 ? "it" : "each"} as an A/B subject test in MailerLite. Readers who picked a state also get
           that state&apos;s edition. Nothing sends until you approve the month here.
         </p>
       </header>
@@ -164,7 +168,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
               </table>
             )}
             <p className="mt-2 text-xs text-gray-500">
-              Score = 0.3 × open rate + 2 × click rate − 10 × unsubscribe rate, as 0 to 100. Sends under 100 people count only lightly when Hamilton learns.
+              Score = 0.3 × open rate + 2 × click rate − 10 × unsubscribe rate, as 0 to 100. Sends under 100 people count only lightly when Growth learns.
             </p>
           </section>
         </>
