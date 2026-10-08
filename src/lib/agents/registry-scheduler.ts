@@ -17,6 +17,8 @@ import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan
 import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
 import { ENFORCEMENT_MATCHER_VERSION, ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/enforcement";
 import { STATE_ENFORCEMENT_PARSER_VERSION, STATE_ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/state-enforcement";
+import { STATE_NEWS_PARSER_VERSION, STATE_REG_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-reg-news";
+import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bill-news";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -54,6 +56,8 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
   [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,
+  [STATE_REG_NEWS_SOURCE]: STATE_NEWS_PARSER_VERSION,
+  [STATE_BILL_NEWS_SOURCE]: STATE_NEWS_PARSER_VERSION,
   [CENSUS_ACS_SOURCE]: CENSUS_ACS_PARSER_VERSION,
   [CFPB_SOURCE]: CFPB_PARSER_VERSION,
   [FFIEC_OVERDRAFT_SOURCE]: FFIEC_OVERDRAFT_PARSER_VERSION,
