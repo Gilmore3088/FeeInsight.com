@@ -72,6 +72,8 @@ export interface SnapshotFeeRow {
   /** When the schedule was last read, not its effective date. */
   read_at: string | Date | null;
   normalized_text: string | null;
+  /** The catalog's charge frequency ("monthly", "annual", "per_item"...), null when unknown. */
+  frequency?: string | null;
 }
 
 export interface SnapshotValue {
@@ -88,6 +90,11 @@ export interface SnapshotValue {
   notes: string[];
   /** The published rows behind the value, so a draft quoting it can be withdrawn if one is taken down. */
   publishedIds: number[];
+  /**
+   * The catalog's charge frequency shared by every row behind the value; null when any row's is
+   * unknown or they differ. Two values compare like for like only at the same frequency.
+   */
+  frequency: string | null;
 }
 
 export interface SnapshotFee {
@@ -120,6 +127,13 @@ function notesFor(rows: SnapshotFeeRow[]): string[] {
     if (row.waiver_text) notes.add(`Waived: ${row.waiver_text}`);
   }
   return [...notes];
+}
+
+/** The frequency every row carries, or null when one is unknown or they differ. */
+function sharedFrequency(rows: SnapshotFeeRow[]): string | null {
+  const frequencies = new Set(rows.map((row) => row.frequency ?? null));
+  const [only] = [...frequencies];
+  return frequencies.size === 1 && only ? only : null;
 }
 
 /** The schedule line the pipeline read this row from (`excerpt="..."` in its conditions), if stored. */
@@ -175,6 +189,7 @@ export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | nul
     readAt: iso(lead.read_at),
     notes: notesFor(checked),
     publishedIds: checked.map((row) => Number(row.fee_published_id)).filter((id) => Number.isInteger(id) && id > 0),
+    frequency: sharedFrequency(checked),
   };
 }
 
@@ -264,7 +279,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
-            ef.conditions, ef.account_product_type, ef.waiver_text,
+            ef.conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text

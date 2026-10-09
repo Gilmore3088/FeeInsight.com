@@ -90,6 +90,9 @@ describe("createCheckoutSession", () => {
     expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "subscription",
+        // Card only when money is due, so a 100%-off code completes without one.
+        payment_method_collection: "if_required",
+        allow_promotion_codes: true,
         line_items: [{ price: "price_small_annual", quantity: 1 }],
         metadata: expect.objectContaining({ institution_id: "2945", pro_tier: "small", pro_plan: "annual" }),
       }),

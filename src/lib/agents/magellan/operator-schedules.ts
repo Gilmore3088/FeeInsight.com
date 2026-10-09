@@ -399,14 +399,16 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // No fee schedule link on file.
     [43, "SouthState Bank, National Association", "https://www.southstatebank.com/PersonalAccountFeeSchedule"],
     [85, "Eastern Bank", "https://www.easternbank.com/media/5301"],
-    // Checking disclosure: "Overdraft Charge ... $25.00", $100 a day. The deposit agreement
-    // read at 15:00 states only the daily cap; this link replaced it at 2026-10-08 16:05.
-    [147, "BancFirst", "https://www.bancfirst.bank/BancFirst/media/Documents/NewDisclosureDocs/BancFirst-Checking-TISA.pdf"],
+    // Personal checking page with its fee table: the checking TISA PDFs return HTTP 404 (Mac
+    // session browser, 2026-10-09 06:46; replaced the TISA PDF link).
+    [147, "BancFirst", "https://www.bancfirst.bank/personal/banking/personal-checking-accounts"],
     [206, "Bankers Trust Company", "https://www.bankerstrust.com/consumer-service-fee-schedule/"],
     [400, "MVB Bank, Inc", "https://mvbbanking.com/wp-content/uploads/2024/03/4.-MVB-Retail-Fee-Schedule-3.31.22-reviewed-2024.pdf"],
     [4966, "Bank Fund Staff Federal Credit Union", "https://bfsfcu.org/documents/Fee_Schedule.pdf"],
     // Link on file was a product, rates or loan page.
-    [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf"],
+    // 2026 public-file Schedule of Fees: overdraft $35, 4 a day; the bl.valley.com links are dead
+    // (Mac session browser, 2026-10-09 06:46).
+    [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/public-file-2026/AAYA,%20Schedule%20of%20Fees,%20Privacy%20Policy.pdf"],
     // Courtesy Pay page: $35 per item (the fee schedule page never read; 2026-10-08 16:05).
     [96, "Beacon Bank and Trust", "https://www.beaconbank.com/personal/courtesy-pay"],
     [300, "Hills Bank and Trust Company", "https://www.hillsbank.com/sites/www.hillsbank.com/files/media/terms-and-conditions-fee-schedule.pdf"],
@@ -422,8 +424,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   // built by JavaScript). Links from search results only, so Rosetta's read is the check.
   ...([
     [6671, "Digital Federal Credit Union", "https://www.dcu.org/content/dam/dcu/pdfs/overdraft-payment-service-disclosure.pdf"],
-    [6881, "Mountain America Federal Credit Union", "https://macu.com/about/disclosures/overdraft-privilege"],
-    [8507, "Vystar Federal Credit Union", "https://vystarcu.org/personal/bank/checking-accounts/overdraft-protection"],
+    // Full schedules found by the Mac session browser (2026-10-09 06:46) replaced the overdraft
+    // pages: Mountain America's Truth in Savings (overdraft $25, effective Oct 1, 2026) and
+    // VyStar's Fee Schedule (Courtesy Pay $29).
+    [6881, "Mountain America Federal Credit Union", "https://www.macu.com/media/pdf/truth-in-savings.pdf"],
+    [8507, "Vystar Federal Credit Union", "https://assets.ctfassets.net/kw2oi7dtt7lh/15GlunYoDyqOCbdajKbm8L/ead2cd63d36e69dc275729c8722cba40/Fee_Schedule.pdf"],
     [46, "Banco Popular de Puerto Rico", "https://www.popular.com/assets/pdf/caracteristicas-e-account-en.pdf"],
     [102, "TowneBank", "https://www.townebank.com/member-support/overdraft-protection/"],
     // Search snippets show a per-item overdraft fee on each (2026-10-08 15:00).
@@ -446,11 +451,15 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     [48, "Cadence Bank", "https://cadencebank.com/personal/checking/my-way"],
     [83, "FirstBank", "https://www.efirstbank.com/customer-service/questions-answers.htm"],
     [98, "Centennial Bank", "https://www.my100bank.com/public/userfiles/Disclosures/CEN-SOF.pdf"],
-    [170, "Stock Yards Bank & Trust Company", "https://www.syb.com/overdraft-privilege"],
+    // Account common features: overdraft and NSF $36, effective Apr 2025 (Mac session browser,
+    // 2026-10-09 06:46; replaced the overdraft privilege page).
+    [170, "Stock Yards Bank & Trust Company", "https://www.syb.com/_s3/syb-com/files/document/2014_accountcommonfeatures.pdf?VersionId=FQg8ut0D4z1SQBsXZ.Yj5coelIGU5Y4x"],
     [7464, "Boeing Employees Federal Credit Union", "https://www.becu.org/-/media/Files/PDF/P-6850.pdf?rev=b84f4b81f7564db9ab1706a2a0de02a2&sc_lang=en&hash=FB0646071579AEFCC1F0BC48F4DF21E3"],
     [6394, "First Technology Federal Credit Union", "https://www.firsttechfed.com/-/media/FirstTech-Web/Documents/Terms-And-Conditions-Pdf/account-and-service-fees.pdf"],
     [38, "East West Bank", "https://www.eastwestbank.com/content/dam/ewb-dotcom/docs/CONSUMER_FEE_SCHEDULE.pdf"],
-    [135, "ConnectOne Bank", "https://www.connectonebank.com/about/miscellaneous-fee-schedule"],
+    // Miscellaneous Bank Fees PDF (05/16/26); its $40 overdraft line is business-only (Mac
+    // session browser, 2026-10-09 06:46; replaced the fee schedule page).
+    [135, "ConnectOne Bank", "https://cdn.prod.website-files.com/6645c05fc60bab424a196a46/6765feca5085628577e3ca17_3f3f62ff932e3a48ca59d577b756ca3e_Miscellaneous-Bank-Fees-051626.pdf"],
   ] as const).map(([institutionId, institutionName, url]) => ({
     institutionId,
     institutionName,
@@ -528,6 +537,25 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName,
     url,
     givenBy: "Mac session browser check of blocked top-10 banks, 2026-10-09 00:57",
+  })),
+  // $10B+ banks with no full fee schedule on file: the Mac session's browser, signed out, found
+  // each bank's own schedule (2026-10-09 06:46). Rosetta's read is the check.
+  ...([
+    // Personal banking fee schedule: NSF/overdraft $35, $175 a day.
+    [34, "Western Alliance Bank", "https://www.westernalliancebancorporation.com/sites/default/files/2026-05/personal-banking-fee-schedule.pdf"],
+    // Personal fee disclosure, effective Sept 2026: overdraft $18.50.
+    [76, "City National Bank of Florida", "https://cdn.prod.website-files.com/6531596c316e0e8e3be7c634/6a9aad21a0fdb5f38af42d3c_CNB%20Personal_Fee_Disclosure%209426%20Final.pdf"],
+    // Personal welcome guide (67 pages): NSF/uncollected funds $35, $175 a day.
+    [124, "Citizens Business Bank, National Association", "https://www.cbbank.com/wp-content/uploads/HBC-Personal-Welcome-Guide_website.pdf"],
+    // Cuenta Libre terms: NSF $15, daily overdraft $5.
+    [144, "Oriental Bank", "https://orientalbank.com/assets/Pdfs/BankAccounts/terms_and_conditions_CUENTA_LIBRE.pdf"],
+    // Fee schedule, rev 3/2025.
+    [4885, "Fourleaf Federal Credit Union", "https://docs.fourleaffcu.com/disclosures/olb/MK-289-fee-schedule-12-2013.pdf"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "Mac session browser check of $10B+ banks with no live overdraft fee, 2026-10-09 06:46",
   })),
   {
     // Market-gap list (2026-10-09): Magellan's paid search proposed this PDF four times on

@@ -267,6 +267,16 @@ export const CHECKBOOK_RECONCILIATION =
 export const CROSS_BORDER_BUNDLE =
   /^(?![\s\S]*(?:%|\b(?:transactions?|purchases?|conversions?|currency|exchange|atms?|wires?)\b))[\s\S]*\bcross[- ]?border (?:banking|bundles?|packages?|accounts?)\b/i;
 
+/**
+ * Adjusting an ATM transaction ("ATM Adjustment" $5 at Wildfire, "ATM Adjustment Fee", "Special
+ * Handling (i.e. ATM adjustment, etc.)"): correcting a deposit or dispute after the fact, which is
+ * research work that account research holds, not a charge for using another network's ATM. A
+ * limit change stays, and so does a line naming the deposit ("ATM Deposit Correction Adjustment"),
+ * which the CA answer key files as a deposited item return. Knox reads these lines with this too,
+ * ahead of its ATM rule.
+ */
+export const ATM_ADJUSTMENT = /^(?![\s\S]*\b(?:limits?|deposit\w*)\b)[\s\S]*\batm\b[\s\S]{0,20}\badjust(?:ment|ments|ed)?\b/i;
+
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
@@ -322,7 +332,13 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   // A cross-border banking bundle's fee is the account's maintenance fee, not a currency fee.
   card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
-  atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
+  // Adjusting an ATM deposit or dispute is research work, not a network ATM fee.
+  atm_non_network: {
+    to: "gift_card_purchase",
+    name: PREPAID_BUY_OR_RELOAD,
+    also: [{ to: "account_research", name: ATM_ADJUSTMENT }],
+    sqlPattern: "prepaid|reload|adjust",
+  },
   // A statement mailed back undelivered is returned mail, which account research holds.
   paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
   // Excess savings or money market activity is account servicing, not a lending fee.
@@ -342,7 +358,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 13;
+export const FOLD_RULES_VERSION = 14;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
