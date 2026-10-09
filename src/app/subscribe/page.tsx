@@ -460,27 +460,15 @@ export default async function SubscribePage({
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
               Benchmark, analyze and monitor bank and credit union fees.
             </p>
-            <div className="mt-6 lg:hidden">
-              <p className="text-sm text-[#3D3833]">
-                <span className="font-semibold text-[#1A1815]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
-                {WORKSPACE_SEAT_LIMIT} people
-              </p>
-              <PricingJump
-                inputId="pro_tier_institution"
-                targetId="pro-heading"
-                id="pro-hero-cta"
-                className={`mt-3 block rounded-lg ${CTA_CLASS}`}
-              >
-                Find your institution &amp; see pricing
-              </PricingJump>
-            </div>
           </div>
 
-          {showcase && <div className="lg:col-start-1 lg:row-start-2">{showcase}</div>}
+          {/* On phones the purchase card (and its institution search) comes straight after the
+              headline, then the example (UX audit F7, 9 Oct 2026); desktop keeps them side by side. */}
+          {showcase && <div className="order-3 lg:order-none lg:col-start-1 lg:row-start-2">{showcase}</div>}
 
           {/* Same size as the example beside it (James, 9 Oct 2026): both stretch to the row, each
               with one 44px line under it (the example dots; the sign-in line). */}
-          <div className="flex flex-col lg:col-start-2 lg:row-start-2">
+          <div className="order-2 flex flex-col lg:order-none lg:col-start-2 lg:row-start-2">
             <div className="flex-1">
             <PurchaseCard
               isLoggedIn={isLoggedIn}
@@ -589,7 +577,7 @@ export default async function SubscribePage({
       </div>
       </main>
       <StickyCta
-        heroId="pro-hero-cta"
+        heroId="pro-title"
         cardId="pro-heading"
         label="Find your institution & see pricing"
         className={`block rounded-lg ${CTA_CLASS}`}
