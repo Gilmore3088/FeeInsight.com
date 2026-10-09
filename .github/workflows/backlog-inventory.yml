@@ -1,0 +1,75 @@
+name: backlog inventory
+
+on:
+  schedule:
+    - cron: '17 16 * * 1'
+  workflow_dispatch:
+    inputs:
+      cutoff:
+        description: 'Optional UTC cutoff; blank protects the latest three hours.'
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - '.github/backlog-policy.json'
+      - '.github/scripts/backlog*'
+      - '.github/workflows/backlog*'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: backlog-inventory-${{ github.event.pull_request.number || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test inventory safety and intake rules
+        run: node --test .github/scripts/backlog.test.mjs
+      - name: Read branches and all PR history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKLOG_CUTOFF: ${{ github.event_name == 'pull_request' && '2026-10-09T18:04:00Z' || inputs.cutoff || '' }}
+        run: node .github/scripts/backlog.mjs inventory
+      - name: Retain full evidence, not just the summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: backlog-inventory
+          path: backlog-output/
+          if-no-files-found: error
+          retention-days: 90
+  dashboard:
+    needs: inventory
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: backlog-inventory
+          path: backlog-output
+      - name: Refresh only the report section of the existing control issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/backlog.mjs publish

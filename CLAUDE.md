@@ -11,12 +11,22 @@ A bank/CU marketing or product manager pays ~$300 for a competitive fee report f
 their market. Why us: live verified fee data (`published_fee_catalog`) + banking domain
 expertise. Kept fully separate from the CSI day job.
 
+## Repository coordination
+Read `docs/project/BACKLOG.md` and GitHub issue #984 before coding. One canonical issue,
+one implementer, one implementation PR. Search existing open/closed PRs, branches and main;
+reuse or explicitly supersede work before starting another version. Respect the three-hour
+active-work protection, parked outreach and the per-area work-in-progress limit.
+No branch deletion, force-push or direct main push under a general cleanup instruction.
+The repository-maintenance workflows operate on GitHub records only; they are not app agents.
+
 ## Standing rules
 - Never fake logs, records or numbers. If a count or result isn't known, say so.
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.
-- Fix PRs may merge once CI is green. Redesigns and design work wait for James's review.
+- CI is evidence, not merge permission. Every production merge needs James's explicit approval
+  for that change. This supersedes older merge-on-green and recovery auto-merge guidance.
+
 
 ## Project memory
 `docs/project/` is the project's durable memory; `docs/project/README.md` explains it.

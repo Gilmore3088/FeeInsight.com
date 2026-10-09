@@ -1,0 +1,13 @@
+{
+  "repository": "Gilmore3088/FeeInsight.com",
+  "default_branch": "main",
+  "dashboard_issue": 984,
+  "initial_cutoff": "2026-10-09T18:04:00Z",
+  "enforce_after": "2026-10-09T21:13:31Z",
+  "protect_hours": 3,
+  "wip_per_area": 3,
+  "areas": ["correctness", "experience", "maintenance", "outreach"],
+  "parked_areas": ["outreach"],
+  "parked_prs": [227, 339, 669],
+  "protected_prefixes": ["redteam/", "rescue/", "rebuild/", "archive/", "release/"]
+}
