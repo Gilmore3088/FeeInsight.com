@@ -28,6 +28,7 @@ import { getInstitutionFees } from "@/lib/data-store/institution";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { compareSelectedInstitutionFees } from "@/lib/hamilton/report-evidence";
 import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
+import { PricingJump } from "./pricing-jump";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
@@ -377,12 +378,13 @@ export default async function SubscribePage({
                 <span className="font-semibold text-[#1A1815]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
                 {WORKSPACE_SEAT_LIMIT} people
               </p>
-              <a
-                href="#pro-heading"
-                className="mt-3 block rounded-lg bg-[#C44B2E] px-5 py-3.5 text-center text-base font-semibold text-white shadow-sm hover:bg-[#A93D25]"
+              <PricingJump
+                inputId="pro_tier_institution"
+                targetId="pro-heading"
+                className="mt-3 block rounded-lg bg-[#C44B2E] px-5 py-3.5 text-center text-base font-semibold text-white shadow-sm hover:bg-[#A93D25] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1815]"
               >
                 Find your institution &amp; see pricing
-              </a>
+              </PricingJump>
             </div>
             {benchmark.length > 0 && (
               <div className="mt-8">

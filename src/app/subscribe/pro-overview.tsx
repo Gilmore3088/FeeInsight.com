@@ -127,7 +127,7 @@ const PILLARS = [
 ] as const;
 
 /**
- * Pro as one platform in four parts (James, 9 Oct 2026; copy his). Rows with thin dividers on
+ * Pro as one platform in four parts (James, 9 Oct 2026; copy his). Stacked rows with thin dividers on
  * phones, four even columns on desktop; no cards and no accent rules.
  */
 export function ProPillars() {
@@ -136,10 +136,10 @@ export function ProPillars() {
       {PILLARS.map((pillar) => (
         <li
           key={pillar.title}
-          className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-4 py-4 first:pt-0 last:pb-0 sm:block sm:py-0"
+          className="py-4 first:pt-0 last:pb-0 sm:py-0"
         >
           <h3 className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</h3>
-          <p className="text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+          <p className="mt-1 text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
             <span className="sm:hidden">{pillar.short}</span>
             <span className="hidden sm:inline">{pillar.body}</span>
           </p>

@@ -21,6 +21,9 @@ const POSITION_WORDS: Record<NonNullable<BenchmarkRow["position"]>, string> = {
   at: "At the median",
 };
 
+/** Under this many like-for-like fees, the preview says the data is limited. */
+const LIMITED_BELOW = 3;
+
 function pct(amount: number, max: number): string {
   return `${Math.max(0, Math.min(100, (amount / max) * 100)).toFixed(1)}%`;
 }
@@ -55,6 +58,7 @@ function RangeBar({ row }: { row: BenchmarkRow }) {
  */
 export function BenchmarkPreview({ institution, rows }: { institution: string | null; rows: BenchmarkRow[] }) {
   const mine = institution !== null;
+  const compared = rows.filter((r) => r.value !== null).length;
   return (
     <figure className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(26,24,21,0.06),0_12px_32px_-16px_rgba(26,24,21,0.2)] ring-1 ring-[#E8E1D6]">
       <figcaption className="flex items-center justify-between gap-3 border-b border-[#EDE6DB] bg-[#FBF9F5] px-4 py-2.5 sm:px-5">
@@ -70,6 +74,20 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
           {mine ? institution : "National fee benchmark"}
         </p>
         {!mine && <p className="mt-0.5 text-sm text-[#6B6255]">Pick your institution to see its own fees here.</p>}
+        {mine && compared === 0 && (
+          <p role="status" className="mt-1.5 rounded-md bg-[#FBF6EC] px-3 py-2 text-sm text-[#3D3833] ring-1 ring-[#EADFC9]">
+            Limited data: none of its verified published fees compare like for like yet, so this shows national
+            medians only.
+          </p>
+        )}
+        {mine && compared > 0 && compared < LIMITED_BELOW && (
+          <p className="mt-0.5 text-sm text-[#6B6255]">
+            Limited data: {compared} of its verified published fees {compared === 1 ? "compares" : "compare"} like for like.
+          </p>
+        )}
+        {mine && compared >= LIMITED_BELOW && (
+          <p className="mt-0.5 text-sm text-[#6B6255]">Its verified published fees, compared like for like.</p>
+        )}
       </div>
 
       <ul className="divide-y divide-[#EDE6DB]">
@@ -118,7 +136,10 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
             </span>
           )}
         </p>
-        <p className="mt-1.5">From {Math.min(...rows.map((r) => r.institutions)).toLocaleString("en-US")}+ institutions&apos; published schedules. In Pro, pick your own peers.</p>
+        <p className="mt-1.5">
+          Source-backed fee data from {Math.min(...rows.map((r) => r.institutions)).toLocaleString("en-US")}+ institutions. In
+          Pro, pick your own peers.
+        </p>
       </div>
     </figure>
   );
