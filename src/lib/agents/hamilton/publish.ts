@@ -24,6 +24,7 @@ import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
+import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 
 type SqlTag = typeof sql;
 
@@ -78,6 +79,8 @@ export interface VerifiedFeeRow extends RateFields {
   /** The URL that document was fetched from; names the page a price was read on. */
   document_url?: string | null;
   institution_name?: string | null;
+  /** True when this row was skipped as identical to a live fee the rules re-check took down. */
+  twin_recheck?: boolean | null;
 }
 
 interface PriorPublishedFeeRow extends RateFields {
@@ -394,6 +397,15 @@ async function selectVerifiedFees(
              to_jsonb(sd)->>'companion_source_id' AS document_stream,
              sd.document_url,
              inst.institution_name,
+             EXISTS (
+               SELECT 1
+                 FROM pipeline_attempts twin_pa
+                 JOIN published_fee_records twin
+                   ON twin.fee_published_id = NULLIF(twin_pa.detail->>'previous_fee_published_id', '')::bigint
+                WHERE twin_pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
+                  AND twin_pa.outcome = 'unchanged'
+                  AND twin.rolled_back_reason = '${RULES_RECHECK_REASON}'
+             ) AS twin_recheck,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
@@ -1156,6 +1168,44 @@ async function flagMovedGuidesStale(
 }
 
 const OLDER_DOCUMENT_REASON = "Older document than the live price";
+const TWIN_RECHECK_REASON = "Rules re-check: today's rules do not read this fee from its own document";
+
+/**
+ * Twins of rules re-check takedowns (`twin_recheck`) that today's rules do not read from any
+ * completed text of their own document, by verified id. A twin with no document or no text
+ * fails too: the check that took its twin down cannot pass it.
+ */
+async function unreproducedTwins(db: SqlTag, rows: VerifiedFeeRow[]): Promise<Set<number>> {
+  const twins = rows.filter((row) => row.twin_recheck);
+  const failed = new Set<number>();
+  if (twins.length === 0) return failed;
+  const documentIds = [...new Set(twins.map((row) => Number(row.source_document_id)).filter((id) => id > 0))];
+  const texts = documentIds.length === 0
+    ? []
+    : await db<Array<{ source_document_id: number | string; normalized_text: string }>>`
+        SELECT DISTINCT ON (source_document_id, text_hash) source_document_id, normalized_text
+          FROM agent_source_texts
+         WHERE source_document_id = ANY(${documentIds}::bigint[])
+           AND status = 'completed'
+           AND normalized_text IS NOT NULL
+         ORDER BY source_document_id, text_hash, id DESC
+      `;
+  const readsByDocument = new Map<number, Set<string>>();
+  for (const text of texts) {
+    const id = Number(text.source_document_id);
+    const reads = readsByDocument.get(id) ?? new Set<string>();
+    for (const key of reproducibleFees(text.normalized_text)) reads.add(key);
+    readsByDocument.set(id, reads);
+  }
+  for (const row of twins) {
+    const amount = normalizedAmount(row.amount);
+    const reads = readsByDocument.get(Number(row.source_document_id));
+    if (amount == null || !reads || !reads.has(feeKey(row.canonical_fee_key, amount))) {
+      failed.add(Number(row.fee_verified_id));
+    }
+  }
+  return failed;
+}
 
 const NO_MOVEMENT = {
   previousFeePublishedId: null,
@@ -1228,6 +1278,7 @@ export async function runHamiltonPublish(
   });
   const rowByVerifiedFeeId = new Map(rows.map((row) => [Number(row.fee_verified_id), row]));
   const results: HamiltonPublishResult[] = [];
+  const twinUnreproduced = await unreproducedTwins(db, rows);
 
   for (const row of rows) {
     const base = {
@@ -1251,8 +1302,14 @@ export async function runHamiltonPublish(
     if (nameHold && !dryRun) {
       await rejectVerifiedFee(db, Number(row.fee_verified_id), publishHoldFlag(nameHold.code));
     }
+    // A twin of a rules re-check takedown publishes only if today's rules read it from its own
+    // document, the same test that took its twin down.
+    const twinFails = category.ok && !nameHold && twinUnreproduced.has(Number(row.fee_verified_id));
+    if (twinFails && !dryRun) {
+      await rejectVerifiedFee(db, Number(row.fee_verified_id), RULES_RECHECK_REASON);
+    }
     const skipReason = category.ok
-      ? (nameHold?.reason ?? publishSkipReason(row, minConfidence))
+      ? (nameHold?.reason ?? (twinFails ? TWIN_RECHECK_REASON : publishSkipReason(row, minConfidence)))
       : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.

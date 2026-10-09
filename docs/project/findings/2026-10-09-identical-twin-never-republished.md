@@ -9,7 +9,9 @@ An "unchanged" decision pointed at a live twin, and stayed in force after the tw
 409 verified rows are in this state behind a rules re-check takedown; in 150 of them the
 institution has no live fee left in that category (read-only query).
 **Fix:** publish selects such a row again when the twin it matched was rolled back by the rules
-re-check, which judged one document's read and not the fee itself. Publish's own checks still
-apply. Twins of takedowns for other reasons stay skipped. This PR.
+re-check, which judged one document's read and not the fee itself. The re-selected row must pass
+the same re-check on its own document (today's rules read its category and price from a
+completed text of it), or it is rejected with `rules_recheck_unreproduced`; the category guard
+and name holds still apply. Twins of takedowns for other reasons stay skipped. This PR.
 **Lesson:** a "skipped as duplicate" decision depends on the row it matched. When that row goes,
 the decision has to be made again.
