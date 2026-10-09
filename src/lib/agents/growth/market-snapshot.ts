@@ -221,7 +221,19 @@ function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
   };
 }
 
-/** The institution and the open institutions in its CBSA that have live fees. */
+/**
+ * The institution and the open institutions in its CBSA that have live fees, less the banks
+ * that gather deposits nationally rather than through local branches. In the newest FDIC
+ * Summary of Deposits, the bank holds $3B or more in deposits through at most 4 offices, one of
+ * which holds at least 90% of it (Ally, SoFi, Sallie Mae and Optum in Salt Lake City; Schwab in
+ * Dallas; Live Oak in Wilmington). The $3B floor keeps one-office community banks such as Walpole
+ * Co-operative and Geddes S&L in their own market; smaller branchless banks (Square, Thrivent)
+ * stay in, since nothing on file tells them apart. A charter address puts these banks in a metro,
+ * but they are not its local competitors, so a snapshot or state comparison leaves them out of the peers
+ * (coordinator, 23:57 UTC Oct 8, after Accuracy confirmed the four Salt Lake City $0 overdraft
+ * rows). Credit unions file no Summary of Deposits and are never excluded here. The same
+ * filter is written into `loadStateComparison`.
+ */
 export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ subject: SnapshotInstitution; peers: SnapshotInstitution[] } | null> {
   const [subjectRow] = await db`
     SELECT id, institution_name, city, state_code, cbsa_code, cbsa_name, charter_type
@@ -235,6 +247,11 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
       FROM institution_sources s
      WHERE s.cbsa_code = ${subject.cbsaCode} AND s.id <> ${institutionId} AND s.closed_date IS NULL
        AND EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = s.id)
+       AND s.id NOT IN (
+             SELECT b.institution_id FROM institution_branch_deposits b
+              WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+              GROUP BY b.institution_id
+             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
      ORDER BY s.institution_name
   `;
   return { subject, peers: peerRows.map(toInstitution) };
@@ -300,6 +317,11 @@ export async function loadStateComparison(db: SqlTag, subject: SnapshotInstituti
       FROM institution_sources s
      WHERE s.state_code = ${subject.stateCode} AND s.id <> ${subject.id} AND s.closed_date IS NULL
        AND EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = s.id AND ef.fee_category = ${category})
+       AND s.id NOT IN (
+             SELECT b.institution_id FROM institution_branch_deposits b
+              WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+              GROUP BY b.institution_id
+             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
   `;
   const names = new Map<number, string>(peerRows.map((row) => [Number(row.id), String(row.institution_name)]));
   const rows = await loadSnapshotRows(db, [subject.id, ...names.keys()], [category]);
