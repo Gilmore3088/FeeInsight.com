@@ -167,7 +167,10 @@ export function Figure({ label, value, note }: { label: string; value: ReactNode
 
 export function fmtMoney(amount: number | null | undefined): string {
   if (amount == null) return "Not published";
-  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
+  // Thousands are grouped: a fee income of 209400 reads "$209,400", not "$209400".
+  return Number.isInteger(amount)
+    ? `$${amount.toLocaleString("en-US")}`
+    : `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function fmtSignedMoney(amount: number): string {
