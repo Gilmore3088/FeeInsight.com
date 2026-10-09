@@ -622,6 +622,15 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.firstmid.com/wp-content/uploads/DepositDisclosures.pdf",
     givenBy: "search index, via the Mac session, 2026-10-09 07:08",
   },
+  {
+    // The personal fee schedule (document 16682) states no monthly charge; the live monthly
+    // maintenance fees came only from the business schedule. The checking accounts page lists
+    // the personal accounts' monthly charges (Premium $15 below $2,500, per the search index).
+    institutionId: 722,
+    institutionName: "Security Federal Bank",
+    url: "https://www.securityfederalbank.com/personal/personal-checking/all-accounts.html",
+    givenBy: "web search for UAT's missing consumer monthly fee, 2026-10-09 08:30",
+  },
 ];
 
 export interface NoConsumerSchedule {
