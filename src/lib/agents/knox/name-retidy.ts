@@ -867,7 +867,9 @@ export const CONDITION_RESTORE_SINCE = "2026-10-09T10:46:00Z";
  */
 // UAT scored a random 20 of the 251 candidates 20/20 against source (2026-10-09 11:58 UTC).
 // Batch 1: v1 and v4, the oldest windows (1 and 3 candidates in the dry read).
-export const CONDITION_RESTORE_OLDER_VERSIONS: number[] = [1, 4];
+// Batches 2 and 3: v6 and v10-v13 (230 restores in the 2026-10-09 13:35 UTC dry read), after
+// restores lost the old name's casing, took an HTML entity, a glued list item or a sentence.
+export const CONDITION_RESTORE_OLDER_VERSIONS: number[] = [1, 4, 6, 10, 11, 12, 13];
 const RESTORE_CUT_LENGTH = 110;
 const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
 /**
@@ -876,8 +878,9 @@ const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
  * long as that clause still holds the condition. Null when nothing of the condition survives.
  */
 export function restoredName(oldName: string, trimmedName: string, canonicalKey?: string): string | null {
-  const name = oldName.replace(/\s+/g, " ").replace(/(?:\s*\.){2,}\s*$/, "").replace(/\s*\.$/, "").trim();
-  if (RESTORE_NOT_A_CONDITION.test(name) || /^\s*\(/.test(trimmedName)) return null;
+  const name = oldName.replace(/\s+/g, " ").replace(/(?:\s*\.){2,}\s*$/, "").replace(/\s*\.$/, "").replace(/[\s,;:\-–—]+$/u, "").trim();
+  // An HTML entity ("closed &lt; 90 days") is markup the extract kept, not the bank's words.
+  if (RESTORE_NOT_A_CONDITION.test(name) || /^\s*\(/.test(trimmedName) || HTML_ENTITY.test(name)) return null;
   const cut = (oldName.length >= RESTORE_CUT_LENGTH && !/[).]\s*$/.test(oldName)) || DANGLING_WORD.test(name);
   let restored = name;
   if (cut || openParens(name) > 0) {
@@ -895,9 +898,9 @@ export function restoredName(oldName: string, trimmedName: string, canonicalKey?
     // What comes back must read as the condition itself, not a cut-off fragment or the next
     // sentence ("(min.=)", "if average goes", ". You will be charged", "(per month after 730)").
     const added = restored.slice(trimmedName.trim().length);
-    return RESTORE_FRAGMENT.test(added) || RESTORE_NOT_ADDED.test(added) || FIGURE_WITHOUT_UNIT.test(added) || GLUED_CAPITALS.test(restored)
-      ? null
-      : restored;
+    if (RESTORE_FRAGMENT.test(added) || RESTORE_NOT_ADDED.test(added) || FIGURE_WITHOUT_UNIT.test(added) || GLUED_CAPITALS.test(restored) || LIST_ITEM_ADDED.test(added) || SENTENCE_ADDED.test(added) || DOUBLED_PHRASE.test(added)) return null;
+    // The live name's own casing stays ("Monthly fee", not the old "monthly fee if requirements are not met").
+    return `${trimmedName.trim()}${added}`;
   }
   const prefix = at > 0 ? restored.slice(0, at) : "";
   return RESTORE_HEADING.test(prefix) && ACCOUNT_WORD.test(prefix) && !/[\d$|]/.test(prefix) ? restored : null;
@@ -934,6 +937,13 @@ const RESTORE_FRAGMENT = /=|\||\botherwise\b|\.\s+[A-Z]|\s(?:has|have|goes|go|if
  * $15.00 Copy of Check $3.00"), or a line of service copy ("..., we can help") is no condition.
  */
 const RESTORE_NOT_ADDED = /^\d|^[\s,:–—-]*\$|\$[\d,.]+[^$]*\$[\d,.]+|\bwe can\b/i;
+/** The next list item glued on ("... (per transfer) -From Kwik-Cash ($100 automatic loan draw)"). */
+const LIST_ITEM_ADDED = /\s[-–—][A-Z][a-z]/;
+const HTML_ENTITY = /&(?:[a-z]{2,6}|#\d{2,5});/i;
+/** A phrase read twice ("(due to if due to your error)"). */
+const DOUBLED_PHRASE = /\b(\w+\s+\w+)\b.*\b\1\b/i;
+/** The page's next sentence ("Copy of Check If you need a copy ...", "... Fee is charged if we receive"). */
+const SENTENCE_ADDED = /^\s+(?:If|When|Unless)\s.*\b(?:you|your|we|our)\b|^\s+(?:is|are)\s+(?:charged|assessed)\b/;
 /**
  * What the old name adds is no condition of the fee: a note that the fee is gone ("Mobile Deposit -
  * per check deposited fee has been removed", 92157, live at $0), or an optional add-on the
