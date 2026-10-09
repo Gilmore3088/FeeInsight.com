@@ -6,7 +6,6 @@ import { getCurrentUser, type User } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
 import { AdminBadgesProvider, AdminRoomMenu, AdminRoomTabs, AdminSidebar } from "./admin-nav";
 import { getSourceSubmissionCounts } from "@/lib/admin-queries";
-import { getKnoxReviewCounts } from "@/lib/data-store/knox-reviews";
 import {
   CommandPalette,
   CommandPaletteIconTrigger,
@@ -57,14 +56,9 @@ async function AdminLayoutInner({
         ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
         : "bg-gray-500/10 text-gray-500 dark:text-gray-400";
 
-  let knoxPending = 0;
   let trustPending = 0;
   try {
-    const [knoxCounts, sourceCounts] = await Promise.all([
-      getKnoxReviewCounts(),
-      getSourceSubmissionCounts(),
-    ]);
-    knoxPending = knoxCounts.pending;
+    const sourceCounts = await getSourceSubmissionCounts();
     trustPending = sourceCounts.pending;
   } catch {
     // DB unavailable; drop the badge silently.
@@ -99,8 +93,8 @@ async function AdminLayoutInner({
                 {SITE_NAME}
               </span>
             </Link>
-            <AdminRoomMenu badges={{ knoxPending, trustPending }} />
-            <AdminRoomTabs badges={{ knoxPending, trustPending }} />
+            <AdminRoomMenu badges={{ trustPending }} />
+            <AdminRoomTabs badges={{ trustPending }} />
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
@@ -130,7 +124,7 @@ async function AdminLayoutInner({
 
       <div className="flex">
         <AdminSidebar
-          badges={{ knoxPending, trustPending }}
+          badges={{ trustPending }}
           footer={
             <div className="border-t border-black/[0.04] dark:border-white/[0.04] px-3 py-2.5">
               <Link
@@ -148,7 +142,7 @@ async function AdminLayoutInner({
         {/* Main content */}
         <main id="main-content" className="admin-content flex-1 min-w-0 px-5 py-5 lg:px-7">
           <div className="mx-auto max-w-[1600px]">
-            <AdminBadgesProvider badges={{ knoxPending, trustPending }}>{children}</AdminBadgesProvider>
+            <AdminBadgesProvider badges={{ trustPending }}>{children}</AdminBadgesProvider>
             <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-black/[0.06] pt-3 text-xs text-gray-500 md:hidden dark:border-white/[0.06]">
               <span>
                 Signed in as {user.display_name} ({user.role})
