@@ -117,7 +117,8 @@ describe("institutionPositions", () => {
 
 describe("business-only sources (rule 6)", () => {
   it("leaves business-only schedules out of statistics with the same address test Magellan uses", () => {
-    expect(STATS_ROW_FILTER).toContain("ef.source_document_id IS NOT NULL AND NOT (");
+    expect(STATS_ROW_FILTER).toContain("ef.source_document_id IS NOT NULL");
+    expect(STATS_ROW_FILTER).toContain("AND NOT (");
     expect(businessSourceSql("c")).toContain("COALESCE(c.source_url, '')");
     // The SQL applies BUSINESS_PATH_SQL / CONSUMER_PATH_SQL to the lowercased path; mirror it here.
     const sqlSays = (url: string) => {
@@ -134,4 +135,11 @@ describe("business-only sources (rule 6)", () => {
       expect(sqlSays(url)).toBe(isBusinessOnlyLink(url));
     }
   });
+});
+
+
+it("requires a verified consumer audience at the SQL boundary and keeps real zeros", () => {
+  expect(STATS_ROW_FILTER).toContain("ef.fee_audience IN ('consumer', 'both')");
+  expect(STATS_ROW_FILTER).not.toContain("ef.amount > 0");
+  expect(valuePerInstitution([{ institution_id: 47, amount: 0, fee_category: "nsf" }]).get(47)).toBe(0);
 });

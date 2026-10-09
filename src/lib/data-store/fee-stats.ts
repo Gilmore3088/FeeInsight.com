@@ -27,7 +27,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 4;
+export const STATS_METHOD_VERSION = 5;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -36,7 +36,7 @@ export function businessSourceSql(alias: string): string {
 }
 
 /** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
-export const STATS_ROW_FILTER = `ef.source_document_id IS NOT NULL AND NOT ${businessSourceSql("ef")}`;
+export const STATS_ROW_FILTER = `ef.source_document_id IS NOT NULL AND ef.fee_audience IN ('consumer', 'both') AND NOT ${businessSourceSql("ef")}`;
 
 
 export interface StatsInputRow {

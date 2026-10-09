@@ -1,3 +1,4 @@
+import type { FeeAudience, FeeTreatment } from "@/lib/fee-audience";
 import type {
   FeePublicationStatus,
   InstitutionInsightReadiness,
@@ -19,6 +20,9 @@ export interface InstitutionSummary {
 }
 
 export interface ExtractedFee {
+  fee_audience?: FeeAudience;
+  audience_evidence?: string | null;
+  fee_treatment?: FeeTreatment;
   id: number;
   fee_name: string;
   amount: number | null;
