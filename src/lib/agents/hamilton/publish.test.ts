@@ -126,6 +126,11 @@ describe("Hamilton agentic publish", () => {
       expect(writes).not.toContain("INSERT INTO published_fee_records");
       expect(JSON.stringify(db.mock.calls), row.fee_name).toContain(hold);
     }
+    // An add-on price and a sentence fragment with no repaired form are held too.
+    expect(publishNameHold("Research Fee (plus", "account_research", 1)?.code).toBe("price_is_addon");
+    expect(publishNameHold("GUASFCU charges a", "check_image", 2)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Our overdraft fee of", "overdraft", 35)).toBeNull(); // repairs to "Overdraft fee"
+    expect(publishNameHold("Fax Fee (incoming and outgoing)", "account_research", 2)).toBeNull();
     // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
     expect(publishNameHold("Courtesy Pay Fee…..$35.005", "overdraft", 35)).toBeNull();
     expect(publishedFeeName("Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", "overdraft")).toBe("Courtesy Pay (Paid Overdraft) Fee");

@@ -1,6 +1,7 @@
+import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -162,6 +163,31 @@ describe("Darwin agentic verification", () => {
     expect(result.results[0]).toMatchObject({ status: "skipped", decision: "rejected", reasonCode: "not_in_source" });
     const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
+  it("settles a stated frequency the fee's own line contradicts, and flags the row", async () => {
+    // Held excess-withdrawal rows (Oct 9): Knox read "monthly" from the allowance, the line charges per withdrawal.
+    const perWithdrawal = {
+      ...rawFee,
+      fee_raw_id: 802,
+      frequency: "monthly",
+      conditions: "canonical_hint=overdraft; excerpt=\"Overdraft fee $35.00 per item in excess of one during a month\"",
+    };
+    const db = createDbMock([perWithdrawal]);
+    await runDarwinVerify({ runId: 101, limit: 999, db: asVerifyDb(db) });
+    const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
+    expect(insert).toBeDefined();
+    const params = JSON.stringify(insert!.slice(1));
+    expect(params).toContain('"per_item"');
+    expect(params).not.toContain('"monthly"');
+    expect(params).toContain(FREQUENCY_SETTLED_FLAG);
+
+    // A line that agrees keeps Knox's frequency and gets no flag.
+    const agreeing = createDbMock([rawFee]);
+    await runDarwinVerify({ runId: 102, limit: 999, db: asVerifyDb(agreeing) });
+    const agreeingInsert = agreeing.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
+    expect(JSON.stringify(agreeingInsert!.slice(1))).toContain('"per_item"');
+    expect(JSON.stringify(agreeingInsert!.slice(1))).not.toContain(FREQUENCY_SETTLED_FLAG);
   });
 
   describe("statedInOwnSource", () => {
@@ -352,6 +378,11 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
       expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+      // A hold outside a hand-set envelope is re-checked once today's envelope takes the amount.
+      expect(query).toContain("pa.detail->>'reason_code' = 'outside_envelope'");
+      expect(query).toContain("->>'min')::numeric");
+      expect(params).toContain(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES));
+      expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
     });
 
     it("records the learned category model's dispute without changing the decision", async () => {
