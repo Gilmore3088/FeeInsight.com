@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
-import { withBoxSizeCellsSplit, withoutBusinessOnlyFees } from "./rules";
+import { withBoxSizeCellsSplit, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
 import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -1156,3 +1156,32 @@ describe("glued safe deposit box sizes (v63)", () => {
     expect(found).toContainEqual([45, "safe_deposit_box"]);
   });
 });
+
+describe("withSidewaysBoxTable (v64)", () => {
+  it("reads a sizes row over a prices row one box per line, keeping the cells before the run (SCCU 8109)", () => {
+    const text = [
+      "Non-SCCU ATM Fee (transaction fee charged by | $2.50 | 3x5 | 5x5 | 3x10 | 5x10 | 10x10",
+      "SCCU for using a non-SCCU ATM) | $60 | $80 | $90 | $110 | $185",
+      "Late payment | $5",
+    ].join("\n");
+    expect(withSidewaysBoxTable(text)).toBe([
+      "Non-SCCU ATM Fee (transaction fee charged by | $2.50",
+      "SCCU for using a non-SCCU ATM)",
+      "3x5 | $60", "5x5 | $80", "3x10 | $90", "5x10 | $110", "10x10 | $185",
+      "Late payment | $5",
+    ].join("\n"));
+  });
+
+  it("allows one blank line between the rows and writes × as x (Houston FCU, doc 15639)", () => {
+    const text = "Size | 2 × 5 | 3 × 10\n\nCost | $17.50 | $40.00\n\nOther Fees";
+    expect(withSidewaysBoxTable(text)).toBe("Size\nCost\n2 x 5 | $17.50\n3 x 10 | $40.00\n\nOther Fees");
+  });
+
+  it("leaves rows alone when the counts differ or there is one size", () => {
+    const uneven = "3 x 5 | 3 x 10 | 5 x 10\n$30.00 | $40.00";
+    expect(withSidewaysBoxTable(uneven)).toBe(uneven);
+    const single = "Box | 3 x 5\nRent | $30.00";
+    expect(withSidewaysBoxTable(single)).toBe(single);
+  });
+});
+
