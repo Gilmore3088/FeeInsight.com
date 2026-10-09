@@ -579,17 +579,6 @@ function cachedSourceLines(text: string): string[] {
 }
 
 /**
- * Lines of a source text that name a fee, for showing a reviewer where to look. This only
- * locates the name; it checks no amount or category (that is `checkFeeAgainstSource`).
- */
-export function linesNamingFee(text: string | null | undefined, feeName: string, limit = 3): string[] {
-  if (!text || !text.trim()) return [];
-  const stems = nameStems(feeName);
-  if (stems.length === 0) return [];
-  return cachedSourceLines(text).filter((line) => namesFee(line, stems)).slice(0, limit);
-}
-
-/**
  * A two-column page flattened row by row ("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" /
  * "($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00") interleaves two fee lists,
  * so a right-column name and its price sit on different rows of other fees. Each column is
