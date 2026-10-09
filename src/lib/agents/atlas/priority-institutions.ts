@@ -330,11 +330,13 @@ export async function selectPriorityInstitutions(
                 AND (c.tier <> 1 OR c.hand_found_at IS NULL OR r.started_at >= c.hand_found_at)
                 AND (c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at)
                 -- A rules version that has not read the bank's current page is new work after
-                -- PRIORITY_RULES_REREAD_HOURS, not the 7-day gap retry.
+                -- PRIORITY_RULES_REREAD_HOURS, not the 7-day gap retry; once per version, since a
+                -- page that version's run still left unread would otherwise come back every tick.
                 AND (
                   c.tier <> 3
                   OR NOT c.rules_unread
                   OR r.started_at > NOW() - make_interval(hours => ${PRIORITY_RULES_REREAD_HOURS}::int)
+                  OR r.idempotency_key = ${"atlas:priority:"}::text || c.id::text || ${`:knox:${KNOX_RULES_STRATEGY.version}`}::text
                 )
                 -- A request by name is new work after an overdraft-gap run of the same bank
                 -- (Bluestone FCU's 06:45 gap run held Marketing's 18:44 request for a day).

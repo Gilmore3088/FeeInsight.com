@@ -128,6 +128,8 @@ describe("priority institutions", () => {
     expect(text).toContain("rules_read.strategy_version = ");
     expect(text).toContain("unread_doc.superseded_by_id IS NULL");
     expect(text).toContain("OR NOT c.rules_unread");
+    expect(text).toContain("OR r.idempotency_key = ");
+    expect(values).toContain(`:knox:${KNOX_RULES_STRATEGY.version}`);
     expect(values).toContain(KNOX_RULES_STRATEGY.strategy);
     expect(values).toContain(KNOX_RULES_STRATEGY.version);
     expect(values).toContain(PRIORITY_RULES_REREAD_HOURS);
