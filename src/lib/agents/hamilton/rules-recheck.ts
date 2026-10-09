@@ -49,7 +49,7 @@ export function knoxFreeSignature(): string {
     .join(",");
 }
 
-function feeKey(canonicalKey: string, amount: number): string {
+export function feeKey(canonicalKey: string, amount: number): string {
   return `${canonicalKey}:${Math.round(amount * 100)}`;
 }
 
