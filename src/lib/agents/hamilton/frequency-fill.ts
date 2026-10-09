@@ -30,7 +30,8 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v5: "More than 2 per year" is an allowance, not the fee's period.
 // v6: footnote marks ("per month6", "each2"), a cap ("up to a maximum of $5.00") and a second
 // price's label ("$1.00/page Business: $3.00/page") no longer hide the fee's own words.
-export const FREQUENCY_FILL_VERSION = 6;
+// v7: "each after 3 in a month" and "exceeding two per month" are allowances too.
+export const FREQUENCY_FILL_VERSION = 7;
 export const FREQUENCY_FILL_LIMIT = 2_000;
 /** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
 const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?[a-z])`;
