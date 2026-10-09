@@ -64,14 +64,15 @@ export function toRateFees(rows: RateFeeDbRow[]): RateFee[] {
   return fees;
 }
 
-/** The live percentage fees of one institution. */
-export async function getRateFeesByInstitution(institutionId: number): Promise<RateFee[]> {
+/** All audiences remain available for labeled institution display; comparisons opt in to consumer evidence. */
+export async function getRateFeesByInstitution(institutionId: number, scope: "all" | "consumer" = "all"): Promise<RateFee[]> {
   const rows = await sql<RateFeeDbRow[]>`
     SELECT ef.id, ef.institution_id, ef.fee_name, ef.fee_category, ef.frequency, ef.conditions,
            ef.source_url, ef.amount_kind, ef.rate_percent, ef.rate_min_amount, ef.rate_max_amount,
            ef.rate_basis, ef.fee_audience, ef.fee_treatment
       FROM published_fee_rate_catalog ef
      WHERE ef.institution_id = ${institutionId}
+       AND ${sql.unsafe(scope === "consumer" ? STATS_ROW_FILTER : "TRUE")}
      ORDER BY ef.fee_category ASC NULLS LAST, ef.fee_name ASC
   `;
   return toRateFees(rows);
