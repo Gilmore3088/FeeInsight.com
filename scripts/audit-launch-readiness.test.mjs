@@ -69,7 +69,7 @@ describe("read-only launch evidence guard", () => {
     expect(auditLaunchReadiness(manifest, options).errors).toHaveLength(2);
   });
   it("fails closed on invalid input and missing expected identifiers", () => {
-    expect(auditLaunchReadiness(manifest, options).ready).toBe(false);
+    expect(auditLaunchReadiness(null, options).ready).toBe(false);
     expect(auditLaunchReadiness(manifest, { ...options, commit: "main" }).ready).toBe(false);
     expect(auditLaunchReadiness(manifest, { ...options, catalogSnapshot: "" }).ready).toBe(false);
   });
