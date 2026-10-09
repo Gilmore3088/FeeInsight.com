@@ -374,6 +374,24 @@ async function selectVerifiedFees(
                      AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
                 )
               )
+              -- A row skipped as identical before the same-line check (\`separateLines\`, 9 Oct)
+              -- to a live line of its own document under another name is decided once more:
+              -- Wildfire's $5 ATM balance inquiry (verified 8019) sat behind its $5 "ATM
+              -- Adjustment" (14754). The new decision carries same_line_check, so it is final.
+              AND NOT (
+                pa.outcome = 'unchanged'
+                AND pa.detail->>'same_line_check' IS NULL
+                AND EXISTS (
+                  SELECT 1 FROM published_fee_records prev
+                    JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
+                    JOIN raw_fee_observations prev_fr ON prev_fr.fee_raw_id = prev_fv.fee_raw_id
+                   WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND prev.rolled_back_at IS NULL
+                     AND prev_fr.source_document_id = fr.source_document_id
+                     AND btrim(regexp_replace(lower(prev.fee_name), '[^a-z0-9]+', ' ', 'g'))
+                         <> btrim(regexp_replace(lower(fv.fee_name), '[^a-z0-9]+', ' ', 'g'))
+                )
+              )
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -720,7 +738,7 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   if (live.length === 0) return { kind: "new" };
   // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
   const value = feeValue(row);
-  const identical = live.find((prior) => feeValue(prior) === value);
+  const identical = live.find((prior) => feeValue(prior) === value && !separateLines(row, prior));
   if (identical) return { kind: "identical", prior: identical };
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
@@ -743,6 +761,32 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   });
   // A rate never replaces a dollar amount, or the reverse; each stays its own line.
   return prior && isPercentFee(prior) === isPercentFee(row) ? { kind: "supersede", prior } : { kind: "additional_line" };
+}
+
+/** Words that say nothing about which fee a line is ("Fee", "per item", "monthly service charge"). */
+const FILLER_WORDS = new Set([
+  "a", "an", "and", "at", "be", "charge", "charges", "each", "fee", "fees", "for", "in", "is", "item", "items",
+  "month", "monthly", "of", "on", "or", "per", "s", "service", "the", "to", "up", "will", "with", "your", "amp",
+]);
+
+function lineWords(name: string | null | undefined): Set<string> {
+  return new Set(normalizedFeeName(name).split(" ").filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word)));
+}
+
+/**
+ * Two lines of one document at the same price whose names share no reading of each other
+ * ("ATM Balance Inquiry (at non-Wildfire ATM)" and "ATM Adjustment", both $5 at Wildfire,
+ * 9 Oct): neither name's words all appear in the other's. Two reads of one line differ by
+ * filler or a carried-in heading ("Stop payment" / "Stop Payment of Checks and ACHs") and
+ * stay identical. Across documents the same fee is often named differently, so only one
+ * document's lines are told apart this way.
+ */
+export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  if (!sameDocument(prior.source_document_id, row.source_document_id)) return false;
+  const rowWords = lineWords(row.fee_name);
+  const priorWords = lineWords(prior.fee_name);
+  const within = (a: Set<string>, b: Set<string>) => [...a].every((word) => b.has(word));
+  return !within(rowWords, priorWords) && !within(priorWords, rowWords);
 }
 
 /** A fee's comparable value: its rate for a percentage fee, else its amount. */
@@ -1412,6 +1456,7 @@ export async function runHamiltonPublish(
           previous_fee_published_id: result.previousFeePublishedId,
           superseded_fee_published_id: result.supersededFeePublishedId,
           change_recorded: result.changeRecorded,
+          same_line_check: 1,
         },
       });
     }

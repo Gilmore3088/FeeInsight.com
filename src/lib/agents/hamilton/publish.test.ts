@@ -673,6 +673,8 @@ describe("Hamilton agentic publish", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'verified:' || fv.fee_verified_id::text");
+      expect(query).toContain("pa.detail->>'same_line_check' IS NULL");
+      expect(JSON.stringify(db.mock.calls)).toContain("same_line_check");
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });
 
@@ -730,6 +732,17 @@ describe("decidePriorFee", () => {
   it("skips an amount already live on any line", () => {
     const match = live({ fee_published_id: 602, amount: "35.00" });
     expect(decidePriorFee(row, [live({ source_document_id: 77 }), match])).toEqual({ kind: "identical", prior: match });
+  });
+
+  it("publishes a second line of the same document at the same price under another name (Wildfire 8019, 9 Oct)", () => {
+    const inquiry = { ...row, canonical_fee_key: "atm_non_network", amount: "5.00", fee_name: "ATM Balance Inquiry (at non-Wildfire ATM) ........................." };
+    const adjustment = live({ fee_published_id: 14754, amount: "5.00", source_document_id: 77, fee_name: "ATM Adjustment ......................................" });
+    expect(decidePriorFee(inquiry, [adjustment])).toEqual({ kind: "additional_line" });
+    // Another read of the same line, or the same price from another document, is still identical.
+    const reread = live({ fee_published_id: 14755, amount: "5.00", source_document_id: 77, fee_name: "ATM Balance Inquiry" });
+    expect(decidePriorFee(inquiry, [reread])).toEqual({ kind: "identical", prior: reread });
+    const elsewhere = live({ fee_published_id: 14756, amount: "5.00", source_document_id: 12, fee_name: "Foreign ATM fee" });
+    expect(decidePriorFee(inquiry, [elsewhere])).toEqual({ kind: "identical", prior: elsewhere });
   });
 
   it("keeps lines from the same document side by side", () => {
