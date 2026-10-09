@@ -18,6 +18,7 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
 | Quote drafts (CARNEGIE) | started when James marks a lead qualified on `/admin/leads` (never cron); also in the daily loop as a dry run | `growth-quote` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
+| Monday plan and proposals (DRAPER) | `/api/admin/crew/draper`; not scheduled yet (proposed Mondays 14:57 UTC, waiting on James) | `growth-proposals`, `growth-plan` | below |
 | Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
 | Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
 | Press pitches (BERNAYS) | `/api/admin/crew/press` (admin or cron secret; not scheduled yet, waits for James) | `growth-press` | below |
@@ -155,6 +156,28 @@ and the method; the institution ids behind each median are in the draft's facts.
 subject is `<outlet>|<fee>:<state>`, so a pitch James skips with a reason keeps both that outlet
 and that finding out of BERNAYS's drafts while the lesson stands. A dry run picks the outlets and
 findings and writes nothing.
+
+### Monday plan and proposals (`draper.ts`)
+
+DRAPER's two Monday drafts, both free (no model call), each filed once per Monday-to-Monday week
+into the queue as DRAPER's item (channel `internal`). The route runs proposals first, then the plan.
+
+- `growth-proposals` (kind `brief`, workflow `draper-proposals`): at most 3 changes the evidence
+  supports, strongest evidence first, each citing its counts. The rules: retire a pilot campaign
+  with `RETIRE_AFTER_SENDS` (20) first emails marked sent and nothing recorded back; change or
+  pause a workflow James skipped `SKIP_PATTERN_MIN` (3) times with a reason in 30 days (the skip
+  lessons in `pipeline_feedback`, so CARNEGIE's own withdrawals don't count); answer a decline
+  reason recorded `DECLINE_PATTERN_MIN` (2) times. When nothing meets a rule it files one line
+  with the counts saying so, never a guess.
+- `growth-plan` (kind `plan`, workflow `draper-plan`): the week's work. First emails and
+  follow-ups waiting for review (by campaign) and approved emails not marked sent; follow-ups that
+  come due this week by `runOutreachFollowUps`'s rule; the other queued drafts and briefs by agent;
+  the latest what-we-learned report's metrics and the latest proposals; and the GTM plan's
+  month-one floor (`MONTH_ONE_FLOOR` in `learning.ts`, the only dated target in the code) with
+  progress against it.
+
+Both carry the conversation log: `outreach_outcomes` counts by outcome, to date and last week. No
+new table. A missing count is said to be missing.
 
 ### Queue intake (`intake.ts`)
 

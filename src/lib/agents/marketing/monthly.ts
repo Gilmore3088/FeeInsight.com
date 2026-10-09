@@ -412,8 +412,10 @@ export async function runMarketingSend({ month, fetcher }: { month: string; fetc
 
 export function summarizeScore(result: ScoreResult): string {
   if (result.skipped) return `Skipped scoring campaigns: ${result.skipped}.`;
-  if (!result.scored) return "No sent campaigns to score yet; stored this month's market snapshot.";
-  return `Scored ${result.scored} sent campaign${result.scored === 1 ? "" : "s"} (${result.learnable} large enough to learn from) and stored this month's market snapshot.`;
+  // A dry run stores nothing, so it says what it would have stored.
+  const snapshot = result.snapshotStored ? "stored this month's market snapshot" : "would store this month's market snapshot (dry run: nothing saved)";
+  if (!result.scored) return `No sent campaigns to score yet; ${snapshot}.`;
+  return `Scored ${result.scored} sent campaign${result.scored === 1 ? "" : "s"} (${result.learnable} large enough to learn from); ${snapshot}.`;
 }
 
 export function summarizeWrite(result: WriteResult): string {
