@@ -850,6 +850,12 @@ describe("condition restores, batches 2 and 3", () => {
       ),
     ).toBeNull();
     expect(restoredName("Return Check (due to if due to your error)", "Return Check", "nsf")).toBeNull();
+    expect(
+      restoredName("Savings accounts become dormant if the customer makes no transactions for an entire year. A", "Savings accounts become dormant", "dormant_account"),
+    ).toBeNull();
+    expect(
+      restoredName("Dormant Account - An account is considered dormant if there has been no financial", "Dormant Account", "dormant_account"),
+    ).toBeNull();
     expect(restoredName("Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b", "Inactive Account", "dormant_account")).toBeNull();
   });
 });
