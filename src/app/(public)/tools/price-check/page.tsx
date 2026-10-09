@@ -6,7 +6,8 @@ import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { DistributionChart } from "@/components/public/distribution-chart";
 import { getNationalIndexCached } from "@/lib/data-store/fee-index";
-import { getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
+import { getCountyFeeMapCached, getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
+import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/lib/report-templates/base/state-charts";
 import {
   charterChecks,
   marketChecks,
@@ -50,15 +51,30 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const prices = asked ? await loadStatePricesCached(state, fee).catch(() => null) : null;
   const check = prices && price !== null ? priceCheck(price, prices) : null;
   const stateName = state ? STATE_NAMES[state] : "";
-  const [national, demographics] = check && state
+  const fips = state ? STATE_TO_FIPS[state] : undefined;
+  const [national, demographics, countyMap] = check && state
     ? await Promise.all([
         getNationalIndexCached().catch(() => []),
-        STATE_TO_FIPS[state] ? getStateDemographicsCached(STATE_TO_FIPS[state]).catch(() => null) : Promise.resolve(null),
+        fips ? getStateDemographicsCached(fips).catch(() => null) : Promise.resolve(null),
+        fips ? getCountyFeeMapCached(state, fee).catch(() => null) : Promise.resolve(null),
       ])
-    : [[], null];
+    : [[], null, null];
   const nationalEntry = national.find((entry) => entry.fee_category === fee) ?? null;
   const charters = prices && price !== null ? charterChecks(price, prices) : [];
   const markets = prices && price !== null ? marketChecks(price, prices) : [];
+  const countyValues = (countyMap?.counties ?? []).map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));
+  const mapWide = check && fips && countyValues.length > 0 ? countyPriceMap(fips, countyValues, check.price) : null;
+  const mapNarrow = mapWide && check && fips ? countyPriceMap(fips, countyValues, check.price, { narrow: true }) : null;
+  const countySteps = [0, 0, 0, 0, 0];
+  let countiesWithout = 0;
+  if (check) {
+    for (const c of countyValues) {
+      if (c.value === null) countiesWithout++;
+      else countySteps[priceStep(c.value, check.price)]++;
+    }
+  }
+  const nationalMedian = nationalEntry?.median_amount != null && (nationalEntry.institution_count ?? 0) > 0 ? nationalEntry.median_amount : null;
+  const income = demographics?.median_household_income ? Number(demographics.median_household_income) : null;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
@@ -67,8 +83,8 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
         Where does a fee price sit in its state?
       </h1>
       <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
-        Enter any overdraft or NSF price, including $0, and a state. The count uses only institutions whose fee
-        was checked against their own published fee schedule, and each one links to that schedule.
+        Enter a price, including $0, and a state. Every fee counted was checked against the institution&apos;s own
+        schedule.
       </p>
 
       <form method="get" className="mt-8 grid gap-4 rounded-xl border border-[#E8DFD1] bg-white/70 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -142,10 +158,43 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <PositionBar lower={check.lower} same={check.same} higher={check.higher} />
           <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Institutions counted" value={String(check.count)} />
-            <Stat label="State median" value={money(check.median)} />
-            <Stat label="Charge less" value={`${check.lowerShare}%`} />
+            <Stat label={`${state} median`} value={money(check.median)} />
+            {nationalMedian !== null ? <Stat label="National median" value={money(nationalMedian)} /> : <Stat label="Charge less" value={`${check.lowerShare}%`} />}
             <Stat label="Charge $0" value={String(check.zero)} />
           </dl>
+
+          {mapWide && (
+            <>
+              <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+                {stateName} counties against {money(check.price)}
+              </h3>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-[#5A5347]">
+                {PRICE_MAP_LEGEND.map((label, i) => (
+                  <span key={label} className="inline-flex items-center gap-1.5">
+                    <span className="inline-block h-3 w-4 rounded-sm" style={{ background: PRICE_MAP_FILLS[i] }} />
+                    {label} <b className="tabular-nums text-[#1A1815]">{countySteps[i]}</b>
+                  </span>
+                ))}
+                {countiesWithout > 0 && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className="inline-block h-3 w-4 rounded-sm border border-[#E0D7C9]"
+                      style={{ background: "repeating-linear-gradient(45deg,#fff 0 2px,#E0D7C9 2px 4px)" }}
+                    />
+                    No fee yet <b className="tabular-nums text-[#1A1815]">{countiesWithout}</b>
+                  </span>
+                )}
+              </div>
+              <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white p-2">
+                <div className={mapNarrow ? "hidden sm:block" : undefined} dangerouslySetInnerHTML={{ __html: mapWide }} />
+                {mapNarrow && <div className="sm:hidden" dangerouslySetInnerHTML={{ __html: mapNarrow }} />}
+              </div>
+              <p className="mt-2 text-[12px] text-[#6B6255]">
+                Each county shows the published {FEE_NOUN[fee]} of the institutions with branches there, weighted by their deposits (FDIC Summary of Deposits
+                {countyMap?.sod_year ? `, ${countyMap.sod_year}` : ""}). Fees of $0 are left out.
+              </p>
+            </>
+          )}
           {prices.uncheckedCount > 0 && (
             <p className="mt-4 text-[13px] text-[#6B6255]">
               {plural(prices.uncheckedCount, "other institution has", "other institutions have")} a published {FEE_NOUN[fee]}{" "}
@@ -159,16 +208,11 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-3">
             <DistributionChart values={prices.institutions.map((institution) => institution.value)} median={check.median} />
           </div>
-          <p className="mt-3 text-[14px] leading-relaxed text-[#5A5347]">
-            The {stateName} median is {money(check.median)}
-            {nationalEntry?.median_amount != null && (nationalEntry.institution_count ?? 0) > 0
-              ? `, against ${money(nationalEntry.median_amount)} across ${nationalEntry.institution_count.toLocaleString()} institutions nationally`
-              : ""}
-            .
-            {demographics?.median_household_income
-              ? ` Median household income in ${stateName} is ${money(Number(demographics.median_household_income))} (Census ACS ${demographics.year}).`
-              : ""}
-          </p>
+          {income !== null && (
+            <p className="mt-2 text-[12px] text-[#6B6255]">
+              Median household income in {stateName}: {money(income)} (Census ACS {demographics?.year}).
+            </p>
+          )}
 
           {charters.length > 0 && (
             <>

@@ -64,6 +64,53 @@ const num = (v: unknown): number | null => {
   return v === null || v === undefined || !Number.isFinite(n) ? null : n;
 };
 
+/**
+ * Each county's deposit-weighted fee for one category: every institution with branches there
+ * counts with its own median published fee, wherever it is headquartered. A $0 reading is left
+ * out of the weighting: it is a fee the institution does not charge, and the map shows what
+ * customers pay where the fee exists.
+ */
+async function countyFeeRows(code: string, sodYear: number, feeCategory: string): Promise<CountyOverdraft[]> {
+  const rows = await sql<{ fips: string; deposits: unknown; covered: unknown; weighted: unknown; institutions: unknown }[]>`
+    WITH od AS (
+      SELECT institution_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amt
+        FROM published_fee_catalog WHERE fee_category = ${feeCategory} AND amount > 0 GROUP BY institution_id
+    ), b AS (
+      SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, COALESCE(d.deposits, 0) AS deposits
+        FROM institution_branch_deposits d
+       WHERE d.state = ${code} AND d.year = ${sodYear} AND d.county_fips IS NOT NULL
+    )
+    SELECT b.fips, SUM(b.deposits) AS deposits,
+           SUM(b.deposits) FILTER (WHERE od.amt IS NOT NULL) AS covered,
+           SUM(od.amt * b.deposits) FILTER (WHERE od.amt IS NOT NULL)
+             / NULLIF(SUM(b.deposits) FILTER (WHERE od.amt IS NOT NULL), 0) AS weighted,
+           COUNT(DISTINCT b.institution_id) AS institutions
+      FROM b LEFT JOIN od ON od.institution_id = b.institution_id
+     GROUP BY b.fips`;
+  return rows.map((r) => ({
+    fips: String(r.fips),
+    deposits: (num(r.deposits) ?? 0) * SOD_THOUSANDS,
+    covered_deposits: (num(r.covered) ?? 0) * SOD_THOUSANDS,
+    overdraft: num(r.weighted),
+    institutions: num(r.institutions) ?? 0,
+  }));
+}
+
+export interface CountyFeeMapData {
+  sod_year: number | null;
+  /** `overdraft` holds the weighted fee for the category asked for. */
+  counties: CountyOverdraft[];
+}
+
+/** One fee category's county figures for a state, from the latest Summary of Deposits year. */
+export async function getCountyFeeMap(stateCode: string, feeCategory: string): Promise<CountyFeeMapData> {
+  const code = stateCode.toUpperCase();
+  const yearRows = await sql<{ y: unknown }[]>`SELECT MAX(year) AS y FROM institution_branch_deposits WHERE state = ${code}`;
+  const sodYear = num(yearRows[0]?.y);
+  if (sodYear === null) return { sod_year: null, counties: [] };
+  return { sod_year: sodYear, counties: await countyFeeRows(code, sodYear, feeCategory) };
+}
+
 export async function getStateVisualsData(stateCode: string): Promise<StateVisualsData> {
   const code = stateCode.toUpperCase();
   const fees = [...STATE_CHART_FEES];
@@ -98,26 +145,8 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
     return { sod_year: null, institutions: [...byInstitution.values()], counties: [], holders: [] };
   }
 
-  // Each institution's median published overdraft fee, wherever it is headquartered. A $0
-  // reading is left out of the weighting: it is a fee the institution does not charge, and the
-  // map shows what customers pay where an overdraft fee exists.
   const [countyRows, holderRows] = await Promise.all([
-    sql<{ fips: string; deposits: unknown; covered: unknown; weighted: unknown; institutions: unknown }[]>`
-      WITH od AS (
-        SELECT institution_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amt
-          FROM published_fee_catalog WHERE fee_category = 'overdraft' AND amount > 0 GROUP BY institution_id
-      ), b AS (
-        SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, COALESCE(d.deposits, 0) AS deposits
-          FROM institution_branch_deposits d
-         WHERE d.state = ${code} AND d.year = ${sodYear} AND d.county_fips IS NOT NULL
-      )
-      SELECT b.fips, SUM(b.deposits) AS deposits,
-             SUM(b.deposits) FILTER (WHERE od.amt IS NOT NULL) AS covered,
-             SUM(od.amt * b.deposits) FILTER (WHERE od.amt IS NOT NULL)
-               / NULLIF(SUM(b.deposits) FILTER (WHERE od.amt IS NOT NULL), 0) AS weighted,
-             COUNT(DISTINCT b.institution_id) AS institutions
-        FROM b LEFT JOIN od ON od.institution_id = b.institution_id
-       GROUP BY b.fips`,
+    countyFeeRows(code, sodYear, "overdraft"),
     sql<{ institution_id: number; name: string; hq_state: string | null; deposits: unknown; branches: unknown; overdraft: unknown }[]>`
       WITH t AS (
         SELECT institution_id, SUM(COALESCE(deposits, 0)) AS deposits, COUNT(*) AS branches
@@ -138,13 +167,7 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
   return {
     sod_year: sodYear,
     institutions: [...byInstitution.values()],
-    counties: countyRows.map((r) => ({
-      fips: String(r.fips),
-      deposits: (num(r.deposits) ?? 0) * SOD_THOUSANDS,
-      covered_deposits: (num(r.covered) ?? 0) * SOD_THOUSANDS,
-      overdraft: num(r.weighted),
-      institutions: num(r.institutions) ?? 0,
-    })),
+    counties: countyRows,
     holders: holderRows.map((r) => ({
       institution_id: Number(r.institution_id),
       name: r.name,

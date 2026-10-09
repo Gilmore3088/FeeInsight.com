@@ -25,6 +25,7 @@ import { getCustomReportMarketData } from "./custom-report-market";
 import { getInstitutionPeerRank } from "./peer-fee-rank";
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
+import { getCountyFeeMap } from "./state-visuals";
 
 /**
  * Cached variants of the catalog-wide reads that public pages run on every request.
@@ -55,6 +56,7 @@ export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", ge
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
 export const getStateDemographicsCached = cachedPublicRead("state-demographics", getStateDemographics);
+export const getCountyFeeMapCached = cachedPublicRead("county-fee-map", getCountyFeeMap, (map) => map.counties.length === 0);
 export const getFeeRevenueDataCached = cachedPublicRead("fee-revenue-data", getFeeRevenueData);
 export const getCharterFeeRevenueSummaryCached = cachedPublicRead(
   "charter-fee-revenue-summary",
