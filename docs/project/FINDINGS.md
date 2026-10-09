@@ -13,16 +13,42 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: A hand-found schedule fetched in another state's lane was never read
+Companion fetch takes hand-found schedules in any state's lane (2026-10-08 fix), but every read
+step is scoped to its run's state. First United's (OK) overdraft disclosure was fetched in the NC
+lane at 23:55 UTC on 8 Oct and sat unread: the priority picker only saw it as "found by hand" while
+it was unfetched. Fix: the picker's unread-document tier (paid fetch) now also covers documents
+fetched from hand-found links, and a dormant bank with a hand-found link can get its run. The paid
+fetch for blocked companion links admits the same dormant case (Stock Yards' syb.com answered 403).
+
+## 2026-10-09: The companion search stopped running on Oct 7
+**What happened:** `pipeline_attempts` holds no `discover.second_document` row after 07:00 UTC Oct 7, through 00:20 UTC Oct 9, while discover steps kept completing (1,126 in all). At 00:20 Oct 9, top-10 banks such as American Savings (HI), Trustone (MN), First Community (WV), Dupaco (IA), Hawaii State FCU and Yellowstone (MT) had a verified overdraft fee but fewer than 3 fee categories, so Hamilton held it, and the search that finds the rest of their schedule had not run for them.
+**Cause:** discovery stopped starting banks at 75 s and ran the companion search only if the bank loop had ended before 75 s. Once the queue had enough banks to fill every step (steps ran 82 to 104 s on Oct 8), the loop always ran past 75 s and the search never started.
+**Fix:** each discover step keeps its last 25 s for the companion search (`COMPANION_RESERVE_MS`): banks stop starting at 50 s and stop running at 75 s, and the search runs until the step's 100 s limit (this PR).
+**Lesson:** work that runs "with whatever time is left" needs its own reserved slice, plus a count that shows when it stops: check its attempt rows by hour after any change to the step.
+
+## 2026-10-08: Seven of the "192 $10B+ banks" are closed charters
+**What happened:** the large-bank overdraft count (106 of 192 at 23:25 UTC) counts every `institution_sources` row at $10B+ in assets. Seven are marked closed by the FDIC or NCUA registry sync (`regulatory_status = 'inactive'`): Webster Bank (closed 2026-08-20), Comerica Bank and Cadence Bank (2026-02-01), FirstBank of Colorado (2026-06-18), First Foundation Bank (2026-04-01), Stellar Bank (2026-07-01) and First Technology FCU (no closed date; NCUA's list no longer has its charter). Six of the seven have no live overdraft fee, and companion fetch skips inactive banks, so their hand-found schedules never fetched. Stock Yards ($10B) is `dormant`, which companion fetch also skipped.
+**Cause:** the count's denominator was never filtered on registry status; the merged banks' fees now belong to the acquirers' charters.
+**Fix:** count open charters only: 105 of 185 at 23:25 UTC. Hand-found schedules now fetch for a dormant bank, never for a closed one (this PR). First Tech's NCUA status is unconfirmed: the cloud cannot reach NCUA, so it waits for the registry's next sync.
+**Lesson:** any coverage count over `institution_sources` excludes `regulatory_status = 'inactive'`.
+
 ## 2026-10-08: Knox's lesson reader took 53 seconds on every extract step
 **What happened:** `pg_stat_statements` on prod showed Knox's lesson query (`loadKnoxLessons`) run 538 times at a 53 s average and a 97 s worst case, against a 120 s statement timeout. Each run held a database connection for that long, during the same evening the database hit "too many clients" (22:07 UTC, 28 refusals right after a deploy).
 **Cause:** the query paired each name's wrong and right categories by joining two CTEs to themselves. Postgres estimated a few rows per CTE (there were 27,467 and 50,112), so it chose a nested loop that rescanned them.
 **Fix:** each name's categories are grouped into arrays and paired with `unnest`, which has no join to misjudge (this PR). The same prod data gives the same 107 global and 867 per-bank lessons (row hashes match), in 4.1 s.
 **Lesson:** a self-join of a CTE gets a guessed row count; when one runs slowly, check `pg_stat_statements` for its mean time and prefer grouping over a self-join.
+
 ## 2026-10-08: Hand-found schedules waited hours for their state's lane
 **What happened:** the schedules added at 17:03 UTC for Comerica, Cadence, FirstBank (CO), Stock Yards and First Tech were still unfetched at 22:50 (`institution_additional_sources.last_fetched_at` null). ConnectOne's listed fee page was never added at all.
 **Cause:** companion fetch only takes pages in the running lane's state, and the TX, MS, CO, KY and CA lanes did not come round. ConnectOne's page counted as already held because a copy was stored in March 2026, though the bank has no current link.
 **Fix:** a hand-found schedule is fetched by the next lane of any state until its first fetch, and a stored copy counts as held only if stored in the last 30 days (this PR).
 **Lesson:** work added by hand should not queue behind a rotation built for routine refreshes; check `last_fetched_at` an hour after adding a link.
+## 2026-10-08: Eight jurisdictions get no Open States search hits at all
+**What happened:** on prod (`registry_ingest_partitions`, source `state-bills`, read 22:50 UTC Oct 8), PR, SD, DE, CT, DC, IN, VA and ME each sent 3 searches ("overdraft", "insufficient funds", "deposit account fee") and got 0 results back, not even bills that fail the fee test. Every other state got 1 to 93 hits. All eight held 2025-26 sessions inside the lookback, so a quiet legislature is an unlikely reason.
+**Cause:** not yet known. The likely cause is that Open States holds no searchable bill text for these eight; the cloud can't reach Open States to check.
+**Fix:** when a state has no hits, the step now asks once more with no date limit and logs `any_date_overdraft_hits` in the partition detail (this PR). 0 confirms a coverage gap; above 0 means no fee bill action in the lookback. The next weekly reads are due Oct 14-15.
+**Lesson:** a source that returns nothing should log why, so an empty list is never mistaken for "no fee bills".
 
 ## 2026-10-08: Frequent Knox version bumps starved the large-bank re-read
 **What happened:** Knox's rules moved from v34 to v43 in about three hours on Oct 8. Each bump re-reads every $10B+ bank's pages, but by 19:15 UTC those versions had reached 97 of the 192 banks (prod `pipeline_attempts`). GreenState (no live overdraft fee, last read at v33) was never reached, so the v39 "OD Privilege" fix written for it did not land.
@@ -3709,7 +3735,6 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
   them live from another bank's host after that.
 
-
 ## 2026-10-08: The failure-streak alert went quiet mid-break
 - **What happened.** Replaying the admin alerts on prod against the 12:06-12:36 publish break:
   the streak alert was up from 12:08 (3 failed in a row) to 12:25, then went quiet when one
@@ -3726,3 +3751,45 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** Alerts are computed live for the admin home page and the daily brief, not stored,
   so there is no row to count. The next break shows on the admin home page as soon as a third
   run fails with the same error.
+
+## 2026-10-08: Bank and credit union numbers share one namespace
+- **What happened.** 314 credit unions in `institution_sources` have the same `cert_number` as
+  an FDIC bank (NCUA charter numbers and FDIC certificate numbers are separate series). The
+  quarterly revenue snapshot counted institutions with `COUNT(DISTINCT ct.cert_number)`, so
+  each pair counted once: on prod, quarter 2026-06 has 8,548 institutions with filings but
+  only 8,246 distinct numbers.
+- **Fix.** Count institutions by `ct.id`. Registry joins and upserts were already keyed by
+  `source` plus `cert_number`, so they are unaffected.
+- **Watch.** A lookup by `cert_number` alone can match the wrong institution; always add
+  `source` (or `charter_type`).
+
+## 2026-10-08: Stated frequencies were read from the row above
+- **What happened.** In the seven-state answer keys, 25 of 131 live fees with a stated
+  frequency had the wrong one: "Reverse Stop Payment Request $20" was published as annual, and
+  "Cashier's Check (Per item) $5" as monthly.
+- **Why.** Knox's `detectFrequency` reads the whole excerpt, and a table excerpt holds the
+  neighbouring rows ("Missing/Bad Address - per year .. $10.00 | Reverse Stop Payment .. $20.00").
+  The first period word anywhere on the line won.
+- **Fix.** `settledFrequency` (`src/lib/fee-frequency.ts`) reads the fee's own row first and
+  drops a period that sits only in another priced cell. Knox v47 uses it on new reads, and
+  Hamilton's frequency fill v2 applies it to live fees. Every change is logged as
+  `frequency_corrected` or `frequency_cleared` with `from` and `to`. A read-only dry run on
+  12,343 live shared-line fees changes 559: 350 corrected and 209 cleared.
+- **Watch.** `pipeline_feedback` rows for `hamilton.frequency_fill`, by kind, after the next
+  publish step.
+
+
+## 2026-10-08: A fee-change notice published its old column
+- **What happened.** Jeanne D'Arc CU (8130) showed Money Orders $2, Rush Card $20, Account
+  Research $35/hr, Tax Levy $50 and Mortgage Subordination $75. Its notice (document 21764) prints
+  "Fee through July 31, 2026 | Fee as of August 1, 2026", so those were the old prices. The five
+  changes recorded from them (1060-1064) read as cuts.
+- **Why.** Knox took the first price on a row, and the source check accepted any price on the
+  fee's own row.
+- **Fix.** `newestColumnText` (`src/lib/fee-change-columns.ts`) keeps only the newest price on a
+  row under a "through / as of", "current / new" or "old / new" header. Knox v48 and source check
+  v16 read the text through it, so the old prices fail the check and go through flag, second look
+  and archive. On prod this table shape held live fees at one institution only (13 fees, one
+  document).
+- **Watch.** 88942, 88945, 88950, 88951 and 88952 are `takedown_pending` after the next source
+  check pass on 8130, and change records 1060-1064 drop out of change lists.

@@ -135,6 +135,34 @@ const INSTITUTION_BUDGET_MS = 45_000;
 // no bank starts after STEP_START_BUDGET_MS and none runs past STEP_HARD_BUDGET_MS.
 const STEP_START_BUDGET_MS = 75_000;
 const STEP_HARD_BUDGET_MS = 100_000;
+/**
+ * The end of each step kept for the companion search (second-document.ts). Banks stopped
+ * starting only at STEP_START_BUDGET_MS and the search ran only if the bank loop ended
+ * before it, so once the queue was long enough to fill every step the search never ran:
+ * no second-document attempt from 07:00 UTC Oct 7 to Oct 9, while top-10 banks with a
+ * verified overdraft fee sat hidden for want of the rest of their schedule.
+ */
+export const COMPANION_RESERVE_MS = 25_000;
+
+export interface DiscoveryTimeBudget {
+  /** Nothing in the step runs past this. */
+  stepDeadline: number;
+  /** No bank starts after this. */
+  lastBankStart: number;
+  /** No bank runs past this; the rest of the step is the companion search's. */
+  bankDeadline: number;
+}
+
+/** A discovery step's clock, with the companion search's reserve when it runs. */
+export function discoveryTimeBudget(startedAt: number, secondDocuments: boolean): DiscoveryTimeBudget {
+  const reserve = secondDocuments ? COMPANION_RESERVE_MS : 0;
+  const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
+  return {
+    stepDeadline,
+    lastBankStart: startedAt + STEP_START_BUDGET_MS - reserve,
+    bankDeadline: stepDeadline - reserve,
+  };
+}
 /** Pause between crawl requests to one site. */
 const DEFAULT_POLITE_DELAY_MS = 250;
 const MAX_TRAIL = 60;
@@ -1646,24 +1674,25 @@ export async function runMagellanDiscovery(
   const hintedOrder = finderOrderFromHints(hints);
   const finderOrder = demoteFinders(hintedOrder, demotedFinders);
 
-  const startedAt = Date.now();
-  const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
+  const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
+  // With the companion search on, banks stop early enough to leave it its reserve.
+  const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
   for (const row of rows) {
     // Banks not reached this step stay due and are picked up by the next one.
-    if (Date.now() - startedAt > STEP_START_BUDGET_MS) break;
+    if (Date.now() > lastBankStart) break;
     const institutionId = Number(row.id);
     const bankStarted = Date.now();
     const result = await discoverForInstitution(row, {
       fetchImpl,
       rejectedUrls: rejected.get(institutionId),
       knowledge,
-      deadline: Math.min(bankStarted + INSTITUTION_BUDGET_MS, stepDeadline),
+      deadline: Math.min(bankStarted + INSTITUTION_BUDGET_MS, bankDeadline),
       politeDelayMs,
       resume: cutOff(row) ? parseDiscoveryResume(row.discovery_resume) : null,
       // The resume state lives on the attempt log, so it needs the learning schema.
       resumable: learning,
-      fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= stepDeadline,
+      fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= bankDeadline,
       pageClassifier,
       finderOrder,
     });
@@ -1721,8 +1750,7 @@ export async function runMagellanDiscovery(
         return null;
       })
     : null;
-  const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
-  const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
+  const secondDocuments = wantSecondDocuments && Date.now() < stepDeadline
     ? await runSecondDocumentFind({
         db,
         fetchImpl,

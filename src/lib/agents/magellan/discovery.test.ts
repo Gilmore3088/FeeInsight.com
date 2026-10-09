@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { ARTICLE_LINK_SQL } from "./link-coverage";
 
 import {
+  COMPANION_RESERVE_MS,
   DISCOVERY_METHOD_VERSION,
+  discoveryTimeBudget,
   finderOrderFromHints,
   nextDiscoveryResume,
   parseDiscoveryResume,
@@ -89,6 +91,16 @@ const bank = (id: number, website: string, extra: Record<string, unknown> = {}) 
 });
 
 describe("Magellan agentic discovery", () => {
+  it("keeps the end of every step for the companion search", () => {
+    // Oct 7-9: banks filled each step past the old start budget, so the search never ran.
+    const withCompanions = discoveryTimeBudget(0, true);
+    expect(withCompanions.stepDeadline - withCompanions.bankDeadline).toBe(COMPANION_RESERVE_MS);
+    expect(withCompanions.lastBankStart).toBeLessThan(withCompanions.bankDeadline);
+    expect(withCompanions).toEqual({ stepDeadline: 100_000, lastBankStart: 50_000, bankDeadline: 75_000 });
+    // A rescue step (no companion search) gives the banks the whole step.
+    expect(discoveryTimeBudget(0, false)).toEqual({ stepDeadline: 100_000, lastBankStart: 75_000, bankDeadline: 100_000 });
+  });
+
   it("discovers a homepage fee schedule link and writes institution plus discovery evidence", async () => {
     const db = createDbMock([bank(42, "https://testbank.example")]);
     const fetchImpl = vi

@@ -1,6 +1,9 @@
 import { getSql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
+import { productNameFromFeeName } from "@/lib/agents/knox/lineup";
 import { AMOUNT_PATTERN, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
+
+export { productNameFromFeeName };
 
 /**
  * Account lineup: each checking or savings account a bank publishes, with its monthly fee,
@@ -65,22 +68,6 @@ const toNumber = (value: number | string | null | undefined): number | null => {
 export function catalogExcerpt(conditions: string | null): string | null {
   const match = conditions?.match(/excerpt="((?:[^"\\]|\\.)*)"/);
   return match ? match[1].replace(/\\"/g, "\"").trim() || null : null;
-}
-
-/** Fee words at the end of a fee name; what is left in front of them may be the account. */
-const FEE_NAME_TAIL =
-  /\s*[-–:]?\s*(?:low balance\s+)?(?:monthly\s+)?(?:maintenance\s+|service\s+|account\s+)*(?:fee|charge|service charge|maintenance)s?\s*$/i;
-const GENERIC_PRODUCT_WORDS =
-  /^(?:monthly|maintenance|service|account|accounts|fee|fees|charge|low|balance|minimum|min\.?|the|a|an|for|per|month|regular|standard|basic|all|each|if|of|and|or)$/i;
-
-/** "Freedom Start-Up Monthly Fee" -> "Freedom Start-Up"; generic or sentence-like names give null. */
-export function productNameFromFeeName(feeName: string): string | null {
-  const prefix = feeName.replace(FEE_NAME_TAIL, "").replace(/[\s\-–:|]+$/, "").trim();
-  if (!prefix || prefix === feeName.trim()) return null;
-  if (!/^[A-Z0-9]/.test(prefix) || /[$\d]{2,}|[.;,]/.test(prefix)) return null;
-  const words = prefix.split(/\s+/);
-  if (words.length > 6 || words.every((word) => GENERIC_PRODUCT_WORDS.test(word))) return null;
-  return prefix.slice(0, 80);
 }
 
 /** "if balance falls below $1,000" -> 1000. Also "minimum daily balance of $20,000 ... to avoid". */

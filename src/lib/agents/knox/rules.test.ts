@@ -288,7 +288,7 @@ describe("Knox extract.rules", () => {
     ["Statement Copy", "document_reproduction"],
     ["Deposit Bags", "night_deposit"],
     ["Verification of Deposit", "account_verification"],
-    ["Mortgage Subordination Fee", "legal_process"],
+    ["Mortgage Subordination Fee", "other_lending_fee"],
     ["Loan Application Fee", "other_lending_fee"],
     ["Same Day Bill Payment", "bill_pay"],
     ["Gift Cards (Visa)", "gift_card_purchase"],
