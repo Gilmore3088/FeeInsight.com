@@ -9,7 +9,7 @@ import { sql } from "@/lib/data-store/connection";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
 import { getMarketStudyData } from "@/lib/data-store/market-study";
-import { getLiveFeeFacts, summarizeMarketCoverage, type MarketCoverage } from "@/lib/data-store/competitor-coverage";
+import { getBranchlessIds, getLiveFeeFacts, summarizeMarketCoverage, type MarketCoverage } from "@/lib/data-store/competitor-coverage";
 import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/hamilton/studies-exhibits/market";
 import { branchNetworkMap, type NetworkCity } from "@/lib/hamilton/branch-network-map";
 import { geoContains } from "d3-geo";
@@ -221,8 +221,8 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
   const own = footprint?.byInstitution[institutionId];
   const footprintIds = Object.keys(footprint?.byInstitution ?? {}).map(Number).filter((id) => id !== institutionId);
   const coverage = footprint
-    ? await getLiveFeeFacts(footprintIds)
-        .then((live) => summarizeMarketCoverage(footprint.byInstitution, institutionId, live))
+    ? await Promise.all([getLiveFeeFacts(footprintIds), getBranchlessIds(footprintIds)])
+        .then(([live, branchless]) => summarizeMarketCoverage(footprint.byInstitution, institutionId, live, branchless))
         .catch(() => null)
     : null;
   return {

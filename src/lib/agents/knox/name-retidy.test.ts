@@ -104,6 +104,7 @@ describe("retidiedFeeName", () => {
     // A condition clause, a dangling range or unit, a list bullet, a sentence cell.
     expect(retidiedFeeName("service charge per month if balance drops below", "monthly_maintenance")).toBe("Service charge");
     expect(retidiedFeeName("Service Charge Charged If Minimum Balance Is Not Met", "monthly_maintenance")).toBe("Service Charge");
+    expect(retidiedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
     expect(retidiedFeeName("Late Fee | Up to", "late_payment")).toBe("Late Fee");
     expect(retidiedFeeName("NSF fee (ACH, ATM, or check) - per", "nsf")).toBe("NSF fee (ACH, ATM, or check)");
     expect(retidiedFeeName("+Returned Item Fee – per item returned", "deposited_item_return")).toBe("Returned Item Fee – per item returned");

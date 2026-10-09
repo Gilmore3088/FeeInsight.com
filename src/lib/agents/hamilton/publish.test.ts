@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, runHamiltonPublish } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -107,6 +107,31 @@ describe("Hamilton agentic publish", () => {
     expect(writes).not.toContain("INSERT INTO published_fee_records");
     expect(writes).toContain("UPDATE verified_fee_observations");
     expect(JSON.stringify(db.mock.calls)).toContain("category_guard:name_contradicts");
+  });
+
+  it("holds a row whose name is not a fee's or carries another price (UAT, Oct 9 re-queued rows)", async () => {
+    const held = [
+      // A waiver sentence at $0 and a no-fee sentence are the eval's not_a_fee rules, applied before publish.
+      { ...verifiedFee, fee_verified_id: 811, canonical_fee_key: "monthly_maintenance", fee_name: "To avoid the monthly service charge, keep", amount: "0.00", hold: "publish_hold:name_rule:waiver_sentence" },
+      { ...verifiedFee, fee_verified_id: 812, canonical_fee_key: "stop_payment", fee_name: "No fee for stop payments placed online", amount: "0.00", hold: "publish_hold:name_rule:no_fee_sentence" },
+      // The price printed in the name is the fee; the stored amount is the next column's rent.
+      { ...verifiedFee, fee_verified_id: 813, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", amount: "50.00", hold: "publish_hold:price_in_name" },
+    ];
+    for (const { hold, ...row } of held) {
+      const db = createDbMock([row]);
+      const result = await runHamiltonPublish({ runId: 118, db: asPublishDb(db) });
+      expect(result.publishedFees, row.fee_name).toBe(0);
+      expect(result.results[0].status, row.fee_name).toBe("skipped");
+      const writes = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(writes).not.toContain("INSERT INTO published_fee_records");
+      expect(JSON.stringify(db.mock.calls), row.fee_name).toContain(hold);
+    }
+    // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
+    expect(publishNameHold("Courtesy Pay Fee…..$35.005", "overdraft", 35)).toBeNull();
+    expect(publishedFeeName("Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", "overdraft")).toBe("Courtesy Pay (Paid Overdraft) Fee");
+    expect(publishedFeeName("ATM Balance Inquiry (at non-Wildfire ATM) .........................", "atm_non_network")).toBe("ATM Balance Inquiry (at non-Wildfire ATM)");
+    expect(publishedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
+    expect(publishNameHold("paper statement fee is waived if enrolled in eStatements", "paper_statement", 5)).toBeNull();
   });
 
   it("never publishes a row read from an article page", async () => {
