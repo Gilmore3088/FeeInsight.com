@@ -1425,6 +1425,48 @@ export function withBoxSizeCellsSplit(text: string): string {
 }
 
 /**
+ * v64: a box table printed sideways, a row of sizes over a row of prices ("... | 3x5 | 5x5 | 3x10
+ * | 5x10 | 10x10" over "... | $60 | $80 | $90 | $110 | $185", SCCU 8109). Knox read the first price
+ * as the neighbouring cell's fee and the rest not at all. Each size and the price under it become
+ * their own "size | price" line after the pair ("×" written as "x"); the cells before the run stay
+ * on their lines.
+ */
+const BOX_SIZE_ONLY_CELL = /^\d{1,2}(?:\.\d)?\s?[x×]\s?\d{1,2}(?:\s?[x×]\s?\d{1,2})?$/i;
+const BARE_PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
+const SIDEWAYS_BOX_MIN = 2;
+
+function trailingRun(cells: string[], test: (cell: string) => boolean): number {
+  let count = 0;
+  while (count < cells.length && test(cells[cells.length - 1 - count])) count += 1;
+  return count;
+}
+
+export function withSidewaysBoxTable(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const sizes = lines[index].split("|").map((cell) => cell.trim());
+    // One blank line may sit between the two rows ("Size | 2 × 5 | ..." / "" / "Cost | $17.50 | ...").
+    const priceIndex = lines[index + 1]?.trim() === "" ? index + 2 : index + 1;
+    const prices = (lines[priceIndex] ?? "").split("|").map((cell) => cell.trim());
+    const run = trailingRun(sizes, (cell) => BOX_SIZE_ONLY_CELL.test(cell));
+    if (run < SIDEWAYS_BOX_MIN || trailingRun(prices, (cell) => BARE_PRICE_CELL.test(cell)) !== run) {
+      out.push(lines[index]);
+      continue;
+    }
+    const sizeLead = sizes.slice(0, sizes.length - run).filter(Boolean).join(" | ");
+    const priceLead = prices.slice(0, prices.length - run).filter(Boolean).join(" | ");
+    if (sizeLead) out.push(sizeLead);
+    if (priceLead) out.push(priceLead);
+    for (let cell = 0; cell < run; cell += 1) {
+      out.push(`${sizes[sizes.length - run + cell].replace(/\s?×\s?/g, " x ")} | ${prices[prices.length - run + cell]}`);
+    }
+    index = priceIndex;
+  }
+  return out.join("\n");
+}
+
+/**
  * v62: a fee whose name carries a footnote mark ("Overdraft - Insufficient Funds / Uncollected2
  * $40.00") is a business price when that footnote says so ("2 Created by check, ... Only
  * applicable to business accounts. This fee is not charged to consumer accounts.", ConnectOne
