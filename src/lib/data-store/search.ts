@@ -97,6 +97,15 @@ function searchQualityCte(scopeSql: string): string {
     FROM published_fee_catalog
     WHERE institution_id IN (SELECT id FROM scope)
   ),
+  scope_verified AS MATERIALIZED (
+    -- Live verified rows for the scope, read once. A verified row always carries its
+    -- raw row's institution, so the raw anti-join below can check against these rows
+    -- instead of scanning every verified row in the country.
+    SELECT institution_id, fee_verified_id, fee_raw_id
+    FROM verified_fee_observations
+    WHERE review_status <> 'rejected'
+      AND institution_id IN (SELECT id FROM scope)
+  ),
   catalog_counts AS (
     SELECT
       institution_id,
@@ -110,10 +119,8 @@ function searchQualityCte(scopeSql: string): string {
     SELECT
       fv.institution_id,
       COUNT(*)::int AS verified_unpublished_fee_count
-    FROM verified_fee_observations fv
-    WHERE fv.review_status <> 'rejected'
-      AND fv.institution_id IN (SELECT id FROM scope)
-      AND NOT EXISTS (
+    FROM scope_verified fv
+    WHERE NOT EXISTS (
         SELECT 1
         FROM scope_catalog pfc
         WHERE pfc.fee_verified_id = fv.fee_verified_id
@@ -129,9 +136,8 @@ function searchQualityCte(scopeSql: string): string {
     WHERE fr.institution_id IN (SELECT id FROM scope)
       AND NOT EXISTS (
       SELECT 1
-      FROM verified_fee_observations fv
+      FROM scope_verified fv
       WHERE fv.fee_raw_id = fr.fee_raw_id
-        AND fv.review_status <> 'rejected'
     )
     GROUP BY fr.institution_id
   ),

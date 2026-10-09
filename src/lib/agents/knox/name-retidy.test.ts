@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { capitalisedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -781,5 +781,47 @@ describe("v16: UAT's 933 misses", () => {
   it("reads a font's hyphen left after an earlier pass", () => {
     expect(spacedControlName("Non\u0372Sufficient Funds (NSF) Return")).toBe("Non-Sufficient Funds (NSF) Return");
     expect(isMessyName("Non\u0372Sufficient Funds (NSF) Return")).toBe(true);
+  });
+});
+
+describe("v17 junk glyphs", () => {
+  it("cuts a font's leader dots, a dot leader of U+FFFD and a footnote bullet off the end", () => {
+    expect(junkStrippedName("Notary Service for members ċċ")).toBe("Notary Service for members");
+    expect(junkStrippedName("Skip-a-payment .. ċċċ .ċċċ")).toBe("Skip-a-payment");
+    expect(junkStrippedName("Night Depository ċċ.")).toBe("Night Depository");
+    expect(junkStrippedName("Copy of statement �����")).toBe("Copy of statement");
+    expect(junkStrippedName("Replacement Visa Debit Card ●")).toBe("Replacement Visa Debit Card");
+  });
+
+  it("cuts a drawn or symbol-font bullet off the front and drops zero-width spaces", () => {
+    expect(junkStrippedName("♦ Paid Overdraft")).toBe("Paid Overdraft");
+    expect(junkStrippedName(" Stop Payment Charges")).toBe("Stop Payment Charges");
+    expect(junkStrippedName("\u0095 Account Reconciliation")).toBe("Account Reconciliation");
+    expect(junkStrippedName("​Dormant Account Fee")).toBe("Dormant Account Fee");
+    expect(junkStrippedName("Levies​​​")).toBe("Levies");
+    expect(junkStrippedName("● 5 x 10 Box Rent")).toBe("5 x 10 Box Rent");
+  });
+
+  it("leaves a glyph inside a name, which stands for a letter, a figure or a cell break", () => {
+    expect(junkStrippedName("Paid Check/Dra� Photocopy")).toBeNull();
+    expect(junkStrippedName("Outgoing Wire – Domesc including Western Union")).toBeNull();
+    expect(junkStrippedName("ACH Wire Transfers � Foreign")).toBeNull();
+    expect(junkStrippedName("Outgoing Wire Fee:  Foreign")).toBeNull();
+    expect(junkStrippedName("Lost Debit Rewards Card Replacement ��� 1st Free")).toBeNull();
+    expect(junkStrippedName("/year ● Late Payment Fee")).toBeNull();
+    // A U+FFFD before a name may be a "$"; the same font writes its digits as U+0100-U+0109.
+    expect(junkStrippedName("�00/Transaction: Non-Sufficient Funds ���")).toBeNull();
+    expect(junkStrippedName("Inactive Account (after āĂ monthsof inactivity) ċċċ")).toBeNull();
+    expect(junkStrippedName("\u200b4 ATM Transaction (each)")).toBeNull();
+    expect(junkStrippedName("Overdraft Fee")).toBeNull();
+  });
+
+  it("renames a junk-glyph name in the plan, and the name is messy", () => {
+    expect(isMessyName("Notary Service for members ċċ")).toBe(true);
+    const plan = planRetidy(
+      [fee({ canonical_fee_key: "notary_fee", fee_name: "Notary Service for members ċċ", amount: 0 })],
+      [{ source_document_id: 70, normalized_text: "Notary Service for members ċċ $0.00" }],
+    );
+    expect(plan.renames.map((rename) => rename.newName)).toEqual(["Notary Service for members"]);
   });
 });

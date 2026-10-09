@@ -7,8 +7,8 @@ import { canAccessPremium } from "@/lib/access";
 import {
   getDistrictMetrics,
   getBeigeBookHeadlines,
-  getPublicStats,
 } from "@/lib/data-store";
+import { getPublicStatsCached } from "@/lib/data-store/public-cached-reads";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { LinkButton, MemoHeader, MemoPage, SERIF } from "@/components/hamilton/memo/memo";
 
@@ -23,7 +23,7 @@ export default async function ProDistrictsPage() {
 
   const metrics = await getDistrictMetrics();
   const headlines = await getBeigeBookHeadlines();
-  const stats = await getPublicStats();
+  const stats = await getPublicStatsCached();
 
   return (
     <MemoPage>
