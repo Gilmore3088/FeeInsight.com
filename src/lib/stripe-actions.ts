@@ -12,6 +12,7 @@ import { resolveProPriceId } from "@/lib/stripe-prices";
 import {
   NON_INSTITUTION_TIER,
   isProPlan,
+  isProTier,
   tierForAssets,
   type ProPlan,
   type ProTier,
@@ -23,34 +24,57 @@ export interface ProCheckoutInput {
   institutionId?: number | null;
   /** A consultant or other organization with no assets of its own. */
   otherOrganization?: boolean;
+  /**
+   * The size band the buyer picked, used only when the institution has no asset size on file
+   * (James, 8 Oct 2026). The subscription is marked so "Plans to check" lists it.
+   */
+  pickedTier?: ProTier | null;
   returnTo?: string;
 }
+
+export type ProCheckoutResult =
+  | { url: string | null; error?: undefined; needsSignIn?: undefined }
+  | { url: null; error: string; needsSignIn?: boolean };
 
 /**
  * Starts Pro checkout. The tier is worked out here from the institution's assets on file,
  * never taken from the browser, so a buyer can't pick a cheaper tier than their size.
+ *
+ * Buyer-facing problems come back as `{ error }` rather than a throw: production builds
+ * replace a thrown server-action message with a generic one, so the buyer would never
+ * see "pick your bank" or the email-us line, and a signed-out click would not reach
+ * the register hand-off.
  */
-export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ url: string | null }> {
+export async function createCheckoutSession(input: ProCheckoutInput): Promise<ProCheckoutResult> {
   const user = await getCurrentUser();
-  if (!user) throw new Error("Not authenticated");
+  if (!user) return { url: null, error: "Sign in to start checkout", needsSignIn: true };
 
   const plan = input.plan;
-  if (!isProPlan(plan)) throw new Error("Unknown plan");
+  if (!isProPlan(plan)) return { url: null, error: "Unknown plan" };
 
   let tier: ProTier | null = null;
   let institutionId: number | null = null;
+  let tierPicked = false;
   if (input.institutionId) {
     const institution = await getProPricingInstitution(Number(input.institutionId));
-    if (!institution) throw new Error("Pick your bank or credit union from the list");
+    if (!institution) return { url: null, error: "Pick your bank or credit union from the list" };
     tier = tierForAssets(institution.assetsThousands);
+    // Assets on file always win; the buyer's band only fills a gap.
+    if (!tier && isProTier(input.pickedTier)) {
+      tier = input.pickedTier;
+      tierPicked = true;
+    }
     if (!tier) {
-      throw new Error(`We don't have ${institution.name}'s asset size yet. Email ${CONTACT_EMAIL} and we'll set up your plan.`);
+      return {
+        url: null,
+        error: `We don't have ${institution.name}'s asset size yet. Pick its size above, or email ${CONTACT_EMAIL}.`,
+      };
     }
     institutionId = institution.id;
   } else if (input.otherOrganization) {
     tier = NON_INSTITUTION_TIER;
   } else {
-    throw new Error("Pick your bank or credit union first");
+    return { url: null, error: "Pick your bank or credit union first" };
   }
 
   const stripe = getStripe();
@@ -67,6 +91,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
   if (hasReturnTo) cancelParams.set("from", sanitizedReturnTo);
   if (institutionId) cancelParams.set("inst", String(institutionId));
   else cancelParams.set("org", "other");
+  if (tierPicked) cancelParams.set("band", tier);
+  cancelParams.set("canceled", "1");
   const cancelPath = `/subscribe?${cancelParams.toString()}`;
 
   // Created here, not at registration, so a free signup never depends on Stripe.
@@ -76,6 +102,10 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer: customerId,
+    // Banks pay against an invoice that names the institution and its address.
+    billing_address_collection: "required",
+    customer_update: { address: "auto", name: "auto" },
+    allow_promotion_codes: true,
     success_url: `${origin}/account/welcome?${successParams.toString()}`,
     cancel_url: `${origin}${cancelPath}`,
     metadata: {
@@ -84,6 +114,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
       pro_tier: tier,
       pro_plan: plan,
       ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
+      ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
       ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
     },
     // Kept on the subscription itself so the consultant report cap can tell who it covers.
@@ -91,6 +122,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
       metadata: {
         pro_tier: tier,
         ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
+        ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
       },
     },
   });
@@ -98,7 +130,11 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<{ 
   return { url: session.url };
 }
 
-export async function createPortalSession(): Promise<void> {
+/**
+ * Opens the Stripe billing portal and comes back to `returnPath` (an internal path; anything
+ * else falls back to /account), so a customer returns to the page they started from.
+ */
+export async function createPortalSession(returnPath = "/account"): Promise<void> {
   const user = await getCurrentUser();
   if (!user || !user.stripe_customer_id) {
     throw new Error("No billing account found");
@@ -109,7 +145,7 @@ export async function createPortalSession(): Promise<void> {
 
   const session = await stripe.billingPortal.sessions.create({
     customer: user.stripe_customer_id,
-    return_url: `${origin}/pro/settings`,
+    return_url: `${origin}${sanitizeInternalRedirect(returnPath, "/account")}`,
   });
 
   redirect(session.url);

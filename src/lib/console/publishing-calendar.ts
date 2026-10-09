@@ -114,16 +114,67 @@ export const PUBLICATIONS: Publication[] = [
     next: nextMonthly(1, 14, 7),
   },
   {
-    // Growth scores posted queue items from tracked visits and leads. Built, but the cron
-    // (/api/admin/crew/growth-score, planned "7 13 * * 1") is not in vercel.json until James says go.
+    // Growth scores posted queue items from tracked visits and leads. Turned on by James
+    // ("Weekly agent schedules: Enable", 15:33 UTC Oct 8).
     key: "growth_scores",
     name: "Weekly growth scores",
     audience: "You",
-    cadence: "Weekly, Mondays (not turned on yet)",
+    cadence: "Weekly, Mondays",
     href: "/admin/customers/content",
     freshnessKey: "run:growth.score",
     next: nextWeekly(1, 13, 7),
-    scheduled: false,
+  },
+  {
+    // NIELSEN reads prospects' published leadership and contact pages. Nothing sends:
+    // the contacts feed outreach drafts James sends himself.
+    key: "prospect_contacts",
+    name: "Prospect contacts",
+    audience: "You",
+    cadence: "Weekly, Mondays (up to 60 prospect websites)",
+    href: "/admin/growth?view=team",
+    freshnessKey: "run:growth.contacts",
+    next: nextWeekly(1, 12, 37),
+  },
+  {
+    // CARNEGIE's first-email drafts. James audits each one and sends it himself; nothing sends.
+    key: "outreach_drafts",
+    name: "Outreach email drafts",
+    audience: "You",
+    cadence: "Weekly, Mondays (drafts for you to audit and send)",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.outreach",
+    next: nextWeekly(1, 14, 7),
+  },
+  {
+    // DRAPER's weekly report from what buyers did and said. Read by James only.
+    key: "learning_report",
+    name: "What we learned",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.learning",
+    next: nextWeekly(1, 14, 37),
+  },
+  {
+    // SHERLOCK's brief from new regulator items and competitors' public pages; filed only on
+    // days with something new. Read by James and DRAPER only.
+    key: "market_brief",
+    name: "Market brief",
+    audience: "You",
+    cadence: "Daily, when there is something new",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.intel",
+    next: nextDaily(14, 17),
+  },
+  {
+    // NORMAN checks every buying page and unsent outreach link loads, and counts the funnel.
+    key: "conversion_check",
+    name: "Conversion check",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.conversion",
+    next: nextWeekly(1, 13, 47),
   },
 ];
 

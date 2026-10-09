@@ -13,6 +13,7 @@ import {
   type MarketRow,
   type MarketSpread,
 } from "./market-spread";
+import { checkSpreadEnds } from "./end-check";
 
 /**
  * W3 fee depth at work (every other Friday, free, no model). Shows how a banking
@@ -74,6 +75,12 @@ export const USE_CASES: readonly UseCase[] = [
     hamilton: "Hamilton answers that question in plain language, fee by fee, against the market, peers, state and Fed district.",
   },
   {
+    key: "marketing-claim",
+    label: "Checking a lower-fees claim",
+    opener: "Before a campaign in the {place} area says your fees are lower, marketing and compliance need each competitor's published price for the fees in the ad.",
+    hamilton: "In Hamilton, the team checks each fee in the claim against every local competitor's schedule, with the source for each figure.",
+  },
+  {
     key: "schedule-review",
     label: "Annual fee schedule review",
     opener: "An annual fee schedule review in the {place} area goes faster when every competitor's schedule sits in one place.",
@@ -124,13 +131,19 @@ export function summarizeDepth(rows: MarketRow[]): MetroDepth[] {
   return metros;
 }
 
-export function pickDepthMetro(metros: MetroDepth[], recent: Set<string>): MetroDepth | null {
+export function rankDepthMetros(metros: MetroDepth[], recent: Set<string>): MetroDepth[] {
   const eligible = metros.filter(
     (metro) => metro.fullSchedules >= MIN_FULL_SCHEDULES && metro.grid.length === GRID_ROWS && !recent.has(metro.metro),
   );
-  eligible.sort((a, b) => b.fullSchedules - a.fullSchedules || b.medianTypes - a.medianTypes || a.metro.localeCompare(b.metro));
-  return eligible[0] ?? null;
+  return eligible.sort((a, b) => b.fullSchedules - a.fullSchedules || b.medianTypes - a.medianTypes || a.metro.localeCompare(b.metro));
 }
+
+export function pickDepthMetro(metros: MetroDepth[], recent: Set<string>): MetroDepth | null {
+  return rankDepthMetros(metros, recent)[0] ?? null;
+}
+
+/** Metros tried, best first, before the run gives up on grid ends that won't trace. */
+export const DEPTH_END_CHECK_TRIES = 3;
 
 /** The next use case after the ones already drafted, in list order. */
 export function nextUseCase(draftedSoFar: number): UseCase {
@@ -175,18 +188,23 @@ export interface FeeDepthResult {
   eligible: number;
   useCase: string | null;
   draftId: number | null;
+  /** Metros passed over because a grid end did not trace to its schedule. */
+  endsRejected: Array<{ metro: string; failing: number }>;
   picked: { metro: string; fullSchedules: number; medianTypes: number } | null;
   reason: string | null;
 }
 
-export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean }): Promise<FeeDepthResult> {
+export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean; avoidSubjects?: Iterable<string> }): Promise<FeeDepthResult> {
   const db = input.db ?? sql;
   const now = input.now ?? new Date();
-  const base: FeeDepthResult = { schemaReady: false, dryRun: input.dryRun, metrosConsidered: 0, eligible: 0, useCase: null, draftId: null, picked: null, reason: null };
+  const base: FeeDepthResult = { schemaReady: false, dryRun: input.dryRun, metrosConsidered: 0, eligible: 0, useCase: null, endsRejected: [], draftId: null, picked: null, reason: null };
   if (!(await contentSchemaReady(db))) return { ...base, reason: "content_drafts table is missing" };
 
-  const metros = summarizeDepth(await loadDepthRows(db));
+  const depthRows = await loadDepthRows(db);
+  const metros = summarizeDepth(depthRows);
+  // Featured lately, or skipped by James with a reason (a lesson): neither is drafted again.
   const recent = await recentSubjects(FEE_DEPTH_WORKFLOW, REPEAT_WINDOW_DAYS, db);
+  for (const subject of input.avoidSubjects ?? []) recent.add(subject);
   const [{ drafted, lately }] = await db`
     SELECT count(*)::int AS drafted,
            count(*) FILTER (WHERE created_at >= now() - make_interval(days => ${CADENCE_DAYS}::int))::int AS lately
@@ -199,10 +217,25 @@ export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; no
     metrosConsidered: metros.length,
     eligible: metros.filter((metro) => metro.fullSchedules >= MIN_FULL_SCHEDULES).length,
     useCase: useCase.key,
+    endsRejected: [],
   };
   if (Number(lately) > 0) return { ...result, reason: "drafted last week; this one runs every other week" };
-  const pick = pickDepthMetro(metros, recent);
-  if (!pick) return { ...result, reason: `no metro has ${MIN_FULL_SCHEDULES} full schedules that wasn't featured recently` };
+  const ranked = rankDepthMetros(metros, recent);
+  if (ranked.length === 0) return { ...result, reason: `no metro has ${MIN_FULL_SCHEDULES} full schedules that wasn't featured recently` };
+  let pick: MetroDepth | null = null;
+  for (const candidate of ranked.slice(0, DEPTH_END_CHECK_TRIES)) {
+    let failing = 0;
+    for (const row of candidate.grid) {
+      const ends = await checkSpreadEnds(db, depthRows, { metro: candidate.metro, feeCategory: row.feeCategory, low: row.low, high: row.high });
+      failing += ends.failing.length;
+    }
+    if (failing === 0) {
+      pick = candidate;
+      break;
+    }
+    result.endsRejected.push({ metro: candidate.metro, failing });
+  }
+  if (!pick) return { ...result, reason: `a low or high end on the grid didn't trace to its own schedule in the top ${result.endsRejected.length} metros` };
 
   const draft = draftDepthCaption(pick, useCase, now);
   const picked = { metro: pick.metro, fullSchedules: pick.fullSchedules, medianTypes: pick.medianTypes };
@@ -234,7 +267,7 @@ export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; no
           median: row.median,
           high: row.high,
         })),
-        method: `published_fee_catalog, sourced rows only; a full schedule has ${FULL_SCHEDULE_TYPES}+ fee types; grid values are one per institution (overdraft at its highest tier), $0 counts`,
+        method: `published_fee_catalog, sourced rows only; a full schedule has ${FULL_SCHEDULE_TYPES}+ fee types; grid values are one per institution (overdraft at its highest tier), $0 counts; every low and high traced to the institution's own schedule`,
         link: draft.link,
       },
       asOf: now,

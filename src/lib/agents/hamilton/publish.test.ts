@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, runHamiltonPublish } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -324,6 +324,33 @@ describe("Hamilton agentic publish", () => {
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
   });
 
+  it("fills a state lane's short publish batch with the oldest eligible rows from any state", async () => {
+    const other = { ...verifiedFee, fee_verified_id: 802, fee_raw_id: 702, institution_id: 43 };
+    const db = createDbMock([]);
+    db.unsafe = vi.fn((query: string, params: unknown[]) => {
+      if (query.includes("institution_fee_depth")) return Promise.resolve(deepInstitutionRows([verifiedFee, other]));
+      if (!query.includes("FROM verified_fee_observations")) return Promise.resolve([]);
+      // The lane's own state has one row; the fill (no state param) finds another.
+      return Promise.resolve(params.includes("CA") ? [verifiedFee] : [verifiedFee, other]);
+    });
+
+    const result = await runHamiltonPublish({ runId: 118, stateCode: "CA", limit: 10, db: asPublishDb(db) });
+
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    expect(selects).toHaveLength(2);
+    expect(selects[0][1]).toContain("CA");
+    expect(selects[1][1]).not.toContain("CA");
+    expect(selects[1][1][0]).toBe(9); // limit minus the lane's own row
+    expect(result.results.map((entry) => entry.feeVerifiedId).sort()).toEqual([801, 802]);
+  });
+
+  it("keeps a single bank's read scoped to that bank", async () => {
+    const db = createDbMock([]);
+    await runHamiltonPublish({ runId: 119, stateCode: "CA", institutionId: 42, db: asPublishDb(db) });
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    expect(selects).toHaveLength(1);
+  });
+
   it("closes the prior live row and records the change when an amount moves", async () => {
     const db = createDbMock([verifiedFee], [priorPublishedFee]);
 
@@ -520,6 +547,16 @@ describe("Hamilton agentic publish", () => {
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });
 
+    it("lets a row Darwin re-filed after a takedown publish again under its new category", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 504, db: asPublishDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key");
+      expect(params).toContain("darwin_schedule_refiled");
+    });
+
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
       const db = learningDb([verifiedFee], [], [{ ...verifiedFee, depth_source: "pending" }]);
 
@@ -661,5 +698,24 @@ describe("listsBothPrices", () => {
   it("is a change when each page lists the name at one price", () => {
     const lines = [line(verifiedFee.source_document_id, verifiedFee.amount), line(prior.source_document_id, prior.amount)];
     expect(listsBothPrices(lines, verifiedFee, prior)).toBe(false);
+  });
+});
+
+describe("publishedFeeName", () => {
+  it("shows a cut-off or doubled name repaired, keeping the name the category rests on", () => {
+    expect(publishedFeeName("Account Research Research", "account_research")).toBe("Account Research");
+    expect(publishedFeeName("Early Account Closure (by Extraco – no", "early_closure")).toBe("Early Account Closure");
+    expect(publishedFeeName(" Overdraft Fee", "overdraft")).toBe("Overdraft Fee");
+    expect(publishedFeeName("Early Account Closure (by customer)", "early_closure")).toBe("Early Account Closure (by customer)");
+  });
+
+  it("drops a footnote number from a read made before the Knox tidy stripped it", () => {
+    expect(publishedFeeName("ATM Inquiry1", "atm_non_network")).toBe("ATM Inquiry");
+    expect(publishedFeeName("Safe Deposit Box 10x10", "safe_deposit_box")).toBe("Safe Deposit Box 10x10");
+  });
+
+  it("publishes the tidied name when only the untidied one fails the category guard", () => {
+    expect(publishedFeeName("per order | Returned Items", "deposited_item_return")).toBe("Returned Items");
+    expect(publishedFeeName("Return Item . . . . .", "deposited_item_return")).toBe("Return Item");
   });
 });

@@ -37,6 +37,7 @@ import {
   type StateReportVisuals,
 } from "./state-exhibits";
 import { regulatoryExtras } from "./regulatory-section";
+import type { StateNews } from "@/lib/data-store/state-news";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import {
   POSITION_AXIS_MAX_PCT,
@@ -60,6 +61,8 @@ export interface StateFeeIndexReportInput {
     regulator: StateRegulatorRef | null;
     /** CFPB complaints, fee-change rules and the district's Beige Book line. */
     regulatory?: RegulatoryContext | null;
+    /** The state's regulator posts, fee bills and press coverage; absent means not read. */
+    stateNews?: StateNews | null;
   };
   /** County map, fee ladder, deposit holders and economy. Left out (no sections) when not loaded. */
   visuals?: StateReportVisuals;
@@ -319,7 +322,7 @@ function developmentsSection(
   return reportSection(
     { label: "Regulatory developments", title: `Regulation and supervision affecting ${data.stateName} institutions` },
     [
-      stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt),
+      stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt, context.stateNews),
       regulatoryExtras(context.regulatory, data.stateName),
     ].join("\n"),
   );

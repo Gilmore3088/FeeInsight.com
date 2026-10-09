@@ -6,6 +6,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { SITE_DOMAIN } from "@/lib/constants";
 import { unbackedNumbers } from "@/lib/agents/marketing/facts";
 import { themeFees } from "./calendar";
+import { checkSpreadEnds } from "./end-check";
 
 /**
  * W1 market spread (weekly, free, no model). Finds the metro where one of this month's
@@ -94,17 +95,23 @@ export function refusal(spread: MarketSpread): string | null {
  * The postable spread with the widest middle half (a real difference between typical
  * local prices, not one outlier), then the widest full range, then the most institutions.
  */
-export function pickMarket(spreads: MarketSpread[], recent: Set<string>): MarketSpread | null {
+export function rankMarkets(spreads: MarketSpread[], recent: Set<string>): MarketSpread[] {
   const eligible = spreads.filter((spread) => refusal(spread) === null && !recent.has(subjectKey(spread)));
-  eligible.sort(
+  return eligible.sort(
     (a, b) =>
       b.p75 - b.p25 - (a.p75 - a.p25) ||
       b.high - b.low - (a.high - a.low) ||
       b.institutions - a.institutions ||
       a.metro.localeCompare(b.metro),
   );
-  return eligible[0] ?? null;
 }
+
+export function pickMarket(spreads: MarketSpread[], recent: Set<string>): MarketSpread | null {
+  return rankMarkets(spreads, recent)[0] ?? null;
+}
+
+/** Spreads tried, best first, before the run gives up on ends that won't trace. */
+export const END_CHECK_TRIES = 5;
 
 export function money(value: number): string {
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
@@ -153,12 +160,11 @@ export interface MarketSpreadDraft {
 
 export function draftCaption(spread: MarketSpread, asOf: Date): MarketSpreadDraft {
   const fee = getDisplayName(spread.feeCategory);
-  const feeLower = fee.toLowerCase();
   const place = metroLabel(spread.metro);
   const zeros = spread.zeros > 0 ? `, and ${spread.zeros} charge nothing` : "";
   const body = [
     `${fee} fees in the ${place} area run from ${money(spread.low)} to ${money(spread.high)}.`,
-    `${spread.institutions} local banks and credit unions publish a ${feeLower} fee. The middle half charge between ${money(spread.p25)} and ${money(spread.p75)}${zeros}.`,
+    `${spread.institutions} local banks and credit unions publish this fee. The middle half charge between ${money(spread.p25)} and ${money(spread.p75)}${zeros}.`,
     `Same fee, same market, a ${money(cents(spread.high - spread.low))} difference. Where does yours sit? Hamilton shows any institution's fee against its local competitors, its peers, its state and its Fed district.`,
     `Source: the Bank Fee Index, built from each institution's own published fee schedule. As of ${asOfLabel(asOf)}.`,
   ].join("\n\n");
@@ -191,6 +197,8 @@ export interface MarketSpreadResult {
   marketsConsidered: number;
   postable: number;
   skippedRecent: number;
+  /** Spreads passed over because an end institution's value did not trace to its schedule. */
+  endsRejected: Array<{ fee: string; metro: string; failing: number; checked: number }>;
   draftId: number | null;
   picked: { fee: string; metro: string; institutions: number; low: number; high: number } | null;
   reason: string | null;
@@ -210,7 +218,7 @@ export async function loadMarketRows(fees: string[], db: SqlTag = sql): Promise<
   return rows as unknown as MarketRow[];
 }
 
-export async function runMarketSpread(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean }): Promise<MarketSpreadResult> {
+export async function runMarketSpread(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean; avoidSubjects?: Iterable<string> }): Promise<MarketSpreadResult> {
   const db = input.db ?? sql;
   const now = input.now ?? new Date();
   const fees = themeFees(now);
@@ -221,14 +229,18 @@ export async function runMarketSpread(input: { db?: SqlTag; runId: number | null
     marketsConsidered: 0,
     postable: 0,
     skippedRecent: 0,
+    endsRejected: [],
     draftId: null,
     picked: null,
     reason: null,
   };
   if (!(await contentSchemaReady(db))) return { ...base, reason: "content_drafts table is missing" };
 
-  const spreads = summarizeMarkets(await loadMarketRows(fees, db));
+  const marketRows = await loadMarketRows(fees, db);
+  const spreads = summarizeMarkets(marketRows);
+  // Featured lately, or skipped by James with a reason (a lesson): neither is drafted again.
   const recent = await recentSubjects(MARKET_SPREAD_WORKFLOW, REPEAT_WINDOW_DAYS, db);
+  for (const subject of input.avoidSubjects ?? []) recent.add(subject);
   const postable = spreads.filter((spread) => refusal(spread) === null);
   const result: MarketSpreadResult = {
     ...base,
@@ -236,9 +248,20 @@ export async function runMarketSpread(input: { db?: SqlTag; runId: number | null
     marketsConsidered: spreads.length,
     postable: postable.length,
     skippedRecent: postable.filter((spread) => recent.has(subjectKey(spread))).length,
+    endsRejected: [],
   };
-  const pick = pickMarket(spreads, recent);
-  if (!pick) return { ...result, reason: "no metro passed the checks this week" };
+  const ranked = rankMarkets(spreads, recent);
+  if (ranked.length === 0) return { ...result, reason: "no metro passed the checks this week" };
+  let pick: MarketSpread | null = null;
+  for (const candidate of ranked.slice(0, END_CHECK_TRIES)) {
+    const ends = await checkSpreadEnds(db, marketRows, candidate);
+    if (ends.failing.length === 0) {
+      pick = candidate;
+      break;
+    }
+    result.endsRejected.push({ fee: candidate.feeCategory, metro: candidate.metro, failing: ends.failing.length, checked: ends.checked });
+  }
+  if (!pick) return { ...result, reason: `the low or high end didn't trace to its own schedule in the top ${result.endsRejected.length} metros` };
 
   const draft = draftCaption(pick, now);
   const unbacked = unbackedNumbers(draft.body, allowedNumbers(pick, now));
@@ -256,7 +279,7 @@ export async function runMarketSpread(input: { db?: SqlTag; runId: number | null
         ...pick,
         fee_label: getDisplayName(pick.feeCategory),
         metro_label: metroLabel(pick.metro),
-        method: "published_fee_catalog, sourced rows only, one value per institution (overdraft at its highest tier), $0 counts",
+        method: "published_fee_catalog, sourced rows only, one value per institution (overdraft at its highest tier), $0 counts; the low and high ends traced to each institution's own schedule",
         link: draft.link,
       },
       asOf: now,
@@ -270,7 +293,7 @@ export async function runMarketSpread(input: { db?: SqlTag; runId: number | null
 export function summarizeMarketSpread(result: MarketSpreadResult): string {
   if (!result.schemaReady) return "Content queue table is missing; nothing drafted.";
   if (result.draftId !== null && result.picked) {
-    return `Drafted a market-spread post: ${getDisplayName(result.picked.fee)} in ${metroLabel(result.picked.metro)}, ${money(result.picked.low)} to ${money(result.picked.high)} across ${result.picked.institutions} institutions.`;
+    return `Drafted a market-spread post: ${getDisplayName(result.picked.fee)} in ${metroLabel(result.picked.metro)}, ${money(result.picked.low)} to ${money(result.picked.high)} across ${result.picked.institutions} institutions${result.endsRejected.length ? `; passed over ${result.endsRejected.length} whose low or high end did not trace to its schedule` : ""}.`;
   }
   return `No market-spread post drafted (${result.reason ?? "unknown"}); ${result.postable} of ${result.marketsConsidered} metros passed the checks.`;
 }

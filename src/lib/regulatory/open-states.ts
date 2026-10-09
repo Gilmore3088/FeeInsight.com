@@ -30,6 +30,54 @@ export const STATE_BILL_QUERIES = ["overdraft", "insufficient funds", "deposit a
 const BANK_FEE_PATTERN =
   /\b(overdraft|non-?sufficient funds|insufficient funds|nsf|returned (check|item)|deposit accounts?|checking accounts?|dormant accounts?|bank fees?|banking fees?)\b/i;
 
+/**
+ * Water law uses "overdraft" for pumping more groundwater than a basin recharges (California's
+ * "critically overdrafted basins"). Those phrases are removed before the bank fee tests, so a
+ * groundwater bill is never read as an overdraft fee bill (CA AB 1520, prod 2026-10-08).
+ */
+const WATER_OVERDRAFT =
+  /\b(critically\s+)?overdraft(ed)?\s+(groundwater\s+)?(sub)?basins?\b|\b(groundwater|aquifer|basin)\s+overdraft\b|\boverdraft\s+(of|in)\s+(the\s+)?(groundwater|aquifers?|(sub)?basins?)\b|\boverdraft\s+conditions?\b/gi;
+
+/** Words that place a bill in water law. */
+const WATER_CONTEXT = /\b(groundwater|aquifers?|water years?|water code|sustainability agenc(y|ies)|(sub)?basins?)\b/i;
+/** Words that place a bill in consumer banking. */
+const BANKING_CONTEXT =
+  /\b(banks?|banking|credit unions?|financial institutions?|depository|checking|deposit accounts?|debit cards?|account ?holders?|consumers?)\b/i;
+
+const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies))\b/i;
+
+/** The overdraft and insufficient funds terms that set the overdraft_nsf topic. */
+const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient funds|nsf|returned (check|item)s?)\b/gi;
+
+/**
+ * The bill's text with non-banking overdraft and insufficient funds wording taken out. Known water
+ * phrases always go. Then each sentence (the title is its own) keeps its overdraft or insufficient
+ * funds terms only when that sentence names a bank, account holder or consumer, or names a fee or
+ * charge without being about water. Budget language ("if insufficient funds are appropriated") and
+ * groundwater "overdraft" fall out. Tagging v3 judged the whole text at once and kept CA AB 1520
+ * ("Public resources: conservation.") on its 2026-10-08 20:27 UTC re-read, because a banking or
+ * fee word somewhere else in its digest vouched for an unrelated sentence.
+ */
+export function withoutWaterOverdraft(text: string): string {
+  const stripped = text.replace(WATER_OVERDRAFT, " ");
+  return stripped
+    .split(/(?<=[.;:!?])\s+/)
+    .map((sentence) =>
+      BANKING_CONTEXT.test(sentence) || (FEE_WORDS.test(sentence) && !WATER_CONTEXT.test(sentence))
+        ? sentence
+        : sentence.replace(OVERDRAFT_TERMS, " "),
+    )
+    .join(" ");
+}
+
+/** About 80 characters around the first bank fee term, so a stored tag can be checked without the abstract. */
+export function bankFeeMatch(text: string): string | null {
+  const hit = BANK_FEE_PATTERN.exec(text);
+  if (!hit) return null;
+  const from = Math.max(0, hit.index - 40);
+  return text.slice(from, hit.index + hit[0].length + 40).replace(/\s+/g, " ").trim();
+}
+
 export type BillStage = "introduced" | "in_committee" | "passed_chamber" | "passed_legislature" | "signed" | "vetoed" | "failed";
 
 export interface StateBillItem {
@@ -46,6 +94,8 @@ export interface StateBillItem {
   /** Date of the action that set the stage. */
   stage_date: string | null;
   topics: string[];
+  /** The words that made it a bank fee bill (diagnostics only, not stored on the row). */
+  match: string | null;
 }
 
 interface RawAction {
@@ -124,7 +174,7 @@ function topicsFor(text: string): string[] {
 export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillItem | null {
   if (!raw.id || !raw.identifier || !raw.title || !raw.openstates_url) return null;
   const abstract = (raw.abstracts ?? []).map((a) => a.abstract ?? "").join(" ");
-  const text = `${raw.title} ${abstract}`;
+  const text = withoutWaterOverdraft(`${raw.title} ${abstract}`);
   if (!BANK_FEE_PATTERN.test(text)) return null;
   const { stage, date } = billStage(raw.actions ?? []);
   return {
@@ -140,14 +190,15 @@ export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillI
     stage,
     stage_date: date,
     topics: topicsFor(text),
+    match: bankFeeMatch(text),
   };
 }
 
-export function openStatesUrl(stateCode: string, query: string, since: string, page = 1): string {
+export function openStatesUrl(stateCode: string, query: string, since: string | null, page = 1): string {
   const params = new URLSearchParams();
   params.set("jurisdiction", openStatesJurisdictionId(stateCode));
   params.set("q", query);
-  params.set("action_since", since);
+  if (since) params.set("action_since", since);
   params.set("sort", "latest_action_desc");
   params.set("per_page", "20");
   params.set("page", String(page));
@@ -180,8 +231,17 @@ export async function fetchStateFeeBills(
   apiKey: string,
   options: RegistryFetchOptions = {},
   requestIntervalMs = OPEN_STATES_REQUEST_INTERVAL_MS,
-): Promise<{ items: StateBillItem[]; searched: number; requests: number }> {
+): Promise<{
+  items: StateBillItem[];
+  rejectedIds: string[];
+  searched: number;
+  requests: number;
+  /** Set only when nothing matched since `since`: hits for the first query at any date. */
+  anyDateHits: number | null;
+}> {
   const byId = new Map<string, StateBillItem>();
+  // Search hits that fail the bank fee test, so a bill an earlier rule tagged can be untagged.
+  const rejected = new Set<string>();
   let searched = 0;
   let requests = 0;
   for (const query of STATE_BILL_QUERIES) {
@@ -199,9 +259,26 @@ export async function fetchStateFeeBills(
         searched += 1;
         const item = parseOpenStatesBill(raw, stateCode);
         if (item) byId.set(item.id, item);
+        else if (raw.id) rejected.add(raw.id);
       }
       if ((body.pagination?.max_page ?? 1) <= page) break;
     }
   }
-  return { items: [...byId.values()], searched, requests };
+  // No search hit at all since `since`: ask once more with no date limit, so the run log says
+  // whether Open States holds no matching bill text for the state at any date (a coverage gap)
+  // or the legislature simply had no fee bill action in the lookback.
+  let anyDateHits: number | null = null;
+  if (searched === 0) {
+    await waitForOpenStatesSlot(requestIntervalMs);
+    const probe = await registryFetchJson<RawPage>(openStatesUrl(stateCode, STATE_BILL_QUERIES[0], null), {
+      retries: 2,
+      timeoutMs: 30_000,
+      backoffMs: 6_000,
+      ...options,
+      headers: { "X-API-KEY": apiKey, ...options.headers },
+    });
+    requests += 1;
+    anyDateHits = probe.pagination?.total_items ?? probe.results?.length ?? 0;
+  }
+  return { items: [...byId.values()], rejectedIds: [...rejected].filter((id) => !byId.has(id)), searched, requests, anyDateHits };
 }

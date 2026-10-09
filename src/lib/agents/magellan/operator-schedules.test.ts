@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   addHandFoundLink,
   addOperatorSchedules,
+  HELD_DOCUMENT_DAYS,
   OPERATOR_SCHEDULE_STRATEGY,
   OPERATOR_SCHEDULES,
   type OperatorSchedule,
@@ -51,6 +52,14 @@ describe("schedules James found by hand", () => {
     const missing = createDb([]);
     expect((await addOperatorSchedules({ db: asDb(missing), runId: 5, schedules: [chase] })).added).toEqual([]);
     expect(inserts(missing)).toHaveLength(0);
+  });
+
+  it("counts a stored copy as held only when it was stored in the last month", async () => {
+    const db = createDb([{ institution_id: 1, url: null, institution_name: chase.institutionName }]);
+    await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [chase] });
+    const held = db.mock.calls.find((call) => text(call[0]).includes("UNION ALL"));
+    expect(text(held?.[0])).toContain("doc.crawled_at > NOW() - make_interval(days =>");
+    expect(held).toContain(HELD_DOCUMENT_DAYS);
   });
 
   it("leaves a bank whose stored name does not match the listed one", async () => {

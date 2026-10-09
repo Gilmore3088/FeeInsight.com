@@ -27,6 +27,8 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 export const SEC_LINKS_SOURCE = "sec-links";
 export const SEC_FILINGS_SOURCE = "sec-filings";
 export const SEC_LINKS_PARTITION = "current";
+/** v2: re-match with the holding-company, short-name and exact-bank-name rules added after the first load (Oct 4 2026). */
+export const SEC_LINKS_PARSER_VERSION = 2;
 export const SEC_FILING_BATCHES = 8;
 /** Two requests in flight with a pause each keeps us under SEC's 10 req/s. */
 const SEC_CONCURRENCY = 2;
@@ -135,7 +137,7 @@ export async function runRegistrySecLinks(options: SecOptions = {}): Promise<Reg
     sourceUrl: SEC_TICKERS_URL,
     runId: options.runId ?? null,
     nextAttemptAfterHours: LINKS_REFRESH_HOURS,
-    detail: { name_matches: result.nameMatches, bank_filers: result.bankFilers },
+    detail: { name_matches: result.nameMatches, bank_filers: result.bankFilers, parser_version: SEC_LINKS_PARSER_VERSION },
   });
   return result;
 }

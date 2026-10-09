@@ -56,6 +56,16 @@ Hamilton supports the decision; it does not make it.
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
+- The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
+  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  of real banks and credit unions (two per charter and asset tier) through the Ask path,
+  scores each with the quality bar and four-roles eval, and checks that a regulation answer
+  names the institution's own regulator and a state question names its state. Read-only, no
+  provider calls; the step detail lists the weakest questions and the commonest failures.
+  It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
+  ledger keeps each question and short answer; saved analyses keep the rest) through today's
+  engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
+  and lists every one that falls short. Questions stay in our own database only.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
@@ -273,6 +283,17 @@ feedback sync writes no Knox or Darwin lesson for these. A takedown whose consum
 longer live comes back. First dry run (7 Oct, prod): 1,028 business-sourced live fees at 91
 banks, 61 beside a consumer fee.
 
+## Other Bank's Document
+Each publish step, `other-bank-document.ts` looks at live fees read from a document on another
+institution's own website (its host is another bank's `website_url` host and not this bank's,
+`magellan/other-bank-host.ts`). Such a fee comes down on the first run that sees it, its first
+look logged (check `hamilton.other_bank_document`; James, Oct 8: no 12-hour wait), unless the document's text names this bank's own website or
+city: `rolled_back_reason = 'other_bank_document: <host>'`, the verified row rejected with the
+`other_bank_document` flag, the link added to the bank's rejected sources and cleared from its
+fee link (unless a correction locked it), and one Magellan `wrong_document` lesson per document.
+First dry run (8 Oct, prod): 323 live fees at 16 banks; 308 at 15 banks fail (Peoples Bank of
+Rock Valley IA showed Peoples Bank of Bellingham WA's 22 fees).
+
 ## Article Page
 
 `article-page.ts`: a page whose address has an article segment (articles, blog, stories,
@@ -360,9 +381,9 @@ category guard and amount envelope accept the fee in its new category
 `category_fold` row to `pipeline_feedback` (check `hamilton.taxonomy_fold`, which Knox does
 not learn from). A live fee no rule can place goes through `secondLook`: flagged on the
 first run, and rolled back (batch `taxonomy-fold-run-<id>`, reason `taxonomy_fold:`) once
-the flag is 12 hours old, but only while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. It is off
-until James decides on the list of no-home fees (Oct 8), so they stay live and are counted
-as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
+the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James turned it on
+after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
+counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 ## Source Check

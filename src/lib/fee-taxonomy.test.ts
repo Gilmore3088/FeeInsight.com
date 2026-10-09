@@ -9,7 +9,7 @@ import {
 // Tripwire for Python↔TS drift. If you change these numbers, update the
 // Guards the canonical taxonomy keys used by public pages and agentic admin flows.
 const EXPECTED_TAXONOMY_COUNT = 50;
-const EXPECTED_CANONICAL_KEY_COUNT = 197;
+const EXPECTED_CANONICAL_KEY_COUNT = 199;
 
 describe("fee-taxonomy sync", () => {
   test("every FEE_FAMILIES category is in CANONICAL_KEY_MAP", () => {

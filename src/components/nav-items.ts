@@ -1,4 +1,4 @@
-import { HAMILTON_NAV } from "@/lib/hamilton/navigation";
+import { HAMILTON_NAV, HAMILTON_WIRE_NAV } from "@/lib/hamilton/navigation";
 import { PRODUCT_NAME } from "@/lib/constants";
 
 /** Plain data shared by the server nav shell and its client islands. */
@@ -19,7 +19,7 @@ export const EXPLORE_NAV_HREFS: readonly string[] = ["/fees", "/research", "/gui
 
 export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
 
-export const PRO_NAV_ITEMS = HAMILTON_NAV.filter((item) => item.label !== "Admin");
+export const PRO_NAV_ITEMS = [...HAMILTON_NAV.filter((item) => item.label !== "Admin"), HAMILTON_WIRE_NAV];
 
 /** The one nav pill for signed-out visitors: the money path, not a vague "Pro". */
 export const REQUEST_REPORT_NAV = { label: "Request your report", href: "/for-institutions#report" } as const;
@@ -31,11 +31,11 @@ export interface NavItem {
 
 /**
  * Which items the chrome shows. Signed-out and free users see the public items (plus
- * Pricing while signed out); Pro users see the Hamilton workspace items.
+ * Pricing); Pro users see the Hamilton workspace items.
  */
 export function navItemsFor(session: { signedIn: boolean; isPro?: boolean } | null): NavItem[] {
   if (session?.isPro) return [...PRO_NAV_ITEMS];
-  return [...PUBLIC_NAV_ITEMS, ...(session?.signedIn ? [] : [PRICING_NAV])];
+  return [...PUBLIC_NAV_ITEMS, PRICING_NAV];
 }
 
 /** True for the section a path belongs to (`/guides` for `/guides/overdraft-fees`). */

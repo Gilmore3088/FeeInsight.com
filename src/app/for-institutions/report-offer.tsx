@@ -14,7 +14,7 @@ const REPORT_CONTENTS = REPORT_INCLUDES;
 export async function ReportOfferSection() {
   const sample = await loadSampleReport().catch(() => null);
   return (
-    <section id="report" className="scroll-mt-16 border-b border-warm-200 bg-white">
+    <section aria-label="Fee reports" className="border-b border-warm-200 bg-white">
       <div className="mx-auto max-w-6xl px-6 py-14">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
           <div>
@@ -25,7 +25,7 @@ export async function ReportOfferSection() {
               className="mt-3 text-warm-900 text-[28px] leading-tight"
               style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
             >
-              Free, instant national and Fed district reports
+              Free national reports, and a paid report on your institution
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-warm-700">
               Pick the national report or your Fed district and it opens right away: the median
@@ -45,7 +45,10 @@ export async function ReportOfferSection() {
             {/* Live rows from the sample report; hidden when no sample market passes the rule today. */}
             {sample && <SampleExcerpt report={sample} />}
           </div>
-          <RequestReportForm contactEmail={CONTACT_EMAIL} />
+          {/* `#report` lands on the form itself, so a phone reader isn't left below the offer list. */}
+          <div id="report" className="scroll-mt-20">
+            <RequestReportForm contactEmail={CONTACT_EMAIL} />
+          </div>
         </div>
       </div>
     </section>

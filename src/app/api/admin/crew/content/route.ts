@@ -25,6 +25,24 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const day = new Date().toISOString().slice(0, 10);
+  // `?only=article` runs just the article step, so an article rebuild can be redrafted the
+  // same day without drafting the week's posts a second time.
+  if (request.nextUrl.searchParams.get("only") === "article") {
+    const started = await startAgentRun({
+      agent: "growth",
+      kind: "workflow",
+      title: `Fee article ${day}`,
+      params: { source: "growth.article", day },
+      triggeredBy: "growth.article",
+      triggerSource: "admin",
+      idempotencyKey: `growth:article:${day}`,
+      steps: [{ key: "content-od-by-state", agent: "growth", title: "Draft or refresh this week's fee article" }],
+    });
+    const result = started.reused
+      ? { runId: started.run.id, status: started.run.status, message: "Today's article run already exists." }
+      : await executeAgentRun(started.run.id, { maxSteps: 1 });
+    return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
+  }
   const started = await startAgentRun({
     agent: "growth",
     kind: "workflow",
@@ -38,7 +56,7 @@ async function handleGET(request: NextRequest) {
     steps: [
       { key: "content-market-spread", agent: "growth", title: "Draft this week's market-spread post" },
       { key: "content-fee-depth", agent: "growth", title: "Draft the fortnightly fee-depth post" },
-      { key: "content-od-by-state", agent: "growth", title: "Draft the monthly overdraft-by-state article" },
+      { key: "content-od-by-state", agent: "growth", title: "Draft this week's fees-by-state article" },
     ],
   });
   const result = started.reused

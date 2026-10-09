@@ -1,4 +1,4 @@
-import type { AdminAgent } from "./types";
+import { isMarketingStep, type AdminAgent } from "./types";
 
 /**
  * Turns run-ledger events into one plain-English sentence each, for the crew
@@ -34,8 +34,21 @@ function joinParts(parts: Array<string | null | false>): string {
   return kept.length > 0 ? `: ${kept.join(", ")}` : "";
 }
 
-/** One sentence for a finished step, from the step key and its recorded detail. */
+/**
+ * One sentence for a finished step, from the step key and its recorded detail. A marketing
+ * step's dry run (the daily growth loop) says so first, so "Drafted 3 emails" isn't read as
+ * three drafts in the queue.
+ */
 export function narrateStepFinished(
+  stepKey: string,
+  detail: Detail,
+  stateCode?: string | null,
+): string | null {
+  const sentence = narrateFinished(stepKey, detail, stateCode);
+  return sentence && detail.dryRun === true && isMarketingStep(stepKey) ? `Dry run, nothing saved: ${sentence}` : sentence;
+}
+
+function narrateFinished(
   stepKey: string,
   detail: Detail,
   stateCode?: string | null,
@@ -205,6 +218,8 @@ export function narrateStepFinished(
       const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
       return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
     }
+    case "hamilton-answer-eval":
+      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
@@ -221,8 +236,43 @@ export function narrateStepFinished(
       return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
     }
     case "content-od-by-state": {
-      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted the overdraft-fees-by-state article for James to publish.`;
-      return `Drafted no overdraft-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
+      return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+    }
+    case "growth-contacts": {
+      if (detail.schemaReady === false) return "Read no websites; the contacts tables are not there yet.";
+      const checked = n(detail, "checked");
+      if (!checked) return "No prospect was due a contact check.";
+      return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
+    }
+    case "growth-outreach": {
+      if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
+      const drafted = n(detail, "drafted");
+      if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
+      return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
+    }
+    case "growth-learning": {
+      if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
+      return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
+    }
+    case "growth-intel": {
+      if (detail.schemaReady === false) return "Wrote no market brief; the queue is not there yet.";
+      const findings = Array.isArray(detail.findings) ? detail.findings.length : 0;
+      if (!findings) return "Read the regulator feeds and competitor pages; nothing new worth a brief.";
+      return `Filed a market brief with ${count(findings, "finding")} for James to read.`;
+    }
+    case "growth-conversion": {
+      if (detail.schemaReady === false) return "Wrote no conversion check; the queue is not there yet.";
+      const broken = Array.isArray(detail.broken) ? detail.broken.length : 0;
+      return broken
+        ? `Found ${count(broken, "broken destination")} and filed the week's conversion check.`
+        : "Checked every destination and the week's funnel, and filed the conversion check.";
+    }
+    case "growth-tools": {
+      const fees = Array.isArray(detail.fees) ? (detail.fees as Array<{ fee?: unknown; checked?: unknown }>) : [];
+      const counts = fees.map((fee) => `${String(fee.fee)} ${Number(fee.checked ?? 0)}`).join(", ");
+      return `Ran the free price check for ${String(detail.state)}${counts ? ` (source-checked institutions: ${counts})` : ""}.`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
@@ -260,6 +310,13 @@ export function narrateStepFinished(
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
     }
+    case "indexnow-ping": {
+      const submitted = n(detail, "submitted");
+      if (submitted > 0) return `Told Bing about ${count(submitted, "changed page")}.`;
+      return detail.skipped === "no pages changed"
+        ? "No institution pages changed in the last day."
+        : `Did not notify Bing (${String(detail.skipped ?? "unknown")}).`;
+    }
     case "briefing-refresh": {
       const stored = n(detail, "stored");
       const quarter = String(detail.quarter ?? "this quarter");
@@ -280,6 +337,13 @@ export function narrateStepFinished(
       if (detail.dryRun === true) return `Dry run: ${count(withNews, "Pro reader")} would get a Monday digest.`;
       if (detail.held === true) return `Counted ${count(withNews, "Pro reader")} for the Monday digest; sending is switched off.`;
       return `Sent ${count(n(detail, "sent"), "Monday digest")}.`;
+    }
+    case "pro-seat-check": {
+      if (detail.passed === true) return "Checked team seats and peer groups end to end with test accounts; both work.";
+      const problems = Array.isArray(detail.problems) ? detail.problems.length : 0;
+      return detail.dryRun === true
+        ? "Dry run: read the test workspace without changing it."
+        : `Seat and peer-group check found ${count(problems, "problem")}.`;
     }
     case "daily-brief":
       return detail.delivery_status === "sent"
@@ -419,12 +483,20 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "indexnow-ping": "atlas",
   "pro-digest": "atlas",
+  "pro-seat-check": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
   "content-fee-depth": "growth",
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
+  "growth-contacts": "growth",
+  "growth-outreach": "growth",
+  "growth-learning": "growth",
+  "growth-intel": "growth",
+  "growth-conversion": "growth",
+  "growth-tools": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",
@@ -433,6 +505,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-states": "growth",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
+  "hamilton-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

@@ -9,6 +9,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release-held";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
+  frequencyFromLine,
   lessonsFor,
   lineRefilesTo,
   loadReviewLessons,
@@ -205,8 +206,11 @@ describe("Darwin held-fee release review", () => {
     expect(statements.some((query) => query.includes("INSERT INTO verified_fee_observations"))).toBe(false);
   });
 
+  it("is paused: James chose Pause at 21:30 UTC Oct 8 after the v13 hand check scored 17 of 20", () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(false);
+  });
+
   it("publishes only the fees that pass once release is on", async () => {
-    expect(DARWIN_RELEASE_ACTS).toBe(true);
     const db = createDbMock([row(), row({ fee_raw_id: 2, fee_name: "HELOC Late Payment", amount: "100", source_line: "5% of Amount Owed, $100.00 Maximum" })]);
     const create = vi.fn(async () => reply({
       verdicts: [
@@ -215,7 +219,7 @@ describe("Darwin held-fee release review", () => {
       ],
     }));
 
-    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2 });
+    await runDarwinReleaseReview({ runId: 5, stepId: 6, db: asDb(db), create, calls: 2, acts: true });
 
     const inserts = db.mock.calls.filter(([strings]) => templateText(strings).includes("INSERT INTO verified_fee_observations"));
     expect(inserts).toHaveLength(1);
@@ -262,6 +266,81 @@ describe("Darwin held-fee release review", () => {
     expect(releaseHoldReason(held("account research fee may apply)", "account_research"))).toBe("name_fragment");
     expect(releaseHoldReason(held("Account Research (per 15 minutes)", "account_research"))).toBeNull();
     expect(releaseHoldReason(held("Undeliverable Mail / Locator fee", "account_research"))).toBeNull();
+  });
+
+  it("v14 keeps merchant fees, small overdraft protection fees and footnoted prices held (hand check, Oct 8)", () => {
+    const held = (fee_name: string, key: string, amount: string, sourceLine = "", sourceContext: string | null = null) => ({
+      row: row({ fee_name, held_canonical_fee_key: key, amount }) as unknown as HeldFeeRow,
+      sourceLine,
+      sourceContext,
+    });
+    // Guard v39 (PR 679) now fails a merchant's NSF filing first; it stays held either way.
+    expect(releaseHoldReason(held("Merchant presenting NSF check from member", "nsf", "5.00"))).toBe("category_guard");
+    expect(releaseHoldReason(held("Merchant overdraft charge", "overdraft", "5.00"))).toBe("charged_to_merchant");
+    expect(releaseHoldReason(held("Charge Back (Merchant Returned Check) per item", "deposited_item_return", "10.00"))).toBeNull();
+    expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "5.00"))).toBe("category_guard");
+    expect(releaseHoldReason(held("Overdraft Protection Fee", "overdraft", "30.00"))).toBeNull();
+    expect(releaseHoldReason(held("Courtesy Pay Overdraft Protection (Paid Item, per presentment)", "overdraft", "14.00"))).toBeNull();
+    expect(releaseHoldReason(held("Early Account Closure", "early_closure", "251.00", "(Closed Within 180 Days of Opening) ....$251 | 1"))).toBe(
+      "footnote_in_price",
+    );
+    expect(
+      releaseHoldReason(held("IRA Direct Transfer Fee", "ira_termination", "251.00", "IRA Direct Transfer Fee ....$251 | 2", "Returned Deposit Item ....$7.501 | 1")),
+    ).toBe("footnote_in_price");
+    expect(releaseHoldReason(held("Wire Transfer", "wire_domestic_outgoing", "21.00", "Wire Transfer | $21", "Stop Payment | $30.00"))).toBeNull();
+    expect(releaseHoldReason(held("Stop Payment", "stop_payment", "35.00", "Stop Payment | $35 | 1"))).toBeNull();
+  });
+
+  it("v15 keeps a fee whose frequency contradicts its schedule line held (James, complete-record bar, Oct 8)", () => {
+    const held = (frequency: string | null, sourceLine: string) => ({
+      row: row({ fee_name: "Excess activity charge", held_canonical_fee_key: "account_research", amount: "5.00", frequency }) as unknown as HeldFeeRow,
+      sourceLine,
+      sourceContext: null,
+    });
+    const excess = "6 Withdrawals/debits included per month; Excess activity charge - $5.00 each after 6";
+    expect(releaseHoldReason(held("monthly", excess))).toBe("frequency_contradicts_line"); // "each" follows the $5.00
+    expect(releaseHoldReason(held("monthly", "Monthly fee | $5.00 per month or $1.00 each"))).toBeNull();
+    expect(releaseHoldReason(held("monthly", "Excess activity charge - $5.00 each after 6"))).toBe("frequency_contradicts_line");
+    expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 per month"))).toBe("frequency_contradicts_line");
+    expect(releaseHoldReason(held("per_item", "Excess activity charge | $5.00 each"))).toBeNull();
+    expect(releaseHoldReason(held(null, "Excess activity charge | $5.00 each"))).toBeNull();
+  });
+
+  it("v16 holds the name shapes the 200-fee eval found and reads a blank frequency from the line", () => {
+    const held = (fee_name: string, key = "stop_payment") => ({
+      row: row({ fee_name, held_canonical_fee_key: key, amount: "5.00" }) as unknown as HeldFeeRow,
+      sourceContext: null,
+    });
+    const fragments: Array<[string, string]> = [
+      ["Express Chip Debit Card Replacement ……………………", "card_replacement"],
+      ["Below minimum balance . . . . . . . . . . . .", "minimum_balance"],
+      ["00/item Counter Checks (per book of 8)", "counter_check"],
+      ["charge for each one-time debit overdraft", "overdraft"],
+      ["per month Stop Payment via Digital Banking", "stop_payment"],
+      ["Fees: o A Minimum Balance Fee", "minimum_balance"],
+      ["(for each overdraft item paid)", "overdraft"],
+      ["Garnishment / Levy: Fee", "garnishment_levy"],
+    ];
+    for (const [name, key] of fragments) {
+      expect(releaseHoldReason(held(name, key)), name).toBe("name_fragment");
+    }
+    const names: Array<[string, string]> = [
+      ["Stop Payment", "stop_payment"],
+      ["eStatement Fee", "estatement_fee"],
+      ["Stop Payment (per item)", "stop_payment"],
+      ["Levy/Garnishment", "garnishment_levy"],
+      ["Replacement Debit Card", "card_replacement"],
+    ];
+    for (const [name, key] of names) {
+      expect(releaseHoldReason(held(name, key)), name).toBeNull();
+    }
+    expect(frequencyFromLine("Stop Payment | $5.00 each", 5)).toBe("per_item");
+    expect(frequencyFromLine("Paper statement $5.00 per month", 5)).toBe("monthly");
+    expect(frequencyFromLine("Safe deposit box 3x5 $5.00 per year", 5)).toBe("annual");
+    expect(frequencyFromLine("Dormant fee $5.00 quarterly", 5)).toBe("quarterly");
+    expect(frequencyFromLine("Monthly fee | $5.00 per month or $1.00 each", 5)).toBeNull();
+    expect(frequencyFromLine("Stop Payment | $5.00", 5)).toBeNull();
+    expect(frequencyFromLine("6 included per month; Excess activity charge - $5.00 each after 6", 5)).toBe("per_item");
   });
 
   it("fills a state lane's short list with held fees from other states", async () => {

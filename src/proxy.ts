@@ -19,6 +19,8 @@ const LEGACY_PATH_REDIRECTS: Record<string, string> = {
   "/check": "/institutions",
   "/districts": "/research#districts",
   "/waitlist": "/for-institutions#report",
+  // Typed and drafted often; the site's own links go to /subscribe.
+  "/pricing": "/subscribe",
 };
 
 function permanentRedirectStatus(method: string) {
@@ -38,6 +40,16 @@ export function proxy(request: NextRequest) {
     url.hostname = "feeinsight.com";
     url.port = "";
     url.protocol = "https:";
+    return NextResponse.redirect(url, permanentRedirectStatus(request.method));
+  }
+
+  // Every route name is lowercase; /INSTITUTION/496 rendered a duplicate page with an
+  // uppercase canonical. Only the first segment is folded: later ones can be real values
+  // such as the state code in /research/state/TX.
+  const firstSegment = pathname.split("/")[1] ?? "";
+  if (firstSegment !== firstSegment.toLowerCase() && !firstSegment.includes(".")) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${firstSegment.toLowerCase()}${pathname.slice(firstSegment.length + 1)}`;
     return NextResponse.redirect(url, permanentRedirectStatus(request.method));
   }
 

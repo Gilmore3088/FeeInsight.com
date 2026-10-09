@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   HAMILTON_NAV,
   HAMILTON_REFERENCE_NAV,
+  HAMILTON_WIRE_NAV,
   HAMILTON_BASE,
   LEFT_RAIL_CONFIG,
   PRIMARY_ACTION_HREF,
@@ -168,8 +169,13 @@ describe("labels open the screen of the same name", () => {
   });
 
   it("reference pages stay inside Pro", () => {
-    expect(HAMILTON_REFERENCE_NAV.length).toBeGreaterThanOrEqual(5);
+    expect(HAMILTON_REFERENCE_NAV.length).toBeGreaterThanOrEqual(4);
     for (const item of HAMILTON_REFERENCE_NAV) expect(item.href.startsWith("/pro/")).toBe(true);
+  });
+
+  it("puts Regulatory Wire in the top nav and not also under Reference", () => {
+    expect(HAMILTON_WIRE_NAV).toEqual({ label: "Regulatory Wire", href: "/pro/news" });
+    expect(HAMILTON_REFERENCE_NAV.map((item) => item.href)).not.toContain("/pro/news");
   });
 });
 
