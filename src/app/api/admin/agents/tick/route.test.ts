@@ -14,6 +14,7 @@ const executeQueuedAgentRunsMock = vi.fn();
 const schedulePriorityInstitutionRunsMock = vi.fn();
 const assertCronTickBudgetAllowedMock = vi.fn();
 const scheduleGuardCatchUpRunMock = vi.fn();
+const scheduleStaleOutreachWithdrawalMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: getCurrentUserMock,
@@ -44,6 +45,10 @@ vi.mock("@/lib/agents/atlas/priority-institutions", () => ({
 
 vi.mock("@/lib/agents/hamilton/guard-catch-up", () => ({
   scheduleGuardCatchUpRun: scheduleGuardCatchUpRunMock,
+}));
+
+vi.mock("@/lib/agents/growth/withdraw", () => ({
+  scheduleStaleOutreachWithdrawal: scheduleStaleOutreachWithdrawalMock,
 }));
 
 vi.mock("@/lib/agents/run-store", () => ({
@@ -98,6 +103,9 @@ describe("/api/admin/agents/tick", () => {
     });
     scheduleGuardCatchUpRunMock.mockResolvedValue({
       scheduled: true, runId: 125, categoryGuardVersion: 53, frequencyFillVersion: 6,
+    });
+    scheduleStaleOutreachWithdrawalMock.mockResolvedValue({
+      scheduled: true, runId: 126, due: 23, reason: null,
     });
     executeQueuedAgentRunsMock.mockResolvedValue({
       selected: 1,
@@ -285,6 +293,7 @@ describe("/api/admin/agents/tick", () => {
     expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
+    expect(scheduleStaleOutreachWithdrawalMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });
 
@@ -307,6 +316,28 @@ describe("/api/admin/agents/tick", () => {
     const body = await (await GET(request())).json();
 
     expect(body.guardCatchUp).toEqual({ error: "db down" });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
+  });
+
+  it("queues growth's stale-outreach withdrawal before draining, so the same tick runs it", async () => {
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(scheduleStaleOutreachWithdrawalMock).toHaveBeenCalledWith({ marketingEnabled: true });
+    expect(body.staleOutreachWithdraw).toMatchObject({ scheduled: true, runId: 126, due: 23 });
+    expect(scheduleStaleOutreachWithdrawalMock.mock.invocationCallOrder[0]).toBeLessThan(
+      executeQueuedAgentRunsMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("still drains queued runs when the stale-outreach withdrawal cannot be scheduled", async () => {
+    scheduleStaleOutreachWithdrawalMock.mockRejectedValue(new Error("db down"));
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.staleOutreachWithdraw).toEqual({ error: "db down" });
     expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
   });
 
@@ -346,6 +377,8 @@ describe("/api/admin/agents/tick", () => {
 
     expect(body.paused).toBeUndefined();
     expect(body.partlyPaused).toBe("marketing");
+    // The withdrawal is a marketing step: the scheduler is told marketing is paused and queues nothing.
+    expect(scheduleStaleOutreachWithdrawalMock).toHaveBeenCalledWith({ marketingEnabled: false });
     expect(scheduleDueStateLaneRunsMock).toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(

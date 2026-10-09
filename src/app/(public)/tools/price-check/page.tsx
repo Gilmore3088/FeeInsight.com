@@ -95,7 +95,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const income = demographics?.median_household_income ? Number(demographics.median_household_income) : null;
 
   return (
-    <div className="mx-auto max-w-screen-2xl px-4 py-14 sm:px-8">
+    <div className="mx-auto max-w-page px-4 py-14 sm:px-6">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:items-end">
         <div className="max-w-2xl">
       <p className={EYEBROW}>Free tool</p>

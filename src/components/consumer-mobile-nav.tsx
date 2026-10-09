@@ -9,6 +9,7 @@ import { isActivePath, navItemsFor, REQUEST_REPORT_NAV } from "./nav-items";
 
 export { isActivePath };
 import { openSearch } from "./public/search-events";
+import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome } from "./use-session-chrome";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 
@@ -102,9 +103,12 @@ export function ConsumerMobileNav() {
                 {session?.isPro ? (
                   <ProAccountLinks isStaff={session.isStaff === true} onNavigate={close} />
                 ) : isLoggedIn ? (
-                  <Link href="/account" onClick={close} className={DRAWER_LINK}>
-                    Account
-                  </Link>
+                  <>
+                    <Link href="/account" onClick={close} className={DRAWER_LINK}>
+                      Account
+                    </Link>
+                    <SignOutForm buttonClassName={`${DRAWER_LINK} w-full text-left`} />
+                  </>
                 ) : (
                   <>
                     <Link href="/login" onClick={close} className={DRAWER_LINK}>
@@ -166,11 +170,7 @@ function ProAccountLinks({ isStaff, onNavigate }: { isStaff: boolean; onNavigate
         <Link href="/account" onClick={onNavigate} className={DRAWER_LINK}>
           Account and billing
         </Link>
-        <form action="/api/auth/logout" method="POST">
-          <button type="submit" className={`${DRAWER_LINK} w-full text-left`}>
-            Sign out
-          </button>
-        </form>
+        <SignOutForm buttonClassName={`${DRAWER_LINK} w-full text-left`} />
       </div>
     </>
   );

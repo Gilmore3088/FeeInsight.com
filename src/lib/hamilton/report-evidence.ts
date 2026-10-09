@@ -54,6 +54,15 @@ export const CHARGE_BASIS_MIN_SHARE = 0.8;
 /** Below this many stated peer rows the basis is unknown, and frequency is not checked. */
 export const CHARGE_BASIS_MIN_ROWS = 20;
 
+/** Categories whose peers charge them on more than one basis, so one median does not compare like for like. */
+export function mixedBasisCategories(bases: readonly CategoryChargeBasis[] | null | undefined): Set<string> {
+  return new Set(
+    (bases ?? [])
+      .filter((basis) => basis.stated_rows >= CHARGE_BASIS_MIN_ROWS && basis.share < CHARGE_BASIS_MIN_SHARE)
+      .map((basis) => basis.fee_category),
+  );
+}
+
 /** A fee left out of the peer comparison because the two sides are not charged alike. */
 export interface UnlikeFeeComparison {
   fee_name: string;

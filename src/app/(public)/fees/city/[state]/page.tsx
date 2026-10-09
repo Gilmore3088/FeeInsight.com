@@ -47,7 +47,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
         ]}
       />
 
-      <div className="max-w-4xl mx-auto px-6 py-14">
+      <div className="max-w-page mx-auto px-6 py-14">
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
           <Link href="/fees" className="hover:text-[#1A1815] transition-colors">Fees</Link>
           <span className="text-[#D4C9BA]">/</span>

@@ -133,6 +133,9 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     reason: "Tennessee report: deposit leader with no verified overdraft fee",
   })),
   { institutionId: 8109, institutionName: "Space Coast Federal Credit Union", reason: "Hamilton answer had only 5 fees; full schedule needed" },
+  // Knox v63 reads its safe deposit box sizes off the return item line (doc 20570); its last read
+  // was v33 and it has a live overdraft fee, so no re-read path reached it (2026-10-09).
+  { institutionId: 8414, institutionName: "Peak Federal Credit Union", reason: "Knox v63 reads this credit union's current page; its last read was v33" },
   ...([
     [51, "First National Bank of Pennsylvania"],
     [156, "Amarillo National Bank"],
