@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -689,7 +689,6 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'verified:' || fv.fee_verified_id::text");
       expect(query).toContain("pa.detail->>'same_line_check' IS NULL");
-      expect(params).toEqual(expect.arrayContaining([[8019]]));
       expect(JSON.stringify(db.mock.calls)).toContain("same_line_check");
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });
@@ -753,9 +752,9 @@ describe("decidePriorFee", () => {
   it("publishes a second line of the same document at the same price under another name (Wildfire 8019, 9 Oct)", () => {
     const inquiry = { ...row, fee_verified_id: 8019, canonical_fee_key: "atm_non_network", amount: "5.00", fee_name: "ATM Balance Inquiry (at non-Wildfire ATM) ........................." };
     const adjustment = live({ fee_published_id: 14754, amount: "5.00", source_document_id: 77, fee_name: "ATM Adjustment ......................................" });
-    expect(decidePriorFee(inquiry, [adjustment])).toEqual({ kind: "additional_line" });
-    // Other rows keep the price-only rule until the check passes its source spot check.
-    expect(decidePriorFee({ ...inquiry, fee_verified_id: 8020 }, [adjustment])).toEqual({ kind: "identical", prior: adjustment });
+    expect(decidePriorFee(inquiry, [adjustment], (prior) => prior === adjustment)).toEqual({ kind: "additional_line" });
+    // Without the page check saying the two lines sit apart, the price alone still decides.
+    expect(decidePriorFee(inquiry, [adjustment])).toEqual({ kind: "identical", prior: adjustment });
     // Another read of the same line, or the same price from another document, is still identical.
     const reread = live({ fee_published_id: 14755, amount: "5.00", source_document_id: 77, fee_name: "ATM Balance Inquiry" });
     expect(decidePriorFee(inquiry, [reread])).toEqual({ kind: "identical", prior: reread });
@@ -783,9 +782,27 @@ describe("decidePriorFee", () => {
     expect(pair("Monthly Maintenance Charge", "/month{{d832 }} with an average daily balance of or more per monthly service charge cycle")).toBe(false);
     expect(pair("Transfers: Photocopy of Documents, per copy", "SCHEDULE OF FEES AND SERVICES 1-855-TERRABK www.terrabank.com SERVICE FEE Photocopy of Doc")).toBe(false);
     // A cut-off sentence is not set aside, so these two stay one line (as before the check).
+    expect(pair("per mailed statement", "Paper Statement Fee")).toBe(false);
     expect(pair("Check Cashing Fee- Members (Only applies to members who do not have $100 in any combination of accounts or a loan with a", "Check Cashing Fee- Third Party")).toBe(false);
     // Still separate.
     expect(pair("ATM/ITM Inquiries (per instance; FREE at Service 1 FCU & Co-Op Network machines)", "ATM/ITM Transfers (per instance; FREE at Service 1 FCU & Co-Op Network machines)")).toBe(true);
+  });
+
+  it("finds both lines apart on the page, each with the price (fresh 20-row source spot checks, 9 Oct)", () => {
+    const page = "ATM FEES ATM Balance Inquiry (at non-Wildfire ATM) ........ $5.00 ATM Adjustment ........ $5.00 Wire Transfer Outgoing $25";
+    expect(linesApartOnPage(page, "ATM Balance Inquiry (at non-Wildfire ATM) ......", "ATM Adjustment ......", "5.00")).toBe(true);
+    // A name not on the current copy of the page.
+    expect(linesApartOnPage(page, "ATM Balance Inquiry", "Foreign ATM fee", "5.00")).toBe(false);
+    // The price does not follow one of the names.
+    expect(linesApartOnPage(page, "ATM Adjustment", "Wire Transfer Outgoing", "5.00")).toBe(false);
+    // A sentence about the table line ("charge of $25") is the same fee read twice.
+    const nsf = "Insufficient Funds Fee $25.00 per item. A nonsufficient funds (NSF) charge of $25.00 applies to each item.";
+    expect(linesApartOnPage(nsf, "Insufficient Funds Fee", "A nonsufficient funds (NSF) charge", "25")).toBe(false);
+    // One name inside the other line ("Inactive Checking" in "Inactive Checking3").
+    const inactive = "Inactive Checking3 $5.00 per month";
+    expect(linesApartOnPage(inactive, "Inactive Checking3", "Inactive Checking", "5")).toBe(false);
+    // Cents must match.
+    expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
   });
 
   it("keeps lines from the same document side by side", () => {
