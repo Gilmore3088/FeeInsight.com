@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
+import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_SAME_STEP_TAKEDOWN, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -46,7 +46,7 @@ describe("Darwin verified re-check", () => {
       { ...verifiedRow, fee_verified_id: 120999, fee_raw_id: 251135, canonical_fee_key: "overdraft", verified_amount: "35.00", fee_name: "Overdraft fee", amount: "35.00", outlier_flags: [], conditions: null, fee_published_id: 7002 },
     ]);
 
-    const result = await recheckVerifiedFees(db as never, { runId: 500, stepId: 9 });
+    const result = await recheckVerifiedFees(db as never, { runId: 500, stepId: 9, sameStepTakedown: true });
 
     expect(result.checked).toBe(4);
     expect(result.passed).toBe(1);
@@ -66,6 +66,24 @@ describe("Darwin verified re-check", () => {
     const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
     expect(attempts).toHaveLength(4);
     expect(attempts[0].slice(1)).toEqual(expect.arrayContaining([DARWIN_RECHECK_STRATEGY.strategy, "verified:120552", "evidence_mismatch"]));
+  });
+
+  it("with the switch off (the default) flags a failing live row for the 12-hour second look instead", async () => {
+    expect(DARWIN_RECHECK_SAME_STEP_TAKEDOWN).toBe(false);
+    const db = dbWith([
+      { ...verifiedRow, fee_verified_id: 120552, fee_raw_id: 217716, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 7001 },
+    ]);
+
+    const result = await recheckVerifiedFees(db as never, { runId: 502 });
+
+    expect(result).toMatchObject({ checked: 1, passed: 0, flagged: 1, takenDown: [] });
+    const sqlText = db.mock.calls.map((call) => templateText(call[0]));
+    expect(sqlText.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    expect(sqlText.some((text) => text.includes("UPDATE verified_fee_observations"))).toBe(false);
+    const feedback = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"));
+    expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain(DARWIN_RECHECK_CHECK);
+    const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
+    expect(JSON.stringify(attempts[0].slice(1))).toContain("second_look");
   });
 
   it("does nothing when every verified row has been re-checked under this version", async () => {

@@ -56,8 +56,12 @@ Darwin owns verification and classification.
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
-  public read cache cleared. James, 11:55 UTC 2026-10-09: "stop waiting 12 hours. go", so this
-  pass does not use the 12-hour second look. Each row
+  public read cache cleared, once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on (James, 11:55 UTC
+  2026-10-09: "stop waiting 12 hours. go"). While it is off (the default) the live row is flagged
+  `takedown_pending` through the shared second look (`darwin.verified_recheck`), which is the dry
+  read: the switch turns on by PR once UAT has hand-checked 10 flagged rows and found at least 9
+  right. A $0's conditional price is read from the fee's own table cell (`ownSegment`), not a
+  neighbour's in the same row. Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
 - The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,

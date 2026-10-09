@@ -131,18 +131,48 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
 };
 
 const NONZERO_DOLLAR = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
+const PRICE_CELL = /\$|\bfree\b|\bn\/c\b|\bno charge\b/i;
 
 /**
- * A $0 fee is conditional when the line Knox read it from (or its name) also prices it:
- * "Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month", "Bill Pay - FREE with
- * E-Statements and Debit Card | $6.95 per Month", "Monthly fee for balance of $500 & over | FREE"
- * (the $5 row is the line below). The customer who misses the condition pays the charge, so
+ * The part of a schedule line that belongs to this fee: on a table line (cells split by " | ")
+ * the cell that carries the most words of the fee name, plus the next cell when it reads as a
+ * price ("$6.95 per Month", "FREE"); a prose line is used whole. Keeps a neighbour's price in
+ * the same table row ("Monthly Maintenance | Free | Assisted Phone Transactions* | $3") from
+ * being read as this fee's. Pure.
+ */
+export function ownSegment(line: string, feeName: string | null | undefined): string {
+  const cells = line.split(/\s\|\s/);
+  if (cells.length < 2) return line;
+  const tokens = (feeName ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? [];
+  let best = -1;
+  let bestScore = 0;
+  cells.forEach((cell, index) => {
+    const lower = cell.toLowerCase();
+    const score = tokens.filter((token) => lower.includes(token)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = index;
+    }
+  });
+  if (best < 0) return line;
+  const next = cells[best + 1];
+  const nextIsPrice = next != null && PRICE_CELL.test(next) && (next.match(/[a-z]+/gi)?.length ?? 0) <= 4;
+  return nextIsPrice ? `${cells[best]} | ${next}` : cells[best];
+}
+
+/**
+ * A $0 fee is conditional when its own part of the line (or its name) also prices it or names a
+ * balance band: "Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month", "Bill Pay - FREE
+ * with E-Statements and Debit Card | $6.95 per Month", "Monthly fee for balance of $500 & over |
+ * FREE" (the $5 row is the line below). The customer who misses the condition pays the charge, so
  * $0 is not the fee; the row is held, never verified as free (UAT, 2026-10-09: 3 of the 4 wrong
- * rows in a 20-row check of the not_in_source re-select were $0 readings of priced fees). Pure.
+ * rows in a 20-row check of the not_in_source re-select were $0 readings of priced fees). A
+ * neighbour's price in the same table row does not count (dry read, 2026-10-09: "Monthly
+ * Maintenance | Free | Assisted Phone Transactions* | $3" is a free fee). Pure.
  */
 export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
   if (amount !== 0) return false;
-  const text = `${line ?? ""} ${feeName ?? ""}`;
+  const text = `${line ? ownSegment(line, feeName) : ""} ${feeName ?? ""}`;
   return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
 }
 

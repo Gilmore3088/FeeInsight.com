@@ -566,4 +566,7 @@ no paid model calls. PRD: /mnt/project-files/plans/agentic-os-prd-v1.md.
 that re-reads verified rows under the retired-type, conditional-$0 and name-rule checks. A live
 record the recheck fails is rolled back at once with the reason (batch `darwin-recheck-<run>`),
 the verified row rejected with the same flag; nothing is deleted and a rollback is reversible.
-Hamilton's other takedowns keep their 12-hour second look unless James says otherwise.
+The takedown spot-check still applies first: the pass flags until UAT has hand-checked 10 of the
+rows it would take down and found at least 9 right, then the switch
+(`DARWIN_RECHECK_SAME_STEP_TAKEDOWN`) turns on by PR. Hamilton's other takedowns keep their 12-hour
+second look unless James says otherwise.
