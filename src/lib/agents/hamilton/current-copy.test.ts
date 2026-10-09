@@ -92,6 +92,10 @@ describe("secondLookFeesNotOnCurrentCopy", () => {
     expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
     expect(JSON.stringify(db.mock.calls)).toContain("takedown_pending");
     expect(writes(db).some((text) => text.includes("hamilton.current_copy_check"))).toBe(true);
+    // UAT reads which fees passed and which copies were judged, even when nothing fails.
+    expect(result.statedFeeIds).toEqual([1]);
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true }]);
+    expect(JSON.stringify(db.mock.calls)).toContain("stated_fee_ids");
   });
 
   it("confirms nothing while confirmations are off, even when the second look is due", async () => {
