@@ -1,3 +1,4 @@
+import { likePattern } from "@/lib/regulatory/wire";
 import { sql, withTransaction } from "./connection";
 
 // ---------------------------------------------------------------------------
@@ -118,41 +119,52 @@ export const FEEDS: Record<string, string> = {
 // Queries
 // ---------------------------------------------------------------------------
 
-interface GetArticlesOptions {
+export interface ArticleFilter {
   source?: string;
   topic?: string;
+  since?: string; // ISO date string
+  /** Case-insensitive match anywhere in the title. */
+  q?: string;
+}
+
+interface GetArticlesOptions extends ArticleFilter {
   limit?: number;
   offset?: number;
-  since?: string; // ISO date string
+}
+
+/**
+ * The WHERE clause and its parameters for the federal release readers. Always federal
+ * releases only; every value is a bind parameter ($1, $2, ...), never SQL text.
+ */
+export function buildArticleFilter(opts: ArticleFilter = {}): { where: string; params: string[] } {
+  const conditions: string[] = [FEDERAL_RELEASES_ONLY];
+  const params: string[] = [];
+  const add = (clause: (n: number) => string, value: string) => {
+    params.push(value);
+    conditions.push(clause(params.length));
+  };
+  if (opts.source) add((n) => `source = $${n}`, opts.source);
+  if (opts.topic) add((n) => `topic = $${n}`, opts.topic);
+  if (opts.since) add((n) => `published_at >= $${n}`, opts.since);
+  const pattern = likePattern(opts.q);
+  if (pattern) add((n) => `title ILIKE $${n}`, pattern);
+  return { where: `WHERE ${conditions.join(" AND ")}`, params };
+}
+
+async function hasArticlesTable(): Promise<boolean> {
+  try {
+    await sql`SELECT 1 FROM reg_articles LIMIT 1`;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getArticles(opts: GetArticlesOptions = {}): Promise<RegArticle[]> {
-  // Check table exists
-  try {
-    await sql`SELECT 1 FROM reg_articles LIMIT 1`;
-  } catch {
-    return [];
-  }
-
-  const conditions: string[] = [FEDERAL_RELEASES_ONLY];
-  const params: (string | number)[] = [];
-
-  if (opts.source) {
-    conditions.push(`source = $${params.length + 1}`);
-    params.push(opts.source);
-  }
-  if (opts.topic) {
-    conditions.push(`topic = $${params.length + 1}`);
-    params.push(opts.topic);
-  }
-  if (opts.since) {
-    conditions.push(`published_at >= $${params.length + 1}`);
-    params.push(opts.since);
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  if (!(await hasArticlesTable())) return [];
+  const { where, params } = buildArticleFilter(opts);
   const limit = opts.limit ?? 50;
-  const offset = opts.offset ?? 0;
+  const offset = Math.max(0, opts.offset ?? 0);
 
   return await sql.unsafe(
     `SELECT guid, source, title, link, topic, published_at, created_at
@@ -164,75 +176,33 @@ export async function getArticles(opts: GetArticlesOptions = {}): Promise<RegArt
   ) as unknown as RegArticle[];
 }
 
-export async function getArticleCount(opts: { source?: string; topic?: string; since?: string } = {}): Promise<number> {
-  try {
-    await sql`SELECT 1 FROM reg_articles LIMIT 1`;
-  } catch {
-    return 0;
-  }
-
-  const conditions: string[] = [FEDERAL_RELEASES_ONLY];
-  const params: (string | number | null)[] = [];
-
-  if (opts.source) {
-    conditions.push(`source = $${params.length + 1}`);
-    params.push(opts.source);
-  }
-  if (opts.topic) {
-    conditions.push(`topic = $${params.length + 1}`);
-    params.push(opts.topic);
-  }
-  if (opts.since) {
-    conditions.push(`published_at >= $${params.length + 1}`);
-    params.push(opts.since);
-  }
-
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const [row] = await sql.unsafe(
-    `SELECT COUNT(*) as cnt FROM reg_articles ${where}`,
-    params,
-  );
+export async function getArticleCount(opts: ArticleFilter = {}): Promise<number> {
+  if (!(await hasArticlesTable())) return 0;
+  const { where, params } = buildArticleFilter(opts);
+  const [row] = await sql.unsafe(`SELECT COUNT(*) as cnt FROM reg_articles ${where}`, params);
   return Number(row.cnt);
 }
 
-export async function getTopicCounts(since?: string): Promise<Record<string, number>> {
-  try {
-    await sql`SELECT 1 FROM reg_articles LIMIT 1`;
-  } catch {
-    return {};
-  }
-
-  const sinceClause = since ? `WHERE ${FEDERAL_RELEASES_ONLY} AND published_at >= $1` : `WHERE ${FEDERAL_RELEASES_ONLY}`;
-  const params = since ? [since] : [];
-
+async function countBy(column: "topic" | "source", since?: string, q?: string): Promise<Record<string, number>> {
+  if (!(await hasArticlesTable())) return {};
+  const { where, params } = buildArticleFilter({ since, q });
   const rows = await sql.unsafe(
-    `SELECT topic, COUNT(*) as cnt FROM reg_articles ${sinceClause} GROUP BY topic ORDER BY cnt DESC`,
+    `SELECT ${column} AS key, COUNT(*) as cnt FROM reg_articles ${where} GROUP BY ${column} ORDER BY cnt DESC`,
     params,
-  ) as { topic: string; cnt: number }[];
-
+  ) as unknown as { key: string; cnt: number }[];
   const counts: Record<string, number> = {};
-  for (const row of rows) counts[row.topic] = Number(row.cnt);
+  for (const row of rows) counts[row.key] = Number(row.cnt);
   return counts;
 }
 
-export async function getSourceCounts(since?: string): Promise<Record<string, number>> {
-  try {
-    await sql`SELECT 1 FROM reg_articles LIMIT 1`;
-  } catch {
-    return {};
-  }
+/** Federal releases per topic in the window (and matching the search, when given). */
+export async function getTopicCounts(since?: string, q?: string): Promise<Record<string, number>> {
+  return countBy("topic", since, q);
+}
 
-  const sinceClause = since ? `WHERE ${FEDERAL_RELEASES_ONLY} AND published_at >= $1` : `WHERE ${FEDERAL_RELEASES_ONLY}`;
-  const params = since ? [since] : [];
-
-  const rows = await sql.unsafe(
-    `SELECT source, COUNT(*) as cnt FROM reg_articles ${sinceClause} GROUP BY source ORDER BY cnt DESC`,
-    params,
-  ) as { source: string; cnt: number }[];
-
-  const counts: Record<string, number> = {};
-  for (const row of rows) counts[row.source] = Number(row.cnt);
-  return counts;
+/** Federal releases per agency in the window (and matching the search, when given). */
+export async function getSourceCounts(since?: string, q?: string): Promise<Record<string, number>> {
+  return countBy("source", since, q);
 }
 
 // ---------------------------------------------------------------------------
