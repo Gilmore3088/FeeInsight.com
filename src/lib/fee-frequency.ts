@@ -26,7 +26,7 @@ const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
 // v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
-const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond)\b[^|$]{0,40}?\bper (month|statement cycle|cycle|year)\b/gi;
+const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond|exceeding)\b[^|$]{0,40}?\b(per|in a|a|each) (month|statement cycle|cycle|year)\b/gi;
 
 function withoutAllowance(text: string): string {
   return text.replace(ALLOWANCE, " ");
