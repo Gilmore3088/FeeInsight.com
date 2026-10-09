@@ -713,4 +713,9 @@ describe("publishedFeeName", () => {
     expect(publishedFeeName("ATM Inquiry1", "atm_non_network")).toBe("ATM Inquiry");
     expect(publishedFeeName("Safe Deposit Box 10x10", "safe_deposit_box")).toBe("Safe Deposit Box 10x10");
   });
+
+  it("publishes the tidied name when only the untidied one fails the category guard", () => {
+    expect(publishedFeeName("per order | Returned Items", "deposited_item_return")).toBe("Returned Items");
+    expect(publishedFeeName("Return Item . . . . .", "deposited_item_return")).toBe("Return Item");
+  });
 });
