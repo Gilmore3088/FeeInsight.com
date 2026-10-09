@@ -264,11 +264,54 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(evalVerdictFeesSql(false)).toContain("(minimum|maximum|min|max)");
   });
 
+  it("reads a balance-to-avoid label as not a fee at any amount (v7, Oct 9)", () => {
+    expect(ruleFor("monthly_maintenance", "Minimum balance required to avoid service charge -", 50)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "Minimum balance to avoid monthly service fee", 5)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "Average Balance Required to Avoid Monthly Fee", 10)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "minimum balance requirement to avoid the monthly maintenance fee. FAT CAT Share accounts can be opened with a", 5)).toBe("balance_threshold");
+    // A $0 waiver keeps its earlier rule.
+    expect(ruleFor("monthly_maintenance", "Minimum Balance to Avoid Monthly Fee", 0)).toBe("waiver_sentence");
+    // A name that goes on to state the fee is the fee's own row.
+    expect(ruleFor("monthly_maintenance", "Minimum balance to avoid imposition of fees - A service charge fee of", 15)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum balance to avoid imposition of fees - A club fee of", 8)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "average collected daily balance required to avoid monthly service charge of", 10)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of", 2.5)).toBeNull();
+    expect(ruleFor("nsf", "Minimum daily balance required to avoid maintenance | Bill Pay Return Item . . . .", 30)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "monthly fee can be avoided by keeping minimum daily balance", 8)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum Balance Fee", 10)).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("(minimum|average|min");
+  });
+
   it("changes nothing in a dry run", async () => {
     const db = createDb(null);
     const result = await retireEvalVerdictFees(db, { ...options, dryRun: true });
     expect(result.flags.non_customer_price).toBe(1);
     expect(result.rolledBack).toHaveLength(1);
     expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
+  });
+
+  it("judges the name before a logged retidy too, so a rename alone does not clear a wrong row (v6, UAT 864)", async () => {
+    const renamed = [
+      // Hand-checked 100161: the retidy dropped the glued prefix; the $0 is still wrong.
+      { fee_published_id: 100161, fee_verified_id: 113967, institution_id: 76, source_document_id: 23020, canonical_fee_key: "cashiers_check", fee_name: "Cashier\u2019s Checks", original_fee_name: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: "0.00" },
+      // A $0 waiver renamed to its fee's name (60387).
+      { fee_published_id: 60387, fee_verified_id: 1, institution_id: 9, source_document_id: 5, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", original_fee_name: "Monthly Service Charge if any of the following qualifications are met", amount: "0.00" },
+      // A rebate renamed to "ATM fee" (13878).
+      { fee_published_id: 13878, fee_verified_id: 2, institution_id: 9, source_document_id: 5, canonical_fee_key: "atm_non_network", fee_name: "ATM fee", original_fee_name: "ATM receipt must be presented for reimbursement of an individual ATM fee of", amount: "5.00" },
+      // A rename of a right row stays live.
+      { fee_published_id: 70200, fee_verified_id: 3, institution_id: 9, source_document_id: 5, canonical_fee_key: "stop_payment", fee_name: "Stop Payment", original_fee_name: "Stop Payment | per item", amount: "30.00" },
+    ];
+    const db = createDb(null);
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(renamed));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result).toMatchObject({ handMatched: 1, ruleFailing: 2, flagged: 3, evalChanged: 0 });
+    expect(result.rolledBack).toEqual([]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("not_a_fee:waiver_sentence");
+    expect(calls).toContain("not_a_fee:rebate");
+    expect(calls).not.toContain("pub:70200");
+    expect(verdictFor({ feePublishedId: 100161, feeName: "Cashier\u2019s Checks", amount: 30, canonicalFeeKey: "cashiers_check", originalFeeName: HAND_CHECKED_VERDICTS[2].feeName })).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("pf.check_name = 'knox.name_retidy' AND pf.kind = 'name_retidied'");
+    expect(evalVerdictFeesSql(false)).toContain("OR retidy.old_name IS NOT NULL");
   });
 });
