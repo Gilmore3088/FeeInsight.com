@@ -235,6 +235,13 @@ describe("top-50 fold", () => {
       ["card_foreign_txn", "Cross-Border Fee", 1, null],
       ["card_foreign_txn", "Cross-border transaction fee", 1, null],
       ["card_foreign_txn", "Cross-Border Banking 3% of purchase", 3, null],
+      ["atm_non_network", "ATM Adjustment", 5, "account_research"],
+      ["atm_non_network", "ATM adjustment fee", 5, "account_research"],
+      ["atm_non_network", "Special Handling (i.e. ATM adjustment, etc.)", 5, "account_research"],
+      ["atm_non_network", "ATM Limit Adjustment", 5, null],
+      ["atm_non_network", "ATM Transaction Adjustment", 5, "account_research"],
+      ["atm_non_network", "ATM Deposit Correction Adjustment", 5, null],
+      ["atm_non_network", "ATM Balance Inquiry (at non-Wildfire ATM)", 2, null],
     ];
     for (const [key, name, amount, want] of moves) {
       const got = splitLiveCategory(key, name)?.to ?? null;

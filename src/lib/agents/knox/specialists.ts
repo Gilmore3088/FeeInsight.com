@@ -52,7 +52,8 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // maintenance fee, not the card's currency fee (`CROSS_BORDER_BUNDLE`; RBC, TD, BMO).
 // v60: a threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and Over)"),
 // a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words (`nameFrom`, `tidyFeeName`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 60 } as const;
+// v61: adjusting an ATM deposit or dispute is account research, not a network ATM fee (`ATM_ADJUSTMENT`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 61 } as const;
 
 export interface SpecialistRun {
   strategy: string;
