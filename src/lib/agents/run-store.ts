@@ -47,6 +47,7 @@ import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
+import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -477,12 +478,15 @@ async function executeAgenticStep(
       // Error review: every chunk of judged links is scored against Darwin and the answer
       // key, per finder; finders that keep failing run last (magellan/batch-review.ts).
       const batchReview = await reviewLinkBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // MG-4: retrain the shadow fee-page classifier from the ledger when it is 6+ hours old.
+      const pageClassifier = await refreshPageClassifier(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
           link_outcomes: linkOutcomes,
           batch_review: batchReview,
+          page_classifier: { ...pageClassifier, scored_with: discovery.pageClassifier },
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -600,7 +604,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: paid.budgetStopped && paid.processed === 0
           ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
-          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? " (stopped at the budget cap)" : ""}.`,
+          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
         detail: {
           selected: paid.selected,
           processed: paid.processed,
@@ -1192,7 +1196,7 @@ async function executeAgenticStep(
           : "";
       const otherBankNote =
         otherBank.rolledBack.length > 0
-          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website.`
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website or a host that does not name the bank.`
           : "";
       const evalVerdictNote =
         evalVerdicts.rolledBack.length > 0
@@ -1291,6 +1295,9 @@ async function executeAgenticStep(
             names_own_bank: otherBank.namesOwnBank,
             flagged: otherBank.flagged,
             waiting: otherBank.waiting,
+            unconfirmed_host_fees: otherBank.unconfirmedHostFees,
+            unconfirmed_host_flagged: otherBank.unconfirmedHostFlagged,
+            unconfirmed_host_waiting: otherBank.unconfirmedHostWaiting,
             rolled_back: otherBank.rolledBack.length,
             links_cleared: otherBank.linksCleared,
           },

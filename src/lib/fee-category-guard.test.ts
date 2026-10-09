@@ -855,6 +855,7 @@ describe("checkFeeCategory", () => {
     expect(guard("bill_pay", "Bill Pay", "5.00")).toBe(true);
     expect(guard("money_order", "Money Order Research Fee", "10.00")).toBe(false);
     expect(guard("money_order", "Cashier’s Check or Money Order Copy", "5.00")).toBe(false);
+    expect(guard("money_order", "Photocopy of Money Order", "5.00")).toBe(false);
     expect(guard("money_order", "Cashier's Check/Money Order", "3.00")).toBe(true);
     expect(guard("wire_intl_outgoing", "Foreign Wire Research", "15.00")).toBe(false);
     expect(guard("nsf", "Returned ACH Items (business only)", "6.00")).toBe(false);

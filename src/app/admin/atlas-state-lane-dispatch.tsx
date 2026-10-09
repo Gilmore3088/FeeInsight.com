@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -18,6 +18,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { triggerAgentRunExecution } from "@/lib/agents/client-execution";
 import type { AtlasStateLaneDispatch, AtlasStateLaneDispatchRow, AtlasStateLaneStatus } from "@/lib/agents/state-lane-memory";
 import { runAtlasDueStateLanes, runAtlasStateLane } from "./atlas-actions";
+import { ATLAS_RUN_STATUSES_EVENT, finishedLaneRunLabel, type AtlasRunStatusesDetail } from "./atlas-run-statuses";
 
 const DUE_BATCH_SIZE = 2;
 const ACTIVE_JOB_LIMIT = 3;
@@ -50,6 +51,15 @@ function statusClass(status: AtlasStateLaneStatus): string {
     default:
       return "bg-gray-100 text-gray-600 dark:bg-white/[0.06] dark:text-gray-400";
   }
+}
+
+/** "4 min old" for a cached snapshot, from its read time. */
+export function snapshotAge(generatedAt: string, now: number): string {
+  const minutes = Math.max(0, Math.round((now - new Date(generatedAt).getTime()) / 60_000));
+  if (minutes < 1) return "under a minute old";
+  if (minutes < 60) return `${minutes} min old`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"} old`;
 }
 
 function backlogTotal(row: AtlasStateLaneDispatchRow): number {
@@ -154,6 +164,25 @@ export function AtlasStateLaneDispatchPanel({
     batchCount?: number;
   } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [liveStatuses, setLiveStatuses] = useState<ReadonlyMap<number, string>>(() => new globalThis.Map<number, string>());
+  // Set after mount so the server render and hydration agree.
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    const first = window.setTimeout(() => setNow(Date.now()), 0);
+    const tick = window.setInterval(() => setNow(Date.now()), 60_000);
+    function handleStatuses(event: Event) {
+      const detail = (event as CustomEvent<AtlasRunStatusesDetail>).detail;
+      if (!detail?.runs) return;
+      setLiveStatuses(new globalThis.Map<number, string>(detail.runs.map((run) => [run.id, run.status])));
+    }
+    window.addEventListener(ATLAS_RUN_STATUSES_EVENT, handleStatuses);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(tick);
+      window.removeEventListener(ATLAS_RUN_STATUSES_EVENT, handleStatuses);
+    };
+  }, []);
 
   const disabledReason = useMemo(() => {
     if (!dispatch.schemaReady) return "State lane schema is not ready";
@@ -163,6 +192,11 @@ export function AtlasStateLaneDispatchPanel({
     return null;
   }, [activeJobCount, automationEnabled, dispatch.schemaReady, executionBlockedReason, executionEnabled]);
 
+  // Lanes whose run the live ledger already shows as finished no longer count as running.
+  const runningLanes = Math.max(
+    0,
+    dispatch.runningLanes - dispatch.rows.filter((row) => finishedLaneRunLabel(row, liveStatuses) !== null).length,
+  );
   const controlsDisabled = Boolean(disabledReason) || isPending;
   const dueDisabled = controlsDisabled || dispatch.dueLanes === 0;
   const stateDisabled = controlsDisabled || !selectedState;
@@ -251,7 +285,7 @@ export function AtlasStateLaneDispatchPanel({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <DispatchMetric label="Total lanes" value={number(dispatch.totalLanes)} icon={Map} />
             <DispatchMetric label="Due now" value={number(dispatch.dueLanes)} icon={Clock3} tone={dispatch.dueLanes > 0 ? "warning" : "default"} />
-            <DispatchMetric label="Running" value={number(dispatch.runningLanes)} icon={Activity} tone={dispatch.runningLanes > 0 ? "active" : "default"} />
+            <DispatchMetric label="Running" value={number(runningLanes)} icon={Activity} tone={runningLanes > 0 ? "active" : "default"} />
             <DispatchMetric label="Need attention" value={number(dispatch.attentionLanes)} icon={AlertTriangle} tone={dispatch.attentionLanes > 0 ? "danger" : "default"} />
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
@@ -264,6 +298,10 @@ export function AtlasStateLaneDispatchPanel({
           </div>
           <p className="admin-meta mt-3">
             Next due {formatAdminDateTime(dispatch.nextDueAfter)} · latest lane run {formatAdminDateTime(dispatch.latestRunAt)}
+          </p>
+          <p className="admin-meta mt-1">
+            Lane snapshot read {formatAdminDateTime(dispatch.generatedAt)}
+            {now !== null ? ` (${snapshotAge(dispatch.generatedAt, now)})` : ""}. A run the live ledger shows as finished is marked here.
           </p>
         </div>
 
@@ -345,6 +383,7 @@ export function AtlasStateLaneDispatchPanel({
           <tbody>
             {dispatch.rows.map((row) => {
               const target = repairTarget(row);
+              const finished = finishedLaneRunLabel(row, liveStatuses);
               return (
                 <tr key={row.stateCode}>
                   <td>
@@ -354,8 +393,8 @@ export function AtlasStateLaneDispatchPanel({
                     <span className="ml-2 text-gray-500">{row.name}</span>
                   </td>
                   <td>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass(row.status)}`}>
-                      {statusCopy(row.status)}
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${finished ? statusClass("scheduled") : statusClass(row.status)}`}>
+                      {finished ?? statusCopy(row.status)}
                     </span>
                     {row.activeRunId && (
                       <span className="ml-2 font-mono text-[10px] text-gray-400">#{row.activeRunId}</span>

@@ -574,6 +574,19 @@ export async function getRegistryPartitionStats(): Promise<RegistryPartitionStat
   }));
 }
 
+/**
+ * State fee bills keep one row per state plus the scheduler's "current" batch row, so the
+ * source's partition count isn't a completion ratio. This counts states read and states with bills.
+ */
+export async function getStateBillCoverage(): Promise<{ statesRead: number; withBills: number }> {
+  const [row] = await sql<Array<{ states_read: number; with_bills: number }>>`
+    SELECT COUNT(*) FILTER (WHERE status IN ('succeeded', 'empty'))::int AS states_read,
+           COUNT(*) FILTER (WHERE status = 'succeeded' AND row_count > 0)::int AS with_bills
+      FROM registry_ingest_partitions
+     WHERE source = 'state-bills' AND partition_key <> 'current'`;
+  return { statesRead: Number(row?.states_read ?? 0), withBills: Number(row?.with_bills ?? 0) };
+}
+
 export interface IdentityReviewItem {
   link_type: string;
   external_key: string;

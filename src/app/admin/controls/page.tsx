@@ -71,6 +71,7 @@ export default async function ControlsRoomPage() {
 
       <AtlasEmergencyControl
         enabled={center.automation.enabled}
+        unreadable={Boolean(center.automation.unreadable)}
         reason={center.automation.reason}
         changedBy={center.automation.changedBy}
         changedAtLabel={dateTime(center.automation.changedAt)}
