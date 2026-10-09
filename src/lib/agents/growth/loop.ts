@@ -20,6 +20,8 @@ export const GROWTH_LOOP_STEPS: ReadonlyArray<{ key: string; title: string }> = 
   { key: "growth-conversion", title: "NORMAN: check every buying page and outreach link, and the funnel" },
   { key: "growth-score", title: "Score posted items and sent outreach emails" },
   { key: "growth-learning", title: "DRAPER: write what the week taught" },
+  { key: "growth-proposals", title: "DRAPER: propose up to 3 changes the evidence supports" },
+  { key: "growth-plan", title: "DRAPER: write the week's plan from the queue and the conversation log" },
   { key: "marketing-score", title: "Score last month's campaigns and the market snapshot" },
   { key: "marketing-states", title: "Plan this month's state editions" },
 ];

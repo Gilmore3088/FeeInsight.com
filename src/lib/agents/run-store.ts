@@ -80,6 +80,7 @@ import { refreshContactPicks, runContactFinder, summarizeContactFinder, summariz
 import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runQuoteDrafts, summarizeQuoteDrafts } from "@/lib/agents/growth/quote";
+import { runMondayPlan, runProposals, summarizeMondayPlan, summarizeProposals } from "@/lib/agents/growth/draper";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
 import { runToolCheck, summarizeToolCheck } from "@/lib/agents/growth/edison";
@@ -1849,6 +1850,14 @@ async function executeAgenticStep(
     case "growth-learning": {
       const result = await runLearningReport({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeLearning(result), detail: { ...result } };
+    }
+    case "growth-proposals": {
+      const result = await runProposals({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeProposals(result), detail: { ...result } };
+    }
+    case "growth-plan": {
+      const result = await runMondayPlan({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMondayPlan(result), detail: { ...result } };
     }
     case "growth-intel": {
       const result = await runMarketIntel({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });

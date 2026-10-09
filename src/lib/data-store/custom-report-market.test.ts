@@ -10,7 +10,7 @@ vi.mock("./connection", () => ({
   }),
 }));
 
-import { getLocalMarketMembers } from "./custom-report-market";
+import { getLocalMarketMembers, maintenanceLineIsNotChecking, reportRowProblem } from "./custom-report-market";
 
 function countyQuery(): string {
   const query = calls.find((call) => call.text.includes("hq AS ("));
@@ -44,5 +44,38 @@ describe("market counties", () => {
     await getLocalMarketMembers(19);
     const county = calls.find((call) => call.text.includes("hq AS ("));
     expect(county?.values.slice(0, 2)).toEqual(["6672", "6672"]);
+  });
+});
+
+describe("whole-record problems that keep a published row out of a report", () => {
+  it("leaves out a fee waiting on its takedown second look", () => {
+    expect(reportRowProblem({ fee_name: "Overdraft Fee", takedown_pending: true })).toBe("takedown_pending");
+  });
+
+  it("leaves out a business price but not a fee that mentions business days", () => {
+    expect(reportRowProblem({ fee_name: "Business Wire Transfer Incoming (domestic)" })).toBe("business_price");
+    expect(reportRowProblem({ fee_name: "Wire Transfer Incoming (same business day)" })).toBeNull();
+  });
+
+  it("leaves out a name that is a cut sentence", () => {
+    expect(reportRowProblem({ fee_name: "to open the account. A Maintenance Service Charge of" })).toBe("name_fragment");
+    expect(reportRowProblem({ fee_name: "at all times. If you do not, a monthly fee of" })).toBe("name_fragment");
+  });
+
+  it("keeps a clean consumer fee", () => {
+    expect(reportRowProblem({ fee_name: "Overdraft/Non-sufficient Funds (NSF)", takedown_pending: false })).toBeNull();
+  });
+});
+
+describe("monthly maintenance compares checking only", () => {
+  it("leaves out a monthly fee stated on a savings or money market line", () => {
+    const savings = "Advantages Money Market Savings: a $1,000 minimum daily balance is required to avoid a monthly fee of $10.";
+    expect(maintenanceLineIsNotChecking("monthly_maintenance", savings)).toBe(true);
+  });
+
+  it("keeps a checking maintenance charge and other lines", () => {
+    const checking = "A Maintenance Service Charge of $8.95 each statement cycle applies to this account.";
+    expect(maintenanceLineIsNotChecking("monthly_maintenance", checking)).toBe(false);
+    expect(maintenanceLineIsNotChecking("overdraft", "Savings overdraft $29")).toBe(false);
   });
 });
