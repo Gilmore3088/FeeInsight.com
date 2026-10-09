@@ -32,6 +32,11 @@ Darwin owns verification and classification.
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
   decided row, and rows once held as `duplicate_in_batch` would be verified as second copies.
+  Each decision also records `source_check_version` (`DARWIN_SOURCE_CHECK_VERSION`, 2026-10-09):
+  when it rises, `not_in_source` rejections stamped lower (or unstamped) are read once more, so a
+  fix to the shared source check reaches the rows it was made for. Before that a `not_in_source`
+  rejection was final; 1,126 rows at 499 banks were waiting on fixes already live (Northern Trust's
+  wrapped-name $25 overdraft, raw 457013, among them).
 - The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,
   2026-10-07). Version 1 named the URL, so a fee on a bank's current copy of a page was held
   as a duplicate of the same fee on an older copy and never verified. A version 1 duplicate on

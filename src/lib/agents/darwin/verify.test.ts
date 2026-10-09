@@ -1,7 +1,7 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { DARWIN_BATCH_KEY_VERSION, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -419,6 +419,16 @@ describe("Darwin agentic verification", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
       expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
+    });
+
+    it("re-reads not_in_source rejections once after the source check changes", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 405, db: asVerifyDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'not_in_source'[\s\S]*COALESCE\(\(pa\.detail->>'source_check_version'\)::int, 0\) </);
+      expect(params).toEqual(expect.arrayContaining([DARWIN_SOURCE_CHECK_VERSION]));
     });
 
     it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {

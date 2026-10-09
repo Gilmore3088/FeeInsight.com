@@ -57,6 +57,17 @@ type SqlTag = typeof sql;
 // then be verified as second copies of an already verified fee (only `fee_raw_id` is unique).
 export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } as const;
 /**
+ * The source check (`checkFeeAgainstSource`, Accuracy's `src/lib/custom-report/source-check.ts`)
+ * as Darwin read it, recorded on every decision. A `not_in_source` rejection was final: the row
+ * was never read again, so a fee the check could not trace before a fix stayed rejected after it
+ * (1,126 rows at 499 banks by 2026-10-09, Northern Trust's wrapped-name $25 overdraft among them).
+ * Raising this number gives every `not_in_source` rejection stamped lower one more read, the way
+ * a guard bump re-checks `category_mismatch`; a row the check still fails is stamped and done.
+ * Bump it when a source-check fix lands that should reach rejected rows. v1: 2026-10-09, after
+ * Knox v62 (#861) taught the check wrapped leader names, per-wire lines and former-fee columns.
+ */
+export const DARWIN_SOURCE_CHECK_VERSION = 1;
+/**
  * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
  * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency
  * contradicted it or was never stated there: "$1.00 per withdrawal in excess of six per month"
@@ -365,6 +376,10 @@ async function selectRawFees(
     // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
     // rejected, or one a new re-file rule now places, is not lost.
     const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
+    // A `not_in_source` rejection under an older source-check version is re-read once
+    // (DARWIN_SOURCE_CHECK_VERSION), so a fix to the shared source check reaches the rows it
+    // was made for; a row the check still fails is stamped with today's version and rests.
+    const sourceCheckParam = `$${params.push(DARWIN_SOURCE_CHECK_VERSION)}`;
     // A row held outside its category's hand-set amount envelope is re-checked once when
     // today's envelope would take its amount (the account_research floor went from $5 to $1 on
     // 2026-10-09 for the returned mail and fax fees pooled there), so an envelope change reaches
@@ -401,6 +416,10 @@ async function selectRawFees(
               AND NOT (
                 pa.detail->>'reason_code' = 'category_mismatch'
                 AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'not_in_source'
+                AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${sourceCheckParam}
               )
               AND NOT (
                 pa.detail->>'reason_code' = 'outside_envelope'
@@ -894,6 +913,7 @@ export async function runDarwinVerify(
           reason_code: result.reasonCode,
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
+          source_check_version: DARWIN_SOURCE_CHECK_VERSION,
           batch_key_version: DARWIN_BATCH_KEY_VERSION,
           amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
             ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
