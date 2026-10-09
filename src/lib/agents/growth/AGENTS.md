@@ -209,6 +209,16 @@ app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and i
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
 
+After the queue, the same step reads Google Search Console (`search-console.ts`) into the step
+result's `search`: total clicks, impressions and average position for the 7 days ending 3 days
+before the run (Search Console data lags about 3 days) against the 7 days before that, and the
+top 10 pages by clicks this week. It signs a service-account JWT with `node:crypto` (scope
+`webmasters.readonly`, no Google SDK) and uses plain fetch; still free, no model call, and it
+reads on dry runs too. Env: `GSC_SERVICE_ACCOUNT_JSON` (the key JSON; the service account must be
+a user on the property) and `GSC_SITE_URL` (default `sc-domain:feeinsight.com`). With no key,
+`search` is `{ measured: false, reason }`; a failed token exchange or query records its error
+message the same way. Neither fails the step, and nothing is estimated.
+
 James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
 Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
 
