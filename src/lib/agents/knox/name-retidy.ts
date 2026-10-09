@@ -161,6 +161,13 @@ export function restoreStrippedAmount(name: string, texts: string[]): string | n
 
 /** v7: a "Name" column label on the front of a name ("Name Stop Payment", Maple FCU). */
 const HEADER_WORD_PREFIX = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
+/**
+ * v7: an account or section heading read onto the front of another fee's name ("BUSINESS
+ * CHECKING ACCOUNT FEES | Skip-a-Pay", "Business Freedom Checking: Pinnacle Business Checking:
+ * Safe Deposit Box Rental"). A monthly or balance fee keeps it: there the account is the name.
+ */
+const LEADING_ACCOUNT_HEADINGS = /^(?:[A-Z][\w/&'’ -]{0,60}?\b(?:checking|savings|money market|account fees|fees)\s*[:|]\s*)+(?=[A-Z])/i;
+const ACCOUNT_NAMED_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
 const SECTION_HEADING_ONLY = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
 
 /** The tidy name a live fee should show, or null to keep its name. */
@@ -282,8 +289,10 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   for (const fee of fees) {
+    const headingless = ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) ? fee.fee_name : fee.fee_name.replace(LEADING_ACCOUNT_HEADINGS, "");
     // Knox v58's tidy drops a "Name" column label ("Name Stop Payment").
-    const tidied = retidiedFeeName(fee.fee_name, fee.canonical_fee_key);
+    const tidied =
+      headingless === fee.fee_name ? retidiedFeeName(fee.fee_name, fee.canonical_fee_key) : retidiedFeeName(headingless, fee.canonical_fee_key) ?? headingless;
     // v7: a name whose dollar figure was cut out gets it back from the fee's own document.
     const ownTexts = texts
       .filter((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id))
@@ -291,7 +300,13 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
     const newName = restoreStrippedAmount(tidied ?? fee.fee_name, ownTexts) ?? (tidied ? restoreStrippedAmount(fee.fee_name, ownTexts) : null) ?? tidied;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
-    if (!newName || (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) || SECTION_HEADING_ONLY.test(newName)) {
+    // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
+    if (
+      !newName ||
+      (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) ||
+      SECTION_HEADING_ONLY.test(newName) ||
+      (/^[a-z]/.test(newName) && !/^[a-z]/.test(fee.fee_name))
+    ) {
       skipped.no_better_name += 1;
       continue;
     }
@@ -381,6 +396,7 @@ export async function retidyLiveFeeNames(
                    OR fp.fee_name ~* '^[[:space:]]*(otherwise|additionally|also|however|in addition|furthermore|further)[[:space:]]*,?[[:space:]]'
                    OR fp.fee_name ~ '\\([[:space:]]|[[:space:]]\\)'
                    OR fp.fee_name ~ '^Name[[:space:]]+[A-Z]'
+                   OR fp.fee_name ~* '^[A-Z][^:|]{0,60}(checking|savings|money market|fees)[[:space:]]*[:|][[:space:]]*[A-Z]'
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -543,6 +559,7 @@ export function isMessyName(name: string): boolean {
     LEADING_DISCOURSE.test(name) ||
     STRIPPED_AMOUNT.test(name) ||
     TRAILING_CUT.test(name) ||
+    LEADING_ACCOUNT_HEADINGS.test(name) ||
     HEADER_WORD_PREFIX.test(name)
   );
 }
