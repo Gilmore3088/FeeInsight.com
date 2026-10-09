@@ -642,6 +642,8 @@ describe("v15: a rename never drops a condition, and v14's trims get theirs back
     expect(restoredName("Monthly fee if account balance falls", "Monthly fee", "monthly_maintenance")).toBeNull();
     expect(restoredName("Service Charge if average balance <", "Service Charge", "monthly_maintenance")).toBeNull();
     expect(restoredName("Monthly Service Charge If Minimum", "Monthly Service Charge", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Escheat Fee (Per Member) | Escheat Fee", "Escheat Fee", "escheat_fee")).toBeNull();
+    expect(restoredName("Check Cashing Otherwise – Per Check", "Check Cashing", "check_cashing")).toBeNull();
     expect(restoredName("Premier Checking: Printed Statements", "Printed Statements", "paper_statement")).toBe("Premier Checking: Printed Statements");
   });
 

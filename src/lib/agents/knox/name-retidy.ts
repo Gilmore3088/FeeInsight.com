@@ -834,7 +834,7 @@ export function restoreOnPage(restored: string, ownTexts: string[]): boolean {
 /** A dollar figure publish cut out of the old name ("if minimum balance is or less", "falls below during"). */
 const AMOUNT_GAP =
   /\b(?:below|under|than|is|of|exceeds?|drops?|over|least)\s+(?:or|and|during|\))(?:\s|$)|\b(?:falls?|below|under|than)\s+(?:below\s+)?(?:for|in|the|during)\b|\b(?:falls?|below|under|than|less|exceeds?|drops?|least)\s*(?:$|[.,:;)])|:\s*(?:n\/a|none)\b/i;
-const RESTORE_FRAGMENT = /=|\.\s+[A-Z]|\s(?:has|have|goes|go|if|when|than|balance|average|minimum|maximum)\s*[.)]*$|[<>]\s*[.)]*$/i;
+const RESTORE_FRAGMENT = /=|\||\botherwise\b|\.\s+[A-Z]|\s(?:has|have|goes|go|if|when|than|balance|average|minimum|maximum)\s*[.)]*$|[<>]\s*[.)]*$/i;
 const FIGURE_WITHOUT_UNIT = /\b(?:after|over|than|below|under)\s+\d[\d,]*\s*\)?\s*$/i;
 const GLUED_CAPITALS = /\b[A-Za-z]*[a-z][A-Z]{2,}\b|\(\/?(?:br|small|b|i|sup)\)/;
 const RESTORE_HEADING = /^[A-Z][\w®™’'&+./ -]{0,60}?\s*:\s*$/;
