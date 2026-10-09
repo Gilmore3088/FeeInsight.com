@@ -151,6 +151,52 @@ describe("Hamilton category guard repair", () => {
     expect(restoreTarget({ ...row, fee_published_id: 96165 })).toBeNull();
   });
 
+  it("brings back the fees the guard took down at 12:26 on Oct 9 under the type their name names", () => {
+    const row = { conditions: null, document_nsf_amount: null };
+    const cases: Array<[number, string, string, string, string]> = [
+      [95142, "money_order", "Money Order Research Fee", "10.00", "account_research"],
+      [67519, "wire_intl_outgoing", "International Wire Research or Tracking", "55.00", "account_research"],
+      [95114, "wire_intl_outgoing", "Foreign Wire Research", "15.00", "account_research"],
+      [51270, "bill_pay", "Member Draft Stop Pymt (Including Bill Pay)", "15.00", "stop_payment"],
+      [53995, "bill_pay", "Electronic Bill Pay Stop Pay", "29.50", "stop_payment"],
+      [72328, "bill_pay", "Bill Pay Stop Pay", "30.00", "stop_payment"],
+      [94280, "bill_pay", "Bill Pay Stop/Cancel Payment", "25.00", "stop_payment"],
+      [65499, "nsf", "Payee-returned ACH Payment Due to Member Error", "25.00", "ach_return"],
+    ];
+    for (const [id, from, name, amount, to] of cases) {
+      expect(checkFeeCategory(from, name).ok, `${id}`).toBe(false);
+      expect(restoreTarget({ ...row, fee_published_id: id, canonical_fee_key: from, fee_name: name, amount }), `${id}`).toBe(to);
+      // The new type's guard keeps it there.
+      expect(checkFeeCategory(to, name).ok, `${id}`).toBe(true);
+    }
+  });
+
+  it("re-files a live fee in place when its name belongs to another type a checked rule names, instead of taking it down", async () => {
+    const refileRow = { fee_published_id: 95142, lineage_ref: 195142, institution_id: 8581, source_document_id: 16111, canonical_fee_key: "money_order", fee_name: "Money Order Research Fee", amount: "10.00", conditions: null };
+    const flags = [{ fee_published_id: 95142, kind: "takedown_pending", evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "name" } }];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback")) return Promise.resolve(flags);
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([refileRow]);
+      return Promise.resolve([]);
+    });
+
+    const dry = await runHamiltonCategoryGuard({ runId: 21, dryRun: true, db: db as unknown as GuardDb });
+    expect(dry).toMatchObject({ liveRefiledFees: 1, failingFees: 0, flaggedFees: 0 });
+
+    const result = await runHamiltonCategoryGuard({ runId: 22, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0, rolledBackFees: 0 });
+    const writes = db.mock.calls.map((call) => templateText(call[0]));
+    expect(writes.some((text) => text.includes("rolled_back_at = NOW()"))).toBe(false);
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key"));
+    expect([move?.[1], move?.[2], move?.[3]]).toEqual([[95142], ["money_order"], ["account_research"]]);
+  });
+
   it("brings an express card replacement back as the rush card fee, once per institution and price", async () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Express Replacement Card", amount: "25.00" })).toBe("rush_card");
