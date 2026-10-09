@@ -154,6 +154,7 @@ export default async function HamiltonHomePage({
           overview={overview}
           windowDays={COMPETITOR_MOVE_WINDOW_DAYS}
           overdraftIncome={briefing.overdraftIncome ?? null}
+          tryPriceHref={hrefWithInstitutionContext("/pro/simulate?fee=overdraft", selectedInstitutionId)}
         />
       ) : null}
 
