@@ -143,7 +143,19 @@ export async function acceptSignedWorkspaceInvite(params: {
         { invitationId: invitation.id, userId: params.user.id, email: userEmail },
         tx,
       );
-      return membership ? { status: "accepted", membership } : { status: "failed" };
+      if (!membership) return { status: "failed" };
+      // A teammate with no saved bank starts on the team's bank, so Hamilton follows the
+      // team's peer group from their first visit. A bank they already saved is kept.
+      await tx`
+        INSERT INTO hamilton_workspace_contexts (user_id, selected_institution_id, selected_source, created_at, updated_at)
+        VALUES (${params.user.id}, ${invitation.institutionId}, 'manual', NOW(), NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          selected_institution_id = EXCLUDED.selected_institution_id,
+          selected_source = EXCLUDED.selected_source,
+          updated_at = NOW()
+        WHERE hamilton_workspace_contexts.selected_institution_id IS NULL
+      `;
+      return { status: "accepted", membership };
     });
   } catch (error) {
     console.error("[workspace-invite] accept failed:", error);
