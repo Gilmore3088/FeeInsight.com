@@ -1,0 +1,53 @@
+name: Verify and commit reviewed R02 billing fix
+on:
+  push:
+    branches: [redteam/r02-billing-reconciliation]
+    paths: [.github/redteam/r02.patch.gz, .github/workflows/redteam-r02-finalize.yml]
+permissions:
+  contents: write
+concurrency:
+  group: redteam-r02-finalize
+  cancel-in-progress: false
+jobs:
+  apply-and-verify:
+    if: github.repository == 'Gilmore3088/FeeInsight.com' && github.ref == 'refs/heads/redteam/r02-billing-reconciliation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Apply checksum-verified patch tested in isolated sandbox
+        run: |
+          set -euo pipefail
+          echo 'c6d788d8b28ef5a75366bad32a4c7d3c9d1d95433b580b85cf4ac30ceb830051  .github/redteam/r02.patch.gz' | sha256sum --check
+          gzip -dc .github/redteam/r02.patch.gz > "$RUNNER_TEMP/r02.patch"
+          echo "248e209f44fa00073f24db6e4c1ddb183f763eaa4e1e477d7e1c4f38a0894af7  $RUNNER_TEMP/r02.patch" | sha256sum --check
+          git apply --index "$RUNNER_TEMP/r02.patch"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run guard:legacy
+      - run: npx tsc --noEmit
+      - run: npx eslint src/lib/billing src/lib/stripe-webhook.ts src/lib/stripe-webhook.test.ts
+      - run: npx vitest run --maxWorkers=2
+      - run: npm run build
+      - name: Commit verified code to the existing billing branch only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'redteam/r02-billing-reconciliation'
+          remote=$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)
+          test "$remote" = "$GITHUB_SHA"
+          git diff --cached --stat
+          test "$(git diff --cached --name-only | wc -l)" -eq 5
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(billing): reconcile authoritative subscription state under customer lock'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          echo 'Billing fix committed after full suite and build. Live Stripe and PostgreSQL concurrency checks remain separate acceptance requirements.' >> "$GITHUB_STEP_SUMMARY"
