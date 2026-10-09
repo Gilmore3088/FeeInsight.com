@@ -15,5 +15,22 @@ guessing a figure from the font. Three such names stay as they are: 19932, 21141
 Those three, and 41496's shifted letters, need a re-read of the source document with a working
 font map.
 
+**Follow-up (retidy v13):** the font writes every glyph 29 code points low, so the map can be read
+back. It is trusted for a document only when at least two of the document's shifted words decode
+to words that the same page also prints in clear. Meridia (doc 6826) passes: "EDODQFH" decodes to
+"balance" and "&KHFN" to "Check". So 96207 becomes "Minimum Balance (under $1000)", and 41496
+becomes its own cell, "Legal Process". All of Meridia's live amounts are printed in clear and
+match the page.
+
+**Known wrong, left live (Oct 9):** LFCU (doc 13444) and Georgia's Own (doc 12676) have no
+shifted words, so their maps cannot be proven.
+- 19932 is wrong under any map. Its $30 belongs to the next line, "Stop Payment Order - Check,
+  ACH (per item)". Its own price is font-coded, and decodes to $25.
+- 21141's $5 and category are right, but its name glues two lines together.
+
+A new takedown check for them was not added, because the permission check refused wiring it into
+publish. A Knox re-read would see the same codes, because Knox has no font decode. If Hamilton's
+rules re-check does not bring them down, the takedown goes to James as a question.
+
 **Lesson:** text extraction should flag control characters in the text it extracts. A clean-looking
 amount column can sit next to names in a broken font.
