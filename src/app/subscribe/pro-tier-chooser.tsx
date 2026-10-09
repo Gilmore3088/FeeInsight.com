@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
+import { trackEvent } from "@/lib/analytics";
 
 interface ProTierChooserProps {
   /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */
@@ -37,7 +38,7 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
   if (chosenLabel) {
     return (
       <div className="rounded-lg border border-[#E0D7C9] bg-white p-4 text-sm">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Your price is for</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">This plan covers</p>
         <p className="mt-1 font-semibold text-[#1A1815]">{chosenLabel}</p>
         {problem && <p className="mt-2 text-[#A93D25]">{problem}</p>}
         {bandChoices && (
@@ -88,19 +89,24 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
       <InstitutionPicker
         inputId="pro_tier_institution"
         name="pro_tier_institution_id"
-        label="Your bank or credit union"
-        help="Your price is set by its total assets. Start typing, then pick it from the list."
+        label="Who is this subscription for?"
+        help="Search your bank or credit union. Its total assets from the latest call report set the price."
         labelClassName="text-sm font-medium text-[#1A1815]"
         labelStyle={{}}
         inputClassName="w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm text-[#1A1815] outline-none focus:border-[#C44B2E]"
         inputStyle={{}}
         onSelect={(result) => {
-          if (result) go((params) => params.set("inst", String(result.id)));
+          if (!result) return;
+          trackEvent("pricing_tier_selected", { kind: "institution" });
+          go((params) => params.set("inst", String(result.id)));
         }}
       />
       <button
         type="button"
-        onClick={() => go((params) => params.set("org", "other"))}
+        onClick={() => {
+          trackEvent("pricing_tier_selected", { kind: "other_organization" });
+          go((params) => params.set("org", "other"));
+        }}
         className="mt-2 inline-flex min-h-11 items-center text-left text-xs font-medium text-[#5A5347] underline underline-offset-2 hover:text-[#1A1815]"
       >
         I&apos;m a consultant or another organization

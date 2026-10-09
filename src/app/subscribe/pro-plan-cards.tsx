@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import { TrackLink } from "@/components/track-link";
-import { annualMonthsFree, tierAmountLabel, type ProTier } from "@/lib/pro-tiers";
+import {
+  CONSULTANT_PRICE_NOTE,
+  annualPerMonthLabel,
+  annualSavingsLabel,
+  tierAmountLabel,
+  type ProTier,
+} from "@/lib/pro-tiers";
 import { SubscribeButton } from "./subscribe-button";
 import { PLAN_TEAM_LABEL, type ProPlan } from "./pricing";
 
@@ -20,29 +26,31 @@ interface ProPlanCardsProps {
   /** Null until a bank, credit union or "other organization" is chosen and priced. */
   selection: ProTierSelection | null;
   returnTo?: string;
+  /** The Pro page checkout returns to ("Regulatory Wire"), or null for Hamilton. */
+  destination: string | null;
   registerHrefFor: (plan: ProPlan) => string;
-  highlightedPlan: ProPlan | null;
   /** When set (post-signup hand-off), the matching plan starts checkout on mount. */
   autoStartPlan?: ProPlan | null;
 }
 
+const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 const PRIMARY_BUTTON =
-  "block w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-[#A93D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+  "block w-full rounded-md bg-[#C44B2E] px-4 py-3 text-center text-sm font-semibold text-white hover:bg-[#A93D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 const SECONDARY_BUTTON =
   "block w-full rounded-md border border-[#D5CBBF] px-4 py-2.5 text-center text-sm font-medium text-[#1A1815] hover:border-[#1A1815] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 /**
- * Starts Pro: the buyer picks who the plan covers, then the two price columns show that
- * tier's monthly and annual price with the button to check out. Every price and what Pro
- * includes are shown above this on the page (pro-overview.tsx).
+ * Starts Pro (James, 9 Oct 2026): the buyer says who the plan covers, then ONE plan card
+ * offers annual first, with monthly as the plain alternative, and says before Stripe what
+ * the buyer is agreeing to and what happens after paying.
  */
 export function ProPlanCards({
   isLoggedIn,
   chooser,
   selection,
   returnTo,
+  destination,
   registerHrefFor,
-  highlightedPlan,
   autoStartPlan = null,
 }: ProPlanCardsProps) {
   const ctaFor = (plan: ProPlan, chosen: ProTierSelection, label: string, className: string) => {
@@ -76,81 +84,62 @@ export function ProPlanCards({
   return (
     <div className="rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6">
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="grid content-start gap-4">
-          {chooser}
-        </div>
-        <div className="grid content-start gap-4">
-          {selection ? (
-            <div className="grid gap-4">
-              <PriceColumn
-                plan="monthly"
-                eyebrow="Monthly"
-                priceLabel={tierAmountLabel(selection.tier, "monthly")}
-                priceSuffix={`/mo ${PLAN_TEAM_LABEL}`}
-                note="Renews monthly until you cancel; cancel at the end of any billing period"
-                highlighted={highlightedPlan === "monthly"}
-                cta={ctaFor("monthly", selection, "Start monthly", SECONDARY_BUTTON)}
-              />
-              <PriceColumn
-                plan="annual"
-                eyebrow="Annual"
-                priceLabel={tierAmountLabel(selection.tier, "annual")}
-                priceSuffix={`/yr ${PLAN_TEAM_LABEL}`}
-                note={`${annualMonthsFree(selection.tier)} months free against paying monthly; renews yearly until you cancel`}
-                badge="Best value"
-                highlighted={highlightedPlan === "annual"}
-                cta={ctaFor("annual", selection, "Start annual", PRIMARY_BUTTON)}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-[#6B6255]">
-              Pick who the plan is for to see your price and start. Plans renew monthly or yearly
-              until you cancel, and you can cancel at the end of any billing period.
-            </p>
-          )}
-        </div>
+        <div className="grid content-start gap-4">{chooser}</div>
+        {selection ? (
+          <PlanCard selection={selection} isLoggedIn={isLoggedIn} destination={destination} ctaFor={ctaFor} />
+        ) : (
+          <div className="rounded-lg border border-dashed border-[#D5CBBF] p-5 text-sm leading-relaxed text-[#6B6255]">
+            Pick your bank or credit union and its price appears here, with annual and monthly
+            billing. Every size gets the same full plan, {PLAN_TEAM_LABEL}.
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-interface PriceColumnProps {
-  plan: ProPlan;
-  eyebrow: string;
-  priceLabel: string;
-  priceSuffix: string;
-  note: string;
-  badge?: string;
-  highlighted: boolean;
-  cta: ReactNode;
-}
-
-function PriceColumn({ plan, eyebrow, priceLabel, priceSuffix, note, badge, highlighted, cta }: PriceColumnProps) {
-  const border = plan === "annual" ? "border-2 border-[#C44B2E]" : "border border-[#E0D7C9]";
-  const ring = highlighted ? " ring-2 ring-[#C44B2E]/30 ring-offset-2 ring-offset-[#FDFBF8]" : "";
+function PlanCard({
+  selection,
+  isLoggedIn,
+  destination,
+  ctaFor,
+}: {
+  selection: ProTierSelection;
+  isLoggedIn: boolean;
+  destination: string | null;
+  ctaFor: (plan: ProPlan, chosen: ProTierSelection, label: string, className: string) => ReactNode;
+}) {
+  const tier = selection.tier;
   return (
-    <div id={`plan-${plan}`} className={`relative flex flex-col rounded-lg bg-white p-5 ${border}${ring}`}>
-      {badge && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="rounded-full bg-[#C44B2E] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
-            {badge}
-          </span>
-        </div>
-      )}
-      <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">{eyebrow}</div>
-      <div className="flex items-baseline gap-1">
-        <span
-          className="text-3xl font-bold text-[#1A1815]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
-          {priceLabel}
+    <div className="rounded-lg border-2 border-[#C44B2E] bg-white p-5">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Your Fee Insight Pro plan</p>
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-1.5">
+        <span className="text-3xl font-bold text-[#1A1815] tabular-nums" style={SERIF}>
+          {annualPerMonthLabel(tier)}
         </span>
-        <span className="text-sm text-[#6B6255]">{priceSuffix}</span>
-      </div>
-      <p className={`mt-1 mb-5 flex-1 text-xs font-medium ${plan === "annual" ? "text-[#A93D25]" : "text-[#6B6255]"}`}>
-        {note}
+        <span className="text-sm text-[#5A5347]">a month, billed {tierAmountLabel(tier, "annual")} a year</span>
       </p>
-      {cta}
+      <p className="mt-1 text-sm font-medium text-[#A93D25]">
+        Save {annualSavingsLabel(tier)} compared with monthly billing.
+      </p>
+      <div className="mt-4">{ctaFor("annual", selection, "Subscribe annually", PRIMARY_BUTTON)}</div>
+      <p className="mt-4 text-sm text-[#5A5347]">Prefer monthly? {tierAmountLabel(tier, "monthly")} a month.</p>
+      <div className="mt-2">{ctaFor("monthly", selection, "Subscribe monthly", SECONDARY_BUTTON)}</div>
+
+      <h3 className="mt-5 text-sm font-semibold text-[#1A1815]">What you&apos;re agreeing to</h3>
+      <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[#5A5347]">
+        <li>One plan {PLAN_TEAM_LABEL}, each with their own login.</li>
+        {selection.otherOrganization && <li>{CONSULTANT_PRICE_NOTE}</li>}
+        <li>
+          Annual renews each year and monthly each month, until you cancel. Cancel from your account; the
+          plan runs to the end of the period you paid for. An annual plan cancelled within 14 days of its
+          first payment is refunded in full.
+        </li>
+        <li>
+          {isLoggedIn ? "" : "You create your account or sign in first. "}
+          You pay on Stripe&apos;s secure checkout, then go straight to {destination ?? "Hamilton, the Pro workspace"}.
+        </li>
+      </ul>
     </div>
   );
 }

@@ -49,9 +49,9 @@ export function ReportCard({ sampleLive = false }: { sampleLive?: boolean }) {
           <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
             {REPORT_OFFER.name}
           </div>
-          <h2 className="text-xl text-[#1A1815]" style={SERIF}>
+          <h3 className="text-xl text-[#1A1815]" style={SERIF}>
             {REPORT_PRICE_LABEL}
-          </h2>
+          </h3>
           <ul className="mt-3 grid gap-x-6 gap-y-1 text-sm text-[#5A5347] sm:grid-cols-2">
             {REPORT_BULLETS.map((bullet) => (
               <li key={bullet} className="flex items-start gap-1.5">
@@ -61,7 +61,8 @@ export function ReportCard({ sampleLive = false }: { sampleLive?: boolean }) {
             ))}
           </ul>
           <p className="mt-3 text-sm text-[#5A5347]">
-            One institution, one peer set, one PDF for your pricing committee.{" "}
+            One institution, one peer set, one source-backed PDF for your pricing committee, prepared by us
+            and paid once. It&apos;s separate from the reports you build yourself in Pro.{" "}
             {REPORT_OFFER.nextStep}.
             {sampleLive && (
               <>
@@ -94,35 +95,23 @@ export function ReportCard({ sampleLive = false }: { sampleLive?: boolean }) {
   );
 }
 
-/** Bespoke tier: absorbs the old "Contact sales" card. */
-export function AdvisoryCard() {
+/** Advisory is a contact option under the FAQ, not a fourth plan (James, 9 Oct 2026). */
+export function AdvisoryLine() {
   return (
-    <div className={CARD_CLASS}>
-      <div className="md:flex md:items-start md:justify-between md:gap-8">
-        <div>
-          <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            {SITE_NAME} Advisory
-          </div>
-          <h2 className="text-xl text-[#1A1815]" style={SERIF}>
-            Custom competitor sets, board decks, multi-institution work
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-[#5A5347]">
-            Prepared by us on the same verified data. Also the path for teams of more than 5 people, data
-            feeds, invoicing and POs, and dedicated support for larger institutions and vendors.
-          </p>
-        </div>
-        <div className="mt-4 flex-shrink-0 md:mt-0 md:w-56">
-          <TrackLink
-            event="contact_sales"
-            eventProps={{ placement: "pricing_advisory" }}
-            href={ADVISORY_HREF}
-            className={SECONDARY_BUTTON_CLASS}
-          >
-            Talk to us
-          </TrackLink>
-        </div>
-      </div>
-    </div>
+    <p className="mt-6 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] px-6 py-4 text-sm leading-relaxed text-[#5A5347]">
+      <span className="font-semibold text-[#1A1815]">{SITE_NAME} Advisory:</span> custom competitor sets, board
+      decks and multi-institution work, prepared by us on the same verified data. It&apos;s also the path for
+      teams of more than 5 people, data feeds, invoicing and POs.{" "}
+      <TrackLink
+        event="contact_sales"
+        eventProps={{ placement: "pricing_advisory" }}
+        href={ADVISORY_HREF}
+        className="font-medium text-[#1A1815] underline underline-offset-2"
+      >
+        Talk to us
+      </TrackLink>
+      .
+    </p>
   );
 }
 

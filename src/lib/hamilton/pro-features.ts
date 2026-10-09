@@ -64,3 +64,45 @@ export const PRO_EXTRA_FEATURES: readonly ProFeature[] = [
     description: "Download any peer comparison from My fees or Try a price as a spreadsheet.",
   },
 ];
+
+/** What a buyer gets, grouped by outcome; each pillar names the screens that deliver it. */
+export interface ProPillar {
+  key: string;
+  title: string;
+  outcome: string;
+  features: readonly string[];
+}
+
+export const PRO_PILLARS: readonly ProPillar[] = [
+  {
+    key: "intelligence",
+    title: "Competitive fee intelligence",
+    outcome: "See how your published fees compare with the peer institutions you choose.",
+    features: ["benchmarking", "my_fees", "csv"],
+  },
+  {
+    key: "wire",
+    title: "Regulatory Wire",
+    outcome: "Follow the federal rules and state bills that touch bank fees, as they are published.",
+    features: ["wire"],
+  },
+  {
+    key: "analysis",
+    title: "Hamilton analysis",
+    outcome: "Ask questions about any institution and test a price before you change it.",
+    features: ["analysis", "scenario_modeling"],
+  },
+  {
+    key: "reports",
+    title: "Reports and monitoring",
+    outcome: "Prepare research for your pricing committee and see when a competitor changes a published fee.",
+    features: ["reports", "market_monitor"],
+  },
+];
+
+/** Every Pro feature by key, for the pillars. */
+export function proFeature(key: string): ProFeature {
+  const feature = [...PRO_WORKSPACE_FEATURES, ...PRO_EXTRA_FEATURES].find((candidate) => candidate.key === key);
+  if (!feature) throw new Error(`Unknown Pro feature: ${key}`);
+  return feature;
+}

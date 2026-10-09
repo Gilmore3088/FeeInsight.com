@@ -18,6 +18,10 @@ export type AnalyticsEvent =
   | "lead_capture_success"
   | "lead_capture_error"
   | "checkout_start"
+  /** /subscribe opened from a Pro page the visitor couldn't open yet; `page` names it. */
+  | "subscription_gate_viewed"
+  /** The buyer said who the plan covers on /subscribe. */
+  | "pricing_tier_selected"
   /** The welcome page after Stripe returns with success=true. */
   | "checkout_complete"
   | "upgrade_click"

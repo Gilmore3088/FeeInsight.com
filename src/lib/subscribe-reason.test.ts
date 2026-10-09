@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gatedPageLabel, subscribeReason, subscribeReasonLine } from "./subscribe-reason";
+import { gatedPageLabel, subscribeEntry, subscribeReason, subscribeReasonLine } from "./subscribe-reason";
 
 describe("subscribeReason", () => {
   it("is activating only for a Stripe customer whose subscription hasn't ended", () => {
@@ -17,12 +17,28 @@ describe("subscribeReason", () => {
 
   it("names the Pro page the reader was trying to open", () => {
     expect(subscribeReasonLine("pro_required", "Fee Insight", "/pro/news")).toBe(
-      "Regulatory Wire is part of Fee Insight Pro. Pick a plan below to open it.",
+      "You're one step away from Regulatory Wire. It's part of Fee Insight Pro, and checkout brings you straight back to it.",
     );
     expect(gatedPageLabel("/pro/news/digest?week=1")).toBe("Regulatory Wire");
     expect(gatedPageLabel("/pro/simulate?instId=2945")).toBe("Try a price");
     expect(gatedPageLabel("/pro/newsroom")).toBeNull();
     expect(gatedPageLabel("/fees")).toBeNull();
     expect(subscribeReasonLine("pro_required", "Fee Insight", "/somewhere")).toContain("Hamilton is part of");
+  });
+
+  it("leads with the gated page's own headline from a fixed list, never from URL text", () => {
+    expect(subscribeEntry("/pro/news", "Fee Insight")).toEqual({
+      page: "Regulatory Wire",
+      headline: "Unlock Regulatory Wire",
+      pillar: "wire",
+    });
+    expect(subscribeEntry("/pro/simulate?fee=nsf", "Fee Insight").headline).toBe("Model potential fee changes");
+    expect(subscribeEntry("/pro/research", "Fee Insight")).toEqual({
+      page: "My fees",
+      headline: "Unlock Fee Insight Pro",
+      pillar: "intelligence",
+    });
+    expect(subscribeEntry("/pro/<script>", "Fee Insight").headline).toBe("Choose your Fee Insight plan");
+    expect(subscribeEntry(null, "Fee Insight")).toEqual({ page: null, headline: "Choose your Fee Insight plan", pillar: null });
   });
 });

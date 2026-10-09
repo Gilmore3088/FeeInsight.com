@@ -9,18 +9,18 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
-import { gatedPageLabel, subscribeReasonLine } from "@/lib/subscribe-reason";
+import { gatedPageLabel, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
 import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
-import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
 import { ProPlanCards, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { ProIncludes, ProTierCards } from "./pro-overview";
+import { ProPillars, ProTierCards, PurchaseSteps } from "./pro-overview";
+import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets } from "@/lib/pro-tiers";
-import { AdvisoryCard, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
+import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
+import { AdvisoryLine, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { PLAN_TEAM_LABEL, isProPlan, type ProPlan } from "./pricing";
@@ -95,6 +95,7 @@ export default async function SubscribePage({
   // /pro says "activating" for anyone with a Stripe customer, and that customer is now made
   // when checkout opens. activateIfPaid just asked Stripe and found no live subscription, so
   // "if you've just paid" would only tell someone who backed out of checkout to wait.
+  const entry = subscribeEntry(returnTo, SITE_NAME);
   const reasonLine =
     params.canceled === "1"
       ? "Checkout was canceled. Nothing was charged."
@@ -192,30 +193,27 @@ export default async function SubscribePage({
         )}
 
         <section id="pro" aria-labelledby="pro-title" className="scroll-mt-20">
+          {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page }} />}
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">{SITE_NAME} Pro</p>
-          <h1 id="pro-title" className="mt-1 text-3xl font-normal tracking-tight text-[#1A1815]" style={SERIF}>
-            See where your fees stand against your market
+          <h1 id="pro-title" className="mt-1 text-3xl font-normal tracking-tight text-[#1A1815] sm:text-4xl" style={SERIF}>
+            {entry.headline}
           </h1>
-          <p className="mt-3 max-w-3xl text-base leading-relaxed text-[#1A1815]">{HAMILTON_CANONICAL}</p>
+          <p className="mt-3 max-w-3xl text-base leading-relaxed text-[#1A1815]">
+            Competitive fee intelligence, regulatory monitoring and analysis tools for banks and credit unions,
+            in Hamilton, the {SITE_NAME} Pro workspace.
+          </p>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#5A5347]">
-            One plan covers your whole team, {PLAN_TEAM_LABEL}. The price is set by your institution&apos;s
-            size, and you can cancel at the end of any billing period.
+            From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} {PLAN_TEAM_LABEL}. Every plan has the same full feature
+            set; the price follows your institution&apos;s total assets.
           </p>
 
-          <h2 className="mt-10 mb-4 text-xl text-[#1A1815]" style={SERIF}>
-            What it costs
+          <h2 id="pro-heading" className="mt-10 mb-4 scroll-mt-20 text-xl text-[#1A1815]" style={SERIF}>
+            Choose your plan
           </h2>
           <ProTierCards highlighted={selection?.otherOrganization ? "consultant" : selection?.tier ?? null} />
-
-          <h2 className="mt-10 mb-4 text-xl text-[#1A1815]" style={SERIF}>
-            What you get on every plan
-          </h2>
-          <ProIncludes />
-          <HamiltonBenchmarkPreview className="mt-8" />
-
-          <h2 id="pro-heading" className="mt-10 mb-4 scroll-mt-20 text-xl text-[#1A1815]" style={SERIF}>
-            Start your plan
-          </h2>
+          <div className="mt-5 mb-4">
+            <PurchaseSteps isLoggedIn={isLoggedIn} destination={entry.page} />
+          </div>
           <ProPlanCards
             isLoggedIn={isLoggedIn}
             chooser={
@@ -228,21 +226,30 @@ export default async function SubscribePage({
             }
             selection={selection}
             returnTo={returnTo ?? undefined}
+            destination={entry.page}
             registerHrefFor={registerHrefFor}
-            highlightedPlan={requestedPlan}
             autoStartPlan={selection ? autoStartPlan : null}
           />
+
+          <h2 className="mt-12 mb-4 text-xl text-[#1A1815]" style={SERIF}>
+            What your team gets
+          </h2>
+          <ProPillars lead={entry.pillar} />
+          <HamiltonBenchmarkPreview className="mt-6" />
         </section>
 
-        <section aria-labelledby="other-options-heading" className="mt-14 space-y-8">
+        <section aria-labelledby="other-options-heading" className="mt-14 space-y-6">
           <h2 id="other-options-heading" className="text-xl text-[#1A1815]" style={SERIF}>
-            Not ready for Pro?
+            Not ready for an ongoing subscription?
           </h2>
-          <FreeTierCard summary={summary} />
           <ReportCard sampleLive={sampleLive} />
-          <AdvisoryCard />
-          <PricingFaq summary={summary} />
+          <FreeTierCard summary={summary} />
         </section>
+
+        <div className="mt-14">
+          <PricingFaq summary={summary} />
+          <AdvisoryLine />
+        </div>
 
         {!isLoggedIn && (
           <p className="mt-8 text-center text-xs text-[#6B6255]">
