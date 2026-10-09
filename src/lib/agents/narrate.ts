@@ -172,8 +172,14 @@ function narrateFinished(
       if (failing === 0) return `Checked ${count(n(detail, "scanned_fees"), "live fee")}; every one matches its category.`;
       return detail.dry_run === true
         ? `Found ${count(failing, "live fee")} filed under the wrong category (dry run, nothing rolled back).`
-        : `Rolled back ${count(n(detail, "rolled_back_fees"), "live fee")} filed under the wrong category.`;
+        : n(detail, "rolled_back_fees") > 0
+          ? `Rolled back ${count(n(detail, "rolled_back_fees"), "live fee")} filed under the wrong category.`
+          : `Flagged ${count(failing, "live fee")} filed under the wrong category for a second look.`;
     }
+    case "frequency-fill":
+      return n(detail, "frequency_fills") === 0
+        ? `Checked ${count(n(detail, "frequency_fill_scanned"), "live fee")}; every frequency matches its schedule row.`
+        : `Set the frequency of ${count(n(detail, "frequency_fills"), "live fee")} from its own schedule row.`;
     case "public-discovery":
     case "public-audit":
       return `Checked ${count(n(detail, "processed_routes"), "Fee Insight page")} ${scope}; ${count(n(detail, "public_findings"), "issue")} found.`;
@@ -593,5 +599,6 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "report-render": "hamilton",
   "report-close": "hamilton",
   "category-guard": "hamilton",
+  "frequency-fill": "hamilton",
   "public-diagnose": "hamilton",
 };
