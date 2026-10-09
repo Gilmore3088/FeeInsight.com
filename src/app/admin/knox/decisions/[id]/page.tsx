@@ -1,12 +1,13 @@
-import { KnoxDecisionDetailView } from "@/app/admin/agents/knox/reviews/[id]/page";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function KnoxDecisionDetailPage({
+/** The Knox decisions queue was retired (James, Oct 9); old links land on Knox. */
+export default async function RetiredKnoxDecisionPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  return <KnoxDecisionDetailView id={id} />;
+  await params;
+  redirect("/admin/knox");
 }

@@ -179,13 +179,13 @@ describe("Hamilton agentic publish", () => {
       document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
     };
     const reason = "Read from a product page's benefits, not a fee schedule";
-    expect(publishSkipReason(benefit, 0.85)).not.toBe(reason);
+    expect(publishSkipReason(benefit, 0.85, false)).not.toBe(reason);
     expect(publishSkipReason(benefit, 0.85, true)).toBe(reason);
     expect(publishSkipReason({ ...benefit, document_url: "https://www.pnc.com/content/dam/pnc-com/pdf/personal/fee-schedule.pdf" }, 0.85, true)).not.toBe(reason);
     expect(publishSkipReason({ ...benefit, free_read: false }, 0.85, true)).not.toBe(reason);
   });
 
-  it("publishes a product-page $0 benefit as before while the product-page switch is off", async () => {
+  it("skips a product-page $0 benefit with the switch as shipped (on since Oct 9), and nothing else", async () => {
     const benefit = {
       ...verifiedFee,
       canonical_fee_key: "overdraft",
@@ -198,8 +198,8 @@ describe("Hamilton agentic publish", () => {
     const plain = { ...benefit, free_read: false };
     const withSwitch = await runHamiltonPublish({ runId: 123, db: asPublishDb(createDbMock([benefit])) });
     const without = await runHamiltonPublish({ runId: 124, db: asPublishDb(createDbMock([plain])) });
-    expect(withSwitch.results[0].reason).not.toBe("Read from a product page's benefits, not a fee schedule");
-    expect([withSwitch.results[0].status, withSwitch.results[0].reason]).toEqual([without.results[0].status, without.results[0].reason]);
+    expect(withSwitch.results[0].reason).toBe("Read from a product page's benefits, not a fee schedule");
+    expect(without.results[0].reason).not.toBe("Read from a product page's benefits, not a fee schedule");
   });
 
   it("holds a twin whose name is a sentence fragment even when its own document reproduces it (101941)", async () => {

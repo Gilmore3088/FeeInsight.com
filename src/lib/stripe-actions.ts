@@ -106,6 +106,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
     billing_address_collection: "required",
     customer_update: { address: "auto", name: "auto" },
     allow_promotion_codes: true,
+    // A card is asked for whenever money is due; a 100%-off code (our own $0 test) skips it.
+    payment_method_collection: "if_required",
     success_url: `${origin}/account/welcome?${successParams.toString()}`,
     cancel_url: `${origin}${cancelPath}`,
     metadata: {
