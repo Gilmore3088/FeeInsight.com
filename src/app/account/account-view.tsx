@@ -79,12 +79,19 @@ function Pill({ tone, children }: { tone: "green" | "amber" | "plain"; children:
   );
 }
 
-function PlanCard({ plan }: { plan: AccountPlan }) {
+function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
   if (plan.kind === "free") {
     return (
-      <AccountCard id="plan" title="Your plan" action={<Pill tone="plain">Free</Pill>}>
+      <AccountCard
+        id="plan"
+        title="Your plan"
+        compact
+        action={ended ? <Pill tone="amber">Pro ended</Pill> : <Pill tone="plain">Free</Pill>}
+      >
         <p className="text-[14px] leading-relaxed text-[#3D3830]">
-          Following banks, fee alerts and the monthly brief are free.
+          {ended
+            ? "Your Pro subscription has ended. The banks you follow and your fee alerts are kept."
+            : "Following banks, fee alerts and the monthly brief are free."}
         </p>
         <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">
           Pro adds Hamilton: peer benchmarks, competitor tracking, reports and data downloads for up to 5 people
@@ -92,9 +99,9 @@ function PlanCard({ plan }: { plan: AccountPlan }) {
         </p>
         <Link
           href="/subscribe?from=%2Faccount"
-          className="mt-4 inline-flex min-h-11 items-center rounded-md bg-[#C44B2E] px-5 text-[14px] font-semibold text-white no-underline hover:bg-[#A93D25]"
+          className="mt-4 inline-flex min-h-11 items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 text-[14px] font-semibold text-[#1A1815] no-underline hover:border-[#1A1815]"
         >
-          See Pro plans
+          {ended ? "Restart Pro" : "See Pro plans"}
         </Link>
       </AccountCard>
     );
@@ -108,7 +115,7 @@ function PlanCard({ plan }: { plan: AccountPlan }) {
   );
 
   return (
-    <AccountCard id="plan" title="Fee Insight Pro" action={status}>
+    <AccountCard id="plan" title="Fee Insight Pro" compact action={status}>
       {plan.access === "staff" && (
         <p className="text-[14px] text-[#3D3830]">Staff access. Nothing to bill.</p>
       )}
@@ -145,7 +152,7 @@ function PlanCard({ plan }: { plan: AccountPlan }) {
       )}
 
       {plan.team && (
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-[#FAF7F2] px-4 py-3">
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-[#FAF7F2] px-3 py-2.5">
           <p className="min-w-0 text-[14px] text-[#1A1815]">
             Team: {plan.team.used} of {plan.team.limit} seats used
           </p>
@@ -158,15 +165,11 @@ function PlanCard({ plan }: { plan: AccountPlan }) {
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Link
-          href={plan.hamiltonHref}
-          className="inline-flex min-h-11 items-center rounded-md bg-[#1A1815] px-5 text-[14px] font-semibold text-white no-underline hover:bg-[#3D3830]"
-        >
-          Open Hamilton
-        </Link>
-        {plan.canManageBilling && <ManageBillingButton label="Billing and invoices" />}
-      </div>
+      {plan.canManageBilling && (
+        <div className="mt-4">
+          <ManageBillingButton label="Billing and invoices" />
+        </div>
+      )}
       {plan.access === "subscription" && (
         <p className="mt-3 text-[13px] text-[#6B6255]">
           Change your card, download invoices or cancel on the billing page.
@@ -178,7 +181,7 @@ function PlanCard({ plan }: { plan: AccountPlan }) {
 
 function EmailsCard({ emails }: { emails: Record<AccountEmailKind, boolean> }) {
   return (
-    <AccountCard id="emails" title="Emails">
+    <AccountCard id="emails" title="Emails" compact>
       <div className="-my-3 divide-y divide-[#F0EBE3]">
         <EmailSwitch
           kind="watchlist_alerts"
@@ -307,6 +310,31 @@ function ReportsCard({
   );
 }
 
+/** Pro's first card: the way into Hamilton, the workspace a paying reader came for. */
+function HamiltonCard({ href }: { href: string }) {
+  return (
+    <section aria-labelledby="hamilton-heading" className="rounded-xl bg-[#1A1815] p-6 text-white">
+      <h2 id="hamilton-heading" className="text-[22px] font-medium leading-tight" style={SERIF}>
+        Hamilton
+      </h2>
+      <p className="mt-2 max-w-md text-[14px] leading-relaxed text-[#D9D1C4]">
+        Your bank against its peers, competitor fee changes, and reports you can hand to your team.
+      </p>
+      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <Link
+          href={href}
+          className="inline-flex min-h-11 items-center rounded-md bg-[#C44B2E] px-5 text-[14px] font-semibold text-white no-underline hover:bg-[#A93D25]"
+        >
+          Open Hamilton
+        </Link>
+        <Link href="/pro/reports/new" className="text-[14px] font-medium text-white underline-offset-4 hover:underline">
+          Make a report
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
   const submitHref = `/submit-fees?institutionId=${institution.id}&institutionName=${encodeURIComponent(institution.name)}`;
   const mailHref = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Fee schedule for ${institution.name}`)}`;
@@ -341,7 +369,7 @@ function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
 
 function SignInCard({ email, emailConfirmed }: { email: string; emailConfirmed: boolean }) {
   return (
-    <AccountCard id="sign-in" title="Sign-in">
+    <AccountCard id="sign-in" title="Sign-in" compact>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
         <dt className="text-[#6B6255]">Email</dt>
         <dd className="min-w-0 break-words text-[#1A1815]">
@@ -380,17 +408,21 @@ function SignInCard({ email, emailConfirmed }: { email: string; emailConfirmed: 
  * organization and sign-in.
  */
 export function AccountView({ data }: { data: AccountViewData }) {
+  const ended = data.plan.kind === "free" && data.statusUser.subscription_status === "canceled";
+  const reports = (
+    <ReportsCard reports={data.reports} paidReports={data.paidReports} emailConfirmed={data.emailConfirmed} />
+  );
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
-      <header className="mb-6">
-        <div className="flex items-center justify-between gap-4">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+      <header className="mb-8 flex items-start justify-between gap-4 border-b border-[#E8DFD1] pb-6">
+        <div className="min-w-0">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Account</p>
-          <LogoutButton />
+          <h1 className="mt-1 text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
+            {data.heading}
+          </h1>
+          <p className="mt-1 break-words text-[14px] text-[#6B6255]">{data.email}</p>
         </div>
-        <h1 className="mt-1 text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
-          {data.heading}
-        </h1>
-        <p className="mt-1 break-words text-[14px] text-[#6B6255]">{data.email}</p>
+        <LogoutButton />
       </header>
 
       <div className="space-y-4">
@@ -400,7 +432,7 @@ export function AccountView({ data }: { data: AccountViewData }) {
           </div>
         )}
 
-        <SubscriptionStatusNotice user={data.statusUser} />
+        {!ended && <SubscriptionStatusNotice user={data.statusUser} />}
 
         {data.invitations.length > 0 && (
           <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
@@ -425,13 +457,30 @@ export function AccountView({ data }: { data: AccountViewData }) {
         {data.ownInstitution && data.ownInstitution.publishedFeeCount < SITE_FEE_BAR && (
           <FeeScheduleReminder institution={data.ownInstitution} />
         )}
+      </div>
 
-        <PlanCard plan={data.plan} />
-        <ReportsCard reports={data.reports} paidReports={data.paidReports} emailConfirmed={data.emailConfirmed} />
-        <AlertsPanel subscriptions={data.subscriptions} />
-        {data.emails && <EmailsCard emails={data.emails} />}
-        <ProfileForm user={data.profile} />
-        <SignInCard email={data.email} emailConfirmed={data.emailConfirmed} />
+      {/* What the reader came to do on the left; plan and settings to the side. */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-6">
+        <div className="space-y-4">
+          {data.plan.kind === "pro" ? (
+            <>
+              <HamiltonCard href={data.plan.hamiltonHref} />
+              {reports}
+              <AlertsPanel subscriptions={data.subscriptions} />
+            </>
+          ) : (
+            <>
+              <AlertsPanel subscriptions={data.subscriptions} />
+              {reports}
+            </>
+          )}
+        </div>
+        <aside aria-label="Plan and settings" className="space-y-4">
+          <PlanCard plan={data.plan} ended={ended} />
+          {data.emails && <EmailsCard emails={data.emails} />}
+          <ProfileForm user={data.profile} />
+          <SignInCard email={data.email} emailConfirmed={data.emailConfirmed} />
+        </aside>
       </div>
     </div>
   );

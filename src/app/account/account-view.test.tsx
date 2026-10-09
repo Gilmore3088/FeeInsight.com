@@ -53,10 +53,10 @@ function section(name: string) {
 describe("AccountView", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("free: plan, banks, organization and sign-in in that order, with the lowest Pro price", () => {
+  it("free: banks and reports first, then plan, organization and sign-in, with the lowest Pro price", () => {
     render(<AccountView data={base} />);
     const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Your plan", "Your reports", "Banks you follow", "Your organization", "Sign-in"]);
+    expect(headings).toEqual(["Banks you follow", "Your reports", "Your plan", "Your organization", "Sign-in"]);
     expect(section("Your plan")).toHaveTextContent("From $150 a month");
     expect(within(section("Your plan")).getByRole("link", { name: "See Pro plans" })).toHaveAttribute(
       "href",
@@ -71,10 +71,34 @@ describe("AccountView", () => {
     expect(plan).toHaveTextContent("$3,000 per year");
     expect(plan).toHaveTextContent("RenewsOctober 8, 2027");
     expect(plan).toHaveTextContent("Team: 3 of 5 seats used");
-    expect(within(plan).getByRole("link", { name: "Open Hamilton" })).toHaveAttribute("href", "/pro/hamilton?instId=7");
+    expect(within(section("Hamilton")).getByRole("link", { name: "Open Hamilton" })).toHaveAttribute(
+      "href",
+      "/pro/hamilton?instId=7",
+    );
+    expect(screen.getAllByRole("heading", { level: 2 })[0]).toHaveTextContent("Hamilton");
     expect(within(plan).getByRole("button", { name: "Billing and invoices" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Competitor fee alerts" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("switch", { name: "Monday digest" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("ended Pro: the plan says so and offers Restart Pro once", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          statusUser: { role: "viewer", subscription_status: "canceled", stripe_customer_id: "cus_1", past_due_since: null },
+        }}
+      />,
+    );
+    expect(section("Your plan")).toHaveTextContent("Your Pro subscription has ended.");
+    expect(screen.getAllByRole("link", { name: "Restart Pro" })).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: "See Pro plans" })).toBeNull();
+  });
+
+  it("every account shows Sign out at the top", () => {
+    render(<AccountView data={base} />);
+    const button = within(screen.getByRole("banner")).getByRole("button", { name: "Sign out" });
+    expect(button.closest("form")).toHaveAttribute("action", "/api/auth/logout");
   });
 
   it("seat holder: no billing button, says who pays", () => {
