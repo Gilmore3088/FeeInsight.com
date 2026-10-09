@@ -23,7 +23,7 @@ import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
-import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
+import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 
 type SqlTag = typeof sql;
 
@@ -610,8 +610,6 @@ export function nameBeforeLeaders(name: string): string {
 }
 
 /** A dollar price inside a name; a third decimal is a footnote mark printed onto it ("$35.005"). */
-const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
-
 /**
  * Why a verified row is held at publish for its name, or null: a name rule the eval takes live
  * fees down for (`ruleFor`: a waiver or no-fee sentence, a rebate, a merchant's fee, two fees on
@@ -623,6 +621,8 @@ const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
 const ADDON_PRICE_NAME = /(?:\bplus|\band|\+)\s*[(\s]*$/i;
 export function publishNameHold(name: string, canonicalKey: string, amount: number | null): { code: string; reason: string } | null {
   const rule = ruleFor(canonicalKey, name, amount);
+  // The price-in-name rule keeps its own hold code (PR 797); the eval check is its live-row twin.
+  if (rule === "price_in_name") return { code: rule, reason: `Price in name ($${priceInName(name)?.toFixed(2)}) is not the amount ($${amount?.toFixed(2)})` };
   if (rule) return { code: `name_rule:${rule}`, reason: `Name rule (${rule}): ${RULE_WHY[rule]}` };
   // "Research Fee (plus" at $1: the price after "plus" is added to the fee's own price ($50 per
   // hour on that line), so the amount is not the fee.
@@ -631,13 +631,6 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   // ("GUASFCU charges a") is not published as it is.
   if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
-  }
-  const price = PRICE_IN_NAME.exec(name);
-  if (price && amount != null) {
-    const value = Number(price[1].replace(/,/g, ""));
-    if (Number.isFinite(value) && Math.abs(value - amount) > 0.005) {
-      return { code: "price_in_name", reason: `Price in name ($${price[1]}) is not the amount ($${amount.toFixed(2)})` };
-    }
   }
   return null;
 }
