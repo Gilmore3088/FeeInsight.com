@@ -295,6 +295,8 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 2210, doc 17169: \"To avoid a Monthly Service Fee of $5 per paper statement, you must enroll for E-Statements\"" },
   { feePublishedId: 79217, from: "check_cashing", amount: 6, to: "collection_item", name: "Canadian/Foreign Check Handling Charge",
     why: "inst 51, doc 19813: the next column's \"Canadian/Foreign Check Handling Charge | $6.00 per item\"" },
+  { feePublishedId: 95142, from: "money_order", amount: 10, to: "account_research", name: "Money Order Research Fee",
+    why: "inst 8581, doc 16111: \"Money Order Research Fee - $10.00/money order\" (Deming audit, run 3516)" },
 ];
 
 interface HandRow {
