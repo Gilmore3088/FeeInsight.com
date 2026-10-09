@@ -166,7 +166,7 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   merchant_payer: "wrong_payer",
   two_fees_one_line: "wrong_amount",
 };
-const RULE_WHY: Readonly<Record<NameRule, string>> = {
+export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
   no_fee_sentence: "A sentence about what is free, not a priced fee line",
   waiver_sentence: "The condition that waives a fee, or the balance that avoids it, published as a $0 fee",

@@ -83,12 +83,71 @@ describe("retidiedFeeName", () => {
     expect(isMessyName("Bill Payment Service)")).toBe(true);
   });
 
+  it("repairs the cut-off shapes (v6: 292 of 1,125 live cut-off names on 2026-10-09)", () => {
+    // Accuracy's two and Ambler's (in the public sample report): a sentence ending at its own price.
+    expect(retidiedFeeName("Inactive fee: This account may be subject to an Inactive fee of", "dormant_account")).toBe("Inactive fee");
+    expect(retidiedFeeName("to open the account. A Maintenance Service Charge of", "monthly_maintenance")).toBe("Maintenance Service Charge");
+    expect(retidiedFeeName("Our overdraft fee of", "overdraft")).toBe("Overdraft fee");
+    expect(retidiedFeeName("AFTER SUCH TIME YOU WILL BE CHARGE A MONTHLY FEE OF", "monthly_maintenance")).toBe("Monthly Fee");
+    expect(retidiedFeeName("1Accounts will be charged the standard Overdraft fee of", "overdraft")).toBe("Overdraft fee");
+    // The sample report's three (Customers Bank 84015, Wells Fargo 68707, UEFCU 55904).
+    expect(retidiedFeeName("at all times. If you do not, a monthly fee of", "monthly_maintenance")).toBe("Monthly fee");
+    expect(retidiedFeeName("Our overdraft fee for Consumer checking accounts is", "overdraft")).toBe("Overdraft fee");
+    expect(retidiedFeeName("minimum daily balance is required to avoid a monthly minimum balance fee of", "minimum_balance")).toBe("Monthly minimum balance fee");
+    expect(retidiedFeeName("Per hour for assistance with statement reconciliation – with a minimum charge of", "account_research")).toBeNull();
+    // A column header glued on either end, and a condition in parentheses.
+    expect(
+      retidiedFeeName("Charge Return Statement or Dormant Account Monthly Fee (Dormant Account Fee assessed after 12 months of inactivity.) | F", "dormant_account"),
+    ).toBe("Return Statement or Dormant Account Monthly Fee");
+    expect(retidiedFeeName("Fee Wire Transfer In", "wire_domestic_incoming")).toBe("Wire Transfer In");
+    expect(retidiedFeeName("Charge Stop Payment Fee", "stop_payment")).toBe("Stop Payment Fee");
+    // A condition clause, a dangling range or unit, a list bullet, a sentence cell.
+    expect(retidiedFeeName("service charge per month if balance drops below", "monthly_maintenance")).toBe("Service charge");
+    expect(retidiedFeeName("Service Charge Charged If Minimum Balance Is Not Met", "monthly_maintenance")).toBe("Service Charge");
+    expect(retidiedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
+    expect(retidiedFeeName("Late Fee | Up to", "late_payment")).toBe("Late Fee");
+    expect(retidiedFeeName("NSF fee (ACH, ATM, or check) - per", "nsf")).toBe("NSF fee (ACH, ATM, or check)");
+    expect(retidiedFeeName("+Returned Item Fee – per item returned", "deposited_item_return")).toBe("Returned Item Fee – per item returned");
+    expect(retidiedFeeName("Stop Payment CU Check | Charged when the CU places a stop payment on a CU issued check prior to 10 business days from is", "stop_payment")).toBe(
+      "Stop Payment CU Check",
+    );
+    expect(retidiedFeeName("Closing of an account | If an account is closed within 6 months of the opening date, a service charge of", "early_closure")).toBe(
+      "Closing of an account",
+    );
+  });
+
+  it("keeps a cut-off name that no rule can turn into a fee's name (v6)", () => {
+    expect(retidiedFeeName("Charge Back Fee", "deposited_item_return")).toBeNull();
+    expect(retidiedFeeName("Charge Backs (Deposited Items Returned)", "deposited_item_return")).toBeNull();
+    expect(retidiedFeeName("Fee Amount", "late_payment")).toBeNull();
+    expect(retidiedFeeName("GUASFCU charges a", "check_image")).toBeNull();
+    expect(retidiedFeeName("If your card is lost/stolen, you may receive a replacement card for a fee of", "card_replacement")).toBeNull();
+    expect(retidiedFeeName("Dormant Account: Checking accounts are considered dormant when inactive for a period of one (1) year.", "dormant_account")).toBeNull();
+    expect(retidiedFeeName("+ Inactive for 1 year", "dormant_account")).toBeNull();
+    expect(retidiedFeeName("Fee if acct. closed within 3 months opening", "early_closure")).toBeNull();
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
+    expect(retidiedFeeName("Overdraft – paid per day per account", "overdraft")).toBeNull();
   });
 });
 
 describe("isMessyName", () => {
+  it("matches the v6 cut-off shapes", () => {
+    for (const name of [
+      "+ drilling cost",
+      "Fee Wire Transfer In",
+      "Our overdraft fee of",
+      "Service Charge if balance falls below",
+      "Late Fee | Up to",
+      "You will be charged a monthly service fee of",
+    ]) {
+      expect(isMessyName(name), name).toBe(true);
+    }
+    expect(isMessyName("Charge Back Fee")).toBe(false);
+  });
+
   it("matches joined cells, a dangling lead-in and a run-on", () => {
     expect(isMessyName("Stop Payment | Item")).toBe(true);
     expect(isMessyName("Replacement card fee of")).toBe(true);

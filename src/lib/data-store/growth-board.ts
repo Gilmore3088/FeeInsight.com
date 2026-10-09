@@ -56,8 +56,8 @@ export function growthAgentForStep(stepKey: string, runParams: unknown, stepInpu
   if (isGrowthAgent(item.agent)) return item.agent;
   if (stepKey === "content-od-by-state") return "ernest";
   if (stepKey === "growth-contacts" || stepKey === "growth-contact-picks") return "nielsen";
-  if (stepKey === "growth-outreach") return "carnegie";
-  if (stepKey === "growth-learning") return "draper";
+  if (stepKey === "growth-outreach" || stepKey === "growth-quote") return "carnegie";
+  if (stepKey === "growth-learning" || stepKey === "growth-plan" || stepKey === "growth-proposals") return "draper";
   if (stepKey === "growth-intel") return "sherlock";
   if (stepKey === "growth-conversion") return "norman";
   if (stepKey === "growth-tools") return "edison";
