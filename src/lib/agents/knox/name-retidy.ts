@@ -778,7 +778,9 @@ export const CONDITION_RESTORE_SINCE = "2026-10-09T10:46:00Z";
  * only after UAT scores a random 20 at 18 or better against source. Their old names are often
  * fragments publish cut off, so each must also print whole on the fee's own page.
  */
-export const CONDITION_RESTORE_OLDER_VERSIONS: number[] = [];
+// UAT scored a random 20 of the 251 candidates 20/20 against source (2026-10-09 11:58 UTC).
+// Batch 1: v1 and v4, the oldest windows (1 and 3 candidates in the dry read).
+export const CONDITION_RESTORE_OLDER_VERSIONS: number[] = [1, 4];
 const RESTORE_CUT_LENGTH = 110;
 const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
 /**
@@ -1037,9 +1039,14 @@ const EMPTY: RetidyResult = {
 };
 
 /** An institution is looked at again when a newer live fee appears or the strategy changes. */
-export function retidyFingerprint(maxLiveFeeId: number | string): string {
-  return `v${NAME_RETIDY_STRATEGY.version}:${maxLiveFeeId}`;
+export function retidyFingerprint(maxLiveFeeId: number | string, restore = false): string {
+  return `v${NAME_RETIDY_STRATEGY.version}:${maxLiveFeeId}${restore ? RESTORE_FINGERPRINT_SUFFIX : ""}`;
 }
+/**
+ * An institution with a restore candidate is looked at again when an older version is added to
+ * `CONDITION_RESTORE_OLDER_VERSIONS`, though its other names were already tidied at this version.
+ */
+const RESTORE_FINGERPRINT_SUFFIX = CONDITION_RESTORE_OLDER_VERSIONS.length > 0 ? `:r${CONDITION_RESTORE_OLDER_VERSIONS.join(".")}` : "";
 
 /**
  * Institutions whose live names the retidy will tidy next: a messy name and no attempt at this
@@ -1049,8 +1056,8 @@ export function retidyDueInstitutions(
   db: SqlTag,
   { institutionId, limit }: { institutionId?: number; limit: number | null },
 ) {
-  return db<{ institution_id: number | string; max_fee_id: number | string }[]>`
-      SELECT live.institution_id, live.max_fee_id
+  return db<{ institution_id: number | string; max_fee_id: number | string; restore: boolean }[]>`
+      SELECT live.institution_id, live.max_fee_id, restore.restore IS TRUE AS restore
         FROM (
           SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_fee_id,
                  -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on, a
@@ -1125,6 +1132,7 @@ export function retidyDueInstitutions(
               AND pa.strategy = ${NAME_RETIDY_STRATEGY.strategy}
               AND pa.institution_id = live.institution_id
               AND pa.input_fingerprint = 'v' || ${NAME_RETIDY_STRATEGY.version}::text || ':' || live.max_fee_id::text
+                    || CASE WHEN restore.restore IS TRUE THEN ${RESTORE_FINGERPRINT_SUFFIX}::text ELSE '' END
          )
        ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, restore.restore IS TRUE DESC,
                 seen.last_retidy_at NULLS FIRST, live.institution_id
@@ -1164,7 +1172,7 @@ export async function retidyLiveFeeNames(
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
     const due = await inSavepoint(db, (scope) => retidyDueInstitutions(scope, { institutionId: options.institutionId, limit }));
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
-    fingerprints = new Map(due.map((row) => [Number(row.institution_id), retidyFingerprint(row.max_fee_id)]));
+    fingerprints = new Map(due.map((row) => [Number(row.institution_id), retidyFingerprint(row.max_fee_id, row.restore)]));
     const ids = [...fingerprints.keys()];
     liveFees = await inSavepoint(db, (scope) => scope<RetidyFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
