@@ -17,3 +17,9 @@ per rules version. But it only runs inside a state lane run (or a direct "Read n
 again after `PRIORITY_RULES_REREAD_HOURS` (6), keyed `atlas:priority:<id>:knox:<version>`, so each
 rules version reaches them through the direct path. Arvest (78) and Old National (41) were added as
 requests so they run first.
+
+## Follow-up (9 Oct, 07:45): requests waited too
+
+The fix above let only overdraft-gap banks re-read once per Knox version. Arvest (78) and Old National (41) are requests by name, so a different hold applied: the 24-hour retry window counted from their last request run, and Arvest's last one was at 23:15 on 8 Oct. Requests also ranked behind paid-fetched pages, and those pages kept both direct-run places full all morning. Neither bank had re-read by 07:40.
+
+Now a request whose current page this Knox version hasn't read gets the same once-per-version re-read, keyed `:knox:<version>`. It ranks right after hand-found links and ahead of paid-fetched pages.

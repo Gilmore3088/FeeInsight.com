@@ -1625,6 +1625,7 @@ async function executeAgenticStep(
           flagged_fees: guard.flaggedFees,
           awaiting_second_look: guard.awaitingSecondLook,
           restored_fees: guard.restoredFees,
+          refiled_fees: guard.refiledFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -2697,6 +2698,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
   "registry-state-reg-news": 170_000,
   "registry-state-bill-news": 120_000,
+  // No new item starts after 100 s; up to three page reads and model calls in flight.
+  "registry-wire-research": 150_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,

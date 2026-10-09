@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { crossPageConflicts, namesProduct, productHeadings, retireCrossPageConflicts, type CrossPageRow } from "./cross-page-conflict";
+import { crossPageConflicts, namesProduct, newerDocument, productHeadings, retireCrossPageConflicts, sameDocumentEdition, type CrossPageRow } from "./cross-page-conflict";
 
 // Citizens Bank of TN (551), stored texts of doc 13386 (compare page) and doc 20941 (account PDF).
 const comparePage = [
@@ -83,6 +83,54 @@ function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | nul
   return db as unknown as Parameters<typeof retireCrossPageConflicts>[0] & typeof db;
 }
 const options = { runId: 9, batchId: "agentic-run-9", dryRun: false };
+
+// Valley (44): the 2025 and 2026 editions of one deposit agreement, both current. The shared body
+// stands in for the agreement's ~2,000 other words.
+const agreementBody = Array.from({ length: 260 }, (_, at) => `clause${String.fromCharCode(97 + (at % 26))}${String.fromCharCode(97 + Math.floor(at / 26))}word`).join(" ");
+const edition2025 = `${agreementBody}\nRev. 01/30/25\nOverdrafts: $30 per paid item.\n• Valley debit card expedited delivery fee: $25.`;
+const edition2026 = `${agreementBody}\nRev. 03/2026\nOverdrafts: $35 per paid item, up to 5 charges per day.\n• Valley debit card expedited delivery fee: $35.`;
+const valley = (id: number, doc: number, amount: number, crawled: string, lastModified: string | null): CrossPageRow => ({
+  fee_published_id: id, fee_verified_id: id + 1000, institution_id: 44, canonical_fee_key: "overdraft",
+  fee_name: "Overdrafts", amount, source_document_id: doc, document_crawled_at: crawled, document_last_modified: lastModified,
+});
+
+describe("editions of one document", () => {
+  it("keeps the newer edition's price by the documents' own dates, not fetch time (Valley 103414)", () => {
+    // The 2025 edition was fetched five minutes after the 2026 one.
+    const old = valley(103414, 23743, 30, "2026-10-09T07:13:48Z", "Mon, 17 Mar 2025 18:38:41 GMT");
+    const current = valley(103405, 23731, 35, "2026-10-09T07:08:58Z", "Wed, 25 Mar 2026 17:43:42 GMT");
+    const texts = new Map([[23743, [edition2025]], [23731, [edition2026]]]);
+    const out = crossPageConflicts([old, current], texts);
+    expect(out.map((fee) => [fee.feePublishedId, fee.keptFeePublishedId, fee.reason])).toEqual([
+      [103414, 103405, "cross_page_conflict: #23743 older edition of #23731 (fee 103405)"],
+    ]);
+  });
+
+  it("judges an edition pair only with both documents' own dates, a day or more apart", () => {
+    const texts = new Map([[23743, [edition2025]], [23731, [edition2026]]]);
+    const noHeader = [valley(103414, 23743, 30, "2026-10-09T07:13:48Z", null), valley(103405, 23731, 35, "2026-10-09T07:08:58Z", null)];
+    expect(crossPageConflicts(noHeader, texts)).toEqual([]);
+    const sameDay = [valley(103414, 23743, 30, "2026-10-09T07:13:48Z", "Wed, 25 Mar 2026 08:00:00 GMT"), valley(103405, 23731, 35, "2026-10-09T07:08:58Z", "Wed, 25 Mar 2026 17:43:42 GMT")];
+    expect(crossPageConflicts(sameDay, texts)).toEqual([]);
+    expect(newerDocument(noHeader[0], noHeader[1])).toBe(true);
+    expect(newerDocument(noHeader[0], noHeader[1], true)).toBe(false);
+  });
+
+  it("does not take one product's schedule for an edition of the bank's full schedule (PNC Simple Checking)", () => {
+    const fullOnly = Array.from({ length: 120 }, (_, at) => `product${String.fromCharCode(97 + (at % 26))}${String.fromCharCode(97 + Math.floor(at / 26))}name`).join(" ");
+    expect(sameDocumentEdition([edition2025], [edition2026])).toBe(true);
+    expect(sameDocumentEdition([agreementBody], [`${agreementBody} ${fullOnly}`])).toBe(false);
+    expect(sameDocumentEdition([edition2025], [edition2025])).toBe(false);
+    expect(sameDocumentEdition(["Overdrafts: $30"], ["Overdrafts: $35"])).toBe(false);
+  });
+
+  it("leaves an edition pair alone when either text prints both prices", () => {
+    const both = `${edition2026}\nOverdrafts: $30 per paid item for accounts opened before 2026.`;
+    const texts = new Map([[23743, [edition2025]], [23731, [both]]]);
+    const rows = [valley(103414, 23743, 30, "2026-10-09T07:13:48Z", "Mon, 17 Mar 2025 18:38:41 GMT"), valley(103405, 23731, 35, "2026-10-09T07:08:58Z", "Wed, 25 Mar 2026 17:43:42 GMT")];
+    expect(crossPageConflicts(rows, texts)).toEqual([]);
+  });
+});
 
 describe("retireCrossPageConflicts", () => {
   it("only flags on the first look, keeping the fee live", async () => {

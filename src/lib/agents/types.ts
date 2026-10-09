@@ -94,7 +94,16 @@ export interface AgentRunEventSnapshot {
  * is deterministic and is paused only by the separate pipeline control.
  */
 /** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
-export const PROVIDER_STEP_KEYS: readonly string[] = ["discover-paid", "read-paid", "extract-paid", "verify-paid", "report-render", "marketing-write"];
+export const PROVIDER_STEP_KEYS: readonly string[] = [
+  "discover-paid",
+  "read-paid",
+  "extract-paid",
+  "verify-paid",
+  "report-render",
+  "marketing-write",
+  // Magellan's Regulatory Wire research notes; shadow mode until REG_WIRE_SUMMARIES_LIVE=true.
+  "registry-wire-research",
+];
 
 export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);
