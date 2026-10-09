@@ -232,8 +232,8 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(HAND_CHECKED_VERDICTS.some((entry) => EVAL_CRITICAL_VERDICTS.some((evalRow) => evalRow.feePublishedId === entry.feePublishedId))).toBe(false);
   });
 
-  it("labels Data inventory's two \"to avoid\" rows no live type fits, each only while it reads as labelled (Oct 9)", () => {
-    const ids = [36498, 90839];
+  it("labels the Oct 9 hand-checked rows no live type fits, each only while it reads as labelled", () => {
+    const ids = [36498, 90839, 15199, 17477, 76242, 104697];
     for (const id of ids) {
       const entry = HAND_CHECKED_VERDICTS.find((row) => row.feePublishedId === id);
       expect(entry, String(id)).toBeDefined();

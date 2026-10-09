@@ -295,6 +295,15 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 2210, doc 17169: \"To avoid a Monthly Service Fee of $5 per paper statement, you must enroll for E-Statements\"" },
   { feePublishedId: 79217, from: "check_cashing", amount: 6, to: "collection_item", name: "Canadian/Foreign Check Handling Charge",
     why: "inst 51, doc 19813: the next column's \"Canadian/Foreign Check Handling Charge | $6.00 per item\"" },
+  // Live names that start mid-sentence (Agentic OS's adversarial sample, Oct 9).
+  { feePublishedId: 28554, from: "atm_non_network", amount: 2, to: "account_research", name: "No contents (e.g. check) included in the ATM",
+    why: "inst 7913, doc 2195: an empty ATM deposit envelope, \"No contents (e.g. check) included in the ATM | $2/envelope\", an ATM adjustment" },
+  { feePublishedId: 37068, from: "safe_deposit_box", amount: 25, to: "account_research", name: "research fee",
+    why: "inst 6999, doc 7866: footnote \"Up to 5 copies, then $25/hr research fee\"" },
+  { feePublishedId: 44516, from: "minimum_balance", amount: 25, to: "account_research", name: "Excessive transaction fee",
+    why: "inst 161, doc 9080: \"Excessive transaction fee is $25/transaction\", an excess withdrawal fee" },
+  { feePublishedId: 91458, from: "atm_non_network", amount: 5, to: "monthly_maintenance", name: "monthly maintenance fee",
+    why: "inst 1349, doc 24074: \"*unlimited 1st National ATM access / $5.00 monthly maintenance fee\"" },
   { feePublishedId: 95142, from: "money_order", amount: 10, to: "account_research", name: "Money Order Research Fee",
     why: "inst 8581, doc 16111: \"Money Order Research Fee - $10.00/money order\" (Deming audit, run 3516)" },
 ];
