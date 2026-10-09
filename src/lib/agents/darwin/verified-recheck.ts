@@ -2,7 +2,6 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { refileCategory } from "@/lib/fee-category-guard";
 
@@ -14,17 +13,15 @@ type SqlTag = typeof sql;
  * Darwin's own second look at the rows it verified: every row verified by `verify.rules` is
  * read once more under the checks that follow the source check (`postSourceCheck`: live
  * category, no conditional $0, Hamilton's name rules). A row that fails and is not live is
- * rejected with a flag; one that is live is flagged `takedown_pending` through the shared
- * second look and comes down only when a run 12 hours on fails it again (James: a takedown is
- * a last resort, looked at more than once; never a hand UPDATE). Each row is read once per
- * version, recorded as a `verify.recheck` attempt.
+ * rejected with a flag; one that is live is archived in the same step (rolled back with the
+ * reason, never deleted; James 11:55 UTC 2026-10-09: "stop waiting 12 hours. go"). Never a hand
+ * UPDATE. Each row is read once per version, recorded as a `verify.recheck` attempt.
  *
  * v1 (2026-10-09): UAT's 20-row check of the not_in_source re-select (#883) found 16 right;
  * three misses were $0 "free if you meet a condition" readings of $2.50-$6.95 fees, one a
  * package list verified into the retired `estatement_fee` type.
  */
 export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 1 } as const;
-export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";
 export const RECHECK_LIMIT = 200;
 export const RECHECK_REJECTED_FLAG_PREFIX = "darwin_recheck";
 
@@ -39,12 +36,11 @@ export interface VerifiedRecheckResult {
   checked: number;
   passed: number;
   rejected: Array<{ feeVerifiedId: number; code: string }>;
-  flagged: number;
-  waiting: number;
+  /** Live records archived (rolled back with the reason) in this step. */
   takenDown: number[];
 }
 
-const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], flagged: 0, waiting: 0, takenDown: [] };
+const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], takenDown: [] };
 
 function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise<RecheckRow[]> {
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
@@ -169,16 +165,15 @@ export async function recheckVerifiedFees(
         code: check?.code ?? null,
         rule: check?.rule ?? null,
         line: line ? line.slice(0, 300) : null,
-        action: !check ? "passed" : publishedId == null ? "rejected" : "second_look",
+        action: !check ? "passed" : publishedId == null ? "rejected" : "taken_down",
       },
     });
   }
 
   if (failing.length === 0) return result;
-  const look = await secondLook(db, { check: DARWIN_RECHECK_CHECK, runId: options.runId, failing, dryRun: false, now: options.now });
-  result.flagged = look.flagged;
-  result.waiting = look.waiting;
-  if (look.confirmed.length === 0) return result;
+  // James, 11:55 UTC 2026-10-09 ("stop waiting 12 hours. go"): a live fee the recheck fails comes
+  // down in the same step. It is archived (rolled back with the reason), never deleted; the
+  // verified row is rejected with the same flag, and every row keeps its verify.recheck attempt.
   try {
     const closed = await inSavepoint(db, async (scope) => {
       const updated = await scope<{ fee_published_id: number | string }[]>`
@@ -186,14 +181,14 @@ export async function recheckVerifiedFees(
            SET rolled_back_at = NOW(),
                rolled_back_by_batch_id = ${`darwin-recheck-${options.runId}`},
                rolled_back_reason = v.reason
-          FROM unnest(${look.confirmed.map((fee) => fee.feePublishedId)}::bigint[], ${look.confirmed.map((fee) => fee.reason)}::text[])
+          FROM unnest(${failing.map((fee) => fee.feePublishedId)}::bigint[], ${failing.map((fee) => fee.reason)}::text[])
                AS v(fee_published_id, reason)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.rolled_back_at IS NULL
         RETURNING fp.fee_published_id
       `;
       const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
-      const done = look.confirmed.filter((fee) => ids.has(fee.feePublishedId));
+      const done = failing.filter((fee) => ids.has(fee.feePublishedId));
       if (done.length > 0) {
         await scope`
           UPDATE verified_fee_observations fv

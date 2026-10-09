@@ -58,8 +58,9 @@ Fix: `postSourceCheck` in `verify.ts` runs after the source check on the matched
 retired category (`retired_category`, rejected), a $0 whose own line or excerpt carries a price
 (`conditional_zero`, needs_review) and any of Hamilton's name rules (`name_rule`, rejected). A
 `verify.recheck` pass (`verified-recheck.ts`) reads every row v3 verified once under the same
-checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones go through the
-shared 12-hour second look before rollback. The recheck never judges an amount; the shared
+checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones are archived in
+the same step (rolled back with the reason, never deleted; James at 11:55 UTC: "stop waiting 12
+hours. go"). The recheck never judges an amount; the shared
 source check (Accuracy's `checkFeeAgainstSource`) stays the one amount check.
 
 ## Lesson

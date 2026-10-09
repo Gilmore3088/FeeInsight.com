@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DARWIN_RECHECK_CHECK, DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
+import { DARWIN_RECHECK_STRATEGY, recheckVerifiedFees } from "./verified-recheck";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -31,14 +31,14 @@ function dbWith(rows: Array<Record<string, unknown>>): DbMock {
     if (text.includes("FROM verified_fee_observations v")) return Promise.resolve(rows);
     if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 55, normalized_text: TEXT }]);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
-    if (text.includes("UPDATE published_fee_records")) return Promise.resolve([]);
+    if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 7001 }]);
     return Promise.resolve([]);
   }) as DbMock;
   return db;
 }
 
 describe("Darwin verified re-check", () => {
-  it("rejects an unpublished conditional $0 row, flags a live one for the second look, passes a good row", async () => {
+  it("rejects an unpublished conditional $0 row, archives a live one in the same step, passes a good row", async () => {
     const db = dbWith([
       { ...verifiedRow, fee_verified_id: 120552, fee_raw_id: 217716, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: "excerpt=\"Bill Pay - FREE\"", fee_published_id: 7001 },
       { ...verifiedRow, fee_verified_id: 120907, fee_raw_id: 233082, canonical_fee_key: "monthly_maintenance", verified_amount: "0.00", fee_name: "Monthly fee for balance of & over", amount: "0.00", outlier_flags: ["knox_review:zero"], conditions: null, fee_published_id: null },
@@ -54,25 +54,23 @@ describe("Darwin verified re-check", () => {
       { feeVerifiedId: 120907, code: "conditional_zero" },
       { feeVerifiedId: 120920, code: "retired_category" },
     ]);
-    // The live row is flagged, not taken down: its first look is logged for the 12h second look.
-    expect(result.flagged).toBe(1);
-    expect(result.takenDown).toEqual([]);
+    // The live row is archived now (James: no 12-hour wait), with the reason on the record.
+    expect(result.takenDown).toEqual([7001]);
     const sqlText = db.mock.calls.map((call) => templateText(call[0]));
+    const rollback = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
+    expect(rollback?.slice(1)).toEqual(expect.arrayContaining(["darwin-recheck-500", [7001], ["darwin_recheck:conditional_zero"]]));
+    expect(sqlText.filter((text) => text.includes("rolled_back_at IS NULL"))).toHaveLength(2);
     const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
-    expect(rejects).toHaveLength(2);
+    expect(rejects).toHaveLength(3);
     expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:conditional_zero"]));
-    expect(sqlText.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
     const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
     expect(attempts).toHaveLength(4);
     expect(attempts[0].slice(1)).toEqual(expect.arrayContaining([DARWIN_RECHECK_STRATEGY.strategy, "verified:120552", "evidence_mismatch"]));
-    const feedback = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_feedback"));
-    expect(feedback.length).toBeGreaterThan(0);
-    expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain(DARWIN_RECHECK_CHECK);
   });
 
   it("does nothing when every verified row has been re-checked under this version", async () => {
     const db = dbWith([]);
     const result = await recheckVerifiedFees(db as never, { runId: 501 });
-    expect(result).toMatchObject({ checked: 0, passed: 0, flagged: 0, takenDown: [] });
+    expect(result).toMatchObject({ checked: 0, passed: 0, takenDown: [] });
   });
 });

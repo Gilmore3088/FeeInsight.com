@@ -560,3 +560,10 @@ Deming's test-case store and takedown-to-regression gate, then Bayes's impact ma
 ledger, then Atlas's truthful status, then the PRD's in-house skills; outside skills are trialled
 one at a time and kept only with a measured benefit. Both start as deterministic Atlas steps with
 no paid model calls. PRD: /mnt/project-files/plans/agentic-os-prd-v1.md.
+
+**Darwin's recheck archives a failing live fee in the same step, no 12-hour second look.** James,
+11:55 UTC 9 Oct, Darwin thread: "stop waiting 12 hours. go", on the `verify.recheck` pass (#928)
+that re-reads verified rows under the retired-type, conditional-$0 and name-rule checks. A live
+record the recheck fails is rolled back at once with the reason (batch `darwin-recheck-<run>`),
+the verified row rejected with the same flag; nothing is deleted and a rollback is reversible.
+Hamilton's other takedowns keep their 12-hour second look unless James says otherwise.
