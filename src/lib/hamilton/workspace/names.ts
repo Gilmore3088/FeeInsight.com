@@ -11,3 +11,11 @@ export function proseFeeName(feeCategory: string): string {
     .map((w) => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()))
     .join(" ");
 }
+
+/** A competitor's name as a reader says it: no ", National Association"; "Federal Credit Union" as "FCU". */
+export function plainName(name: string): string {
+  return name
+    .replace(/,?\s+(National Association|N\.A\.)$/i, "")
+    .replace(/\s+Federal Credit Union$/i, " FCU")
+    .trim();
+}

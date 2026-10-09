@@ -5,6 +5,7 @@ import { Activity, CheckCircle2, Clock3, RotateCw, TerminalSquare, XCircle } fro
 import { triggerAgentRunExecution } from "@/lib/agents/client-execution";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { AtlasCancelButton } from "./atlas-cancel-button";
+import { ATLAS_RUN_STATUSES_EVENT, type AtlasRunStatusesDetail } from "./atlas-run-statuses";
 
 type LiveJob = {
   id: number;
@@ -222,6 +223,17 @@ export function AtlasLiveStatus({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Share each live read of the run ledger, so the state-lane table on this page
+  // shows the same terminal status as Recent outcomes instead of its cached snapshot.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(ATLAS_RUN_STATUSES_EVENT, {
+      detail: {
+        generatedAt: snapshot.generatedAt,
+        runs: [...snapshot.activeJobs, ...snapshot.recentJobs].map((job) => ({ id: job.id, status: job.status })),
+      } satisfies AtlasRunStatusesDetail,
+    }));
+  }, [snapshot]);
 
   useEffect(() => {
     if (snapshot.activeJobs.length === 0 && pendingLaunch === null) return;

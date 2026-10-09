@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import { listApiKeys, type ApiKeyRow } from "@/lib/api-keys";
 import { CreateKeyForm } from "./create-key-form";
 import { revokeApiKeyAction } from "./actions";
+import { ADMIN_TIME_ZONE } from "@/lib/admin-time";
 
 const TIER_LABELS: Record<string, string> = {
   enterprise: "Unlimited",
@@ -20,6 +21,8 @@ function time(value: string | null): string {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: ADMIN_TIME_ZONE,
+    timeZoneName: "short",
   }).format(new Date(value));
 }
 

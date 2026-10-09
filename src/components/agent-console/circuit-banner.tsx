@@ -8,7 +8,7 @@ export function CircuitBanner({
   status,
   onReset,
 }: {
-  status: AgentStatus;
+  status: Omit<AgentStatus, "pending"> & { pending?: number | null };
   onReset: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);

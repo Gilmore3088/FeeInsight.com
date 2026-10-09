@@ -127,7 +127,7 @@ export async function runRegistryStateBills(
     return result;
   }
 
-  const { items, rejectedIds, searched, requests, anyDateHits } = await fetchStateFeeBills(
+  const { items, rejectedIds, rejectedSample, searched, requests, anyDateHits } = await fetchStateFeeBills(
     stateCode,
     since,
     apiKey,
@@ -199,6 +199,7 @@ export async function runRegistryStateBills(
       untagged: result.untagged,
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
       matches: Object.fromEntries(items.slice(0, 25).map((item) => [item.identifier, item.match])),
+      rejected_sample: rejectedSample,
     },
   });
   return result;

@@ -163,6 +163,14 @@ describe("storyline", () => {
     ]);
   });
 
+  it("states where the price sits against local competitors without judging it", () => {
+    const lowest = buildFeeAnswer({ ...research(), current: 20 }).storyline!.lenses.market.map((f) => f.text);
+    expect(lowest[0]).toBe("None of the 3 local competitors charge less than your $20; the highest is Peer 101 ($35).");
+    const highest = buildFeeAnswer({ ...research(), current: 40 }).storyline!.lenses.market.map((f) => f.text);
+    expect(highest).toContain("No one in that group charges more than your $40.");
+    expect([...lowest, ...highest].join(" ")).not.toMatch(/favou?r|against you|advantage/i);
+  });
+
   it("reads the exhibits for a market reader instead of repeating their titles", () => {
     for (const intent of [{}, { structure: true }, { focus: "trend" as const }]) {
       const story = buildFeeAnswer(research(), { story: intent }).storyline!;
