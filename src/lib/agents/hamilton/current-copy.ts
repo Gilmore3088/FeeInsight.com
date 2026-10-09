@@ -39,7 +39,8 @@ export const CURRENT_COPY_REASON = "not_on_current_copy";
 export const CURRENT_COPY_FLAG = "not_on_current_copy";
 export const CURRENT_COPY_CONFIRM_LIVE = false;
 export const CURRENT_COPY_DOCUMENT_LIMIT = 40;
-export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 1 } as const;
+// v2 (9 Oct): copies judged before #471's verdict and the renamed-account fix are judged again.
+export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 2 } as const;
 
 export function currentCopyFingerprint(olderDocumentId: number, currentDocumentId: number): string {
   return `v${CURRENT_COPY_STRATEGY.version}:${olderDocumentId}:${currentDocumentId}`;
