@@ -56,7 +56,7 @@ type SqlTag = typeof sql;
  * Knox's learning reads what was wrong.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 5;
+export const EVAL_VERDICT_VERSION = 7;
 /** Why v5 cleared v4's price_in_name flags; written on the rule_revised lesson and each reconstructed first look. */
 export const RULE_REVISED_WHY = "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own";
 const EVAL_REASON_PREFIX = "eval_critical";
@@ -190,6 +190,16 @@ const NO_FEE_SENTENCE = /^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)
 /** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
 const WAIVER_SENTENCE = /\b(if|when|unless)\s+you\b|\bof\s+the\s+following\b|\bqualifications?\s+(are|is)\s+met\b|^\s*to\s+avoid\b|\bto\s+avoid\s+(a\s+|an\s+|the\s+)?(monthly\s+|maintenance\s+)?(service\s+charge|monthly\s+fee|maintenance\s+fee|fee)/i;
 
+/**
+ * v7: the balance that avoids a fee, published at any amount: a label row ("Minimum balance
+ * required to avoid service charge" at $50, "Average Balance Required to Avoid Monthly Fee" at
+ * $10) whose amount is the threshold or a neighbouring cell, not a fee (15/15 such live names on
+ * Oct 9 were not fees against the source). A name that goes on to state the fee ("...service
+ * charge fee of", "Otherwise, a fee of") is the fee's own row and is left alone.
+ */
+const BALANCE_THRESHOLD = /^\s*(minimum|average|min\.?)\b[a-z ]{0,30}?\bbalance\s+(required\s+|requirement\s+)?to\s+avoid\b/i;
+const STATES_FEE = /\bof\s*[-–:]?\s*$|\botherwise\b/i;
+
 /** A fee the merchant or payee pays, not the account holder. */
 const MERCHANT_PAYER = /\b(merchant|payee)\s+(pays|presenting|presented)\b|\bpaid\s+by\s+(the\s+)?(merchant|payee)\b/i;
 /** A name that pairs two directions or scopes of one service: two fees, one row. */
@@ -263,7 +273,7 @@ export function distinctPrices(text: string | null | undefined): number {
  */
 const RATE_BOUND_NAME = /\d\s*%.*\b(minimum|maximum|min|max)\.?:?\s*$/i;
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound";
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound" | "balance_threshold";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
@@ -272,6 +282,7 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   two_fees_one_line: "wrong_amount",
   price_in_name: "wrong_amount",
   rate_bound: "wrong_amount",
+  balance_threshold: "not_a_fee",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -281,6 +292,7 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
   price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
   rate_bound: "The name states a percent and ends on minimum or maximum: the amount is the rate fee's floor or cap, not the fee",
+  balance_threshold: "The balance that avoids a fee, published as a fee: the amount is the threshold or another cell, not a charge",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
@@ -289,6 +301,7 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
   if (NO_FEE_SENTENCE.test(name)) return "no_fee_sentence";
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
+  if (BALANCE_THRESHOLD.test(name) && !STATES_FEE.test(name)) return "balance_threshold";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
   if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
   if (amount != null && amount > 0 && RATE_BOUND_NAME.test(name)) return "rate_bound";
@@ -406,6 +419,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
             OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
+            OR fp.fee_name ~* '^\\s*(minimum|average|min\\.?)\\y[a-z ]{0,30}?\\ybalance\\s+(required\\s+|requirement\\s+)?to\\s+avoid\\y'
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
             OR fp.fee_name ~ '\\$\\s?[0-9]'
             OR (fp.fee_name ~ '[0-9]\\s*%' AND fp.fee_name ~* '\\y(minimum|maximum|min|max)\\.?:?\\s*$')
