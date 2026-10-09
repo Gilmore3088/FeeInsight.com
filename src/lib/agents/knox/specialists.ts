@@ -48,7 +48,9 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
 // v57: a long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
 // and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest, Old National).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 57 } as const;
+// v58: a threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and Over)"),
+// a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words (`nameFrom`, `tidyFeeName`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 58 } as const;
 
 export interface SpecialistRun {
   strategy: string;

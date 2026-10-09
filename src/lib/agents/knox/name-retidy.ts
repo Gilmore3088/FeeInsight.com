@@ -125,6 +125,44 @@ export function isCutoffName(name: string): boolean {
   );
 }
 
+/** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */
+const LEADING_DISCOURSE = /^\s*(?:otherwise|additionally|also|however|in addition|furthermore|further)\s*,?\s/i;
+/** v7: the gap a dollar figure left in a name when it was cut out ("Cashier's Checks ( and Over)", "balance is under )"). */
+const STRIPPED_AMOUNT = /\(\s|\s\)/;
+/** v7: a threshold cut off the end of a name ("Classic Money Market Account (balance below"). */
+const TRAILING_CUT = /\((?:[^()]*\s)?(?:below|under|than|over|exceeds?|exceeding|least|above)\s*$/i;
+const AMOUNT_IN_NAME = String.raw`\$\s?\d[\d,]*(?:\.\d{1,2})?(?:\s*[-–]\s*\$\s?\d[\d,]*(?:\.\d{1,2})?)?`;
+
+/**
+ * v7: the name with the dollar figures its schedule line states put back where they were cut
+ * out ("Dormant Account Fee-(No activity for 2 years and the balance is under $100)"), read
+ * from the fee's own stored text. Null when the name has no such gap or the text does not hold
+ * the name with figures in exactly those gaps.
+ */
+export function restoreStrippedAmount(name: string, texts: string[]): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  const cutAtEnd = TRAILING_CUT.test(current);
+  if (!STRIPPED_AMOUNT.test(current) && !cutAtEnd) return null;
+  const tokens = current.split(" ").map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(
+    tokens.join(`(?:\\s*${AMOUNT_IN_NAME}\\s*|\\s+)`) + (cutAtEnd ? `\\s*${AMOUNT_IN_NAME}(?:\\s*\\))?` : ""),
+    "i",
+  );
+  for (const text of texts) {
+    const found = text.replace(/\s+/g, " ").match(pattern)?.[0];
+    if (!found) continue;
+    let restored = found.replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim();
+    if ((restored.match(/\(/g) ?? []).length > (restored.match(/\)/g) ?? []).length) restored = `${restored})`;
+    const figures = (value: string) => (value.match(/\$/g) ?? []).length;
+    return figures(restored) > figures(current) && !STRIPPED_AMOUNT.test(restored) ? restored : null;
+  }
+  return null;
+}
+
+/** v7: a "Name" column label on the front of a name ("Name Stop Payment", Maple FCU). */
+const HEADER_WORD_PREFIX = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
+const SECTION_HEADING_ONLY = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
+
 /** The tidy name a live fee should show, or null to keep its name. */
 export function retidiedFeeName(name: string, canonicalKey: string): string | null {
   const stored = name.trim();
@@ -203,8 +241,11 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * v6: cut-off shapes (`repairCutoffName`): a list bullet "+", a column header glued on either
  * end, a sentence ending at its own price, a condition clause or parenthetical after the name,
  * a dangling "up to" / "per". 1,100 live names carried one of these on 2026-10-09.
+ * v7: Knox v57's tidy (a details or "N/A" cell after the name, a leading "Otherwise,"), and a
+ * dollar figure cut out of the name put back from the fee's own text (`restoreStrippedAmount`).
+ * 352 live names carried one of these or a "to avoid" fragment on 2026-10-09.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 6 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 7 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
@@ -241,8 +282,16 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   for (const fee of fees) {
-    const newName = retidiedFeeName(fee.fee_name, fee.canonical_fee_key);
-    if (!newName) {
+    // Knox v58's tidy drops a "Name" column label ("Name Stop Payment").
+    const tidied = retidiedFeeName(fee.fee_name, fee.canonical_fee_key);
+    // v7: a name whose dollar figure was cut out gets it back from the fee's own document.
+    const ownTexts = texts
+      .filter((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id))
+      .map((text) => text.normalized_text);
+    const newName = restoreStrippedAmount(tidied ?? fee.fee_name, ownTexts) ?? (tidied ? restoreStrippedAmount(fee.fee_name, ownTexts) : null) ?? tidied;
+    // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
+    // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
+    if (!newName || (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) || SECTION_HEADING_ONLY.test(newName)) {
       skipped.no_better_name += 1;
       continue;
     }
@@ -329,6 +378,9 @@ export async function retidyLiveFeeNames(
                    OR length(fp.fee_name) - length(replace(fp.fee_name, '(', ''))
                       <> length(fp.fee_name) - length(replace(fp.fee_name, ')', ''))
                    OR fp.fee_name ~ '^[[:space:]]*/'
+                   OR fp.fee_name ~* '^[[:space:]]*(otherwise|additionally|also|however|in addition|furthermore|further)[[:space:]]*,?[[:space:]]'
+                   OR fp.fee_name ~ '\\([[:space:]]|[[:space:]]\\)'
+                   OR fp.fee_name ~ '^Name[[:space:]]+[A-Z]'
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -486,7 +538,12 @@ export function isMessyName(name: string): boolean {
     name !== name.trim() ||
     repairNameShape(name) !== name.trim() ||
     // v5: a price's unit left on the front ("/month service charge") or a ")" cut from its "(".
-    /^\s*\//.test(name)
+    /^\s*\//.test(name) ||
+    // v7: a leading "Otherwise,", a gap where a dollar figure was cut out, or a header word in front.
+    LEADING_DISCOURSE.test(name) ||
+    STRIPPED_AMOUNT.test(name) ||
+    TRAILING_CUT.test(name) ||
+    HEADER_WORD_PREFIX.test(name)
   );
 }
 
