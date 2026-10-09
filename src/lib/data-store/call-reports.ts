@@ -2,6 +2,7 @@ import { getSql } from "./connection";
 import { financialSourceFilter } from "./financial-sources";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * fdic and ncua rows report dollars in thousands. ffiec rows duplicate the fdic
@@ -260,7 +261,7 @@ export async function getTopRevenueInstitutions(
 
     return rows.map((row) => ({
       cert_number: row.cert_number,
-      institution_name: row.institution_name,
+      institution_name: institutionDisplayName(row.institution_name),
       charter_type: row.charter_type,
       report_date: row.report_date,
       service_charge_income: Number(row.service_charge_income),

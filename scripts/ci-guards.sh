@@ -27,6 +27,8 @@
 #                 Fail if active app code uses crawler-era institution keys or physical data tables.
 #   sql-placeholder-kill
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
+#   findings-file-kill
+#                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09 or a findings/ file is misnamed.
 #   heading-wrap-kill
 #                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
 #   plausible-kill
@@ -668,6 +670,25 @@ migration_version_kill() {
   echo "migration-version-kill: OK (unique, well-formed migration numbers)"
 }
 
+findings_file_kill() {
+  # Every PR used to add its finding at the top of docs/project/FINDINGS.md, so parallel PRs
+  # conflicted on the same lines (2026-10-09). New findings are one file each in
+  # docs/project/findings/, named YYYY-MM-DD-short-slug.md; FINDINGS.md keeps entries through
+  # 2026-10-09 and takes no new ones.
+  local late bad
+  late=$(grep -nE '^## [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/project/FINDINGS.md \
+    | awk -F'## ' '{ d = substr($2, 1, 10); if (d > "2026-10-09") print }' || true)
+  bad=$(find docs/project/findings -maxdepth 1 -type f ! -name README.md -printf '%f\n' 2>/dev/null \
+    | grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\.md$' || true)
+  if [[ -n "$late" || -n "$bad" ]]; then
+    echo "findings-file-kill: add each new finding as docs/project/findings/YYYY-MM-DD-short-slug.md (see docs/project/findings/README.md), not in FINDINGS.md:" >&2
+    [[ -n "$late" ]] && echo "$late" >&2
+    [[ -n "$bad" ]] && echo "misnamed: $bad" >&2
+    exit 1
+  fi
+  echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/)"
+}
+
 heading_wrap_kill() {
   # Headings must never wrap one word onto its own line (James, 5 Oct 2026). The rule lives
   # once in the global stylesheet and once in the report template; per-page fixes drift.
@@ -749,16 +770,17 @@ case "$SUBCOMMAND" in
   brand-kill) brand_kill ;;
   sql-placeholder-kill) sql_placeholder_kill ;;
   heading-wrap-kill) heading_wrap_kill ;;
+  findings-file-kill) findings_file_kill ;;
   plausible-kill) plausible_kill ;;
   financial-source-kill) financial_source_kill ;;
   migration-version-kill) migration_version_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill>" >&2
     exit 2
     ;;
 esac

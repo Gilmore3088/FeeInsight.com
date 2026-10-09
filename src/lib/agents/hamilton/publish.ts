@@ -16,13 +16,14 @@ import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-gua
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
-import { retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
+import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 
 type SqlTag = typeof sql;
 
@@ -258,7 +259,16 @@ export async function rejectVerifiedFeeForCategory(
   feeVerifiedId: number,
   code: CategoryGuardCode,
 ): Promise<void> {
-  const flag = categoryGuardFlag(code);
+  await rejectVerifiedFee(db, feeVerifiedId, categoryGuardFlag(code));
+}
+
+/** The flag a verified row keeps when publish holds it for its name (`publishNameHold`). */
+export function publishHoldFlag(code: string): string {
+  return `publish_hold:${code}`;
+}
+
+/** Retire a verified row with the flag that says why; the row and its raw read stay. */
+export async function rejectVerifiedFee(db: SqlTag, feeVerifiedId: number, flag: string): Promise<void> {
   await db`
     UPDATE verified_fee_observations
        SET review_status = 'rejected',
@@ -315,9 +325,12 @@ async function selectVerifiedFees(
   }
   if (learning) {
     // A row this rule version already decided on (published, skipped as identical, or
-    // rejected) is never selected again, so skipped rows cannot starve the batch. The one
-    // exception is a row Darwin re-filed after a takedown (verify.schedule_refile): a decision
-    // made under its old category does not count, so the new filing goes through publish.
+    // rejected) is never selected again, so skipped rows cannot starve the batch. Two
+    // exceptions: a row Darwin re-filed after a takedown (verify.schedule_refile), whose
+    // decision under its old category does not count; and a row the category guard rejected
+    // that the guard re-queue step (publish.guard_requeue, flag `category_guard_requeued:g<n>`)
+    // has since passed under a newer guard, whose guard rejection does not count. Without the
+    // second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
     const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
@@ -330,6 +343,14 @@ async function selectVerifiedFees(
               AND NOT (
                 fv.outlier_flags ? ${refiledParam}
                 AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
+              )
+              AND NOT (
+                pa.outcome = 'rejected'
+                AND pa.detail->>'reason' LIKE 'Category guard%'
+                AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements_text(fv.outlier_flags) flag
+                   WHERE flag LIKE 'category_guard_requeued:%'
+                )
               )
          )`);
   }
@@ -577,12 +598,50 @@ export function normalizedFeeName(name: string | null | undefined): string {
  * are the category evidence; the repair applies only when the category guard still accepts
  * the shorter name.
  */
+/**
+ * A dot leader run or a price glued onto the name ("ATM Balance Inquiry (at non-Wildfire ATM)
+ * .........", "Courtesy Pay (Paid Overdraft) Fee…..….$35.005 | 3x10"): the name ends where they
+ * start, when what is left still names something.
+ */
+const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/;
+export function nameBeforeLeaders(name: string): string {
+  const cut = name.split(LEADER_OR_PRICE)[0].replace(/[\s:;,\-–—|]+$/u, "").trim();
+  return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
+}
+
+/** A dollar price inside a name; a third decimal is a footnote mark printed onto it ("$35.005"). */
+const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
+
+/**
+ * Why a verified row is held at publish for its name, or null: a name rule the eval takes live
+ * fees down for (`ruleFor`: a waiver or no-fee sentence, a rebate, a merchant's fee, two fees on
+ * one line), or a price printed inside the name that is not the row's amount ("Courtesy Pay
+ * (Paid Overdraft) Fee…$35.005" stored at $50.00, the next column's rent). UAT found both among
+ * the rows the guard re-queue step passed on 2026-10-09. The row is retired with
+ * `publish_hold:<code>`; no row is deleted.
+ */
+export function publishNameHold(name: string, canonicalKey: string, amount: number | null): { code: string; reason: string } | null {
+  const rule = ruleFor(canonicalKey, name, amount);
+  if (rule) return { code: `name_rule:${rule}`, reason: `Name rule (${rule}): ${RULE_WHY[rule]}` };
+  const price = PRICE_IN_NAME.exec(name);
+  if (price && amount != null) {
+    const value = Number(price[1].replace(/,/g, ""));
+    if (Number.isFinite(value) && Math.abs(value - amount) > 0.005) {
+      return { code: "price_in_name", reason: `Price in name ($${price[1]}) is not the amount ($${amount.toFixed(2)})` };
+    }
+  }
+  return null;
+}
+
 export function publishedFeeName(name: string, canonicalKey: string): string {
-  const current = name.trim();
+  const current = nameBeforeLeaders(name);
   // A name the guard rejects only because a neighbouring cell or dot leaders ran into it ("per
   // order | Returned Items", "Return Item . . . .") publishes under Knox's re-tidied name when
   // that name passes the guard (Darwin's returned-check refile, Oct 9).
-  if (!checkFeeCategory(canonicalKey, current).ok) {
+  // A name cut from a sentence or a table ("paper statement fee is waived if enrolled in
+  // eStatements") publishes under Knox's repaired name too (retidy v6), so the shape never goes
+  // live to be tidied later.
+  if (!checkFeeCategory(canonicalKey, current).ok || isCutoffName(current)) {
     const retidied = retidiedFeeName(current, canonicalKey);
     if (retidied && checkFeeCategory(canonicalKey, retidied).ok) return retidied;
   }
@@ -1173,8 +1232,13 @@ export async function runHamiltonPublish(
     if (!category.ok && !dryRun) {
       await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
     }
+    // A name that is not a fee's, or that carries another price, is held before it is live.
+    const nameHold = category.ok ? publishNameHold(row.fee_name, row.canonical_fee_key, base.amount) : null;
+    if (nameHold && !dryRun) {
+      await rejectVerifiedFee(db, Number(row.fee_verified_id), publishHoldFlag(nameHold.code));
+    }
     const skipReason = category.ok
-      ? publishSkipReason(row, minConfidence)
+      ? (nameHold?.reason ?? publishSkipReason(row, minConfidence))
       : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.

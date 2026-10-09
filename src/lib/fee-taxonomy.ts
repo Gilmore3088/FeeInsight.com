@@ -265,7 +265,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   overdraft_each_overdraft_paid: "overdraft",
   overdraft_privilege: "overdraft",
   over_fee: "overdraft",
-  excessive_withdrawal_fee: "overdraft",
+  // A savings or money market excess withdrawal (Reg D-style) is account servicing, not overdraft.
+  excessive_withdrawal_fee: "account_research",
   // --- Card / debit variants ---
   debit_fee: "card_replacement",
   debit_card_fee: "card_replacement",

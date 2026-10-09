@@ -5,7 +5,7 @@ import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { fillBlankFrequencies } from "@/lib/agents/hamilton/frequency-fill";
+import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -79,6 +79,8 @@ import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
 import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
+import { runQuoteDrafts, summarizeQuoteDrafts } from "@/lib/agents/growth/quote";
+import { runMondayPlan, runProposals, summarizeMondayPlan, summarizeProposals } from "@/lib/agents/growth/draper";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
 import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
 import { runToolCheck, summarizeToolCheck } from "@/lib/agents/growth/edison";
@@ -1565,6 +1567,9 @@ async function executeAgenticStep(
           failing_fees: guard.failingFees,
           rolled_back_fees: guard.rolledBackFees,
           rejected_verified_fees: guard.rejectedVerifiedFees,
+          flagged_fees: guard.flaggedFees,
+          awaiting_second_look: guard.awaitingSecondLook,
+          restored_fees: guard.restoredFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -1579,6 +1584,37 @@ async function executeAgenticStep(
             fee_name: failure.feeName,
             amount: failure.amount,
             code: failure.code,
+          })),
+        },
+      };
+    }
+    case "frequency-fill": {
+      // The frequency half of a guard catch-up run (hamilton/guard-catch-up.ts): every live fee,
+      // not one lane's, so a frequency fix reaches live rows on the tick after its deploy.
+      const fill = await fillBlankFrequencies(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const blanks = fill.filled.filter((row) => row.from == null).length;
+      const cleared = fill.filled.filter((row) => row.frequency == null).length;
+      return {
+        status: "completed",
+        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared).`,
+        detail: {
+          frequency_fill_version: FREQUENCY_FILL_VERSION,
+          frequency_fill_scanned: fill.scanned,
+          frequency_fills: fill.filled.length,
+          frequency_filled_blank: blanks,
+          frequency_cleared: cleared,
+          dry_run: fill.dryRun,
+          frequency_fill_samples: fill.filled.slice(0, 25).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            amount: row.amount,
+            from: row.from,
+            to: row.frequency,
           })),
         },
       };
@@ -1837,12 +1873,28 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         campaigns: outreachCampaignsFromEnv(process.env.OUTREACH_CAMPAIGNS),
       });
-      const followUpLine = followUps.due ? ` ${followUps.drafted} follow-ups drafted (day 6 and final day 13).` : "";
+      // Always say how many follow-ups were due, so a run with none shows the check happened.
+      const followUpLine = run.runKind === "dry_run"
+        ? ` Follow-ups (day 6 and final day 13): ${followUps.due} due, would draft ${followUps.due}.`
+        : ` Follow-ups (day 6 and final day 13): ${followUps.due} due, ${followUps.drafted} drafted.`;
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
+    }
+    case "growth-quote": {
+      // Free: a quote email per qualified lead, drafted into the queue; nothing sends.
+      const result = await runQuoteDrafts({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeQuoteDrafts(result), detail: { ...result } };
     }
     case "growth-learning": {
       const result = await runLearningReport({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeLearning(result), detail: { ...result } };
+    }
+    case "growth-proposals": {
+      const result = await runProposals({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeProposals(result), detail: { ...result } };
+    }
+    case "growth-plan": {
+      const result = await runMondayPlan({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMondayPlan(result), detail: { ...result } };
     }
     case "growth-intel": {
       const result = await runMarketIntel({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
