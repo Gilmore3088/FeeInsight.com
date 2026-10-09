@@ -352,8 +352,9 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
  * their page, all checked against their source line.
  * v16: a name that opens in lower case (`capitalisedName`).
+ * v17: junk glyphs at a name's start or end, and zero-width spaces (`junkStrippedName`).
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 16 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 17 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -370,6 +371,8 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   // v16: UAT's 933 misses (92700/1 at 8299, 61516 at 4624, 60532 at 6283) and the glued cells the v15
   // pass had not reached (278, 268, 8658, 2526, 217, 5668, 834), 107240 (7757) and 106859 (457).
   4624, 278, 268, 8658, 2526, 217, 5668, 834, 7757, 457,
+  // v17: the junk-glyph names UAT found (77845 at 8511) and the institutions with the most of them.
+  8511, 6272, 219, 5647, 8445, 1484, 206, 6512, 4802, 6048, 1445, 699, 887, 4769, 568, 8024, 3397,
 ];
 /**
  * v16: a live name that opens in lower case (758 of 67,670 live names on 2026-10-09, Agentic OS's
@@ -562,6 +565,38 @@ export function spacedControlName(name: string): string | null {
   // another extract, as U+0372 ("Non\u0372Sufficient").
   const spaced = name.replace(/\u0003/g, " ").replace(/(?<=\w)[\u0332\u0372](?=\w)/g, "-").replace(/\s+/g, " ").trim();
   return spaced && !CONTROL_CHARACTER.test(spaced) ? spaced : null;
+}
+
+/**
+ * v17: glyphs a document's extract leaves on a name that are not part of it: a symbol font's
+ * bullet in the private use area (U+F0B7), a C1 control (U+0095, Windows' bullet), U+FFFD runs
+ * where a dot leader was, a drawn bullet ("♦ Paid Overdraft", "■ Overdraft Fee"), zero-width
+ * spaces, and one PDF font's leader dot "ċ" ("Notary Service for members ċċ", 77845). 358 of
+ * 68,965 live names on 2026-10-09.
+ */
+const JUNK_GLYPH_CLASS = "\\uE000-\\uF8FF\\u0080-\\u009F\\uFFFD\\u200B-\\u200D\\u2060\\uFEFF\\u2666\\u25CF\\u25AA\\u25A0\\u27A2\\u2219\\u2663\\u2022\\u010B";
+const JUNK_GLYPH = new RegExp(`[${JUNK_GLYPH_CLASS}]`);
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
+/** Bullets and a symbol font's glyph before the name; U+FFFD is not one (it may stand for "$"). */
+const LEADING_JUNK = /^[\s\uE000-\uF8FF\u0080-\u009F\u2666\u25CF\u25AA\u25A0\u27A2\u2219\u2663\u2022]+/;
+/** A footnote bullet or a dot leader after the name, with any dots and spaces among it. */
+const TRAILING_JUNK = new RegExp(`(?:[\\s.…]*[${JUNK_GLYPH_CLASS}])+[\\s.…]*$`);
+/** The same PDF font writes its digits as U+0100-U+0109 ("$Ć.Ā0", "after āĂ months"). */
+const FONT_DIGIT = /[\u0100-\u0109]/;
+
+/**
+ * v17: the name with junk glyphs cut from its start and end and zero-width spaces dropped, or
+ * null. A glyph left inside the name stands for a letter, a figure or a cell break
+ * ("Effec\uFFFDve", "$Ć.Ā0", "ACH Wire Transfers \uFFFD Foreign"): nothing is guessed, and the name
+ * waits for a re-read.
+ */
+export function junkStrippedName(name: string): string | null {
+  if (!JUNK_GLYPH.test(name)) return null;
+  const stripped = name.replace(ZERO_WIDTH, "").replace(LEADING_JUNK, "").replace(TRAILING_JUNK, "").replace(/\s+/g, " ").trim();
+  if (!stripped || JUNK_GLYPH.test(stripped) || FONT_DIGIT.test(stripped) || !/^[A-Za-z0-9("“]/.test(stripped)) return null;
+  // A footnote's number left in front ("\u200b4 ATM Transaction (each)") is not the name's.
+  if (/^\d\s+[A-Za-z]{2}/.test(stripped)) return null;
+  return stripped === name ? null : stripped;
 }
 
 /**
@@ -1062,9 +1097,11 @@ export function planRetidy(
     const unligated = unligatedName(stored.fee_name);
     const storedName = unligated ?? stored.fee_name;
     const controlRead = spacedControlName(storedName) ?? (fontMapped ? fontDecodedName(storedName) : null);
-    const spaced = controlRead ?? unligated;
+    const fontRead = controlRead ?? unligated;
+    // v17: and junk glyphs cut from its start and end.
+    const spaced = junkStrippedName(fontRead ?? stored.fee_name) ?? fontRead;
     const fee = spaced ? { ...stored, fee_name: spaced } : stored;
-    const readTexts = spaced
+    const readTexts = fontRead
       ? texts.map((text) =>
           fontMapped && storedTexts.includes(text)
             ? { ...text, normalized_text: readLigatures(fontDecodedText(text.normalized_text)) }
@@ -1236,6 +1273,7 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~ '^[[:space:]]*\\([^()]*\\)[[:space:]]*(:|$)'
                    OR fp.fee_name ~ '^[a-z]'
                    OR fp.fee_name ~ '[\u0332\u0372]'
+                   OR fp.fee_name ~ '[\uE000-\uF8FF\u0080-\u009F\uFFFD\u200B-\u200D\u2060\uFEFF\u2666\u25CF\u25AA\u25A0\u27A2\u2219\u2663\u2022\u010B]'
                    OR fp.fee_name ~* '[[:space:]](below|under|than|over|above)[[:space:]]*$'
                    OR fp.fee_name ~ '^(([A-H]|[IVX]{1,4})[.)][[:space:]]+[A-Z]|(The|A|An)[[:space:]]+[A-Za-z])'
                    OR fp.fee_name ~ '^[[:space:]]*[0-9.]+[[:space:]]*[xX×][[:space:]]*[0-9.]+[[:space:]]*["”″][[:space:]]*[0-9]{1,2}[[:space:]]*$'
@@ -1541,7 +1579,9 @@ function messyBeforeV16(name: string): boolean {
     CONDITION_ONLY_NAME.test(name) ||
     // v16: a font's hyphen, or a threshold cut off the end without its figure.
     FONT_HYPHEN.test(name) ||
-    THRESHOLD_END.test(name)
+    THRESHOLD_END.test(name) ||
+    // v17: a junk glyph.
+    JUNK_GLYPH.test(name)
   );
 }
 
