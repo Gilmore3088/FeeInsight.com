@@ -138,7 +138,7 @@ export const DARWIN_CATEGORY_HOLDS: ReadonlyArray<{
   when: RegExp;
   since: string;
 }> = [
-  { filedAs: "nsf", shouldBe: "deposited_item_return", when: /\bbonds?\b[\s\S]*\breturn|\breturn\w*\b[\s\S]*\bbonds?\b/i, since: "2026-10-09" },
+  // The bond-return hold (2026-10-09) ended with guard v58, which re-files those rows.
 ];
 
 /** The pending category lesson that holds this row, if any. */

@@ -193,16 +193,22 @@ export interface ChunkScore {
   holdoutRight: number;
   holdoutWrong: number;
   misses: Array<{ verdict: StoredVerdict; scored: ScoredClaim; set: string }>;
+  /** Closed short because its review version was retired; `right + wrong` is under `size`. */
+  partial?: boolean;
 }
 
 /**
  * Pure: verdicts (in attempt order) cut into chunks of `size` decided verdicts. A chunk
- * that has not filled yet is left for the next run, so every chunk is the same size.
+ * that has not filled yet is left for the next run, so every chunk is the same size,
+ * unless `closeOpen` is set: then the open chunk is returned too, marked `partial`, for a
+ * review version that will get no more verdicts (the release review went v11 to v17 on
+ * 2026-10-08 and no version reached 20 keyed verdicts, so no chunk was ever recorded).
  */
 export function scoreChunks(
   verdicts: StoredVerdict[],
   keysByInstitution: Map<number, KeyText[]>,
   size = SCORE_CHUNK,
+  closeOpen = false,
 ): ChunkScore[] {
   const chunks: ChunkScore[] = [];
   let current: ChunkScore | null = null;
@@ -235,6 +241,7 @@ export function scoreChunks(
       current = null;
     }
   }
+  if (closeOpen && current && current.right + current.wrong > 0) chunks.push({ ...current, partial: true });
   return chunks;
 }
 
@@ -260,7 +267,7 @@ async function loadKeysByInstitution(db: SqlTag): Promise<Map<number, KeyText[]>
 }
 
 export interface VerdictScoreResult {
-  chunks: Array<{ review: string; version: number; right: number; wrong: number; unclear: number; knox_right: number; to_attempt_id: number }>;
+  chunks: Array<{ review: string; version: number; right: number; wrong: number; unclear: number; knox_right: number; to_attempt_id: number; partial: boolean }>;
   lessons: number;
 }
 
@@ -298,10 +305,13 @@ export async function runDarwinVerdictScore(
          LIMIT ${SCAN_LIMIT}::int
       `);
       const verdicts = rows.map(verdictFromRow).filter((verdict): verdict is StoredVerdict => verdict != null);
-      // Versions are scored apart, so a new prompt starts its own record.
-      const versions = [...new Set(verdicts.map((verdict) => verdict.version))];
+      // Versions are scored apart, so a new prompt starts its own record. A version below
+      // the newest one seen gets no more verdicts, so its open chunk is closed as partial.
+      const versions = [...new Set(verdicts.map((verdict) => verdict.version))].sort((a, b) => a - b);
+      const newest = versions[versions.length - 1];
       for (const version of versions) {
-        for (const chunk of scoreChunks(verdicts.filter((verdict) => verdict.version === version), keys)) {
+        const retired = version < newest;
+        for (const chunk of scoreChunks(verdicts.filter((verdict) => verdict.version === version), keys, SCORE_CHUNK, retired)) {
           await recordChunk(db, options, review, version, chunk);
           result.lessons += await recordMisses(db, options.runId, chunk);
           result.chunks.push({
@@ -312,6 +322,7 @@ export async function runDarwinVerdictScore(
             unclear: chunk.unclear,
             knox_right: chunk.knoxRight,
             to_attempt_id: chunk.toAttemptId,
+            partial: chunk.partial === true,
           });
         }
       }
@@ -351,6 +362,8 @@ async function recordChunk(
       from_attempt_id: chunk.fromAttemptId,
       to_attempt_id: chunk.toAttemptId,
       decided,
+      // A short chunk closed when its review version was retired; read its hit_rate with `decided`.
+      partial: chunk.partial === true,
       right: chunk.right,
       wrong: chunk.wrong,
       unclear: chunk.unclear,

@@ -6,7 +6,7 @@ import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { DistributionChart } from "@/components/public/distribution-chart";
 import { CountyPriceMap, type CountyDetail } from "@/components/public/county-price-map";
-import { countyFeature } from "@/lib/geo/counties";
+import { countyFeatures } from "@/lib/geo/counties";
 import { getNationalIndexCached } from "@/lib/data-store/fee-index";
 import { getCountyFeeMapCached, getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
 import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/lib/report-templates/base/state-charts";
@@ -67,28 +67,28 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const countyValues = (countyMap?.counties ?? []).map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));
   const mapWide = check && fips && countyValues.length > 0 ? countyPriceMap(fips, countyValues, check.price) : null;
   const mapNarrow = mapWide && check && fips ? countyPriceMap(fips, countyValues, check.price, { narrow: true }) : null;
+  // The legend counts every county the map draws, so counties with no branch in the deposit
+  // data (hatched on the map) are counted as having no fee yet.
   const countySteps = [0, 0, 0, 0, 0];
   let countiesWithout = 0;
   const countyDetails: Record<string, CountyDetail> = {};
-  if (mapWide) {
-    for (const c of countyMap?.counties ?? []) {
-      countyDetails[c.fips] = {
-        name: countyFeature(c.fips)?.properties.name ?? "County",
-        fee: c.overdraft,
-        institutions: c.institutions,
-        deposits: c.deposits,
-        covered: c.covered_deposits,
+  if (mapWide && check && fips) {
+    const rows = new Map((countyMap?.counties ?? []).map((c) => [c.fips, c]));
+    for (const f of countyFeatures().filter((x) => x.id.startsWith(fips))) {
+      const c = rows.get(f.id);
+      if (c?.overdraft == null) countiesWithout++;
+      else countySteps[priceStep(c.overdraft, check.price)]++;
+      countyDetails[f.id] = {
+        name: f.properties.name,
+        fee: c?.overdraft ?? null,
+        institutions: c?.institutions ?? 0,
+        deposits: c?.deposits ?? 0,
+        covered: c?.covered_deposits ?? 0,
         top: [],
       };
     }
     for (const i of countyMap?.institutions ?? []) {
       countyDetails[i.fips]?.top.push({ id: i.institution_id, name: i.name, fee: i.fee, deposits: i.deposits });
-    }
-  }
-  if (check) {
-    for (const c of countyValues) {
-      if (c.value === null) countiesWithout++;
-      else countySteps[priceStep(c.value, check.price)]++;
     }
   }
   const nationalMedian = nationalEntry?.median_amount != null && (nationalEntry.institution_count ?? 0) > 0 ? nationalEntry.median_amount : null;
