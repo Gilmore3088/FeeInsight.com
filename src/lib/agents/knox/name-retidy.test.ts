@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, headName, isMessyName, spacedControlName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -435,5 +435,49 @@ describe("v12: a PDF font's U+0003 space becomes a space", () => {
     expect(spacedControlName("Minimum Balance (under $\u0014\u001300)")).toBeNull();
     expect(spacedControlName(`Returned Check $\u0015\u0018.00${S}per item`)).toBeNull();
     expect(spacedControlName("Copy of Check")).toBeNull();
+  });
+});
+
+describe("v13: a shifted font's digits, read back when the document proves its map", () => {
+  const S = "\u0003";
+  // Meridia CU (doc 6826): shifted words next to the same words in clear.
+  const meridia = [
+    "ATM & Standard Debit Card Fees / If you have any | Balance Inquiry (Non-Meridia ATMs) | $1.00",
+    `Non-Sufficient Funds | New Card Fee | $5.00 / HDFK${S}SUHVHQWPHQW | $34.99${S}HD | Other Service Fees`,
+    `Club Savings Account Fees | $FFRXQW${S},QTXLU\\${S} RWKHU${S}WKDQ${S}EDODQFH | $1.00`,
+    "Money Market Account Fees | Certified Check, Official Check or Money Order | $1.00",
+    "Minimum Balance (under $\u0014\u001300) | $7.50/mo | Clearing Check Unacceptable for Processing | $20.00",
+    `Withdrawal Fee | Clearing &DQDGLDQ${S}&KHFN | $\u00180.00 ea`,
+    `(ACH & Share Draft)${S} HDFK${S}SUHVHQWPHQW | Legal Process | $100.00`,
+  ].join("\n");
+  // LFCU (doc 13444): shifted digits, but no shifted word to prove the map.
+  const lfcu = "Courtesy Pay Service | $\u0015\u001c.00\nReturned Deposited Check | $\u0015\u0018.00/item\nStop Payment Order - Check, ACH (per item) | $30.00";
+
+  it("trusts a map only when shifted words read as words printed in clear", () => {
+    expect(fontMapVerified(meridia)).toBe(true);
+    expect(fontMapVerified(lfcu)).toBe(false);
+    expect(fontMapVerified("Stop Payment | $30.00")).toBe(false);
+    expect(fontDecodedName("Minimum Balance (under $\u0014\u001300)")).toBe("Minimum Balance (under $1000)");
+  });
+
+  it("reads 96207's threshold back, and 41496 takes its own cell, under a proven map", () => {
+    const page = [{ source_document_id: 70, normalized_text: meridia }];
+    const minimum = fee({ fee_published_id: 96207, canonical_fee_key: "minimum_balance", fee_name: "Minimum Balance (under $\u0014\u001300)", amount: 7.5 });
+    const legal = fee({ fee_published_id: 41496, canonical_fee_key: "legal_process", fee_name: `(ACH & Share Draft)${S} HDFK${S}SUHVHQWPHQW: Legal Process`, amount: 100 });
+    expect(planRetidy([minimum, legal], page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [96207, "Minimum Balance (under $1000)"],
+      [41496, "Legal Process"],
+    ]);
+  });
+
+  it("leaves a name in place when the document cannot prove the map", () => {
+    const page = [{ source_document_id: 70, normalized_text: lfcu }];
+    const returned = fee({
+      fee_published_id: 19932,
+      canonical_fee_key: "deposited_item_return",
+      fee_name: "Returned Deposited Check $\u0015\u0018.00/item Stop Payment Order - Check, ACH (per item)",
+      amount: 30,
+    });
+    expect(planRetidy([returned], page).renames).toEqual([]);
   });
 });
