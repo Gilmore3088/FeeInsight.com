@@ -605,7 +605,7 @@ export function normalizedFeeName(name: string | null | undefined): string {
  */
 const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/;
 export function nameBeforeLeaders(name: string): string {
-  const cut = name.split(LEADER_OR_PRICE)[0].replace(/[\s:;,\-–—|]+$/u, "").trim();
+  const cut = name.split(LEADER_OR_PRICE)[0].replace(/[\s:;,.\-–—|]+$/u, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 
@@ -620,9 +620,18 @@ const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
  * the rows the guard re-queue step passed on 2026-10-09. The row is retired with
  * `publish_hold:<code>`; no row is deleted.
  */
+const ADDON_PRICE_NAME = /(?:\bplus|\band|\+)\s*[(\s]*$/i;
 export function publishNameHold(name: string, canonicalKey: string, amount: number | null): { code: string; reason: string } | null {
   const rule = ruleFor(canonicalKey, name, amount);
   if (rule) return { code: `name_rule:${rule}`, reason: `Name rule (${rule}): ${RULE_WHY[rule]}` };
+  // "Research Fee (plus" at $1: the price after "plus" is added to the fee's own price ($50 per
+  // hour on that line), so the amount is not the fee.
+  if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
+  // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
+  // ("GUASFCU charges a") is not published as it is.
+  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
+    return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
+  }
   const price = PRICE_IN_NAME.exec(name);
   if (price && amount != null) {
     const value = Number(price[1].replace(/,/g, ""));

@@ -54,7 +54,7 @@ const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|yea
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
 const PRONOUN = /\b(?:i|we|you|my|our|your|will|would|may|must|shall)\b/i;
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
-const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|receive|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
+const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
 const SENTENCE_END = /\b(?:of|to|from|for|at|is|and|or|with|by|a|an|the|per|than|below|above|up to|each)$/i;
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
