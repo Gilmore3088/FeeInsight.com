@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { STATS_ROW_FILTER } from "./fee-stats";
 
 /**
  * Data behind Hamilton's new market study: a bank looking at a county where it may not have
@@ -147,10 +148,14 @@ export async function getMarketStudyData(institutionId: number, countyFips: stri
 
   const [feeRows, demoRows] = await Promise.all([
     sql<MarketStudyRows["fees"]>`
-      SELECT institution_id, fee_category, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amount
-        FROM published_fee_catalog
-       WHERE institution_id = ANY(${feeIds}::bigint[]) AND fee_category = ANY(${categories}::text[]) AND amount IS NOT NULL
-       GROUP BY institution_id, fee_category`,
+      SELECT ef.institution_id, ef.fee_category,
+             CASE WHEN ef.fee_category = 'overdraft' THEN MAX(ef.amount)
+                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+        FROM published_fee_catalog ef
+       WHERE ef.institution_id = ANY(${feeIds}::bigint[]) AND ef.fee_category = ANY(${categories}::text[])
+         AND ef.amount IS NOT NULL AND ef.amount >= 0
+         AND ${sql.unsafe(STATS_ROW_FILTER)}
+       GROUP BY ef.institution_id, ef.fee_category`,
     sql<MarketStudyRows["demographics"]>`
       SELECT DISTINCT ON (geo_id) geo_id, geo_name, median_household_income, total_population, poverty_count, year
         FROM demographics WHERE geo_id = ANY(${geoIds}::text[])
