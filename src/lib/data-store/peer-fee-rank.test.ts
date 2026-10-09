@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ReportRuleCheck } from "./market-readiness";
-import { peerFiltersForRule, peerRankFromGroupValues, rankAgainstPeers, type PeerGroupValue } from "./peer-fee-rank";
+import {
+  peerFiltersForRule,
+  peerGroupValuesFrom,
+  peerRankFromGroupValues,
+  rankAgainstPeers,
+  type PeerGroupValue,
+  type PeerRankValue,
+} from "./peer-fee-rank";
 
 describe("rankAgainstPeers", () => {
   it("counts lower, equal and higher values among the other institutions", () => {
@@ -61,5 +68,25 @@ describe("peerRankFromGroupValues", () => {
 
   it("returns null when the institution has no ranked fee", () => {
     expect(peerRankFromGroupValues(99, rule, { charter_type: "bank", state_code: "TX" }, values)).toBeNull();
+  });
+});
+
+describe("peerGroupValuesFrom", () => {
+  const all: PeerRankValue[] = [
+    [1, "overdraft", 30, "bank", "TX", 11],
+    [2, "overdraft", 25, "credit_union", "TX", 11],
+    [3, "overdraft", 35, "bank", "OK", 10],
+    [4, "overdraft", 20, "bank", "NM", 11],
+  ];
+
+  it("keeps the same charter in the state", () => {
+    expect(peerGroupValuesFrom(all, { charter_type: "bank", state_code: "TX" })).toEqual([[1, "overdraft", 30]]);
+  });
+
+  it("keeps the same charter in the Fed district", () => {
+    expect(peerGroupValuesFrom(all, { charter_type: "bank", fed_districts: [11] })).toEqual([
+      [1, "overdraft", 30],
+      [4, "overdraft", 20],
+    ]);
   });
 });
