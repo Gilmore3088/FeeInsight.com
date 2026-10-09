@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Outreach drafts link to a snapshot page main doesn't have
+**What happened:** the first daily growth-loop dry run (run 3203, 00:57 UTC Oct 9) ran all 12 steps. NORMAN's conversion check loaded 28 outreach destinations: 5 loaded and 23 answered 404, all `https://feeinsight.com/institution/<id>/market?...` (drafts 49 onward). Two dry-run summaries also read as if they saved: `marketing-score` said "stored this month's market snapshot" with `snapshotStored: false`, and `marketing-states` said "Drafted 0" when it skipped AL as "dry run: not drafted".
+**Cause:** `snapshotLink` in `src/lib/agents/growth/outreach.ts` points at `/institution/[id]/market`, but that page (commit 9bbe7e3f) is only on the Marketing branch, not main. The summaries ignored the dry-run flag.
+**Fix:** this PR makes both summaries say "would" in a dry run. The 404 links are for the Marketing thread, which owns the snapshot page and the outreach drafts. No draft has been sent.
+**Lesson:** when an agent writes a link into a draft, check that the route exists on main. NORMAN's destination check now catches this daily.
+
 ## 2026-10-09: Magellan's fee-page classifier never trained
 **What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
 **Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
