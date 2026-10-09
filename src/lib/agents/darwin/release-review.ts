@@ -24,6 +24,8 @@ import {
   scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
+import { isCutoffName } from "@/lib/agents/knox/name-retidy";
+
 import { loadReviewMisses } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
@@ -79,9 +81,15 @@ type SqlTag = typeof sql;
 // footnotes, bullet text, table headers or two-column glue. A released fee now takes its frequency
 // from the words after its own price when they point one way (`frequencyFromLine`), and those name
 // shapes stay held (`name_fragment`).
+// Version 17 (2026-10-09): the eval's re-score left 25 wrong names, and Accuracy sent two more
+// ("Inactive fee: This account may be subject to an Inactive fee of", "Charge Return Statement or
+// Dormant Account Monthly Fee (...) | F"): names cut from a sentence or a table. A name with a
+// cut-off shape (a list bullet "+", a glued column header, a sentence ending at its own price, a
+// condition clause, a dangling "up to" / "per"; Knox's `isCutoffName`) now stays held
+// (`name_fragment`); Knox's retidy v6 gives the live ones their tidy name.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
-  version: 16,
+  version: 17,
 } as const;
 export const RELEASE_REVIEW_FEES_PER_CALL = 25;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -148,7 +156,7 @@ const SENTENCE_START = /^\s*[a-z]/;
 const LOWERCASE_PRODUCT_NAME = /^\s*e-?(statement|banking|bill)/i;
 
 export function nameIsFragment(name: string): boolean {
-  if (NAME_FRAGMENT.test(name)) return true;
+  if (NAME_FRAGMENT.test(name) || isCutoffName(name)) return true;
   return SENTENCE_START.test(name) && !LOWERCASE_PRODUCT_NAME.test(name);
 }
 

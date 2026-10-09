@@ -7,6 +7,7 @@ import {
   type HitListView,
 } from "@/lib/data-store/hit-list";
 import { getTopTenCoverage, type TopTenCoverage } from "@/lib/data-store/top-ten-coverage";
+import { COVERED_SHARE, getNationalCompetitorCoverage } from "@/lib/data-store/competitor-coverage";
 import { HitListLinkForm } from "./link-form";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ export default async function HitListPage({
   const view: PageView = params.view === "no_overdraft" || params.view === "top10" ? params.view : "no_fees";
   const state = params.state && /^[A-Za-z]{2}$/.test(params.state) ? params.state.toUpperCase() : null;
   const coverage: TopTenCoverage | null = view === "top10" ? await getTopTenCoverage().catch(() => null) : null;
+  const markets = view === "no_fees" ? await getNationalCompetitorCoverage().catch(() => null) : null;
   const list =
     view === "top10" && !coverage
       ? { rows: [], total: 0 }
@@ -118,6 +120,16 @@ export default async function HitListPage({
           {state ? ` in ${state}` : ""}. Showing the largest {list.rows.length.toLocaleString("en-US")}.
         </p>
       )}
+      {markets ? (
+        <p className="text-sm text-[#6B6255]">
+          Competitor coverage: in the median bank&rsquo;s branch counties, competitors with live fees hold{" "}
+          <span className="font-semibold text-current">{Math.round(markets.medianShare * 100)}%</span> of competitor
+          deposits ({Math.round(markets.medianShareOverdraft * 100)}% with an overdraft fee).{" "}
+          {markets.buyersCovered.toLocaleString("en-US")} of {markets.buyers.toLocaleString("en-US")} banks have{" "}
+          {Math.round(COVERED_SHARE * 100)}% or more of their market covered ({markets.buyersCoveredOverdraft.toLocaleString("en-US")} for
+          overdraft). FDIC Summary of Deposits {markets.sodYear}; credit unions report no deposits by branch.
+        </p>
+      ) : null}
 
       <ol className="space-y-3">
         {list.rows.map((row, index) => (

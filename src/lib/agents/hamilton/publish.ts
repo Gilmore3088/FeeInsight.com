@@ -315,9 +315,12 @@ async function selectVerifiedFees(
   }
   if (learning) {
     // A row this rule version already decided on (published, skipped as identical, or
-    // rejected) is never selected again, so skipped rows cannot starve the batch. The one
-    // exception is a row Darwin re-filed after a takedown (verify.schedule_refile): a decision
-    // made under its old category does not count, so the new filing goes through publish.
+    // rejected) is never selected again, so skipped rows cannot starve the batch. Two
+    // exceptions: a row Darwin re-filed after a takedown (verify.schedule_refile), whose
+    // decision under its old category does not count; and a row the category guard rejected
+    // that the guard re-queue step (publish.guard_requeue, flag `category_guard_requeued:g<n>`)
+    // has since passed under a newer guard, whose guard rejection does not count. Without the
+    // second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
     const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
@@ -330,6 +333,14 @@ async function selectVerifiedFees(
               AND NOT (
                 fv.outlier_flags ? ${refiledParam}
                 AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
+              )
+              AND NOT (
+                pa.outcome = 'rejected'
+                AND pa.detail->>'reason' LIKE 'Category guard%'
+                AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements_text(fv.outlier_flags) flag
+                   WHERE flag LIKE 'category_guard_requeued:%'
+                )
               )
          )`);
   }
