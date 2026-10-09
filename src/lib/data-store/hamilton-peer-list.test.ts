@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PeerListCriteria } from "@/lib/hamilton/peer-list";
+// Match the regulator mapping, not its line wrapping. Both branches remain required.
+const REGULATOR_SOURCE_CASE = /source\s*=\s*CASE\s+WHEN\s+inst\.charter_type\s*=\s*'credit_union'\s+THEN\s+'ncua'\s+ELSE\s+'fdic'\s+END/;
 const mocks = vi.hoisted(() => ({ sql: vi.fn() }));
 vi.mock("./connection", () => ({ sql: mocks.sql }));
 import { getPeerListRows, getPeerListSubject, peerAssetSourceUrl, peerSubjectFromRow } from "./hamilton-peer-list";
@@ -27,11 +29,40 @@ describe("dated asset read model", () => {
   it("selects latest dated records before asset filtering and computes fee coverage after selection", async () => {
     await getPeerListRows(101, criteria, "2026-10-10");
     const text = mocks.sql.mock.calls[0][0].join("?");
+    expect(text.indexOf("ORDER BY report_date DESC") >= 0).toBe(true);
+    expect(text.indexOf("eligible AS") >= 0).toBe(true);
     expect(text.indexOf("ORDER BY report_date DESC") < text.indexOf("eligible AS")).toBe(true);
+    expect(text.indexOf("LIMIT ?") >= 0).toBe(true);
+    expect(text.indexOf("EXISTS (SELECT 1 FROM published_fee_catalog") >= 0).toBe(true);
     expect(text.indexOf("LIMIT ?") < text.indexOf("EXISTS (SELECT 1 FROM published_fee_catalog")).toBe(true);
     expect(text).toContain("(f.total_assets::numeric * 1000) AS total_assets_usd");
-    expect(text).toContain("COUNT(*) OVER ()"); expect(text).toContain("'credit_union' THEN 'ncua' ELSE 'fdic'");
+    expect(text).toContain("COUNT(*) OVER ()");
+    expect(text).toMatch(REGULATOR_SOURCE_CASE);
     expect(text).toContain("published_fee_rate_catalog");
     expect(text).not.toContain("total_deposits");
+  });
+
+  it("accepts line breaks in the source-selection CASE without weakening its branches", async () => {
+    await getPeerListRows(101, criteria, "2026-10-10");
+    const text = mocks.sql.mock.calls[0][0].join("?");
+    const wrapped = text.replace(
+      /CASE\s+WHEN\s+inst\.charter_type\s*=\s*'credit_union'\s+THEN\s+'ncua'\s+ELSE\s+'fdic'\s+END/g,
+      "CASE\n  WHEN inst.charter_type = 'credit_union'\n    THEN 'ncua'\n  ELSE 'fdic'\nEND",
+    );
+    expect(wrapped.includes("'credit_union'\n    THEN 'ncua'")).toBe(true);
+    expect(wrapped).not.toContain("'credit_union' THEN 'ncua' ELSE 'fdic'");
+    expect(wrapped).toMatch(REGULATOR_SOURCE_CASE);
+  });
+  it("rejects a wrong credit-union source despite flexible whitespace", async () => {
+    await getPeerListRows(101, criteria, "2026-10-10");
+    const text = mocks.sql.mock.calls[0][0].join("?");
+    const wrong = text.replace(/THEN\s+'ncua'/g, "THEN 'fdic'");
+    expect(REGULATOR_SOURCE_CASE.test(wrong)).toBe(false);
+  });
+  it("rejects a wrong bank source despite flexible whitespace", async () => {
+    await getPeerListRows(101, criteria, "2026-10-10");
+    const text = mocks.sql.mock.calls[0][0].join("?");
+    const wrong = text.replace(/ELSE\s+'fdic'/g, "ELSE 'ncua'");
+    expect(REGULATOR_SOURCE_CASE.test(wrong)).toBe(false);
   });
 });
