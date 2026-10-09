@@ -38,12 +38,15 @@ export function ThisMonthOverview({
   overview,
   windowDays,
   overdraftIncome = null,
+  tryPriceHref = null,
 }: {
   institutionName: string;
   peerLabel: string;
   overview: BriefingOverview;
   windowDays: number;
   overdraftIncome?: RevenueLine | null;
+  /** Try a price for overdraft, where a reader can ask what a price would come to. */
+  tryPriceHref?: string | null;
 }) {
   const { feesCompared, higher, inLine, lower, peerCount, stateLabel, feesChangedNearby, income } = overview;
   const place = stateLabel ?? "your state";
@@ -85,7 +88,17 @@ export function ThisMonthOverview({
         />
       </div>
       {overdraftIncome ? (
-        <p className="max-w-3xl text-sm leading-snug text-warm-700">{overdraftIncomeNote(overdraftIncome)}</p>
+        <p className="max-w-3xl text-sm leading-snug text-warm-700">
+          {overdraftIncomeNote(overdraftIncome)}
+          {tryPriceHref ? (
+            <>
+              {" "}
+              <a href={tryPriceHref} className="text-terra-text underline">
+                Test an overdraft price
+              </a>
+            </>
+          ) : null}
+        </p>
       ) : null}
     </section>
   );
