@@ -117,7 +117,7 @@ export default async function NewsPage({
     const win = pageWindow(wire.offset / WIRE_PAGE_SIZE + 1, wire.total);
     const shown = { ...params, page: win.page };
     return (
-      <div data-wide-page>
+      <div>
         <WireHeader params={shown} />
         <div className="mt-5">
           <WireControls
@@ -166,7 +166,7 @@ export default async function NewsPage({
   const feeData = buildFeeDataStrips(stripItems, feeIndexes);
 
   return (
-    <div data-wide-page>
+    <div>
       <WireHeader params={shown} />
       <div className="mt-5">
         <WireControls params={shown} actions={canRefreshFeeds ? <RefreshButton /> : undefined} />
