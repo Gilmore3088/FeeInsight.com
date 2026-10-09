@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { FLOW_AGENTS, isWentLive, latestPerInstitution, type FlowMove, type FlowNow, type FlowSnapshot, type FlowWaiting, type MoveTone } from "@/lib/agents/flow-model";
 import type { AdminAgent } from "@/lib/agents/types";
+import { formatAdminTime } from "@/lib/admin-time";
 
 const POLL_MS = 10_000;
 
@@ -31,7 +32,7 @@ const TONE: Record<MoveTone, { mark: string; label: string; text: string; ring: 
 };
 
 function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return formatAdminTime(iso);
 }
 
 function number(value: number): string {

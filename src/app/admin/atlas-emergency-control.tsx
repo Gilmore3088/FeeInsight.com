@@ -9,9 +9,12 @@ import {
   setPipelinePaused,
   stopAllAutomation,
 } from "./atlas-actions";
+import { providerStopLabel } from "@/lib/console/control-labels";
 
 interface Props {
   enabled: boolean;
+  /** The provider stop could not be read; work is held but no operator set it. */
+  unreadable?: boolean;
   reason: string | null;
   changedBy: string;
   changedAtLabel: string;
@@ -28,6 +31,7 @@ interface Props {
 
 export function AtlasEmergencyControl({
   enabled,
+  unreadable = false,
   reason,
   changedBy,
   changedAtLabel,
@@ -168,7 +172,16 @@ export function AtlasEmergencyControl({
           <div className="flex gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-700 dark:text-red-400" />
             <div>
-              <p className="text-sm font-bold text-red-900 dark:text-red-200">Provider automation stop is active</p>
+              <p className="text-sm font-bold text-red-900 dark:text-red-200">
+                {unreadable
+                  ? `${providerStopLabel(null)}: provider steps are held until it reads again`
+                  : `${providerStopLabel(false)}: provider automation stop is active`}
+              </p>
+              {unreadable && (
+                <p className="mt-1 text-xs text-red-800/80 dark:text-red-300/80">
+                  This is not a confirmed switch setting. <button type="button" onClick={() => window.location.reload()} className="font-semibold underline underline-offset-2">Retry the read</button>
+                </p>
+              )}
               <p className="mt-1 text-xs text-red-800/80 dark:text-red-300/80">
                 Paid AI provider calls and provider steps are blocked. Deterministic pipeline steps follow the pipeline control below. {reason ?? "No reason recorded."}
               </p>
@@ -213,7 +226,7 @@ export function AtlasEmergencyControl({
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Automation safety</p>
-            <p className="admin-meta mt-1">Provider stop is off: paid provider steps may run when the budget policy allows. {activeJobCount} run{activeJobCount === 1 ? "" : "s"} active.</p>
+            <p className="admin-meta mt-1">{providerStopLabel(true)}: paid provider steps may run when the budget policy allows. {activeJobCount} run{activeJobCount === 1 ? "" : "s"} active.</p>
           </div>
           <button
             type="button"

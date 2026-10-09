@@ -68,6 +68,7 @@ export default async function HamiltonReportsPage({
           <form method="GET" className="flex items-center gap-2 ml-auto">
             <select
               name="status"
+              aria-label="Filter report jobs by status"
               defaultValue={statusFilter ?? ""}
               className="text-[11px] border border-gray-200 dark:border-white/[0.08] rounded px-2 py-1 bg-white dark:bg-white/[0.04] text-gray-700 dark:text-gray-300"
             >
@@ -80,6 +81,7 @@ export default async function HamiltonReportsPage({
             </select>
             <select
               name="type"
+              aria-label="Filter report jobs by type"
               defaultValue={typeFilter ?? ""}
               className="text-[11px] border border-gray-200 dark:border-white/[0.08] rounded px-2 py-1 bg-white dark:bg-white/[0.04] text-gray-700 dark:text-gray-300"
             >

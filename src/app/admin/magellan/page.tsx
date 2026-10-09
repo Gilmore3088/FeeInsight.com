@@ -14,7 +14,8 @@ export default async function MagellanPage() {
     dead: 0,
     needs_human: 0,
     retry_after: 0,
-    today_cost_usd: 0,
+    today_cost_usd: null,
+    spend_read_at: null,
     circuit: { halted: false },
   }));
 
