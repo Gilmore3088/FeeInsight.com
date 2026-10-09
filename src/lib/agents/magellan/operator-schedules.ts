@@ -632,6 +632,15 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.securityfederalbank.com/personal/personal-checking/all-accounts.html",
     givenBy: "web search for UAT's missing consumer monthly fee, 2026-10-09 08:30",
   },
+  // The fee schedule (held, read) prints the checking charge only as "Interest Checking (below
+  // $1,500) | $15/mo." in a two-column table that never verified; the product page states it as
+  // "Monthly low balance fee $15/mo".
+  {
+    institutionId: 8109,
+    institutionName: "Space Coast Federal Credit Union",
+    url: "https://www.sccu.com/personal/checking-accounts/interest-checking",
+    givenBy: "web search for Hamilton's thin coverage, 2026-10-09 08:40",
+  },
 ];
 
 export interface NoConsumerSchedule {
