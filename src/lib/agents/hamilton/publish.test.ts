@@ -372,6 +372,45 @@ describe("Hamilton agentic publish", () => {
     expect(change?.slice(1)).toEqual(expect.arrayContaining([42, "overdraft", 30, 35, "increase"]));
   });
 
+  it("records a real schedule change replayed from prod (MFCU non-member cashier's check, $5 to $10)", async () => {
+    // Prod, 9 Oct: verified 81480 from the 5 Oct copy of mfcu.net/Fees (document 16105), live
+    // 54570 from the 17 Feb copy (document 2253). Each copy lists the fee at one price only.
+    const newer = {
+      ...verifiedFee,
+      fee_verified_id: 81480,
+      institution_id: 7383,
+      canonical_fee_key: "cashiers_check",
+      fee_name: "Non-Member Cashier's Check Fee",
+      amount: "10.00",
+      source_url: "https://www.mfcu.net/Fees",
+      document_url: "https://www.mfcu.net/Fees",
+      source_document_id: 16105,
+      document_crawled_at: "2026-10-05T19:30:49.176Z",
+    };
+    const live = {
+      fee_published_id: 54570,
+      amount: "5.00",
+      fee_name: "Non-Member Cashier's Check Fee",
+      published_at: "2026-10-06T00:45:47.296Z",
+      source_url: "https://www.mfcu.net/Fees",
+      document_url: "https://www.mfcu.net/Fees",
+      source_document_id: 2253,
+      document_crawled_at: "2026-02-17T09:37:03.000Z",
+    };
+    const lines = [
+      { source_document_id: 2253, fee_name: "Non-Member Cashier's Check Fee", amount: "5.00" },
+      { source_document_id: 16105, fee_name: "Non-Member Cashier's Check Fee", amount: "10.00" },
+    ];
+    expect(listsBothPrices(lines, newer, live)).toBe(false);
+
+    const db = createDbMock([newer], [live]);
+    const result = await runHamiltonPublish({ runId: 120, db: asPublishDb(db) });
+
+    expect(result.results[0]).toMatchObject({ supersededFeePublishedId: 54570, changeRecorded: true });
+    const change = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO fee_change_records"));
+    expect(change?.slice(1)).toEqual(expect.arrayContaining([7383, "cashiers_check", 5, 10, "increase", 54570, true]));
+  });
+
   it("publishes a second price from the same document as its own fee line", async () => {
     const sameDocumentPrior = { ...priorPublishedFee, fee_name: "Stop payment (ACH)", source_document_id: 77 };
     const db = createDbMock([{ ...verifiedFee, source_document_id: 77 }], [sameDocumentPrior]);

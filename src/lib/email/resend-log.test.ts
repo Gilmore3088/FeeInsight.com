@@ -36,6 +36,16 @@ describe("getSentEmailLog", () => {
   it("reports a failed answer instead of an empty log", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
-    expect(await getSentEmailLog()).toEqual({ status: "failed", reason: "Resend answered 401. The key may be limited to sending; a key with full access can list sent emails." });
+    expect(await getSentEmailLog()).toEqual({ status: "failed", reason: "Resend answered 401. Resend refused the key for listing; a key with full access can list sent emails." });
+  });
+
+  it("tells a sending-only key apart from a failure", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const body = JSON.stringify({ statusCode: 401, name: "restricted_api_key", message: "This API key is restricted to only send emails" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 401 })));
+    expect(await getSentEmailLog()).toEqual({
+      status: "send_only",
+      reason: "Resend recognizes the key as a sending key; its sent-email list needs a key with read access.",
+    });
   });
 });

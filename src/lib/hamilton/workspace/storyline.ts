@@ -11,7 +11,7 @@
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { formatRatePercent } from "@/lib/percent-fees";
-import { proseFeeName } from "./names";
+import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
@@ -599,13 +599,7 @@ function customerGroup(research: FeeResearch): { label: string; members: { name:
   return null;
 }
 
-/** A competitor's name as a reader says it: no ", National Association"; "Federal Credit Union" as "FCU". */
-export function plainName(name: string): string {
-  return name
-    .replace(/,?\s+(National Association|N\.A\.)$/i, "")
-    .replace(/\s+Federal Credit Union$/i, " FCU")
-    .trim();
-}
+export { plainName };
 
 function names(list: { name: string }[], max = 3): string {
   const shown = list.slice(0, max).map((m) => m.name);
@@ -650,8 +644,12 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const dearer = group.members.filter((m) => m.amount > current);
     const n = group.members.length;
     if (cheaper.length === 0) {
+      // Neutral: who is higher, by name, never whether that helps or hurts.
+      const highest = [...dearer].sort((a, b) => b.amount - a.amount)[0];
       out.push({
-        text: `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; price works in your favor.`,
+        text: highest
+          ? `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`
+          : `All ${count(n)} ${group.label} charge the same ${money(current)} you do.`,
         source: group.source,
         sampleSize: n,
       });
@@ -663,7 +661,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       });
       if (dearer.length === 0) {
         out.push({
-          text: `No one in that group charges more than your ${money(current)}, so every price comparison works against you.`,
+          text: `No one in that group charges more than your ${money(current)}.`,
           source: group.source,
           sampleSize: n,
         });

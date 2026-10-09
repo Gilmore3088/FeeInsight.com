@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { DarwinConsole } from "./components/darwin-console";
 import { LoopPanels } from "./components/loop-panels";
 import { fetchDarwinStatus } from "./actions";
+import type { DarwinStatus } from "./types";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AgentHandoffStrip } from "@/components/agent-console/agent-handoff-strip";
 import { requireAuth } from "@/lib/auth";
@@ -10,12 +11,13 @@ export const dynamic = "force-dynamic";
 
 export default async function DarwinPage() {
   await requireAuth("view");
-  const status = await fetchDarwinStatus().catch(() => ({
-    pending: 0,
-    today_promoted: 0,
-    today_cost_usd: 0,
+  const status = await fetchDarwinStatus().catch((): DarwinStatus => ({
+    pending: null,
+    today_promoted: null,
+    today_cost_usd: null,
     circuit: { halted: false },
-    recent_run_avg_tokens_per_row: null,
+    last_step: null,
+    as_of: null,
   }));
 
   return (

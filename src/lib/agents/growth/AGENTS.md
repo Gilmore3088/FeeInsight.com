@@ -14,11 +14,12 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
-| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
 | Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
 | Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
+| Press pitches (BERNAYS) | `/api/admin/crew/press` (admin or cron secret; not scheduled yet, waits for James) | `growth-press` | below |
 | Price check (EDISON) | in the daily loop below | `growth-tools` | runs `src/lib/price-check.ts` for one state a day, read-only |
 | Daily growth loop | `/api/admin/crew/growth-loop`, daily 00:57 UTC | every step in `loop.ts`, as one `dry_run` run | nothing saved or sent; leaves out `marketing-write` (paid) and `marketing-send` |
 
@@ -34,7 +35,19 @@ sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 
 Each contact has a confidence (`contactConfidence`): high for a named person with a title in a
 buying role, medium for a person's own address with a name or title, low for anything else or a
 shared mailbox. `rankContacts` orders an institution's contacts (confidence, then marketing,
-retail, executive, finance); the CSV marks the first as primary and the second as backup.
+retail, executive, finance). `pickContacts` marks the first decision-maker in that order
+(`isDecisionMaker`, the rule outreach uses) as the institution's primary buyer contact and the
+second as backup; an institution with no decision-maker has neither.
+
+These are stored on `prospect_contacts` (migration `20270110000031`): `role` re-read with today's
+rules (`normalizeContact`), `confidence`, `pick` (`primary`, `backup` or null) and `ranked_at`.
+`refreshContactPicks` writes them, only on rows whose values change. `growth-contacts` runs it for
+the institutions it just read; the second step of the same run, `growth-contact-picks`, re-ranks
+every saved contact, so a rule change reaches old rows each Monday (its first run is the backfill
+for rows saved before the columns). Both skip the write before the migration and on a dry run.
+The CSV reads the stored confidence and pick, and ranks an institution itself, the same way, only
+while any of its rows is unranked. Outreach still ranks each candidate's contacts when it drafts
+(`buildOutreachDraft`), with the same functions, so its choice matches the stored pick.
 
 ### First-email drafts (`outreach.ts`, `market-snapshot.ts`)
 
@@ -93,6 +106,30 @@ his notes, every decline reason to date, and the plan's sales metrics to date (q
 conversations per 100 contacts, share reaching a proposal, proposal to paid, median days from
 email to purchase) against the month-one floor. Counts and James's own notes only; a metric with
 no data says so. It lands in the queue as DRAPER's `brief` (channel `internal`), once per week.
+
+### Press pitches (`bernays.ts`)
+
+BERNAYS drafts `PITCHES_PER_WEEK` (2) press pitches a week into the queue (agent `bernays`, kind
+`pitch`, workflow `press-pitch`). Free, no model call, nothing sends. Each pitch goes to one of the
+outlets due next in `PRESS_OUTLETS` (the press list of the 2026-10-08 research draft, less Bank
+Director and Independent Banker, which take contributed content only as paid placement): never
+pitched first in list order, then the longest since a pitch, none again within 7 weeks.
+
+Each pitch carries one finding: in one state, the median of one of the month's theme fees
+(`../content/calendar.ts`) at banks and at credit unions. Rows are the fee-stats contract's
+(sourced, one value per institution, overdraft at its highest tier, $0 counts; unknown charters
+count as neither). An institution counts only when every row behind its value passes
+`checkFeeAgainstSource` (via `failingEnds` in `../content/end-check.ts`); each median needs
+`MIN_INSTITUTIONS_FOR_MEDIAN` verified institutions, else the next finding is tried. A finding is
+not reused within 8 weeks, and the week's two pitches use different findings. Every number in the
+pitch must be one of the finding's facts (`unbackedNumbers`), and `pitchStyleProblems` holds back a
+pitch that does not open with "Fee Insight publishes the Bank Fee Index", uses the first person,
+advises a fee change, judges ("cheapest", "worst") or offers a free report. Under the pitch,
+James's notes give the outlet's route and link (from the research draft: confirm before sending)
+and the method; the institution ids behind each median are in the draft's facts. The queue
+subject is `<outlet>|<fee>:<state>`, so a pitch James skips with a reason keeps both that outlet
+and that finding out of BERNAYS's drafts while the lesson stands. A dry run picks the outlets and
+findings and writes nothing.
 
 ### Queue intake (`intake.ts`)
 
@@ -155,8 +192,8 @@ row: `reported_by` growth, `about_stage` marketing, `about_strategy` the item's 
 marks it `restored`. `recentLessons(db, agent)` returns the standing ones (90 days, newest 10):
 the weekly content steps read MURROW's before drafting, leave each skipped subject (a fee and
 metro, or a metro) out of that workflow's drafts while its lesson stands (`skippedSubjects`), and
-list them in their step result, and a
-scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
+list them in their step result; BERNAYS's press step reads its own the same way (a skipped
+outlet and finding stay out); and a scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
 
 These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
 (`hamilton:content:<day>`, `hamilton:marketing:<month>`, `hamilton:marketing-send:<month>`) and
@@ -222,7 +259,8 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `pr_url` and `score` / `scored_at` (migration `20270110000025`). Scheduled sessions file into
   it through the intake route above.
 - Prospect contacts go to `prospect_contacts` and `prospect_contact_checks` (migration
-  `20270110000028`).
+  `20270110000028`); their stored confidence and primary/backup pick are columns on
+  `prospect_contacts` (migration `20270110000031`).
 - Snapshot page events go to `snapshot_events`, and outreach outcomes to `outreach_outcomes`
   (migration `20270110000029`).
 - No other tables for marketing results.
