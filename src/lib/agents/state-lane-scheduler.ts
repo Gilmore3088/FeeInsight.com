@@ -408,6 +408,25 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            )
            AND inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS})
       ) OR EXISTS (
+        -- A live fee a Hamilton check flagged since the bank's last fetch, so the page is
+        -- fetched again before the 12-hour second look. Matches Magellan's backlog fetch.
+        SELECT 1
+          FROM pipeline_feedback pending
+          JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
+          JOIN institution_sources inst ON inst.id = pending.institution_id
+          LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+         WHERE pending.kind = 'takedown_pending'
+           AND pending_fee.rolled_back_at IS NULL
+           AND upper(btrim(inst.state_code)) = ${stateCode}
+           AND COALESCE(inst.status, 'active') = 'active'
+           AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+           AND (
+             profile.canonical_source_url IS NOT NULL
+             OR NULLIF(btrim(inst.fee_schedule_url), '') IS NOT NULL
+           )
+           AND (pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+      ) OR EXISTS (
         -- Raw rows Darwin has not decided under the current rules (the rows its
         -- verify step selects), so a large extraction drains hourly, not next month.
         SELECT 1
@@ -576,6 +595,37 @@ export async function wakeLanesWithUncheckedLiveFees(): Promise<number> {
     return woken.count;
   } catch (error) {
     console.error("wakeLanesWithUncheckedLiveFees failed:", error);
+    return 0;
+  }
+}
+
+/**
+ * A Hamilton check that flags a live fee takes it down on a second look 12 hours later.
+ * Wake sleeping lanes whose state has a bank with such a flag since its last fetch, so the
+ * hourly backlog pass fetches the page again before that look (Magellan's backlog fetch).
+ */
+export async function wakeLanesWithPendingSecondLooks(): Promise<number> {
+  try {
+    const woken = await sql`
+      UPDATE public.agent_state_lanes lane
+         SET next_run_after = NOW(),
+             updated_at = NOW()
+       WHERE lane.next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+         AND EXISTS (
+           SELECT 1
+             FROM pipeline_feedback pending
+             JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
+             JOIN institution_sources inst ON inst.id = pending.institution_id
+            WHERE pending.kind = 'takedown_pending'
+              AND pending_fee.rolled_back_at IS NULL
+              AND COALESCE(inst.status, 'active') = 'active'
+              AND upper(btrim(inst.state_code)) = lane.state_code
+              AND (pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+         )
+    `;
+    return woken.count;
+  } catch (error) {
+    console.error("wakeLanesWithPendingSecondLooks failed:", error);
     return 0;
   }
 }
@@ -1079,6 +1129,7 @@ export async function scheduleDueStateLaneRuns({
   if (shouldRunNationwideLaneSync(now)) {
     await syncStateLaneProfiles(sql);
     await wakeLanesWithUncheckedLiveFees();
+    await wakeLanesWithPendingSecondLooks();
     await refreshLanePriorities();
   }
   // Every tick: a fixed break should rerun its failed lanes within minutes, not an hour.
