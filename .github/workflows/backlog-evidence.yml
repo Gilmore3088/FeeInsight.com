@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   evidence:
-    if: github.event.pull_request.number == 987
+    if: github.ref == 'refs/heads/chore/984-backlog-control'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
