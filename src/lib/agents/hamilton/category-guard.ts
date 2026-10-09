@@ -4,10 +4,15 @@ import {
   CATEGORY_GUARD_VERSION,
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
+  refileCategory,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
+import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
+import { passesDarwinChecks } from "@/lib/agents/knox/layout";
+import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/taxonomy-fold";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
@@ -60,6 +65,8 @@ export interface RunHamiltonCategoryGuardResult {
   awaitingSecondLook: number;
   /** Earlier category-guard takedowns today's guard passes, put back live. */
   restoredFees: number;
+  /** Of those, the ones put back under the top-50 type a fold split gives them (`SPLIT_CATEGORIES`). */
+  refiledFees: number;
   limit: number;
   dryRun: boolean;
   rollbackBatchId: string;
@@ -224,7 +231,7 @@ export async function runHamiltonCategoryGuard(
 
   let rolledBackFees = 0;
   let rejectedVerifiedFees = 0;
-  const restoredFees = await restorePassingTakedowns(db, { dryRun, institutionId: options.institutionId });
+  const restore = await restorePassingTakedowns(db, { dryRun, institutionId: options.institutionId, runId: options.runId });
   if (!dryRun) {
     const toRollBack = confirmed.slice(0, limit);
     for (let start = 0; start < toRollBack.length; start += WRITE_CHUNK) {
@@ -241,7 +248,8 @@ export async function runHamiltonCategoryGuard(
     rejectedVerifiedFees,
     flaggedFees: look.flagged,
     awaitingSecondLook: look.waiting,
-    restoredFees,
+    restoredFees: restore.restored,
+    refiledFees: restore.refiled,
     limit,
     dryRun,
     rollbackBatchId,
@@ -255,6 +263,8 @@ export async function runHamiltonCategoryGuard(
 interface TakenDownRow {
   fee_published_id: number | string;
   lineage_ref: number | string;
+  institution_id: number | string;
+  source_document_id: number | string | null;
   canonical_fee_key: string;
   fee_name: string;
   amount: number | string | null;
@@ -262,16 +272,61 @@ interface TakenDownRow {
   document_nsf_amount: number | string | null;
 }
 
+interface Restore {
+  row: TakenDownRow;
+  /** The category it comes back under: its own, or the one a fold split gives it. */
+  to: string;
+}
+
+/**
+ * Where an earlier takedown comes back, or null when it stays down. Today's guard passing it
+ * under its own category brings it back there. A fee the guard took down because its name
+ * belongs to another top-50 type comes back under that type when a fold split names it
+ * (`splitLiveCategory`) and that type's guard and price range accept it: on Oct 9 guard v57's
+ * catch-up took down six "ATM Adjustment" fees ($2 to $6) as non-network ATM fees minutes
+ * before fold v14 would have moved them to account research. A guard re-file rule
+ * (`refileCategory`) places it the same way. Pure.
+ */
+export function restoreTarget(row: Pick<TakenDownRow, "canonical_fee_key" | "fee_name" | "amount" | "conditions" | "document_nsf_amount">): string | null {
+  if (checkFeeCategory(row.canonical_fee_key, row.fee_name, row).ok) return row.canonical_fee_key;
+  // Or the guard's own re-file rule names it: express card replacements kept coming back as
+  // card_replacement and going down again (235, 12213, 29782, Oct 6-9); rush_card is their home.
+  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? restoreRefile(row.canonical_fee_key, row.fee_name);
+  // A retired key is no home: Hamilton never publishes it.
+  if (!to || to === row.canonical_fee_key || isRetiredCategory(to)) return null;
+  const amount = normalizedAmount(row.amount) ?? 0;
+  return checkFeeCategory(to, row.fee_name, row).ok && passesDarwinChecks(to, row.fee_name, amount) ? to : null;
+}
+
+/**
+ * The guard re-file rules a takedown may come back under. Each one needs its own dry read and
+ * 10-row spot check first: on Oct 9 all re-file rules would have brought back 66 fees, some
+ * with sentence names, but only card_replacement -> rush_card was checked (12/12 on source).
+ */
+const RESTORE_REFILES: ReadonlySet<string> = new Set(["card_replacement>rush_card"]);
+
+function restoreRefile(canonicalFeeKey: string, feeName: string): string | null {
+  const to = refileCategory(canonicalFeeKey, feeName);
+  return to && RESTORE_REFILES.has(`${canonicalFeeKey}>${to}`) ? to : null;
+}
+
 /**
  * A guard fix (a new CATEGORY_GUARD_VERSION) can make an earlier takedown wrong. Fees the
  * guard took down that today's guard passes come back live, with their verified row, unless
- * an identical fee is already live. Bounded per run; a failed read restores nothing.
+ * an identical fee is already live. One whose fold split places it comes back re-filed there,
+ * published and verified rows alike, and the move is logged to pipeline_feedback as a fold.
+ * Bounded per run; a failed read restores nothing.
  */
-async function restorePassingTakedowns(db: SqlTag, options: { dryRun: boolean; institutionId?: number }): Promise<number> {
+async function restorePassingTakedowns(
+  db: SqlTag,
+  options: { dryRun: boolean; institutionId?: number; runId: number },
+): Promise<{ restored: number; refiled: number }> {
+  const none = { restored: 0, refiled: 0 };
   let rows: TakenDownRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope<TakenDownRow[]>`
-      SELECT fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions, ${documentNsfAmount(scope)}
+      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key,
+             fp.fee_name, fp.amount, fr.conditions, ${documentNsfAmount(scope)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -283,47 +338,94 @@ async function restorePassingTakedowns(db: SqlTag, options: { dryRun: boolean; i
     `);
   } catch (error) {
     console.error("category guard restore read failed:", error);
-    return 0;
+    return none;
   }
-  const passing = rows
-    .filter((row) => checkFeeCategory(row.canonical_fee_key, row.fee_name, row).ok)
-    .slice(0, CATEGORY_GUARD_RESTORE_LIMIT);
-  if (options.dryRun || passing.length === 0) return passing.length;
+  const passing: Restore[] = [];
+  // One re-filed fee per institution, type and price: two copies of one schedule's express card
+  // line (350 and 27687 at institution 6042) are one fee.
+  const refiledSeen = new Set<string>();
+  for (const row of rows) {
+    const to = restoreTarget(row);
+    if (!to) continue;
+    if (to !== row.canonical_fee_key) {
+      const key = `${row.institution_id}|${to}|${normalizedAmount(row.amount)}`;
+      if (refiledSeen.has(key)) continue;
+      refiledSeen.add(key);
+    }
+    passing.push({ row, to });
+    if (passing.length >= CATEGORY_GUARD_RESTORE_LIMIT) break;
+  }
+  const refiling = passing.filter((restore) => restore.to !== restore.row.canonical_fee_key);
+  if (options.dryRun || passing.length === 0) return { restored: passing.length, refiled: refiling.length };
   try {
     return await inSavepoint(db, async (scope) => {
-      const restored = await scope<{ lineage_ref: number | string }[]>`
+      const restored = await scope<{ fee_published_id: number | string; lineage_ref: number | string; canonical_fee_key: string }[]>`
         UPDATE published_fee_records fp
            SET rolled_back_at = NULL,
                rolled_back_by_batch_id = NULL,
-               rolled_back_reason = NULL
-         WHERE fp.fee_published_id = ANY(${passing.map((row) => Number(row.fee_published_id))}::bigint[])
+               rolled_back_reason = NULL,
+               canonical_fee_key = v.to_key
+          FROM unnest(${passing.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
+                      ${passing.map((restore) => restore.to)}::text[]) AS v(fee_published_id, to_key)
+         WHERE fp.fee_published_id = v.fee_published_id
            AND fp.rolled_back_reason LIKE 'category_guard:%'
            AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live
               WHERE live.rolled_back_at IS NULL
                 AND live.institution_id = fp.institution_id
-                AND live.canonical_fee_key = fp.canonical_fee_key
+                AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount
-                AND live.fee_name = fp.fee_name
+                -- Re-filed, any same-priced fee of that type is the same fee under another
+                -- name: 235's twin 100126 is already live as rush_card.
+                AND (live.fee_name = fp.fee_name OR v.to_key <> fp.canonical_fee_key)
            )
-        RETURNING fp.lineage_ref
+        RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;
-      if (restored.length > 0) {
-        await scope`
-          UPDATE verified_fee_observations
-             SET review_status = 'verified',
-                 outlier_flags = COALESCE((
-                   SELECT jsonb_agg(flag) FROM jsonb_array_elements(outlier_flags) flag
-                    WHERE flag #>> '{}' NOT LIKE 'category_guard:%'
-                 ), '[]'::jsonb)
-           WHERE fee_verified_id = ANY(${restored.map((row) => Number(row.lineage_ref))}::bigint[])
-             AND review_status = 'rejected'
-        `;
-      }
-      return restored.length;
+      if (restored.length === 0) return none;
+      await scope`
+        UPDATE verified_fee_observations fv
+           SET review_status = 'verified',
+               canonical_fee_key = v.to_key,
+               outlier_flags = COALESCE((
+                 SELECT jsonb_agg(flag) FROM jsonb_array_elements(fv.outlier_flags) flag
+                  WHERE flag #>> '{}' NOT LIKE 'category_guard:%'
+               ), '[]'::jsonb)
+          FROM unnest(${restored.map((row) => Number(row.lineage_ref))}::bigint[],
+                      ${restored.map((row) => row.canonical_fee_key)}::text[]) AS v(fee_verified_id, to_key)
+         WHERE fv.fee_verified_id = v.fee_verified_id
+           AND fv.review_status = 'rejected'
+      `;
+      const back = new Set(restored.map((row) => Number(row.fee_published_id)));
+      const moved = refiling.filter((restore) => back.has(Number(restore.row.fee_published_id)));
+      if (moved.length > 0) await recordFeedback(scope, moved.map((restore) => refileFeedback(restore, options.runId)));
+      return { restored: restored.length, refiled: moved.length };
     });
   } catch (error) {
     console.error("category guard restore failed:", error);
-    return 0;
+    return none;
   }
+}
+
+/** The fold's own lesson row for a takedown brought back under its split type. */
+function refileFeedback({ row, to }: Restore, runId: number): FeedbackRow {
+  const rule = `${row.canonical_fee_key}#${splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to === to ? "split" : "refile"}`;
+  return {
+    aboutStage: "publish",
+    aboutStrategy: TAXONOMY_FOLD_CHECK,
+    aboutVersion: FOLD_RULES_VERSION,
+    signal: "right",
+    kind: TAXONOMY_FOLD_KIND,
+    reportedBy: "hamilton",
+    checkName: TAXONOMY_FOLD_CHECK,
+    institutionId: Number(row.institution_id),
+    sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+    feeVerifiedId: Number(row.lineage_ref),
+    feePublishedId: Number(row.fee_published_id),
+    canonicalFeeKey: to,
+    amount: normalizedAmount(row.amount),
+    weight: 0,
+    evidence: { from: row.canonical_fee_key, to, rule, fee_name: row.fee_name, restored_from: "category_guard" },
+    runId,
+    dedupeKey: `${TAXONOMY_FOLD_CHECK}:ver:${Number(row.lineage_ref)}`,
+  };
 }

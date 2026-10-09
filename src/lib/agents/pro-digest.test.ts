@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   withConfirmedMovements: vi.fn(),
   sendResendEmail: vi.fn(),
   getTransactionalFromAddress: vi.fn(() => "digest@feeinsight.com"),
+  loadWireDigestInputs: vi.fn(),
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
@@ -13,6 +14,8 @@ vi.mock("./fee-movement-check", async () => {
   const actual = await vi.importActual<typeof import("./fee-movement-check")>("./fee-movement-check");
   return { ...actual, withConfirmedMovements: mocks.withConfirmedMovements };
 });
+// The Wire section's reads have their own tests; here they return one week's fixture.
+vi.mock("@/lib/data-store/wire-digest", () => ({ loadWireDigestInputs: mocks.loadWireDigestInputs }));
 vi.mock("@/lib/email/resend", async () => {
   const actual = await vi.importActual<typeof import("@/lib/email/resend")>("@/lib/email/resend");
   return {
@@ -176,11 +179,16 @@ describe("buildProDigestEmail", () => {
 describe("runProDigest", () => {
   const now = new Date("2026-10-12T13:11:00Z");
 
-  function install({ readers = [readerRow()], snapshot = null as unknown }: { readers?: DigestReaderRow[]; snapshot?: unknown } = {}) {
+  function install({
+    readers = [readerRow()],
+    snapshot = null as unknown,
+    watchedStates = [] as { user_id: number; state_code: string }[],
+  }: { readers?: DigestReaderRow[]; snapshot?: unknown; watchedStates?: { user_id: number; state_code: string }[] } = {}) {
     mocks.sql.mockImplementation((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       const result = (rows: unknown[]) => Object.assign(Promise.resolve(rows), {});
       if (text.includes("FROM users u")) return result(readers);
+      if (text.includes("FROM reg_wire_watched_states")) return result(watchedStates);
       if (text.includes("FROM hamilton_signals s")) {
         return result([signal(5, "Lone Star CU", "TX", 11, "2026-10-08T00:00:00Z", [od(30, 33)])]);
       }
@@ -208,6 +216,18 @@ describe("runProDigest", () => {
     mocks.getTransactionalFromAddress.mockReturnValue("digest@feeinsight.com");
     mocks.withConfirmedMovements.mockReset();
     mocks.withConfirmedMovements.mockImplementation(async (rows: unknown[]) => rows);
+    mocks.loadWireDigestInputs.mockReset();
+    mocks.loadWireDigestInputs.mockResolvedValue({
+      stateItems: [
+        {
+          kind: "bill", date: "2026-10-09", state_code: "TX", identifier: "HB 3", title: "Overdraft fee limits",
+          stage: "introduced", stage_on: "2026-10-09", introduced_on: "2026-10-09", url: "https://openstates.example/hb3",
+        },
+      ],
+      federal: [],
+      notes: new Map(),
+      failed: [],
+    });
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -251,6 +271,25 @@ describe("runProDigest", () => {
     );
     const result = await runProDigest({ now, dryRun: true });
     expect(result).toMatchObject({ withNews: 0, quiet: 1 });
+  });
+
+  it("adds a Regulatory Wire section for watched states to a digest that already goes out", async () => {
+    install({ watchedStates: [{ user_id: 20, state_code: "TX" }] });
+    const result = await runProDigest({ now, dryRun: true });
+    expect(mocks.loadWireDigestInputs).toHaveBeenCalledWith(["TX"], now);
+    expect(result.previews[0].text).toContain("Regulatory Wire: Oct 5, 2026 to Oct 12, 2026");
+    expect(result.previews[0].text).toContain("Legislation · Oct 9, 2026 · HB 3: Overdraft fee limits [Overdraft & NSF]");
+  });
+
+  it("never makes an email from the Wire section alone, and sends nothing while switched off", async () => {
+    install({
+      readers: [readerRow({ own_state_code: "VT", own_fed_district: 1, watched_ids: [] })],
+      watchedStates: [{ user_id: 20, state_code: "TX" }],
+    });
+    const result = await runProDigest({ now });
+    expect(result).toMatchObject({ withNews: 0, quiet: 1, sent: 0, held: true });
+    expect(mocks.loadWireDigestInputs).not.toHaveBeenCalled();
+    expect(mocks.sendResendEmail).not.toHaveBeenCalled();
   });
 
   it("opens a reader's first digest with where their institution stands", async () => {

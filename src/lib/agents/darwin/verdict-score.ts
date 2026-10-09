@@ -26,6 +26,14 @@ export const DARWIN_VERDICT_SCORE_STRATEGY = { strategy: "verify.verdict_score",
 export const SCORE_CHUNK = 20;
 export const REVIEW_MISS_KIND = "review_wrong";
 export const REVIEW_MISS_CHECK = "darwin.verdict_score";
+/**
+ * The answer-key set whose misses never become lessons. A `holdout` key was never used while
+ * writing rules, and a review that read its own holdout misses before the next call would score
+ * on fees it had already been corrected on, so the holdout hit rate would overstate how the
+ * review does on fees it has not seen. Holdout misses are still recorded (weight 0,
+ * `lesson: false`) so the measurement keeps every miss; only `loadReviewMisses` skips them.
+ */
+export const HOLDOUT_SET = "holdout";
 /** Attempts read per run while looking for verdicts at keyed institutions. */
 const SCAN_LIMIT = 5_000;
 const MISSES_PER_KEY = 3;
@@ -348,7 +356,13 @@ async function recordChunk(
       unclear: chunk.unclear,
       hit_rate: decided > 0 ? Math.round((chunk.right / decided) * 1000) / 1000 : null,
       knox_right: chunk.knoxRight,
-      holdout: { right: chunk.holdoutRight, wrong: chunk.holdoutWrong },
+      holdout: {
+        right: chunk.holdoutRight,
+        wrong: chunk.holdoutWrong,
+        hit_rate: chunk.holdoutRight + chunk.holdoutWrong > 0
+          ? Math.round((chunk.holdoutRight / (chunk.holdoutRight + chunk.holdoutWrong)) * 1000) / 1000
+          : null,
+      },
       misses: chunk.misses.map(({ verdict, scored, set }) => ({
         attempt_id: verdict.attemptId,
         fee_raw_id: verdict.feeRawId,
@@ -363,10 +377,13 @@ async function recordChunk(
   });
 }
 
-async function recordMisses(db: SqlTag, runId: number, chunk: ChunkScore): Promise<number> {
-  if (chunk.misses.length === 0) return 0;
-  if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return 0;
-  const rows: FeedbackRow[] = chunk.misses.map(({ verdict, scored, set }) => ({
+/**
+ * Pure: the learning-store rows for a chunk's misses. A tuning miss is a lesson (weight 1);
+ * a holdout miss is kept for the record at weight 0 with `lesson: false`, and
+ * `loadReviewMisses` never reads it back into a prompt.
+ */
+export function missRows(chunk: ChunkScore, runId: number): FeedbackRow[] {
+  return chunk.misses.map(({ verdict, scored, set }) => ({
     aboutStage: "verify",
     aboutStrategy: verdict.strategy,
     aboutVersion: verdict.version,
@@ -380,17 +397,24 @@ async function recordMisses(db: SqlTag, runId: number, chunk: ChunkScore): Promi
     feeRawId: verdict.feeRawId,
     canonicalFeeKey: verdict.knoxKey,
     amount: verdict.amount,
+    weight: set === HOLDOUT_SET ? 0 : 1,
     evidence: {
       fee_name: verdict.feeName.slice(0, 160),
       said: verdict.claim.isFee ? verdict.claim.category ?? "none fits" : "not a fee",
       key_says: scored.keySays,
       key_line: scored.keyLine,
       answer_key_set: set,
+      lesson: set !== HOLDOUT_SET,
     },
     runId,
     dedupeKey: `${REVIEW_MISS_CHECK}:attempt:${verdict.attemptId}`,
   }));
-  return recordFeedback(db, rows);
+}
+
+async function recordMisses(db: SqlTag, runId: number, chunk: ChunkScore): Promise<number> {
+  if (chunk.misses.length === 0) return 0;
+  if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return 0;
+  return recordFeedback(db, missRows(chunk, runId));
 }
 
 /** A past miss of a Darwin review, in the words its prompt uses. */
@@ -405,7 +429,8 @@ export interface ReviewMiss {
 
 /**
  * The most recent misses of one review on fees filed in these categories, newest first,
- * at most MISSES_PER_KEY per category. Empty when the store is missing or unreadable.
+ * at most MISSES_PER_KEY per category. Holdout-key misses are never read: they are the
+ * measurement, not the lesson (`HOLDOUT_SET`). Empty when the store is missing or unreadable.
  */
 export async function loadReviewMisses(db: SqlTag, review: ScoredReview, keys: string[]): Promise<ReviewMiss[]> {
   const unique = [...new Set(keys.filter(Boolean))];
@@ -426,6 +451,7 @@ export async function loadReviewMisses(db: SqlTag, review: ScoredReview, keys: s
              AND pf.check_name = ${REVIEW_MISS_CHECK}
              AND pf.about_strategy = ${review}
              AND pf.canonical_fee_key = ANY(${unique}::text[])
+             AND COALESCE(pf.evidence->>'answer_key_set', 'tuning') <> ${HOLDOUT_SET}
         ) ranked
        WHERE rank <= ${MISSES_PER_KEY}::int
     `);

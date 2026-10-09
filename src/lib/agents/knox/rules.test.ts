@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
-import { withoutBusinessOnlyFees } from "./rules";
+import { withBoxSizeCellsSplit, withoutBusinessOnlyFees } from "./rules";
 import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -1127,5 +1127,32 @@ describe("v62: business-only footnotes and former-fee columns", () => {
 
   it("names a wire by its price's noun only when the name says which way it goes", () => {
     expect(read("Domestic | $20.00 per wire")).toEqual([]);
+  });
+});
+
+describe("glued safe deposit box sizes (v63)", () => {
+  // Doc 20570 (inst 8414): the box table's rows sit in the next column of the fee table.
+  const text = [
+    "Safe Deposit Box Annual Rental",
+    "03 x 05….....$30",
+    "Return Item Fee | 03 x 10….....$45",
+    "Checks deposited drawn on your",
+    "$28 per item",
+    "account at another financial | 05 x 10….....$65",
+  ].join("\n");
+
+  it("starts a box size cell on its own line", () => {
+    expect(withBoxSizeCellsSplit(text)).toContain("Return Item Fee\n03 x 10….....$45");
+    expect(withBoxSizeCellsSplit("Stop Payment | $30.00")).toBe("Stop Payment | $30.00");
+    // A size with no price after it is a description, not the box table.
+    expect(withBoxSizeCellsSplit("Box | 3 x 5 small")).toBe("Box | 3 x 5 small");
+    // The box table's own heading keeps its sizes on its line.
+    expect(withBoxSizeCellsSplit("Safe Deposit Box Rental | 3 x 5 - $20.00 3 x 10 - $35.00")).toBe("Safe Deposit Box Rental | 3 x 5 - $20.00 3 x 10 - $35.00");
+  });
+
+  it("reads the box rent as a box rent, never as the return item fee (73956)", () => {
+    const found = runFreeSpecialists(text).candidates.map((fee) => [fee.amount, fee.canonicalHint]);
+    expect(found).not.toContainEqual([45, "nsf"]);
+    expect(found).toContainEqual([45, "safe_deposit_box"]);
   });
 });

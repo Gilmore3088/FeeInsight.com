@@ -1,6 +1,7 @@
 import {
   extractCandidatesFromText,
   MAX_FEES_PER_DOCUMENT,
+  withBoxSizeCellsSplit,
   withoutBusinessOnlyFees,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
@@ -58,7 +59,7 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v62: a dot-leader line's name wrapped over lines above it is read whole (`joinWrappedLeaderNames`),
 // "Domestic Outgoing (client only) .... $25.00 per wire" is a wire, and one line read by two
 // specialists is one fee (Northern Trust).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 62 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 63 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -147,7 +148,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
   // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
-  const text = withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText));
+  // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
+  const text = withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText)));
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },

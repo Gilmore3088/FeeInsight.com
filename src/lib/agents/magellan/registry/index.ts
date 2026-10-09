@@ -35,11 +35,14 @@ import { STATE_ENFORCEMENT_PARTITION, STATE_ENFORCEMENT_SOURCE, runRegistryState
 import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRegulators } from "./state-regulators";
 import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNews } from "./state-reg-news";
 import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
+import { WIRE_RESEARCH_PARTITION, WIRE_RESEARCH_SOURCE, WIRE_RESEARCH_STEP_KEY, runRegistryWireResearch } from "./wire-research";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
  * published regulator data. Each source is one step key (`registry-<source>`)
- * that processes exactly one partition per step.
+ * that processes exactly one partition per step. One exception calls a model:
+ * `registry-wire-research` (the Regulatory Wire's research notes) is a provider step,
+ * listed in PROVIDER_STEP_KEYS and off until REG_WIRE_SUMMARIES_LIVE=true.
  */
 
 export const REGISTRY_STEP_PREFIX = "registry-";
@@ -570,6 +573,46 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       return {
         summary: `Magellan read ${n(read.length)} state banking departments and found ${n(orders)} orders against banks, ${n(matched)} matched to a bank${dry(r.dryRun)}.${unread.length > 0 ? ` No page read for ${unread.join(", ")}.` : ""}`,
         detail: { by_state: r.byState, upserted: r.upserted },
+      };
+    },
+  },
+  {
+    source: WIRE_RESEARCH_SOURCE,
+    stepKey: WIRE_RESEARCH_STEP_KEY,
+    title: "Write research notes for the Regulatory Wire",
+    fixedPartition: WIRE_RESEARCH_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryWireResearch({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      if (r.schemaMissing) {
+        return {
+          summary: "Skipped Regulatory Wire research notes: the reg_wire_research table is not in the database yet.",
+          detail: { schema_missing: true, shadow: r.shadow },
+          skipped: true,
+        };
+      }
+      const usd = (r.costMicrousd / 1_000_000).toFixed(4);
+      const would = r.items.filter((i) => i.outcome === "would_summarise").length;
+      const notReached = r.items.filter((i) => i.outcome === "not_reached").length;
+      const stopped = r.budgetStopped ? ` A budget cap or the provider stop ended the step: ${r.budgetReason}.` : "";
+      return {
+        summary: r.shadow || r.dryRun
+          ? `Magellan picked ${r.selected} wire items without a research note and could read ${would} of them; ${r.unreadable} unreadable (${r.shadow ? "shadow mode: no model call, nothing stored" : "dry run"}).`
+          : `Magellan wrote ${r.written} Regulatory Wire research notes with ${r.model} from ${r.selected} items: ${r.unreadable} unreadable, ${r.failed} failed, ${notReached} left for the next run; ${r.datesDropped} dates dropped because the source text does not state them; estimated cost $${usd}.${stopped}`,
+        detail: {
+          shadow: r.shadow,
+          model: r.model,
+          selected: r.selected,
+          would_summarise: would,
+          written: r.written,
+          unreadable: r.unreadable,
+          failed: r.failed,
+          not_reached: notReached,
+          dates_dropped: r.datesDropped,
+          budget_stopped: r.budgetStopped,
+          budget_reason: r.budgetReason,
+          cost_microusd: r.costMicrousd,
+          items: r.items,
+        },
       };
     },
   },
