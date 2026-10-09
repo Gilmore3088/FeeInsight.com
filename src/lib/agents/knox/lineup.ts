@@ -130,6 +130,13 @@ export function readableProductName(value: string | null | undefined): string | 
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
 }
 
+/**
+ * A balance needed to earn interest or a dividend is a rate tier, not a way to avoid the fee
+ * ("$25,000 minimum balance requirement to earn interest with tiers").
+ */
+export const INTEREST_TIER =
+  /\b(?:earn(?:s|ing)?\s+(?:the\s+)?(?:interest|dividends?|apy)|apy|annual percentage yield|interest\s+(?:rate|tier)s?|dividend\s+rates?|rate\s+tiers?)\b/i;
+
 /** A waiver says how to avoid the fee: a balance, deposit, age, activity or relationship. */
 const WAIVER_CONDITION =
   /\b(?:balance|deposits?|e-?statements?|paperless|ages?|years?|younger|older|students?|seniors?|minors?|members?|transactions?|purchases?|debit card|enroll(?:ed|ment)?|relationship|min(?:imum)?|average|combined|direct)\b|\$\s?\d/i;
@@ -143,7 +150,7 @@ export function readableWaiver(value: string | null | undefined): string | null 
   const text = squash(value.replace(/\s*\.{3,}.*$/, "")).replace(/[\s.;,)]+$/, "");
   // The fee's own amount is not a condition ("waive the $10 monthly fee").
   const conditions = text.replace(/\$\s?\d[\d,.]*\s+(?:monthly\s+)?(?:fee|charge|service)/gi, "");
-  return text.length >= 8 && WAIVER_CONDITION.test(conditions) ? text : null;
+  return text.length >= 8 && WAIVER_CONDITION.test(conditions) && !INTEREST_TIER.test(text) ? text : null;
 }
 
 /** "Freedom Checking Monthly Fee" -> "Freedom Checking";"Service charge (Checking + Interest Account)" -> the parenthetical. */
@@ -224,6 +231,7 @@ function figureOf(match: RegExpMatchArray | null): number | null {
 
 /** The balance that avoids the fee, stated in one line: the fee's own condition or an "avoid" sentence. */
 export function minBalanceFromExcerpt(line: string): number | null {
+  if (INTEREST_TIER.test(line)) return null;
   const clause = line.match(BALANCE_BELOW_CLAUSE)?.[0];
   if (clause) {
     const figure = [...clause.matchAll(AMOUNT_PATTERN)].at(-1)?.[1];
@@ -267,7 +275,10 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
   text: string,
 ): T {
   if (candidate.canonicalHint !== LINEUP_CATEGORY) return candidate;
-  const current: AccountLineup = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
+  const read = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
+  // A model-read waiver that is a rate tier carries the tier's balance with it; neither is the fee's.
+  const current: AccountLineup =
+    read.waiverText && INTEREST_TIER.test(read.waiverText) ? { ...read, minBalanceToAvoid: null, waiverText: null } : read;
   const block = accountBlock(text, candidate.excerpt);
   const own = [candidate.excerpt, ...(block ? [block.feeLine] : [])];
   const aboutTheFee = (block?.nearby ?? []).filter((line) => FEE_WORD.test(line));
@@ -284,6 +295,6 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
     minOpeningDeposit: current.minOpeningDeposit ?? first([...own, ...(block?.nearby ?? [])], openingDepositIn),
     waiverText: current.waiverText ?? first([...own, ...aboutTheFee], waiverFromExcerpt),
   };
-  const changed = (Object.keys(filled) as (keyof AccountLineup)[]).some((key) => filled[key] !== current[key]);
+  const changed = (Object.keys(filled) as (keyof AccountLineup)[]).some((key) => filled[key] !== read[key]);
   return changed ? { ...candidate, lineup: filled } : candidate;
 }
