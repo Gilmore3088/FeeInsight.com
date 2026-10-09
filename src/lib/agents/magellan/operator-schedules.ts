@@ -615,11 +615,12 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "Mac session headless browser check, 2026-10-09 07:08",
   },
   {
-    // firstmid.com resets the connection from the Mac too, so this indexed deposit disclosure is
-    // unverified; a dead link is retired by the fetch like any other.
+    // firstmid.com resets the connection from the Mac too, so this indexed disclosure is
+    // unverified. The first indexed link, /wp-content/uploads/DepositDisclosures.pdf, returned
+    // HTTP 404 to Magellan (run 3345, 2026-10-09).
     institutionId: 202,
     institutionName: "First Mid Bank & Trust, National Association",
-    url: "https://www.firstmid.com/wp-content/uploads/DepositDisclosures.pdf",
+    url: "https://www.firstmid.com/wp-content/uploads/Disclosures_Web.pdf",
     givenBy: "search index, via the Mac session, 2026-10-09 07:08",
   },
   {
