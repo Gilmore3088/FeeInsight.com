@@ -14,9 +14,10 @@ import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/ham
 import { branchNetworkMap, type NetworkCity } from "@/lib/hamilton/branch-network-map";
 import { geoContains } from "d3-geo";
 import { countyFeature } from "@/lib/geo/counties";
+import { DEFAULT_LOCAL_MARKET_CATEGORIES, resolveLocalMarketCategories, selectMarketFees } from "./local-market-request";
 
 /** The fees compared across the market, in reading order. */
-export const MARKET_FEES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network", "wire_domestic_outgoing"] as const;
+export const MARKET_FEES = DEFAULT_LOCAL_MARKET_CATEGORIES;
 
 export { isLocalMarketQuestion } from "./local-market-question";
 
@@ -28,7 +29,7 @@ export interface MarketCompetitor {
   branches: number | null;
   /** Deposits held in the market's branches, whole dollars; null for credit unions (NCUA reports none by branch). */
   deposits: number | null;
-  /** Median published amount per fee in MARKET_FEES. */
+  /** Median published amount per requested fee category. */
   fees: Record<string, number>;
 }
 
@@ -145,14 +146,14 @@ export function rankCompetitors(list: MarketCompetitor[]): MarketCompetitor[] {
     .slice(0, MAX_COMPETITORS);
 }
 
-async function ownFees(institutionId: number): Promise<Record<string, number>> {
+async function ownFees(institutionId: number, categories: readonly string[]): Promise<Record<string, number>> {
   const rows = await sql`
     SELECT fee_category, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount) AS amount
       FROM published_fee_catalog
      WHERE institution_id = ${institutionId}
        AND review_status = 'approved'
        AND amount IS NOT NULL
-       AND fee_category = ANY(${[...MARKET_FEES]})
+       AND fee_category = ANY(${[...categories]})
      GROUP BY fee_category`;
   const out: Record<string, number> = {};
   for (const r of rows) {
@@ -163,7 +164,12 @@ async function ownFees(institutionId: number): Promise<Record<string, number>> {
 }
 
 /** Null when no market can be located for the institution. */
-export async function getLocalMarketAnswer(institutionId: number): Promise<LocalMarketAnswer | null> {
+export async function getLocalMarketAnswer(
+  institutionId: number,
+  options: { categories?: readonly string[] } = {},
+): Promise<LocalMarketAnswer | null> {
+  // Validate before any read. An empty/unknown selection is not a request for default fees.
+  const categories = resolveLocalMarketCategories(options.categories);
   const [inst] = await sql`
     SELECT id, institution_name, charter_type, cert_number, city, state_code
       FROM institution_sources WHERE id = ${institutionId}`;
@@ -175,7 +181,7 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
     certNumber: charterType === "credit_union" ? null : (inst.cert_number as string | null),
     city: inst.city as string | null,
     stateCode: inst.state_code as string | null,
-    categories: [...MARKET_FEES],
+    categories: [...categories],
     limit: 60,
   });
   if (!market) return null;
@@ -185,7 +191,7 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
   const [footprint, ownBranches, fees, study] = await Promise.all([
     getMarketBranchFootprint(market.county_fips.map(String), market.sod_year).catch(() => null),
     getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null),
-    ownFees(institutionId).catch(() => ({})),
+    ownFees(institutionId, categories).catch(() => ({})),
     mainCounty ? getMarketStudyData(institutionId, mainCounty).catch(() => null) : Promise.resolve(null),
   ]);
   let drawn: Pick<LocalMarketAnswer, "map" | "colours">;
@@ -213,7 +219,7 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
         charterType: row.charter_type ? String(row.charter_type) : null,
         branches: spot?.branches ?? null,
         deposits: spot?.deposits ?? null,
-        fees: feeBy.get(id)?.fees ?? {},
+        fees: selectMarketFees(feeBy.get(id)?.fees ?? {}, categories),
       };
     }),
   );
@@ -235,12 +241,12 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
       branchesInMarket: own?.branches ?? null,
       depositsInMarket: own?.deposits ?? null,
       cities,
-      fees,
+      fees: selectMarketFees(fees, categories),
     },
     marketDeposits: footprint?.totalDeposits ?? null,
     marketBranches: footprint?.totalBranches ?? null,
     competitors,
-    categories: [...MARKET_FEES],
+    categories: [...categories],
     sources: [
       { label: "FDIC Summary of Deposits", asOf: `${market.sod_year}-06-30` },
       { label: "NCUA credit union branch file", asOf: null },
