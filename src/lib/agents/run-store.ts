@@ -723,10 +723,10 @@ async function executeAgenticStep(
         stateCode,
       });
       // Lines a re-read retired that the current text still prints the same way go back to Darwin.
+      // Not scoped to the run's lane: the paid-reader rows are few (43 on 9 Oct), and a lane
+      // reaches its own banks' rows only when that state comes round.
       const supersededRecheck = await recheckSupersededRows(tx, {
         dryRun: run.runKind === "dry_run",
-        institutionId: numericRunParam(params, ["institution_id"]),
-        stateCode,
       });
       // Held percentage fees in categories that publish rates go to Darwin as rate fees.
       const rateRecheck = await recheckHeldRates(tx, {
