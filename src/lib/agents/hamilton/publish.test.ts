@@ -805,6 +805,31 @@ describe("decidePriorFee", () => {
     expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
   });
 
+  it("reads box sizes, footnote marks and two-price tables as lines (CBB and source spot checks, 9 Oct)", () => {
+    const pair = (rowName: string, priorName: string) =>
+      separateLines({ ...row, fee_name: rowName }, live({ source_document_id: 77, fee_name: priorName }));
+    // Box sizes are lines of their own, not the same "x" line.
+    expect(pair("5 x 10", "6 x 10")).toBe(true);
+    expect(pair("3 x 5", "SAFE DEPOSIT BOX: 2.5 x 10")).toBe(true);
+    expect(pair("3x5 box", "Safe Deposit Box Fee - 3x5")).toBe(false);
+    // A cut-off sentence ("GUASFCU charges a") says nothing about which line it is.
+    expect(pair("Inactivity Fees: N/A Draft Photocopy", "GUASFCU charges a")).toBe(false);
+    const boxes = [
+      "SAFE DEPOSIT BOX BOX SIZES | FORMER FEES | NEW FEES",
+      "2.5 x 10 | $45.00 per year | $70.00 per year",
+      "5 x 10 | $150.00 per year | $110.00 per year",
+      "6 x 10 | $200.00 per year | $110.00 per year",
+    ].join("\n");
+    // "5 x 10" also sits inside "2.5 x 10"; the new-fee column follows the former one.
+    expect(linesApartOnPage(boxes, "5 x 10", "6 x 10", "110.00")).toBe(true);
+    expect(linesApartOnPage(boxes, "5 x 10", "6 x 10", "120.00")).toBe(false);
+    // A footnote mark glued to the name ("fee2") is still the name.
+    const od = "Insufficient funds fee - paid2 ........ $30.00/each\nPremium overdraft fee2……...$30.00/each";
+    expect(linesApartOnPage(od, "Premium overdraft fee", "Insufficient funds fee - paid", "30")).toBe(true);
+    // A box size never takes a following digit as its footnote ("3 x 5" is not "3 x 50").
+    expect(linesApartOnPage("3 x 50 $20.00 4 x 5 $20.00", "3 x 5", "4 x 5", "20")).toBe(false);
+  });
+
   it("keeps lines from the same document side by side", () => {
     expect(decidePriorFee(row, [live({ source_document_id: 77 })])).toEqual({ kind: "additional_line" });
   });

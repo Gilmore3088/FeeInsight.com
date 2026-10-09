@@ -380,10 +380,11 @@ async function selectVerifiedFees(
               -- A row skipped as identical before the same-line check (9 Oct) to a live line of its
               -- own document under another name is decided once more: Wildfire's $5 ATM balance
               -- inquiry (verified 8019) sat behind its $5 "ATM Adjustment" (14754). The new decision
-              -- carries same_line_check, so it is final.
+              -- carries same_line_check, so it is final. A box-size row decided by check 1 is decided
+              -- once more by check 2, which reads "3 x 5" and "2 x 10" as two lines (CBB, 9 Oct).
               AND NOT (
                 pa.outcome = 'unchanged'
-                AND pa.detail->>'same_line_check' IS NULL
+                AND ${SAME_LINE_RESELECT_SQL}
                 AND EXISTS (
                   SELECT 1 FROM published_fee_records prev
                     JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
@@ -439,7 +440,7 @@ async function selectVerifiedFees(
                  FROM pipeline_attempts sl_pa
                 WHERE sl_pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
                   AND sl_pa.outcome = 'unchanged'
-                  AND sl_pa.detail->>'same_line_check' IS NULL
+                  AND ${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
              ) AS same_line_reselect,
              COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
@@ -812,9 +813,23 @@ function stem(word: string): string {
   return word;
 }
 
+/**
+ * The same-line check's version on each publish attempt (\`detail.same_line_check\`). An identical
+ * skip decided before a version is decided again by it: every row before check 1, and box-size
+ * rows ("3 x 5") before check 2, whose names check 1 read as the same line.
+ */
+const SAME_LINE_CHECK_VERSION = 2;
+const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
+                OR (pa.detail->>'same_line_check' = '1' AND fv.fee_name ~ '\\d\\s*[xX\u00d7]\\s*\\d'))`;
+
+/** A box or size ("3 x 5", "2.5x10"): one word, so "3 x 5" and "2 x 10" are two lines (CBB, 9 Oct). */
+const BOX_SIZE = /(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)/gi;
+
 function significantWords(name: string | null | undefined): Set<string> {
   return new Set(
-    (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+    (name ?? "").toLowerCase()
+      .replace(BOX_SIZE, (_, a: string, b: string) => ` ${a.replace(".", "p")}x${b.replace(".", "p")} `)
+      .replace(/[^a-z0-9]+/g, " ").trim()
       .split(" ")
       .filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word))
       .map(stem),
@@ -825,9 +840,12 @@ function significantWords(name: string | null | undefined): Set<string> {
 const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
 const MAX_LINE_WORDS = 10;
 function unclearName(name: string | null | undefined): boolean {
-  const text = (name ?? "").trim();
-  // A name starting lower-case is the rest of a line ("per mailed statement"), not its start.
-  if (!/^[A-Z]/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  const text = (name ?? "").replace(/[\u200b\ufeff]/g, "").trim();
+  // A name starting lower-case is the rest of a line ("per mailed statement"), not its start;
+  // a box size ("3 x 5") is a line's start. A name ending on "a" or "of" is a cut-off sentence
+  // ("GUASFCU charges a", the $1 check copy line read again).
+  if (!/^(?:[A-Z]|\d+(?:\.\d+)?\s*[xX\u00d7]\s*\d)/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  if (/\b(?:a|an|of|the)$/i.test(text)) return true;
   return text.toLowerCase().split(/[^a-z]+/).filter((word) => SENTENCE_WORD.test(word)).length >= 2;
 }
 
@@ -869,6 +887,9 @@ function pageWords(text: string): string {
  * words, with no "of" between ("A nonsufficient funds (NSF) charge of $25.00" is a sentence about
  * the table line, not a second line). A name not on the current copy, or inside the other line
  * ("Inactive Checking" in "Inactive Checking3"), is a read of the same line.
+ * Every place a name is printed counts ("5 x 10" also sits inside "2.5 x 10"), a footnote mark
+ * glued to a name's last word is the name ("Premium overdraft fee2"), and the words before the
+ * price may be another column's price ("5 x 10 | $150.00 per year | $110.00 per year").
  */
 export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
   const value = amount == null ? NaN : Number(amount);
@@ -876,17 +897,28 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
   const cents = Math.round(value * 100);
   const whole = Math.floor(cents / 100);
   const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
-  const follows = new RegExp(`^ (?:(?!of )[a-z]+ ){0,6}${price} `);
+  const follows = new RegExp(`^ (?:(?!of )[a-z0-9]+ ){0,6}${price} `);
   const page = pageWords(text);
-  const place = (name: string) => {
+  const places = (name: string) => {
     const words = pageWords(name).trim();
-    const at = words ? page.indexOf(` ${words} `) : -1;
-    return at < 0 ? null : { start: at, end: at + words.length + 1 };
+    if (!words) return [];
+    const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
+    const found: Array<{ start: number; end: number }> = [];
+    const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
+    for (const match of page.matchAll(pattern)) {
+      const start = (match.index ?? 0) - 1;
+      const end = start + match[0].length + 1;
+      if (follows.test(page.slice(end))) found.push({ start, end });
+    }
+    return found;
   };
-  const a = place(rowName);
-  const b = place(priorName);
-  if (!a || !b || !(a.end <= b.start || b.end <= a.start)) return false;
-  return follows.test(page.slice(a.end)) && follows.test(page.slice(b.end));
+  const a = places(rowName);
+  const b = places(priorName);
+  return a.some((one) => b.some((two) => one.end <= two.start || two.end <= one.start));
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** The current read of a document (\`agent_source_texts\`), for the same-line check. */
@@ -1636,7 +1668,7 @@ export async function runHamiltonPublish(
           previous_fee_published_id: result.previousFeePublishedId,
           superseded_fee_published_id: result.supersededFeePublishedId,
           change_recorded: result.changeRecorded,
-          same_line_check: 1,
+          same_line_check: SAME_LINE_CHECK_VERSION,
         },
       });
     }
