@@ -1,0 +1,22 @@
+name: fee-audience-release-review
+on:
+  push:
+    branches: [fix/pinnacle-fee-audience-integrity]
+    paths: [.github/workflows/fee-audience-review.yml]
+permissions:
+  contents: read
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Package tracked source for isolated release review
+        run: git archive --format=tar HEAD > fee-audience-source.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fee-audience-source-${{ github.sha }}
+          path: fee-audience-source.tar
+          retention-days: 2
