@@ -66,6 +66,8 @@ export interface MarketReportBodyProps {
   revenue?: RevenueContext | null;
   /** Branch counts and deposits in the market counties; footprint lines are left out when null. */
   branches?: MarketBranchFootprint | null;
+  /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
+  titleAs?: "h1" | "h2";
 }
 
 /** Whole dollars -> "$2.4 billion" / "$310 million". */
@@ -145,7 +147,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, titleAs: Title = "h1" }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -161,9 +163,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
       <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{eyebrow}</p>
-          <h1 className="mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[1.85rem]" style={SERIF}>
+          <Title className="mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[1.85rem]" style={SERIF}>
             {name} against its local market
-          </h1>
+          </Title>
           <p className="mt-2 text-[14px] text-[#5A5347]">
             {marketLabel} · verified fees for {analysis.readiness.competitorsWithData} of{" "}
             {analysis.readiness.competitorsInMarket} local competitors · prepared{" "}
