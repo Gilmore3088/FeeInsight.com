@@ -43,7 +43,10 @@ import { settledFrequency } from "@/lib/fee-frequency";
 // v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
 // v53: a fax service is document reproduction, the fold's home for it (`FAX_SERVICE`).
 // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 54 } as const;
+// v55: a monthly fee's lineup is never read from a neighbour: the next account's fee line, another
+// account's clause of a one-line footnote, or a fee heading above "Money Market" (`lineup.ts`).
+// v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 56 } as const;
 
 export interface SpecialistRun {
   strategy: string;

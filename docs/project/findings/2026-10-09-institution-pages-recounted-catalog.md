@@ -15,3 +15,9 @@ check still reads coverage live.
 
 **Lesson.** A per-id cache in front of a whole-catalog aggregate does nothing under crawler traffic.
 Cache the aggregate itself and derive each id from it.
+
+**Follow-up (same day).** The first fix put the coverage cache inside the per-institution peer rank
+cache. Next bypasses an `unstable_cache` nested inside another one, so the coverage read still ran on
+every miss: 330 calls from 03:55 to 04:25 at about 750 ms. The coverage cache is now read beside the
+per-institution cache, never inside it. Any `cachedPublicRead` called from inside another cached read
+does not cache.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CONFIRMED_KIND, PENDING_KIND, planSecondLook, secondLookDedupeKey, type PendingFlag } from "./second-look";
+import { CONFIRMED_KIND, PENDING_KIND, planSecondLook, secondLookDedupeKey, secondLookEventKey, type PendingFlag } from "./second-look";
 
 const now = new Date("2026-10-07T03:00:00Z");
 const fee = (id: number) => ({ feePublishedId: id, institutionId: 7, reason: "amount_not_the_fee" });
@@ -30,5 +30,7 @@ describe("planSecondLook", () => {
 
   it("keys each check's log separately", () => {
     expect(secondLookDedupeKey("hamilton.source_check", 5)).toBe("hamilton.second_look:hamilton.source_check:pub:5");
+    expect(secondLookEventKey("hamilton.source_check", 5, "cleared", 12)).toBe("hamilton.second_look:hamilton.source_check:pub:5:cleared:12");
+    expect(secondLookEventKey("hamilton.source_check", 5, "flag", null)).toBe("hamilton.second_look:hamilton.source_check:pub:5:flag:unknown");
   });
 });
