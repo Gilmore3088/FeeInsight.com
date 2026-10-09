@@ -27,6 +27,9 @@ Magellan owns institution source discovery and source fetching.
   slash or `#fragment`, query kept; `SAME_PAGE_SUPERSEDE_LIVE`, on since 7 Oct 2026). Each fetch
   step also backfills pages already stored under two spellings (`supersedeSamePageCopies`,
   logged as `magellan.same_page_copies`); a thin copy never takes a readable copy's place.
+  A hand-found schedule that moved to a new path on the same host (same file name, bank's current
+  `OPERATOR_SCHEDULES` link) supersedes the old link's copy the same way
+  (`supersedeMovedHandFoundCopies`, logged as `magellan.moved_hand_found_copies`).
   Superseding moves no fee by itself: Hamilton's refresh moves a live fee to the current copy
   when that copy reads the same line, and nothing is taken down because a spelling changed.
 - Treat accepted source submissions as validation-ready or manual-validation-needed when automation is stopped.
