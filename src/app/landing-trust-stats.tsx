@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { COVERAGE_LABELS, type PublicStatsSummary } from "@/lib/public-stats";
 import { US_STATES } from "@/lib/us-map-paths";
+import { GLASS, H2 } from "@/components/public/site-look";
 
 interface LandingTrustStatsProps {
   summary: PublicStatsSummary;
@@ -13,7 +14,6 @@ const STATE_NAME = new Map(US_STATES.map((state) => [state.id, state.name]));
 
 const SOURCES = ["FDIC", "NCUA", "Federal Reserve", "Published fee schedules"];
 
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
 /** Same ramp as the institutions directory map, so coverage reads the same everywhere. */
 function coverageFill(verified: number, max: number): string {
@@ -36,18 +36,20 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
   const topStates = [...states]
     .filter((s) => s.verified_institution_count > 0)
     .sort((a, b) => b.verified_institution_count - a.verified_institution_count)
-    .slice(0, 3);
+    .slice(0, 5);
 
   return (
-    <section className="border-t border-warm-300 bg-warm-150/60">
-      <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center lg:gap-10">
+    <section aria-labelledby="where-we-track">
+      <div className="mx-auto max-w-page px-4 py-12 sm:px-6 sm:py-16">
+        <h2 id="where-we-track" className={H2}>
+          Where we track fees
+        </h2>
+        {/* Desktop: the map, and beside it one glass panel with the counts, the busiest states,
+            the state picker and the sources. */}
+        <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-center xl:gap-14">
           <div className="min-w-0">
-            <h2 className="text-balance text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
-              Where we track fees
-            </h2>
             {states.length > 0 && (
-              <p className="mt-1.5 text-[13px] text-warm-700">
+              <p className="text-sm text-warm-700">
                 Darker states have more institutions with published fees.{" "}
                 <span className="font-semibold text-warm-900">
                   Tap a state to see its banks and credit unions.
@@ -58,7 +60,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
               <>
                 <svg
                   viewBox="0 0 960 600"
-                  className="mt-4 h-auto w-full"
+                  className="mx-auto mt-4 h-auto w-full max-w-[920px]"
                   role="group"
                   aria-label={`Map of U.S. states shaded by institutions with published fees; ${summary.statesLabel} states covered`}
                 >
@@ -97,57 +99,27 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                   </span>
                   <span>More published</span>
                 </div>
-                {/* Every state the map links to, as a list control: the same route for keyboard
-                    and screen-reader users, and for anyone who can't pick a small state by tap. */}
-                <form action="/institutions" method="get" className="mt-3 flex items-center justify-center gap-2">
-                  <label htmlFor="landing-state-pick" className="text-[12px] text-warm-700">
-                    Or pick a state
-                  </label>
-                  <select
-                    id="landing-state-pick"
-                    name="state"
-                    defaultValue=""
-                    required
-                    className="min-h-9 rounded-md border border-warm-300 bg-white px-2 text-[13px] text-warm-900"
-                  >
-                    <option value="" disabled>
-                      Choose…
-                    </option>
-                    {[...US_STATES]
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((state) => (
-                        <option key={state.id} value={state.id}>
-                          {state.name}
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    type="submit"
-                    className="min-h-9 rounded-md bg-terra px-3 text-[13px] font-semibold text-white hover:bg-terra-dark"
-                  >
-                    View
-                  </button>
-                </form>
               </>
             )}
           </div>
 
-          <dl className="grid grid-cols-2 gap-4 lg:grid-cols-1 lg:gap-6">
+          <div className={`min-w-0 p-5 sm:p-7 ${GLASS}`}>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
             <div>
-              <dd className="text-3xl font-bold tabular-nums text-warm-900 sm:text-4xl">
+              <dd className="text-3xl font-bold [font-variant-numeric:tabular-nums] tracking-tight text-warm-900 sm:text-4xl">
                 {summary.institutionsLabel}
               </dd>
               <dt className="mt-1 text-[12px] text-warm-600">{COVERAGE_LABELS.institutions}</dt>
             </div>
             <div>
-              <dd className="text-3xl font-bold tabular-nums text-warm-900 sm:text-4xl">
+              <dd className="text-3xl font-bold [font-variant-numeric:tabular-nums] tracking-tight text-warm-900 sm:text-4xl">
                 {summary.categoriesLabel}
               </dd>
               <dt className="mt-1 text-[12px] text-warm-600">{COVERAGE_LABELS.categories}</dt>
             </div>
             {topStates.length > 0 && (
-              <div className="col-span-2 lg:col-span-1">
-                <dt className="text-[12px] text-warm-600">Most coverage</dt>
+              <div className="col-span-2">
+                <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-warm-600">Most coverage</dt>
                 <dd className="mt-1.5">
                   <ul className="space-y-1">
                     {topStates.map((s) => (
@@ -155,10 +127,10 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                         <Link
                           href={`/institutions?state=${s.state_code}`}
                           prefetch={false}
-                          className="flex items-baseline justify-between gap-3 text-[13px] text-warm-900 hover:text-terra-dark"
+                          className="flex min-h-9 items-center justify-between gap-3 text-sm text-warm-900 hover:text-terra-dark"
                         >
                           <span>{STATE_NAME.get(s.state_code) ?? s.state_code}</span>
-                          <span className="tabular-nums text-warm-600">
+                          <span className="[font-variant-numeric:tabular-nums] text-warm-600">
                             {s.verified_institution_count.toLocaleString("en-US")}
                           </span>
                         </Link>
@@ -169,6 +141,38 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
               </div>
             )}
           </dl>
+          {/* Every state the map links to, as a list control: the same route for keyboard
+              and screen-reader users, and for anyone who can't pick a small state by tap. */}
+          <form action="/institutions" method="get" className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#E8E1D6] pt-5">
+            <label htmlFor="landing-state-pick" className="w-full text-sm font-semibold text-warm-900">
+              Pick a state
+            </label>
+            <select
+              id="landing-state-pick"
+              name="state"
+              defaultValue=""
+              required
+              className="min-h-11 min-w-0 flex-1 rounded-lg border border-warm-300 bg-white px-3 text-sm text-warm-900"
+            >
+              <option value="" disabled>
+                Choose…
+              </option>
+              {[...US_STATES]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((state) => (
+                  <option key={state.id} value={state.id}>
+                    {state.name}
+                  </option>
+                ))}
+            </select>
+            <button
+              type="submit"
+              className="min-h-11 cursor-pointer rounded-lg bg-terra px-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-terra-dark"
+            >
+              View
+            </button>
+          </form>
+          </div>
         </div>
 
         {/* Provenance: sources as tags, freshness with a live dot, one methodology link. */}

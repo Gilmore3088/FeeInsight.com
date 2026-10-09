@@ -50,15 +50,15 @@ export const metadata: Metadata = {
 
 const FAMILY_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   "Overdraft & NSF": { bg: "bg-[#C44B2E]/8", text: "text-[#C44B2E]", dot: "bg-[#C44B2E]" },
-  "ATM & Card": { bg: "bg-amber-500/8", text: "text-amber-800", dot: "bg-amber-500" },
-  "Wire Transfers": { bg: "bg-violet-500/8", text: "text-violet-800", dot: "bg-violet-500" },
+  "ATM & Card": { bg: "bg-[#B8860B]/8", text: "text-[#6E4A0C]", dot: "bg-[#B8860B]" },
+  "Wire Transfers": { bg: "bg-[#7B6491]/8", text: "text-[#4E3A66]", dot: "bg-[#7B6491]" },
   "Account Fees": { bg: "bg-emerald-500/8", text: "text-emerald-800", dot: "bg-emerald-500" },
-  International: { bg: "bg-sky-500/8", text: "text-sky-800", dot: "bg-sky-500" },
+  International: { bg: "bg-[#4F8078]/8", text: "text-[#23514B]", dot: "bg-[#4F8078]" },
   "Check Services": { bg: "bg-rose-400/8", text: "text-rose-700", dot: "bg-rose-400" },
-  "Digital Banking": { bg: "bg-indigo-500/8", text: "text-indigo-800", dot: "bg-indigo-500" },
-  "Account Lifecycle": { bg: "bg-orange-500/8", text: "text-orange-800", dot: "bg-orange-500" },
-  "Branch Services": { bg: "bg-teal-500/8", text: "text-teal-800", dot: "bg-teal-500" },
-  "Benchmarking Method": { bg: "bg-slate-500/8", text: "text-slate-700", dot: "bg-slate-500" },
+  "Digital Banking": { bg: "bg-[#8C3A52]/8", text: "text-[#6E2238]", dot: "bg-[#8C3A52]" },
+  "Account Lifecycle": { bg: "bg-[#7A8A2E]/8", text: "text-[#46521A]", dot: "bg-[#7A8A2E]" },
+  "Branch Services": { bg: "bg-[#A38B57]/8", text: "text-[#5C4A24]", dot: "bg-[#A38B57]" },
+  "Benchmarking Method": { bg: "bg-[#7A6E5E]/8", text: "text-[#4A4238]", dot: "bg-[#7A6E5E]" },
 };
 
 const Arrow = () => (

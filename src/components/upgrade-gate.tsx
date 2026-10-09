@@ -2,6 +2,7 @@ import { TrackLink } from "@/components/track-link";
 import { headers } from "next/headers";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { SITE_NAME } from "@/lib/constants";
+import { CTA_PRIMARY, GLASS_SOFT } from "@/components/public/site-look";
 
 interface UpgradeGateProps {
   message?: string;
@@ -80,20 +81,17 @@ export async function UpgradeGate({
   }
 
   return (
-    <div className="bg-[#FFFDF9] border border-[#E8DFD1] rounded-xl p-6 text-center">
+    <div className={`px-6 py-8 text-center sm:px-10 ${GLASS_SOFT}`}>
       <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#FFF0ED] mb-3">
         <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           <path d="M7 11V7a5 5 0 0110 0v4" />
         </svg>
       </div>
-      <h3
-        className="text-lg font-normal text-[#1A1815] mb-1"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-      >
+      <h3 className="mb-1 text-xl font-semibold tracking-tight text-[#1A1815]">
         {message || "Unlock full access"}
       </h3>
-      <p className="text-sm text-[#6B6255] mb-4">
+      <p className="mx-auto mb-4 text-[15px] leading-relaxed text-[#3D3830]">
         {locked
           ? locked
           : audience === "consumer"
@@ -102,14 +100,14 @@ export async function UpgradeGate({
           ? `${moreCount} more fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`
           : `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`}
       </p>
-      <div className="text-[12px] text-[#6B6255] mt-2 mb-4">
+      <div className="mt-2 mb-5 text-[13px] text-[#5A5347]">
         Based on {summary.observationsLabel} published fee entries from {summary.institutionsLabel} institutions
       </div>
       <TrackLink
         event="upgrade_click"
         eventProps={eventProps}
         href={pricingHref}
-        className="inline-flex items-center gap-1.5 rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#C44B2E]/15 hover:bg-[#A93D25] hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all"
+        className={CTA_PRIMARY}
       >
         See pricing
         <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">

@@ -96,9 +96,10 @@ export function lookupHostedReport(
   return { state: isHostedReportExpired(entry, options.now) ? "expired" : "ok", report };
 }
 
-/** The free request form, prefilled for this institution; the request enters the lead loop. */
+/** The request form, opened on the paid institution report for this bank; the request enters the lead loop. */
 export function hostedReportRequestHref(report: HostedReportEntry, src: "hosted_report" | "hosted_report_expired"): string {
   const params = new URLSearchParams({
+    report: "institution",
     institution: String(report.institution_id),
     name: report.institution_name,
     src,

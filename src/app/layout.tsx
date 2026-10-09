@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { Newsreader, JetBrains_Mono } from "next/font/google";
+import { Newsreader, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SITE_URL } from "@/lib/constants";
 import { MarketingTouchRecorder } from "@/components/public/marketing-touch-recorder";
@@ -12,6 +12,18 @@ const newsreader = Newsreader({
   weight: ["300", "400", "500", "600"],
   style: ["normal", "italic"],
   variable: "--font-newsreader",
+  display: "swap",
+});
+
+/**
+ * The site's sans face (font-sans): Plus Jakarta Sans, the face James chose for /subscribe
+ * (9 Oct 2026), now on every page so header, footer and body text match it. Geist stays
+ * loaded as the fallback and for anything that names it directly.
+ */
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-jakarta",
   display: "swap",
 });
 
@@ -63,7 +75,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} ${jakarta.variable} font-sans antialiased`}>
         {children}
         {/* Records a tracked-link visit (utm_ tags) once per session; no personal data. */}
         <MarketingTouchRecorder />

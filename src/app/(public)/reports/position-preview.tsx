@@ -41,8 +41,8 @@ export function PositionPreview({ map }: { map: ReportPositionMap }) {
           const style = STATUS_STYLE[row.status];
           return (
             <li key={row.category} className="border-b border-[#F3EEE6] py-2.5 last:border-b-0">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="truncate text-[13px] text-[#1A1815]">{row.category}</span>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <span className="min-w-0 text-[13px] text-[#1A1815]">{row.category}</span>
                 <span className="shrink-0 text-[12px] tabular-nums text-[#6B6255]">
                   <b className={`font-semibold ${style.text}`}>{money(row.you)}</b>
                   <span> vs {money(row.median)} median</span>

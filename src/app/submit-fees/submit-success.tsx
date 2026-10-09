@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { REPORT_OFFER } from "@/lib/constants";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 
-const REPORT_HREF = "/for-institutions#report";
+const REPORT_HREF = "/for-institutions?report=institution#report";
 
 export function SubmitSuccessCard({
   claimFlow,
@@ -35,8 +36,8 @@ export function SubmitSuccessCard({
               Institution employees can also request their{" "}
               <Link href={REPORT_HREF} className="font-semibold text-[#C44B2E] hover:text-[#A93D25]">
                 Competitive Fee Position report
-              </Link>
-              .
+              </Link>{" "}
+              ({REPORT_OFFER.priceLabel.toLowerCase()}).
             </p>
           )}
           <div className="mt-5 flex flex-wrap items-center gap-3">

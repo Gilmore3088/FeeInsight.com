@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getArticleBySlug, incrementViewCount, getPublishedArticles } from "@/lib/data-store/articles";
 import { ensureResearchTables } from "@/lib/research/history";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_NAME } from "@/lib/constants";
+import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
 
@@ -109,14 +109,14 @@ export default async function ArticlePage({
               Work at a bank or credit union?
             </p>
             <p className="mt-1 text-[13px] text-[#6B6255]">
-              Request a free competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
+              The {REPORT_OFFER.name} ({REPORT_OFFER.priceLabel.toLowerCase()}) puts every fee your institution publishes against named competitors. National and Fed district reports are free.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Link
-                href="/for-institutions#report"
+                href="/for-institutions?report=institution#report"
                 className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#A93D25] transition-colors"
               >
-                Request your report
+                {REPORT_OFFER.institutionCtaLabel}
               </Link>
               <Link href="/institutions" className="text-[12px] font-medium text-[#A93D25] hover:underline">
                 Or look up any bank&rsquo;s fees

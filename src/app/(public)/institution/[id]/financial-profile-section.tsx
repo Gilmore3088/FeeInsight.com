@@ -6,6 +6,7 @@ import { BranchFootprintCard, ComplaintsCard, EnforcementCard, HoldingCompanyCar
 import { RegulatoryWatchSection } from "./regulatory-watch";
 import type { RegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import type { BranchFootprint, ComplaintTrend, EnforcementRecord, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
+import { GLASS_SOFT } from "@/components/public/site-look";
 
 /** Decorative silhouette for the locked state; contains no institution data. */
 function LockedPreview() {
@@ -22,7 +23,7 @@ function LockedPreview() {
       </div>
       <div className="mt-4 flex h-40 items-end gap-1.5 rounded-xl border border-[#E0D7C9] bg-white p-4">
         {bars.map((height, i) => (
-          <div key={i} className="flex-1 rounded-t bg-[#2a78d6]/40" style={{ height: `${height}%` }} />
+          <div key={i} className="flex-1 rounded-t bg-[#C44B2E]/35" style={{ height: `${height}%` }} />
         ))}
       </div>
     </div>
@@ -71,13 +72,13 @@ export function FinancialProfileSection({
   const years = points.length > 0 ? Math.max(1, Math.round(points.length / 4)) : null;
 
   return (
-    <section className="border border-[#E0D7C9] bg-[#FFFDF9] p-5">
+    <section className={`p-6 ${GLASS_SOFT}`}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
             Financial profile{!isPro && " · Pro"}
           </p>
-          <h2 className="text-lg font-semibold text-[#1A1815]">Performance from regulator filings</h2>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-[#1A1815]">Performance from regulator filings</h2>
         </div>
         {isPro && years && (
           <p className="text-sm text-[#6B6255]">

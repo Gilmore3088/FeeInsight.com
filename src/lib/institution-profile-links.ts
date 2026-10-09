@@ -55,7 +55,14 @@ export function buildPublicInstitutionProfileLinks({
   const instId = String(institutionId);
   const gate = (proHref: string) =>
     isAuthenticated ? proHref : `/subscribe?from=${encodeURIComponent(proHref)}#pro`;
-  const reportContext = new URLSearchParams({ institution: instId, name: institutionName, src: "profile" });
+  // report=institution: the profile's CTAs ask for this institution's paid report, so the form
+  // opens on it rather than relying on the name to imply it.
+  const reportContext = new URLSearchParams({
+    report: "institution",
+    institution: instId,
+    name: institutionName,
+    src: "profile",
+  });
   return {
     correctSourceHref: `/submit-fees?institution=${instId}`,
     claimHref: `/submit-fees?institution=${instId}&claim=1`,

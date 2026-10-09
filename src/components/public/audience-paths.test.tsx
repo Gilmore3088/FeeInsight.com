@@ -7,7 +7,7 @@ describe("AudiencePaths", () => {
     render(<AudiencePaths />);
     const nav = screen.getByRole("navigation", { name: "Where to start" });
     const hrefs = Array.from(nav.querySelectorAll("a")).map((a) => a.getAttribute("href"));
-    expect(hrefs).toEqual(["/guides", "/research/national-fee-index", "/for-institutions#report"]);
+    expect(hrefs).toEqual(["/guides", "/research/national-fee-index", "/for-institutions?report=institution#report"]);
   });
 
   it("does not promise API access", () => {

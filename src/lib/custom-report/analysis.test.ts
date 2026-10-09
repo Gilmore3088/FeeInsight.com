@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CustomReportMarketData, MarketFeeLine } from "@/lib/data-store/custom-report-market";
-import { analyzeMarket, buildReportCsv, diffReports, positionCounts, MIN_COMPARABLE_LINES, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
+import { analyzeMarket, buildReportCsv, diffReports, positionCounts, unavailableReason, MIN_COMPARABLE_LINES, MIN_LOCAL_PEERS_PER_LINE, NAMED_COMPETITORS, NAMED_WITHOUT_DEPOSITS, pickNamedCompetitors, quantile, type NamedCompetitor } from "./analysis";
 
 const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domestic_outgoing", "card_replacement"];
 
@@ -68,6 +68,45 @@ describe("analyzeMarket", () => {
     expect(nsf.peers?.n).toBe(7);
     expect(nsf.comparable).toBe(false);
     expect(nsf.position).toBeNull();
+  });
+});
+
+describe("unavailableReason", () => {
+  it("names the institution's missing fee when enough competitors publish the line", () => {
+    const data = market({ competitors: 20, ownKeys: KEYS.filter((k) => k !== "nsf") });
+    const nsf = analyzeMarket(data).lines.find((l) => l.key === "nsf")!;
+    expect(nsf.own).toBeNull();
+    expect(nsf.peers?.n).toBe(20);
+    expect(unavailableReason(nsf)).toBe("own_fee_missing");
+  });
+
+  it("names too few competitors when the institution's fee is on file", () => {
+    const data = market({ competitors: 20 });
+    data.lines = data.lines.filter((l) => !(l.line === "nsf" && l.institution_id >= 100 + MIN_LOCAL_PEERS_PER_LINE - 1));
+    const nsf = analyzeMarket(data).lines.find((l) => l.key === "nsf")!;
+    expect(nsf.own?.amount).toBe(20);
+    expect(nsf.peers?.n).toBe(MIN_LOCAL_PEERS_PER_LINE - 1);
+    expect(unavailableReason(nsf)).toBe("too_few_peers");
+  });
+
+  it("names both when the fee is missing and too few competitors publish it", () => {
+    const data = market({ competitors: 20, ownKeys: KEYS.filter((k) => k !== "nsf") });
+    data.lines = data.lines.filter((l) => !(l.line === "nsf" && l.institution_id >= 103));
+    const nsf = analyzeMarket(data).lines.find((l) => l.key === "nsf")!;
+    expect(unavailableReason(nsf)).toBe("own_fee_missing_and_too_few_peers");
+    const none = analyzeMarket(market({ competitors: 20 })).lines.find((l) => l.key === "monthly_maintenance")!;
+    expect(none.own).toBeNull();
+    expect(none.peers).toBeNull();
+    expect(unavailableReason(none)).toBe("own_fee_missing_and_too_few_peers");
+  });
+
+  it("is null for a compared line, at exactly the threshold", () => {
+    const data = market({ competitors: MIN_LOCAL_PEERS_PER_LINE + 10 });
+    data.lines = data.lines.filter((l) => !(l.line === "nsf" && l.institution_id >= 100 + MIN_LOCAL_PEERS_PER_LINE));
+    const nsf = analyzeMarket(data).lines.find((l) => l.key === "nsf")!;
+    expect(nsf.peers?.n).toBe(MIN_LOCAL_PEERS_PER_LINE);
+    expect(nsf.comparable).toBe(true);
+    expect(unavailableReason(nsf)).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
 import { summarizeFeesBy } from "./fee-stats";
+import { lineupAccountFromRow } from "./account-lineup";
 import { VALID_US_CODES } from "../us-states";
 import {
   classifyInstitutionQuality,
@@ -14,6 +15,7 @@ import type {
   CollectionStats,
   InstitutionSummary,
   ExtractedFee,
+  FeeAccount,
   InstitutionDetail,
 } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -90,21 +92,58 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
            ef.extraction_confidence, ef.review_status,
            ef.validation_flags, ef.fee_category, ef.fee_family,
            ef.source_url, ef.created_at,
+           ef.account_product_type, ef.min_balance_to_avoid, ef.waiver_text,
            ct.institution_name, ef.institution_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.institution_id = ${targetId}
     ORDER BY ef.fee_name
   `;
-  // Normalize numeric fields (Postgres NUMERIC/BIGINT returns strings)
-  return rows.map((r) => ({
-    ...r,
-    id: Number(r.id),
-    institution_id: Number(r.institution_id),
-    amount: r.amount !== null ? Number(r.amount) : null,
-    extraction_confidence: Number(r.extraction_confidence),
-    conditions: readerFeeConditions(r.conditions),
-  }));
+  // Normalize numeric fields (Postgres NUMERIC/BIGINT returns strings). The lineup columns
+  // are read here, before the provenance note is dropped from conditions, because an
+  // account's name and waiver can come from the fee's own schedule line in that note.
+  return rows.map((r) => {
+    const { account_product_type, min_balance_to_avoid, waiver_text, ...fee } = r as ExtractedFee & {
+      account_product_type: string | null;
+      min_balance_to_avoid: number | string | null;
+      waiver_text: string | null;
+    };
+    return {
+      ...fee,
+      id: Number(r.id),
+      institution_id: Number(r.institution_id),
+      amount: r.amount !== null ? Number(r.amount) : null,
+      extraction_confidence: Number(r.extraction_confidence),
+      conditions: readerFeeConditions(r.conditions),
+      account: feeAccount({ ...r, account_product_type, min_balance_to_avoid, waiver_text }),
+    };
+  });
+}
+
+/**
+ * The account a monthly maintenance fee belongs to, with how it is avoided: the stored
+ * lineup fields first, then what the fee's own schedule line says (lineupAccountFromRow).
+ * Null for other fees, which are not tied to one account.
+ */
+function feeAccount(row: {
+  institution_id: number;
+  fee_name: string;
+  amount: number | null;
+  conditions: string | null;
+  fee_category?: string | null;
+  account_product_type: string | null;
+  min_balance_to_avoid: number | string | null;
+  waiver_text: string | null;
+}): FeeAccount | null {
+  if (row.fee_category !== "monthly_maintenance") return null;
+  const account = lineupAccountFromRow({ ...row, min_opening_deposit: null });
+  if (!account) return null;
+  return {
+    name: account.productName,
+    nameSource: account.productNameSource,
+    minBalanceToAvoid: account.minBalanceToAvoid,
+    waiverText: account.waiverText,
+  };
 }
 
 export async function getAllFees(

@@ -49,7 +49,7 @@ export default async function AboutPage() {
         <p>
           Everything is built on one ladder. The Bank Fee Index is the free lookup: any
           institution, any published fee, with its source. The{" "}
-          <Link href="/for-institutions#report" className="text-[#A93D25] hover:underline">
+          <Link href="/for-institutions?report=institution#report" className="text-[#A93D25] hover:underline">
             {REPORT_OFFER.name}
           </Link>{" "}
           is a one-time report, from $300, placing one institution against

@@ -15,7 +15,7 @@ export default function Loading() {
       </div>
       <div className="mx-auto max-w-page px-4 py-14 sm:px-6">
         <div className="h-3 w-32 rounded bg-[#E8DFD1]" />
-        <div className="mt-3 h-8 w-80 rounded bg-[#E8DFD1]" />
+        <div className="mt-3 h-8 w-80 max-w-full rounded bg-[#E8DFD1]" />
         <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="h-56 rounded-2xl bg-[#F1EBE1]" />

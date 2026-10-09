@@ -110,7 +110,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
 
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* Map */}
-        <div className="relative rounded-2xl border border-[#E8DFD1] bg-white p-3 sm:p-5">
+        <div className="relative rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl p-3 sm:p-5">
           <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label={`Map of US states colored by ${activeMetric.label.toLowerCase()}`}>
             {US_STATES.map((st) => {
               const s = byCode.get(st.id);
@@ -148,10 +148,10 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
                 <p className="text-[15px] font-semibold text-[#1A1815]">{STATE_NAMES[hoveredCode] ?? hoveredCode}</p>
                 {hovered && hovered.verified_institutions > 0 ? (
                   <dl className="mt-2 space-y-1 text-[12px] text-[#5A5347]">
-                    <div className="flex justify-between"><dt>Institutions</dt><dd className="font-semibold tabular-nums text-[#1A1815]">{NUMBER.format(hovered.verified_institutions)}</dd></div>
-                    <div className="flex justify-between"><dt>Verified fees</dt><dd className="font-semibold tabular-nums text-[#1A1815]">{NUMBER.format(hovered.verified_fees)}</dd></div>
-                    <div className="flex justify-between"><dt>Monitored</dt><dd className="tabular-nums">{NUMBER.format(hovered.monitored)}</dd></div>
-                    <div className="flex justify-between"><dt>Coverage</dt><dd className="font-semibold tabular-nums text-[#A93D25]">{formatMetric(metricValue(hovered, "coverage"), "coverage")}</dd></div>
+                    <div className="flex justify-between"><dt>Institutions</dt><dd className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{NUMBER.format(hovered.verified_institutions)}</dd></div>
+                    <div className="flex justify-between"><dt>Verified fees</dt><dd className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{NUMBER.format(hovered.verified_fees)}</dd></div>
+                    <div className="flex justify-between"><dt>Monitored</dt><dd className="[font-variant-numeric:tabular-nums]">{NUMBER.format(hovered.monitored)}</dd></div>
+                    <div className="flex justify-between"><dt>Coverage</dt><dd className="font-semibold [font-variant-numeric:tabular-nums] text-[#A93D25]">{formatMetric(metricValue(hovered, "coverage"), "coverage")}</dd></div>
                   </dl>
                 ) : (
                   <p className="mt-1 text-[12px] text-[#6B6255]">No verified fees yet.</p>
@@ -190,7 +190,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
         </div>
 
         {/* Top 10 */}
-        <div className="rounded-2xl border border-[#E8DFD1] bg-white p-5">
+        <div className="rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl p-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Top 10 by {activeMetric.label.toLowerCase()}</p>
           <ol className="mt-4 space-y-2.5">
             {ranked.map((s, i) => {
@@ -205,10 +205,10 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
                   >
                     <div className="flex items-baseline justify-between text-[12px]">
                       <span className="text-[#5A5347] group-hover:text-[#A93D25]">
-                        <span className="mr-2 inline-block w-4 text-right tabular-nums text-[#A39A8C]">{i + 1}</span>
+                        <span className="mr-2 inline-block w-4 text-right [font-variant-numeric:tabular-nums] text-[#A39A8C]">{i + 1}</span>
                         <span className="font-semibold">{STATE_NAMES[s.state_code] ?? s.state_code}</span>
                       </span>
-                      <span className="font-semibold tabular-nums text-[#1A1815]">{formatMetric(v, metric)}</span>
+                      <span className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{formatMetric(v, metric)}</span>
                     </div>
                     <div className="ml-6 mt-1 h-1.5 overflow-hidden rounded-full bg-[#F1EBE1]">
                       <div className="h-full rounded-full bg-[#C44B2E] transition-[width] duration-500" style={{ width: `${rankMax > 0 ? (v / rankMax) * 100 : 0}%` }} />
@@ -227,7 +227,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
       </div>
 
       {/* All states */}
-      <div className="mt-6 rounded-2xl border border-[#E8DFD1] bg-white">
+      <div className="mt-6 rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F1EBE1] px-5 py-4">
           <p className="text-[13px] font-semibold text-[#1A1815]">
             All state reports <span className="font-normal text-[#8A8072]">({NUMBER.format(withData.length)} with verified fees)</span>
@@ -266,7 +266,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
                     <span className="truncate text-[13px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">
                       {STATE_NAMES[s.state_code] ?? s.state_code}
                     </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-[#6B6255]">
+                    <span className="shrink-0 text-[11px] [font-variant-numeric:tabular-nums] text-[#6B6255]">
                       <span className="font-semibold text-[#1A1815]">{NUMBER.format(s.verified_institutions)}</span> inst · {NUMBER.format(s.verified_fees)} fees
                     </span>
                   </div>
@@ -274,7 +274,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
                     <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#F1EBE1]">
                       <div className="h-full rounded-full bg-[#C44B2E]/70" style={{ width: `${coverage * 100}%` }} />
                     </div>
-                    <span className="whitespace-nowrap text-right text-[10px] tabular-nums text-[#8A8072]">{Math.round(coverage * 100)}% covered</span>
+                    <span className="whitespace-nowrap text-right text-[10px] [font-variant-numeric:tabular-nums] text-[#8A8072]">{Math.round(coverage * 100)}% covered</span>
                   </div>
                 </Link>
               </li>
