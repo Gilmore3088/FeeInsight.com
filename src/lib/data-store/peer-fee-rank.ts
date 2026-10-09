@@ -1,3 +1,4 @@
+import { sql } from "./connection";
 import { getPeerFeeValues, type PeerFilterSet } from "./fee-index";
 import { getReportRuleCheck, type ReportRuleCheck } from "./market-readiness";
 
@@ -80,6 +81,62 @@ export async function getPeerGroupValues(filters: PeerFilterSet): Promise<PeerGr
     for (const value of byCategory?.get(key) ?? []) values.push([value.institution_id, key, value.amount]);
   }
   return values;
+}
+
+/**
+ * One institution's ranked-fee value with what places it in a peer group:
+ * [institution id, fee key, amount, charter, state, Fed district].
+ */
+export type PeerRankValue = [
+  institutionId: number,
+  key: PeerRankLine["key"],
+  amount: number,
+  charterType: string | null,
+  stateCode: string | null,
+  fedDistrict: number | null,
+];
+
+/**
+ * Every institution's ranked-fee values, nationally, for the shared public cache. An
+ * institution's value depends only on its own rows, so each peer group is a filter over
+ * this list. One entry for every institution page: per-group entries were each re-read
+ * after every takedown refresh of the public cache, about 300 reads an hour on Oct 9.
+ */
+export async function getAllPeerRankValues(): Promise<PeerRankValue[]> {
+  const [byCategory] = await getPeerFeeValues([{}], [...PEER_RANK_FEE_KEYS]);
+  const ids = new Set<number>();
+  for (const key of PEER_RANK_FEE_KEYS) for (const value of byCategory?.get(key) ?? []) ids.add(value.institution_id);
+  if (ids.size === 0) return [];
+  const places = await sql<{ id: number | string; charter_type: string | null; state_code: string | null; fed_district: number | string | null }[]>`
+    SELECT id, charter_type, state_code, fed_district FROM institution_sources WHERE id = ANY(${[...ids]}::bigint[])`;
+  const placeOf = new Map(places.map((row) => [Number(row.id), row]));
+  const values: PeerRankValue[] = [];
+  for (const key of PEER_RANK_FEE_KEYS) {
+    for (const value of byCategory?.get(key) ?? []) {
+      const place = placeOf.get(value.institution_id);
+      values.push([
+        value.institution_id,
+        key,
+        value.amount,
+        place?.charter_type ?? null,
+        place?.state_code ?? null,
+        place?.fed_district === null || place?.fed_district === undefined ? null : Number(place.fed_district),
+      ]);
+    }
+  }
+  return values;
+}
+
+/** The values of one peer group, filtered from the national list the way getPeerFeeValues filters rows. */
+export function peerGroupValuesFrom(all: PeerRankValue[], filters: PeerFilterSet): PeerGroupValue[] {
+  return all
+    .filter(([, , , charterType, stateCode, fedDistrict]) => {
+      if (filters.charter_type && charterType !== filters.charter_type) return false;
+      if (filters.state_code && stateCode !== filters.state_code) return false;
+      if (filters.fed_districts?.length && !filters.fed_districts.includes(Number(fedDistrict))) return false;
+      return true;
+    })
+    .map(([institutionId, key, amount]) => [institutionId, key, amount]);
 }
 
 /** The institution's rank within its peer group's values (see getInstitutionPeerRank). */
