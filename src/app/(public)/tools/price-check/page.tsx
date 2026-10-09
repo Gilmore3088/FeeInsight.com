@@ -95,7 +95,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const income = demographics?.median_household_income ? Number(demographics.median_household_income) : null;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
+    <div className="mx-auto max-w-page px-4 py-14 sm:px-6">
       <p className={EYEBROW}>Free tool</p>
       <h1 className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
         Where does a fee price sit in its state?

@@ -115,7 +115,7 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
       <ReportChrome preparedFor={report.institution_name} />
-      <main className="mx-auto max-w-6xl px-6 pb-24 pt-10">
+      <main className="mx-auto max-w-page px-6 pb-24 pt-10">
         <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">

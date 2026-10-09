@@ -141,7 +141,8 @@ async function AdminLayoutInner({
 
         {/* Main content */}
         <main id="main-content" className="admin-content flex-1 min-w-0 px-5 py-5 lg:px-7">
-          <div className="mx-auto max-w-[1600px]">
+          {/* Admin fills the width beside the sidebar so its edges line up with the full-width header. */}
+          <div className="min-w-0">
             <AdminBadgesProvider badges={{ trustPending }}>{children}</AdminBadgesProvider>
             <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-black/[0.06] pt-3 text-xs text-gray-500 md:hidden dark:border-white/[0.06]">
               <span>
