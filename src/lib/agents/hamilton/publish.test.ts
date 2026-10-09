@@ -137,6 +137,10 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("ATM Balance Inquiry (at non-Wildfire ATM) .........................", "atm_non_network")).toBe("ATM Balance Inquiry (at non-Wildfire ATM)");
     expect(publishedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
     expect(publishNameHold("paper statement fee is waived if enrolled in eStatements", "paper_statement", 5)).toBeNull();
+    // A threshold inside the name's parenthesis is not a glued price (102976 went live as "...falls below").
+    expect(publishedFeeName("Service charge (daily balance falls below $500)", "minimum_balance")).toBe("Service charge (daily balance falls below $500)");
+    expect(publishedFeeName("Classic Money Market Account (balance below $1,000)", "minimum_balance")).toBe("Classic Money Market Account (balance below $1,000)");
+    expect(publishedFeeName("Wire Transfer Fee $25", "wire_domestic_outgoing")).toBe("Wire Transfer Fee");
   });
 
   it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {
