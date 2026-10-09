@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { CrewFeedItem, CrewMemberStatus, CrewState } from "@/lib/agents/crew";
 import type { AdminAgent } from "@/lib/agents/types";
+import { formatAdminDateTime, formatAdminTime } from "@/lib/admin-time";
 
 const POLL_MS = 15_000;
 
@@ -23,10 +24,7 @@ const TONE_STYLE: Record<CrewFeedItem["tone"], string> = {
 function clock(iso: string): string {
   const date = new Date(iso);
   const sameDay = date.toDateString() === new Date().toDateString();
-  return sameDay
-    ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    : date.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
-        " " + date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return sameDay ? formatAdminTime(iso) : formatAdminDateTime(iso);
 }
 
 export function CrewLive({

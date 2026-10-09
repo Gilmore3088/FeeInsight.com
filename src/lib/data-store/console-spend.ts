@@ -77,3 +77,18 @@ export async function getSpendSummary(): Promise<SpendSummary> {
 
   return { readAt: new Date().toISOString(), total, agents };
 }
+
+/**
+ * One agent's provider spend for the current UTC day, from the same ledger and
+ * windows Controls shows. Null when the ledger could not be read, so a panel never
+ * shows $0.00 for a failed read.
+ */
+export async function getAgentSpendToday(agent: string): Promise<{ todayUsd: number; readAt: string } | null> {
+  try {
+    const summary = await getSpendSummary();
+    return { todayUsd: summary.agents.find((line) => line.key === agent)?.todayUsd ?? 0, readAt: summary.readAt };
+  } catch (error) {
+    console.error(`Spend read for ${agent} failed`, error);
+    return null;
+  }
+}
