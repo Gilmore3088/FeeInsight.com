@@ -135,6 +135,8 @@ describe("Magellan companion fetch", () => {
     expect(updateText).toContain("other.id <> inst.id");
     expect(updateText).toContain("IS DISTINCT FROM");
     expect(updateText).not.toContain("found_by_strategy");
+    // Not limited to the lane's state.
+    expect(updateText).not.toContain("inst.state_code");
     expect(update).toContain("other_bank_host");
   });
 

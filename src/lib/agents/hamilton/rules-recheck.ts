@@ -71,16 +71,16 @@ export function reproducibleReads(text: string): Map<string, Set<string>> {
   const add = (key: string, name: string) => reads.set(key, (reads.get(key) ?? new Set()).add(name.toLowerCase()));
   // The category Darwin files a read under, as its verify step does.
   // A fee under a retired category is placed by its wording and the schedule section above it.
-  const filedAs = (hint: string, name: string) => refileCategory(hint, name, foldContext(text, name)) ?? hint;
+  const filedAs = (hint: string, name: string, amount: number) => refileCategory(hint, name, foldContext(text, name, amount)) ?? hint;
   for (const candidate of result.candidates) {
-    const key = filedAs(candidate.canonicalHint, candidate.feeName);
+    const key = filedAs(candidate.canonicalHint, candidate.feeName, candidate.amount);
     if (passesDarwinChecks(key, candidate.feeName, candidate.amount)) {
       add(feeKey(key, candidate.amount), candidate.feeName);
     }
   }
   for (const held of result.held) {
     if (held.shape !== "zero" || !held.canonicalHint) continue;
-    const key = filedAs(held.canonicalHint, held.feeName);
+    const key = filedAs(held.canonicalHint, held.feeName, 0);
     if (passesDarwinChecks(key, held.feeName, 0)) add(feeKey(key, 0), held.feeName);
   }
   return reads;
