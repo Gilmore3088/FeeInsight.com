@@ -545,3 +545,10 @@ research efficiency (no figures, no link), B personalized research (names local 
 figures, no link), C one tier-A comparison with a link checked live. James approves every first
 email. This supersedes the 21:31 statewide fallback. The 21 single-fee drafts from run 3157 were held
 and are withdrawn by the next run. Plan: https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c
+
+**The Knox decisions queue is retired; admin layout is not design work.** James, 06:50 UTC 9 Oct,
+Admin audit fixes thread: "Retire it" and "This is an admin audit so no customer is going to see the
+admin." The queue's screens, actions, badge and data-trust state are gone; old links land on
+/admin/knox. Its rows stay in agent_messages and knox_overrides (726 of 746 were from the August
+import, and an override could never publish because it needed a recent Darwin accept). Admin-only
+layout changes are fixes that merge on green; public, Pro and Hamilton screens still wait for his review.

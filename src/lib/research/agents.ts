@@ -4,7 +4,6 @@ import { publicTools } from "./tools";
 import { internalTools } from "./tools-internal";
 import { getPublicStats } from "../data-store";
 import { sql } from "../data-store/connection";
-import { getKnoxReviewCounts } from "../data-store/knox-reviews";
 import { HAMILTON_SYSTEM_PROMPT } from "../hamilton/voice";
 import { withCompactResults } from "./tool-output";
 
@@ -171,7 +170,6 @@ async function opsContext(): Promise<string> {
     const [lastCollection] = (await sql`
       SELECT completed_at FROM source_collection_runs WHERE status='completed' ORDER BY completed_at DESC LIMIT 1
     `) as { completed_at: string }[];
-    const knoxReview = await getKnoxReviewCounts();
     const [activeRuns] = (await sql`
       SELECT COUNT(*) as cnt
         FROM agent_runs
@@ -180,7 +178,6 @@ async function opsContext(): Promise<string> {
     `) as { cnt: number }[];
     const parts: string[] = [];
     if (lastCollection?.completed_at) parts.push(`Last collection: ${lastCollection.completed_at}`);
-    if (knoxReview.pending > 0) parts.push(`${knoxReview.pending} Knox decisions pending review`);
     if (activeRuns.cnt > 0) parts.push(`${activeRuns.cnt} agent runs active`);
     return parts.length > 0 ? `\n\nOperational status: ${parts.join(". ")}.` : "";
   } catch {

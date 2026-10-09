@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
-import { OUTREACH_HELD_REASON, outreachCampaignsFromEnv, runOutreachDrafts, buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
+import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type SnapshotValue } from "./market-snapshot";
+import { OUTREACH_HELD_REASON, OUTREACH_STALE_WORDING_REASON, institutionKinds, outreachCampaignsFromEnv, runOutreachDrafts, buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
   return {
@@ -17,6 +17,7 @@ function odRow(institutionId: number, amount: number, text: string | null = `Ove
     document_url: `https://bank${institutionId}.example/fees.pdf`,
     read_at: "2026-10-01T00:00:00.000Z",
     normalized_text: text,
+    frequency: "per_item",
   };
 }
 
@@ -127,7 +128,7 @@ describe("buildOutreachDraft", () => {
     expect(draft.findings.map((finding) => finding.category)).toEqual(["overdraft", "cashiers_check", "stop_payment"]);
     expect(draft.caption).toContain("Subject: Waco, TX fee schedules, side by side");
     expect(draft.caption).toContain("Hi Jane,");
-    expect(draft.caption).toContain("In the Waco, TX schedules we hold, overdraft (od) fees run from $25 at Peer 10 to $35 at Peer 14. First Bank's published figure is $30.");
+    expect(draft.caption).toContain("In the Waco, TX schedules we hold, overdraft (OD) fees run from $25 at Peer 10 to $35 at Peer 14. First Bank's published figure is $30.");
     expect(draft.caption).toContain("https://feeinsight.com/institution/1/market?utm_source=email&utm_medium=outreach&utm_campaign=outreach-launch&utm_content=inst-1");
     const [email, audit] = draft.caption.split("--- For your audit");
     expect(email).toContain("James\nFounder, Fee Insight");
@@ -243,11 +244,13 @@ describe("withdrawing unreviewed drafts", () => {
       const query = strings.join("?");
       if (query.includes("SELECT id, facts")) {
         return Promise.resolve([
-          { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" }, quote_rule: 3 } },
+          { id: 7, facts: { to: { email: "eroche@x.com", name: null, title: "Senior Mortgage Loan Officer", role: "other" }, quote_rule: 4 } },
           { id: 16, facts: JSON.stringify({ to: ceo, quote_rule: 2 }) },
-          { id: 40, facts: { to: ceo, quote_rule: 3, published_ids: [501, 502] } },
-          { id: 41, facts: { to: ceo, quote_rule: 3, published_ids: [601] } },
-          { id: 42, facts: { to: { email: "ceo@x.org", name: "Mailing Address", title: "CEO For questions or concerns not resolved by staff", role: "executive" }, quote_rule: 3 } },
+          { id: 40, facts: { to: ceo, quote_rule: 4, published_ids: [501, 502] } },
+          { id: 41, facts: { to: ceo, quote_rule: 4, published_ids: [601] } },
+          { id: 42, facts: { to: { email: "ceo@x.org", name: "Mailing Address", title: "CEO For questions or concerns not resolved by staff", role: "executive" }, quote_rule: 4 } },
+          // Campaigns A-C written before credit unions got member wording.
+          { id: 43, facts: { to: ceo, quote_rule: 3 } },
         ]);
       }
       if (query.includes("takedown_pending")) {
@@ -257,10 +260,11 @@ describe("withdrawing unreviewed drafts", () => {
       updates.push(values);
       return Promise.resolve([]);
     }) as never;
-    expect(await withdrawNonBuyerDrafts(db)).toBe(4);
-    expect(updates.map((values) => values.at(-1))).toEqual([7, 16, 40, 42]);
+    expect(await withdrawNonBuyerDrafts(db)).toBe(5);
+    expect(updates.map((values) => values.at(-1))).toEqual([7, 16, 40, 42, 43]);
+    expect(updates.at(-1)).toContain(OUTREACH_STALE_WORDING_REASON);
     updates.length = 0;
-    expect(await withdrawNonBuyerDrafts(db, true)).toBe(4);
+    expect(await withdrawNonBuyerDrafts(db, true)).toBe(5);
     expect(updates).toEqual([]);
   });
 });
@@ -332,5 +336,236 @@ describe("pilot campaign gate", () => {
     expect(queries.some((query) => query.includes("SELECT id, facts FROM content_drafts"))).toBe(true);
     expect(queries.some((query) => query.includes("prospect_contacts c") || query.includes("FROM prospect_contacts"))).toBe(false);
     expect(summarizeOutreach(result)).toContain("No first emails drafted: held");
+  });
+});
+
+/** The same market with a credit union as the prospect and a mix of credit unions and banks around it. */
+function creditUnionSnapshot(base: MarketSnapshot = multiSnapshot()): MarketSnapshot {
+  return {
+    ...base,
+    subject: { ...base.subject, name: "First Community Credit Union", charterType: "credit_union" },
+    peers: base.peers.map((peer) => (peer.id % 2 === 0 ? { ...peer, name: `Peer CU ${peer.id}`, charterType: "credit_union" } : peer)),
+  };
+}
+
+const cuMarketing: OutreachContact = { ...jane, email: "jsmith@firstcommunitycu.org", source_url: "https://firstcommunitycu.org/leadership" };
+
+function emailOf(built: ReturnType<typeof buildOutreachDraft>) {
+  if (!("draft" in built)) throw new Error(`skipped: ${built.skip}`);
+  const [email, audit] = built.draft.caption.split("--- For your audit");
+  return { draft: built.draft, email, audit };
+}
+
+/** Rules every first email keeps, bank or credit union (James, 22:23 UTC Oct 8). */
+function expectHouseRules(email: string) {
+  expect(email).not.toMatch(/\b(?:median|average|(?:above|below) (?:the |your )?(?:median|average|market|peers)|should|consider|lower|higher|raise|cut|reduce|recommend)\b/i);
+  expect(email).toContain("Best,\nJames\nFounder, Fee Insight");
+  expect(email).toContain("Fee Insight LLC · [postal address: James to add before sending]");
+  expect(email).toContain("reply \"no thanks\" and I won't follow up.");
+  // One ask: the body asks one question (a link's query string is not one).
+  const body = email.split("Best,")[0];
+  expect(body.match(/\?(?=\s|$)/g)).toHaveLength(1);
+}
+
+describe("credit union wording", () => {
+  it("names a local set only by the charters it holds", () => {
+    expect(institutionKinds(["credit_union", "bank"])).toBe("credit unions and banks");
+    expect(institutionKinds(["credit_union", "credit_union"])).toBe("credit unions");
+    expect(institutionKinds(["bank"])).toBe("bank");
+    expect(institutionKinds([null, undefined])).toBe("institutions");
+  });
+
+  it("campaign A: members and the board or ALCO for a credit union; the bank email is unchanged", () => {
+    const cu = emailOf(buildOutreachDraft(creditUnionSnapshot(snapshot()), [cuMarketing], { allowInsight: true }));
+    expect(cu.draft.campaign).toBe("research_efficiency");
+    expect(cu.email).toContain("Subject: Quick question about competitor fee research");
+    expect(cu.email).toContain("Reviewing a member checking product against what other credit unions and banks publish usually means finding, reading and lining up dozens of published fee schedules by hand.");
+    expect(cu.email).toContain("so a comparison that goes to the board or ALCO can be traced line by line.");
+    expect(cu.email).toContain("When your team compares First Community Credit Union's member fees with other credit unions and banks, do you compile that research yourselves");
+    expect(cu.email).not.toMatch(/customer|\$\d|https?:|Peer/i);
+    expect(cu.audit).toContain("Credit union: member wording");
+    expectHouseRules(cu.email);
+
+    const bank = emailOf(buildOutreachDraft(snapshot(), [jane], { allowInsight: true }));
+    expect(bank.draft.campaign).toBe("research_efficiency");
+    expect(bank.email).toContain("Fee Insight brings published bank and credit union fee schedules together in one place, with every figure linked to the schedule it came from.\n");
+    expect(bank.email).not.toMatch(/member|ALCO|board/i);
+    expect(bank.audit).not.toContain("Credit union");
+    expectHouseRules(bank.email);
+  });
+
+  it("campaign B: names the verified local credit unions and banks, still no figures or link", () => {
+    const cu = emailOf(buildOutreachDraft(creditUnionSnapshot(), [cuMarketing]));
+    expect(cu.draft.campaign).toBe("personalized_research");
+    expect(cu.draft.link).toBeNull();
+    expect(cu.email).toContain("First Community Credit Union's schedule is in our research, along with those of 5 other credit unions and banks in the Waco, TX area, including Peer CU 10 and Peer 11. Between them, 3 fee types can be compared line by line.");
+    expect(cu.email).toContain("Would a short, source-linked comparison of First Community Credit Union's member fees and those of a few local credit unions and banks you choose be useful for your product reviews?");
+    expect(cu.email).not.toMatch(/customer|\$\d|https?:/i);
+    expectHouseRules(cu.email);
+
+    // When the best-covered peers are both banks, a credit union's email still names one credit union.
+    const base = multiSnapshot();
+    const oneCu = emailOf(buildOutreachDraft({ ...creditUnionSnapshot(base), peers: base.peers.map((peer) => (peer.id === 13 ? { ...peer, name: "Peer CU 13", charterType: "credit_union" } : peer)) }, [cuMarketing]));
+    expect(oneCu.email).toContain("including Peer 10 and Peer CU 13.");
+
+    const bank = emailOf(buildOutreachDraft(multiSnapshot(), [jane]));
+    expect(bank.draft.campaign).toBe("personalized_research");
+    expect(bank.email).toContain("along with those of 5 other institutions in the Waco, TX area");
+    expect(bank.email).not.toMatch(/member|ALCO/i);
+    expectHouseRules(bank.email);
+  });
+
+  it("campaign C: one finding as a range across the verified local set, the member figure, and the checked link", () => {
+    const cu = emailOf(buildOutreachDraft(creditUnionSnapshot(), [cuMarketing], { allowInsight: true }));
+    expect(cu.draft.campaign).toBe("market_insight");
+    expect(cu.email).toContain("In the Waco, TX schedules we hold, overdraft (OD) fees at 5 local credit unions and banks run from $25 at Peer CU 10 to $35 at Peer CU 14. The figure First Community Credit Union publishes for members is $30.");
+    expect(cu.email).toContain("https://feeinsight.com/institution/1/market?utm_source=email&utm_medium=outreach&utm_campaign=outreach-launch&utm_content=inst-1");
+    expect(cu.email).toContain("Is competitive fee research something your team prepares regularly, for example for ALCO or the board?");
+    expect(cu.email).not.toMatch(/customer/i);
+    expect(cu.email).not.toContain("Peer 99");
+    expectHouseRules(cu.email);
+
+    const bank = emailOf(buildOutreachDraft(multiSnapshot(), [jane], { allowInsight: true }));
+    expect(bank.draft.campaign).toBe("market_insight");
+    expect(bank.email).toContain("First Bank's published figure is $30.");
+    expect(bank.email).not.toMatch(/member|ALCO/i);
+    expectHouseRules(bank.email);
+  });
+
+  it("campaign C never leads with a $0 fee: the next quotable fee leads, and with none it falls back to B", () => {
+    const zeroOverdraft = multiSnapshot([
+      ["overdraft", "Overdraft Fee", [0, 25, 28, 30, 32, 35]],
+      ["stop_payment", "Stop Payment", [30, 20, 25, 30, 32, 35]],
+      ["cashiers_check", "Cashier's Check", [8, 5, 6, 8, 10, 10]],
+    ]);
+    for (const snap of [zeroOverdraft, creditUnionSnapshot(zeroOverdraft)]) {
+      const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight: true }));
+      expect(built.draft.campaign).toBe("market_insight");
+      // The $0 overdraft stays in the data and on the page, but doesn't lead.
+      expect(built.draft.findings.map((finding) => finding.category)).toEqual(["cashiers_check", "overdraft", "stop_payment"]);
+      expect(built.draft.findings[0].own.value).toBe(8);
+      expect(built.email).toMatch(/cashier's check fees .*run from \$5 at Peer (?:CU )?10 to \$10 at Peer (?:CU )?14/);
+      expect(built.email).not.toContain("$0");
+      expect(built.audit).toContain("1. Cashier's Check (quoted in the email)");
+    }
+    const allZero = multiSnapshot([
+      ["overdraft", "Overdraft Fee", [0, 25, 28, 30, 32, 35]],
+      ["stop_payment", "Stop Payment", [0, 20, 25, 30, 32, 35]],
+      ["cashiers_check", "Cashier's Check", [0, 5, 6, 8, 10, 10]],
+    ]);
+    for (const snap of [allZero, creditUnionSnapshot(allZero)]) {
+      const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight: true }));
+      expect(built.draft.campaign).toBe("personalized_research");
+      expect(built.draft.link).toBeNull();
+    }
+  });
+
+  it("campaign C leads only with a range charged at one frequency (James: the whole record must match)", () => {
+    // Overdraft: one peer is charged monthly. Five per-item peers remain, so the range narrows to them.
+    const withFrequency = (snap: MarketSnapshot, category: string, frequencyOf: (institutionId: number) => string | null) => ({
+      ...snap,
+      fees: snap.fees.map((fee) => {
+        if (fee.category !== category) return fee;
+        const set = (value: SnapshotValue | null) => (value ? { ...value, frequency: frequencyOf(value.institutionId) } : value);
+        return { ...fee, subject: set(fee.subject), peers: fee.peers.map((peer) => set(peer)!) };
+      }),
+    });
+    const six = multiSnapshot([
+      ["overdraft", "Overdraft Fee", [30, 25, 28, 30, 32, 35]],
+      ["stop_payment", "Stop Payment", [30, 20, 25, 30, 32, 35]],
+      ["cashiers_check", "Cashier's Check", [8, 5, 6, 8, 10, 10]],
+    ]);
+    // Add a sixth verified overdraft peer (id 15, $40) so one can be dropped and five remain.
+    six.peers.push({ ...six.peers[0], id: 15, name: "Peer 15" });
+    six.fees[0] = buildSnapshotFee("overdraft", 1, [...[1, 10, 11, 12, 13, 14].map((id, index) => feeRow("overdraft", "Overdraft Fee", id, [30, 25, 28, 30, 32, 35][index])), feeRow("overdraft", "Overdraft Fee", 15, 40)]);
+
+    const narrowed = emailOf(buildOutreachDraft(withFrequency(six, "overdraft", (id) => (id === 10 ? "monthly" : "per_item")), [jane], { allowInsight: true }));
+    expect(narrowed.draft.campaign).toBe("market_insight");
+    expect(narrowed.draft.findings[0].category).toBe("overdraft");
+    expect(narrowed.draft.findings[0].peers.map((peer) => peer.institutionId)).toEqual([11, 12, 13, 14, 15]);
+    expect(narrowed.email).toContain("overdraft (OD) fees run from $28 at Peer 11 to $40 at Peer 15.");
+    expect(narrowed.audit).toContain("Left out of the quoted range for a different or unknown charge frequency: Peer 10 $25 (monthly)");
+    expect(narrowed.audit).toContain("charged per_item");
+
+    // Mixed with too few left at the prospect's frequency: overdraft can't lead, the next finding does.
+    const mixed = emailOf(buildOutreachDraft(withFrequency(multiSnapshot(), "overdraft", (id) => (id % 2 ? "annual" : "monthly")), [jane], { allowInsight: true }));
+    expect(mixed.draft.campaign).toBe("market_insight");
+    expect(mixed.draft.findings.map((finding) => finding.category)).toEqual(["cashiers_check", "overdraft", "stop_payment"]);
+
+    // An unknown frequency on the prospect's row, or on every peer's, is not comparable.
+    const unknownOwn = emailOf(buildOutreachDraft(withFrequency(multiSnapshot(), "overdraft", (id) => (id === 1 ? null : "per_item")), [jane], { allowInsight: true }));
+    expect(unknownOwn.draft.findings[0].category).toBe("cashiers_check");
+    const unknownAll = multiSnapshot();
+    for (const category of ["overdraft", "stop_payment", "cashiers_check"]) Object.assign(unknownAll, withFrequency(unknownAll, category, () => null));
+    for (const snap of [unknownAll, creditUnionSnapshot(unknownAll)]) {
+      const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight: true }));
+      expect(built.draft.campaign).toBe("personalized_research");
+      expect(built.draft.link).toBeNull();
+    }
+  });
+
+  it("reads a value's frequency only when every row behind it carries the same one", () => {
+    const rowsAt = (frequencies: (string | null)[]) => frequencies.map((frequency) => ({ ...odRow(1, 30), frequency }));
+    expect(buildSnapshotFee("overdraft", 1, rowsAt(["monthly", "monthly"])).subject?.frequency).toBe("monthly");
+    expect(buildSnapshotFee("overdraft", 1, rowsAt(["monthly", null])).subject?.frequency).toBeNull();
+    expect(buildSnapshotFee("overdraft", 1, rowsAt(["monthly", "annual"])).subject?.frequency).toBeNull();
+  });
+
+  it("never prints a row's schedule excerpt in an email body, only in the audit block", () => {
+    const excerpt = "Overdraft Fee $30.00";
+    for (const snap of [multiSnapshot(), creditUnionSnapshot()]) {
+      for (const allowInsight of [true, false]) {
+        const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight }));
+        expect(built.email).not.toContain(excerpt);
+        expect(built.email).not.toMatch(/Schedule line|Fee: "/);
+        if (built.draft.campaign === "market_insight") expect(built.audit).toContain(`Schedule line: "${excerpt}"`);
+      }
+    }
+  });
+
+  it("frames a finance or compliance addressee at a credit union for ALCO, the board or the supervisory committee", () => {
+    const cfo: OutreachContact = { ...cuMarketing, email: "cfo@firstcommunitycu.org", title: "Chief Financial Officer", role: "finance" };
+    const auditor: OutreachContact = { ...cuMarketing, email: "plee@firstcommunitycu.org", name: "Pat Lee", title: "Compliance Officer", role: "compliance" };
+    expect(emailOf(buildOutreachDraft(creditUnionSnapshot(), [cfo])).email).toContain("be useful for your next ALCO or board review?");
+    expect(emailOf(buildOutreachDraft(creditUnionSnapshot(snapshot()), [auditor])).email).toContain("internal analysis or supervisory committee reviews");
+  });
+
+  it("both follow-ups: member wording for a credit union, no figures or link, same sign-off", () => {
+    const source = { draftId: 41, institutionId: 1, institutionName: "First Community Credit Union", market: "Waco, TX", link: "", subject: "Quick question about competitor fee research", to: { email: "jsmith@firstcommunitycu.org", name: "Jane Q. Smith", title: "SVP Marketing" }, charterType: "credit_union" };
+    for (const stage of [1, 2] as const) {
+      const cu = buildFollowUpDraft(source, stage);
+      const bank = buildFollowUpDraft({ ...source, institutionName: "First Bank", charterType: "bank" }, stage);
+      for (const draft of [cu, bank]) {
+        const [email] = draft.caption.split("--- For your audit");
+        expect(email).not.toMatch(/\$\d|https?:|customer|median|should/i);
+        expect(email).toContain("James\nFounder, Fee Insight");
+        expect(email).toContain("[postal address: James to add before sending]");
+        expect(email.split("Best,")[0].match(/\?/g)?.length ?? 0).toBeLessThanOrEqual(1);
+      }
+      expect(cu.caption).toContain("ALCO or board");
+      expect(bank.caption).not.toMatch(/ALCO|member/);
+    }
+    expect(buildFollowUpDraft(source, 1).caption).toContain("comparing First Community Credit Union's member fees with those of a few credit unions and banks in Waco, TX, laid out so it can go into an ALCO or board packet.");
+    expect(buildFollowUpDraft(source, 2).caption).toContain("such as whoever prepares ALCO or board materials");
+  });
+
+  it("follow-ups read the charter from the institution when an older draft didn't store it", async () => {
+    const db = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (query.includes("information_schema") || query.includes("to_regclass")) return Promise.resolve([{ ready: true, exists: true, ok: true, n: 1 }]);
+      if (query.includes("JOIN outreach_outcomes sent")) {
+        expect(query).toContain("charter_type");
+        return Promise.resolve(!values.includes("outreach-followup-final") ? [{ id: 9, charter_type: "credit_union", facts: { institution_id: 1, institution_name: "First Community Credit Union", market: "Waco, TX", subject: "Quick question about competitor fee research", to: null } }] : []);
+      }
+      return Promise.resolve([{ id: 77 }]);
+    }) as never;
+    const inserted: unknown[][] = [];
+    const recording = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join("?").includes("INSERT")) inserted.push(values);
+      return (db as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    }) as never;
+    const result = await runOutreachFollowUps({ db: recording, runId: 1 });
+    expect(result.drafted).toBe(1);
+    expect(JSON.stringify(inserted)).toContain("ALCO or board packet");
   });
 });

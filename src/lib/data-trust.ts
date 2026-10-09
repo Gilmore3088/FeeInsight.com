@@ -4,7 +4,6 @@ export const DATA_TRUST_QUEUE_STATES = [
   "source_accepted_awaiting_validation",
   "source_failed",
   "extracted_rows_pending_classification",
-  "knox_decisions_pending",
   "verified_public_ready",
 ] as const;
 
@@ -24,7 +23,6 @@ export interface DataTrustQueueInput {
   pendingSubmissionCount?: number | null;
   acceptedSubmissionCount?: number | null;
   validationQueueCount?: number | null;
-  knoxPendingCount?: number | null;
   automationEnabled?: boolean | null;
 }
 
@@ -55,7 +53,6 @@ export function classifyDataTrustQueue(
   const pendingSubmissionCount = count(input.pendingSubmissionCount);
   const acceptedSubmissionCount = count(input.acceptedSubmissionCount);
   const validationQueueCount = count(input.validationQueueCount);
-  const knoxPendingCount = count(input.knoxPendingCount);
   const latestSourceStatus = input.latestSourceStatus ?? null;
   const hasFeeUrl = hasText(input.feeScheduleUrl);
   const automationEnabled = input.automationEnabled === true;
@@ -114,17 +111,6 @@ export function classifyDataTrustQueue(
       owner: "hamilton",
       nextAction: "Publish verified rows into the public fee catalog or document why they are withheld.",
       publicLabel: "Fee evidence is verified internally and awaiting publication.",
-    };
-  }
-
-  if (knoxPendingCount > 0) {
-    return {
-      state: "knox_decisions_pending",
-      label: "Knox pending",
-      severity: "work",
-      owner: "knox",
-      nextAction: "Resolve pending Knox decisions before public-ready status.",
-      publicLabel: "Fee evidence is in human exception review.",
     };
   }
 

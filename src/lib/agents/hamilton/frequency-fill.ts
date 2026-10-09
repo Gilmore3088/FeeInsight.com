@@ -31,7 +31,10 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v6: footnote marks ("per month6", "each2"), a cap ("up to a maximum of $5.00") and a second
 // price's label ("$1.00/page Business: $3.00/page") no longer hide the fee's own words.
 // v7: "each after 3 in a month" and "exceeding two per month" are allowances too.
-export const FREQUENCY_FILL_VERSION = 7;
+// v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") clears a
+// flat frequency (whole-record sample 2, Oct 9).
+// v9: "each above 6/month" is an allowance, and a cell priced "N/C" is another fee's row (101933).
+export const FREQUENCY_FILL_VERSION = 9;
 export const FREQUENCY_FILL_LIMIT = 2_000;
 /** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
 const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?[a-z])`;

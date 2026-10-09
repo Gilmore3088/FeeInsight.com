@@ -14,6 +14,8 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
+import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
+import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
@@ -857,12 +859,14 @@ async function executeAgenticStep(
       const decisions = await getKnoxDecisionQueueSnapshot(tx);
       return {
         status: "completed",
-        summary: `Knox decision queue checked: ${decisions.pending.toLocaleString()} pending human verdicts; ${decisions.confirmed.toLocaleString()} confirmed and ${decisions.overridden.toLocaleString()} overridden.`,
+        // The decisions queue was retired (James, Oct 9): its verdicts are on record, not reviewed.
+        summary: `Knox decision queue is retired: ${decisions.pending.toLocaleString()} verdicts were never confirmed and stay on record; ${decisions.confirmed.toLocaleString()} confirmed and ${decisions.overridden.toLocaleString()} overridden.`,
         detail: {
           pending_knox_decisions: decisions.pending,
           confirmed_knox_decisions: decisions.confirmed,
           overridden_knox_decisions: decisions.overridden,
           total_knox_decisions: decisions.total,
+          queue_retired: true,
           dry_run: run.runKind === "dry_run",
         },
       };
@@ -983,6 +987,20 @@ async function executeAgenticStep(
       });
       // A fee read from an article (a blog post quoting a national average), not a schedule.
       const articlePage = await retireArticlePageFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
+      const productPage = await retireProductPageFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // One product priced differently on two current pages: the older page's price comes down.
+      const crossPage = await retireCrossPageConflicts(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -1178,6 +1196,8 @@ async function executeAgenticStep(
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
+              productPage.rolledBack.length > 0 ||
+              crossPage.rolledBack.length > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
@@ -1234,6 +1254,14 @@ async function executeAgenticStep(
         articlePage.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${articlePage.rolledBack.length.toLocaleString()} fee(s) read from an article page, not a fee schedule.`
           : "";
+      const productNote =
+        productPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${productPage.rolledBack.length.toLocaleString()} $0 fee(s) read from a product page's benefits, not a fee schedule.`
+          : "";
+      const crossPageConflictNote =
+        crossPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${crossPage.rolledBack.length.toLocaleString()} older price(s) for a product another current page prices differently.`
+          : "";
       const categoryGuardNote =
         categoryGuardRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
@@ -1279,7 +1307,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1375,6 +1403,20 @@ async function executeAgenticStep(
             flagged: articlePage.flagged,
             waiting: articlePage.waiting,
             rolled_back: articlePage.rolledBack.length,
+          },
+          cross_page_conflict: {
+            fees_checked: crossPage.pairsChecked,
+            conflicts: crossPage.conflicts,
+            flagged: crossPage.flagged,
+            waiting: crossPage.waiting,
+            rolled_back: crossPage.rolledBack.length,
+          },
+          product_page: {
+            enabled: productPage.enabled,
+            product_fees: productPage.productFees,
+            flagged: productPage.flagged,
+            waiting: productPage.waiting,
+            rolled_back: productPage.rolledBack.length,
           },
           limit_rollbacks: limitRollbacks.length,
           limit_rollback_samples: limitRollbacks.slice(0, 10).map((rollback) => ({
@@ -1583,6 +1625,7 @@ async function executeAgenticStep(
           flagged_fees: guard.flaggedFees,
           awaiting_second_look: guard.awaitingSecondLook,
           restored_fees: guard.restoredFees,
+          refiled_fees: guard.refiledFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -2655,6 +2698,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // No new site or search starts after 90 s; one in flight can take a few 15 s fetches more.
   "registry-state-reg-news": 170_000,
   "registry-state-bill-news": 120_000,
+  // No new item starts after 100 s; up to three page reads and model calls in flight.
+  "registry-wire-research": 150_000,
   "read-paid": 165_000,
   read: 110_000,
   discover: 110_000,

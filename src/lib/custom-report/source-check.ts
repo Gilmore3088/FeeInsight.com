@@ -164,8 +164,18 @@ function longLineParts(line: string): string[] {
   const parts = line.split(LONG_LINE_SPLIT);
   const cells = line.split("|").map((cell) => cell.trim());
   const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
-  return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
+  if (title && PRICE_CELL.test(cells[1])) return [...parts, `${title} | ${cells[1]}`];
+  // A table row whose details column runs long ("| Overdraft (OD) - Paid Item | A fee may be
+  // charged ... | $17.00 | per item |", Arvest): split at its sentences, the name and the price
+  // land in different parts, so the row is also read without its long cells.
+  const filled = cells.filter(Boolean);
+  const short = filled.filter((cell) => cell.length <= TABLE_CELL_MAX_LENGTH);
+  if (filled.length >= 3 && short.length >= 2 && short.length < filled.length && short[0] === filled[0]) {
+    return [...parts, short.join(" | ")];
+  }
+  return parts;
 }
+const TABLE_CELL_MAX_LENGTH = 80;
 
 /** A fee card's name field ("Fee TypeCheckOK Fee", "Fee Name: Rush Order") and its price field ("Fee$5.00"). */
 const CARD_NAME = /^\s*fee\s*(?:type|name)\s*:?\s*(?=[A-Za-z])([^|]+)$/i;
@@ -225,14 +235,65 @@ export function stripPriceFootnoteMarks(text: string): string {
 }
 
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
+/**
+ * A dot-leader fee line whose name was wrapped over several lines carries only the name's tail
+ * ("debit card payments) ......... $25.00 per Occurrence", Northern Trust), and a tail that
+ * closes a parenthesis it never opened names no fee. Such a line takes back the price-less lines
+ * above it until the parenthesis opens, plus the one long line the name starts on ("Overdrafts
+ * Paid and Items Paid against Nonsufficient / Funds (includes ..."). It never reaches past a
+ * line with a price, a dot leader, a table cell or a finished sentence, nor more than five
+ * lines up; a tail whose parenthesis never opens is left as it was. Knox reads lines the same
+ * way (v62), so the fee it reads traces to the row this check reads.
+ */
+const WRAPPED_LEADER_PRICE = /\.{4,}\s*(?:\$\s?\d|\d+(?:\.\d+)?\s?%)/;
+const WRAPPED_NAME_MAX_LINES = 5;
+const WRAPPED_NAME_START_CHARS = 40;
+
+export function parenBalance(value: string): number {
+  return (value.match(/\(/g)?.length ?? 0) - (value.match(/\)/g)?.length ?? 0);
+}
+
+export function joinWrappedLeaderNames(lines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const leader = line.match(WRAPPED_LEADER_PRICE);
+    let balance = leader ? parenBalance(line.slice(0, leader.index)) : 0;
+    if (balance >= 0) {
+      joined.push(line);
+      continue;
+    }
+    const taken: string[] = [];
+    while (taken.length < WRAPPED_NAME_MAX_LINES) {
+      const above = joined.at(-1);
+      if (
+        above == null ||
+        !/[a-z]/i.test(above) ||
+        above.includes("|") ||
+        /\.{4,}|\$\s?\d|\d\s?%/.test(above) ||
+        /[.:;!?]\s*$/.test(above)
+      ) break;
+      const opened = balance >= 0;
+      if (opened && (above.length < WRAPPED_NAME_START_CHARS || /\)\s*$/.test(above))) break;
+      taken.unshift(joined.pop() as string);
+      balance += parenBalance(above);
+      if (opened) break;
+    }
+    if (balance >= 0 && taken.length > 0) joined.push([...taken, line].join(" "));
+    else joined.push(...taken, line);
+  }
+  return joined;
+}
+
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
     regridRows(
-      text
-        .split(/\r?\n/)
-        .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
-        .map((line) => line.replace(/\s+/g, " ").trim())
-        .filter((line) => line.length > 0),
+      joinWrappedLeaderNames(
+        text
+          .split(/\r?\n/)
+          .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+          .map((line) => line.replace(/\s+/g, " ").trim())
+          .filter((line) => line.length > 0),
+      ),
     ),
   ).filter((line) => line.length > 0);
 }
@@ -566,17 +627,6 @@ function cachedSourceLines(text: string): string[] {
     lastText = text;
   }
   return lastLines;
-}
-
-/**
- * Lines of a source text that name a fee, for showing a reviewer where to look. This only
- * locates the name; it checks no amount or category (that is `checkFeeAgainstSource`).
- */
-export function linesNamingFee(text: string | null | undefined, feeName: string, limit = 3): string[] {
-  if (!text || !text.trim()) return [];
-  const stems = nameStems(feeName);
-  if (stems.length === 0) return [];
-  return cachedSourceLines(text).filter((line) => namesFee(line, stems)).slice(0, limit);
 }
 
 /**

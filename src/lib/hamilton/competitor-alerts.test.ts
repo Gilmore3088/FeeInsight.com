@@ -106,9 +106,15 @@ describe("planCompetitorAlerts", () => {
 });
 
 describe("runCompetitorAlerts", () => {
-  function install({ banks = [{ institution_id: 1, user_ids: [20, 21] }], changes = [change()], alerted = [] as string[] } = {}) {
+  function install({
+    banks = [{ institution_id: 1, user_ids: [20, 21] }],
+    changes = [change()],
+    alerted = [] as string[],
+    stale = [] as Array<{ id: string; reason: string }>,
+  } = {}) {
     mocks.sql.mockImplementation((strings: TemplateStringsArray) => {
       const text = strings.join("?");
+      if (text.includes("NOT (s.source_json ? 'withdrawn_at')")) return Promise.resolve(stale);
       if (text.includes("FROM institution_workspace_memberships")) return Promise.resolve(banks);
       if (text.includes("FROM published_fee_catalog")) return Promise.resolve([{ fee_category: "overdraft", amount: "32.00" }]);
       if (text.includes("FROM fee_change_records")) return Promise.resolve(changes);
@@ -162,6 +168,30 @@ describe("runCompetitorAlerts", () => {
     expect(result).toMatchObject({ dryRun: true, banks: 1, alerts: 1, memberAlerts: 0 });
     expect(result.previews[0].title).toContain("raised its overdraft fee");
     expect(mocks.recordHamiltonMonitorSignal).not.toHaveBeenCalled();
+  });
+
+  it("withdraws an earlier alert whose new price is waiting on a takedown, keeping the signal", async () => {
+    install({ banks: [], stale: [{ id: "00000000-0000-0000-0000-000000000009", reason: "new price has a pending takedown" }] });
+    const result = await runCompetitorAlerts();
+    expect(result.withdrawn).toBe(1);
+    const texts = mocks.sql.mock.calls.map((c) => (c[0] as TemplateStringsArray).join("?"));
+    const find = texts.find((t) => t.includes("NOT (s.source_json ? 'withdrawn_at')"))!;
+    expect(find).toContain("takedown_pending");
+    expect(find).toContain("like_for_like IS NOT TRUE");
+    expect(find).toContain("rolled_back_at IS NOT NULL");
+    expect(texts.some((t) => t.includes("UPDATE hamilton_signals") && t.includes("withdrawn_at"))).toBe(true);
+    expect(texts.some((t) => t.includes("UPDATE hamilton_priority_alerts") && t.includes("'dismissed'"))).toBe(true);
+    expect(texts.some((t) => t.includes("DELETE"))).toBe(false);
+    expect(summarizeCompetitorAlerts(result)).toContain("Withdrew 1 earlier alert(s)");
+  });
+
+  it("only counts alerts it would withdraw on a dry run", async () => {
+    install({ banks: [], stale: [{ id: "00000000-0000-0000-0000-000000000009", reason: "change is not like for like" }] });
+    const result = await runCompetitorAlerts({ dryRun: true });
+    expect(result.withdrawn).toBe(1);
+    const texts = mocks.sql.mock.calls.map((c) => (c[0] as TemplateStringsArray).join("?"));
+    expect(texts.some((t) => t.includes("UPDATE"))).toBe(false);
+    expect(summarizeCompetitorAlerts(result)).toContain("Would withdraw 1");
   });
 
   it("says plainly when no institution has a workspace", async () => {

@@ -12,6 +12,7 @@ import {
   parseStateFeed,
 } from "@/lib/regulatory/state-news";
 import { mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
+import { flagOn } from "./live-flag";
 
 /**
  * Magellan registry step: each state banking regulator's own press releases and
@@ -42,7 +43,7 @@ const FETCH_OPTIONS: RegistryFetchOptions = { retries: 0, timeoutMs: 15_000 };
 
 /** One flag for both state news steps (this one and registry-state-bill-news). */
 export function stateNewsLive(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.STATE_NEWS_TRACKER_LIVE === "true";
+  return flagOn(env.STATE_NEWS_TRACKER_LIVE);
 }
 
 export type StateRegNewsMode = "feed" | "page" | "none" | "failed" | "no_website" | "not_reached";

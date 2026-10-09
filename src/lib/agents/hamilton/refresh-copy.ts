@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { FREE_READ_PREFIX } from "@/lib/agents/hamilton/product-page";
 import {
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
   feeValue,
@@ -146,6 +147,10 @@ export async function refreshFeesFromCurrentCopy(
              nv.verified_by_agent_event_id, nv.fee_name, nv.amount, nv.frequency, nv.amount_kind,
              nv.rate_percent, nv.rate_min_amount, nv.rate_max_amount, nv.rate_basis,
              nr.agent_event_id AS raw_agent_event_id, nr.source_document_id,
+             -- The product-page rule (publishSkipReason) needs both: without them a product
+             -- page's $0 benefit moved to its page's new copy unflagged (55986 -> 103663, Oct 9).
+             COALESCE(nr.conditions LIKE ${`${FREE_READ_PREFIX}%`}, false) AS free_read,
+             (SELECT cd.document_url FROM source_documents cd WHERE cd.id = nr.source_document_id) AS document_url,
              stale.fee_published_id AS prior_fee_published_id, stale.fee_name AS prior_fee_name,
              stale.amount AS prior_amount, stale.amount_kind AS prior_amount_kind,
              stale.rate_percent AS prior_rate_percent, stale.source_document_id AS prior_source_document_id
