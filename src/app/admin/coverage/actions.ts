@@ -5,11 +5,13 @@ import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { startAgentRun } from "@/lib/agents/run-store";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import { sql } from "@/lib/data-store/connection";
+import { getAgentSpendToday } from "@/lib/data-store/console-spend";
 import type { MagellanStatus } from "./types";
 
 export async function fetchMagellanStatus(): Promise<MagellanStatus> {
   await requireAuth("operate");
   const backend = getExecutionBackendStatus();
+  const spendRead = getAgentSpendToday("magellan");
   const [row] = await sql`
     SELECT
       COUNT(*) FILTER (
@@ -24,6 +26,7 @@ export async function fetchMagellanStatus(): Promise<MagellanStatus> {
       COUNT(*) FILTER (WHERE rescue_status = 'retry_after')::int AS retry_after
     FROM institution_sources
   `;
+  const spend = await spendRead;
   return {
     pending: Number(row?.pending ?? 0),
     circuit: { halted: !backend.enabled, reason: backend.enabled ? null : backend.detail },
@@ -31,7 +34,8 @@ export async function fetchMagellanStatus(): Promise<MagellanStatus> {
     dead: Number(row?.dead ?? 0),
     needs_human: Number(row?.needs_human ?? 0),
     retry_after: Number(row?.retry_after ?? 0),
-    today_cost_usd: 0,
+    today_cost_usd: spend?.todayUsd ?? null,
+    spend_read_at: spend?.readAt ?? null,
   };
 }
 

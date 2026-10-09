@@ -5,11 +5,12 @@
  */
 
 /** The marketing agents (`growth-os/agents/<name>.md`). */
-export const GROWTH_AGENTS = ["carnegie", "draper", "edison", "ernest", "murrow", "nielsen", "norman", "sherlock"] as const;
+export const GROWTH_AGENTS = ["bernays", "carnegie", "draper", "edison", "ernest", "murrow", "nielsen", "norman", "sherlock"] as const;
 export type GrowthAgent = (typeof GROWTH_AGENTS)[number];
 
 /** Each agent's job, as the team table in `growth-os/README.md` states it. */
 export const GROWTH_AGENT_ROLES: Record<GrowthAgent, string> = {
+  bernays: "Press pitches: weekly data notes for trade and consumer press",
   carnegie: "B2B outreach drafts",
   draper: "Chief marketing officer: priorities, assignments, review",
   edison: "Product-led growth tools",

@@ -107,6 +107,30 @@ export function StateDirectoryMap({
     )
     .slice(0, 10);
 
+  // Once a state is picked, the results are what the reader came for: a one-line
+  // "Vermont · Change state" bar replaces the large map so the list starts right below.
+  if (selectedStateCode) {
+    const stateName = STATE_NAMES[selectedStateCode] ?? selectedStateCode;
+    return (
+      <section
+        aria-label="Selected state"
+        className="fi-reveal fi-reveal-delay-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#D8CBB8] py-4"
+      >
+        <p className="text-sm text-[#1A1815]">
+          <span className="text-lg font-semibold tracking-tight">{stateName}</span>
+          <span className="ml-2 text-xs tabular-nums text-[#6B6255]">{formatStateCounts(selectedSummary ?? undefined)}</span>
+        </p>
+        <Link
+          href={clearStateHref({ charterType, feeCategory })}
+          prefetch={false}
+          className="text-sm font-semibold text-[#A93D25] underline-offset-2 hover:underline"
+        >
+          Change state
+        </Link>
+      </section>
+    );
+  }
+
   return (
     <section className="fi-reveal fi-reveal-delay-1 border-b border-[#D8CBB8] py-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
@@ -120,21 +144,13 @@ export function StateDirectoryMap({
                 Choose a state to see its banks and credit unions.
               </h2>
             </div>
-            {selectedStateCode && (
-              <Link
-                href={clearStateHref({ charterType, feeCategory })}
-                className="text-xs font-semibold text-[#A93D25] transition-colors hover:text-[#A93D25]"
-              >
-                Clear state
-              </Link>
-            )}
           </div>
 
           <div className="hidden border border-[#E0D7C9] bg-[#FFFDF9] p-3 sm:block">
             <svg
               viewBox="0 0 960 600"
               className="h-auto w-full"
-              role="img"
+              role="group"
               aria-label="Map of United States institutions by state"
             >
               {US_STATES.map((state) => {
@@ -178,52 +194,28 @@ export function StateDirectoryMap({
                 <span className="h-2.5 w-2.5 bg-[#C44B2E]" />
                 More with fees
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 bg-[#1A1815]" />
-                Selected
-              </span>
             </div>
           </div>
 
           <div className="sm:hidden">
-            {selectedSummary ? (
-              <div className="flex min-h-12 items-center justify-between border border-[#1A1815] bg-[#1A1815] px-3 text-sm text-white">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] opacity-60">
-                    Selected
-                  </p>
-                  <p className="font-semibold">
-                    {STATE_NAMES[selectedSummary.state_code] ?? selectedSummary.state_code}
-                  </p>
-                </div>
+            <div className="grid gap-2">
+              {topStates.map((summary) => (
                 <Link
-                  href={clearStateHref({ charterType, feeCategory })}
+                  key={summary.state_code}
+                  href={buildHref({ stateCode: summary.state_code, query, charterType, feeCategory })}
                   prefetch={false}
-                  className="text-xs font-semibold opacity-80 transition-opacity hover:opacity-100"
+                  className="flex min-h-12 items-center justify-between border border-[#E0D7C9] bg-[#FFFDF9] px-3 text-sm text-[#1A1815] transition-colors hover:border-[#C44B2E]"
                 >
-                  Change
+                  <span className="font-semibold">
+                    {STATE_NAMES[summary.state_code] ?? summary.state_code}
+                  </span>
+                  <span className="flex items-center gap-2 text-xs tabular-nums text-[#5A5347]">
+                    {formatStateCounts(summary)}
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
                 </Link>
-              </div>
-            ) : (
-              <div className="grid gap-2">
-                {topStates.map((summary) => (
-                  <Link
-                    key={summary.state_code}
-                    href={buildHref({ stateCode: summary.state_code, query, charterType, feeCategory })}
-                    prefetch={false}
-                    className="flex min-h-12 items-center justify-between border border-[#E0D7C9] bg-[#FFFDF9] px-3 text-sm text-[#1A1815] transition-colors hover:border-[#C44B2E]"
-                  >
-                    <span className="font-semibold">
-                      {STATE_NAMES[summary.state_code] ?? summary.state_code}
-                    </span>
-                    <span className="flex items-center gap-2 text-xs tabular-nums text-[#5A5347]">
-                      {formatStateCounts(summary)}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         </div>
 

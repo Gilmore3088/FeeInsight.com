@@ -163,6 +163,29 @@ describe("top-50 fold", () => {
     expect(split("money_order", "Cashier's Check / Money Order")).toBeNull();
   });
 
+  test("night deposit keys, box rent late charges, IRA transfers out and lien releases move to their own types (Oct 9)", () => {
+    const moves: [string, string, number, string | null][] = [
+      ["safe_deposit_box", "Night Drop Key Replacement", 15, "night_deposit"],
+      ["safe_deposit_box", "Replacement Night Depository Bag or Lost Key", 35, "night_deposit"],
+      ["safe_deposit_box", "Lost Key - Safe Deposit Box", 25, null],
+      ["late_payment", "Box Rental Late Fee", 25, "safe_deposit_box"],
+      ["late_payment", "Late charge for safety deposit box rental after 10 days", 10, "safe_deposit_box"],
+      ["late_payment", "Late Payment Fee - Consumer Loans", 25, null],
+      ["account_research", "IRA Transfer (outgoing)", 50, "ira_termination"],
+      ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
+      ["account_research", "IRA Excessive Withdrawal", 10, null],
+      ["account_research", "IRA Transfer Incoming", 0, null],
+      ["account_research", "Account Research (per hour)", 25, null],
+      ["legal_process", "Lien Release for Lost Title", 15, "other_lending_fee"],
+      ["legal_process", "Legal Process (Liens, levies, restraining orders, etc,) Per Action", 100, null],
+    ];
+    for (const [key, name, amount, want] of moves) {
+      const got = splitLiveCategory(key, name)?.to ?? null;
+      expect([key, name, got]).toEqual([key, name, want]);
+      if (want) expect([name, passesDarwinChecks(want, name, amount)]).toEqual([name, true]);
+    }
+  });
+
   test("foldContext returns the text before the fee's line", () => {
     const text = "ATM Fees Non-Bank ATM ........ Withdrawal $2.00\nBalance Inquiry .......... $1.00";
     expect(foldContext(text, "Balance Inquiry")).toBe("ATM Fees Non-Bank ATM Withdrawal $2.00 ");

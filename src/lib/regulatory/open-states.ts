@@ -207,6 +207,9 @@ export function openStatesUrl(stateCode: string, query: string, since: string | 
   return `${OPEN_STATES_API}?${params.toString()}`;
 }
 
+/** Rejected search hits kept in the run log per state. */
+export const REJECTED_SAMPLE_SIZE = 10;
+
 /** Pages per query. Open States' free tier is rate limited, so a state costs at most queries x pages requests. */
 export const MAX_PAGES_PER_QUERY = 2;
 
@@ -238,10 +241,15 @@ export async function fetchStateFeeBills(
   requests: number;
   /** Set only when nothing matched since `since`: hits for the first query at any date. */
   anyDateHits: number | null;
+  /** Up to REJECTED_SAMPLE_SIZE search hits the fee test turned away, identifier to title. */
+  rejectedSample: Record<string, string>;
 }> {
   const byId = new Map<string, StateBillItem>();
   // Search hits that fail the bank fee test, so a bill an earlier rule tagged can be untagged.
   const rejected = new Set<string>();
+  // The first few rejected hits, by identifier and title, so the run log shows what the fee
+  // test turned away (most states get dozens of hits and keep none).
+  const rejectedSample = new Map<string, string>();
   let searched = 0;
   let requests = 0;
   for (const query of STATE_BILL_QUERIES) {
@@ -259,7 +267,12 @@ export async function fetchStateFeeBills(
         searched += 1;
         const item = parseOpenStatesBill(raw, stateCode);
         if (item) byId.set(item.id, item);
-        else if (raw.id) rejected.add(raw.id);
+        else if (raw.id) {
+          rejected.add(raw.id);
+          if (rejectedSample.size < REJECTED_SAMPLE_SIZE && raw.identifier) {
+            rejectedSample.set(raw.identifier, (raw.title ?? "").slice(0, 120));
+          }
+        }
       }
       if ((body.pagination?.max_page ?? 1) <= page) break;
     }
@@ -280,5 +293,12 @@ export async function fetchStateFeeBills(
     requests += 1;
     anyDateHits = probe.pagination?.total_items ?? probe.results?.length ?? 0;
   }
-  return { items: [...byId.values()], rejectedIds: [...rejected].filter((id) => !byId.has(id)), searched, requests, anyDateHits };
+  return {
+    items: [...byId.values()],
+    rejectedIds: [...rejected].filter((id) => !byId.has(id)),
+    rejectedSample: Object.fromEntries(rejectedSample),
+    searched,
+    requests,
+    anyDateHits,
+  };
 }

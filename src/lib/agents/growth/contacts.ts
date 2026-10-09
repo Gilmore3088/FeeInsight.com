@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signals";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * NIELSEN's contact finder: the same walk Magellan makes for fee schedules, aimed at the
@@ -460,6 +461,8 @@ export interface ContactsRunResult {
   byRole: Partial<Record<ContactRole, number>>;
   /** Institutions left for the next run because this one ran out of time. */
   deferred: number;
+  /** The stored confidence, role and primary/backup pick, re-ranked for the institutions read (null before the migration or on a dry run). */
+  picks?: ContactPicksResult | null;
 }
 
 export async function runContactFinder({
@@ -499,8 +502,13 @@ export async function runContactFinder({
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, sites.length) }, worker));
 
+  let picks: ContactPicksResult | null = null;
   if (!dryRun) {
     for (const check of checks) await saveCheck(db, check, runId);
+    // Store each contact's confidence, role and primary/backup pick for the institutions just read,
+    // so /admin/growth reads them instead of ranking again.
+    const touched = checks.filter((check) => check.contacts.length > 0).map((check) => check.institutionId);
+    if (touched.length && (await contactPicksSchemaReady(db))) picks = await refreshContactPicks({ db, institutionIds: touched });
   }
 
   const byRole: ContactsRunResult["byRole"] = {};
@@ -517,7 +525,7 @@ export async function runContactFinder({
       }
     }
   }
-  return { schemaReady: true, dryRun, checked: checks.length, found: byOutcome.found, people, general, byOutcome, byRole, deferred };
+  return { schemaReady: true, dryRun, checked: checks.length, found: byOutcome.found, people, general, byOutcome, byRole, deferred, picks };
 }
 
 export function summarizeContactFinder(result: ContactsRunResult): string {
@@ -547,33 +555,54 @@ export interface ProspectContactRow {
   role: ContactRole;
   source_url: string;
   found_at: string;
+  /** Stored by `refreshContactPicks`; null until the row is ranked (or absent before the migration). */
+  confidence?: ContactConfidence | null;
+  pick?: ContactPick | null;
 }
 
-/** Every saved contact with its institution, people before shared mailboxes. */
+/**
+ * Every saved contact with its institution, people before shared mailboxes. Once the ranking
+ * columns exist, each row carries its stored confidence and primary/backup pick.
+ */
 export async function listProspectContacts(db: SqlTag = sql): Promise<ProspectContactRow[]> {
-  const rows = await db`
-    SELECT c.institution_id, s.institution_name, s.charter_type, s.state_code, s.city,
-           ROUND(s.asset_size / 1000.0) AS assets_musd,
-           c.email, c.kind, c.name, c.title, c.role, c.source_url, c.found_at
-      FROM prospect_contacts c
-      JOIN institution_sources s ON s.id = c.institution_id
-     ORDER BY s.state_code, s.institution_name, (c.kind = 'person') DESC, c.role, c.email
-  `;
-  return rows.map((row) => normalizeContact({
-    institution_id: Number(row.institution_id),
-    institution_name: String(row.institution_name),
-    charter_type: row.charter_type === null ? null : String(row.charter_type),
-    state_code: row.state_code === null ? null : String(row.state_code),
-    city: row.city === null ? null : String(row.city),
-    assets_musd: row.assets_musd === null ? null : Number(row.assets_musd),
-    email: String(row.email),
-    kind: row.kind as ContactKind,
-    name: row.name === null ? null : String(row.name),
-    title: row.title === null ? null : String(row.title),
-    role: row.role as ContactRole,
-    source_url: String(row.source_url),
-    found_at: new Date(row.found_at as string).toISOString(),
-  }));
+  const stored = await contactPicksSchemaReady(db);
+  const rows = stored
+    ? await db`
+        SELECT c.institution_id, s.institution_name, s.charter_type, s.state_code, s.city,
+               ROUND(s.asset_size / 1000.0) AS assets_musd,
+               c.email, c.kind, c.name, c.title, c.role, c.source_url, c.found_at, c.confidence, c.pick
+          FROM prospect_contacts c
+          JOIN institution_sources s ON s.id = c.institution_id
+         ORDER BY s.state_code, s.institution_name, (c.kind = 'person') DESC, c.role, c.email
+      `
+    : await db`
+        SELECT c.institution_id, s.institution_name, s.charter_type, s.state_code, s.city,
+               ROUND(s.asset_size / 1000.0) AS assets_musd,
+               c.email, c.kind, c.name, c.title, c.role, c.source_url, c.found_at
+          FROM prospect_contacts c
+          JOIN institution_sources s ON s.id = c.institution_id
+         ORDER BY s.state_code, s.institution_name, (c.kind = 'person') DESC, c.role, c.email
+      `;
+  return rows.map((row) => {
+    const contact = normalizeContact({
+      institution_id: Number(row.institution_id),
+      institution_name: institutionDisplayName(String(row.institution_name)),
+      charter_type: row.charter_type === null ? null : String(row.charter_type),
+      state_code: row.state_code === null ? null : String(row.state_code),
+      city: row.city === null ? null : String(row.city),
+      assets_musd: row.assets_musd === null ? null : Number(row.assets_musd),
+      email: String(row.email),
+      kind: row.kind as ContactKind,
+      name: row.name === null ? null : String(row.name),
+      title: row.title === null ? null : String(row.title),
+      role: row.role as ContactRole,
+      source_url: String(row.source_url),
+      found_at: new Date(row.found_at as string).toISOString(),
+    });
+    return stored
+      ? { ...contact, confidence: parseConfidence(row.confidence), pick: parsePick(row.pick) }
+      : contact;
+  });
 }
 
 export interface ContactCounts {
@@ -638,6 +667,176 @@ export function rankContacts<T extends Pick<ProspectContactRow, "kind" | "name" 
   );
 }
 
+/**
+ * A first email goes only to a person whose printed title is a buying role (marketing, retail
+ * and deposits, the executive team, finance, operations, compliance). A person's address with a
+ * lender's, branch or committee title, or with a name and no title, is not a decision-maker.
+ * (Re-exported by `outreach.ts`, where it was first written.)
+ */
+export function isDecisionMaker(contact: Pick<ProspectContactRow, "kind" | "role" | "email">): boolean {
+  return contact.kind === "person" && contact.role !== "other" && !isSharedMailbox(contact.email);
+}
+
+/** The institution's buyer contact the first email goes to, and the one behind it. */
+export type ContactPick = "primary" | "backup";
+
+const CONFIDENCES: readonly ContactConfidence[] = ["high", "medium", "low"];
+const PICKS: readonly ContactPick[] = ["primary", "backup"];
+function parseConfidence(value: unknown): ContactConfidence | null {
+  return CONFIDENCES.includes(value as ContactConfidence) ? (value as ContactConfidence) : null;
+}
+function parsePick(value: unknown): ContactPick | null {
+  return PICKS.includes(value as ContactPick) ? (value as ContactPick) : null;
+}
+
+/**
+ * One institution's contacts, each with its confidence and its pick: among the decision-makers
+ * (`isDecisionMaker`) in `rankContacts` order, the first is primary and the second backup; every
+ * other contact has no pick. The same choice `buildOutreachDraft` makes. Pass contacts already
+ * read with today's rules (`normalizeContact`).
+ */
+export function pickContacts<T extends Pick<ProspectContactRow, "kind" | "name" | "title" | "role" | "email">>(
+  contacts: T[],
+): Array<T & { confidence: ContactConfidence; pick: ContactPick | null }> {
+  const buyers = rankContacts(contacts).filter(isDecisionMaker);
+  const pickOf = new Map<T, ContactPick>();
+  if (buyers[0]) pickOf.set(buyers[0], "primary");
+  if (buyers[1]) pickOf.set(buyers[1], "backup");
+  return contacts.map((contact) => ({ ...contact, confidence: contactConfidence(contact), pick: pickOf.get(contact) ?? null }));
+}
+
+/** True once `prospect_contacts` has the ranking columns (migration 20270110000031). */
+export async function contactPicksSchemaReady(db: SqlTag = sql): Promise<boolean> {
+  const [row] = await db`
+    SELECT COUNT(*) = 3 AS ready
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'prospect_contacts'
+       AND column_name IN ('confidence', 'pick', 'ranked_at')
+  `;
+  return row?.ready === true;
+}
+
+export interface ContactPicksResult {
+  schemaReady: boolean;
+  dryRun: boolean;
+  /** Institutions and contacts read. */
+  institutions: number;
+  contacts: number;
+  /** Contacts whose stored role, confidence or pick changed (or had never been stored). */
+  changed: number;
+  primary: number;
+  backup: number;
+  /** Institutions with saved contacts but no decision-maker, so no primary. */
+  noBuyer: number;
+  byConfidence: Record<ContactConfidence, number>;
+}
+
+/**
+ * Ranks saved contacts with today's rules and stores what it finds on each row: the role
+ * re-read from its title (`normalizeContact`), its confidence (`contactConfidence`) and whether
+ * it is the institution's primary or backup buyer contact (`pickContacts`). Every contact of the
+ * institutions read is ranked together, so a pick moves when a better contact appears. Only rows
+ * whose values change are written; a dry run counts and writes nothing. Without `institutionIds`
+ * it ranks every saved contact (the `growth-contact-picks` step, which also backfills rows saved
+ * before the columns existed).
+ */
+export async function refreshContactPicks({
+  db = sql,
+  institutionIds,
+  dryRun = false,
+}: {
+  db?: SqlTag;
+  institutionIds?: number[];
+  dryRun?: boolean;
+} = {}): Promise<ContactPicksResult> {
+  const byConfidence: Record<ContactConfidence, number> = { high: 0, medium: 0, low: 0 };
+  const result: ContactPicksResult = { schemaReady: false, dryRun, institutions: 0, contacts: 0, changed: 0, primary: 0, backup: 0, noBuyer: 0, byConfidence };
+  if (!(await contactsSchemaReady(db)) || !(await contactPicksSchemaReady(db))) return result;
+  result.schemaReady = true;
+  if (institutionIds && institutionIds.length === 0) return result;
+
+  const rows = institutionIds
+    ? await db`
+        SELECT id, institution_id, email, kind, name, title, role, confidence, pick, ranked_at
+          FROM prospect_contacts
+         WHERE institution_id = ANY(${institutionIds}::bigint[])
+         ORDER BY institution_id, email
+      `
+    : await db`
+        SELECT id, institution_id, email, kind, name, title, role, confidence, pick, ranked_at
+          FROM prospect_contacts
+         ORDER BY institution_id, email
+      `;
+
+  type Saved = { id: number; email: string; kind: ContactKind; name: string | null; title: string | null; role: ContactRole; stored: { role: string; confidence: unknown; pick: unknown; rankedAt: unknown } };
+  const byInstitution = new Map<number, Saved[]>();
+  for (const row of rows) {
+    const institutionId = Number(row.institution_id);
+    const contact = normalizeContact({
+      email: String(row.email),
+      kind: row.kind as ContactKind,
+      name: row.name === null ? null : String(row.name),
+      title: row.title === null ? null : String(row.title),
+      role: row.role as ContactRole,
+    });
+    const saved: Saved = { ...contact, id: Number(row.id), stored: { role: String(row.role), confidence: row.confidence, pick: row.pick, rankedAt: row.ranked_at } };
+    const list = byInstitution.get(institutionId);
+    if (list) list.push(saved);
+    else byInstitution.set(institutionId, [saved]);
+  }
+
+  const ids: number[] = [];
+  const roles: string[] = [];
+  const confidences: string[] = [];
+  const picks: Array<string | null> = [];
+  for (const list of byInstitution.values()) {
+    result.institutions += 1;
+    const ranked = pickContacts(list);
+    if (!ranked.some((contact) => contact.pick === "primary")) result.noBuyer += 1;
+    for (const contact of ranked) {
+      result.contacts += 1;
+      byConfidence[contact.confidence] += 1;
+      if (contact.pick === "primary") result.primary += 1;
+      if (contact.pick === "backup") result.backup += 1;
+      const { stored } = contact;
+      const same =
+        stored.rankedAt !== null && stored.rankedAt !== undefined &&
+        stored.role === contact.role && stored.confidence === contact.confidence && (stored.pick ?? null) === contact.pick;
+      if (same) continue;
+      ids.push(contact.id);
+      roles.push(contact.role);
+      confidences.push(contact.confidence);
+      picks.push(contact.pick);
+    }
+  }
+  result.changed = ids.length;
+  if (!dryRun && ids.length) {
+    await db`
+      UPDATE prospect_contacts c
+         SET role = u.role, confidence = u.confidence, pick = u.pick, ranked_at = now()
+        FROM unnest(${ids}::bigint[], ${roles}::text[], ${confidences}::text[], ${picks}::text[]) AS u(id, role, confidence, pick)
+       WHERE c.id = u.id
+    `;
+  }
+  return result;
+}
+
+export function summarizeContactPicks(result: ContactPicksResult): string {
+  if (!result.schemaReady) return "Ranked no contacts; the ranking columns on prospect_contacts are not there yet.";
+  if (!result.contacts) return "No saved contact to rank.";
+  const parts = [
+    `Ranked ${result.contacts} contacts at ${result.institutions} institutions: ${result.primary} primary and ${result.backup} backup buyer contacts`,
+    `confidence high ${result.byConfidence.high}, medium ${result.byConfidence.medium}, low ${result.byConfidence.low}`,
+  ];
+  if (result.noBuyer) parts.push(`${result.noBuyer} institutions have no decision-maker yet`);
+  parts.push(`${result.changed} rows ${result.dryRun ? "would change" : "updated"}`);
+  return `${parts.join("; ")}.${result.dryRun ? " Dry run: nothing saved." : ""}`;
+}
+
+/**
+ * The contacts as a CSV. An institution whose rows are all ranked uses the stored confidence and
+ * pick; one with any unranked row (before the backfill) is ranked here the same way.
+ */
 export function contactsCsv(rows: ProspectContactRow[]): string {
   const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
   const byInstitution = new Map<number, ProspectContactRow[]>();
@@ -647,11 +846,18 @@ export function contactsCsv(rows: ProspectContactRow[]): string {
     else byInstitution.set(row.institution_id, [row]);
   }
   const lines: string[] = [];
+  const order: Record<ContactPick, number> = { primary: 0, backup: 1 };
   for (const list of byInstitution.values()) {
-    rankContacts(list).forEach((row, index) => {
-      const cells = { ...row, pick: index === 0 ? "primary" : index === 1 ? "backup" : "", confidence: contactConfidence(row) };
-      lines.push(header.map((key) => csvCell(cells[key])).join(","));
-    });
+    const ranked = list.every((row) => row.confidence)
+      ? list.map((row) => ({ ...row, confidence: row.confidence as ContactConfidence, pick: row.pick ?? null }))
+      : pickContacts(list);
+    const position = new Map(rankContacts(ranked).map((row, index) => [row, index]));
+    ranked
+      .sort((a, b) => (a.pick ? order[a.pick] : 2) - (b.pick ? order[b.pick] : 2) || position.get(a)! - position.get(b)!)
+      .forEach((row) => {
+        const cells = { ...row, pick: row.pick ?? "" };
+        lines.push(header.map((key) => csvCell(cells[key])).join(","));
+      });
   }
   return [header.join(","), ...lines].join("\n") + "\n";
 }

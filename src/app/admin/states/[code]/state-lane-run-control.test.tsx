@@ -92,7 +92,7 @@ describe("StateLaneRunControl", () => {
     renderControl(null, false, null, { id: 1034, status: "running", startedAt: "2026-10-05T17:31:49.000Z" });
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Run #1034 running since 5:31 PM UTC");
+    expect(screen.getByRole("status")).toHaveTextContent("Run #1034 running since 10:31 AM PDT");
     expect(screen.getByRole("link", { name: "Open run" })).toHaveAttribute("href", "/admin/states/OH/runs/1034");
   });
 
