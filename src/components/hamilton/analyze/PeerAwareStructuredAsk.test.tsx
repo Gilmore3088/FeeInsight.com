@@ -1,0 +1,89 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PeerAwareStructuredAsk } from "./PeerAwareStructuredAsk";
+import { PeerListView } from "./PeerListView";
+import type { PeerListResponse, PeerListRow } from "@/lib/hamilton/peer-list";
+
+vi.mock("./StructuredAsk", () => ({ StructuredAsk: () => <p>Existing fee-answer path</p> }));
+const fetcher = vi.fn();
+const fallback = vi.fn();
+const lead = vi.fn();
+const props = { question: "List ten peers", nonce: 1, institutionId: "101", modelHrefFor: () => "/pro/simulate", onNoStoryline: fallback, onLead: lead };
+const peer = (id: number, name: string, assets: number | null): PeerListRow => ({ institutionId: id, name, charterType: "credit_union", city: "Orlando", stateCode: "FL", totalAssetsUsd: assets, reportDate: assets === null ? null : "2026-06-30", source: assets === null ? null : "ncua", sourceUrl: null, recordId: assets === null ? null : id, feeCoverage: "not_found", inclusionReason: "Matches the stated criteria." });
+const fixture: PeerListResponse = { kind: "peer_list", shortAnswer: "3 of 3 matching institutions for Test CU.", peerList: { version: 1, status: "ready", subject: peer(101, "Test CU", 10_000_000_000), criteria: null, rows: [peer(202, "Alpha CU", 1_000_000_000), peer(203, "Zero CU", 0), peer(204, "Missing CU", null)], totalMatches: 3, queriedAt: "2026-10-10T00:00:00Z", notes: ["Synthetic test data; assets use their stored reporting dates."] } };
+const ok = (result = fixture) => ({ ok: true, json: async () => result });
+beforeEach(() => { fetcher.mockReset().mockResolvedValue(ok()); fallback.mockReset(); lead.mockReset(); vi.stubGlobal("fetch", fetcher); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe("peer-first Ask rendering", () => {
+  it("renders actual peer rows, assets and dates without the report path or another input", async () => {
+    render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("table");
+    expect(screen.getByRole("link", { name: "Alpha CU" }).getAttribute("href")).toBe("/institution/202");
+    expect(screen.getByText("$1,000,000,000")).toBeTruthy();
+    expect(screen.getAllByText("2026-06-30").length).toBe(2);
+    expect(screen.queryByText("Existing fee-answer path")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(fallback).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe("/api/hamilton/ask");
+  });
+  it("distinguishes zero from missing assets and missing fee coverage", async () => {
+    render(<PeerAwareStructuredAsk {...props} />); await screen.findByRole("table");
+    expect(screen.getByText("$0")).toBeTruthy();
+    expect(screen.getAllByText("Not available").length).toBe(2);
+    expect(screen.getAllByText("No published fees on file").length).toBe(3);
+    expect(screen.queryByText("Free")).toBeNull();
+  });
+  it("sorts only displayed rows and keeps unknown assets last", () => {
+    render(<PeerListView response={fixture} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "assets_asc" } });
+    const rows = within(screen.getByRole("table")).getAllByRole("row");
+    expect(rows[1].textContent).toContain("Zero CU"); expect(rows[3].textContent).toContain("Missing CU");
+    expect(fixture.peerList.rows[0].name).toBe("Alpha CU");
+  });
+  it("keeps a failed list visible and never calls the paid prose fallback", async () => {
+    fetcher.mockResolvedValue({ ok: false });
+    render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("alert"); expect(fallback).not.toHaveBeenCalled();
+    expect(screen.queryByText("Existing fee-answer path")).toBeNull();
+    fetcher.mockResolvedValue(ok()); fireEvent.click(screen.getByRole("button", { name: "Retry peer list" }));
+    await screen.findByRole("table"); expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("renders unsupported-criteria guidance without inventing a peer table", async () => {
+    fetcher.mockResolvedValue(ok({ ...fixture, shortAnswer: "Choose supported asset criteria.", peerList: { ...fixture.peerList, status: "needs_criteria", rows: [], totalMatches: null } }));
+    render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByText("Choose supported asset criteria."); expect(screen.queryByRole("table")).toBeNull(); expect(fallback).not.toHaveBeenCalled();
+  });
+  it("preserves the existing plain local-competitor view", () => {
+    render(<PeerAwareStructuredAsk {...props} question="Who are my local competitors and where are they?" />);
+    expect(screen.getByText("Existing fee-answer path")).toBeTruthy();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("preserves the legacy path for an explicit fee comparison", () => {
+    render(<PeerAwareStructuredAsk {...props} question="Compare our NSF fees with peers" />);
+    expect(screen.getByText("Existing fee-answer path")).toBeTruthy(); expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("aborts the old list request when the institution changes", async () => {
+    let release: (value: ReturnType<typeof ok>) => void = () => {};
+    fetcher.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const view = render(<PeerAwareStructuredAsk {...props} />);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    const signal = fetcher.mock.calls[0][1].signal as AbortSignal;
+    view.rerender(<PeerAwareStructuredAsk {...props} institutionId="999" nonce={2} />);
+    await screen.findByRole("table"); expect(signal.aborted).toBe(true);
+    await act(async () => release(ok({ ...fixture, shortAnswer: "Stale answer must not appear." })));
+    expect(screen.queryByText("Stale answer must not appear.")).toBeNull(); expect(lead).toHaveBeenCalledTimes(1);
+  });
+  it("offers no unsupported export/report action for the new list type", async () => {
+    render(<PeerAwareStructuredAsk {...props} />); await screen.findByRole("table");
+    expect(screen.queryByRole("button", { name: /Download|report/i })).toBeNull();
+    expect(screen.getByText(/Peer-list saving, exports/)).toBeTruthy();
+  });
+  it("provides a keyboard-focusable horizontal table region", () => {
+    render(<PeerListView response={fixture} />);
+    expect(screen.getByRole("region", { name: "Peer table; scroll horizontally" }).getAttribute("tabindex")).toBe("0");
+  });
+});
