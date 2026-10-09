@@ -266,6 +266,12 @@ export interface HandRefile {
   amount: number;
   to: string;
   name: string;
+  /**
+   * The bad name the fee still carries. When set, the fee is also fixed if another check has
+   * already moved it under `to` with that name (96164: the guard's own hand re-file moves it to
+   * atm_non_network without renaming it).
+   */
+  oldName?: string;
   why: string;
 }
 
@@ -331,7 +337,20 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 97560, from: "nsf", amount: 30, to: "nsf", name: "Non-Sufficient Funds",
     why: "inst 6272, doc 8005: \"Non-Sufficient Funds ... $30/item\"; the ATM line before it was glued on" },
   { feePublishedId: 98064, from: "dormant_account", amount: 5, to: "dormant_account", name: "Inactive Account",
-    why: "inst 8511, doc 13054: \"Inactive Account (after [months unreadable] of inactivity) ... $5.00/month\"" },
+    why: "inst 8511, doc 13054: \"Inactive Account (after [months unreadable] of inactivity) ... $5.00/month\"" },  // UAT, Oct 9: real fees carrying a sentence fragment as their name, each under a pending
+  // takedown from another check. Named from their own line; the next check that reads them clears it.
+  { feePublishedId: 96164, from: "monthly_maintenance", amount: 2.5, to: "atm_non_network",
+    name: "Non-Westamerica ATM withdrawal (balance requirement not met)",
+    oldName: "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of",
+    why: "Westamerica (250), doc 17065: \"Non-Westamerica ATM Withdrawals: ... Otherwise, a fee of $2.50 per posted withdrawal\"" },
+  { feePublishedId: 61848, from: "minimum_balance", amount: 2, to: "minimum_balance",
+    name: "Minimum balance fee (minimum daily balance of $5)",
+    oldName: "in your account to avoid a minimum balance fee of",
+    why: "inst 6026, doc 18314: \"You must maintain a minimum daily balance of $5 in your account to avoid a minimum balance fee of $2\"" },
+  { feePublishedId: 98747, from: "monthly_maintenance", amount: 15, to: "monthly_maintenance",
+    name: "Service charge (balance falls below $1,000.00)",
+    oldName: "Minimum balance to avoid imposition of fees - A service charge fee of",
+    why: "inst 2094, doc 22814: \"If your balance falls below $1,000.00 on any day ... we will impose a service charge fee of $15.00\"" },
 ];
 
 interface HandRow {
@@ -350,6 +369,8 @@ export interface HandMove {
   institutionId: number;
   sourceDocumentId: number | null;
   oldName: string;
+  /** The category the fee is under now: `from`, or `to` when another check already moved it. */
+  currentKey: string;
 }
 
 /**
@@ -361,7 +382,9 @@ export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] 
   for (const row of rows) {
     const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
     const amount = amountOf(row.amount);
-    if (!refile || row.canonical_fee_key !== refile.from || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
+    if (!refile || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
+    const movedUnfixed = refile.oldName != null && row.canonical_fee_key === refile.to && (row.fee_name ?? "") === refile.oldName;
+    if (row.canonical_fee_key !== refile.from && !movedUnfixed) continue;
     // A rename in place (from == to) is done once the live name reads as listed.
     if (refile.from === refile.to && (row.fee_name ?? "").trim() === refile.name) continue;
     if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
@@ -371,6 +394,7 @@ export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] 
       institutionId: Number(row.institution_id),
       sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
       oldName: row.fee_name ?? "",
+      currentKey: row.canonical_fee_key,
     });
   }
   return moves;
@@ -394,7 +418,7 @@ async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Pro
   const updated = await db<{ fee_published_id: number | string }[]>`
     UPDATE published_fee_records fp
        SET canonical_fee_key = v.to_key, fee_name = v.new_name
-      FROM unnest(${moves.map((move) => move.refile.feePublishedId)}::bigint[], ${moves.map((move) => move.refile.from)}::text[],
+      FROM unnest(${moves.map((move) => move.refile.feePublishedId)}::bigint[], ${moves.map((move) => move.currentKey)}::text[],
                   ${moves.map((move) => move.refile.to)}::text[], ${moves.map((move) => move.refile.name)}::text[])
            AS v(fee_published_id, from_key, to_key, new_name)
      WHERE fp.fee_published_id = v.fee_published_id
@@ -408,7 +432,7 @@ async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Pro
   await db`
     UPDATE verified_fee_observations fv
        SET canonical_fee_key = v.to_key
-      FROM unnest(${applied.map((move) => move.feeVerifiedId)}::bigint[], ${applied.map((move) => move.refile.from)}::text[],
+      FROM unnest(${applied.map((move) => move.feeVerifiedId)}::bigint[], ${applied.map((move) => move.currentKey)}::text[],
                   ${applied.map((move) => move.refile.to)}::text[]) AS v(fee_verified_id, from_key, to_key)
      WHERE fv.fee_verified_id = v.fee_verified_id
        AND fv.canonical_fee_key = v.from_key
@@ -435,7 +459,7 @@ function handFeedback(move: HandMove, runId: number): FeedbackRow {
     canonicalFeeKey: refile.to,
     amount: refile.amount,
     weight: 0,
-    evidence: { from: refile.from, to: refile.to, rule: "hand_refile", old_name: move.oldName, new_name: refile.name, why: refile.why },
+    evidence: { from: move.currentKey, to: refile.to, rule: "hand_refile", old_name: move.oldName, new_name: refile.name, why: refile.why },
     runId,
     dedupeKey: `${TAXONOMY_FOLD_CHECK}:hand:pub:${refile.feePublishedId}`,
   };
