@@ -375,7 +375,9 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
 // a safe deposit box late fee above $250.
 // v55: a merchant service's monthly charge or an early termination fee is not monthly maintenance.
-export const CATEGORY_GUARD_VERSION = 55;
+// v56: one product priced differently on two current pages keeps the newer page's price
+// (`hamilton/cross-page-conflict.ts`; a publish-step check, not a name rule here).
+export const CATEGORY_GUARD_VERSION = 56;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
