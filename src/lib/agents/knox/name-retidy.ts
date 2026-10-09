@@ -168,6 +168,11 @@ const HEADER_WORD_PREFIX = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
  */
 const LEADING_ACCOUNT_HEADINGS = /^(?:[A-Z][\w/&'’ -]{0,60}?\b(?:checking|savings|money market|account fees|fees)\s*[:|]\s*)+(?=[A-Z])/i;
 const ACCOUNT_NAMED_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
+/**
+ * v7: Hamilton's business_schedule check reads a leading "Business" or "Commercial" as a business
+ * fee. A rename never drops that word, or a business price would sit beside the consumer one.
+ */
+const BUSINESS_NAMED = /^(?:business|commercial)\b/i;
 const SECTION_HEADING_ONLY = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
 
 /** The tidy name a live fee should show, or null to keep its name. */
@@ -305,6 +310,7 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
       !newName ||
       (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) ||
       SECTION_HEADING_ONLY.test(newName) ||
+      (BUSINESS_NAMED.test(fee.fee_name) && !BUSINESS_NAMED.test(newName)) ||
       (/^[a-z]/.test(newName) && !/^[a-z]/.test(fee.fee_name))
     ) {
       skipped.no_better_name += 1;

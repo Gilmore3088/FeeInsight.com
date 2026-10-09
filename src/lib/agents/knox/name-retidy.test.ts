@@ -237,18 +237,21 @@ describe("v7: stored names Knox v57/v58 would read differently", () => {
     expect(planRetidy([named, sentence], page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[1, "Monthly service fee"]]);
   });
 
-  it("drops an account heading read onto another fee's name (Dirigo 45029, Apex 90646)", () => {
-    const skip = fee({ canonical_fee_key: "skip_a_pay", fee_name: "BUSINESS CHECKING ACCOUNT FEES | Skip-a-Pay", amount: 35 });
+  it("drops an account heading read onto another fee's name, but never a business one", () => {
+    const skip = fee({ canonical_fee_key: "skip_a_pay", fee_name: "PERSONAL CHECKING ACCOUNT FEES | Skip-a-Pay", amount: 35 });
     const box = fee({
       fee_published_id: 2,
       canonical_fee_key: "safe_deposit_box",
-      fee_name: "Business Freedom Checking: Pinnacle Business Checking: Safe Deposit Box Rental begins at",
+      fee_name: "Freedom Checking: Pinnacle Checking: Safe Deposit Box Rental begins at",
       amount: 12,
     });
     const page = text("LOAN FEES\nSkip-a-Pay | $35.00\nSafe Deposit Box Rental begins at $12.00");
     const renames = planRetidy([skip, box], page).renames.map((rename) => rename.newName);
     expect(renames[0]).toBe("Skip-a-Pay");
     expect(renames[1]).toMatch(/^Safe Deposit Box Rental/);
+    // Hamilton's business_schedule check reads a leading "Business": a rename keeps it (Dirigo 45029).
+    const business = fee({ fee_published_id: 3, canonical_fee_key: "skip_a_pay", fee_name: "BUSINESS CHECKING ACCOUNT FEES | Skip-a-Pay", amount: 35 });
+    expect(planRetidy([business], text("BUSINESS CHECKING ACCOUNT FEES | Skip-a-Pay | $35.00")).renames).toEqual([]);
     // A monthly fee's account heading is its name.
     const monthly = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "Gold Checking: Monthly Fee", amount: 10 });
     expect(planRetidy([monthly], text("Gold Checking: Monthly Fee $10.00")).renames).toEqual([]);
