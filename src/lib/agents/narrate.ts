@@ -269,6 +269,19 @@ function narrateFinished(
       if (!drafted) return `Checked ${count(n(detail, "qualified"), "qualified lead")}; each already has a quote draft.`;
       return `Drafted ${count(drafted, "quote email")} for James to review and send himself.`;
     }
+    case "growth-plan": {
+      if (detail.schemaReady === false) return "Wrote no Monday plan; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s Monday plan already in the queue.`;
+      return `Filed the Monday plan for the week of ${String(detail.week)} for James to read.`;
+    }
+    case "growth-proposals": {
+      if (detail.schemaReady === false) return "Wrote no proposals; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s proposals already in the queue.`;
+      const proposals = n(detail, "proposals");
+      return proposals
+        ? `Filed ${count(proposals, "proposed change")} for the week of ${String(detail.week)}, each with its counts.`
+        : `Filed no proposed change for the week of ${String(detail.week)}: too little evidence yet.`;
+    }
     case "growth-intel": {
       if (detail.schemaReady === false) return "Wrote no market brief; the queue is not there yet.";
       const findings = Array.isArray(detail.findings) ? detail.findings.length : 0;
@@ -517,6 +530,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-outreach": "growth",
   "growth-learning": "growth",
   "growth-quote": "growth",
+  "growth-plan": "growth",
+  "growth-proposals": "growth",
   "growth-intel": "growth",
   "growth-conversion": "growth",
   "growth-tools": "growth",
