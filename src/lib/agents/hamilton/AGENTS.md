@@ -294,6 +294,15 @@ fee link (unless a correction locked it), and one Magellan `wrong_document` less
 First dry run (8 Oct, prod): 323 live fees at 16 banks; 308 at 15 banks fail (Peoples Bank of
 Rock Valley IA showed Peoples Bank of Bellingham WA's 22 fees).
 
+The same step also checks documents on a host that is neither this bank's website nor another
+institution's (check `hamilton.unconfirmed_document_host`, admin audit Oct 9). A shared file
+host (`SHARED_CONTENT_HOST_PATTERN`), a host sharing the website's name, a link a person locked by
+correction, or a text naming the bank's website, its name, its city or the bank's own name all
+pass. The rest go through the 12-hour second look and then come down the same way, with
+`unconfirmed_document_host: <host>`, the `unconfirmed_document_host` flag and failure reason
+`magellan_unconfirmed_document_host`. First dry run (9 Oct, prod): 1,894 live fees on such hosts,
+277 at 17 banks failing.
+
 ## Article Page
 
 `article-page.ts`: a page whose address has an article segment (articles, blog, stories,

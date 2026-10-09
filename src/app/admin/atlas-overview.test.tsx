@@ -51,7 +51,7 @@ describe("funnelSteps", () => {
     const steps = funnelSteps(funnel);
     expect(steps).toHaveLength(7);
     expect(steps[1]).toMatchObject({ label: "Fee URL found", value: 4600, note: "institutions · 53% of universe" });
-    expect(steps[6]).toMatchObject({ value: 239, note: "institutions · 2.7% sourced · 1,183 any" });
+    expect(steps[6]).toMatchObject({ value: 239, note: "institutions with a source link · 2.7% of universe · 1,183 with any live fee (944 with no source link on any live fee)" });
   });
 });
 

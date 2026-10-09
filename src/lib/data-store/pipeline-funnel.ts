@@ -13,7 +13,9 @@ export interface PipelineFunnel {
   rawExtracted: number;
   verified: number;
   publishedRows: number;
+  /** Institutions with any live fee in published_fee_catalog. */
   publishedInstitutions: number;
+  /** Institutions with at least one live fee that carries a source_url. */
   sourcedInstitutions: number;
 }
 

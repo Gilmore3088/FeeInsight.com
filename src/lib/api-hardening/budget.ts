@@ -89,6 +89,27 @@ function toNumber(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function usd(microusd: number): string {
+  return `$${(microusd / 1_000_000).toFixed(2)}`;
+}
+
+/**
+ * Names the cap a block hit: its kind, the policy key and its scope, so a stop message
+ * says which cap ended the work ("Daily cap agent:magellan (agent magellan)").
+ */
+function capLabel(policy: BudgetPolicyRow, kind: string): string {
+  const scope = policy.scope === "agent" && policy.agent_name
+    ? `agent ${policy.agent_name}`
+    : policy.scope === "route" && policy.route_id
+      ? `route ${policy.route_id}`
+      : "all agents";
+  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)} cap ${policy.policy_key} (${scope})`;
+}
+
+function runScope(policy: BudgetPolicyRow): string {
+  return policy.scope === "agent" && policy.agent_name ? ` by ${policy.agent_name} in this run` : " in this run";
+}
+
 function monthStart(): string {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
@@ -196,7 +217,7 @@ async function assertWindowSpend(policy: BudgetPolicyRow): Promise<void> {
     if (dailySpend >= dailyCap) {
       throw new ProviderBudgetBlockedError(
         "budget_daily_exhausted",
-        `Provider daily budget exhausted for ${policy.policy_key}.`,
+        `${capLabel(policy, "daily")}: ${usd(dailySpend)} used of ${usd(dailyCap)}; resets 00:00 UTC.`,
         policy,
       );
     }
@@ -208,7 +229,7 @@ async function assertWindowSpend(policy: BudgetPolicyRow): Promise<void> {
     if (monthlySpend >= monthlyCap) {
       throw new ProviderBudgetBlockedError(
         "budget_monthly_exhausted",
-        `Provider monthly budget exhausted for ${policy.policy_key}.`,
+        `${capLabel(policy, "monthly")}: ${usd(monthlySpend)} used of ${usd(monthlyCap)}; resets the 1st at 00:00 UTC.`,
         policy,
       );
     }
@@ -255,7 +276,7 @@ async function assertRunCaps(
     if (callCap !== null && actualCalls >= callCap) {
       throw new ProviderBudgetBlockedError(
         "budget_run_cap_exhausted",
-        `Provider call cap exhausted for run ${context.agentRunId} under ${policy.policy_key}.`,
+        `${capLabel(policy, "per-run call")} reached in run ${context.agentRunId}: ${actualCalls} of ${callCap} calls${runScope(policy)}; a new run starts at 0.`,
         policy,
       );
     }
@@ -263,7 +284,7 @@ async function assertRunCaps(
     if (costCap !== null && actualCost >= costCap) {
       throw new ProviderBudgetBlockedError(
         "budget_run_cap_exhausted",
-        `Provider spend cap exhausted for run ${context.agentRunId} under ${policy.policy_key}.`,
+        `${capLabel(policy, "per-run spend")} reached in run ${context.agentRunId}: ${usd(actualCost)} used of ${usd(costCap)}${runScope(policy)}; a new run starts at $0.`,
         policy,
       );
     }
