@@ -413,7 +413,7 @@ export function AccountView({ data }: { data: AccountViewData }) {
     <ReportsCard reports={data.reports} paidReports={data.paidReports} emailConfirmed={data.emailConfirmed} />
   );
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+    <div className="mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <header className="mb-8 flex items-start justify-between gap-4 border-b border-[#E8DFD1] pb-6">
         <div className="min-w-0">
           <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Account</p>
@@ -460,7 +460,7 @@ export function AccountView({ data }: { data: AccountViewData }) {
       </div>
 
       {/* What the reader came to do on the left; plan and settings to the side. */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-6">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6">
         <div className="space-y-4">
           {data.plan.kind === "pro" ? (
             <>
