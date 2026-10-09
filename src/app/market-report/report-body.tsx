@@ -349,7 +349,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               institution headquartered there. Each figure is a published, verified fee from the institution&apos;s own
               schedule; one representative amount per institution and fee line, with fee caps excluded. A figure is used only
               when a line of that institution&apos;s own stored schedule states that amount as the fee; amounts that are
-              balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out
+              balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out, and so
+              are fees under review for a correction, business prices, savings fees on the checking line, and records
+              whose fee name was not read cleanly
               {droppedCount > 0 ? ` (${droppedCount} published figures in this market were left out this way)` : ""}.
               When a schedule lists several versions of a fee, the comparison uses the standard consumer version (not an
               online, business or other special variant); if several still remain, it uses the lowest monthly maintenance
