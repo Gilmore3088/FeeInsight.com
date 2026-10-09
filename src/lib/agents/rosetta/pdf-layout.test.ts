@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { layoutDocumentText, layoutPageText, type PdfTextItem } from "./pdf-layout";
@@ -112,5 +115,24 @@ describe("Rosetta read.pdf_layout", () => {
 
     expect(text).toContain("Overdraft item fee (per item, each time we pay or return it) | $30.00 per item");
     expect(text).toContain("Overdraft item fee charged to your account .......... $20.00 | Overdraft item fee for business accounts ................ $40.00");
+  });
+
+  it("finds the gutter of a two-column notice that draws each letter as its own item", async () => {
+    // First United's overdraft notice: read across, "we will charge an additional $5.00 per
+    // day" came out as a fee named "additional".
+    const { getDocumentProxy } = await import("unpdf");
+    const bytes = readFileSync(join(__dirname, "test-fixtures", "first-united-opt-in.pdf"));
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
+    const content = await (await pdf.getPage(1)).getTextContent();
+    const items: PdfTextItem[] = [];
+    for (const entry of content.items) if ("str" in entry) items.push(entry);
+
+    const text = layoutPageText(items);
+    expect(text).toContain(
+      "• If the account is overdrawn for 4 or more\nconsecutive calendar days, we will charge an\nadditional $5.00 per day.",
+    );
+    expect(text).toContain("• We will charge you a fee of up to $40 each time\nwe pay an overdraft.");
+    expect(text).not.toMatch(/practices\. To learn more, \|/);
+    await pdf.destroy?.();
   });
 });

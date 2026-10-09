@@ -5,6 +5,7 @@ import {
   deriveStrengthsAndWatch,
   detectPaidItemFee,
   generateInterpretation,
+  verifiedFeesCollected,
 } from "./institution-rating";
 import type { IndexEntry } from "./data-store/fee-index";
 
@@ -282,5 +283,30 @@ describe("generateInterpretation", () => {
       charterType: null,
     });
     expect(text.length).toBeGreaterThan(10);
+  });
+});
+
+// The audit (Oct 8): 8 verified rows read as "leaner than most institutions". A short
+// verified list is incomplete collection, never evidence of a smaller fee menu.
+describe("fee count wording", () => {
+  it("states the count as verified fees collected, with no menu-size verdict", () => {
+    const result = rated([
+      { id: 1, fee_name: "overdraft", amount: 30, fee_category: "overdraft", conditions: null },
+      { id: 2, fee_name: "maintenance", amount: 10, fee_category: "monthly_maintenance", conditions: null },
+    ]);
+    expect(result.bullets).toContain("2 verified fees collected");
+    expect(result.bullets.join(" ")).not.toMatch(/leaner|broader|Total fees/);
+    expect(verifiedFeesCollected(1)).toBe("1 verified fee collected");
+  });
+
+  it("does not call a short verified list a simpler fee structure", () => {
+    const text = generateInterpretation({
+      rating: { label: "Average Fee Structure", color: "yellow", bullets: [] },
+      feeCount: 8,
+      overdraftAmount: null,
+      charterType: "bank",
+    });
+    expect(text).toContain("Fee Insight has verified 8 fees from its published schedule so far");
+    expect(text).not.toMatch(/simpler|fewer ways|more line items|typical range/);
   });
 });

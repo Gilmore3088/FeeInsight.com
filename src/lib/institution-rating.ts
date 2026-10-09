@@ -27,10 +27,6 @@ const OVERDRAFT_YELLOW_MAX = 36;   // $20.01–$36 → yellow; > $36 → red
 
 const BONUS_SIGNALS = ["cap", "de minimis", "balance threshold", "maximum", "limit"];
 
-// Typical fee count range for context copy (hardcoded per spec §4): CU floor, bank ceiling
-const TYPICAL_BANK_MAX = 50;
-const TYPICAL_CU_MIN = 25;
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -194,13 +190,9 @@ export function computeInstitutionRating(
     }
   }
 
-  if (feeCount < TYPICAL_CU_MIN) {
-    bullets.push(`Total fees: ${feeCount} — leaner than most institutions`);
-  } else if (feeCount <= TYPICAL_BANK_MAX) {
-    bullets.push(`Total fees: ${feeCount}`);
-  } else {
-    bullets.push(`Total fees: ${feeCount} — broader fee menu than most`);
-  }
+  // A count of verified rows, not of what the institution charges: a short list usually means
+  // collection is incomplete, so it never reads as a leaner or broader fee menu.
+  bullets.push(verifiedFeesCollected(feeCount));
 
   const label =
     color === "green"
@@ -210,6 +202,11 @@ export function computeInstitutionRating(
         : "Above-Average Fees";
 
   return { label, color, bullets: bullets.slice(0, 3) };
+}
+
+/** "8 verified fees collected": the count of verified rows, stated as collection, not menu size. */
+export function verifiedFeesCollected(count: number): string {
+  return `${count} verified ${count === 1 ? "fee" : "fees"} collected`;
 }
 
 /** Shown in place of a verdict when no paid-item overdraft/NSF fee is verified. */
@@ -222,8 +219,8 @@ export const NO_VERDICT_LABEL = "Overdraft fee not published";
 /**
  * Derive up to 2 strengths and 2 watch items from fee data (D-09).
  *
- * Strengths: fees >10% below national median, low fee count.
- * Watch: fees >10% above national median, high fee count.
+ * Strengths: fees >10% below national median.
+ * Watch: fees >10% above national median.
  */
 export function deriveStrengthsAndWatch(
   fees: RatingInput[],
@@ -321,21 +318,10 @@ export function generateInterpretation(params: InterpretationParams): string {
       }
     }
   } else if (feeCount > 0) {
-    const isLow = feeCount < TYPICAL_CU_MIN;
-    const isHigh = feeCount > TYPICAL_BANK_MAX;
-    if (isLow) {
-      sentences.push(
-        `With only ${feeCount} fees on record, it has a simpler fee structure than most institutions — which generally means fewer ways to be charged unexpectedly.`
-      );
-    } else if (isHigh) {
-      sentences.push(
-        `With ${feeCount} fees on file, it has more line items than most — worth reviewing the full schedule before opening an account.`
-      );
-    } else {
-      sentences.push(
-        `It has ${feeCount} fees on record, which is in line with the typical range for a ${institutionType}.`
-      );
-    }
+    // Coverage, not menu size: a short verified list is not evidence of a simpler schedule.
+    sentences.push(
+      `Fee Insight has verified ${feeCount} ${feeCount === 1 ? "fee" : "fees"} from its published schedule so far; the coverage line shows which headline fees are still missing.`
+    );
   } else {
     sentences.push(
       "Complete fee data isn't available yet — check back as the schedule is updated."
