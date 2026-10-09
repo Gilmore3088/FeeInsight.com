@@ -215,12 +215,40 @@ const PREPAID_BUY_OR_RELOAD =
  */
 const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
 
+/** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"), a charge on the IRA itself. */
+const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
+
+/** Lines where "fax" is how something else is requested or sent, not a fax service. */
+const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)`;
+
+/**
+ * Sending or receiving a fax ("Fax (Outgoing)"), which document reproduction holds. Fax as the
+ * way a wire, transfer or closing is requested, a verification or loan payoff sent by fax, a
+ * Carfax report, and research priced with copies stay where they are. Knox reads fax lines
+ * with this too (`FOLDED_PATTERNS`), so its reads and the fold agree.
+ */
+export const FAX_SERVICE = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*\bfax(?:es|ed|ing)?\b`, "i");
+
+/** A fax or a document copy ("Copy of previous statement"), outside the same exceptions. */
+const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)`, "i");
+
+/**
+ * A copy charge priced by the page ("Account Research Copies (per page)", "Research Request - Per
+ * Page Copied"), which document reproduction holds even when the copies come from research.
+ * Research priced by the hour or with a minimum, copies extra, stays research. Knox reads these
+ * lines with this too, ahead of its research pattern.
+ */
+export const PER_PAGE_COPY =
+  /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?=[\s\S]*\bcop(?:y|ies|ied|ying)\b)[\s\S]*(?:\bper (?:page|pg)\b|\/ ?(?:page|pg)\b)/i;
+
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
 interface SplitCategory {
   to: string;
   name: RegExp;
+  /** Further rules for the same source key, tried in order when `name` does not match. */
+  also?: ReadonlyArray<{ to: string; name: RegExp }>;
   /** A cheap SQL pre-filter (case-insensitive regex) for the rows the rule might move. */
   sqlPattern: string;
 }
@@ -241,10 +269,27 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   // A night deposit or night drop key is the night depository's, not a safe deposit box's.
   safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
   // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
-  late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent" },
+  // A statement or item copy is document reproduction, not a late payment.
+  late_payment: {
+    to: "safe_deposit_box",
+    name: BOX_RENT,
+    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+    sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
+  },
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
-  // excess withdrawal charge stays: excess activity is account servicing wherever it occurs.
-  account_research: { to: "ira_termination", name: IRA_TRANSFER_OUT, sqlPattern: "\\mira\\M" },
+  // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
+  // A fax or a document copy is document reproduction, not research, and so is a copy charged
+  // by the page during research.
+  account_research: {
+    to: "ira_termination",
+    name: IRA_TRANSFER_OUT,
+    also: [
+      { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
+      { to: "document_reproduction", name: FAX_OR_COPY },
+      { to: "document_reproduction", name: PER_PAGE_COPY },
+    ],
+    sqlPattern: "\\mira\\M|fax|cop(y|ies)|reproduc",
+  },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
   atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
   // A statement mailed back undelivered is returned mail, which account research holds.
@@ -259,12 +304,14 @@ export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLI
 export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
   if (!key) return null;
   const split = SPLIT_CATEGORIES[key];
-  if (!split || !split.name.test(plain(feeName ?? ""))) return null;
-  return { to: split.to, rule: `${key}#split` };
+  if (!split) return null;
+  const name = plain(feeName ?? "");
+  const hit = [{ to: split.to, name: split.name }, ...(split.also ?? [])].find((rule) => rule.name.test(name));
+  return hit ? { to: hit.to, rule: `${key}#split` } : null;
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 9;
+export const FOLD_RULES_VERSION = 10;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

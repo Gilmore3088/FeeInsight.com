@@ -11,6 +11,7 @@
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { formatRatePercent } from "@/lib/percent-fees";
+import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
@@ -304,6 +305,11 @@ function structurePiece(research: FeeResearch): Piece | null {
   };
 }
 
+/** A line naming an institution, or the same line without the name when a long name would run past a storyline line's limit. */
+function namedWithin(named: string, unnamed: string): string {
+  return words(named) <= MAX_STORY_LINE_WORDS ? named : unnamed;
+}
+
 /** Monthly maintenance: the bank's account lineup beside the group's, one row per institution. */
 function lineupPiece(research: FeeResearch): Piece | null {
   const set = research.lineup;
@@ -314,11 +320,17 @@ function lineupPiece(research: FeeResearch): Piece | null {
   const withFree = group.filter((r) => r.summary.shareWithFreeAccount === 1).length;
   const ownSummary = own.summary;
   const ownLowest = ownSummary.lowestMonthlyFee;
+  // Lead with the bank's lowest price; the table carries the account count.
+  const ownLead =
+    ownLowest === 0
+      ? "Your lineup includes a no-fee account"
+      : ownLowest === null
+        ? `Your schedule shows ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"}`
+        : `Your lowest monthly fee is ${money(ownLowest)}`;
   const actionTitle =
     group.length >= MIN_PEERS_FOR_POSITION
-      ? `You publish ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"} with a monthly fee from ${money(ownLowest ?? 0)}; ${count(withFree)} of ${count(group.length)} ${label} publish an account with no monthly fee.`
-      : `You publish ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"} with a monthly fee from ${money(ownLowest ?? 0)}; too few ${label} publish their lineup to compare.`;
-  const named = set.ownAccounts.filter((a) => a.productName).length;
+      ? `${ownLead}; ${count(withFree)} of ${count(group.length)} ${label} offer a no-fee account.`
+      : `${ownLead}; too few ${label} publish their lineup to compare.`;
   const shown = [own, ...group.slice(0, MAX_MATRIX_ROWS)];
   return {
     key: "lineup",
@@ -339,10 +351,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
-      note: [
-        group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : null,
-        `${count(named)} of your ${count(set.ownAccounts.length)} accounts are named on the schedule. A blank balance means the schedule states none.`,
-      ]
+      note: [group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : null, "A blank balance means the schedule states none."]
         .filter(Boolean)
         .join(" "),
     },
@@ -648,14 +657,20 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       const highest = [...dearer].sort((a, b) => b.amount - a.amount)[0];
       out.push({
         text: highest
-          ? `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`
+          ? namedWithin(
+              `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
+              `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; the highest charges ${money(highest.amount)}.`,
+            )
           : `All ${count(n)} ${group.label} charge the same ${money(current)} you do.`,
         source: group.source,
         sampleSize: n,
       });
     } else {
       out.push({
-        text: `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than your ${money(current)}; the lowest is ${plainName(cheaper[0].name)} (${money(cheaper[0].amount)}).`,
+        text: namedWithin(
+          `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than your ${money(current)}; the lowest is ${plainName(cheaper[0].name)} (${money(cheaper[0].amount)}).`,
+          `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than your ${money(current)}; the lowest charges ${money(cheaper[0].amount)}.`,
+        ),
         source: group.source,
         sampleSize: n,
       });

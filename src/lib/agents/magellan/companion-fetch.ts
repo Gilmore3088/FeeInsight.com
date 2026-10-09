@@ -13,6 +13,7 @@ import { NOT_CONSUMER_FEE_PAGE_REASON, companionStreamsReady } from "@/lib/agent
 import { accountNameFor, isGenericAccountName, isNonDepositLink } from "./second-document";
 import { markCurrentCopy } from "./current-copy";
 import { OTHER_BANK_HOST_CODE } from "./other-bank-host";
+import { looksLikeBotChallenge } from "./site-signals";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -305,6 +306,11 @@ async function fetchOne(
   // would hand Rosetta an error page; the paid fetch (blocked-fetch.ts) tries it instead.
   if (format === "html" && isPdfLink(row.url)) {
     return fail(response.status, "PDF link answered with a web page (bot wall)", undefined, "blocked_bot");
+  }
+  // A challenge page in place of the page itself, as discovery judges a homepage: Arvest's
+  // fee page came back as a 928-byte challenge (8 Oct 2026) and was stored and read blank.
+  if (format === "html" && looksLikeBotChallenge(new TextDecoder("utf-8").decode(bytes))) {
+    return fail(response.status, "Page answered with a bot challenge", undefined, "blocked_bot");
   }
 
   // Same bytes as this page's last copy, or as any stored document of the bank (the
