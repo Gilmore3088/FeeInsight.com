@@ -53,8 +53,20 @@ describe("benchmark export", () => {
         local_market: { median: null, institutions: 1 },
         position: "typical", source_url: null,
       }],
+      rate_rows: [{
+        fee_category: "foreign_transaction", display_name: "Foreign Transaction", family: "Card", rate_percent: 1,
+        rate_terms: "1% of the transaction",
+        national: { median: 1, p25: 1, p75: 3, institutions: 120 },
+        position: "typical", source_url: "https://example.com/fees.pdf",
+      }],
     });
-    expect(rows).toEqual([["nsf", "NSF", "Overdraft & NSF", 30, 29.99, 25, 35, 900, null, 2, 30, 26, 34, 300, null, 1, "typical", null]]);
+    expect(rows).toEqual([
+      ["nsf", "NSF", "Overdraft & NSF", 30, 29.99, 25, 35, 900, null, 2, 30, 26, 34, 300, null, 1, "typical", null,
+        "dollars", null, null, null, null, null, null, null],
+      // A rate fee gets its own row: no dollar amount or dollar benchmark, only other rates.
+      ["foreign_transaction", "Foreign Transaction", "Card", null, null, null, null, null, null, null, null, null, null, null, null, null, null, "https://example.com/fees.pdf",
+        "percent", 1, "1% of the transaction", 1, 1, 3, 120, "typical"],
+    ]);
   });
 });
 
