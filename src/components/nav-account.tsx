@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 import { REQUEST_REPORT_NAV } from "./nav-items";
+import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome, type SessionChrome } from "./use-session-chrome";
 
 /**
@@ -21,15 +22,18 @@ export function NavAccount() {
 
   if (session?.signedIn) {
     return (
-      <Link
-        href="/account"
-        className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
-      >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
-          {session.initial ?? "U"}
-        </span>
-        <span className="hidden lg:inline">Account</span>
-      </Link>
+      <div className="flex items-center gap-4">
+        <Link
+          href="/account"
+          className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
+            {session.initial ?? "U"}
+          </span>
+          <span className="hidden lg:inline">Account</span>
+        </Link>
+        <SignOutForm buttonClassName="text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]" />
+      </div>
     );
   }
 
@@ -116,11 +120,7 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
             <Link href="/account" className={MENU_LINK} onClick={() => setOpen(false)}>
               Account and billing
             </Link>
-            <form action="/api/auth/logout" method="POST">
-              <button type="submit" className="w-full px-4 py-1.5 text-left text-[13px] text-[#5A5347] hover:bg-[#F5EFE6]">
-                Sign out
-              </button>
-            </form>
+            <SignOutForm buttonClassName="w-full px-4 py-1.5 text-left text-[13px] text-[#5A5347] hover:bg-[#F5EFE6]" />
           </div>
         </div>
       ) : null}

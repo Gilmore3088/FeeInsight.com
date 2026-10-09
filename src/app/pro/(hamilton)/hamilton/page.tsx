@@ -9,13 +9,17 @@ import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-cont
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
+import { ThisMonthOverview } from "@/components/hamilton/benchmark/ThisMonthOverview";
 import { FeeScorecard } from "@/components/hamilton/benchmark/FeeScorecard";
-import { buildAttentionItems, FLAGSHIP_FEE } from "@/lib/hamilton/briefing-observations";
+import { LocalCompetitors } from "@/components/hamilton/benchmark/LocalCompetitors";
+import { buildAttentionItems, buildBriefingOverview } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
-import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
+import { COMPETITOR_MOVE_WINDOW_DAYS, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
+import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
+import { mixedBasisCategories } from "@/lib/hamilton/report-evidence";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
-import type { Briefing, FeeResearch } from "@/lib/hamilton/workspace/types";
+import type { Briefing } from "@/lib/hamilton/workspace/types";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
 export const dynamic = "force-dynamic";
@@ -23,40 +27,41 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "This month" };
 
 /**
- * The engine's Briefing and overdraft research, cached for an hour per institution and peer
- * group (keyed on both, so a bank's own group from Settings never serves another reader).
+ * The engine's Briefing, cached for an hour per institution and peer group (keyed on both, so a
+ * bank's own group from Settings never serves another reader), with the categories whose peers
+ * charge them on mixed bases.
  */
 const getCachedBriefing = unstable_cache(
   async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => {
-    const peers: EnginePeerOptions = { peerSet };
-    const [briefing, overdraft] = await Promise.all([
-      getWorkspaceBriefing(institutionId, new Date(), peers),
-      getFeeResearch(institutionId, FLAGSHIP_FEE, new Date(), peers),
+    const [briefing, bases] = await Promise.all([
+      getWorkspaceBriefing(institutionId, new Date(), { peerSet }),
+      getCategoryChargeBases().catch(() => []),
     ]);
-    return { briefing, overdraft };
+    return { briefing, mixedBasis: [...mixedBasisCategories(bases)] };
   },
-  ["hamilton-this-month-briefing-v1"],
+  ["hamilton-this-month-briefing-v3"],
   { revalidate: 3600 },
 );
 
 async function loadBriefing(
   user: User | null,
   selectedInstitutionId: string | null,
-): Promise<{ briefing: Briefing | null; overdraft: FeeResearch | null; unavailable: boolean }> {
+): Promise<{ briefing: Briefing | null; mixedBasis: string[]; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
-  if (!institutionId) return { briefing: null, overdraft: null, unavailable: false };
+  if (!institutionId) return { briefing: null, mixedBasis: [], unavailable: false };
   try {
     const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
     const peerSet = active ? { filters: active.filters, label: active.label } : null;
     return { ...(await getCachedBriefing(institutionId, peerSet)), unavailable: false };
   } catch {
-    return { briefing: null, overdraft: null, unavailable: true };
+    return { briefing: null, mixedBasis: [], unavailable: true };
   }
 }
 
 const BRIEFING_METHOD = [
   ...STANDARD_METHOD,
-  `Overdraft leads when you publish it. After it come your fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group, institutions in your state that changed a fee you charge in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in your service charge income, most unusual first.`,
+  `What stands out: your fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group (overdraft first when it is one), institutions in your state that changed a fee you charge in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in your service charge income, most unusual first, at most three.`,
+  "A fee whose peers charge it on more than one basis (per item and monthly, say) has no single median to stand out from, so it is not listed.",
 ];
 
 function ChangesSkeleton() {
@@ -121,17 +126,13 @@ export default async function HamiltonHomePage({
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
   const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
-  const { briefing, overdraft, unavailable } = await loadBriefing(user, selectedInstitutionId);
-  const items = buildAttentionItems(briefing, overdraft);
+  const { briefing, mixedBasis, unavailable } = await loadBriefing(user, selectedInstitutionId);
+  const mixed = new Set(mixedBasis);
+  const items = buildAttentionItems(briefing, { mixedBasis: mixed });
+  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null, mixed) : null;
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const trail = briefing
-    ? provenanceToTrail(briefing.provenance, {
-        method: BRIEFING_METHOD,
-        extraAssumptions:
-          overdraft && items[0]?.id === `position:${FLAGSHIP_FEE}`
-            ? [`Overdraft is compared with ${overdraft.peerLabel}, ${overdraft.band?.n ?? 0} institutions.`]
-            : [],
-      })
+    ? provenanceToTrail(briefing.provenance, { method: BRIEFING_METHOD })
     : null;
 
   return (
@@ -145,6 +146,16 @@ export default async function HamiltonHomePage({
             : "Choose your bank and Hamilton reads its published fees against its market every month."
         }
       />
+
+      {briefing && overview ? (
+        <ThisMonthOverview
+          institutionName={briefing.institutionName}
+          peerLabel={briefing.peerLabel}
+          overview={overview}
+          windowDays={COMPETITOR_MOVE_WINDOW_DAYS}
+          overdraftIncome={briefing.overdraftIncome ?? null}
+        />
+      ) : null}
 
       {briefing && trail && items.length > 0 ? (
         <WorthYourAttention observations={items} institutionId={selectedInstitutionId} trail={trail} />
@@ -176,9 +187,11 @@ export default async function HamiltonHomePage({
         </div>
       )}
 
+      {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} notCompared={mixedBasis} /> : null}
+
       {/* Every fee against its own peer group, in the engine's order. */}
       {briefing && briefing.positions.length > 0 ? (
-        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} />
+        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} notCompared={mixedBasis} />
       ) : null}
 
       <Suspense fallback={<ChangesSkeleton />}>

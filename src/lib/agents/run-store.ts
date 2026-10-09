@@ -10,6 +10,7 @@ import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
+import { retireSameLineDuplicates } from "@/lib/agents/hamilton/same-line-duplicates";
 import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
@@ -82,7 +83,7 @@ import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
-import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach, withdrawNonBuyerDrafts } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runQuoteDrafts, summarizeQuoteDrafts } from "@/lib/agents/growth/quote";
 import { runMondayPlan, runProposals, summarizeMondayPlan, summarizeProposals } from "@/lib/agents/growth/draper";
@@ -979,6 +980,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A fee the same-line re-decide (9 Oct) published beside an older live line of itself.
+      const sameLineDuplicates = await retireSameLineDuplicates(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Another bank's fee: read from a document on another institution's own website.
       const otherBank = await retireOtherBankDocumentFees(tx, {
         runId: run.id,
@@ -1202,6 +1210,8 @@ async function executeAgenticStep(
               limitRollbacks.length > 0 ||
               businessSchedule.rolledBack.length > 0 ||
               businessSchedule.restored > 0 ||
+              sameLineDuplicates.rolledBack.length > 0 ||
+              sameLineDuplicates.restored > 0 ||
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
@@ -1242,6 +1252,10 @@ async function executeAgenticStep(
       const businessNote =
         businessSchedule.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${businessSchedule.rolledBack.length.toLocaleString()} business-schedule fee(s) beside the bank's consumer fee.`
+          : "";
+      const sameLineNote =
+        sameLineDuplicates.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${sameLineDuplicates.rolledBack.length.toLocaleString()} duplicate same-line fee(s).`
           : "";
       const otherBankNote =
         otherBank.rolledBack.length > 0
@@ -1285,7 +1299,10 @@ async function executeAgenticStep(
           : "";
       const recheckNote =
         (recheckRollbacks > 0
-          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document, after a 12-hour second look.`
+          : "") +
+        ((rulesRecheck?.flagged ?? 0) > 0
+          ? ` ${published.dryRun ? "Would flag" : "Flagged"} ${(rulesRecheck?.flagged ?? 0).toLocaleString()} live fee(s) today's Knox rules no longer read for a 12-hour second look (still live).`
           : "") +
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
@@ -1316,7 +1333,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1350,6 +1367,14 @@ async function executeAgenticStep(
             waiting: businessSchedule.waiting,
             rolled_back: businessSchedule.rolledBack.length,
             restored: businessSchedule.restored,
+          },
+          same_line_duplicates: {
+            candidates: sameLineDuplicates.candidates,
+            duplicates: sameLineDuplicates.duplicates,
+            flagged: sameLineDuplicates.flagged,
+            waiting: sameLineDuplicates.waiting,
+            rolled_back: sameLineDuplicates.rolledBack.length,
+            restored: sameLineDuplicates.restored,
           },
           other_bank_document: {
             other_bank_fees: otherBank.otherBankFees,
@@ -1525,6 +1550,8 @@ async function executeAgenticStep(
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
+          rules_recheck_flagged: rulesRecheck?.flagged ?? 0,
+          rules_recheck_waiting: rulesRecheck?.waitingSecondLook ?? 0,
           rules_recheck_restores: recheckRestores,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
@@ -1985,6 +2012,16 @@ async function executeAgenticStep(
         ? ` Follow-ups (day 6 and final day 13): ${followUps.due} due, would draft ${followUps.due}.`
         : ` Follow-ups (day 6 and final day 13): ${followUps.due} due, ${followUps.drafted} drafted.`;
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
+    }
+    case "growth-withdraw": {
+      // Started by the agent tick (growth/withdraw.ts) when unreviewed first emails no longer
+      // qualify; the same withdrawal a real outreach run makes first. Free, no model calls.
+      const dryRun = run.runKind === "dry_run";
+      const withdrawn = await withdrawNonBuyerDrafts(tx, dryRun);
+      const summary = dryRun
+        ? `Would withdraw ${withdrawn} unreviewed first email${withdrawn === 1 ? "" : "s"} that no longer qualif${withdrawn === 1 ? "ies" : "y"}.`
+        : `Withdrew ${withdrawn} unreviewed first email${withdrawn === 1 ? "" : "s"} that no longer qualif${withdrawn === 1 ? "ies" : "y"} (older format or wording, not a decision-maker, or a quoted fee no longer live).`;
+      return { status: "completed", summary, detail: { dryRun, withdrawn } };
     }
     case "growth-quote": {
       // Free: a quote email per qualified lead, drafted into the queue; nothing sends.
@@ -2762,6 +2799,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   extract: 40_000,
   publish: 30_000,
   classify: 25_000,
+  // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
+  "growth-withdraw": 30_000,
 };
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
@@ -3079,7 +3118,9 @@ export async function executeQueuedAgentRuns({
      ORDER BY (r.run_kind = 'report') DESC,
               -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
               -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
-              COALESCE(r.params_json->>'source' = 'hamilton.guard_catch_up', false) DESC,
+              -- Growth's stale-outreach withdrawal (growth/withdraw.ts) is one short step, at most
+              -- once a day, and ranks with it so the tick that queues it also runs it.
+              COALESCE(r.params_json->>'source' IN ('hamilton.guard_catch_up', 'growth.outreach_withdraw'), false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
