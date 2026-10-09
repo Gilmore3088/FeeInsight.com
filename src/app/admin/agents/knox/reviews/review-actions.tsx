@@ -84,7 +84,7 @@ export function OverrideButton({ messageId, feeVerifiedId, disabled }: Props) {
           );
         } else {
           alert(
-            "Override recorded. Darwin has not yet posted accept; promotion will complete on the next pass."
+            "Override recorded. The fee was not published: that needs a Darwin accept from the last 30 days, and no later pass reads overrides."
           );
         }
         router.refresh();
@@ -99,12 +99,12 @@ export function OverrideButton({ messageId, feeVerifiedId, disabled }: Props) {
         data-action="override"
         disabled={pending || disabled || !feeVerifiedId}
         onClick={open}
-        aria-label="Override Knox and promote fee"
+        aria-label="Override Knox rejection"
         className="rounded px-2 py-1 text-xs font-medium bg-emerald-50 text-emerald-700
                    hover:bg-emerald-100 disabled:opacity-50
                    dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/30 transition-colors"
       >
-        {pending ? "..." : "Override & promote"}
+        {pending ? "..." : "Override"}
       </button>
 
       <dialog
@@ -123,7 +123,7 @@ export function OverrideButton({ messageId, feeVerifiedId, disabled }: Props) {
           </h2>
           <p className="text-[12px] text-gray-500 dark:text-gray-400">
             Record your reasoning. Minimum 3 characters. The note is attached
-            to <code>knox_overrides</code> and the resulting promotion event.
+            to <code>knox_overrides</code> and the override audit event.
           </p>
           <textarea
             autoFocus
@@ -159,7 +159,7 @@ export function OverrideButton({ messageId, feeVerifiedId, disabled }: Props) {
               className="rounded px-3 py-1.5 text-xs font-semibold bg-emerald-600
                          text-white hover:bg-emerald-700 disabled:opacity-50"
             >
-              {pending ? "Submitting..." : "Override & promote"}
+              {pending ? "Submitting..." : "Override"}
             </button>
           </div>
         </form>
