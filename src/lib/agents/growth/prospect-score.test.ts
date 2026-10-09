@@ -65,4 +65,12 @@ describe("prospect score", () => {
     expect(roleProblem({ title: "VP of Retail", role: "retail" }).useFor).toBe("your deposit-account reviews");
     expect(roleProblem({ title: "President", role: "executive" }).opening).toBe("Keeping track of what competitors charge");
   });
+
+  it("frames a credit union's buyer for members, the board, ALCO or the supervisory committee", () => {
+    expect(roleProblem({ title: "Chief Financial Officer", role: "finance" }, "credit_union")).toEqual({ opening: "Preparing a competitive fee review for the board or ALCO", useFor: "your next ALCO or board review" });
+    expect(roleProblem({ title: "VP of Member Experience", role: "retail" }, "credit_union").useFor).toBe("your member deposit-account reviews");
+    expect(roleProblem({ title: "Compliance Officer", role: "compliance" }, "credit_union").opening).toContain("supervisory committee");
+    expect(roleProblem({ title: "President", role: "executive" }, "credit_union").opening).toBe("Keeping track of what other credit unions and banks charge");
+    expect(roleProblem({ title: "President", role: "executive" }, "bank").opening).toBe("Keeping track of what competitors charge");
+  });
 });

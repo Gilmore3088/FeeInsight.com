@@ -75,6 +75,18 @@ withdraws unreviewed drafts whose addressee fails that test, that were written u
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
 institutions can be drafted again. Nothing sends.
 
+Credit unions (`charter_type` 'credit_union', Oct 9) get the same campaigns, rules and follow-ups
+in member wording (`isCreditUnion`): the email speaks of members' fees, never customers; frames
+the research for the board or ALCO (finance titles), the supervisory committee (compliance) or board
+reporting (executives) through `roleProblem(contact, charterType)`; and calls the local set
+"credit unions and banks" only when it holds both (`institutionKinds` says only what the set
+holds). Campaign B names one credit union and one bank when both verify; campaign C counts the
+verified local institutions behind its range and gives the figure the credit union publishes for
+members. The sign-off, footer, postal-address placeholder, one ask and no-pricing-advice rules are
+unchanged. Drafts store `charter_type`; follow-ups read it from the draft, or from
+`institution_sources` for older drafts. `OUTREACH_QUOTE_RULE` 4 marks this wording, so an
+unreviewed rule-3 draft is withdrawn and drafted again.
+
 ### The outreach journey (`src/lib/outreach-journey.ts`)
 
 Five stages per institution (James, 15:39 Oct 8): email sent, snapshot opened, engaged with the

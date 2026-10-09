@@ -61,6 +61,11 @@ export interface OutreachCandidate {
 
 const money = (value: number) => (Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`);
 
+/** A fee's display name inside a sentence: lower case, acronyms kept ("Non-Network ATM" -> "non-network ATM"). */
+export function inSentence(label: string): string {
+  return label.replace(/[\p{L}']+/gu, (word) => (word.length > 1 && word === word.toUpperCase() ? word : word.toLowerCase()));
+}
+
 const HONORIFIC = /^(mr|mrs|ms|miss|dr|mx)\.?$/i;
 
 /** The first name for the greeting, or null when the page printed none. */
@@ -101,6 +106,32 @@ export const CAMPAIGN_LETTER: Record<OutreachCampaign, "A" | "B" | "C"> = {
   personalized_research: "B",
   market_insight: "C",
 };
+
+/**
+ * A credit union prospect (`charter_type` 'credit_union') gets the same three campaigns and
+ * follow-ups in member wording: members rather than customers, the board, ALCO or supervisory
+ * committee where the role fits, and its local peers named as the credit unions and banks they are.
+ * The rules don't change: no position against a median, no pricing advice, one ask, and the same
+ * Fee Insight sign-off and footer.
+ */
+export function isCreditUnion(charterType: string | null | undefined): boolean {
+  return charterType === "credit_union";
+}
+
+/**
+ * What a set of local institutions is, by charter, saying only what the set holds: "credit unions
+ * and banks" when it has both, otherwise one kind (singular for one), or "institutions" when no
+ * charter is on file.
+ */
+export function institutionKinds(charters: (string | null | undefined)[]): string {
+  const one = charters.length === 1;
+  const creditUnions = charters.some((charter) => charter === "credit_union");
+  const banks = charters.some((charter) => charter === "bank");
+  if (creditUnions && banks) return "credit unions and banks";
+  if (creditUnions) return one ? "credit union" : "credit unions";
+  if (banks) return one ? "bank" : "banks";
+  return one ? "institution" : "institutions";
+}
 
 export interface OutreachDraft {
   campaign: OutreachCampaign;
@@ -215,7 +246,10 @@ export function buildOutreachDraft(
   const held = new Set(Object.entries(score.tiers).filter(([, tier]) => tier === "D").map(([category]) => category));
   const findings = outreachFindings(snapshot, held);
   const supported = supportedFeeTypes(snapshot, held);
-  const problem = roleProblem(primary);
+  const creditUnion = isCreditUnion(snapshot.subject.charterType);
+  const charters = new Map(snapshot.peers.map((peer) => [peer.id, peer.charterType]));
+  const kindsOf = (ids: number[]) => institutionKinds(ids.map((id) => charters.get(id)));
+  const problem = roleProblem(primary, snapshot.subject.charterType);
   const campaign: OutreachCampaign =
     options.allowInsight && findings.length >= OUTREACH_MIN_FINDINGS
       ? "market_insight"
@@ -236,38 +270,71 @@ export function buildOutreachDraft(
   let link: string | null = null;
   if (campaign === "research_efficiency") {
     subject = "Quick question about competitor fee research";
-    body = [
-      `I'm James, founder of Fee Insight. ${problem.opening} usually means finding, reading and lining up dozens of published fee schedules by hand.`,
-      "",
-      "Fee Insight brings published bank and credit union fee schedules together in one place, with every figure linked to the schedule it came from.",
-      "",
-      `When your team compares ${institution}'s fees with other institutions, do you compile that research yourselves, or do you already have a tool or consultant for it?`,
-    ];
+    body = creditUnion
+      ? [
+          `I'm James, founder of Fee Insight. ${problem.opening} usually means finding, reading and lining up dozens of published fee schedules by hand.`,
+          "",
+          "Fee Insight brings published credit union and bank fee schedules together in one place, with every figure linked to the schedule it came from, so a comparison that goes to the board or ALCO can be traced line by line.",
+          "",
+          `When your team compares ${institution}'s member fees with other credit unions and banks, do you compile that research yourselves, or do you already have a tool or consultant for it?`,
+        ]
+      : [
+          `I'm James, founder of Fee Insight. ${problem.opening} usually means finding, reading and lining up dozens of published fee schedules by hand.`,
+          "",
+          "Fee Insight brings published bank and credit union fee schedules together in one place, with every figure linked to the schedule it came from.",
+          "",
+          `When your team compares ${institution}'s fees with other institutions, do you compile that research yourselves, or do you already have a tool or consultant for it?`,
+        ];
   } else if (campaign === "personalized_research") {
-    named = bestPeers.slice(0, 2).map((id) => ({ institutionId: id, name: peerName(id) }));
+    // A credit union's email names one credit union and one bank when both verify, matching "credit unions and banks".
+    const creditUnionPeer = bestPeers.find((id) => isCreditUnion(charters.get(id)));
+    const bankPeer = bestPeers.find((id) => charters.get(id) === "bank");
+    const chosen = creditUnion && creditUnionPeer !== undefined && bankPeer !== undefined
+      ? bestPeers.filter((id) => id === creditUnionPeer || id === bankPeer)
+      : bestPeers.slice(0, 2);
+    named = chosen.map((id) => ({ institutionId: id, name: peerName(id) }));
     subject = `Competitive fee research for ${institution}`;
-    body = [
-      "I'm James, founder of Fee Insight. We compile published fee schedules so competitive research is faster and every figure can be traced to its source.",
-      "",
-      `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other institutions in the ${market} area, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
-      "",
-      `Would a short, source-linked comparison of ${institution} and a few local institutions you choose be useful for ${problem.useFor}?`,
-    ];
+    body = creditUnion
+      ? [
+          "I'm James, founder of Fee Insight. We compile published credit union and bank fee schedules so competitive research is faster and every figure can be traced to its source.",
+          "",
+          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other ${kindsOf([...sharedCount.keys()])} in the ${market} area, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
+          "",
+          `Would a short, source-linked comparison of ${institution}'s member fees and those of a few local credit unions and banks you choose be useful for ${problem.useFor}?`,
+        ]
+      : [
+          "I'm James, founder of Fee Insight. We compile published fee schedules so competitive research is faster and every figure can be traced to its source.",
+          "",
+          `${institution}'s schedule is in our research, along with those of ${sharedCount.size} other institutions in the ${market} area, including ${named.map((peer) => peer.name).join(" and ")}. Between them, ${supported.length} fee types can be compared line by line.`,
+          "",
+          `Would a short, source-linked comparison of ${institution} and a few local institutions you choose be useful for ${problem.useFor}?`,
+        ];
   } else {
     const fact = findings[0];
     named = [fact.low, fact.high].map((peer) => ({ institutionId: peer.institutionId, name: peerName(peer.institutionId) }));
     link = snapshotLink(snapshot.subject.id);
     subject = `${market} fee schedules, side by side`;
-    body = [
-      "I'm James, founder of Fee Insight. We line up published fee schedules so institutions can see their market without collecting each disclosure by hand.",
-      "",
-      `In the ${market} schedules we hold, ${fact.label.toLowerCase()} fees run from ${money(fact.low.value)} at ${named[0].name} to ${money(fact.high.value)} at ${named[1].name}. ${institution}'s published figure is ${money(fact.own.value)}.`,
-      "",
-      `The page below shows that comparison and ${findings.length - 1} others, each figure linked to the schedule it came from:`,
-      link,
-      "",
-      "Is competitive fee research something your team does regularly?",
-    ];
+    body = creditUnion
+      ? [
+          "I'm James, founder of Fee Insight. We line up published credit union and bank fee schedules so a credit union can see its market without collecting each disclosure by hand.",
+          "",
+          `In the ${market} schedules we hold, ${inSentence(fact.label)} fees at ${fact.peers.length} local ${kindsOf(fact.peers.map((peer) => peer.institutionId))} run from ${money(fact.low.value)} at ${named[0].name} to ${money(fact.high.value)} at ${named[1].name}. The figure ${institution} publishes for members is ${money(fact.own.value)}.`,
+          "",
+          `The page below shows that comparison and ${findings.length - 1} others, each figure linked to the schedule it came from:`,
+          link,
+          "",
+          "Is competitive fee research something your team prepares regularly, for example for ALCO or the board?",
+        ]
+      : [
+          "I'm James, founder of Fee Insight. We line up published fee schedules so institutions can see their market without collecting each disclosure by hand.",
+          "",
+          `In the ${market} schedules we hold, ${inSentence(fact.label)} fees run from ${money(fact.low.value)} at ${named[0].name} to ${money(fact.high.value)} at ${named[1].name}. ${institution}'s published figure is ${money(fact.own.value)}.`,
+          "",
+          `The page below shows that comparison and ${findings.length - 1} others, each figure linked to the schedule it came from:`,
+          link,
+          "",
+          "Is competitive fee research something your team does regularly?",
+        ];
   }
   const email = [`Subject: ${subject}`, "", ...greeting, ...body, "", ...SIGN_OFF, ...FOOTER];
 
@@ -298,6 +365,11 @@ export function buildOutreachDraft(
     `Score ${score.total}/100 (fit ${score.parts.fit}/25, buyer ${score.parts.buyer}/20, research ${score.parts.research}/20, data confidence ${score.parts.confidence}/20, commercial ${score.parts.commercial}/15).`,
     `Comparison tiers: ${(["A", "B", "C", "D"] as const).map((tier) => `${tier} ${Object.values(score.tiers).filter((value) => value === tier).length}`).join(", ")}. Only tier A figures may be quoted.`,
     ...(link ? [`Link checked live before drafting: ${link}`] : ["No link: the one ask is a reply."]),
+    ...(creditUnion
+      ? [
+          `Credit union: member wording (members, board/ALCO/supervisory committee, peers as credit unions and banks). Local institutions with live fees: ${snapshot.peers.filter((peer) => isCreditUnion(peer.charterType)).length} credit unions, ${snapshot.peers.filter((peer) => peer.charterType === "bank").length} banks.`,
+        ]
+      : []),
     "",
     ...evidence,
     "Before sending: confirm the recipient's title on the institution's own site, open any quoted schedule line, and check the email gives no pricing advice.",
@@ -390,7 +462,7 @@ export interface OutreachRunResult {
   campaigns: Partial<Record<OutreachCampaign, number>>;
   /** Prospects with enough for C whose snapshot page didn't show the figures (drafted as B instead). */
   insightPageNotLive?: number;
-  /** Unreviewed drafts taken back (not a decision-maker, an older email format, or a quoted fee no longer live). */
+  /** Unreviewed drafts taken back (not a decision-maker, an older email format or wording, or a quoted fee no longer live). */
   withdrawn?: number;
   reason: string | null;
 }
@@ -399,13 +471,16 @@ export interface OutreachRunResult {
 export const OUTREACH_WITHDRAWN_BY = "carnegie";
 export const OUTREACH_WITHDRAWN_REASON = "Withdrawn by CARNEGIE: the addressee is not a decision-maker (lender, branch, committee or shared mailbox).";
 export const OUTREACH_STALE_QUOTE_REASON = "Withdrawn by CARNEGIE: an older single-fee email (James's outreach audit, Oct 8); the institution is drafted again as a pilot email.";
+export const OUTREACH_STALE_WORDING_REASON = "Withdrawn by CARNEGIE: written before credit unions got member wording (Oct 9); the institution is drafted again in the current wording.";
 export const OUTREACH_NOT_LIVE_REASON = "Withdrawn by CARNEGIE: a fee the email quotes is no longer live or is waiting on a takedown second look; the institution is drafted again if its fees still qualify.";
 /**
  * Drafts carry the rule they were written under; anything older is withdrawn. 2 = the catalog row's
  * own excerpt, consumer tier first; 3 = the pilot's campaigns A, B and C (James's outreach audit,
- * 22:34 UTC Oct 8).
+ * 22:34 UTC Oct 8); 4 = the same campaigns with member wording for credit unions (Oct 9).
  */
-export const OUTREACH_QUOTE_RULE = 3;
+export const OUTREACH_QUOTE_RULE = 4;
+/** The first rule of the pilot's campaigns A, B and C; anything older is the single-fee email. */
+const OUTREACH_PILOT_RULE = 3;
 
 /** Published rows a draft quotes that are gone from the catalog or have a pending takedown. */
 async function notLiveCount(db: SqlTag, publishedIds: number[]): Promise<number> {
@@ -420,7 +495,7 @@ async function notLiveCount(db: SqlTag, publishedIds: number[]): Promise<number>
 
 /**
  * Takes back first emails still waiting for review whose addressee no longer passes
- * `isDecisionMaker`, that were written under an older `OUTREACH_QUOTE_RULE`, or that quote a
+ * `isDecisionMaker`, that were written under an older `OUTREACH_QUOTE_RULE` (an older format or wording), or that quote a
  * published row (the prospect's or a named competitor's) no longer live or marked
  * `takedown_pending`. Only unreviewed drafts: anything James approved, marked sent or skipped
  * himself stays as he left it. Returns how many; a dry run only counts them.
@@ -442,7 +517,8 @@ export async function withdrawNonBuyerDrafts(db: SqlTag, dryRun = false): Promis
     const contact = normalizeContact({ name: to.name ?? null, title: to.title ?? null, role: to.role ?? "other", kind: "person" as ContactKind, email: to.email ?? "" });
     let reason: string | null = null;
     if (!isDecisionMaker({ ...contact, email: to.email })) reason = OUTREACH_WITHDRAWN_REASON;
-    else if (Number(facts?.quote_rule ?? 1) < OUTREACH_QUOTE_RULE) reason = OUTREACH_STALE_QUOTE_REASON;
+    else if (Number(facts?.quote_rule ?? 1) < OUTREACH_PILOT_RULE) reason = OUTREACH_STALE_QUOTE_REASON;
+    else if (Number(facts?.quote_rule ?? 1) < OUTREACH_QUOTE_RULE) reason = OUTREACH_STALE_WORDING_REASON;
     else if ((await notLiveCount(db, (facts?.published_ids ?? []).map(Number))) > 0) reason = OUTREACH_NOT_LIVE_REASON;
     if (!reason) continue;
     if (!dryRun) await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, reason);
@@ -564,6 +640,7 @@ export async function runOutreachDrafts(input: {
           institution_id: candidate.institutionId,
           institution_name: snapshot.subject.name,
           market: marketLabel(snapshot.subject),
+          charter_type: snapshot.subject.charterType,
           to: { email: draft.primary.email, name: draft.primary.name, title: draft.primary.title, role: draft.primary.role, confidence: draft.primary.confidence, source_url: draft.primary.source_url },
           backup: draft.backup ? { email: draft.backup.email, name: draft.backup.name, title: draft.backup.title, confidence: draft.backup.confidence } : null,
           subject: draft.subject,
@@ -625,7 +702,7 @@ export function summarizeOutreach(result: OutreachRunResult): string {
     .join(", ");
   const head = `${result.dryRun ? "Would draft" : "Drafted"} ${result.drafted} first emails for James to audit and send himself (${result.considered} prospects read)${byCampaign ? `; by campaign: ${byCampaign}` : ""}.`;
   const notLive = result.insightPageNotLive ? ` ${result.insightPageNotLive} could have had campaign C but the snapshot page didn't show their figures, so they got B.` : "";
-  const withdrawn = result.withdrawn ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} unreviewed drafts (not a decision-maker, the older single-fee format, or a quoted fee no longer live).` : "";
+  const withdrawn = result.withdrawn ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} unreviewed drafts (not a decision-maker, an older email format or wording, or a quoted fee no longer live).` : "";
   return (skipped ? `${head} Passed over: ${skipped}.` : head) + notLive + withdrawn;
 }
 
@@ -649,28 +726,38 @@ export interface FollowUpSource {
   market: string;
   link: string;
   to: { email: string; name: string | null; title: string | null } | null;
+  /** 'credit_union' gets member wording (see `isCreditUnion`). */
+  charterType?: string | null;
 }
 
-/** The follow-up email: short, no figures, no link, an offer of an example and an easy way to redirect it. */
+/**
+ * The follow-up email: short, no figures, no link, an offer of an example and an easy way to
+ * redirect it. A credit union's speaks of members and of ALCO or board materials.
+ */
 export function buildFollowUpDraft(source: FollowUpSource, stage: 1 | 2 = 1): { subject: string; title: string; caption: string } {
   const subject = `Re: ${source.subject ?? `How your overdraft fee compares in ${source.market}`}`;
   const greetingName = firstName(source.to?.name ?? null);
+  const creditUnion = isCreditUnion(source.charterType);
+  const firstFollowUp = [
+    creditUnion
+      ? `Following up once on my note last week. If it would help, I can send a short, source-linked example comparing ${source.institutionName}'s member fees with those of a few credit unions and banks in ${source.market}, laid out so it can go into an ALCO or board packet.`
+      : `Following up once on my note last week. If it would help, I can send a short, source-linked example comparing ${source.institutionName} with a few ${source.market} institutions.`,
+    "",
+    "If competitive fee research sits with someone else on your team, I'd be glad to send it to them instead.",
+  ];
+  const finalFollowUp = [
+    "One last note, and then I'll stop.",
+    "",
+    creditUnion
+      ? `Is competitive fee research part of your role at ${source.institutionName}? If it sits with someone else, such as whoever prepares ALCO or board materials, I'd be grateful for their name. If it isn't something your team does, that's useful to know too.`
+      : `Is competitive fee research part of your role at ${source.institutionName}? If it sits with someone else, I'd be grateful for their name. If it isn't something your team does, that's useful to know too.`,
+  ];
   const email = [
     `Subject: ${subject}`,
     "",
     greetingName ? `Hi ${greetingName},` : "Hello,",
     "",
-    ...(stage === 1
-      ? [
-          `Following up once on my note last week. If it would help, I can send a short, source-linked example comparing ${source.institutionName} with a few ${source.market} institutions.`,
-          "",
-          "If competitive fee research sits with someone else on your team, I'd be glad to send it to them instead.",
-        ]
-      : [
-          "One last note, and then I'll stop.",
-          "",
-          `Is competitive fee research part of your role at ${source.institutionName}? If it sits with someone else, I'd be grateful for their name. If it isn't something your team does, that's useful to know too.`,
-        ]),
+    ...(stage === 1 ? firstFollowUp : finalFollowUp),
     "",
     ...SIGN_OFF,
     "",
@@ -681,6 +768,7 @@ export function buildFollowUpDraft(source: FollowUpSource, stage: 1 | 2 = 1): { 
   const audit = [
     "--- For your audit. Not part of the email; delete before sending. ---",
     source.to ? `To: ${[source.to.name, source.to.title].filter(Boolean).join(", ") || "No name printed"} <${source.to.email}>` : "To: as the first email",
+    ...(creditUnion ? ["Credit union: member wording (members, ALCO or board materials, peers as credit unions and banks)."] : []),
     stage === 1
       ? `Reply to the first email (queue item ${source.draftId}) so it threads. One final follow-up comes a week after this one if nothing is heard.`
       : `Reply in the same thread (first email: queue item ${source.draftId}). This is the last email to this institution; after it, stop.`,
@@ -719,7 +807,7 @@ async function draftFollowUps(
   const cutoff = new Date(now.getTime() - days * 86_400_000).toISOString();
   const firstSent = stage === 1;
   const rows = await db`
-    SELECT d.id, d.facts
+    SELECT d.id, d.facts, (SELECT s.charter_type FROM institution_sources s WHERE s.id = sent.institution_id) AS charter_type
       FROM content_drafts d
       JOIN outreach_outcomes sent ON sent.draft_id = d.id AND sent.outcome = 'sent'
      WHERE d.workflow = ${OUTREACH_WORKFLOW} AND d.kind = 'outreach_email' AND sent.created_at <= ${cutoff}
@@ -754,6 +842,8 @@ async function draftFollowUps(
       market: String(facts.market ?? "your market"),
       link: String(facts.link ?? snapshotLink(institutionId)),
       to: to && typeof to.email === "string" ? { email: to.email, name: typeof to.name === "string" ? to.name : null, title: typeof to.title === "string" ? to.title : null } : null,
+      // Drafts carry the charter from Oct 9; older ones read it from the institution.
+      charterType: typeof facts.charter_type === "string" ? facts.charter_type : row.charter_type == null ? null : String(row.charter_type),
     };
     if (input.dryRun) continue;
     const draft = buildFollowUpDraft(source, stage);
@@ -766,7 +856,7 @@ async function draftFollowUps(
         subjectKey: `institution:${institutionId}`,
         title: draft.title,
         caption: draft.caption,
-        facts: { institution_id: institutionId, institution_name: source.institutionName, market: source.market, to: source.to, subject: source.subject ?? null, follows_draft: source.draftId, stage },
+        facts: { institution_id: institutionId, institution_name: source.institutionName, market: source.market, charter_type: source.charterType ?? null, to: source.to, subject: source.subject ?? null, follows_draft: source.draftId, stage },
         asOf: now,
         agentRunId: input.runId,
       },
