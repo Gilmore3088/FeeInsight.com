@@ -986,7 +986,11 @@ describe("glued cells at publish (run 3467, 9 Oct)", () => {
   });
 
   it("drops another line's leading parenthetical cell and a box size's footnote number", () => {
-    expect(publishedFeeName("(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)", "safe_deposit_box")).toBe("Rental Late Fee (Past Due 30 Days)");
+    expect(publishedFeeName("(Members over Age 60 are exempt.): Statement Copy fee", "document_reproduction")).toBe("Statement Copy fee");
+    // The rest must name the fee's own category: a rental late fee reads as late_payment, and a
+    // bare "Wire Transfer Fee" names no category, so both keep the name for the retidy.
+    expect(publishedFeeName("(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)", "safe_deposit_box")).toBe("(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)");
+    expect(publishedFeeName("(after two years): Wire Transfer Fee", "garnishment_levy")).toBe("(after two years): Wire Transfer Fee");
     expect(publishedFeeName("3x10” 8", "safe_deposit_box")).toBe("3x10”");
     expect(publishedFeeName("17 x 11 3/8", "safe_deposit_box")).toBe("17 x 11 3/8");
     expect(publishedFeeName("(P3) An Inactivity Fee", "dormant_account")).toBe("(P3) An Inactivity Fee");

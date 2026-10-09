@@ -15,7 +15,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
-import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
+import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -733,14 +733,16 @@ const BOX_FOOTNOTE = /^(\s*\d+(?:\.\d+)?\s*[xX\u00d7]\s*\d+(?:\.\d+)?\s*["\u201d
 
 /**
  * The name with a neighbouring line's leading parenthetical cell or a box size's footnote number
- * taken off, when what is left still passes the category guard; otherwise the name. Pure.
+ * taken off, when what is left names the fee's own category; otherwise the name. Pure.
  */
 export function withoutNeighbourCell(name: string, canonicalKey: string): string {
   const box = name.match(BOX_FOOTNOTE);
   if (box) return box[1].trim();
   if (!LEADING_PARENTHETICAL_CELL.test(name)) return name;
   const rest = name.replace(LEADING_PARENTHETICAL_CELL, "").trim();
-  return rest && checkFeeCategory(canonicalKey, rest).ok ? rest : name;
+  // The rest must name the fee's own category, not merely pass the guard: "Wire Transfer Fee"
+  // passes a legal-process key's guard (Data inventory's retidy v15, PR 933).
+  return rest && classifyFeeText(rest) === canonicalKey && checkFeeCategory(canonicalKey, rest).ok ? rest : name;
 }
 
 export function publishedFeeName(name: string, canonicalKey: string): string {

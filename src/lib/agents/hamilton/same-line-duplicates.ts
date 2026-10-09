@@ -49,11 +49,14 @@ export const SOURCE_CHECKED_SEPARATE_LINES: ReadonlyMap<number, string> = new Ma
  *   heading; 83890 names its balance (Data inventory).
  * - 87575 "ATM TransacƟon Fee" $3 repeats 85596 "ATM Transaction Fee" $3 from a sibling copy of
  *   the same schedule at institution 175 (Data inventory).
+ * - 99504 "(Members over Age 60 are exempt.): Statement Copy fee" $5 is 58624 "Statement Copy fee"
+ *   $5 with another line's note glued on (Data inventory, retidy v15).
  */
 export const REVIEWED_REPEATS: ReadonlyMap<number, number> = new Map([
   [14458, 104758],
   [83889, 83890],
   [87575, 85596],
+  [99504, 58624],
 ]);
 const KEPT_LINES = new Set(REVIEWED_REPEATS.values());
 
