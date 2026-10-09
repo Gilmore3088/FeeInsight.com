@@ -825,3 +825,30 @@ describe("v17 junk glyphs", () => {
     expect(plan.renames.map((rename) => rename.newName)).toEqual(["Notary Service for members"]);
   });
 });
+
+describe("condition restores, batches 2 and 3", () => {
+  it("keeps the live name's casing and drops a dash left on the end", () => {
+    expect(restoredName("monthly fee if requirements are not met", "Monthly fee", "monthly_maintenance")).toBe(
+      "Monthly fee if requirements are not met",
+    );
+  });
+
+  it("leaves markup, a glued list item and a sentence off", () => {
+    expect(restoredName("Early closing fee if account closed &lt; 90 days after opening –", "Early closing fee", "early_closure")).toBeNull();
+    expect(
+      restoredName(
+        "Overdraft Protection -From Savings/Checking (per transfer) -From Kwik-Cash ($100 automatic loan draw)",
+        "Overdraft Protection -From Savings/Checking",
+        "od_protection_transfer",
+      ),
+    ).toBeNull();
+    expect(
+      restoredName(
+        "Copy of Check If you need a copy of a cleared check that was written from your personal checkbook",
+        "Copy of Check",
+        "check_image",
+      ),
+    ).toBeNull();
+    expect(restoredName("Return Check (due to if due to your error)", "Return Check", "nsf")).toBeNull();
+  });
+});
