@@ -38,6 +38,6 @@ describe("planLineupCorrections", () => {
   });
 
   it("fingerprints by strategy version and text", () => {
-    expect(lineupCorrectFingerprint(15374)).toBe("v1:15374");
+    expect(lineupCorrectFingerprint(15374)).toBe("v2:15374");
   });
 });

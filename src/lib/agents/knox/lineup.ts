@@ -99,17 +99,31 @@ const ACCOUNT_TYPE_HEADING = /^(?:money market(?: account| savings)?|share draft
 const FEE_HEADING_END = /\b(?:closing|closed|closure|dormant|inactive|inactivity|overdraft|transfer|withdrawals?)\s*$/i;
 const SENTENCE_WORDS = /\b(?:is|are|you|your|we|our|will|may|must|when|if|or|per|this|that)\b/i;
 const HEADING_LOOKBACK_LINES = 12;
-/** Words around the name: "Open an Advantage Checking Account", "Details: Popular Prestige Checking". */
-const LEAD_IN = /^(?:open\s+(?:an?\s+|your\s+)?|(?:features|details|benefits|highlights)\s*(?:of\s+|:\s*))/i;
+/**
+ * Words around the name: "Open an Advantage Checking Account", "Details: Popular Prestige Checking",
+ * "Learn more about Advantage Checking" (a link under the account, First International 260, 9 Oct).
+ */
+const LEAD_IN = /^(?:open\s+(?:an?\s+|your\s+)?|(?:features|details|benefits|highlights)\s*(?:of\s+|:\s*)|learn\s+more\s+about\s+(?:our\s+|the\s+)?)/i;
 const ARTICLE_START = /^(?:an?|the)\s/i;
+
+/** Two or more lower-case words: a description of an account, not its title-cased name. */
+function describesAccount(words: string[]): boolean {
+  return words.filter((word) => /^[a-z]/.test(word) && !/^(?:and|of|for|plus|with)$/.test(word)).length >= 2;
+}
+
+/** Page text, not a name: lower-case description, a sentence, an ellipsis, or a link's lead-in. */
+function isPageSentence(name: string): boolean {
+  return describesAccount(name.split(" ")) || /…|\.\.\./.test(name) || SENTENCE_WORDS.test(name) || LEAD_IN.test(name);
+}
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
   const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
-  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_]/.test(name) || SENTENCE_WORDS.test(name)) return null;
+  // "For all customers with savings needs…" is a tagline under the account (RNB 2558, 9 Oct).
+  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_…]/.test(name) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
-  if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name)) return null;
+  if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name) || describesAccount(words)) return null;
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
 }
 
@@ -130,8 +144,7 @@ export function readableProductName(value: string | null | undefined): string | 
   if (FEE_HEADING_END.test(name)) return null;
   const words = name.split(" ");
   // A product name is title-cased; a run of lower-case words is a description of it.
-  const lowerCase = words.filter((word) => /^[a-z]/.test(word) && !/^(?:and|of|for|plus|with)$/.test(word));
-  if (words.length > 6 || lowerCase.length >= 2) return null;
+  if (words.length > 6 || describesAccount(words)) return null;
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
 }
 
@@ -417,9 +430,14 @@ export function lineupCorrections(
   }
   if (stored.productName && v55.productName && v55.productName !== stored.productName) {
     const name = squash(stored.productName);
-    if (FEE_HEADING_END.test(name) || readableProductName(name) === null) {
+    // A stored name with a link's lead-in ("Learn more about Advantage Checking") is corrected too.
+    if (FEE_HEADING_END.test(name) || readableProductName(name) === null || LEAD_IN.test(name)) {
       corrections.push({ field: "productName", old: stored.productName, new: v55.productName });
     }
+  } else if (stored.productName && !v55.productName && block.heading === null && isPageSentence(squash(stored.productName))) {
+    // A sentence or tagline stored as the name ("For all customers with savings needs…") is
+    // cleared when the current rules read no account for the fee either: a blank, never a sentence.
+    corrections.push({ field: "productName", old: stored.productName, new: null });
   }
   return corrections;
 }
