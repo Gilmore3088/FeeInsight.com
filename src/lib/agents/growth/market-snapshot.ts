@@ -358,6 +358,16 @@ export function marketLabel(institution: Pick<SnapshotInstitution, "cbsaName" | 
     const state = states ? states.split("-")[0].trim() : null;
     return state ? `${names[0]}, ${state}` : names[0];
   }
-  if (institution.city) return institution.stateCode ? `${institution.city}, ${institution.stateCode}` : institution.city;
+  if (institution.city) {
+    const city = cityName(institution.city);
+    return institution.stateCode ? `${city}, ${institution.stateCode}` : city;
+  }
   return "your market";
+}
+
+/** Some institution records carry the city in capitals ("LINCOLN"); show it as "Lincoln". */
+function cityName(city: string): string {
+  const trimmed = city.trim();
+  if (trimmed !== trimmed.toUpperCase()) return trimmed;
+  return trimmed.toLowerCase().replace(/(^|[\s\-'.])(\p{L})/gu, (_, lead: string, letter: string) => lead + letter.toUpperCase());
 }

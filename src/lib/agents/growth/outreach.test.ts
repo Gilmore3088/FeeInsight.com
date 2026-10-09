@@ -98,6 +98,8 @@ describe("market snapshot", () => {
     expect(marketLabel({ cbsaName: "New York-Newark-Jersey City, NY-NJ-PA", city: null, stateCode: null })).toBe("New York-Newark");
     expect(marketLabel({ cbsaName: "St. Louis, MO-IL", city: null, stateCode: null })).toBe("St. Louis, MO");
     expect(marketLabel({ cbsaName: null, city: "Waco", stateCode: "TX" })).toBe("Waco, TX");
+    expect(marketLabel({ cbsaName: null, city: "LINCOLN", stateCode: "NE" })).toBe("Lincoln, NE");
+    expect(marketLabel({ cbsaName: null, city: "O'NEILL", stateCode: "NE" })).toBe("O'Neill, NE");
   });
 });
 

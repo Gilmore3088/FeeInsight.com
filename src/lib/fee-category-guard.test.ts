@@ -988,3 +988,35 @@ describe("monthly maintenance add-ons (v59)", () => {
     expect(checkFeeCategory("monthly_maintenance", name)).toEqual({ ok: true });
   });
 });
+
+describe("night deposit items filed as a safe deposit box (v60)", () => {
+  it.each([
+    ["Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle", null],
+    ["Plastic Deposit Bag Fee, per 100, 11”x15” (Business)", null],
+    ["Zipper with Lock (9\" X 16”)", null],
+    ["Replacement Key for Bag", "night_deposit"],
+    ["Bag Replacement/Lost Key", "night_deposit"],
+    ["Depository Replacement Key", "night_deposit"],
+  ])("takes %s out of safe_deposit_box (re-file: %s)", (name, to) => {
+    expect(checkFeeCategory("safe_deposit_box", name).ok).toBe(false);
+    expect(refileCategory("safe_deposit_box", name)).toBe(to ?? "safe_deposit_box");
+  });
+
+  it.each(["Safe Deposit Box 3x5 Annual Rent", "Safe Deposit Box Lost Key Replacement", "Safe Deposit Box Drilling", "Key Replacement"])(
+    "keeps a box fee: %s",
+    (name) => {
+      expect(checkFeeCategory("safe_deposit_box", name)).toEqual({ ok: true });
+    },
+  );
+});
+
+describe("sweep service charges filed as monthly maintenance (v60)", () => {
+  it.each([
+    "Sweep maintenance charge (per month)",
+    "Balance Maintenance Fee (Sweep Fee)",
+    "Zero Balance Account (ZBA) or Sweep Transfer Monthly fee",
+    "Maintenance – Sweep Checking Monthly service charge",
+  ])("takes %s out of monthly_maintenance", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+  });
+});

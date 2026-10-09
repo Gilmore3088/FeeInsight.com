@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { narrateEvent, STEP_OWNER } from "./narrate";
 import type { AdminAgent } from "./types";
+import { agentRegistry, nextRunFor } from "./atlas/registry";
 
 /**
  * The Fee Insight crew: the six pipeline agents presented as named workers with a
@@ -30,7 +31,8 @@ export function crewMember(agent: string): CrewMemberMeta | undefined {
   return CREW.find((member) => member.agent === agent);
 }
 
-export type CrewState = "working" | "waiting" | "blocked" | "idle";
+/** `unknown`: the run ledger could not be read, so no state is claimed (PRD 12.2). */
+export type CrewState = "working" | "waiting" | "blocked" | "idle" | "unknown";
 
 export interface CrewFeedItem {
   id: number;
@@ -48,6 +50,12 @@ export interface CrewMemberStatus extends CrewMemberMeta {
   last: string | null;
   lastAt: string | null;
   doneToday: number;
+  /** Latest step this worker started, whatever its outcome. */
+  lastAttemptAt: string | null;
+  /** Latest step this worker finished successfully. */
+  lastSuccessAt: string | null;
+  /** Soonest scheduled run from vercel.json, or null when only the tick drives it. */
+  nextRunAt: string | null;
 }
 
 const FEED_EVENT_TYPES = ["step.finished", "step.failed", "step.reaped", "step.dead", "run.blocked", "run.completed"];
@@ -125,6 +133,9 @@ export async function getCrewFeed({
 }
 
 export interface CrewSignals {
+  lastAttemptAt?: string | null;
+  lastSuccessAt?: string | null;
+  nextRunAt?: string | null;
   runningStep: { title: string; stateCode: string | null } | null;
   queuedSteps: number;
   activeRuns: number;
@@ -158,11 +169,40 @@ export function deriveCrewMember(meta: CrewMemberMeta, signals: CrewSignals): Cr
     last: signals.lastItem?.text ?? null,
     lastAt: signals.lastItem?.at ?? null,
     doneToday: signals.doneToday,
+    lastAttemptAt: signals.lastAttemptAt ?? null,
+    lastSuccessAt: signals.lastSuccessAt ?? null,
+    nextRunAt: signals.nextRunAt ?? null,
   };
 }
 
-export async function getCrewStatus(): Promise<CrewMemberStatus[]> {
-  const [activeSteps, activeRunsRow, todayRows, feed] = await Promise.all([
+/** Pure: every worker as Unknown, for when the ledger cannot be read. Never a guessed "idle". */
+export function unknownCrew(now: Date = new Date()): CrewMemberStatus[] {
+  const registry = agentRegistry();
+  return CREW.map((meta) => ({
+    ...meta,
+    state: "unknown",
+    now: "Status unknown: the run ledger could not be read.",
+    last: null,
+    lastAt: null,
+    doneToday: 0,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextRunAt: nextRunFor(registry.find((entry) => entry.agent === meta.agent)?.schedules ?? [], now),
+  }));
+}
+
+export async function getCrewStatus(now: Date = new Date()): Promise<CrewMemberStatus[]> {
+  try {
+    return await readCrewStatus(now);
+  } catch (error) {
+    console.error("Crew status could not be read", error);
+    return unknownCrew(now);
+  }
+}
+
+async function readCrewStatus(now: Date): Promise<CrewMemberStatus[]> {
+  const registry = agentRegistry();
+  const [activeSteps, activeRunsRow, todayRows, feed, lastRows] = await Promise.all([
     sql`
       SELECT s.agent_name, s.step_key, s.title, s.status, r.state_code
         FROM agent_run_steps s
@@ -187,7 +227,16 @@ export async function getCrewStatus(): Promise<CrewMemberStatus[]> {
        GROUP BY 1
     `,
     getCrewFeed({ limit: 200 }),
+    sql`
+      SELECT agent_name,
+             MAX(started_at) AS last_attempt_at,
+             MAX(completed_at) FILTER (WHERE status = 'completed') AS last_success_at
+        FROM agent_run_steps
+       WHERE updated_at > NOW() - INTERVAL '30 days'
+       GROUP BY agent_name
+    `,
   ]);
+  const iso = (value: unknown) => (value ? new Date(value as string | Date).toISOString() : null);
   const activeRuns = Number(activeRunsRow[0]?.active ?? 0);
 
   return CREW.map((meta) => {
@@ -195,7 +244,11 @@ export async function getCrewStatus(): Promise<CrewMemberStatus[]> {
     const running = mine.find((row) => row.status === "running");
     const today = todayRows.find((row) => String(row.agent) === meta.agent);
     const lastItem = feed.find((item) => item.agent === meta.agent) ?? null;
+    const last = lastRows.find((row) => String(row.agent_name) === meta.agent);
     return deriveCrewMember(meta, {
+      lastAttemptAt: iso(last?.last_attempt_at),
+      lastSuccessAt: iso(last?.last_success_at),
+      nextRunAt: nextRunFor(registry.find((entry) => entry.agent === meta.agent)?.schedules ?? [], now),
       runningStep: running
         ? { title: String(running.title), stateCode: running.state_code ? String(running.state_code) : null }
         : null,

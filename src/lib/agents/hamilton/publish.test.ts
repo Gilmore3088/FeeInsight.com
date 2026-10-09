@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -805,6 +805,49 @@ describe("decidePriorFee", () => {
     expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
   });
 
+  it("reads box sizes, footnote marks and two-price tables as lines (CBB and source spot checks, 9 Oct)", () => {
+    const pair = (rowName: string, priorName: string) =>
+      separateLines({ ...row, fee_name: rowName }, live({ source_document_id: 77, fee_name: priorName }));
+    // Box sizes are lines of their own, not the same "x" line.
+    expect(pair("5 x 10", "6 x 10")).toBe(true);
+    expect(pair("3 x 5", "SAFE DEPOSIT BOX: 2.5 x 10")).toBe(true);
+    expect(pair("3x5 box", "Safe Deposit Box Fee - 3x5")).toBe(false);
+    // A cut-off sentence ("GUASFCU charges a") says nothing about which line it is.
+    expect(pair("Inactivity Fees: N/A Draft Photocopy", "GUASFCU charges a")).toBe(false);
+    const boxes = [
+      "SAFE DEPOSIT BOX BOX SIZES | FORMER FEES | NEW FEES",
+      "2.5 x 10 | $45.00 per year | $70.00 per year",
+      "5 x 10 | $150.00 per year | $110.00 per year",
+      "6 x 10 | $200.00 per year | $110.00 per year",
+    ].join("\n");
+    // "5 x 10" also sits inside "2.5 x 10"; the new-fee column follows the former one.
+    expect(linesApartOnPage(boxes, "5 x 10", "6 x 10", "110.00")).toBe(true);
+    expect(linesApartOnPage(boxes, "5 x 10", "6 x 10", "120.00")).toBe(false);
+    // A box of another size the page does not print is another line; one printed without
+    // this price is a price-first table, where the price after a name is the next line's.
+    expect(linesApartOnPage("3 x 5 | $50.00 per year | $45.00 per year", "3 x 5", "SAFE DEPOSIT BOX: 2.5 x 10", "45")).toBe(true);
+    const priceFirst = "$ 25.00 Safe Deposit Box 3x5/per year* $ 35.00 Safe Deposit Box 5x5/per year* $ 40.00 Safe Deposit Box 3x10/per year*";
+    expect(linesApartOnPage(priceFirst, "Safe Deposit Box 3x5/per year", "Safe Deposit Box 5x5/per year", "35")).toBe(false);
+    // A footnote mark glued to the name ("fee2") is still the name.
+    const od = "Insufficient funds fee - paid2 ........ $30.00/each\nPremium overdraft fee2……...$30.00/each";
+    expect(linesApartOnPage(od, "Premium overdraft fee", "Insufficient funds fee - paid", "30")).toBe(true);
+    // Another document's line repeats this one only when one name reads as the other.
+    expect(namesShareReading("Wire Transfers - Outgoing: Outgoing Wire Fee", "Outgoing Wire Fee")).toBe(true);
+    expect(namesShareReading("Return Mail/ Bad Address", "Excessive Transaction Fee")).toBe(false);
+    expect(namesShareReading("Service Charge", "Service Charge Assessed Each Month Balance Falls Below Minimum")).toBe(true);
+    // A live line that names a balance is another fee when this row names another balance, or,
+    // from another document, when this row's page never prints that balance (SCCU, 9 Oct).
+    const moneyMarket = live({ source_document_id: 13776, fee_name: "Money Market Savings Account (below $2,500)" });
+    const lowBalance = { ...row, source_document_id: 23995, fee_name: "Monthly Low Balance Fee" };
+    expect(otherBalanceLine(lowBalance, moneyMarket, "Minimum Daily Balance | $1,500 Monthly Low Balance Fee | $15/mo")).toBe(true);
+    expect(otherBalanceLine(lowBalance, moneyMarket, "Money Market below $2,500 Monthly Low Balance Fee | $15/mo")).toBe(false);
+    expect(otherBalanceLine(lowBalance, moneyMarket, null)).toBe(false);
+    expect(otherBalanceLine({ ...row, fee_name: "Minimum Balance Fee (if Balance is Below $7,500)" }, live({ fee_name: "Minimum Balance Fee (if Balance is Below $1,000)" }), null)).toBe(true);
+    expect(otherBalanceLine({ ...row, fee_name: "Minimum Balance Fee (average below $1000)" }, live({ fee_name: "Minimum Balance Fee (average below $1,000)" }), null)).toBe(false);
+    // A box size never takes a following digit as its footnote ("3 x 5" is not "3 x 50").
+    expect(linesApartOnPage("3 x 50 $20.00 4 x 5 $20.00", "3 x 5", "4 x 5", "20")).toBe(false);
+  });
+
   it("keeps lines from the same document side by side", () => {
     expect(decidePriorFee(row, [live({ source_document_id: 77 })])).toEqual({ kind: "additional_line" });
   });
@@ -933,5 +976,31 @@ describe("publishedFeeName", () => {
   it("publishes the tidied name when only the untidied one fails the category guard", () => {
     expect(publishedFeeName("per order | Returned Items", "deposited_item_return")).toBe("Returned Items");
     expect(publishedFeeName("Return Item . . . . .", "deposited_item_return")).toBe("Return Item");
+  });
+});
+
+describe("glued cells at publish (run 3467, 9 Oct)", () => {
+  it("holds a name that would show only a condition", () => {
+    expect(publishNameHold("(balance falls below $1,000) $15.00 Copy of Check $3.00 (in house)", "check_image", 15)?.code).toBe("condition_only_name");
+    expect(publishNameHold("Service charge (daily balance falls below $500)", "minimum_balance", 5)).toBeNull();
+  });
+
+  it("drops another line's leading parenthetical cell and a box size's footnote number", () => {
+    expect(publishedFeeName("(Members over Age 60 are exempt.): Statement Copy fee", "document_reproduction")).toBe("Statement Copy fee");
+    // The rest must name the fee's own category: a rental late fee reads as late_payment, and a
+    // bare "Wire Transfer Fee" names no category, so both keep the name for the retidy.
+    expect(publishedFeeName("(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)", "safe_deposit_box")).toBe("(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)");
+    expect(publishedFeeName("(after two years): Wire Transfer Fee", "garnishment_levy")).toBe("(after two years): Wire Transfer Fee");
+    expect(publishedFeeName("3x10” 8", "safe_deposit_box")).toBe("3x10”");
+    expect(publishedFeeName("17 x 11 3/8", "safe_deposit_box")).toBe("17 x 11 3/8");
+    expect(publishedFeeName("(P3) An Inactivity Fee", "dormant_account")).toBe("(P3) An Inactivity Fee");
+  });
+
+  it("reads a balance line the newer copy still prints as current", () => {
+    const row = { fee_name: "Minimum Balance Fee (if Balance is Below $7,500)", amount: "15.00" };
+    expect(newerCopyPrintsLine(row, "Minimum Balance Fee (if Balance is Below $7,500):\n\n$15\n\nExcessive")).toBe(true);
+    expect(newerCopyPrintsLine(row, "Minimum Balance Fee (if Balance is Below $7,500):\n\n$20\n\n")).toBe(false);
+    expect(newerCopyPrintsLine(row, "Minimum Balance Fee (if Balance is Below $1,000):\n\n$15\n\n")).toBe(false);
+    expect(newerCopyPrintsLine({ fee_name: "Stop Payment", amount: "15.00" }, "Stop Payment $15")).toBe(false);
   });
 });

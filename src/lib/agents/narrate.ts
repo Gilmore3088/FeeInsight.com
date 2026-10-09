@@ -227,10 +227,19 @@ function narrateFinished(
     }
     case "hamilton-answer-eval":
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "schedule-check": {
+      const missed = n(detail, "missed") + n(detail, "failed");
+      return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
+    }
     case "bayes-replay-ledger": {
       if (detail.schema_ready === false) return "Bayes counted nothing: the replay ledger is not created yet.";
       const stuck = n(detail, "stuck");
       return `Bayes counted the reach of each rule change: ${n(detail, "closed")} closed, ${n(detail, "open")} open with ${count(n(detail, "queued_records"), "record")} queued${stuck > 0 ? `, ${stuck} stuck` : ""}.`;
+    }
+    case "deming-fresh-audit": {
+      if (detail.readable === false) return "Deming's fresh audit could not read the live fees; accuracy is unknown today.";
+      const accuracy = typeof detail.accuracy === "number" ? `${(detail.accuracy * 100).toFixed(1)}%` : "too few to score";
+      return `Deming audited ${count(n(detail, "sampled"), "live fee")} against the banks' own schedules: ${n(detail, "right")} of ${n(detail, "scorable")} right (${accuracy}), ${n(detail, "no_text")} with no stored text.`;
     }
     case "deming-regression": {
       if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
@@ -574,6 +583,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-states": "growth",
   "score-answer-key": "atlas",
   "bayes-replay-ledger": "atlas",
+  "schedule-check": "atlas",
+  "deming-fresh-audit": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",

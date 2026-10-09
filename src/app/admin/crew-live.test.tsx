@@ -9,10 +9,12 @@ const crew: CrewMemberStatus[] = [
     agent: "magellan", name: "Magellan", role: "Finds and downloads fee schedules", href: "/admin/magellan",
     state: "working", now: "Fetch state source documents (GA).", last: "Downloaded 25 fee schedules in GA.",
     lastAt: "2026-10-02T10:42:00Z", doneToday: 3,
+    lastAttemptAt: "2026-10-02T10:40:00Z", lastSuccessAt: "2026-10-02T10:42:00Z", nextRunAt: null,
   },
   {
     agent: "knox", name: "Knox", role: "Pulls fees out of documents", href: "/admin/knox",
     state: "blocked", now: "My last job failed. See the log below.", last: null, lastAt: null, doneToday: 0,
+    lastAttemptAt: "2026-10-02T10:46:00Z", lastSuccessAt: null, nextRunAt: null,
   },
 ];
 
@@ -30,6 +32,17 @@ afterEach(() => {
 });
 
 describe("CrewLive", () => {
+  it("shows Unknown and the last success, last try and next run", () => {
+    const unknown: CrewMemberStatus = {
+      ...crew[0], agent: "rosetta", name: "Rosetta", state: "unknown", now: "Status unknown: the run ledger could not be read.",
+      nextRunAt: "2026-10-02T11:00:00Z",
+    };
+    render(<CrewLive initialCrew={[...crew, unknown]} initialFeed={feed} />);
+    expect(screen.getByText("Unknown")).toBeTruthy();
+    expect(screen.getByText(/Last success: none in 30 days · last try/)).toBeTruthy();
+    expect(screen.getAllByText(/next scheduled/).length).toBe(1);
+  });
+
   it("shows each worker's state, now and last", () => {
     render(<CrewLive initialCrew={crew} initialFeed={feed} />);
     expect(screen.getByText("Working")).toBeTruthy();

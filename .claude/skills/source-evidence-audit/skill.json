@@ -1,0 +1,57 @@
+{
+  "id": "source-evidence-audit",
+  "version": 1,
+  "maintainer": "hamilton",
+  "owning_agent": "hamilton",
+  "inputs": [
+    "institution id, or a list of fee_published_id",
+    "optional official website host"
+  ],
+  "outputs": [
+    "per-fee lineage and evidence verdict: traced / relinked / untraceable / lineage broken / no stored text",
+    "document list with own-site and page-type findings",
+    "failures graded by deming/severity.ts"
+  ],
+  "data_access": [
+    { "table": "published_fee_records", "mode": "read" },
+    { "table": "verified_fee_observations", "mode": "read" },
+    { "table": "raw_fee_observations", "mode": "read" },
+    { "table": "source_documents", "mode": "read" },
+    { "table": "agent_source_texts", "mode": "read" },
+    { "table": "institution_sources", "mode": "read" },
+    { "table": "pipeline_feedback", "mode": "read" }
+  ],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "deterministic, no paid calls; bounded to one institution or a stated list of fees",
+  "triggering_workflows": [
+    "a customer, reviewer or James questions a fee or a schedule",
+    "before a report goes out (with report-reconciliation)",
+    "after a Magellan or Rosetta change that can relink documents"
+  ],
+  "evaluation_suite": [
+    "src/lib/agents/hamilton/source-check.test.ts",
+    "src/lib/custom-report/source-check-layout.test.ts",
+    "src/lib/agents/hamilton/other-bank-document.test.ts",
+    "src/lib/agents/hamilton/article-page.test.ts",
+    "src/lib/agents/hamilton/product-page.test.ts",
+    "src/lib/agents/hamilton/business-schedule.test.ts"
+  ],
+  "failure_behavior": "A step that cannot run (no stored text, unknown site host) is reported as unknown for the fees it covers; the audit never substitutes a live page read for stored evidence.",
+  "approval_requirements": "None to run (read-only). Takedowns stay with Hamilton's own checks and their 12-hour second look.",
+  "dependencies": [
+    { "path": "src/lib/agents/hamilton/source-check.ts", "version_constant": "SOURCE_CHECK_STRATEGY" },
+    { "path": "src/lib/custom-report/source-check.ts" },
+    { "path": "src/lib/agents/hamilton/other-bank-document.ts" },
+    { "path": "src/lib/agents/hamilton/article-page.ts" },
+    { "path": "src/lib/agents/hamilton/product-page.ts" },
+    { "path": "src/lib/agents/deming/severity.ts" }
+  ],
+  "last_validated": "2026-10-09",
+  "abstain_when": [
+    "the institution has no completed stored text",
+    "the official site host is unknown (skip the own-site step)",
+    "a rate fee would be compared with a dollar figure",
+    "a takedown_pending second look is already open on the fee"
+  ]
+}

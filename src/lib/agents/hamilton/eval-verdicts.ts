@@ -183,6 +183,15 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_amount", pattern: "two_column_glue",
     why: "Footnote 11: incoming is $0 only from a CNB account to a CNB personal account; the schedule's incoming wire fee is $15.00",
   },
+  // Keys FCU (4838), Oct 9, doc 2628: a three-column page joins Keys Premier Checking's "(balance
+  // falls below $1,000) $15.00" to the next column's "Copy of Check $3.00 (in house)". Publish now
+  // holds a name that is only a condition (`condition_only_name`).
+  {
+    feePublishedId: 106318, institution: "Keys Federal Credit Union",
+    feeName: "(balance falls below $1,000)", amount: 15, canonicalFeeKey: "check_image",
+    verdict: "wrong_category", pattern: "column_glue",
+    why: "$15 is Keys Premier Checking's low balance fee (below $1,000), filed as a check copy; the check copy fee on that line is $3.00",
+  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */

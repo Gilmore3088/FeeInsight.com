@@ -4,7 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { refileCategory } from "@/lib/fee-category-guard";
-import { foldContext } from "@/lib/fee-fold";
+import { foldContext, isRetiredCategory } from "@/lib/fee-fold";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -467,6 +467,9 @@ export async function rollBackUnreproducedFees(
     for (const row of newestFirst(documentRows.filter((candidate) => candidate.pulled))) {
       const fee = asFee(row);
       if (fee.amount == null) continue;
+      // A category outside the top 50 is never restored: the taxonomy fold would flag it again
+      // (67860 "Monthly Service Fee with e-Statement" came back as estatement_fee on 9 Oct, run 3446).
+      if (isRetiredCategory(row.canonical_fee_key)) continue;
       const key = feeKey(row.canonical_fee_key, fee.amount);
       if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
       // An earlier re-check judged this fee against a text other than its own. It comes back

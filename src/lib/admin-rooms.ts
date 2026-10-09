@@ -67,6 +67,7 @@ export const ROOMS: Room[] = [
       { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents", card: true },
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
       { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
+      { href: "/admin/agents/quality", label: "Quality", role: "Regressions, replay and schedules", more: true },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },
       { href: "/admin/agents/replay", label: "Replay", role: "Trace a run", more: true },
       { href: "/admin/agents/messages", label: "Messages", role: "Agent to agent", more: true },

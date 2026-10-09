@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { replayStatus, summarizeBayesLedger, STUCK_AFTER_CHECKS, type BayesLedgerResult } from "./ledger";
-import { changeKey, guardRunCount, loadManifests } from "./manifests";
+import { changeKey, currentCopyCount, guardRunCount, loadManifests, retidyCount } from "./manifests";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
@@ -66,6 +66,23 @@ describe("manifests", () => {
     for (const manifest of await loadManifests()) {
       if (!manifest.count) expect(manifest.notCounted).toBeTruthy();
     }
+  });
+});
+
+describe("current copy and retidy counts", () => {
+  it("counts pairs it cannot read as excluded, not queued", () => {
+    expect(currentCopyCount({ pairs: 801, done: 744, queued: 57, noText: 0 })).toMatchObject({ affected: 801, done: 744, queued: 57, exclusions: {} });
+    expect(currentCopyCount({ pairs: 10, done: 5, queued: 3, noText: 2 }).exclusions).toEqual({ no_completed_text: 2 });
+  });
+
+  it("counts an institution due again after a new fee once, as queued", () => {
+    expect(retidyCount({ due: [1, 2, 3], doneCurrent: [3, 4] })).toEqual({ affected: 4, done: 1, queued: 3, exclusions: {} });
+    expect(retidyCount({ due: [], doneCurrent: [] })).toEqual({ affected: 0, done: 0, queued: 0, exclusions: {} });
+  });
+
+  it("counts every change except Darwin's unversioned envelopes", async () => {
+    const uncounted = (await loadManifests()).filter((manifest) => !manifest.count).map((manifest) => manifest.key);
+    expect(uncounted).toEqual(["darwin.envelopes"]);
   });
 });
 
