@@ -239,7 +239,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(cop(y|ies)|address|research|re-?print|duplicate|interim|special|photo|image|^(?!.*paper).*e-?statement)/i,
   },
   card_replacement: {
-    include: /(replace|reissue|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
+    // "Re-issuance" and "Reissuance" are the reissue fee too ("ATM/Check Card Re-issuance" $10).
+    include: /(replace|reissue|re-?issu|lost|stolen|duplicate card|card \(duplicate\)|card reorder)/i,
     // A "check card" is a debit card; checks, checkbooks and checking accounts are not. A PIN
     // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
     // v35: express, priority or two-day delivery of a replacement card is the rush card fee
@@ -455,7 +456,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "overdraft", to: "account_research", when: /\bcharge(d)?[- ]?off\b/i },
   { from: "check_cashing", to: "account_research", when: /\bcharge(d)?[- ]?off\b/i },
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
-  { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
+  { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
   { from: "legal_process", to: "other_lending_fee", when: SUBORDINATION },

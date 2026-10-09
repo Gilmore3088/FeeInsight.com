@@ -306,6 +306,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 1349, doc 24074: \"*unlimited 1st National ATM access / $5.00 monthly maintenance fee\"" },
   { feePublishedId: 95142, from: "money_order", amount: 10, to: "account_research", name: "Money Order Research Fee",
     why: "inst 8581, doc 16111: \"Money Order Research Fee - $10.00/money order\" (Deming audit, run 3516)" },
+  // UAT's paid report snapshot (Oct 9): card re-issues filed as ATM fees.
+  { feePublishedId: 46752, from: "atm_non_network", amount: 4, to: "card_replacement", name: "Debit/ATM Card Reissuance",
+    why: "inst 6371, doc 3645: \"Debit/ATM Card Reissuance | $4.00 each\"" },
+  { feePublishedId: 16698, from: "atm_non_network", amount: 10, to: "card_replacement", name: "ATM/Check Card Re-issuance",
+    why: "inst 338, doc 14541: \"ATM/Check Card Re-issuance | $10 /each\" (a card replacement, not an ATM use fee)" },
 ];
 
 interface HandRow {
