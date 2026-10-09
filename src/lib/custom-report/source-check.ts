@@ -235,14 +235,65 @@ export function stripPriceFootnoteMarks(text: string): string {
 }
 
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
+/**
+ * A dot-leader fee line whose name was wrapped over several lines carries only the name's tail
+ * ("debit card payments) ......... $25.00 per Occurrence", Northern Trust), and a tail that
+ * closes a parenthesis it never opened names no fee. Such a line takes back the price-less lines
+ * above it until the parenthesis opens, plus the one long line the name starts on ("Overdrafts
+ * Paid and Items Paid against Nonsufficient / Funds (includes ..."). It never reaches past a
+ * line with a price, a dot leader, a table cell or a finished sentence, nor more than five
+ * lines up; a tail whose parenthesis never opens is left as it was. Knox reads lines the same
+ * way (v62), so the fee it reads traces to the row this check reads.
+ */
+const WRAPPED_LEADER_PRICE = /\.{4,}\s*(?:\$\s?\d|\d+(?:\.\d+)?\s?%)/;
+const WRAPPED_NAME_MAX_LINES = 5;
+const WRAPPED_NAME_START_CHARS = 40;
+
+export function parenBalance(value: string): number {
+  return (value.match(/\(/g)?.length ?? 0) - (value.match(/\)/g)?.length ?? 0);
+}
+
+export function joinWrappedLeaderNames(lines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const leader = line.match(WRAPPED_LEADER_PRICE);
+    let balance = leader ? parenBalance(line.slice(0, leader.index)) : 0;
+    if (balance >= 0) {
+      joined.push(line);
+      continue;
+    }
+    const taken: string[] = [];
+    while (taken.length < WRAPPED_NAME_MAX_LINES) {
+      const above = joined.at(-1);
+      if (
+        above == null ||
+        !/[a-z]/i.test(above) ||
+        above.includes("|") ||
+        /\.{4,}|\$\s?\d|\d\s?%/.test(above) ||
+        /[.:;!?]\s*$/.test(above)
+      ) break;
+      const opened = balance >= 0;
+      if (opened && (above.length < WRAPPED_NAME_START_CHARS || /\)\s*$/.test(above))) break;
+      taken.unshift(joined.pop() as string);
+      balance += parenBalance(above);
+      if (opened) break;
+    }
+    if (balance >= 0 && taken.length > 0) joined.push([...taken, line].join(" "));
+    else joined.push(...taken, line);
+  }
+  return joined;
+}
+
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
     regridRows(
-      text
-        .split(/\r?\n/)
-        .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
-        .map((line) => line.replace(/\s+/g, " ").trim())
-        .filter((line) => line.length > 0),
+      joinWrappedLeaderNames(
+        text
+          .split(/\r?\n/)
+          .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+          .map((line) => line.replace(/\s+/g, " ").trim())
+          .filter((line) => line.length > 0),
+      ),
     ),
   ).filter((line) => line.length > 0);
 }
