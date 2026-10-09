@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, headName, isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -230,6 +230,12 @@ describe("v7: stored names Knox v57/v60 would read differently", () => {
     expect(isMessyName("Name Change Fee")).toBe(false);
   });
 
+  it("drops a \"Name\" label before an address fee (Maple 102394)", () => {
+    const row = fee({ canonical_fee_key: "account_research", fee_name: "Name Bad Address", amount: 5 });
+    const page = text("Name Bad Address | Fee $5.00");
+    expect(planRetidy([row], page).renames[0]?.newName).toBe("Bad Address");
+  });
+
   it("drops a leading \"Otherwise,\" only when what is left is a name", () => {
     const page = text("Otherwise, a monthly service fee of $6.95.\nOtherwise, the monthly service charge is only $15.00.");
     const named = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "Otherwise, a monthly service fee", amount: 6.95 });
@@ -351,5 +357,58 @@ describe("v10: a fee's own table cell replaces glued heading cells or a cut word
     expect(cellName({ fee_name: "Platinum Checking: Monthly Maintenance Fee", canonical_fee_key: "monthly_maintenance", amount: 25 }, [page])).toBeNull();
     expect(cellName({ fee_name: "Business Checking: Wire Transfer Fee", canonical_fee_key: "wire_domestic_outgoing", amount: 30 }, [page])).toBeNull();
     expect(cellName({ fee_name: "Products: Monthly Maintenance Fee", canonical_fee_key: "monthly_maintenance", amount: 5 }, [page])).toBeNull();
+  });
+});
+
+describe("v11: a sentence name gives way to the short name it opens with", () => {
+  const named = (fee_name: string, canonical_fee_key: string) => headName({ fee_name, canonical_fee_key });
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("keeps the opening name when the rest describes the fee", () => {
+    expect(named("Stop payment order (all items) - Customer must sign and return the stop payment agreement within 14 days", "stop_payment")).toBe(
+      "Stop payment order",
+    );
+    expect(named("Dormant Account Fee: Assessed after two years of no activity on a transaction account", "dormant_account")).toBe("Dormant Account Fee");
+    expect(named("Insufficient funds fee (NSF) — returned item fee charged for insufficient or uncollected funds", "nsf")).toBe("Insufficient funds fee");
+  });
+
+  it("leaves names whose cut words are part of the name", () => {
+    expect(named("Overdraft Item (OD) Charge will apply to each item we pay when your end-of-day overdraft balance", "overdraft")).toBeNull();
+    expect(named("Safe Deposit Box Yearly Rental (3x4) Only available at our County St. New Bedford Branch", "safe_deposit_box")).toBeNull();
+    expect(named("Safe Deposit Box (no new box rentals after Jan. 1, 2023): Annual Fee: 3\" x 5\" box", "safe_deposit_box")).toBeNull();
+    expect(named("Inactive account fee for Demand Deposit (Checking) Accounts, NOW Accounts, Super NOW Accounts, Rewards Checking", "dormant_account")).toBeNull();
+    expect(named("Stop Payment – Your Checks (Continuous range)", "stop_payment")).toBeNull();
+  });
+
+  it("leaves heads that are not names, dated, or lose a business qualifier", () => {
+    expect(named("All items returned for non-sufficient funds (NSF) will be charged a fee per item presented", "nsf")).toBeNull();
+    expect(named("PAPER STATEMENT FEE EFFECTIVE JULY 1, 2016: a fee will be charged for each paper statement mailed", "paper_statement")).toBeNull();
+    expect(named("Excess Transactions - per item over six per month on business savings and money market accounts", "account_research")).toBeNull();
+    expect(named("Texans ATM – an ATM that prominently displays Transaction in US, ATM Withdrawal Service the Texans Credit Union", "atm_non_network")).toBeNull();
+  });
+
+  it("leaves a head when the rest is another fee glued on", () => {
+    expect(
+      named("Wire Transfer- Foreign (1) Accounts with no owner-initiated debits or credits for 11 months will be charged a Fee equal", "wire_intl_outgoing"),
+    ).toBeNull();
+  });
+
+  it("renames only when no other live fee at the institution opens with the same words", () => {
+    const page = text(
+      "Monthly Maintenance Fee (Use your debit card 15 or more times per month and we'll waive the monthly fee.) $5.95\nMonthly Maintenance Fee (for Premier Checking, waived when you keep a balance of $1,500) $10.00",
+    );
+    const basic = fee({
+      canonical_fee_key: "monthly_maintenance",
+      fee_name: "Monthly Maintenance Fee (Use your debit card 15 or more times per month and we'll waive the monthly fee.)",
+      amount: 5.95,
+    });
+    const premier = fee({
+      fee_published_id: 2,
+      canonical_fee_key: "monthly_maintenance",
+      fee_name: "Monthly Maintenance Fee (for Premier Checking, waived when you keep a balance of $1,500)",
+      amount: 10,
+    });
+    expect(planRetidy([basic], page, [basic]).renames.map((rename) => rename.newName)).toEqual(["Monthly Maintenance Fee"]);
+    expect(planRetidy([basic], page, [basic, premier]).renames).toEqual([]);
   });
 });
