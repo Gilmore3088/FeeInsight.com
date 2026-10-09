@@ -90,7 +90,7 @@ async function engageProviderCreditStop(context: ProviderCallContext): Promise<v
   try {
     await engageEmergencyStop(
       "provider-guard",
-      `Anthropic API credit balance is too low; automation paused after ${context.agent} ${context.operation}`,
+      `Anthropic API credit balance is too low or its usage limit is reached; automation paused after ${context.agent} ${context.operation}`,
     );
   } catch (stopError) {
     console.error("Failed to engage emergency stop after provider credit error", stopError);
@@ -159,7 +159,7 @@ async function assertProviderCircuitHealthy(context: ProviderCallContext): Promi
   const failedOperation = failure.operation;
   await engageProviderCreditStop(context);
   throw new ProviderCircuitOpenError(
-    `Provider circuit is open: latest Anthropic credit-balance failure was ${seenAt} on ${failedAgent}.${failedOperation}. Fix provider billing or move this route off Anthropic before retrying.`,
+    `Provider circuit is open: latest Anthropic credit-balance or usage-limit failure was ${seenAt} on ${failedAgent}.${failedOperation}. Fix provider billing or move this route off Anthropic before retrying.`,
   );
 }
 

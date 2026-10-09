@@ -186,7 +186,7 @@ export async function writeStorylineMemo(
       raw = await client.create({ system, user, model });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { status: "unavailable", reason: /budget/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
+      return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
     }
     const draft = parseMemo(raw);
     if (!draft) {

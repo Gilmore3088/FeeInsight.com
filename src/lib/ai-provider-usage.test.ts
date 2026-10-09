@@ -142,6 +142,24 @@ describe("AI provider usage", () => {
     );
   });
 
+  it("engages the emergency stop when the Anthropic workspace usage limit is reached (2026-10-09)", async () => {
+    const error = new Error(
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC."}}',
+    );
+
+    await expect(trackAnthropicRequest(
+      { model: "claude-opus-5-5", agent: "hamilton", operation: "memo" },
+      async () => {
+        throw error;
+      },
+    )).rejects.toBe(error);
+
+    expect(stopMock).toHaveBeenCalledWith(
+      "provider-guard",
+      expect.stringContaining("usage limit is reached"),
+    );
+  });
+
   it("engages the emergency stop when a streaming provider route records credit exhaustion", async () => {
     await recordProviderUsage(
       { provider: "anthropic", model: "claude-sonnet-4-5", agent: "hamilton", operation: "chat" },

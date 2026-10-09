@@ -18,6 +18,8 @@ export const PROVIDER_CREDIT_ERROR_MARKERS = [
   "insufficient credits",
   "purchase credits",
   "plans & billing",
+  // A spend limit set on the Anthropic workspace (2026-10-09: every call failed from 08:11 UTC).
+  "reached your specified api usage limits",
 ] as const;
 
 export const PROVIDER_CREDIT_ERROR_PATTERNS = PROVIDER_CREDIT_ERROR_MARKERS.map((marker) => `%${marker}%`);
