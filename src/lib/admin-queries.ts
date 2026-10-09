@@ -2218,6 +2218,11 @@ export interface LeadRow {
   paid_at: string | null;
   /** False until migration 20270110000003 has added the payment columns. */
   payment_columns: boolean;
+  /** When and by whom the lead was marked qualified (migration 20270110000032); null when not. */
+  qualified_at: string | null;
+  qualified_by: string | null;
+  /** False until migration 20270110000032 has added the qualified columns. */
+  qualified_columns: boolean;
 }
 
 export interface LeadsSummary {
@@ -2256,6 +2261,16 @@ export async function getLeadsSummary(): Promise<LeadsSummary> {
   }
 }
 
+/** The qualified mark from the row's JSON, so the list works before migration 20270110000032. */
+export function qualifiedFieldsOf(fields: Record<string, unknown> | null): Pick<LeadRow, "qualified_at" | "qualified_by" | "qualified_columns"> {
+  const row = fields ?? {};
+  return {
+    qualified_at: typeof row.qualified_at === "string" && row.qualified_at ? row.qualified_at : null,
+    qualified_by: typeof row.qualified_by === "string" && row.qualified_by ? row.qualified_by : null,
+    qualified_columns: "qualified_at" in row && "qualified_by" in row,
+  };
+}
+
 export async function getLeads(limit = 200): Promise<LeadRow[]> {
   try {
     const rows = await sql`
@@ -2283,6 +2298,7 @@ export async function getLeads(limit = 200): Promise<LeadRow[]> {
       quote_sent_at: payment.quoteSentAt,
       paid_at: payment.paidAt,
       payment_columns: payment.paymentColumns,
+      ...qualifiedFieldsOf(r.fields as Record<string, unknown> | null),
       };
     });
   } catch (e) {
