@@ -89,6 +89,34 @@ export interface OutreachFinding {
   median: number;
   low: SnapshotValue;
   high: SnapshotValue;
+  /** Verified peers left out of a lead's range for a different or unknown charge frequency. */
+  otherFrequency?: SnapshotValue[];
+}
+
+/**
+ * The finding narrowed to what campaign C may lead with, or null. The prospect charges something
+ * (never a $0 lead; Accuracy, Oct 9), its frequency is known, and every peer in the quoted range
+ * is charged at that same frequency: a fee is right only when the whole record matches (James).
+ * Peers at another or unknown frequency are dropped from the range when SNAPSHOT_MIN_PEERS still
+ * remain; otherwise the finding can't lead.
+ */
+export function quotableLead(finding: OutreachFinding): OutreachFinding | null {
+  const frequency = finding.own.frequency;
+  if (finding.own.value <= 0 || !frequency) return null;
+  const same = finding.peers.filter((peer) => peer.frequency === frequency);
+  if (same.length === finding.peers.length) return finding;
+  if (same.length < SNAPSHOT_MIN_PEERS) return null;
+  const values = same.map((peer) => peer.value);
+  const middle = Math.floor(values.length / 2);
+  const median = values.length % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+  return {
+    ...finding,
+    peers: same,
+    median: Math.round(median * 100) / 100,
+    low: same[0],
+    high: same[same.length - 1],
+    otherFrequency: finding.peers.filter((peer) => peer.frequency !== frequency),
+  };
 }
 
 /**
@@ -179,7 +207,7 @@ function valueLine(name: string, value: SnapshotValue): string {
   const read = value.readAt ? `, schedule read ${value.readAt.slice(0, 10)}` : "";
   const line = `${value.feeName ? ` Fee: "${value.feeName}".` : ""}${value.sourceLine ? ` Schedule line: "${value.sourceLine}".` : ""}`;
   const notes = value.notes.length ? ` ${value.notes.join("; ")}.` : "";
-  return `- ${name}: ${money(value.value)} (${value.documentUrl ?? "no document link"}${read}).${line}${notes}`;
+  return `- ${name}: ${money(value.value)}, charged ${value.frequency ?? "at an unknown frequency"} (${value.documentUrl ?? "no document link"}${read}).${line}${notes}`;
 }
 
 /**
@@ -238,14 +266,26 @@ export function buildOutreachDraft(
   const score = scoreProspect(snapshot, primary, options.assetsK ?? null, options.pendingTakedown);
   // A comparison with a row waiting on a takedown second look (tier D) is never used.
   const held = new Set(Object.entries(score.tiers).filter(([, tier]) => tier === "D").map(([category]) => category));
-  const findings = outreachFindings(snapshot, held);
+  // Campaign C leads with the first finding `quotableLead` accepts (a charge, at one frequency
+  // across the range); the rest follow on the page, and with none C isn't written.
+  const byPriority = outreachFindings(snapshot, held);
+  let leadIndex = -1;
+  let lead: OutreachFinding | null = null;
+  for (const [index, finding] of byPriority.entries()) {
+    lead = quotableLead(finding);
+    if (lead) {
+      leadIndex = index;
+      break;
+    }
+  }
+  const findings = lead ? [lead, ...byPriority.filter((_, index) => index !== leadIndex)] : byPriority;
   const supported = supportedFeeTypes(snapshot, held);
   const creditUnion = isCreditUnion(snapshot.subject.charterType);
   const charters = new Map(snapshot.peers.map((peer) => [peer.id, peer.charterType]));
   const kindsOf = (ids: number[]) => institutionKinds(ids.map((id) => charters.get(id)));
   const problem = roleProblem(primary, snapshot.subject.charterType);
   const campaign: OutreachCampaign =
-    options.allowInsight && findings.length >= OUTREACH_MIN_FINDINGS
+    options.allowInsight && findings.length >= OUTREACH_MIN_FINDINGS && leadIndex >= 0
       ? "market_insight"
       : supported.length >= OUTREACH_MIN_FINDINGS
         ? "personalized_research"
@@ -341,6 +381,9 @@ export function buildOutreachDraft(
             valueLine(institution, finding.own),
             ...finding.peers.map((peer) => valueLine(peerName(peer.institutionId), peer)),
             ...(unverified.length ? [`  Left out as unverified: ${unverified.map((peer) => `${peerName(peer.institutionId)} ${money(peer.value)}`).join(", ")}`] : []),
+            ...(finding.otherFrequency?.length
+              ? [`  Left out of the quoted range for a different or unknown charge frequency: ${finding.otherFrequency.map((peer) => `${peerName(peer.institutionId)} ${money(peer.value)} (${peer.frequency ?? "unknown"})`).join(", ")}`]
+              : []),
             "",
           ];
         })

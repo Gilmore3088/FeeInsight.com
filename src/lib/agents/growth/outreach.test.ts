@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
-import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow } from "./market-snapshot";
+import { buildSnapshotFee, marketLabel, type MarketSnapshot, type SnapshotFeeRow, type SnapshotValue } from "./market-snapshot";
 import { OUTREACH_HELD_REASON, OUTREACH_STALE_WORDING_REASON, institutionKinds, outreachCampaignsFromEnv, runOutreachDrafts, buildFollowUpDraft, buildOutreachDraft, checkOutreachDestination, runOutreachFollowUps, firstName, isDecisionMaker, loadOutreachCandidates, summarizeOutreach, withdrawNonBuyerDrafts, type OutreachContact } from "./outreach";
 
 function odRow(institutionId: number, amount: number, text: string | null = `Overdraft Fee $${amount.toFixed(2)} per item`): SnapshotFeeRow {
@@ -17,6 +17,7 @@ function odRow(institutionId: number, amount: number, text: string | null = `Ove
     document_url: `https://bank${institutionId}.example/fees.pdf`,
     read_at: "2026-10-01T00:00:00.000Z",
     normalized_text: text,
+    frequency: "per_item",
   };
 }
 
@@ -429,6 +430,97 @@ describe("credit union wording", () => {
     expect(bank.email).toContain("First Bank's published figure is $30.");
     expect(bank.email).not.toMatch(/member|ALCO/i);
     expectHouseRules(bank.email);
+  });
+
+  it("campaign C never leads with a $0 fee: the next quotable fee leads, and with none it falls back to B", () => {
+    const zeroOverdraft = multiSnapshot([
+      ["overdraft", "Overdraft Fee", [0, 25, 28, 30, 32, 35]],
+      ["stop_payment", "Stop Payment", [30, 20, 25, 30, 32, 35]],
+      ["cashiers_check", "Cashier's Check", [8, 5, 6, 8, 10, 10]],
+    ]);
+    for (const snap of [zeroOverdraft, creditUnionSnapshot(zeroOverdraft)]) {
+      const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight: true }));
+      expect(built.draft.campaign).toBe("market_insight");
+      // The $0 overdraft stays in the data and on the page, but doesn't lead.
+      expect(built.draft.findings.map((finding) => finding.category)).toEqual(["cashiers_check", "overdraft", "stop_payment"]);
+      expect(built.draft.findings[0].own.value).toBe(8);
+      expect(built.email).toMatch(/cashier's check fees .*run from \$5 at Peer (?:CU )?10 to \$10 at Peer (?:CU )?14/);
+      expect(built.email).not.toContain("$0");
+      expect(built.audit).toContain("1. Cashier's Check (quoted in the email)");
+    }
+    const allZero = multiSnapshot([
+      ["overdraft", "Overdraft Fee", [0, 25, 28, 30, 32, 35]],
+      ["stop_payment", "Stop Payment", [0, 20, 25, 30, 32, 35]],
+      ["cashiers_check", "Cashier's Check", [0, 5, 6, 8, 10, 10]],
+    ]);
+    for (const snap of [allZero, creditUnionSnapshot(allZero)]) {
+      const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight: true }));
+      expect(built.draft.campaign).toBe("personalized_research");
+      expect(built.draft.link).toBeNull();
+    }
+  });
+
+  it("campaign C leads only with a range charged at one frequency (James: the whole record must match)", () => {
+    // Overdraft: one peer is charged monthly. Five per-item peers remain, so the range narrows to them.
+    const withFrequency = (snap: MarketSnapshot, category: string, frequencyOf: (institutionId: number) => string | null) => ({
+      ...snap,
+      fees: snap.fees.map((fee) => {
+        if (fee.category !== category) return fee;
+        const set = (value: SnapshotValue | null) => (value ? { ...value, frequency: frequencyOf(value.institutionId) } : value);
+        return { ...fee, subject: set(fee.subject), peers: fee.peers.map((peer) => set(peer)!) };
+      }),
+    });
+    const six = multiSnapshot([
+      ["overdraft", "Overdraft Fee", [30, 25, 28, 30, 32, 35]],
+      ["stop_payment", "Stop Payment", [30, 20, 25, 30, 32, 35]],
+      ["cashiers_check", "Cashier's Check", [8, 5, 6, 8, 10, 10]],
+    ]);
+    // Add a sixth verified overdraft peer (id 15, $40) so one can be dropped and five remain.
+    six.peers.push({ ...six.peers[0], id: 15, name: "Peer 15" });
+    six.fees[0] = buildSnapshotFee("overdraft", 1, [...[1, 10, 11, 12, 13, 14].map((id, index) => feeRow("overdraft", "Overdraft Fee", id, [30, 25, 28, 30, 32, 35][index])), feeRow("overdraft", "Overdraft Fee", 15, 40)]);
+
+    const narrowed = emailOf(buildOutreachDraft(withFrequency(six, "overdraft", (id) => (id === 10 ? "monthly" : "per_item")), [jane], { allowInsight: true }));
+    expect(narrowed.draft.campaign).toBe("market_insight");
+    expect(narrowed.draft.findings[0].category).toBe("overdraft");
+    expect(narrowed.draft.findings[0].peers.map((peer) => peer.institutionId)).toEqual([11, 12, 13, 14, 15]);
+    expect(narrowed.email).toContain("overdraft (OD) fees run from $28 at Peer 11 to $40 at Peer 15.");
+    expect(narrowed.audit).toContain("Left out of the quoted range for a different or unknown charge frequency: Peer 10 $25 (monthly)");
+    expect(narrowed.audit).toContain("charged per_item");
+
+    // Mixed with too few left at the prospect's frequency: overdraft can't lead, the next finding does.
+    const mixed = emailOf(buildOutreachDraft(withFrequency(multiSnapshot(), "overdraft", (id) => (id % 2 ? "annual" : "monthly")), [jane], { allowInsight: true }));
+    expect(mixed.draft.campaign).toBe("market_insight");
+    expect(mixed.draft.findings.map((finding) => finding.category)).toEqual(["cashiers_check", "overdraft", "stop_payment"]);
+
+    // An unknown frequency on the prospect's row, or on every peer's, is not comparable.
+    const unknownOwn = emailOf(buildOutreachDraft(withFrequency(multiSnapshot(), "overdraft", (id) => (id === 1 ? null : "per_item")), [jane], { allowInsight: true }));
+    expect(unknownOwn.draft.findings[0].category).toBe("cashiers_check");
+    const unknownAll = multiSnapshot();
+    for (const category of ["overdraft", "stop_payment", "cashiers_check"]) Object.assign(unknownAll, withFrequency(unknownAll, category, () => null));
+    for (const snap of [unknownAll, creditUnionSnapshot(unknownAll)]) {
+      const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight: true }));
+      expect(built.draft.campaign).toBe("personalized_research");
+      expect(built.draft.link).toBeNull();
+    }
+  });
+
+  it("reads a value's frequency only when every row behind it carries the same one", () => {
+    const rowsAt = (frequencies: (string | null)[]) => frequencies.map((frequency) => ({ ...odRow(1, 30), frequency }));
+    expect(buildSnapshotFee("overdraft", 1, rowsAt(["monthly", "monthly"])).subject?.frequency).toBe("monthly");
+    expect(buildSnapshotFee("overdraft", 1, rowsAt(["monthly", null])).subject?.frequency).toBeNull();
+    expect(buildSnapshotFee("overdraft", 1, rowsAt(["monthly", "annual"])).subject?.frequency).toBeNull();
+  });
+
+  it("never prints a row's schedule excerpt in an email body, only in the audit block", () => {
+    const excerpt = "Overdraft Fee $30.00";
+    for (const snap of [multiSnapshot(), creditUnionSnapshot()]) {
+      for (const allowInsight of [true, false]) {
+        const built = emailOf(buildOutreachDraft(snap, [jane], { allowInsight }));
+        expect(built.email).not.toContain(excerpt);
+        expect(built.email).not.toMatch(/Schedule line|Fee: "/);
+        if (built.draft.campaign === "market_insight") expect(built.audit).toContain(`Schedule line: "${excerpt}"`);
+      }
+    }
   });
 
   it("frames a finance or compliance addressee at a credit union for ALCO, the board or the supervisory committee", () => {

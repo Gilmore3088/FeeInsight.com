@@ -61,7 +61,15 @@ the prospect's and offers a comparison; still no figures and no link. C (market 
 tier-A comparison (the prospect and at least 5 named local competitors all verify) as a range with
 the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
 only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
-otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
+otherwise the prospect gets B. C leads only with a finding `quotableLead` accepts: the prospect
+charges something (never a $0 lead; the $0 fee stays on the page), and the prospect's value and
+every peer in the quoted range share the catalog's charge `frequency` (James: a fee is right only
+when the whole record matches, frequency included). Peers at another or unknown frequency are
+dropped from the range if 5+ verified remain (the audit names them); otherwise the next finding is
+tried. A value whose rows' frequency is unknown or mixed is not comparable. With no finding left
+the prospect gets B. No email
+body prints a row's schedule excerpt; excerpts appear only in the audit block, and the email gives
+names and amounts. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
 no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
 nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
 90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
