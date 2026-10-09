@@ -253,7 +253,7 @@ export async function rollBackUnreproducedFees(
              AND fp.amount_kind = 'flat'
              ${filters.join("\n             ")}
         ),
-        docs AS (
+        pending AS (
           SELECT DISTINCT live.source_document_id, live.institution_id
             FROM live
            WHERE NOT EXISTS (
@@ -266,7 +266,23 @@ export async function rollBackUnreproducedFees(
                 AND pa.source_document_id = live.source_document_id
                 AND pa.input_fingerprint = $4
            )
-           ORDER BY live.source_document_id
+        ),
+        -- The documents whose last re-check (under any Knox version) is oldest go first. In
+        -- document-id order every Knox bump restarted the walk at the lowest ids, so a lane's
+        -- later documents went unchecked for 30 versions (2026-10-09: doc 20570 last checked
+        -- at v33, SCCU's 13776 kept a v33 read the v64 box-table fix never reached).
+        docs AS (
+          SELECT pending.source_document_id, pending.institution_id
+            FROM pending
+            LEFT JOIN LATERAL (
+              SELECT MAX(pa.created_at) AS checked_at
+                FROM pipeline_attempts pa
+               WHERE pa.institution_id = pending.institution_id
+                 AND pa.stage = 'publish'
+                 AND pa.strategy = $2
+                 AND pa.source_document_id = pending.source_document_id
+            ) last_check ON TRUE
+           ORDER BY last_check.checked_at NULLS FIRST, pending.source_document_id
            LIMIT $1
         )
         SELECT live.*
