@@ -6,8 +6,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import {
   getNationalIndexCached,
-  getPublicStats,
-  getDataFreshness,
 } from "@/lib/data-store";
 import {
   getBeigeBookHeadlines,
@@ -16,6 +14,7 @@ import {
 } from "@/lib/data-store/fed";
 import { getPublishedArticles } from "@/lib/data-store/articles";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { getDataFreshnessCached, getPublicStatsCached } from "@/lib/data-store/public-cached-reads";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAmount } from "@/lib/format";
 import { timeAgo } from "@/lib/format";
@@ -42,8 +41,8 @@ export default async function ProMarketPage() {
   if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/market");
 
   const allEntries = await getNationalIndexCached();
-  const stats = await getPublicStats();
-  const freshness = await getDataFreshness();
+  const stats = await getPublicStatsCached();
+  const freshness = await getDataFreshnessCached();
 
   const lastUpdated = freshness.last_crawl_at
     ? new Date(freshness.last_crawl_at).toLocaleDateString("en-US", {

@@ -1,5 +1,5 @@
 import { cachedPublicRead } from "./public-read-cache";
-import { getDataFreshness, getStats } from "./core";
+import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
 import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
@@ -42,6 +42,8 @@ import { getCountyFeeMap } from "./state-visuals";
 
 export const getDataFreshnessCached = cachedPublicRead("data-freshness", getDataFreshness);
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
+// A failed read returns zeros; never cache those.
+export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);
 export const getDistrictMetricsCached = cachedPublicRead("district-metrics", getDistrictMetrics);
 export const getFeeCategoryDetailCached = cachedPublicRead(
   "fee-category-detail",
