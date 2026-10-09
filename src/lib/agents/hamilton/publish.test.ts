@@ -736,9 +736,11 @@ describe("decidePriorFee", () => {
   });
 
   it("publishes a second line of the same document at the same price under another name (Wildfire 8019, 9 Oct)", () => {
-    const inquiry = { ...row, canonical_fee_key: "atm_non_network", amount: "5.00", fee_name: "ATM Balance Inquiry (at non-Wildfire ATM) ........................." };
+    const inquiry = { ...row, fee_verified_id: 8019, canonical_fee_key: "atm_non_network", amount: "5.00", fee_name: "ATM Balance Inquiry (at non-Wildfire ATM) ........................." };
     const adjustment = live({ fee_published_id: 14754, amount: "5.00", source_document_id: 77, fee_name: "ATM Adjustment ......................................" });
     expect(decidePriorFee(inquiry, [adjustment])).toEqual({ kind: "additional_line" });
+    // Other rows keep the price-only rule until the check passes its source spot check.
+    expect(decidePriorFee({ ...inquiry, fee_verified_id: 8020 }, [adjustment])).toEqual({ kind: "identical", prior: adjustment });
     // Another read of the same line, or the same price from another document, is still identical.
     const reread = live({ fee_published_id: 14755, amount: "5.00", source_document_id: 77, fee_name: "ATM Balance Inquiry" });
     expect(decidePriorFee(inquiry, [reread])).toEqual({ kind: "identical", prior: reread });
@@ -752,7 +754,6 @@ describe("decidePriorFee", () => {
     // Separate lines.
     expect(pair("ACH OD Fee", "Courtesy Pay Fee")).toBe(true);
     expect(pair("ACH Origination Item — Debit", "ACH Origination Item — Credit ………………")).toBe(true);
-    expect(pair("Check Cashing Fee- Members (Only applies to members who do not have $100 in any combination of accounts or a loan with a", "Check Cashing Fee- Third Party")).toBe(true);
     expect(pair("Monthly service charge (if daily balance falls below $1,000 minimum)", "Monthly service charge – Prestige Checking")).toBe(true);
     // One fee, named twice.
     expect(pair("Check Copies", "Check Copy")).toBe(false);
@@ -760,6 +761,16 @@ describe("decidePriorFee", () => {
     expect(pair("Legal | Legal Document Processing", "Legal Process")).toBe(false);
     expect(pair("Mailed Statement Fee (Business and Public Value $3.00)", "Consumer Additional Mailed Statement Fee")).toBe(false);
     expect(pair("Overdraft Protection Plans designed to avoid the above fees are available either by linking to another deposit account o", "Overdraft Protection Sweep Fee")).toBe(false);
+    expect(pair("RUSH DELIVERY (2-3 BUSINESS: MONEY ORDER", "MONEY ORDER")).toBe(false);
+    expect(pair("Paid NSF Item < $30 (Courtesy Pay)", "(Courtesy Pay)")).toBe(false);
+    expect(pair("The cost to purchase a prepaid travel card is", "Acadia Prepaid Travel Card")).toBe(false);
+    expect(pair("There is a Replacement Card Fee", "ATM/Debit Card Replacement Fee")).toBe(false);
+    expect(pair("Monthly Maintenance Charge", "/month{{d832 }} with an average daily balance of or more per monthly service charge cycle")).toBe(false);
+    expect(pair("Transfers: Photocopy of Documents, per copy", "SCHEDULE OF FEES AND SERVICES 1-855-TERRABK www.terrabank.com SERVICE FEE Photocopy of Doc")).toBe(false);
+    // A cut-off sentence is not set aside, so these two stay one line (as before the check).
+    expect(pair("Check Cashing Fee- Members (Only applies to members who do not have $100 in any combination of accounts or a loan with a", "Check Cashing Fee- Third Party")).toBe(false);
+    // Still separate.
+    expect(pair("ATM/ITM Inquiries (per instance; FREE at Service 1 FCU & Co-Op Network machines)", "ATM/ITM Transfers (per instance; FREE at Service 1 FCU & Co-Op Network machines)")).toBe(true);
   });
 
   it("keeps lines from the same document side by side", () => {

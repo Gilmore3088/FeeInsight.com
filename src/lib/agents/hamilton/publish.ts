@@ -32,8 +32,10 @@ type SqlTag = typeof sql;
 /** The publisher recorded in the attempt log; bump the version when the rules change. */
 export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
 /**
- * Verified rows skipped as identical before the same-line check that are decided once more.
- * Only 8019 for now (UAT, 9 Oct); the rest of the backlog waits for a source spot check.
+ * The verified rows the same-line check (`separateLines`) applies to, each decided once more if
+ * it was skipped as identical before. Only 8019 (UAT, 9 Oct): source spot checks of 20 rows the
+ * check would separate found 13, then 10 and 14 (after tightening) real separate lines, below the
+ * 18 of 20 it must reach before it applies to every row.
  */
 export const SAME_LINE_RESELECT_IDS: number[] = [8019];
 
@@ -736,7 +738,8 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   if (live.length === 0) return { kind: "new" };
   // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
   const value = feeValue(row);
-  const identical = live.find((prior) => feeValue(prior) === value && !separateLines(row, prior));
+  const sameLineCheck = SAME_LINE_RESELECT_IDS.includes(Number(row.fee_verified_id));
+  const identical = live.find((prior) => feeValue(prior) === value && !(sameLineCheck && separateLines(row, prior)));
   if (identical) return { kind: "identical", prior: identical };
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
@@ -777,21 +780,31 @@ function stem(word: string): string {
 
 function significantWords(name: string | null | undefined): Set<string> {
   return new Set(
-    normalizedFeeName(name)
+    (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
       .split(" ")
       .filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word))
       .map(stem),
   );
 }
 
-/** A line's words, without a parenthetical aside ("(Only applies to members who ...)") when the rest names it. */
-function lineWords(name: string | null | undefined): Set<string> {
-  const outside = significantWords((name ?? "").replace(/\([^)]*\)?/g, " "));
-  return outside.size > 0 ? outside : significantWords(name);
+/** A name read from page text or a page header: it says nothing about which line it is. */
+const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
+const MAX_LINE_WORDS = 10;
+function unclearName(name: string | null | undefined): boolean {
+  const text = (name ?? "").trim();
+  if (!/^[A-Za-z]/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  return text.toLowerCase().split(/[^a-z]+/).filter((word) => SENTENCE_WORD.test(word)).length >= 2;
 }
 
-/** More words than a fee line has: a sentence of the page read as the name, which says nothing about which line it is. */
-const MAX_LINE_WORDS = 10;
+/**
+ * Two lines' words, each without a parenthetical aside ("(Only applies to members who ...)")
+ * when the rest of both names still says something.
+ */
+function linePair(a: string | null | undefined, b: string | null | undefined): [Set<string>, Set<string>] {
+  const outside = (name: string | null | undefined) => significantWords((name ?? "").replace(/\([^)]*\)/g, " "));
+  const [aOut, bOut] = [outside(a), outside(b)];
+  return aOut.size > 0 && bOut.size > 0 ? [aOut, bOut] : [significantWords(a), significantWords(b)];
+}
 
 /**
  * Two lines of one document at the same price whose names share no reading of each other
@@ -803,8 +816,8 @@ const MAX_LINE_WORDS = 10;
  */
 export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
   if (!sameDocument(prior.source_document_id, row.source_document_id)) return false;
-  const rowWords = lineWords(row.fee_name);
-  const priorWords = lineWords(prior.fee_name);
+  if (unclearName(row.fee_name) || unclearName(prior.fee_name)) return false;
+  const [rowWords, priorWords] = linePair(row.fee_name, prior.fee_name);
   if (rowWords.size > MAX_LINE_WORDS || priorWords.size > MAX_LINE_WORDS) return false;
   const within = (a: Set<string>, b: Set<string>) => [...a].every((word) => b.has(word));
   return !within(rowWords, priorWords) && !within(priorWords, rowWords);

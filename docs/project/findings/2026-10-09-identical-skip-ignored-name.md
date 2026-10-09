@@ -12,17 +12,21 @@ and price (`feeValue`). It never looked at the name. When one page lists two fee
 same price, the first one published hid the second.
 
 **Fix:** this PR.
-- `separateLines` makes two lines of one document separate fees when neither name's words all appear in the
-  other's. Filler words like "fee", "per item" and "monthly service charge" are ignored, as are numbers and
-  dot leaders.
-- A re-read of the same line, or a heading carried in front of it ("Stop payment" / "Stop Payment of Checks
-  and ACHs"), stays identical.
-- Across documents the same fee is often named differently, so price alone still decides there.
-- Only 8019 is re-decided now (`SAME_LINE_RESELECT_IDS`); each new attempt carries `same_line_check`, so the
-  re-decision is final. The backlog waits for a 20-row source spot check: about 540 still-verified rows
-  have a live same-document row whose name shares no reading with theirs (read-only estimate). A
-  first look is mostly separate lines (inquiry vs transfer, purchase vs reload, paid NSF vs paid
-  overdraft), with some reworded duplicates ("Return Check Fee" vs "Returned Item Fee").
+- `separateLines` treats two lines of one document as separate fees when neither name's words all
+  appear in the other's. It ignores filler words, plural and -ing forms, parenthetical asides, and
+  names that are page sentences or headers.
+- The check applies only to the rows in `SAME_LINE_RESELECT_IDS`, which is just 8019 for now, and each
+  of those rows is decided once more. Every new attempt carries `same_line_check`, so that second
+  decision is final.
+- Source spot checks of 20 rows the check would separate:
+  - 13/20 real separate lines on the first version.
+  - 10/20 on a fresh sample after one round of tightening.
+  - 14/20 on a third fresh sample after another.
+- The misses are one fee read twice, worded differently:
+  - a footnote vs the table row ("A nonsufficient funds (NSF) charge" / "Returned Item/NSF Fee");
+  - a heading vs its continuation ("Monthly Dormancy Fee" / "inactive for six (6) months");
+  - a footnote digit glued on ("Inactive Checking3").
+- The bar for applying the check to every row, and to the backlog (about 400 rows), is 18 of 20.
 
 **Lesson:** a dedupe key needs the fee's identity, not just its value. Price and category alone collapse
 distinct lines.
