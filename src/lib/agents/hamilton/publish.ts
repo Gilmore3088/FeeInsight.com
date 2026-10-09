@@ -922,6 +922,22 @@ async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublis
   return new Set(candidates.filter((prior) => linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)));
 }
 
+/**
+ * The older live line a live fee repeats, if any: a same-valued line of its category (any
+ * frequency or variant) published before it that the same-line check does not set apart.
+ * Used to find the duplicates the same-line re-decide published on 9 Oct (same-line-duplicates.ts).
+ */
+export async function sameLineDuplicateOf(db: SqlTag, row: VerifiedFeeRow, feePublishedId: number): Promise<number | null> {
+  const value = feeValue(row);
+  const older = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter(
+    (prior) => Number(prior.fee_published_id) < feePublishedId && feeValue(prior) === value,
+  );
+  if (older.length === 0) return null;
+  const apart = await linesApartFrom(db, row, older);
+  const repeated = older.find((prior) => !apart.has(prior));
+  return repeated ? Number(repeated.fee_published_id) : null;
+}
+
 /** A fee's comparable value: its rate for a percentage fee, else its amount. */
 export function feeValue(row: RateFields & { amount: number | string | null }): string {
   return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
