@@ -825,6 +825,13 @@ const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
 /** A box or size ("3 x 5", "2.5x10"): one word, so "3 x 5" and "2 x 10" are two lines (CBB, 9 Oct). */
 const BOX_SIZE = /(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)/gi;
 
+/** The box sizes a name gives, smaller side first ("3 x 5" and "5x3" are one box). */
+function boxSizes(name: string | null | undefined): Set<string> {
+  return new Set(
+    [...(name ?? "").matchAll(BOX_SIZE)].map((match) => [Number(match[1]), Number(match[2])].sort((a, b) => a - b).join("x")),
+  );
+}
+
 function significantWords(name: string | null | undefined): Set<string> {
   return new Set(
     (name ?? "").toLowerCase()
@@ -859,6 +866,14 @@ function linePair(a: string | null | undefined, b: string | null | undefined): [
   return aOut.size > 0 && bOut.size > 0 ? [aOut, bOut] : [significantWords(a), significantWords(b)];
 }
 
+/** One name's words all appear in the other's ("Outgoing Wire Fee" in "Wire Transfers - Outgoing: Outgoing Wire Fee"). */
+export function namesShareReading(a: string | null | undefined, b: string | null | undefined): boolean {
+  const [aWords, bWords] = linePair(a, b);
+  // A name of filler alone ("Service Charge") reads as any line.
+  const within = (x: Set<string>, y: Set<string>) => [...x].every((word) => y.has(word));
+  return within(aWords, bWords) || within(bWords, aWords);
+}
+
 /**
  * Two lines of one document at the same price whose names share no reading of each other
  * ("ATM Balance Inquiry (at non-Wildfire ATM)" and "ATM Adjustment", both $5 at Wildfire,
@@ -889,7 +904,8 @@ function pageWords(text: string): string {
  * ("Inactive Checking" in "Inactive Checking3"), is a read of the same line.
  * Every place a name is printed counts ("5 x 10" also sits inside "2.5 x 10"), a footnote mark
  * glued to a name's last word is the name ("Premium overdraft fee2"), and the words before the
- * price may be another column's price ("5 x 10 | $150.00 per year | $110.00 per year").
+ * price may be another column's price ("5 x 10 | $150.00 per year | $110.00 per year"). A box of
+ * another size that the page does not print needs only the row's own line.
  */
 export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
   const value = amount == null ? NaN : Number(amount);
@@ -899,20 +915,27 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
   const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
   const follows = new RegExp(`^ (?:(?!of )[a-z0-9]+ ){0,6}${price} `);
   const page = pageWords(text);
-  const places = (name: string) => {
+  const printed = (name: string) => {
     const words = pageWords(name).trim();
     if (!words) return [];
     const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
-    const found: Array<{ start: number; end: number }> = [];
     const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
-    for (const match of page.matchAll(pattern)) {
+    return [...page.matchAll(pattern)].map((match) => {
       const start = (match.index ?? 0) - 1;
-      const end = start + match[0].length + 1;
-      if (follows.test(page.slice(end))) found.push({ start, end });
-    }
-    return found;
+      return { start, end: start + match[0].length + 1 };
+    });
   };
+  const places = (name: string) => printed(name).filter((place) => follows.test(page.slice(place.end)));
   const a = places(rowName);
+  // A box of another size that this copy does not print at all is another line (CBB's 3 x 5 at
+  // $45 beside a misread "SAFE DEPOSIT BOX: 2.5 x 10" at $45, 9 Oct). One printed without this
+  // price is a price-first table ("$25.00 Safe Deposit Box 3x5"), where the price after a name
+  // is the next line's, so it stays the same line.
+  const rowSizes = boxSizes(rowName);
+  const priorSizes = boxSizes(priorName);
+  if (rowSizes.size > 0 && priorSizes.size > 0 && ![...rowSizes].some((size) => priorSizes.has(size)) && printed(priorName).length === 0) {
+    return a.length > 0;
+  }
   const b = places(priorName);
   return a.some((one) => b.some((two) => one.end <= two.start || two.end <= one.start));
 }
@@ -966,7 +989,12 @@ export async function sameLineDuplicateOf(db: SqlTag, row: VerifiedFeeRow, feePu
   );
   if (older.length === 0) return null;
   const apart = await linesApartFrom(db, row, older);
-  const repeated = older.find((prior) => !apart.has(prior));
+  // A line of another document repeats this one only when one name reads as the other: the
+  // re-decide's duplicates were renamed reads of one line, and "Return Mail/ Bad Address" is not
+  // another document's "Excessive Transaction Fee" (both $10, 9 Oct).
+  const repeated = older.find(
+    (prior) => !apart.has(prior) && (sameDocument(prior.source_document_id, row.source_document_id) || namesShareReading(row.fee_name, prior.fee_name)),
+  );
   return repeated ? Number(repeated.fee_published_id) : null;
 }
 

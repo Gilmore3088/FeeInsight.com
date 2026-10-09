@@ -21,20 +21,33 @@ Because of that, the same-line duplicate cleanup (PR 902) flagged 103621 as a du
 
 ## Fix
 - A box size ("3 x 5", "2.5x10") is one word and may start a name.
-- A name ending on "a", "an", "of" or "the" counts as a cut-off sentence.
+- A box of another size that the page does not print at all is a separate line. CBB's 3 x 5 at
+  $45 sat behind a misread "SAFE DEPOSIT BOX: 2.5 x 10" at $45.
+- A box name the page prints without this price is not set apart. In a price-first table
+  ("$25.00 Safe Deposit Box 3x5"), the price after a name belongs to the next line.
+- A name ending on "a", "an", "of" or "the" counts as a cut-off sentence, and zero-width
+  characters are ignored.
 - Every place a name is printed counts.
 - A one- or two-digit footnote mark after a name's last letter is still part of the name.
 - Up to six words, digits included, may sit between a name and its price.
 - Check version 2 (`same_line_check: 2`) decides again only the box-size rows that check 1
   skipped as identical. 895's wide identical check still applies to them.
+- The duplicate cleanup counts an older line from another document only when one name reads as
+  the other.
+- `SOURCE_CHECKED_SEPARATE_LINES` lists five flags that a source review found to be lines of
+  their own, which the check cannot tell apart. Their flags clear through the second look.
 
 ## Dry read (prod, 9 Oct, before merge)
-- **Box rows:** 81 rows were skipped by check 1. 14 would publish, and all 14 match their source
-  line and price: 54131, 56741, 56883, 62572, 102035, 103876, 108818, 113118, 119628, 119630,
-  120059, 120209, 120418, 120438.
-- **CBB 3 x 5 (119627)** stays skipped. The live line 103534 ("2.5 x 10" at $45) is the former
-  price of the 2.5 x 10 box, so that live row is the misread, not the skip.
-- **902's 208 flags:** 103621 (the footnote case) and 104744 ("Drilling Fee & Key Replacement" vs
-  "3x10") clear, and both are real separate lines. The "every place" rule alone would also have
-  cleared 104637 against "GUASFCU charges a". That is a sentence restating the check copy fee;
-  the cut-off-sentence rule keeps it flagged.
+- **Box rows:** 15 of the 81 box-size rows skipped by check 1 would publish, and all 15 match
+  their source line and price: 54131, 56741, 56883, 62572, 102035, 103876, 108818, 113118,
+  119627, 119628, 119630, 120059, 120209, 120418, 120438.
+- **Price-first table:** without the printed-without-price rule, Midwest's price-first table
+  (doc 12680) would have published 57120 to 57124 at the next line's prices.
+- **902's 208 flags, random 20 against source:** 19 are true duplicates. 104895 (Loan Refinance vs
+  Loan Application) is not.
+- **Flags cleared, 9 in total:**
+  - By the rules: 103621 (footnote mark), 104744 (box size), 104895 (zero-width character) and
+    105054 (another document's unrelated name).
+  - By the source-checked list: 104713, 104650, 104875, 104615 and 104906.
+- **Kept flagged:** without the cut-off-sentence rule, 104637 would have cleared against
+  "GUASFCU charges a". That is a sentence restating the check copy fee, so it stays flagged.

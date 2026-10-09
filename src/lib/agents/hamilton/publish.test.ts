@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -823,9 +823,18 @@ describe("decidePriorFee", () => {
     // "5 x 10" also sits inside "2.5 x 10"; the new-fee column follows the former one.
     expect(linesApartOnPage(boxes, "5 x 10", "6 x 10", "110.00")).toBe(true);
     expect(linesApartOnPage(boxes, "5 x 10", "6 x 10", "120.00")).toBe(false);
+    // A box of another size the page does not print is another line; one printed without
+    // this price is a price-first table, where the price after a name is the next line's.
+    expect(linesApartOnPage("3 x 5 | $50.00 per year | $45.00 per year", "3 x 5", "SAFE DEPOSIT BOX: 2.5 x 10", "45")).toBe(true);
+    const priceFirst = "$ 25.00 Safe Deposit Box 3x5/per year* $ 35.00 Safe Deposit Box 5x5/per year* $ 40.00 Safe Deposit Box 3x10/per year*";
+    expect(linesApartOnPage(priceFirst, "Safe Deposit Box 3x5/per year", "Safe Deposit Box 5x5/per year", "35")).toBe(false);
     // A footnote mark glued to the name ("fee2") is still the name.
     const od = "Insufficient funds fee - paid2 ........ $30.00/each\nPremium overdraft fee2……...$30.00/each";
     expect(linesApartOnPage(od, "Premium overdraft fee", "Insufficient funds fee - paid", "30")).toBe(true);
+    // Another document's line repeats this one only when one name reads as the other.
+    expect(namesShareReading("Wire Transfers - Outgoing: Outgoing Wire Fee", "Outgoing Wire Fee")).toBe(true);
+    expect(namesShareReading("Return Mail/ Bad Address", "Excessive Transaction Fee")).toBe(false);
+    expect(namesShareReading("Service Charge", "Service Charge Assessed Each Month Balance Falls Below Minimum")).toBe(true);
     // A box size never takes a following digit as its footnote ("3 x 5" is not "3 x 50").
     expect(linesApartOnPage("3 x 50 $20.00 4 x 5 $20.00", "3 x 5", "4 x 5", "20")).toBe(false);
   });

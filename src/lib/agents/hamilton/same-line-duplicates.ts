@@ -25,6 +25,20 @@ export const SAME_LINE_DUPLICATE_REASON = "same_line_duplicate";
 export const SAME_LINE_DUPLICATE_FLAG = "same_line_duplicate";
 export const SAME_LINE_DUPLICATE_LIMIT = 200;
 
+/**
+ * Live fees this check flagged that their source prints as a line of their own, beside the older
+ * line it named (source review of the 208 flags, 9 Oct). The same-line check cannot tell these
+ * apart (a name split across columns, a parenthetical the word rule drops, a lower-case name), so
+ * each passes here and its flag clears through the second look.
+ */
+export const SOURCE_CHECKED_SEPARATE_LINES: ReadonlyMap<number, string> = new Map([
+  [104713, "Statement Reconciliation, Research or Special Request $35, beside Wire Research Fee $35"],
+  [104650, "Stop payment (all items) $35, beside Bill Pay Stop Payment $35"],
+  [104875, "Cashiers check copy $5, beside Convenience check copy $5"],
+  [104615, "Levies $20 per levy, beside Garnishments $20 per garnishment"],
+  [104906, "Check Copy - Certified $5, beside Check Copy - Member Draft $5"],
+]);
+
 type CandidateRow = VerifiedFeeRow & { fee_published_id: number | string };
 
 export interface SameLineDuplicate {
@@ -100,7 +114,7 @@ export async function retireSameLineDuplicates(
   const passing: number[] = [];
   for (const row of rows) {
     const feePublishedId = Number(row.fee_published_id);
-    const older = await sameLineDuplicateOf(db, row, feePublishedId);
+    const older = SOURCE_CHECKED_SEPARATE_LINES.has(feePublishedId) ? null : await sameLineDuplicateOf(db, row, feePublishedId);
     if (older == null) {
       passing.push(feePublishedId);
       continue;
