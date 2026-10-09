@@ -19,7 +19,11 @@ type SqlTag = typeof sql;
  *   - a surcharge rebate or reimbursement published as an ATM fee ("ATM Fee Reimbursement $10":
  *     the bank gives it, it does not charge it): 20 live fees on Oct 8;
  *   - a product-feature sentence ("No fee for cashier's checks or money orders") published as a
- *     $0 fee: 4 live fees on Oct 8. A table row priced "No Charge" is a fee and stays.
+ *     $0 fee: 4 live fees on Oct 8. A table row priced "No Charge" is a fee and stays;
+ *   - a waiver or threshold sentence published as a $0 fee ("Monthly Service Fee when you have any
+ *     ONE of the following during each monthly", "Minimum Balance Required to avoid service
+ *     charge"): the bank's monthly fee is another row, this one is its condition (Accuracy's
+ *     Chase row 75915, Oct 9; 13 live). A $0 fee named "... - Waived" is a fee and stays.
  * A non-customer price beside the bank's own customer price (316 live fees) is not taken down
  * here: whether it is a payer error or a flag is James's open call (confirm list, row 16).
  *
@@ -29,7 +33,7 @@ type SqlTag = typeof sql;
  * Knox's learning reads what was wrong.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 1;
+export const EVAL_VERDICT_VERSION = 2;
 const EVAL_REASON_PREFIX = "eval_critical";
 const RULE_REASON_PREFIX = "not_a_fee";
 const ROLLBACK_LIMIT = 500;
@@ -117,14 +121,20 @@ const ATM_KEYS = new Set(["atm_non_network", "atm_international"]);
 /** A sentence about what is free ("No fee for stop payments"), not a priced row. */
 const NO_FEE_SENTENCE = /^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\b/i;
 
-/** Postgres pre-filter for the two name rules; `ruleFor` decides. */
-export const RULE_NAME_PATTERN = String.raw`(rebate|reimburse|refund)|^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\y`;
+/** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
+const WAIVER_SENTENCE = /\b(if|when|unless)\s+you\b|\bof\s+the\s+following\b|\bqualifications?\s+(are|is)\s+met\b|^\s*to\s+avoid\b|\bto\s+avoid\s+(a\s+|an\s+|the\s+)?(monthly\s+|maintenance\s+)?(service\s+charge|monthly\s+fee|maintenance\s+fee|fee)/i;
+
+/** Postgres pre-filter for the name rules; `ruleFor` decides. */
+export const RULE_NAME_PATTERN = String.raw`(rebate|reimburse|refund)|^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\y|\y(if|when|unless)\s+you\y|\yof\s+the\s+following\y|\yqualifications?\s+(are|is)\s+met\y|\yto\s+avoid\y`;
+
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence";
 
 /** Which name rule, if any, takes a live fee down. Pure. */
-export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined): "rebate" | "no_fee_sentence" | null {
+export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null): NameRule | null {
   const name = feeName ?? "";
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
   if (NO_FEE_SENTENCE.test(name)) return "no_fee_sentence";
+  if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   return null;
 }
 
@@ -194,7 +204,8 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
        ${byInstitution ? "AND fp.institution_id = $2" : ""}
        AND (fp.fee_published_id = ANY($1::bigint[])
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
-            OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y')
+            OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
+            OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y'))
      ORDER BY fp.fee_published_id`;
 }
 
@@ -244,12 +255,14 @@ export async function retireEvalVerdictFees(
       result.evalChanged += 1;
       continue;
     }
-    const rule = ruleFor(base.canonicalFeeKey, base.feeName);
+    const rule = ruleFor(base.canonicalFeeKey, base.feeName, base.amount);
     if (!rule) continue;
     const why =
       rule === "rebate"
         ? "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges"
-        : "A sentence about what is free, not a priced fee line";
+        : rule === "no_fee_sentence"
+          ? "A sentence about what is free, not a priced fee line"
+          : "The condition that waives a fee, or the balance that avoids it, published as a $0 fee";
     ruleRows.push({ ...base, kind: "not_a_fee", reason: `${RULE_REASON_PREFIX}:${rule}`, why, source: "rule" });
   }
   result.evalMatched = evalRows.length;
