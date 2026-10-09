@@ -6,6 +6,7 @@ import {
   refreshPageClassifier,
   scoreHoldout,
   trainPageClassifier,
+  withoutRequestEcho,
   type PageExample,
 } from "./page-classifier";
 
@@ -42,6 +43,28 @@ describe("page classifier", () => {
     expect(features.has("u:.pdf")).toBe(true);
     expect(features.has("s:rule_fee_page")).toBe(true);
     expect(features.has("s:fee_lines_3")).toBe(true);
+  });
+
+  it("reads a page without the request headers it echoes back (our own user agent)", () => {
+    // The top of a credit union page on one site platform, stored 2026-10 (agent_source_texts 12494).
+    const echoed = [
+      "Tx1Xx0QrzM8uFSwiGQe8m",
+      "www.newellfcu.org",
+      "FeeInsightBot/1.0 (Magellan; +https://feeinsight.com/contact)",
+      "Ashburn",
+      "x-forwarded-for",
+      "cloudfront-viewer-city",
+      "user-agent",
+      "x-vercel-id",
+      "x-forwarded-host",
+      SCHEDULE,
+    ].join("\n");
+    expect(withoutRequestEcho(echoed)).toBe(SCHEDULE);
+    const features = pageFeatures(echoed, null);
+    for (const leaked of ["w:feeinsi", "w:magella", "w:vercel", "w:ashburn", "w:cloudfr"]) expect(features.has(leaked)).toBe(false);
+    expect(features.has("w:overdra")).toBe(true);
+    // A page that never names our crawler is read whole.
+    expect(withoutRequestEcho(`Host\n${SCHEDULE}`)).toBe(`Host\n${SCHEDULE}`);
   });
 
   it("needs enough examples of each label before it trains", () => {
