@@ -129,7 +129,8 @@ describe("selectBlockedLinks", () => {
     const rows = await selectBlockedLinks(db, 3);
     expect(rows.map((row) => row.id)).toEqual([37]);
     expect(texts[0]).toContain("plain.outcome = 'http_403'");
-    expect(texts[0]).toContain("plain.outcome = 'timeout'");
+    // A refused connection (Centennial Bank) counts like a timeout.
+    expect(texts[0]).toContain("plain.outcome IN ('timeout', 'network_error')");
     expect(values[0]).toContain(BLOCKED_TIMEOUT_MIN_FAILURES);
   });
 });
