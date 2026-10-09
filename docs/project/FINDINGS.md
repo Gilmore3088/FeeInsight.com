@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Link words retired hand-found fee schedules before anyone read them
+Magellan's companion review retires any stored page whose link text or URL has a word like
+"privacy", "opt in", "loan" or "apply" (`isNonDepositLink`). That rule is for links the finder
+picks up on its own, but it also ran on schedules a person found: Valley National's
+"Schedule of Fees-Privacy Policy-ADA.pdf" and First United's overdraft "opt-in-form.pdf" were
+retired as "loan or other non-deposit document", so neither $10B+ bank got a live overdraft fee.
+Fix: the review never retires a `discover.operator_schedule` row for its link words (Rosetta's
+read and the source check judge it), and puts back the ones it had retired. First United's
+earlier first.bank row (another bank's schedule) is still stored as fetched; the cross-bank
+takedown is what keeps its fees off the site.
+
 ## 2026-10-09: The Knox decisions queue read a reason field no verdict has
 **What happened:** an admin audit found all sampled rows of `/admin/knox?queue=decisions` (746 pending) shown as "Other (no reason)". Read-only queries on prod (Oct 9): all 746 Knox `reject` messages store `payload.reasons`, an array, and none has `payload.reason` or `payload.confidence`, which the page read. Their reasons are of five shapes: 638 rejections are "$0 or missing amount, not marked free" (472 of those fees have no amount at all; Knox read a missing amount as $0) and 108 are "above 5x the peer median". 726 of the 746 come from the `migration_v10` legacy import and 85 already have a live published record. Darwin's last `accept` message and the last Knox reject were both on 2026-08-12.
 **Cause:** the queue's reason categories were written for a single-string `reason` that Knox never stored in this shape. Separately, the page said an override "will complete on Darwin's next pass": the override calls `promote_to_tier3`, which needs a Darwin accept from the last 30 days, and no agent reads `knox_overrides` or retries afterwards, so on every pending row the override records a verdict but cannot publish.
@@ -3834,6 +3845,23 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** 88942, 88945, 88950, 88951 and 88952 are `takedown_pending` after the next source
   check pass on 8130, and change records 1060-1064 drop out of change lists.
 
+
+## 2026-10-09: A two-column notice drawn letter by letter was read across its columns
+- **What happened.** First United (118) had a raw fee named "additional" at $5 (fee_raw_id
+  431341). Its overdraft notice is set in two columns, and the page was read across them, so
+  "we will charge an additional $5.00 per day" lost its sentence.
+- **Why.** `proseColumns` allowed a gutter as many covering text items as 3% of the page's
+  items. This PDF draws each letter as its own item (2,243 on one page), so the allowance (53)
+  was larger than any column's line count, and no strip of the page counted as covered. No
+  gutter was ever found.
+- **Fix.** Gutter coverage counts lines, not items, and a gutter may be crossed by up to 10% of
+  the page's lines (a title, a form below the columns). `PDF_LAYOUT_VERSION` is now 3. The
+  fixture `src/lib/agents/rosetta/test-fixtures/first-united-opt-in.pdf` is read column by column
+  in `pdf-layout.test.ts`.
+- **Watch.** Texts already read across their columns are read again only when they hold
+  `INTERLEAVED_PROSE_CELLS` cell breaks or more. The First United notice holds fewer, so its old
+  text stays until the bank's bytes change. Its full schedule (OAC_Account_Disclosures.pdf) is now
+  the hand-found source.
 
 ## 2026-10-09: The other-bank check only knew hosts that are another bank's website
 - **What happened.** The admin audit (Oct 8) found Peoples Bank of Rock Valley IA (915) showing

@@ -75,7 +75,7 @@ import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
-import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
+import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
 import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
@@ -83,6 +83,7 @@ import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growt
 import { runToolCheck, summarizeToolCheck } from "@/lib/agents/growth/edison";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
 import { lessonsLine, recentLessons, skippedSubjects } from "@/lib/agents/growth/lessons";
+import { PRESS_WORKFLOW, runPressPitches, summarizePressPitches } from "@/lib/agents/growth/bernays";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
@@ -1787,6 +1788,12 @@ async function executeAgenticStep(
       });
       return { status: "completed", summary: summarizeContactFinder(result), detail: { ...result } };
     }
+    case "growth-contact-picks": {
+      // Ranks every saved contact with today's rules and stores its role, confidence and
+      // primary/backup pick; on its first run this is the backfill for rows saved before the columns.
+      const result = await refreshContactPicks({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeContactPicks(result), detail: { ...result } };
+    }
     case "growth-outreach": {
       const followUps = await runOutreachFollowUps({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       const result = await runOutreachDrafts({
@@ -1810,6 +1817,12 @@ async function executeAgenticStep(
     case "growth-conversion": {
       const result = await runConversionCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: summarizeConversionCheck(result), detail: { ...result } };
+    }
+    case "growth-press": {
+      // BERNAYS's brief: an outlet or finding James skipped with a reason stays out while the lesson stands.
+      const lessons = await recentLessons(tx, "bernays");
+      const result = await runPressPitches({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, PRESS_WORKFLOW) });
+      return { status: "completed", summary: [summarizePressPitches(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "growth-tools": {
       const result = await runToolCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", state: stringRunParam(params, ["state"]) });

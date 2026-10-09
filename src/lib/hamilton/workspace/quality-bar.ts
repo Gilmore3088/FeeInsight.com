@@ -54,6 +54,8 @@ export const QUALITY_QUESTIONS: readonly QualityQuestion[] = [
 
 /** Price position words that do not fit a bank audience. */
 const CHEAP = /\bcheap(?:er|est)?\b|\bdearest\b|\bpricier\b/i;
+/** A verdict on the bank's position; Hamilton says lower or higher and leaves the judgment to the reader. */
+const JUDGMENT = /\b(?:works? (?:in your favou?r|against you)|in your favou?r|to your (?:dis)?advantage|(?:a|an) (?:good|bad) (?:price|position|sign))\b/i;
 /** An opening that leads with what the data lacks. */
 const LIMIT_FIRST = /^(?:the data|hamilton|we|this (?:data|index))\b[^.]{0,40}\b(?:cannot|can't|does not|doesn't|has no|holds no|lacks)\b/i;
 const NUMBER = /\$\d|\d%|\b\d+ (?:peers|institutions|banks|credit unions|fees)\b/;
@@ -84,6 +86,8 @@ export function scoreResponse(item: QualityQuestion, response: AskResponse): Qua
   if (advice) failures.push(`reads as advice: "${advice[0]}"`);
   const cheap = all.match(CHEAP);
   if (cheap) failures.push(`says "${cheap[0]}" instead of lower or higher`);
+  const judgment = all.match(JUDGMENT);
+  if (judgment) failures.push(`judges the position: "${judgment[0]}"`);
   if (LIMIT_FIRST.test(response.shortAnswer.trim())) failures.push("opens with a limit");
   const internal = all.match(PIPELINE_TERMS);
   if (internal) failures.push(`internal name: "${internal[0]}"`);
