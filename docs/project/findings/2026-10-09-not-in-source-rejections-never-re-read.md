@@ -49,17 +49,18 @@ were $0 readings of lines that price the fee when a condition is not met ("Bill 
 E-Statements and Debit Card | $6.95 per Month", 217716, live; "Monthly fee for balance of $500 &
 over | FREE" with $5.00 on the next row, 233082, live; "$0 with $100 minimum daily balance OR
 $2.50/month", 230322), one was a package list ("Includes: Bill Pay E-Statement...") verified into
-the retired `estatement_fee` type (251150), and two carried amounts not on their matched line
-(250826 $10, 226547 $3). Hamilton's publish-time rules would have taken the live ones down after
-the fact; nothing stopped them before verification.
+the retired `estatement_fee` type (251150); two more (250826 $10, 226547 $3) were marked wrong on
+amount, but Accuracy found both amounts on the source one line below the name, so those two were
+right. Hamilton's publish-time rules would have taken the live $0 ones down after the fact;
+nothing stopped them before verification.
 
 Fix: `postSourceCheck` in `verify.ts` runs after the source check on the matched line and stops a
 retired category (`retired_category`, rejected), a $0 whose own line or excerpt carries a price
 (`conditional_zero`, needs_review) and any of Hamilton's name rules (`name_rule`, rejected). A
 `verify.recheck` pass (`verified-recheck.ts`) reads every row v3 verified once under the same
 checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones go through the
-shared 12-hour second look before rollback. The amount-off-line misses are the source check's
-(Accuracy's `checkFeeAgainstSource`) and are reported there rather than patched here.
+shared 12-hour second look before rollback. The recheck never judges an amount; the shared
+source check (Accuracy's `checkFeeAgainstSource`) stays the one amount check.
 
 ## Lesson
 
