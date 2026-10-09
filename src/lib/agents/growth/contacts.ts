@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signals";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * NIELSEN's contact finder: the same walk Magellan makes for fee schedules, aimed at the
@@ -561,7 +562,7 @@ export async function listProspectContacts(db: SqlTag = sql): Promise<ProspectCo
   `;
   return rows.map((row) => normalizeContact({
     institution_id: Number(row.institution_id),
-    institution_name: String(row.institution_name),
+    institution_name: institutionDisplayName(String(row.institution_name)),
     charter_type: row.charter_type === null ? null : String(row.charter_type),
     state_code: row.state_code === null ? null : String(row.state_code),
     city: row.city === null ? null : String(row.city),

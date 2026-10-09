@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface FeeCategorySummary {
   fee_category: string;
@@ -197,7 +198,7 @@ export async function getCheapestAndMostExpensive(
     (rows as FeeExtreme[]).map((r) => ({
       id: Number(r.id),
       institution_id: Number(r.institution_id),
-      institution_name: r.institution_name,
+      institution_name: institutionDisplayName(r.institution_name),
       amount: Number(r.amount),
     }));
 

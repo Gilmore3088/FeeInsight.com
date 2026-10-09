@@ -6,6 +6,7 @@
  */
 
 import { getSql } from "./connection";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface FeeChangeEvent {
   id: number;
@@ -131,7 +132,7 @@ export async function getFeeChangeEvents(
     return rows.map((row) => ({
       id: Number(row.id),
       institution_id: Number(row.institution_id),
-      institution_name: row.institution_name,
+      institution_name: institutionDisplayName(row.institution_name),
       fee_category: row.fee_category,
       old_amount: row.old_amount !== null ? Number(row.old_amount) : null,
       new_amount: row.new_amount !== null ? Number(row.new_amount) : null,
