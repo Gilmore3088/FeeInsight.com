@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Magellan's fee-page classifier never trained
+**What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
+**Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
+**Fix:** the discover step calls `refreshPageClassifier` again and reports `page_classifier` (this PR). It still only records its opinion (shadow).
+**Lesson:** when a feature writes to its own table, check that table's row count after merges that touch its caller; a loader that finds nothing fails silently.
+
+## 2026-10-09: A hand-found schedule fetched in another state's lane was never read
+Companion fetch takes hand-found schedules in any state's lane (2026-10-08 fix), but every read
+step is scoped to its run's state. First United's (OK) overdraft disclosure was fetched in the NC
+lane at 23:55 UTC on 8 Oct and sat unread: the priority picker only saw it as "found by hand" while
+it was unfetched. Fix: the picker's unread-document tier (paid fetch) now also covers documents
+fetched from hand-found links, and a dormant bank with a hand-found link can get its run. The paid
+fetch for blocked companion links admits the same dormant case (Stock Yards' syb.com answered 403).
+
+## 2026-10-09: The companion search stopped running on Oct 7
+**What happened:** `pipeline_attempts` holds no `discover.second_document` row after 07:00 UTC Oct 7, through 00:20 UTC Oct 9, while discover steps kept completing (1,126 in all). At 00:20 Oct 9, top-10 banks such as American Savings (HI), Trustone (MN), First Community (WV), Dupaco (IA), Hawaii State FCU and Yellowstone (MT) had a verified overdraft fee but fewer than 3 fee categories, so Hamilton held it, and the search that finds the rest of their schedule had not run for them.
+**Cause:** discovery stopped starting banks at 75 s and ran the companion search only if the bank loop had ended before 75 s. Once the queue had enough banks to fill every step (steps ran 82 to 104 s on Oct 8), the loop always ran past 75 s and the search never started.
+**Fix:** each discover step keeps its last 25 s for the companion search (`COMPANION_RESERVE_MS`): banks stop starting at 50 s and stop running at 75 s, and the search runs until the step's 100 s limit (this PR).
+**Lesson:** work that runs "with whatever time is left" needs its own reserved slice, plus a count that shows when it stops: check its attempt rows by hour after any change to the step.
+
 ## 2026-10-08: Seven of the "192 $10B+ banks" are closed charters
 **What happened:** the large-bank overdraft count (106 of 192 at 23:25 UTC) counts every `institution_sources` row at $10B+ in assets. Seven are marked closed by the FDIC or NCUA registry sync (`regulatory_status = 'inactive'`): Webster Bank (closed 2026-08-20), Comerica Bank and Cadence Bank (2026-02-01), FirstBank of Colorado (2026-06-18), First Foundation Bank (2026-04-01), Stellar Bank (2026-07-01) and First Technology FCU (no closed date; NCUA's list no longer has its charter). Six of the seven have no live overdraft fee, and companion fetch skips inactive banks, so their hand-found schedules never fetched. Stock Yards ($10B) is `dormant`, which companion fetch also skipped.
 **Cause:** the count's denominator was never filtered on registry status; the merged banks' fees now belong to the acquirers' charters.

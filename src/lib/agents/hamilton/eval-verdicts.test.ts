@@ -60,10 +60,23 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(ruleFor("counter_check", "Temporary counter checks (no charge with account opening)")).toBeNull();
   });
 
+  it("reads a $0 waiver or threshold sentence as not a fee (v2, Chase 75915)", () => {
+    expect(ruleFor("monthly_maintenance", "Monthly Service Fee when you have any ONE of the following during each monthly", 0)).toBe("waiver_sentence");
+    expect(ruleFor("monthly_maintenance", "Monthly Service Charge if any of the following qualifications are met", 0)).toBe("waiver_sentence");
+    expect(ruleFor("monthly_maintenance", "Minimum Balance Required to avoid service charge", 0)).toBe("waiver_sentence");
+    expect(ruleFor("monthly_maintenance", "To avoid a monthly maintenance fee, most accounts have a stated minimum balance.", 0)).toBe("waiver_sentence");
+    // The same wording at a price is the fee with its waiver; the name is for the retidy, not a takedown.
+    expect(ruleFor("monthly_maintenance", "monthly service charge; waived if you maintain a daily balance", 5)).toBeNull();
+    // A $0 fee that says it is waived is a fee.
+    expect(ruleFor("monthly_maintenance", "Dividend Checking Monthly Fee - Waived", 0)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "Maintenance fee waived for students under age 25", 0)).toBeNull();
+  });
+
   it("reads the eval's rows and the rule candidates, scoped to a bank when asked", () => {
     expect(evalVerdictFeesSql(false)).toContain("fp.fee_published_id = ANY($1::bigint[])");
     expect(evalVerdictFeesSql(false)).not.toContain("$2");
     expect(evalVerdictFeesSql(true)).toContain("fp.institution_id = $2");
+    expect(evalVerdictFeesSql(false)).toContain("fp.amount = 0 AND");
   });
 
   it("archives an unchanged eval row on the first run and only flags a rule row", async () => {
