@@ -626,8 +626,20 @@ export function confidenceFor(segment: string): number {
   return Math.min(confidence, 0.94);
 }
 
+/** v60: a parenthetical that states a threshold of the fee ("($10,000.01 and Over)", "(below $500)", "($25 minimum)"). */
+const THRESHOLD_PARENTHETICAL =
+  /\b(?:below|under|over|above|than|up to|exceed(?:s|ing)?|least|min(?:imum)?|max(?:imum)?|limit|greater|less|or more|and up)\b|[<>]/i;
+
 export function nameFrom(value: string): string {
-  return stripFootnoteMarks(normalizeSegment(value.replace(AMOUNT_PATTERN, " "))).slice(0, 120).trim();
+  // v60: a figure in a threshold parenthetical stays in the name; every other figure is the price.
+  const kept: string[] = [];
+  const masked = value.replace(/\([^()]*\$\s*\d[^()]*\)/g, (group) => {
+    if (!THRESHOLD_PARENTHETICAL.test(group.replace(AMOUNT_PATTERN, " "))) return group;
+    kept.push(group);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const stripped = masked.replace(AMOUNT_PATTERN, " ").replace(/\u0000(\d+)\u0000/g, (_, index: string) => kept[Number(index)]);
+  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, 120).trim();
 }
 
 /**
