@@ -3,6 +3,7 @@ import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -84,8 +85,8 @@ interface FeePattern {
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
  * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
- * excess-activity fees -> account research; collection items and foreign checks -> check
- * cashing; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
+ * excess-activity fees -> account research; collection items and foreign checks -> collection
+ * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
  * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
@@ -104,9 +105,11 @@ export const FOLDED_PATTERNS: FeePattern[] = [
       /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b/i,
   },
   {
-    key: "check_cashing",
-    // A collection fee on a charged-off or past-due account, or a collection phone call,
-    // is debt collection, not a check sent for collection (v30, from prod's first v26 pass).
+    // Collection items got their own type on Oct 8 (James, "Own type"); v26 filed them under
+    // check cashing. A collection fee on a charged-off or past-due account, or a collection
+    // phone call, is debt collection, not a check sent for collection (v30, from prod's first
+    // v26 pass).
+    key: "collection_item",
     pattern:
       /^(?![\s\S]*\b(?:charged[- ]?off|past[- ]due|delinquen\w*|calls?)\b)[\s\S]*?\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
   },
@@ -404,10 +407,43 @@ function longLineParts(line: string): string[] {
   return parts;
 }
 
+/**
+ * v46: a paragraph wrapped across lines is read as its sentences. Read line by line, "we will
+ * charge you an overdrawn account fee of $10.00 on the 5th consecutive" named the $10 by the
+ * line above it ("overdrafts created by check, in-person withdrawal ...", Origin Bank) and
+ * "overdrawn $5 / or less" lost the words that make $5 a threshold. A line joins the one above
+ * when neither is a table row, the one above is long and ends mid-sentence, and it starts in
+ * lower case; the joined line is then cut into sentences like any long line.
+ */
+const MIN_WRAPPED_LINE_CHARS = 40;
+const ENDS_SENTENCE = /[.:;!?)]\s*$/;
+const STARTS_LOWER = /^[a-z]/;
+
+export function joinWrappedProse(lines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const previous = joined.at(-1);
+    if (
+      previous != null &&
+      !previous.includes(CELL_SEPARATOR) &&
+      !line.includes(CELL_SEPARATOR) &&
+      previous.length >= MIN_WRAPPED_LINE_CHARS &&
+      !ENDS_SENTENCE.test(previous) &&
+      STARTS_LOWER.test(line)
+    ) {
+      joined[joined.length - 1] = `${previous} ${line}`;
+    } else {
+      joined.push(line);
+    }
+  }
+  return joined;
+}
+
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
-  for (const rawLine of text.split(/\n+/)) {
+  const lines = joinWrappedProse(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()));
+  for (const rawLine of lines) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
     const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];
@@ -705,7 +741,7 @@ function accountRowLineup(label: string, after: string): AccountLineup {
 }
 
 /** "average balances below $1,000", "balance falls below $7,500": the condition of a low-balance fee. */
-const BALANCE_BELOW_CLAUSE =
+export const BALANCE_BELOW_CLAUSE =
   /\b(?:(?:average|avg\.?|minimum|min\.?|daily|monthly|ledger|collected|account|share)\s+){0,3}balances?\s+(?:(?:falls?|drops?|goes|is)\s+)?(?:below|under|less than)\s+\$\s?[\d,]+(?:\.\d{2})?/i;
 
 /**
@@ -1302,7 +1338,8 @@ export function centeredNamePrices(text: string): string[] {
 }
 
 export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
-  const text = stripPriceFootnoteMarks(raw);
+  // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
+  const text = stripPriceFootnoteMarks(newestColumnText(raw));
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];

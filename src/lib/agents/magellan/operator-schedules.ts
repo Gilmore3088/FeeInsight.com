@@ -287,11 +287,13 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // personal schedule of fees page.
+    // The bank's own overdraft disclosure on mybank.com (fee per paid item, $5 a day after 4
+    // days, $240 daily cap). The first.bank link given before was First Bank of St. Louis's
+    // schedule, which Hamilton took down as another bank's document (2026-10-08 23:15).
     institutionId: 118,
     institutionName: "First United Bank and Trust Company",
-    url: "https://first.bank/About/Disclosures/Personal-Schedule-of-Fees",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://mybank.com/wp-content/uploads/opt-in-form.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 23:30",
   },
   {
     // schedule of service fees, 2025-03-25.
@@ -519,6 +521,9 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   },
 ];
 
+/** A stored copy of the schedule counts as held only when it is this recent. */
+export const HELD_DOCUMENT_DAYS = 30;
+
 const sameName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, " ");
 
 export interface OperatorScheduleResult {
@@ -526,7 +531,7 @@ export interface OperatorScheduleResult {
 }
 
 /**
- * Adds each listed schedule the bank does not hold yet (as its link, a stored document or a
+ * Adds each listed schedule the bank does not hold yet (as its link, a document stored in the last HELD_DOCUMENT_DAYS days or a
  * companion). A schedule already held, or one a reviewer rejected, is left alone.
  */
 export async function addOperatorSchedules(options: {
@@ -544,7 +549,11 @@ export async function addOperatorSchedules(options: {
   const held = await db`
     SELECT inst.id AS institution_id, inst.fee_schedule_url AS url, inst.institution_name FROM institution_sources inst WHERE inst.id = ANY(${ids}::bigint[])
     UNION ALL
-    SELECT doc.institution_id, doc.document_url, NULL FROM source_documents doc WHERE doc.institution_id = ANY(${ids}::bigint[])
+    SELECT doc.institution_id, doc.document_url, NULL FROM source_documents doc
+     WHERE doc.institution_id = ANY(${ids}::bigint[])
+       -- A copy stored months ago under no current link is not held: ConnectOne's fee page
+       -- was last stored in March 2026, so its listed schedule was never added again.
+       AND doc.crawled_at > NOW() - make_interval(days => ${HELD_DOCUMENT_DAYS})
     UNION ALL
     SELECT ias.institution_id, ias.url, NULL FROM institution_additional_sources ias WHERE ias.institution_id = ANY(${ids}::bigint[])
   `;

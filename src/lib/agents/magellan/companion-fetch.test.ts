@@ -53,6 +53,18 @@ describe("Magellan companion fetch", () => {
     expect(touched.some((text) => text.includes("UPDATE institution_sources") || text.includes("institution_source_profiles"))).toBe(false);
   });
 
+  it("fetches a schedule found by hand in any state's lane until it is first fetched", async () => {
+    const db = createDb([]);
+    await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(), vault: null, runId: 7, stateCode: "LA" });
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("latest.content_hash AS last_hash"));
+    expect(templateText(select?.[0]).replace(/\s+/g, " ")).toContain(
+      "OR (ias.found_by_strategy = 'discover.operator_schedule' AND ias.last_fetched_at IS NULL)",
+    );
+    expect(templateText(select?.[0]).replace(/\s+/g, " ")).toContain(
+      "OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')",
+    );
+  });
+
   it("reuses a stored document with the same bytes instead of inserting a duplicate", async () => {
     const db = createDb([freedom], { existing: 512 });
     const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page("same bytes")), vault: null, runId: 7 });

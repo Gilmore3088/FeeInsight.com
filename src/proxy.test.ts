@@ -16,6 +16,15 @@ function request(
 }
 
 describe("proxy", () => {
+  it("folds an uppercase route name to lowercase, keeping later segments and the query", () => {
+    const response = proxy(request("https://feeinsight.com/INSTITUTION/496?tab=fees"));
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe("https://feeinsight.com/institution/496?tab=fees");
+
+    const state = proxy(request("https://feeinsight.com/research/state/TX"));
+    expect(state.headers.get("x-middleware-next")).toBe("1");
+  });
+
   it("lets public routes reach the App Router", () => {
     const response = proxy(request("https://feeinsight.com/methodology"));
 
@@ -48,6 +57,7 @@ describe("proxy", () => {
     const cases: Array<[string, string]> = [
       ["https://feeinsight.com/consumer", "https://feeinsight.com/institutions"],
       ["https://feeinsight.com/check", "https://feeinsight.com/institutions"],
+      ["https://feeinsight.com/pricing", "https://feeinsight.com/subscribe"],
       ["https://feeinsight.com/districts", "https://feeinsight.com/research#districts"],
       ["https://feeinsight.com/waitlist", "https://feeinsight.com/for-institutions#report"],
     ];

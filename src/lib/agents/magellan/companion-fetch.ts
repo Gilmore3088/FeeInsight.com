@@ -89,8 +89,20 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.status IN ('found', 'fetched')
        AND ias.document_role <> 'business'
-       AND COALESCE(inst.status, 'active') = 'active'
-       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+       AND (
+         COALESCE(inst.status, 'active') = 'active'
+         -- A schedule found by hand is fetched for a bank whose own link went dormant (Stock
+         -- Yards, $10B, 2026-10-08): that is why it was found by hand. A closed charter is not.
+         OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')
+       )
+       AND (
+         ${stateCode}::text IS NULL
+         OR upper(btrim(inst.state_code)) = ${stateCode}
+         -- A schedule found by hand is fetched by the next state lane, whatever its state:
+         -- waiting for its own state's lane left Comerica, Cadence and three more unfetched
+         -- for six hours on 2026-10-08.
+         OR (ias.found_by_strategy = 'discover.operator_schedule' AND ias.last_fetched_at IS NULL)
+       )
        AND (${institutionId}::bigint IS NULL OR ias.institution_id = ${institutionId}::bigint)
        AND (
          ias.last_fetched_at IS NULL

@@ -140,10 +140,29 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v45 files collection items and foreign checks under their own type; cashing one stays check cashing (James, Oct 8)", () => {
+    for (const name of [
+      "Foreign Item Collection Fee (per item)",
+      "Collection Item",
+      "Items Sent for Collection",
+      "Foreign Check Processing",
+      "Canadian Item Deposit",
+    ]) {
+      expect(checkFeeCategory("check_cashing", name).ok).toBe(false);
+      expect(checkFeeCategory("collection_item", name)).toEqual({ ok: true });
+      expect(refileCategory("check_cashing", name)).toBe("collection_item");
+    }
+    for (const name of ["Foreign Check Cashing", "Returned Canadian Check", "Non-Member Check Cashing"]) {
+      expect(checkFeeCategory("check_cashing", name)).toEqual({ ok: true });
+      expect(checkFeeCategory("collection_item", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("collection_item", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
+    expect(checkFeeCategory("collection_item", "Negative Balance Collection Fee").ok).toBe(false);
+  });
+
   it("v15 keeps debt collection out of check cashing and account opening out of loan fees (prod, Oct 7)", () => {
     expect(checkFeeCategory("check_cashing", "Phone Call Collection Fee").ok).toBe(false);
     expect(checkFeeCategory("check_cashing", "Collection Fee for Charged-Off Accounts").ok).toBe(false);
-    expect(checkFeeCategory("check_cashing", "Foreign Item Collection Fee (per item)")).toEqual({ ok: true });
     expect(checkFeeCategory("check_cashing", "Check Cashing Fee - Non-Member")).toEqual({ ok: true });
     expect(checkFeeCategory("loan_origination", "Credit Report Fee to Open Account").ok).toBe(false);
     expect(checkFeeCategory("loan_origination", "Credit Report Fee")).toEqual({ ok: true });
@@ -713,8 +732,11 @@ describe("checkFeeCategory", () => {
     }
     expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
     expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
-    for (const name of ["Subordination Request", "Mortgage Subordination Fee", "Legal Process Fee"]) {
-      expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
+    expect(checkFeeCategory("legal_process", "Legal Process Fee")).toEqual({ ok: true });
+    // Since v48 a subordination is another lending fee.
+    for (const name of ["Subordination Request", "Mortgage Subordination Fee"]) {
+      expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
+      expect(refileCategory("legal_process", name), name).toBe("other_lending_fee");
     }
   });
 
@@ -736,7 +758,9 @@ describe("checkFeeCategory", () => {
       expect(refileCategory("check_cashing", name), name).toBe("account_research");
     }
     expect(checkFeeCategory("overdraft", "Overdraft Fee")).toEqual({ ok: true });
-    expect(checkFeeCategory("check_cashing", "Collection Item (Incoming)")).toEqual({ ok: true });
+    // Since v45 an incoming collection item is its own type, Collection Items.
+    expect(checkFeeCategory("collection_item", "Collection Item (Incoming)")).toEqual({ ok: true });
+    expect(refileCategory("check_cashing", "Collection Item (Incoming)")).toBe("collection_item");
   });
 
   it("v43 fails a name cut from the end of another fee's note (Darwin audit, Oct 8)", () => {
@@ -776,5 +800,76 @@ describe("checkFeeCategory", () => {
       expect(checkFeeCategory("overdraft", name).ok, name).toBe(false);
     }
     expect(refileCategory("nsf", "NSF Fee Charge - Returned (per item)")).toBe("nsf");
+  });
+
+  it("v44 fails a paired wire price filed from the wrong slot (Darwin eval, Oct 8)", () => {
+    const wire = (key: string, name: string, amount: string, excerpt: string) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    // Live rows that took the first price for the second wire.
+    expect(wire("wire_intl_outgoing", "Wire International In/Out", "10.00", "Wire International In/Out | $10/$35")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Outgoing Wire Fee: Domestic/Foreign", "15.00", "Outgoing Wire Fee | Domestic/Foreign | $15.00/$30.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Wire OUT Fee/INTERNATIONAL", "15.00", "Wire OUT Fee/INTERNATIONAL / $15.00/$35.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Bank Wire Transfers/International", "20.00", "Bank Wire Transfers/International $20.00/$40.00 | □ Premier Checking")).toBe(false);
+    expect(wire("wire_intl_incoming", "Incoming Domestic / International Wire", "20.00", "Incoming Domestic / International Wire: $20 / $30 per wire")).toBe(false);
+    expect(wire("wire_domestic_outgoing", "Wire Domestic In/Out", "10.00", "Wire Domestic In/Out | $10/$20")).toBe(false);
+    // The first slot's own price, the second slot's price, and a pair with no wire sides stay.
+    expect(wire("wire_domestic_outgoing", "Domestic Wire Transfer", "30.00", "Domestic Wire Transfer: $30.00 / $10.00 per transfer – Outgoing / Incoming")).toBe(true);
+    expect(wire("wire_domestic_outgoing", "Wire Transfer – Outgoing (domestic/int’l)", "25.00", "ATM Deposit Adjustment $20 Wire Transfer – Outgoing (domestic/int’l) $25/$50")).toBe(true);
+    expect(wire("wire_intl_outgoing", "Wire International In/Out", "35.00", "Wire International In/Out | $10/$35")).toBe(true);
+    expect(wire("wire_intl_outgoing", "International Outbound Wires (Online/Manual)", "35.00", "International Outbound Wires (Online/Manual) | $35/$75 | $35/$75")).toBe(true);
+  });
+
+  it("v46 reads spaced wire labels by phrase and keeps other fees out of early closure (Darwin eval, Oct 8)", () => {
+    const wire = (key: string, name: string, amount: string, excerpt: string) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    expect(wire("wire_intl_outgoing", "Wire Out / Wire Out Foreign", "25.00", "Wire Out / Wire Out Foreign | $25.00 / $45.00")).toBe(false);
+    expect(wire("wire_intl_outgoing", "Wire Out / Wire Out Foreign", "45.00", "Wire Out / Wire Out Foreign | $25.00 / $45.00")).toBe(true);
+    expect(wire("wire_intl_outgoing", "Outgoing Domestic / International Wire", "30.00", "Outgoing Domestic / International Wire $30 / $50 per wire")).toBe(false);
+    expect(wire("wire_domestic_incoming", "Domestic Wire Transfer", "30.00", "Domestic Wire Transfer: $30.00 / $10.00 per transfer – Outgoing / Incoming")).toBe(false);
+
+    for (const name of [
+      "Accounts closed within 90 days: International Wire",
+      "Accounts closed within 90 days: Domestic Wire Transfer",
+      "Rush Request for New/Reissued Card: Express shipping cost: New Accounts Closed within 90 Days",
+      "Reinstate Closed Checking",
+      "Charge Membership Reinstatement Fee (For memberships closed within the last 12 months)",
+    ]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      "Wire Transfers: Early Account Closure Fee",
+      "Checking & Savings Early Closing (Within 90 days of opening account)",
+      "Card Account Closure",
+      "Christmas Club Early Withdrawal/Transfer",
+      "Early closing of share draft VISA debit card",
+    ]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
+    }
+  });
+
+  it("v47 covers Darwin's Oct 8 eval rows", () => {
+    const guard = (key: string, name: string, amount: string, excerpt = name) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    expect(guard("bill_pay", "Bill Pay Stop/Cancel Payment", "25.00")).toBe(false);
+    expect(guard("bill_pay", "Lifetime Membership Fee", "5.00")).toBe(false);
+    expect(guard("bill_pay", "Bill Pay", "5.00")).toBe(true);
+    expect(guard("money_order", "Money Order Research Fee", "10.00")).toBe(false);
+    expect(guard("money_order", "Cashier’s Check or Money Order Copy", "5.00")).toBe(false);
+    expect(guard("money_order", "Cashier's Check/Money Order", "3.00")).toBe(true);
+    expect(guard("wire_intl_outgoing", "Foreign Wire Research", "15.00")).toBe(false);
+    expect(guard("nsf", "Returned ACH Items (business only)", "6.00")).toBe(false);
+    expect(guard("nsf", "Payee-returned Check Payment Due to Member Error", "0.00")).toBe(false);
+    expect(guard("od_protection_transfer", "Overdraft Protection", "25.00", "Fee Description Overdraft(2)(3)(4) | Fee Amount Free with Overdraft Protection, $25.00 per item")).toBe(false);
+    expect(guard("od_protection_transfer", "Overdraft Protection", "29.00", "Overdraft Protection $29.00 each Overdraft Protection - if opted in $29.00 each item")).toBe(false);
+    expect(guard("od_protection_transfer", "Overdraft Protection Transfer", "25.00", "Overdraft Protection Transfer | $25.00 per item")).toBe(true);
+    expect(guard("od_protection_transfer", "Overdraft Protection", "5.00", "Overdraft Protection | $5.00 per item")).toBe(true);
+  });
+
+  it("v49 keeps treasury service monthly charges out of monthly maintenance", () => {
+    for (const name of ["Monthly Fee (per account)", "API Service Monthly Fee (per account)", "MODULES ACH Module Monthly maintenance", "Treasury Management Monthly fee (includes Positive Pay)", "Cash Management Monthly Fee", "ACH Monthly Fee, per account"]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance charge per account.").ok).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
   });
 });

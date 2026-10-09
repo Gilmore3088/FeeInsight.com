@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**No rollback; finish the work.** James, 22:44 UTC, Rollback thread: "i dont want rollback. i want
+the fucking work done." He had asked about going back to Oct 4 or Oct 5; the cost check is in
+`/mnt/project-files/audits/rollback-oct4-oct5-2026-10-08.md`. Work is reported per ask as live,
+built not live, or missing, and only the UAT thread marks an ask done.
+
+**Darwin's 11 critical eval rows come down now.** James, 23:18 UTC, Darwin thread ("please resolve
+each of thes. all of them"), answering Hide or Guard for the 11 critical rows and Split or Pool for
+the taxonomy. #714 archives the 11 on the first publish step, with the eval label as the audit
+record; nothing is deleted. Collection Items split out (#701); the other four pooled groups wait on
+the Top 50 card.
+
 **A paying Pro buyer holds their bank's owner seat at checkout, before claim review.** James, 13:44
 UTC ("Grant at checkout" on the decision card). The plan sells 5 seats, so they work the moment the
 buyer pays. The claim is still filed for James to review, and rejecting it revokes that seat
@@ -55,6 +66,11 @@ are archived, so Hamilton's fold step flags them but keeps them live
 (`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. At 15:42 UTC, after seeing the list
 of 248, he said "drop them -- the 248", so the switch is on: they are archived (rolled back with
 reason `taxonomy_fold:`, logged) once their 12-hour second look passes. Nothing is deleted.
+Around 16:00 UTC he gave collection items their own type ("Own type": about 1,000 check
+cashing fees with a $20 median beside check cashing's $5 move to `collection_item`), and picked
+Foreign Card to give up a spot for it. Foreign Transaction and International ATM became one type,
+International ATM & Card. It keeps the `card_foreign_txn` key, which holds the 277 rate fees,
+the spotlight and the consumer guide, and the 59 International ATM fees fold into it.
 
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
@@ -519,3 +535,13 @@ corrupted amount, without the 12-hour second look, still needs his explicit yes.
 when a prospect's metro has fewer than 5 verified competitors with an overdraft fee, the first
 email compares it with the verified institutions across its state and says so ("across Nebraska").
 The same source check and 5-institution minimum apply statewide. Local stays first whenever it has enough.
+
+**Outreach sells research, not a median gap, and every link must work.** James, 22:23 and 22:34 UTC
+8 Oct, Marketing thread (feedback, then a full audit grading the campaign C-). Fee Insight does not
+advise institutions to change their fees; being above or below a median is not a sales reason; a
+statewide group is not a prospect's competitors; every email needs a verified, working destination
+that delivers what it promises. The first emails are a 30-prospect pilot in three campaigns: A
+research efficiency (no figures, no link), B personalized research (names local institutions, no
+figures, no link), C one tier-A comparison with a link checked live. James approves every first
+email. This supersedes the 21:31 statewide fallback. The 21 single-fee drafts from run 3157 were held
+and are withdrawn by the next run. Plan: https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c

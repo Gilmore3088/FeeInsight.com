@@ -8,7 +8,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
-import { groundLineup, LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
+import { groundLineup, LINEUP_CATEGORY, withAccountName } from "@/lib/agents/knox/lineup";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
@@ -75,6 +75,12 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
  * Raise it only when a rules change is worth reading every page again.
  */
 export const KNOX_STALE_READ_BELOW_VERSION = 26;
+/**
+ * A current copy with a monthly fee row that has no account name, last read below this
+ * version, is read again once so v49 can name the account (2026-10-09: 8,928 such rows on
+ * 3,223 current copies). Free: rules only.
+ */
+export const KNOX_ACCOUNT_NAME_READ_BELOW_VERSION = 49;
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
@@ -320,6 +326,31 @@ async function selectTextArtifacts(
                   AND recent.input_fingerprint = adt.text_hash
                   AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${staleParam}
+             )
+           )`;
+      // A current copy whose monthly fee rows have no account name is read again once.
+      const namedParam = `$${params.push(KNOX_ACCOUNT_NAME_READ_BELOW_VERSION)}`;
+      thinTextReextract += `
+           OR (
+             EXISTS (
+               SELECT 1 FROM raw_fee_observations unnamed
+                WHERE unnamed.source = 'knox'
+                  AND unnamed.source_document_id = adt.source_document_id
+                  AND unnamed.product_name IS NULL
+                  AND unnamed.conditions LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${namedParam}
              )
            )`;
     }
@@ -951,11 +982,12 @@ export async function runKnoxExtract(
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
         const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
         if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
+        const named = withAccountName(candidate, row.normalized_text);
         if (
           await insertCandidate(db, {
             runId: options.runId,
             row,
-            candidate: candidate.lineup ? { ...candidate, lineup: groundLineup(candidate.lineup, row.normalized_text) } : candidate,
+            candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
             takenDownBy,

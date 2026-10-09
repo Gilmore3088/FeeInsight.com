@@ -21,7 +21,9 @@ import { getStateEconomicContext } from "@/lib/data-store/economic-context";
 import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
-import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getComplaintBenchmark, getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getAccountLineups, summarizeLineup, type LineupAccount } from "@/lib/data-store/account-lineup";
+import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -58,6 +60,7 @@ import {
   type ChangeEvent,
   type Fact,
   type FeeResearch,
+  type AccountLineupSet,
   type FeeStructureSet,
   type InstitutionFinancials,
   type LocalMarketInfo,
@@ -622,7 +625,39 @@ async function loadStructure(
   }
 }
 
-const RATE_SOURCE_LABEL = "Fees stated as a rate on each institution's own published schedule (verified, live)";
+const LINEUP_SOURCE: SourceRef = {
+  label: "Monthly maintenance fees on each institution's own published schedule, with the account each one belongs to (verified, live)",
+  table: "published_fee_catalog",
+};
+
+/** Monthly maintenance only: the bank's account lineup beside each group member's. */
+async function loadLineup(
+  base: WorkspaceBase,
+  group: { label: string; members: { institutionId: number; institutionName: string }[] },
+): Promise<AccountLineupSet | null> {
+  try {
+    const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
+    const accounts = await getAccountLineups(ids);
+    const byInstitution = new Map<number, LineupAccount[]>();
+    for (const account of accounts) {
+      byInstitution.set(account.institutionId, [...(byInstitution.get(account.institutionId) ?? []), account]);
+    }
+    const ownAccounts = byInstitution.get(base.institutionId) ?? [];
+    if (ownAccounts.length === 0) return null;
+    const rows = [
+      { institutionId: base.institutionId, name: base.institutionName, own: true, summary: summarizeLineup(ownAccounts) },
+      ...group.members
+        .filter((m) => m.institutionId !== base.institutionId && byInstitution.has(m.institutionId))
+        .map((m) => ({ institutionId: m.institutionId, name: m.institutionName, own: false, summary: summarizeLineup(byInstitution.get(m.institutionId)!) })),
+    ];
+    return { groupLabel: group.label, rows, ownAccounts: [...ownAccounts].sort((a, b) => a.monthlyFee - b.monthlyFee), source: LINEUP_SOURCE };
+  } catch (error) {
+    console.error("[hamilton-research] lineup read failed", { error });
+    return null;
+  }
+}
+
+const RATE_SOURCE_LABEL ="Fees stated as a rate on each institution's own published schedule (verified, live)";
 
 /**
  * The fee where it is stated as a rate, for the fees that may publish as one. Rates are read
@@ -663,7 +698,7 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
@@ -675,6 +710,7 @@ export async function getFeeResearch(
     loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),
     getInstitutionRegulators(institutionId).catch(() => null),
     getInstitutionComplaintYears(institutionId).catch(() => []),
+    getComplaintBenchmark(institutionId).catch(() => null),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
@@ -692,6 +728,7 @@ export async function getFeeResearch(
         ? { label: "competitors in your market", members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
   const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
+  const lineup = feeCategory === LINEUP_CATEGORY ? await loadLineup(base, structureGroup) : null;
   const changeEvents: ChangeEvent[] = changes.map((c) => ({
     date: c.changedAt.slice(0, 10),
     institutionName: c.institutionName,
@@ -735,6 +772,7 @@ export async function getFeeResearch(
         charterType: base.charterType,
         regulators,
         complaints,
+        complaintBenchmark,
         readOn: now.toISOString().slice(0, 10),
       }),
       ...feeRules(feeCategory, base.charterType),
@@ -744,6 +782,7 @@ export async function getFeeResearch(
     segment,
     changeEvents,
     structure,
+    lineup,
     rates,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
@@ -766,6 +805,7 @@ export async function getFeeResearch(
         ...(economy?.beigeBook ? [economy.beigeBook.source] : []),
         ...(segment ? [segment.source] : []),
         ...(rates ? [rates.source] : []),
+        ...(lineup ? [lineup.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [
