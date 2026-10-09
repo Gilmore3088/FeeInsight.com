@@ -17,9 +17,9 @@ type SqlTag = typeof sql;
  * personal, compare, services, ...) and no schedule, disclosure, rates or fee page, and is not a
  * file or legal page (`isProductPage`). Only Knox's free reads at $0 on such a page qualify.
  *
- * Off until James answers "Product-page $0 benefits: Keep or Take down" (punch list, Oct 9):
- * his "Take down" is one line, `PRODUCT_PAGE_TAKEDOWN_ON = true`. Off, the step only counts the
- * fees it would flag (`product_page.product_fees` in the publish step's detail).
+ * On since James answered "Product-page $0 benefits: Keep or Take down" (punch list) with "You
+ * can take down the fees" (Oct 9, 07:10 UTC). Off, the step only counts the fees it would flag
+ * (`product_page.product_fees` in the publish step's detail).
  * On, publish skips new ones, and a live one comes down on its second look (`second-look.ts`,
  * check `hamilton.product_page`), archived with `rolled_back_reason = 'product_page: #<doc>'`
  * and its verified row rejected. The lesson goes to Knox (`not_on_schedule`, stage extract).
@@ -33,8 +33,8 @@ export const FREE_READ_PREFIX = "Knox read a free fee";
 const PRODUCT_WORDS = "(checking|savings|accounts?|personal|business|banking|products?|compare|services|rewards|kasasa|money-market|credit-cards?)";
 const NOT_PRODUCT_WORDS = "(schedule|disclosure|pricing|rates|fee|charges|\\.pdf|truth|assets/|files/|legal|terms|tos\\b|agreement|faq)";
 
-/** James's answer to the punch-list question; false until he says "Take down". */
-export const PRODUCT_PAGE_TAKEDOWN_ON = false;
+/** James's answer to the punch-list question: "You can take down the fees" (Oct 9). */
+export const PRODUCT_PAGE_TAKEDOWN_ON = true;
 
 /** True when the takedown is switched on. */
 export function productPageTakedownEnabled(on: boolean = PRODUCT_PAGE_TAKEDOWN_ON): boolean {
