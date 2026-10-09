@@ -9,6 +9,7 @@ import { getFeeValuesForInstitutions, getInstitutionFeeValues, getPeerIndexes, t
 import { marketMediansFrom } from "./regulatory-watch";
 import { getNationalRateStats, getRateFeesByInstitution } from "./rate-fees";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export const BENCHMARK_MIN_INSTITUTIONS = 3;
 const MARKET_PEER_LIMIT = 40;
@@ -127,7 +128,7 @@ export async function getInstitutionBenchmark(institutionId: number): Promise<In
   return {
     institution: {
       id: Number(inst.id),
-      name: inst.institution_name,
+      name: institutionDisplayName(inst.institution_name),
       state: inst.state_code,
       charter_type: inst.charter_type,
       asset_tier: inst.asset_size_tier,

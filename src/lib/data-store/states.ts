@@ -7,6 +7,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { toDateStr, safeJsonb } from "@/lib/pg-helpers";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,7 +84,7 @@ export async function getStateInstitutions(
     `;
     return rows.map((r) => ({
       id: Number(r.id),
-      institution_name: String(r.institution_name),
+      institution_name: institutionDisplayName(String(r.institution_name)),
       city: r.city ? String(r.city) : null,
       charter_type: r.charter_type ? String(r.charter_type) : null,
       asset_size_tier: r.asset_size_tier ? String(r.asset_size_tier) : null,
@@ -246,7 +247,7 @@ export async function getAgentRunDetail(runId: number): Promise<{
     const results: AgentRunResult[] = resultRows.map((row) => ({
       id: Number(row.id),
       institution_id: Number(row.institution_id),
-      institution_name: String(row.institution_name),
+      institution_name: institutionDisplayName(String(row.institution_name)),
       stage: String(row.stage),
       status: String(row.status),
       detail: safeJsonb<Record<string, unknown>>(row.detail),
@@ -285,7 +286,7 @@ export async function getStateUrlResolutionQueue(
     `;
     return rows.map((r) => ({
       id: Number(r.id),
-      institution_name: String(r.institution_name),
+      institution_name: institutionDisplayName(String(r.institution_name)),
       website_url: r.website_url ? String(r.website_url) : null,
       latest_failure_reason: r.latest_failure_reason
         ? String(r.latest_failure_reason)
