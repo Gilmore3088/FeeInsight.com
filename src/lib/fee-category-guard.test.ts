@@ -948,3 +948,11 @@ describe("v54: a safe deposit box late fee ceiling", () => {
     expect(checkFeeCategory("safe_deposit_box", "Box Drilling (late rent)", { amount: 400 }).ok).toBe(true);
   });
 });
+
+describe("v55: merchant services and early termination are not monthly maintenance", () => {
+  it("fails ProGrowth's merchant capture lines and keeps First Merchants' checking fee", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Monthly Service Fee Early Termination Fee").ok).toBe(false);
+    expect(checkFeeCategory("monthly_maintenance", "Merchant Capture Monthly Service Charge").ok).toBe(false);
+    expect(checkFeeCategory("monthly_maintenance", "First Merchants Prosper Checking Monthly Maintenance Fee").ok).toBe(true);
+  });
+});

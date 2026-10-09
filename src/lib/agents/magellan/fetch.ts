@@ -15,11 +15,17 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
-import { markCurrentCopy, supersedeSamePageCopies, type SamePageCopyResult } from "@/lib/agents/magellan/current-copy";
+import {
+  markCurrentCopy,
+  supersedeMovedHandFoundCopies,
+  supersedeSamePageCopies,
+  type MovedHandFoundCopyResult,
+  type SamePageCopyResult,
+} from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
-import { addOperatorSchedules, type OperatorScheduleResult } from "./operator-schedules";
+import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isErrorPageLink } from "./link-coverage";
 
 type SqlTag = typeof sql;
@@ -148,6 +154,7 @@ export interface RunMagellanFetchResult {
   operatorSchedules: OperatorScheduleResult | null;
   /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
   samePageCopies: SamePageCopyResult | null;
+  movedHandFoundCopies: MovedHandFoundCopyResult | null;
   results: FetchResult[];
 }
 
@@ -953,6 +960,7 @@ export async function runMagellanFetch(
   let companions: RunCompanionFetchResult | null = null;
   let operatorSchedules: OperatorScheduleResult | null = null;
   let samePageCopies: SamePageCopyResult | null = null;
+  let movedHandFoundCopies: MovedHandFoundCopyResult | null = null;
   if (!dryRun) {
     try {
       samePageCopies = await inSavepoint(db, (scope) =>
@@ -968,6 +976,19 @@ export async function runMagellanFetch(
       );
     } catch (error) {
       console.error("Operator schedules failed:", error);
+    }
+    // A hand-found schedule that moved on the bank's site: its old link's copy stops being current.
+    try {
+      movedHandFoundCopies = await inSavepoint(db, (scope) =>
+        supersedeMovedHandFoundCopies(scope, {
+          runId: options.runId,
+          strategy: OPERATOR_SCHEDULE_STRATEGY.strategy,
+          links: OPERATOR_SCHEDULES,
+          institutionId: options.institutionId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error("Moved hand-found copies failed:", error);
     }
     try {
       const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
@@ -1004,6 +1025,7 @@ export async function runMagellanFetch(
     companions,
     operatorSchedules,
     samePageCopies,
+    movedHandFoundCopies,
     results,
   };
 }
