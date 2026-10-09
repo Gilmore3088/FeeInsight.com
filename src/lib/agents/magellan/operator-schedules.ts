@@ -519,6 +519,18 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.theq.org/service-fee-schedule",
     givenBy: "web search for Marketing's outreach batch, 2026-10-08 18:45",
   },
+  // State top-10 banks whose sites refuse our fetcher (HTTP 403). The Mac session's browser,
+  // signed out, found no fee schedule PDF; the fees are on the product pages, with no overdraft
+  // amount published (2026-10-09 00:57). The paid companion fetch reads the blocked pages.
+  ...([
+    [276, "Bridgewater Bank", "https://www.bridgewaterbankmn.com/personal-banking/personal-deposits/interest-checking"],
+    [295, "Dacotah Bank", "https://www.dacotahbank.com/personal-checking-and-debit"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "Mac session browser check of blocked top-10 banks, 2026-10-09 00:57",
+  })),
 ];
 
 /** A stored copy of the schedule counts as held only when it is this recent. */
