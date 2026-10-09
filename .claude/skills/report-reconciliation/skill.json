@@ -1,0 +1,58 @@
+{
+  "id": "report-reconciliation",
+  "version": 1,
+  "maintainer": "hamilton",
+  "owning_agent": "hamilton",
+  "inputs": [
+    "report kind: competitive (institution id) or index report (report_jobs / published_reports row, or a file under Reports/)",
+    "the report's printed numbers: saved analysis, paid snapshot, or rendered file"
+  ],
+  "outputs": [
+    "per printed fee: tie out / moved since report / no live row / source check fails",
+    "per derived number: printed vs recomputed",
+    "dropped rows by reason and a ties-out verdict"
+  ],
+  "data_access": [
+    { "table": "published_fee_catalog", "mode": "read" },
+    { "table": "published_fee_rate_catalog", "mode": "read" },
+    { "table": "agent_source_texts", "mode": "read" },
+    { "table": "institution_sources", "mode": "read" },
+    { "table": "leads", "mode": "read" },
+    { "table": "report_jobs", "mode": "read" },
+    { "table": "published_reports", "mode": "read" }
+  ],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "deterministic, no paid calls; one market recompute per report",
+  "triggering_workflows": [
+    "before a paid report link is sent",
+    "before a state or national report is published",
+    "a buyer questions a figure",
+    "a guard or takedown run touched institutions in a report's market"
+  ],
+  "evaluation_suite": [
+    "src/lib/custom-report/analysis.test.ts",
+    "src/lib/custom-report/report-data.test.ts",
+    "src/lib/data-store/custom-report-market.test.ts",
+    "src/lib/custom-report/source-check-layout.test.ts",
+    "src/lib/data-store/fee-stats.test.ts"
+  ],
+  "failure_behavior": "Without the printed numbers or stored text the affected items are reported as unknown; the verdict is 'ties out' only with no critical or major findings.",
+  "approval_requirements": "None to run (read-only). Sending a report or a quote stays with James.",
+  "dependencies": [
+    { "path": "src/lib/custom-report/analysis.ts" },
+    { "path": "src/lib/custom-report/rules.ts" },
+    { "path": "src/lib/custom-report/source-check.ts" },
+    { "path": "src/lib/data-store/custom-report-market.ts" },
+    { "path": "src/lib/data-store/report-payments.ts" },
+    { "path": "src/lib/data-store/fee-stats.ts", "version_constant": "STATS_METHOD_VERSION" },
+    { "path": "src/lib/agents/deming/severity.ts" }
+  ],
+  "last_validated": "2026-10-09",
+  "abstain_when": [
+    "the report's printed numbers are not available",
+    "the market fails readiness and no saved copy exists",
+    "stored text is missing for a fee (its source check is unknown)",
+    "a pass/fail is asked against an older statistics method"
+  ]
+}
