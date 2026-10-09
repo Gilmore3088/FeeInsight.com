@@ -3779,3 +3779,20 @@ and quarter were already stored, without looking at the periods of the data behi
   document).
 - **Watch.** 88942, 88945, 88950, 88951 and 88952 are `takedown_pending` after the next source
   check pass on 8130, and change records 1060-1064 drop out of change lists.
+
+
+## 2026-10-09: The other-bank check only knew hosts that are another bank's website
+- **What happened.** The admin audit (Oct 8) found Peoples Bank of Rock Valley IA (915) showing
+  22 "verified" fees from Peoples Bank of Bellingham WA's PDF. #691 took those down, but its check
+  only matches a document host that is another registry institution's `website_url`. A schedule
+  on a host that is no institution's in the registry passed with no identity check at all.
+- **Why.** Source-text checks prove a fee is in the document, not that the document is the bank's.
+- **Fix.** `unconfirmedHostFeesSql` (`src/lib/agents/hamilton/other-bank-document.ts`) checks the
+  rest: a document off the bank's own site and off shared file hosts must name the bank (website,
+  its name, city or the bank's name), share the website's name, or be locked by a person.
+  Failing fees take the 12-hour second look and are archived, never deleted. Read-only dry run on
+  prod (Oct 9): 277 of 1,894 such live fees, at 17 banks, fail (e.g. USF FCU Tampa read from
+  usfcu.com).
+- **Watch.** `pipeline_feedback` rows for `hamilton.unconfirmed_document_host` after the next
+  publish steps; rebranded banks whose registry website is stale (First National Bank Texas,
+  website on record `validate.perfdrive.com`) go back to discovery and should be re-found.

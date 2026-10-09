@@ -1192,7 +1192,7 @@ async function executeAgenticStep(
           : "";
       const otherBankNote =
         otherBank.rolledBack.length > 0
-          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website.`
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website or a host that does not name the bank.`
           : "";
       const evalVerdictNote =
         evalVerdicts.rolledBack.length > 0
@@ -1291,6 +1291,9 @@ async function executeAgenticStep(
             names_own_bank: otherBank.namesOwnBank,
             flagged: otherBank.flagged,
             waiting: otherBank.waiting,
+            unconfirmed_host_fees: otherBank.unconfirmedHostFees,
+            unconfirmed_host_flagged: otherBank.unconfirmedHostFlagged,
+            unconfirmed_host_waiting: otherBank.unconfirmedHostWaiting,
             rolled_back: otherBank.rolledBack.length,
             links_cleared: otherBank.linksCleared,
           },
