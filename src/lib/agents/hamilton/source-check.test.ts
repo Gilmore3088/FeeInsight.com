@@ -6,6 +6,7 @@ import {
   markRestoredForSourceCheck,
   READER_LOSS_RESTORES_ON,
   readerLostLine,
+  restorableName,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
   takeDownUntraceableFees,
@@ -66,6 +67,31 @@ function knoxFee(id: number, name: string, amount: string, excerpt: string, read
 const gucuTexts = [{ source_document_id: 7, normalized_text: GUCU_REREAD, updated_at: REREAD_AT }];
 const stopPayment = knoxFee(21162, "Stop Payment", "32", "(each submission/resubmission) Stop Payment $32.00/Request EFT");
 
+describe("restorableName", () => {
+  // UAT passed "PREMIUM / PREMIUM RDC CHECKING MINIMUM BALANCE FEE"; the repeated-word rule
+  // holds it back too, on purpose: a restore errs toward leaving a fee down.
+  it("passes the names UAT confirmed and fails the three it failed on name alone (Oct 9)", () => {
+    for (const name of ["Overdraft Protection Transfer", "Stop Payment", "5” x 5” Box", "Legal Process", "Cashier’s Check"]) {
+      expect(restorableName(name)).toBe(true);
+    }
+    for (const name of [
+      "Mechanical Repair Coverage (MRC) Stop Payments Quoted Rate Check / ACH / Electronic Check",
+      "Account Research/Reconciliation Fee Subpoena/Levy/Garnishment Research per Hour Lost",
+      "services Account Closing (within first 90 days) Does not apply to Youth Savings accounts",
+      "Wire Transfer | Incoming",
+      "SAFE DEPOSIT BOX FEES x Box",
+      "Free Official Checks, per check",
+      "Per Check Safe Deposit Box Annual 2X5+",
+      "ATMs Non S&T ATM Transactions ATM Service Fees",
+      "SAFE DEPOSIT BOXES Auburn Hills, Warren, Waterford West",
+      "USD Inactive Membership Fee",
+      "Automated overdraft LOC transfer after 2",
+    ]) {
+      expect(restorableName(name)).toBe(false);
+    }
+  });
+});
+
 describe("readerLostLine", () => {
   it("keeps a fee whose own document was re-read after Knox read it and whose stored line still states it", () => {
     const verdict = traceLiveFee(stopPayment, gucuTexts);
@@ -77,6 +103,11 @@ describe("readerLostLine", () => {
     const notRewritten = [{ ...gucuTexts[0], updated_at: "2026-10-01T00:00:00Z" }];
     expect(readerLostLine(stopPayment, notRewritten, "amount_not_the_fee")).toBe(false);
     expect(readerLostLine({ ...stopPayment, raw_created_at: null }, gucuTexts, "amount_not_the_fee")).toBe(false);
+  });
+
+  it("does not when the price on the stored line belongs to the next line's fee", () => {
+    const nextLinePrice = knoxFee(46987, "Notary Service", "10", "Notary Service / $10 low balance fee if balance falls below $2,500");
+    expect(readerLostLine(nextLinePrice, gucuTexts, "amount_not_the_fee")).toBe(false);
   });
 
   it("does not when the stored line never stated the fee", () => {
