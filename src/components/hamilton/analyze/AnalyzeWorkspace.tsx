@@ -538,12 +538,12 @@ export function AnalyzeWorkspace({
       id="hamilton-ask"
       onSubmit={handleSubmit}
       aria-label="Ask Hamilton"
-      className="flex scroll-mb-8 flex-col gap-2 print:hidden"
+      className="flex scroll-mb-8 flex-col gap-2 rounded-xl border-2 border-terra bg-terra-soft p-3 shadow-sm print:hidden sm:p-4"
     >
-      <label htmlFor="hamilton-ask-page" className="text-sm font-medium text-warm-800">
+      <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-terra-text">
         {askedQuestion || shown ? "Ask a follow-up" : "Your question"}
       </label>
-      <div className="flex items-end gap-2 rounded-lg border border-warm-300 bg-white p-2 pl-3 focus-within:border-warm-600">
+      <div className="flex items-end gap-2 rounded-lg border border-terra/40 bg-white p-2 pl-3 focus-within:border-terra">
         <textarea
           id="hamilton-ask-page"
           ref={textareaRef}
