@@ -154,6 +154,8 @@ describe("selectBlockedCompanions", () => {
     expect(rows.map((row) => row.id)).toEqual([2104, 2048]);
     expect(texts[0]).toContain("ILIKE 'text/html%'");
     expect(texts[0]).toContain("'blocked_bot'");
+    // A dormant bank's hand-found schedule is fetched too (Stock Yards); a closed charter's is not.
+    expect(texts[0]).toContain("OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')");
     expect(await selectBlockedCompanions(db, 0)).toEqual([]);
   });
 });
