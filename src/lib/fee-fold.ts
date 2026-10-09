@@ -166,6 +166,18 @@ export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|ou
 /** A copy of an item, not the item. */
 export const ITEM_COPY = /\b(?:photo ?)?cop(?:y|ies)\b/i;
 
+/** A subordination or a lien release filed as legal process. */
+const LENDING_LEGAL = new RegExp(String.raw`${SUBORDINATION.source}|\blien release`, "i");
+
+/** A night depository's key, bag or service. */
+const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
+
+/** A late charge on safe deposit box rent. */
+const BOX_RENT = /\bbox rent|\bsafe(?:ty)? deposit box/i;
+
+/** An IRA moved out to another institution ("IRA Transfer (outgoing)", "IRA Transfer Closeout"). */
+const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btransfer/i;
+
 interface SplitCategory {
   to: string;
   name: RegExp;
@@ -182,9 +194,16 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
   // A mortgage or lien subordination is a lending service (median $150), not legal process like
   // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
-  legal_process: { to: "other_lending_fee", name: SUBORDINATION, sqlPattern: "subordinat" },
+  // A lien release is other lending too (James, Oct 8: Lien Release gave up its spot).
+  legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "subordinat|lien release" },
   // A copy of a money order or cashier's check is a check copy, not the money order itself.
   money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
+  // A night deposit or night drop key is the night depository's, not a safe deposit box's.
+  safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
+  // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
+  late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "box rent|deposit box" },
+  // Moving an IRA to another institution closes it here; it is not account research.
+  account_research: { to: "ira_termination", name: IRA_TRANSFER_OUT, sqlPattern: "\\mira\\M" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -198,7 +217,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 6;
+export const FOLD_RULES_VERSION = 7;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
