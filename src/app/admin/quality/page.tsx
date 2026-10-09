@@ -46,7 +46,6 @@ const QUEUE_LABELS: Record<DataTrustQueueState, string> = {
   source_accepted_awaiting_validation: "Accepted",
   source_failed: "Failed source",
   extracted_rows_pending_classification: "Extracted",
-  knox_decisions_pending: "Knox",
   verified_public_ready: "Public ready",
 };
 
@@ -284,7 +283,6 @@ export default async function DataTrustWorkbench({
         <SummaryMetric label="Accepted sources" value={number(submissionCounts.accepted)} />
         <SummaryMetric label="Source needed" value={number(queue.counts.source_needed)} tone="warning" />
         <SummaryMetric label="Failed source" value={number(queue.counts.source_failed)} tone={queue.counts.source_failed > 0 ? "critical" : "default"} />
-        <SummaryMetric label="Knox pending" value={number(queue.counts.knox_decisions_pending)} tone={queue.counts.knox_decisions_pending > 0 ? "work" : "default"} />
         <SummaryMetric label="Public ready" value={number(queue.counts.verified_public_ready)} tone="ok" />
       </section>
 

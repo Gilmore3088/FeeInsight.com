@@ -61,7 +61,6 @@ export const ROOMS: Room[] = [
         label: "Knox",
         role: "3 Extract",
         card: true,
-        badgeKey: "knoxPending",
         activePrefixes: ["/admin/review", "/admin/agents/knox"],
       },
       { href: "/admin/darwin", label: "Darwin", role: "4 Verify", card: true },

@@ -436,7 +436,10 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // Old National publishes no stand-alone personal fee schedule (its deposit agreement points
     // to one per account). Its overdraft page (held since 8 Oct: $36 paid item) gives two fees,
     // under the 3-fee bar; the Everyday Checking page lists the monthly, paper statement and
-    // early-closure fees (replaced the overdraft page link, 2026-10-09 03:50).
+    // early-closure fees (replaced the overdraft page link, 2026-10-09 03:50). No public
+    // schedule exists: the Mac session checked its disclosures, CRA public file, FAQs and all
+    // 2,595 sitemap URLs (2026-10-09 07:08); the deposit agreement only says "see the fee
+    // schedule", which is given at account opening.
     [41, "Old National Bank", "https://www.oldnational.com/personal/checking/onb-everyday-checking/"],
     [165, "Origin Bank", "https://www.origin.bank/deposit-account-agreement-disclosures.pdf"],
     [7559, "Idaho Central Federal Credit Union", "https://www.iccu.com/file/notices/account-agreement.pdf"],
@@ -691,6 +694,12 @@ export async function addOperatorSchedules(options: {
        -- A copy stored months ago under no current link is not held: ConnectOne's fee page
        -- was last stored in March 2026, so its listed schedule was never added again.
        AND doc.crawled_at > NOW() - make_interval(days => ${HELD_DOCUMENT_DAYS})
+       -- A refused fetch is stored as a document too (Morton, Jovia and SC Federal: HTTP 403,
+       -- no content); only a copy Rosetta read holds the schedule.
+       AND EXISTS (
+         SELECT 1 FROM agent_source_texts txt
+          WHERE txt.source_document_id = doc.id AND txt.status = 'completed'
+       )
     UNION ALL
     SELECT ias.institution_id, ias.url, NULL FROM institution_additional_sources ias WHERE ias.institution_id = ANY(${ids}::bigint[])
   `;

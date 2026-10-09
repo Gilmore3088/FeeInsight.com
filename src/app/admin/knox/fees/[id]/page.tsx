@@ -8,5 +8,5 @@ export default async function KnoxFeeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   await params;
-  redirect("/admin/knox?queue=decisions");
+  redirect("/admin/knox");
 }
