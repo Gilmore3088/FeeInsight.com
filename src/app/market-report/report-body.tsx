@@ -1,6 +1,7 @@
 /**
  * The body of a Competitive Fee Position Report: the header card, the at-a-glance
- * table, findings, every fee line against the local market, named competitors with
+ * table, findings, every fee line against the local market, the checking account lineup
+ * (when the page loads one), named competitors with
  * the schedule each amount was read from, and sources and method. Shared by the
  * buyer's signed report (/market-report/[token]) and the public sample report, so the
  * sample always shows exactly what a buyer gets.
@@ -19,6 +20,8 @@ import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
 import { AtAGlance, SinceBought } from "./[token]/at-a-glance";
 import { HamiltonClose } from "./[token]/hamilton-close";
+import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
+import { CheckingLineupSection } from "./checking-lineup-section";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -66,6 +69,8 @@ export interface MarketReportBodyProps {
   revenue?: RevenueContext | null;
   /** Branch counts and deposits in the market counties; footprint lines are left out when null. */
   branches?: MarketBranchFootprint | null;
+  /** The checking account lineup against local competitors; the section is left out when null. */
+  lineup?: CheckingLineupView | null;
   /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
   titleAs?: "h1" | "h2";
 }
@@ -147,7 +152,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, titleAs: Title = "h1" }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, titleAs: Title = "h1" }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -260,6 +265,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               </tbody>
             </table>
           </section>
+
+          {lineup && <CheckingLineupSection name={name} lineup={lineup} live={Boolean(savedAt)} />}
 
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
 

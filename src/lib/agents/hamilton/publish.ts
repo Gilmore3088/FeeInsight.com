@@ -15,7 +15,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
-import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
+import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
 import { isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -397,6 +397,7 @@ async function selectVerifiedFees(
                 )
               )
               AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
+              AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -715,11 +716,37 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
+  // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
+  // falls below $1,000) $15.00 Copy of Check $3.00"): the fee it belongs to is on another cell,
+  // so neither the name nor the category can be trusted (106318, live 9 Oct).
+  if (CONDITION_ONLY_NAME.test(publishedFeeName(name, canonicalKey))) {
+    return { code: "condition_only_name", reason: "Name is only a parenthetical condition; the fee it belongs to is in another cell" };
+  }
   return null;
 }
 
+const CONDITION_ONLY_NAME = /^\s*\([^()]*\)\s*$/;
+/** Another line's parenthetical cell glued to the front of the name: "(Fee depends on style of check selected): Rental Late Fee". */
+const LEADING_PARENTHETICAL_CELL = /^\s*\([^()]*\)\s*:\s*(?=[A-Z])/;
+/** A footnote number after a box size's inch mark: "3x10” 8" is box 3x10, footnote 8. */
+const BOX_FOOTNOTE = /^(\s*\d+(?:\.\d+)?\s*[xX\u00d7]\s*\d+(?:\.\d+)?\s*["\u201d\u2033])\s*\d{1,2}\s*$/;
+
+/**
+ * The name with a neighbouring line's leading parenthetical cell or a box size's footnote number
+ * taken off, when what is left names the fee's own category; otherwise the name. Pure.
+ */
+export function withoutNeighbourCell(name: string, canonicalKey: string): string {
+  const box = name.match(BOX_FOOTNOTE);
+  if (box) return box[1].trim();
+  if (!LEADING_PARENTHETICAL_CELL.test(name)) return name;
+  const rest = name.replace(LEADING_PARENTHETICAL_CELL, "").trim();
+  // The rest must name the fee's own category, not merely pass the guard: "Wire Transfer Fee"
+  // passes a legal-process key's guard (Data inventory's retidy v15, PR 933).
+  return rest && classifyFeeText(rest) === canonicalKey && checkFeeCategory(canonicalKey, rest).ok ? rest : name;
+}
+
 export function publishedFeeName(name: string, canonicalKey: string): string {
-  const current = nameBeforeLeaders(name);
+  const current = withoutNeighbourCell(nameBeforeLeaders(name), canonicalKey);
   // A name the guard rejects only because a neighbouring cell or dot leaders ran into it ("per
   // order | Returned Items", "Return Item . . . .") publishes under Knox's re-tidied name when
   // that name passes the guard (Darwin's returned-check refile, Oct 9).
@@ -817,10 +844,12 @@ function stem(word: string): string {
 
 /**
  * The same-line check's version on each publish attempt (\`detail.same_line_check\`). An identical
- * skip decided before a version is decided again by it: every row before check 1, and box-size
- * rows ("3 x 5") before check 2, whose names check 1 read as the same line.
+ * skip decided before a version is decided again by it: every row before check 1, box-size
+ * rows ("3 x 5") before check 2, whose names check 1 read as the same line, and balance-named
+ * rows skipped as an older document before check 3.
  */
-const SAME_LINE_CHECK_VERSION = 2;
+const SAME_LINE_CHECK_VERSION = 3;
+const OLDER_DOCUMENT_REASON_TEXT = "Older document than the live price";
 const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
                 OR (pa.detail->>'same_line_check' = '1' AND fv.fee_name ~ '\\d\\s*[xX\u00d7]\\s*\\d'))`;
 
@@ -832,12 +861,17 @@ const BALANCE_THRESHOLD_SQL = `'(below|under|less than)\\s*\\$\\s?[0-9]'`;
  * decided again by check 2, which reads the balance (SCCU's Interest Checking $15 low balance fee
  * sat behind its Money Market "below $2,500" $15 line, 9 Oct).
  */
-const THRESHOLD_RESELECT_SQL = `(COALESCE(pa.detail->>'same_line_check', '0') <> '2' AND EXISTS (
+const THRESHOLD_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 2 AND EXISTS (
                   SELECT 1 FROM published_fee_records th_prev
                    WHERE th_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
                      AND th_prev.rolled_back_at IS NULL
                      AND th_prev.fee_name ~* ${BALANCE_THRESHOLD_SQL}
                 ))`;
+
+/** A balance-named row skipped as an older document before check 3 is decided again (`newerCopyPrintsLine`). */
+const OLDER_DOCUMENT_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 3
+                AND pa.detail->>'reason' = '${OLDER_DOCUMENT_REASON_TEXT}'
+                AND fv.fee_name ~* ${BALANCE_THRESHOLD_SQL})`;
 
 export function balanceThreshold(name: string | null | undefined): number | null {
   const match = (name ?? "").match(BALANCE_THRESHOLD);
@@ -865,6 +899,21 @@ export function otherBalanceLine(row: VerifiedFeeRow, prior: PriorPublishedFeeRo
   return !pagePrintsAmount(rowText, priorBalance);
 }
 
+/**
+ * Pure: the newer copy of the page still prints this balance-named line, its balance followed by
+ * its price ("Minimum Balance Fee (if Balance is Below $7,500): $15"). A newer copy's live line at
+ * another balance then does not make this row stale: OnTap's $7,500 line (verified 56431, March
+ * copy) sat behind the October copy's $2,500 and $1,000 lines though October prints it too.
+ */
+export function newerCopyPrintsLine(row: Pick<VerifiedFeeRow, "fee_name" | "amount">, newerText: string | null): boolean {
+  const balance = balanceThreshold(row.fee_name);
+  const amount = Number(row.amount);
+  if (balance == null || !newerText || !Number.isFinite(amount) || amount <= 0) return false;
+  const plain = newerText.replace(/(\d),(\d{3})/g, "$1$2");
+  const money = (value: number) => (Number.isInteger(value) ? `${value}(?:\\.00)?` : value.toFixed(2).replace(".", "\\."));
+  return new RegExp(`(?:below|under|less than)\\s*\\$\\s?${money(balance)}(?![\\d])[^$]{0,60}\\$\\s?${money(amount)}(?![\\d])`, "i").test(plain);
+}
+
 /** A box or size ("3 x 5", "2.5x10"): one word, so "3 x 5" and "2 x 10" are two lines (CBB, 9 Oct). */
 const BOX_SIZE = /(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)/gi;
 
@@ -889,7 +938,7 @@ function significantWords(name: string | null | undefined): Set<string> {
 /** A name read from page text or a page header: it says nothing about which line it is. */
 const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
 const MAX_LINE_WORDS = 10;
-function unclearName(name: string | null | undefined): boolean {
+export function unclearName(name: string | null | undefined): boolean {
   const text = (name ?? "").replace(/[\u200b\ufeff]/g, "").trim();
   // A name starting lower-case is the rest of a line ("per mailed statement"), not its start;
   // a box size ("3 x 5") is a line's start. A name ending on "a" or "of" is a cut-off sentence
@@ -1477,7 +1526,7 @@ async function flagMovedGuidesStale(
   }
 }
 
-const OLDER_DOCUMENT_REASON = "Older document than the live price";
+const OLDER_DOCUMENT_REASON = OLDER_DOCUMENT_REASON_TEXT;
 const TWIN_RECHECK_REASON = "Rules re-check: today's rules do not read this fee from its own document";
 
 /**
@@ -1654,6 +1703,9 @@ export async function runHamiltonPublish(
         const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
         if (wideDecision.kind === "identical") decision = wideDecision;
       }
+    }
+    if (decision?.kind === "older_document" && newerCopyPrintsLine(row, await selectDocumentText(db, decision.prior.source_document_id))) {
+      decision = { kind: "additional_line" };
     }
     if (
       decision?.kind === "supersede" &&
