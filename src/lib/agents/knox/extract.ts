@@ -8,7 +8,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
-import { groundLineup, LINEUP_CATEGORY, withAccountName } from "@/lib/agents/knox/lineup";
+import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
@@ -982,7 +982,7 @@ export async function runKnoxExtract(
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
         const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
         if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
-        const named = withAccountName(candidate, row.normalized_text);
+        const named = withLineupFromText(candidate, row.normalized_text);
         if (
           await insertCandidate(db, {
             runId: options.runId,

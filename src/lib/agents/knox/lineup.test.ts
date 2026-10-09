@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { accountHeadingAbove, groundLineup, productNameFromFeeName, withAccountName } from "./lineup";
+import { accountHeadingAbove, groundLineup, minBalanceFromExcerpt, productNameFromFeeName, withLineupFromText } from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
 
 const text = [
@@ -100,9 +100,58 @@ describe("Knox account names for monthly fees (v49)", () => {
       excerpt: "One low monthly maintenance fee of $7.00 each month.",
       lineup: { productName: null, minBalanceToAvoid: 500, minOpeningDeposit: null, waiverText: null },
     };
-    expect(withAccountName(candidate, page).lineup).toEqual({ ...candidate.lineup, productName: "Exchange Advantage Checking" });
-    expect(withAccountName({ ...candidate, canonicalHint: "overdraft" }, page)).toEqual({ ...candidate, canonicalHint: "overdraft" });
+    expect(withLineupFromText(candidate, page).lineup).toEqual({ ...candidate.lineup, productName: "Exchange Advantage Checking" });
+    expect(withLineupFromText({ ...candidate, canonicalHint: "overdraft" }, page)).toEqual({ ...candidate, canonicalHint: "overdraft" });
     const named = { ...candidate, lineup: { ...candidate.lineup, productName: "Gold Checking" } };
-    expect(withAccountName(named, page)).toBe(named);
+    expect(withLineupFromText(named, page)).toBe(named);
+  });
+});
+
+describe("Knox lineup facts around a monthly fee (v50)", () => {
+  const candidate = (excerpt: string, feeName = "Monthly service charge") => ({
+    canonicalHint: "monthly_maintenance",
+    feeName,
+    excerpt,
+    lineup: null as null | { productName: string | null; minBalanceToAvoid: number | null; minOpeningDeposit: number | null; waiverText: string | null },
+  });
+
+  it("reads the balance, waiver and opening deposit from the account's own lines", () => {
+    const page = [
+      "Thrifty Checking Account",
+      "Minimum Opening Balance $100.00",
+      "Non-interest bearing",
+      "Monthly service charge | $3.00",
+      "The service charge is waived with a minimum daily balance of $500 in the account.",
+      "Premier Checking",
+      "Monthly service charge | $12.00",
+    ].join("\n");
+    expect(withLineupFromText(candidate("Monthly service charge | $3.00"), page).lineup).toEqual({
+      productName: "Thrifty Checking Account",
+      minBalanceToAvoid: 500,
+      minOpeningDeposit: 100,
+      waiverText: "waived with a minimum daily balance of $500 in the account",
+    });
+  });
+
+  it("reads the opening deposit when the schedule says it is to open", () => {
+    const page = "NOW Checking\n$500 minimum opening deposit required\nMaintain a minimum daily balance of $1,000 to avoid the $10 monthly service charge";
+    const read = withLineupFromText(candidate("Maintain a minimum daily balance of $1,000 to avoid the $10 monthly service charge"), page).lineup;
+    expect(read).toMatchObject({ productName: "NOW Checking", minBalanceToAvoid: 1000, minOpeningDeposit: 500 });
+  });
+
+  it("never takes a figure from the next account's lines", () => {
+    const page = ["Basic Checking", "Monthly fee | $4.00", "Gold Checking", "Waived with a minimum daily balance of $2,500 to avoid the fee"].join("\n");
+    expect(withLineupFromText(candidate("Monthly fee | $4.00", "Monthly fee"), page).lineup).toEqual({
+      productName: "Basic Checking",
+      minBalanceToAvoid: null,
+      minOpeningDeposit: null,
+      waiverText: null,
+    });
+  });
+
+  it("reads a balance condition on the fee's own line", () => {
+    expect(minBalanceFromExcerpt("Performance Plus | $10.00 per month if average daily balance is below $1,000")).toBe(1000);
+    expect(minBalanceFromExcerpt("Monthly Fee / $10")).toBeNull();
+    expect(minBalanceFromExcerpt("Avoid the monthly fee with a minimum daily balance of 2,500 or $500 in monthly direct deposits")).toBeNull();
   });
 });
