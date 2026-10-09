@@ -24,7 +24,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.17.3";
+export const WORKSPACE_ENGINE_VERSION = "1.17.4";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -161,6 +161,8 @@ export interface MarketIncome {
 export interface Briefing {
   institutionId: number;
   institutionName: string;
+  /** The bank's state, the scope of the competitor changes it watches. */
+  stateCode?: string | null;
   observations: Observation[];
   /** The bank's own reported fee income; null when no filing is on file. */
   institutionFinancials: InstitutionFinancials | null;

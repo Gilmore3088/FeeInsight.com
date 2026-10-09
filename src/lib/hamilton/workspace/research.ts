@@ -500,6 +500,7 @@ export async function getWorkspaceBriefing(
   return {
     institutionId,
     institutionName: base.institutionName,
+    stateCode: base.stateCode,
     observations,
     institutionFinancials: financials,
     nationalIncome,
