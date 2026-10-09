@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, recentSubjects } from "@/lib/data-store/content-drafts";
+import { listQualifiedLeads, type QualifiedLeadMark } from "@/lib/data-store/lead-qualified";
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
 import {
   BUYER_LOG_FIELDS,
@@ -47,6 +48,8 @@ export interface LearningInput {
   draftsThisWeek: { drafted: number; done: number; skipped: number };
   scoredThisWeek: Array<{ title: string; score: number | null }>;
   leadsThisWeek: { total: number; fromOutreach: number } | null;
+  /** Leads James marked qualified on /admin/leads, to date (empty before migration 20270110000032). */
+  qualifiedLeads?: QualifiedLeadMark[];
 }
 
 const QUALIFIED: ReadonlySet<OutreachOutcome> = new Set(["conversation", "report_requested", "proposal", "purchased_report", "purchased_pro"]);
@@ -66,15 +69,22 @@ export interface LearningMetrics {
   contacted: number;
   qualified: number;
   qualifiedPer100: number | null;
+  /** Leads marked qualified that are not an outreach contact already counted in `qualified`. */
+  qualifiedInbound: number;
   reachedProposal: number;
   paid: number;
   medianDaysToPurchase: number | null;
 }
 
-/** The plan's sales metrics from every outcome to date, per institution. */
-export function learningMetrics(outcomes: LearningOutcome[]): LearningMetrics {
+/**
+ * The plan's sales metrics from every outcome to date, per institution. A lead James marked
+ * qualified counts as a qualified conversation: toward the per-100 rate when its quote names an
+ * institution we emailed, otherwise as an inbound qualified lead (each institution once).
+ */
+export function learningMetrics(outcomes: LearningOutcome[], qualifiedLeads: QualifiedLeadMark[] = []): LearningMetrics {
   const byInstitution = new Map<number, LearningOutcome[]>();
   for (const outcome of outcomes) byInstitution.set(outcome.institutionId, [...(byInstitution.get(outcome.institutionId) ?? []), outcome]);
+  const qualifiedByLead = new Set(qualifiedLeads.map((lead) => lead.institutionId).filter((id): id is number => id !== null));
   let contacted = 0;
   let qualified = 0;
   let reachedProposal = 0;
@@ -83,7 +93,7 @@ export function learningMetrics(outcomes: LearningOutcome[]): LearningMetrics {
   for (const list of byInstitution.values()) {
     const sent = list.find((item) => item.outcome === "sent");
     if (sent) contacted++;
-    if (list.some((item) => QUALIFIED.has(item.outcome))) qualified++;
+    if (list.some((item) => QUALIFIED.has(item.outcome)) || (sent && qualifiedByLead.has(list[0].institutionId))) qualified++;
     if (list.some((item) => PROPOSAL_OR_LATER.has(item.outcome))) reachedProposal++;
     const bought = list.find((item) => PAID.has(item.outcome));
     if (bought) {
@@ -91,12 +101,26 @@ export function learningMetrics(outcomes: LearningOutcome[]): LearningMetrics {
       if (sent) daysToPurchase.push(Math.max(0, Math.round((Date.parse(bought.at) - Date.parse(sent.at)) / DAY_MS)));
     }
   }
+  const inboundInstitutions = new Set<number>();
+  let qualifiedInbound = 0;
+  for (const lead of qualifiedLeads) {
+    if (lead.institutionId === null) {
+      qualifiedInbound++;
+      continue;
+    }
+    if (byInstitution.get(lead.institutionId)?.some((item) => item.outcome === "sent")) continue;
+    if (byInstitution.get(lead.institutionId)?.some((item) => QUALIFIED.has(item.outcome))) continue;
+    if (inboundInstitutions.has(lead.institutionId)) continue;
+    inboundInstitutions.add(lead.institutionId);
+    qualifiedInbound++;
+  }
   daysToPurchase.sort((a, b) => a - b);
   const middle = Math.floor(daysToPurchase.length / 2);
   return {
     contacted,
     qualified,
     qualifiedPer100: contacted ? Math.round((qualified / contacted) * 1000) / 10 : null,
+    qualifiedInbound,
     reachedProposal,
     paid,
     medianDaysToPurchase: daysToPurchase.length
@@ -109,7 +133,7 @@ export function learningMetrics(outcomes: LearningOutcome[]): LearningMetrics {
 
 /** The report's title and text. Every line is a count or a note James wrote; nothing is estimated. */
 export function buildLearningReport(input: LearningInput): { title: string; body: string; metrics: LearningMetrics } {
-  const metrics = learningMetrics(input.outcomes);
+  const metrics = learningMetrics(input.outcomes, input.qualifiedLeads ?? []);
   const week = input.outcomes.filter((item) => inWeek(item.at, input));
   const weekEvents = input.events.filter((item) => inWeek(item.at, input));
   const title = `What we learned, week of ${day(input.weekStart)}`;
@@ -181,6 +205,7 @@ export function buildLearningReport(input: LearningInput): { title: string; body
         : `- Days from email to purchase (median): ${metrics.medianDaysToPurchase}.`,
     );
   }
+  lines.push(`- Leads marked qualified outside outreach: ${metrics.qualifiedInbound}.`);
   const stages = new Map<number, { events: SnapshotEvent[]; outcomes: OutreachOutcome[] }>();
   const entry = (id: number) => stages.get(id) ?? stages.set(id, { events: [], outcomes: [] }).get(id)!;
   for (const item of input.events) entry(item.institutionId).events.push(item.event);
@@ -189,7 +214,7 @@ export function buildLearningReport(input: LearningInput): { title: string; body
   lines.push(`- Journey: ${funnel.map((stage) => `${stage.label} ${stage.count}`).join(", ")}.`);
   lines.push("");
   lines.push("Month-one floor (GTM plan): 5 qualified conversations and 2 purchase discussions by Nov 6.");
-  lines.push(`So far: ${metrics.qualified} qualified, ${metrics.reachedProposal} at a proposal or later.`);
+  lines.push(`So far: ${metrics.qualified + metrics.qualifiedInbound} qualified, ${metrics.reachedProposal} at a proposal or later.`);
 
   return { title, body: lines.join("\n"), metrics };
 }
@@ -242,6 +267,7 @@ async function loadLearningInput(db: SqlTag, weekStart: Date, weekEnd: Date): Pr
     leadsThisWeek = { total: Number(leads.total), fromOutreach: Number(leads.from_outreach) };
   }
   const iso = (value: unknown) => new Date(value as string).toISOString();
+  const qualifiedLeads = await listQualifiedLeads(weekEnd, db);
   return {
     weekStart,
     weekEnd,
@@ -257,6 +283,7 @@ async function loadLearningInput(db: SqlTag, weekStart: Date, weekEnd: Date): Pr
     draftsThisWeek: { drafted: Number(drafts[0]?.drafted ?? 0), done: Number(drafts[0]?.done ?? 0), skipped: Number(drafts[0]?.skipped ?? 0) },
     scoredThisWeek: scored.map((row) => ({ title: String(row.title), score: row.score === null ? null : Number(row.score) })),
     leadsThisWeek,
+    qualifiedLeads,
   };
 }
 
@@ -294,7 +321,7 @@ export async function runLearningReport(input: { db?: SqlTag; runId: number | nu
       subjectKey,
       title: report.title,
       caption: report.body,
-      facts: { week_start: week, week_end: day(weekEnd), metrics: report.metrics, source: "outreach_outcomes, snapshot_events, content_drafts, leads" },
+      facts: { week_start: week, week_end: day(weekEnd), metrics: report.metrics, source: "outreach_outcomes, snapshot_events, content_drafts, leads (incl. qualified marks)" },
       asOf: weekEnd,
       agentRunId: input.runId,
     },
@@ -309,6 +336,6 @@ export function summarizeLearning(result: LearningRunResult): string {
   const metrics = result.metrics;
   const head = `${result.dryRun ? "Would file" : "Filed"} what we learned for the week of ${result.week}`;
   return metrics && metrics.contacted
-    ? `${head}: ${metrics.qualified} qualified conversations from ${metrics.contacted} contacted, ${metrics.paid} paid.`
-    : `${head}: no email marked sent yet.`;
+    ? `${head}: ${metrics.qualified} qualified conversations from ${metrics.contacted} contacted, ${metrics.qualifiedInbound} qualified inbound, ${metrics.paid} paid.`
+    : `${head}: no email marked sent yet${metrics?.qualifiedInbound ? `; ${metrics.qualifiedInbound} qualified inbound` : ""}.`;
 }

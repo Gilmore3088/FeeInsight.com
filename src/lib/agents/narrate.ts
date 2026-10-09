@@ -262,6 +262,13 @@ function narrateFinished(
       if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
       return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
     }
+    case "growth-quote": {
+      if (detail.schemaReady === false) return "Drafted no quotes; the queue or the leads' qualified columns are not there yet.";
+      if (!n(detail, "qualified")) return "Checked the leads; none is marked qualified, so no quote was drafted.";
+      const drafted = n(detail, "drafted");
+      if (!drafted) return `Checked ${count(n(detail, "qualified"), "qualified lead")}; each already has a quote draft.`;
+      return `Drafted ${count(drafted, "quote email")} for James to review and send himself.`;
+    }
     case "growth-intel": {
       if (detail.schemaReady === false) return "Wrote no market brief; the queue is not there yet.";
       const findings = Array.isArray(detail.findings) ? detail.findings.length : 0;
@@ -509,6 +516,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-contact-picks": "growth",
   "growth-outreach": "growth",
   "growth-learning": "growth",
+  "growth-quote": "growth",
   "growth-intel": "growth",
   "growth-conversion": "growth",
   "growth-tools": "growth",
