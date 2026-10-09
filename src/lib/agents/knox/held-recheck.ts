@@ -437,9 +437,10 @@ export async function recheckUntracedRows(
  *
  * `SUPERSEDED_RECHECK_LIVE` off is a dry read: each row is read once per rules version and
  * marked with what the pass would do (`knox_superseded_would_promote:vN`), and nothing goes to
- * Darwin.
+ * Darwin. The paid-only dry read (9 Oct, all 43 rows) would have sent one row, Northern Trust's
+ * $25 overdraft, and it matched the source line, so the switch is on.
  */
-export const SUPERSEDED_RECHECK_LIVE = false;
+export const SUPERSEDED_RECHECK_LIVE = true;
 export const SUPERSEDED_RECHECK_LIMIT = 100;
 export const SUPERSEDED_RECHECK_PROMOTED_FLAG = "knox_promoted_from_superseded";
 export const SUPERSEDED_RECHECK_SOURCE_FLAG = KNOX_PAID_FLAG;
