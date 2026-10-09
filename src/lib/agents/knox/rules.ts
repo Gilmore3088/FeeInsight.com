@@ -2,7 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { CHECKBOOK_RECONCILIATION, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -245,6 +245,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
   { key: "account_research", pattern: /\bcheck ?book balanc\w*|\bbalanc\w* (?:your |a )?check ?book\b/i },
+  // v56: balancing or reconciling a checkbook is account research, not a check order (`CHECKBOOK_RECONCILIATION`).
+  { key: "account_research", pattern: new RegExp(String.raw`^(?=[\s\S]*\bcheck ?books?\b)[\s\S]*` + CHECKBOOK_RECONCILIATION.source, "i") },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
