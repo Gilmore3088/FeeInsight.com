@@ -52,7 +52,7 @@ export const metadata: Metadata = {
 const WELCOME_PATH = "/account/welcome";
 /**
  * /subscribe follows the ui-ux-pro-max design system James asked for (9 Oct 2026): Plus Jakarta
- * Sans, trust blue with an orange CTA (black label, 6:1), glass surfaces over soft colour.
+ * Sans, trust blue with Fee Insight terracotta for buttons and marks (James, 11:04), glass over soft colour.
  */
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -62,7 +62,7 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 const CTA_CLASS =
-  "cursor-pointer bg-[#EA580C] px-5 py-3.5 text-center text-base font-semibold text-black shadow-sm transition-colors duration-200 hover:bg-[#F97316]";
+  "cursor-pointer bg-[#C44B2E] px-5 py-3.5 text-center text-base font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[#A93D25]";
 
 /** The skill's checklist, page-wide: pointer cursors, 200ms hover transitions, visible focus. */
 const INTERACTION_CLASS =
@@ -410,8 +410,8 @@ export default async function SubscribePage({
       {/* The glass surfaces need colour behind them: two soft light sources, no motion. */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[1100px]">
         <div className="absolute -left-40 -top-32 h-[560px] w-[560px] rounded-full bg-[#3B82F6]/25 blur-3xl" />
-        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-[#EA580C]/15 blur-3xl" />
-        <div className="absolute left-1/3 top-[620px] h-[420px] w-[520px] rounded-full bg-[#2563EB]/15 blur-3xl" />
+        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-[#C44B2E]/15 blur-3xl" />
+        <div className="absolute left-1/3 top-[620px] h-[420px] w-[520px] rounded-full bg-[#C44B2E]/15 blur-3xl" />
       </div>
       <ConsumerNav />
       <main id="main-content">
@@ -446,7 +446,7 @@ export default async function SubscribePage({
           </div>
         )}
 
-        <section id="pro" aria-labelledby="pro-title" className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-x-14 lg:gap-y-10">
+        <section id="pro" aria-labelledby="pro-title" className="grid gap-8 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-10">
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           {/* The headline spans both columns; the example and the card start on one line below it. */}
           <div className="lg:col-span-2 lg:row-start-1">
@@ -478,7 +478,10 @@ export default async function SubscribePage({
 
           {showcase && <div className="lg:col-start-1 lg:row-start-2">{showcase}</div>}
 
-          <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-start-2 lg:self-start">
+          {/* Same size as the example beside it (James, 9 Oct 2026): both stretch to the row, each
+              with one 44px line under it (the example dots; the sign-in line). */}
+          <div className="flex flex-col lg:col-start-2 lg:row-start-2">
+            <div className="flex-1">
             <PurchaseCard
               isLoggedIn={isLoggedIn}
               chooser={
@@ -499,14 +502,17 @@ export default async function SubscribePage({
               autoStartPlan={selection ? autoStartPlan : null}
               entry={entryPoint}
             />
-            {!isLoggedIn && (
-              <p className="mt-4 text-center text-sm text-[#475569]">
-                Already have an account?{" "}
-                <a href={loginHref} className="font-medium text-[#1E293B] underline underline-offset-2">
-                  Sign in
-                </a>
-              </p>
-            )}
+            </div>
+            <div className="mt-1 flex h-11 items-center justify-center text-sm text-[#475569]">
+              {!isLoggedIn && (
+                <p>
+                  Already have an account?{" "}
+                  <a href={loginHref} className="font-medium text-[#1E293B] underline underline-offset-2">
+                    Sign in
+                  </a>
+                </p>
+              )}
+            </div>
           </div>
         </section>
       </div>

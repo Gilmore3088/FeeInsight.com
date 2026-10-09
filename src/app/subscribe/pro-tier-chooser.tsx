@@ -75,7 +75,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
                   className={
                     "min-h-11 rounded-md border px-3 text-left text-sm " +
                     (pickedBand === band.key
-                      ? "border-[#2563EB] ring-1 ring-[#2563EB] text-[#1E293B]"
+                      ? "border-[#C44B2E] ring-1 ring-[#C44B2E] text-[#1E293B]"
                       : "border-[#E2E8F0] text-[#475569] hover:border-[#1E293B]")
                   }
                 >

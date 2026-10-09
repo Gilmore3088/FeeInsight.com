@@ -101,13 +101,13 @@ function AnalyzeRun({ scenario, animate }: { scenario: AnalyzeScenario; animate:
               )}
               <div className="absolute -inset-y-1 w-0.5 rounded bg-[#1E293B]" style={{ left: pct(scenario.median, max) }} />
               <div
-                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2563EB] ring-2 ring-white transition-[left] duration-700 ease-out motion-reduce:transition-none"
+                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C44B2E] ring-2 ring-white transition-[left] duration-700 ease-out motion-reduce:transition-none"
                 style={{ left: answered ? pct(scenario.price, max) : pct(scenario.median, max) }}
               />
             </div>
             <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#556377]">
               <span>
-                <span aria-hidden className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-[#2563EB] align-middle" />
+                <span aria-hidden className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E] align-middle" />
                 Scenario price
               </span>
               <span>

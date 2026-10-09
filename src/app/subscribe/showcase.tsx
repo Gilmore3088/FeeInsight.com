@@ -116,10 +116,10 @@ export function ShowcaseProvider({ autoCycle, entry, children }: { autoCycle: bo
 export function ShowcaseStage({ panels }: { panels: ReactNode[] }) {
   const { active, setPaused, choose } = useShowcase();
   return (
-    <div>
+    <div className="flex h-full flex-col">
     <div
       id={STAGE_ID}
-      className="grid scroll-mt-24"
+      className="grid flex-1 scroll-mt-24"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -141,7 +141,7 @@ export function ShowcaseStage({ panels }: { panels: ReactNode[] }) {
         </div>
       ))}
     </div>
-    <div className="mt-1 flex items-center justify-center gap-1" role="group" aria-label="Examples">
+    <div className="mt-1 flex h-11 items-center justify-center gap-1" role="group" aria-label="Examples">
       {PILLARS.map((pillar, i) => (
         <button
           key={pillar.key}

@@ -46,7 +46,7 @@ export function PurchaseCard({
   entry,
 }: PurchaseCardProps) {
   return (
-    <div className="rounded-2xl bg-white/75 p-6 backdrop-blur-xl ring-1 ring-[#E2E8F0]/80 shadow-[0_12px_40px_-12px_rgba(30,41,59,0.25),inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-7">
+    <div className="h-full rounded-2xl bg-white/75 p-6 backdrop-blur-xl ring-1 ring-[#E2E8F0]/80 shadow-[0_12px_40px_-12px_rgba(30,41,59,0.25),inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-7">
       <h2 id="pro-heading" className="scroll-mt-24 text-xl text-[#1E293B] font-semibold tracking-tight" style={DISPLAY}>
         Fee Insight Pro
       </h2>
