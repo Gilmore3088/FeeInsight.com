@@ -3721,7 +3721,6 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** 308 fees at 15 banks archived by the first publish steps after deploy, and none of
   them live from another bank's host after that.
 
-
 ## 2026-10-08: The failure-streak alert went quiet mid-break
 - **What happened.** Replaying the admin alerts on prod against the 12:06-12:36 publish break:
   the streak alert was up from 12:08 (3 failed in a row) to 12:25, then went quiet when one
@@ -3749,3 +3748,19 @@ and quarter were already stored, without looking at the periods of the data behi
   `source` plus `cert_number`, so they are unaffected.
 - **Watch.** A lookup by `cert_number` alone can match the wrong institution; always add
   `source` (or `charter_type`).
+
+## 2026-10-08: Stated frequencies were read from the row above
+- **What happened.** In the seven-state answer keys, 25 of 131 live fees with a stated
+  frequency had the wrong one: "Reverse Stop Payment Request $20" was published as annual, and
+  "Cashier's Check (Per item) $5" as monthly.
+- **Why.** Knox's `detectFrequency` reads the whole excerpt, and a table excerpt holds the
+  neighbouring rows ("Missing/Bad Address - per year .. $10.00 | Reverse Stop Payment .. $20.00").
+  The first period word anywhere on the line won.
+- **Fix.** `settledFrequency` (`src/lib/fee-frequency.ts`) reads the fee's own row first and
+  drops a period that sits only in another priced cell. Knox v47 uses it on new reads, and
+  Hamilton's frequency fill v2 applies it to live fees. Every change is logged as
+  `frequency_corrected` or `frequency_cleared` with `from` and `to`. A read-only dry run on
+  12,343 live shared-line fees changes 559: 350 corrected and 209 cleared.
+- **Watch.** `pipeline_feedback` rows for `hamilton.frequency_fill`, by kind, after the next
+  publish step.
+
