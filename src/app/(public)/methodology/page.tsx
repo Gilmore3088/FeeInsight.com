@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
+import { getSourceCheckWeek, sourceCheckParagraphs } from "@/lib/data-store/source-check-stats";
 
 const METHODOLOGY_URL = `${SITE_URL}/methodology`;
 
@@ -55,8 +56,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function MethodologyPage() {
-  const summary = await getPublicStatsSummary();
+  const [summary, sourceCheckWeek] = await Promise.all([getPublicStatsSummary(), getSourceCheckWeek()]);
   const institutions = summary.institutionsLabel;
+  const measured = sourceCheckParagraphs(sourceCheckWeek);
   const jsonLdData = buildJsonLd(institutions);
   return (
     <div>
@@ -140,6 +142,15 @@ export default async function MethodologyPage() {
             `Every category carries a plain status based on how many institutions publish a verified fee in it. Strong: ${STRONG_INSTITUTION_COUNT} or more institutions. Provisional: ${MIN_INSTITUTIONS_FOR_MEDIAN} to ${STRONG_INSTITUTION_COUNT - 1}, benchmarked with a caution. Too few to benchmark: fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN}, shown but not used for medians. Fees still being checked are marked Under review and stay out of benchmarks.`,
           ]}
         />
+
+        {/* Section 5b: Measured source check (shown only when the run ledger has one) */}
+        {measured && (
+          <Section
+            label="Measured"
+            title="Every live fee is checked against the bank's own schedule"
+            body={measured}
+          />
+        )}
 
         {/* Section 6: Coverage and Limitations */}
         <Section
