@@ -115,12 +115,12 @@ describe("Hamilton category guard repair", () => {
     expect(statements).not.toContain("DELETE");
   });
 
-  it("keeps a takedown down when neither its own type nor a split or re-file type accepts it", () => {
+  it("keeps a takedown down when neither its own type nor a split or checked re-file type accepts it", () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment Fee", amount: "5.00" })).toBe("account_research");
     expect(restoreTarget({ ...row, canonical_fee_key: "atm_non_network", fee_name: "ATM Limit Adjustment", amount: "5.00" })).toBeNull();
-    // The guard's own re-file rule is a home too: a sweep transfer is the OD protection transfer.
-    expect(restoreTarget({ ...row, canonical_fee_key: "overdraft", fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" })).toBe("od_protection_transfer");
+    // Only spot-checked re-file rules bring a fee back: this one has not been checked yet.
+    expect(restoreTarget({ ...row, canonical_fee_key: "overdraft", fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" })).toBeNull();
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
   });
 

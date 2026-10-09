@@ -291,11 +291,23 @@ export function restoreTarget(row: Pick<TakenDownRow, "canonical_fee_key" | "fee
   if (checkFeeCategory(row.canonical_fee_key, row.fee_name, row).ok) return row.canonical_fee_key;
   // Or the guard's own re-file rule names it: express card replacements kept coming back as
   // card_replacement and going down again (235, 12213, 29782, Oct 6-9); rush_card is their home.
-  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? refileCategory(row.canonical_fee_key, row.fee_name);
+  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? restoreRefile(row.canonical_fee_key, row.fee_name);
   // A retired key is no home: Hamilton never publishes it.
   if (!to || to === row.canonical_fee_key || isRetiredCategory(to)) return null;
   const amount = normalizedAmount(row.amount) ?? 0;
   return checkFeeCategory(to, row.fee_name, row).ok && passesDarwinChecks(to, row.fee_name, amount) ? to : null;
+}
+
+/**
+ * The guard re-file rules a takedown may come back under. Each one needs its own dry read and
+ * 10-row spot check first: on Oct 9 all re-file rules would have brought back 66 fees, some
+ * with sentence names, but only card_replacement -> rush_card was checked (12/12 on source).
+ */
+const RESTORE_REFILES: ReadonlySet<string> = new Set(["card_replacement>rush_card"]);
+
+function restoreRefile(canonicalFeeKey: string, feeName: string): string | null {
+  const to = refileCategory(canonicalFeeKey, feeName);
+  return to && RESTORE_REFILES.has(`${canonicalFeeKey}>${to}`) ? to : null;
 }
 
 /**
