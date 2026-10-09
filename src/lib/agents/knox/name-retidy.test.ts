@@ -301,3 +301,15 @@ describe("v8: advice on how to avoid a fee comes off its name", () => {
     expect(isMessyName("Stop Payment (Check/ACH) Submit request through Online Banking to avoid this charge")).toBe(true);
   });
 });
+
+describe("v9: a threshold publish cut off comes back from Knox's own read", () => {
+  it("restores 102976 from its raw name when the page words differ from the name", () => {
+    const row = {
+      ...fee({ canonical_fee_key: "minimum_balance", fee_name: "Service charge (daily balance falls below", amount: 5 }),
+      raw_fee_name: "Service charge (daily balance falls below $500)",
+    };
+    const page = [{ source_document_id: 70, normalized_text: "Monthly Service Fee | $5 per month if daily balance falls below $500 at any time during the month" }];
+    expect(planRetidy([row], page).renames.map((rename) => rename.newName)).toEqual(["Service charge (daily balance falls below $500)"]);
+    expect(planRetidy([{ ...row, raw_fee_name: null }], page).renames).toEqual([]);
+  });
+});
