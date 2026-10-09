@@ -12,8 +12,13 @@ import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 
 export const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
-export function MemoPage({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex max-w-5xl flex-col gap-8 text-warm-800">{children}</div>;
+/** "reading" keeps a page to one column at a comfortable reading width; most pages use the wide grid. */
+export function MemoPage({ children, width = "wide" }: { children: ReactNode; width?: "wide" | "reading" }) {
+  return (
+    <div className={`mx-auto flex w-full flex-col gap-8 text-warm-800 ${width === "reading" ? "max-w-3xl" : "max-w-5xl"}`}>
+      {children}
+    </div>
+  );
 }
 
 export function MemoHeader({

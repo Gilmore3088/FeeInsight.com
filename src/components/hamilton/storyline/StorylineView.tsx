@@ -76,7 +76,11 @@ function Line({ fact, notes }: { fact: Fact; notes: SourceNotes }) {
 }
 
 function Kicker({ children }: { children: ReactNode }) {
-  return <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">{children}</h3>;
+  return (
+    <h3 className="mb-3 text-xl leading-snug text-warm-900" style={SERIF}>
+      {children}
+    </h3>
+  );
 }
 
 function FactList({ facts, notes, empty }: { facts: Fact[]; notes: SourceNotes; empty?: string }) {
@@ -84,8 +88,8 @@ function FactList({ facts, notes, empty }: { facts: Fact[]; notes: SourceNotes; 
   return (
     <ul className="flex max-w-[65ch] flex-col gap-2">
       {facts.map((f, i) => (
-        <li key={i} className="grid grid-cols-[0.875rem_minmax(0,1fr)] gap-2 text-[15px] leading-snug text-warm-800">
-          <span aria-hidden className="mt-[0.45rem] h-1.5 w-1.5 rounded-full bg-terra" />
+        <li key={i} className="grid grid-cols-[0.875rem_minmax(0,1fr)] gap-2 text-base leading-relaxed text-warm-800">
+          <span aria-hidden className="mt-[0.65rem] h-1.5 w-1.5 rounded-full bg-terra" />
           <span>
             <Line fact={f} notes={notes} />
           </span>
@@ -99,7 +103,7 @@ function FactList({ facts, notes, empty }: { facts: Fact[]; notes: SourceNotes; 
 function MemoNote({ text, size = "base" }: { text: string; size?: "base" | "lead" }) {
   return (
     <p
-      className={`max-w-[62ch] whitespace-pre-line text-warm-800 [font-variant-numeric:tabular-nums] ${size === "lead" ? "text-[17px] leading-relaxed" : "border-l-2 border-warm-300 pl-4 text-[15px] leading-relaxed"}`}
+      className={`max-w-[62ch] whitespace-pre-line text-warm-800 [font-variant-numeric:tabular-nums] ${size === "lead" ? "text-base leading-relaxed" : "border-l-2 border-warm-300 pl-4 text-base leading-relaxed"}`}
       style={size === "lead" ? SERIF : undefined}
     >
       {withFiguresBold(text)}
@@ -117,8 +121,8 @@ function SourceList({ notes }: { notes: SourceNotes }) {
   if (notes.list.length === 0) return null;
   return (
     <section className="border-t border-warm-200 pt-4">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-warm-600">Sources</h3>
-      <ol className="grid gap-x-6 gap-y-1 text-xs leading-snug text-warm-600 sm:grid-cols-2">
+      <h3 className="mb-2 text-sm font-medium text-warm-700">Sources</h3>
+      <ol className="grid gap-x-6 gap-y-1 text-[13px] leading-snug text-warm-600 sm:grid-cols-2">
         {notes.list.map((s, i) => {
           // One sample size reads as n=; several different ones would only clutter the note.
           const detail = [monthOf(s.asOf), s.n.length === 1 ? `n=${s.n[0].toLocaleString("en-US")}` : null]
@@ -151,10 +155,10 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
   const figures = story.keyFigures.slice(0, 4);
   const cols = figures.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : figures.length === 3 ? "sm:grid-cols-3" : figures.length === 2 ? "grid-cols-2" : "grid-cols-1";
   return (
-    <article className="flex flex-col gap-9">
+    <article className="flex flex-col gap-10 [&_.rd]:mx-0 [&_.rd]:max-w-none [&_.rd-exhibit]:mt-0 [&_.rd-exhibit_h2]:text-xl [&_.rd-exhibit_h2]:leading-snug">
       <div className="border-l-2 border-terra pl-5">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">The answer</p>
-        <p className="mt-1 max-w-[46ch] text-[1.4rem] leading-snug text-warm-900 sm:text-[1.6rem]" style={SERIF}>
+        <p className="mt-1 text-[1.375rem] leading-snug text-warm-900 sm:text-2xl" style={SERIF}>
           {story.governingThought}
         </p>
         {written ? (
@@ -178,12 +182,12 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
           {figures.map((f) => (
             <div key={f.label} className="flex flex-col bg-white px-5 py-4">
               {/* The label comes first for screen readers; the figure still shows on top. */}
-              <dt className="order-2 mt-1 line-clamp-3 text-xs leading-snug text-warm-600" title={f.label}>
+              <dt className="order-2 mt-1 line-clamp-3 text-[13px] leading-snug text-warm-600" title={f.label}>
                 {f.label}
                 <Note n={notes.noteFor(f.source)} />
               </dt>
               <dd
-                className={`order-1 ${f.value.length > 8 ? "text-xl sm:text-2xl" : "text-3xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
+                className={`order-1 ${f.value.length > 8 ? "text-xl" : "text-2xl"} text-warm-900 [font-variant-numeric:tabular-nums]`}
                 style={SERIF}
               >
                 {f.value}
@@ -194,7 +198,7 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       ) : null}
 
       {story.situation.length > 0 || story.complication.length > 0 ? (
-        <div className="grid gap-x-8 gap-y-5 rounded-lg border border-warm-200 bg-white px-5 py-4 md:grid-cols-2">
+        <div className="grid gap-x-8 gap-y-6 border-t border-warm-300 pt-6 md:grid-cols-2">
           <section>
             <Kicker>Where things stand</Kicker>
             <FactList facts={story.situation} notes={notes} />
@@ -210,7 +214,7 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
         <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} />
       ))}
 
-      <section>
+      <section className="border-t border-warm-300 pt-6">
         <Kicker>What it means for you</Kicker>
         <LensSwitch
           initial={story.defaultView ?? "finance"}
@@ -230,9 +234,9 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       </section>
 
       {written && written.questions.length > 0 ? (
-        <section>
+        <section className="border-t border-warm-300 pt-6">
           <Kicker>Before deciding</Kicker>
-          <ol className="flex max-w-[65ch] list-decimal flex-col gap-2 pl-5 text-[15px] leading-snug text-warm-800 marker:font-semibold marker:text-terra-text">
+          <ol className="flex max-w-[65ch] list-decimal flex-col gap-2 pl-5 text-base leading-relaxed text-warm-800 marker:font-semibold marker:text-terra-text">
             {written.questions.map((q, i) => (
               <li key={i}>{withFiguresBold(q)}</li>
             ))}
@@ -241,21 +245,21 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       ) : null}
 
       {story.options && story.options.length > 0 ? (
-        <section>
+        <section className="border-t border-warm-300 pt-6">
           <Kicker>Options and what each would mean</Kicker>
           <OptionsSideBySide story={story} notes={notes} />
-          <p className="mt-2 text-xs text-warm-600">Hamilton sets out the options; the choice is your team&apos;s.</p>
+          <p className="mt-2 text-[13px] text-warm-600">Hamilton sets out the options; the choice is your team&apos;s.</p>
         </section>
       ) : null}
 
       {story.watch.length > 0 ? (
-        <section>
+        <section className="border-t border-warm-300 pt-6">
           <Kicker>What would change this</Kicker>
           <FactList facts={story.watch} notes={notes} />
         </section>
       ) : null}
 
-      {nextSteps ? <div className="flex flex-wrap justify-end gap-2">{nextSteps}</div> : null}
+      {nextSteps ? <div className="flex flex-wrap gap-2">{nextSteps}</div> : null}
 
       <SourceList notes={notes} />
     </article>
