@@ -297,6 +297,14 @@
   border-color: #d8cbb8;
 }
 
+/* In-page jumps (section navs, "On this page", error-summary links) glide instead of
+   cutting; people who ask for reduced motion keep the instant jump. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fi-reveal {
     animation: none;
