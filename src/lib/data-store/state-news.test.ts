@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  countNewByState,
   isBankingPost,
   mergeStateWire,
   toFeeBills,
@@ -149,5 +150,23 @@ describe("state news shaping", () => {
       // Only the newest bulletin per state, under its plain name; the date is shown beside it.
       ["https://mo1", "Electronic bulletin"],
     ]);
+  });
+});
+
+describe("new since the last visit to My states", () => {
+  it("counts each watched state's items dated after the visit, and nothing for a first visit", () => {
+    const parts = {
+      bills: [
+        { state_code: "CA", identifier: "AB 1", title: "Overdraft", stage: "introduced", stage_on: "2026-10-07", url: null, introduced_on: "2026-10-01" },
+        // An action on the visit's own day is not counted: a bare day is midnight UTC.
+        { state_code: "CA", identifier: "AB 2", title: "NSF", stage: "introduced", stage_on: "2026-10-05", url: null, introduced_on: "2026-10-01" },
+      ] as StateWireBill[],
+      regulators: [
+        { state_code: "CA", title: "Post", link: "https://x/1", published_at: "2026-10-06T09:00:00Z", fee_related: false },
+        { state_code: "TX", title: "Post", link: "https://x/2", published_at: "2026-10-06T09:00:00Z", fee_related: false },
+      ],
+      press: [{ state_code: "CA", headline: "Old", publisher: null, link: "https://x/3", published_at: "2026-10-01T09:00:00Z" }],
+    };
+    expect(countNewByState(parts, { CA: "2026-10-05T12:00:00Z", TX: null })).toEqual({ CA: 2, TX: 0 });
   });
 });
