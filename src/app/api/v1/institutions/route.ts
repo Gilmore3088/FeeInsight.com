@@ -1,3 +1,4 @@
+import { feeDisplayName } from "@/lib/fee-display-name";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -10,6 +11,7 @@ import {
 import { searchInstitutions } from "@/lib/data-store/search";
 import { BENCHMARK_CSV_HEADER, benchmarkCsvRows, getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
+import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { validateApiKey } from "@/lib/api-auth";
 import { checkRateLimitWithTier } from "@/lib/api-rate-limit";
 import { logApiUsage } from "@/lib/api-usage";
@@ -189,7 +191,7 @@ async function handleGET(request: NextRequest) {
     const fees = (await getFeesByInstitution(id))
       .filter((f) => f.review_status !== "rejected")
       .map((f) => ({
-        fee_name: f.fee_name,
+        fee_name: feeDisplayName(f.fee_name, f.fee_category),
         category: f.fee_category,
         amount: f.amount,
         frequency: f.frequency,
@@ -201,9 +203,12 @@ async function handleGET(request: NextRequest) {
       }));
 
     // Federal data: FDIC/NCUA call report quarters and CFPB complaint totals.
-    const [financials, complaints] = await Promise.all([
+    // Fees stated as a rate ("3% of the transaction") come from the rate catalog and are listed
+    // apart from the dollar fees, never pooled with them.
+    const [financials, complaints, rateFees] = await Promise.all([
       getFinancialsByInstitution(id, quarters),
       getComplaintsByInstitution(id),
+      getRateFeesByInstitution(id),
     ]);
 
     logApiUsage(organizationId, anonymousId, "api.v1.institutions.detail", {
@@ -223,6 +228,18 @@ async function handleGET(request: NextRequest) {
         fed_district: inst.fed_district,
         fee_count: fees.length,
         fees,
+        rate_fees: rateFees.map((f) => ({
+          fee_name: f.fee_name,
+          category: f.fee_category,
+          rate_percent: f.rate_percent,
+          rate_min_amount: f.rate_min_amount,
+          rate_max_amount: f.rate_max_amount,
+          rate_basis: f.rate_basis,
+          rate_terms: f.rate_label,
+          frequency: f.frequency,
+          conditions: f.conditions,
+          source_url: f.source_url,
+        })),
         call_reports: financials.map((quarter) => {
           const { institution_id, ...fields } = quarter;
           void institution_id;

@@ -3,6 +3,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 
 import { looksLikePdfUrl } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { otherInstitutionAtHost } from "./other-bank-host";
 
 type SqlTag = typeof sql;
 
@@ -72,8 +73,10 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   {
     institutionId: 27,
     institutionName: "Regions Bank",
-    url: "https://www.regions.com/virtualDocuments/Checking-Pricing-Schedule.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+    // The virtualDocuments copy is Rev. 8/20 (found stale by the accuracy check, 2026-10-09);
+    // regions.com now serves the personal pricing schedule from its media library.
+    url: "https://www.regions.com/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf",
+    givenBy: "web search for the accuracy check's stale Regions schedule, 2026-10-09 02:30",
   },
   {
     institutionId: 30,
@@ -287,16 +290,6 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // "Account Disclosures and Fee Schedule" on mybank.com: Overdraft Fee $42.00/item, a $5.99
-    // Continuous Overdraft Fee per day, NSF Returned Item Fee no charge. Two links came before:
-    // first.bank was First Bank of St. Louis's schedule (taken down as another bank's document,
-    // 2026-10-08 23:15), and the overdraft opt-in form (stored, read) states only "up to $40".
-    institutionId: 118,
-    institutionName: "First United Bank and Trust Company",
-    url: "https://mybank.com/wp-content/uploads/OAC_Account_Disclosures.pdf",
-    givenBy: "the Mac session's signed-out browser for the $10B+ banks with no live overdraft fee, 2026-10-09 00:57",
-  },
-  {
     // schedule of service fees, 2025-03-25.
     institutionId: 142,
     institutionName: "First Commonwealth Bank",
@@ -406,14 +399,16 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // No fee schedule link on file.
     [43, "SouthState Bank, National Association", "https://www.southstatebank.com/PersonalAccountFeeSchedule"],
     [85, "Eastern Bank", "https://www.easternbank.com/media/5301"],
-    // Checking disclosure: "Overdraft Charge ... $25.00", $100 a day. The deposit agreement
-    // read at 15:00 states only the daily cap; this link replaced it at 2026-10-08 16:05.
-    [147, "BancFirst", "https://www.bancfirst.bank/BancFirst/media/Documents/NewDisclosureDocs/BancFirst-Checking-TISA.pdf"],
+    // Personal checking page with its fee table: the checking TISA PDFs return HTTP 404 (Mac
+    // session browser, 2026-10-09 06:46; replaced the TISA PDF link).
+    [147, "BancFirst", "https://www.bancfirst.bank/personal/banking/personal-checking-accounts"],
     [206, "Bankers Trust Company", "https://www.bankerstrust.com/consumer-service-fee-schedule/"],
     [400, "MVB Bank, Inc", "https://mvbbanking.com/wp-content/uploads/2024/03/4.-MVB-Retail-Fee-Schedule-3.31.22-reviewed-2024.pdf"],
     [4966, "Bank Fund Staff Federal Credit Union", "https://bfsfcu.org/documents/Fee_Schedule.pdf"],
     // Link on file was a product, rates or loan page.
-    [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf"],
+    // 2026 public-file Schedule of Fees: overdraft $35, 4 a day; the bl.valley.com links are dead
+    // (Mac session browser, 2026-10-09 06:46).
+    [44, "Valley National Bank", "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/public-file-2026/AAYA,%20Schedule%20of%20Fees,%20Privacy%20Policy.pdf"],
     // Courtesy Pay page: $35 per item (the fee schedule page never read; 2026-10-08 16:05).
     [96, "Beacon Bank and Trust", "https://www.beaconbank.com/personal/courtesy-pay"],
     [300, "Hills Bank and Trust Company", "https://www.hillsbank.com/sites/www.hillsbank.com/files/media/terms-and-conditions-fee-schedule.pdf"],
@@ -429,13 +424,20 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   // built by JavaScript). Links from search results only, so Rosetta's read is the check.
   ...([
     [6671, "Digital Federal Credit Union", "https://www.dcu.org/content/dam/dcu/pdfs/overdraft-payment-service-disclosure.pdf"],
-    [6881, "Mountain America Federal Credit Union", "https://macu.com/about/disclosures/overdraft-privilege"],
-    [8507, "Vystar Federal Credit Union", "https://vystarcu.org/personal/bank/checking-accounts/overdraft-protection"],
+    // Full schedules found by the Mac session browser (2026-10-09 06:46) replaced the overdraft
+    // pages: Mountain America's Truth in Savings (overdraft $25, effective Oct 1, 2026) and
+    // VyStar's Fee Schedule (Courtesy Pay $29).
+    [6881, "Mountain America Federal Credit Union", "https://www.macu.com/media/pdf/truth-in-savings.pdf"],
+    [8507, "Vystar Federal Credit Union", "https://assets.ctfassets.net/kw2oi7dtt7lh/15GlunYoDyqOCbdajKbm8L/ead2cd63d36e69dc275729c8722cba40/Fee_Schedule.pdf"],
     [46, "Banco Popular de Puerto Rico", "https://www.popular.com/assets/pdf/caracteristicas-e-account-en.pdf"],
     [102, "TowneBank", "https://www.townebank.com/member-support/overdraft-protection/"],
     // Search snippets show a per-item overdraft fee on each (2026-10-08 15:00).
     [123, "NBT Bank, National Association", "https://www.nbtbank.com/assets/pdfs/PricingScheduleforProductsandServices.pdf"],
-    [41, "Old National Bank", "https://www.oldnational.com/personal/services/overdraft-solutions/"],
+    // Old National publishes no stand-alone personal fee schedule (its deposit agreement points
+    // to one per account). Its overdraft page (held since 8 Oct: $36 paid item) gives two fees,
+    // under the 3-fee bar; the Everyday Checking page lists the monthly, paper statement and
+    // early-closure fees (replaced the overdraft page link, 2026-10-09 03:50).
+    [41, "Old National Bank", "https://www.oldnational.com/personal/checking/onb-everyday-checking/"],
     [165, "Origin Bank", "https://www.origin.bank/deposit-account-agreement-disclosures.pdf"],
     [7559, "Idaho Central Federal Credit Union", "https://www.iccu.com/file/notices/account-agreement.pdf"],
     // Overdrafts and overdraft fees: $33 each time (replaced the 2023 flyer at 16:05).
@@ -449,11 +451,15 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     [48, "Cadence Bank", "https://cadencebank.com/personal/checking/my-way"],
     [83, "FirstBank", "https://www.efirstbank.com/customer-service/questions-answers.htm"],
     [98, "Centennial Bank", "https://www.my100bank.com/public/userfiles/Disclosures/CEN-SOF.pdf"],
-    [170, "Stock Yards Bank & Trust Company", "https://www.syb.com/overdraft-privilege"],
+    // Account common features: overdraft and NSF $36, effective Apr 2025 (Mac session browser,
+    // 2026-10-09 06:46; replaced the overdraft privilege page).
+    [170, "Stock Yards Bank & Trust Company", "https://www.syb.com/_s3/syb-com/files/document/2014_accountcommonfeatures.pdf?VersionId=FQg8ut0D4z1SQBsXZ.Yj5coelIGU5Y4x"],
     [7464, "Boeing Employees Federal Credit Union", "https://www.becu.org/-/media/Files/PDF/P-6850.pdf?rev=b84f4b81f7564db9ab1706a2a0de02a2&sc_lang=en&hash=FB0646071579AEFCC1F0BC48F4DF21E3"],
     [6394, "First Technology Federal Credit Union", "https://www.firsttechfed.com/-/media/FirstTech-Web/Documents/Terms-And-Conditions-Pdf/account-and-service-fees.pdf"],
     [38, "East West Bank", "https://www.eastwestbank.com/content/dam/ewb-dotcom/docs/CONSUMER_FEE_SCHEDULE.pdf"],
-    [135, "ConnectOne Bank", "https://www.connectonebank.com/about/miscellaneous-fee-schedule"],
+    // Miscellaneous Bank Fees PDF (05/16/26); its $40 overdraft line is business-only (Mac
+    // session browser, 2026-10-09 06:46; replaced the fee schedule page).
+    [135, "ConnectOne Bank", "https://cdn.prod.website-files.com/6645c05fc60bab424a196a46/6765feca5085628577e3ca17_3f3f62ff932e3a48ca59d577b756ca3e_Miscellaneous-Bank-Fees-051626.pdf"],
   ] as const).map(([institutionId, institutionName, url]) => ({
     institutionId,
     institutionName,
@@ -532,7 +538,67 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url,
     givenBy: "Mac session browser check of blocked top-10 banks, 2026-10-09 00:57",
   })),
+  // $10B+ banks with no full fee schedule on file: the Mac session's browser, signed out, found
+  // each bank's own schedule (2026-10-09 06:46). Rosetta's read is the check.
+  ...([
+    // Personal banking fee schedule: NSF/overdraft $35, $175 a day.
+    [34, "Western Alliance Bank", "https://www.westernalliancebancorporation.com/sites/default/files/2026-05/personal-banking-fee-schedule.pdf"],
+    // Personal fee disclosure, effective Sept 2026: overdraft $18.50.
+    [76, "City National Bank of Florida", "https://cdn.prod.website-files.com/6531596c316e0e8e3be7c634/6a9aad21a0fdb5f38af42d3c_CNB%20Personal_Fee_Disclosure%209426%20Final.pdf"],
+    // Personal welcome guide (67 pages): NSF/uncollected funds $35, $175 a day.
+    [124, "Citizens Business Bank, National Association", "https://www.cbbank.com/wp-content/uploads/HBC-Personal-Welcome-Guide_website.pdf"],
+    // Cuenta Libre terms: NSF $15, daily overdraft $5.
+    [144, "Oriental Bank", "https://orientalbank.com/assets/Pdfs/BankAccounts/terms_and_conditions_CUENTA_LIBRE.pdf"],
+    // Fee schedule, rev 3/2025.
+    [4885, "Fourleaf Federal Credit Union", "https://docs.fourleaffcu.com/disclosures/olb/MK-289-fee-schedule-12-2013.pdf"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "Mac session browser check of $10B+ banks with no live overdraft fee, 2026-10-09 06:46",
+  })),
+  {
+    // Market-gap list (2026-10-09): Magellan's paid search proposed this PDF four times on
+    // 7 Oct ("personal deposit account fees including overdraft ($25.00)") but timed out
+    // opening it; the link on file is a page-not-found page.
+    institutionId: 25,
+    institutionName: "The Northern Trust Company",
+    url: "https://www.northerntrust.com/content/dam/northerntrust/pws/nt/documents/wealth-management/banking/disclosures/deposit-account-descriptions-and-fees.pdf",
+    givenBy: "Magellan's paid schedule search (proposed 4 times, 2026-10-07), for the market-gap list 2026-10-09",
+  },
 ];
+
+export interface NoConsumerSchedule {
+  institutionId: number;
+  institutionName: string;
+  reason: string;
+}
+
+/**
+ * Large-deposit banks with no consumer deposit fee schedule to find: their deposits are
+ * wholesale, custody or fee-free online savings. Discovery does not put them first as market
+ * gaps, and the gap ranking leaves them out (2026-10-09). A bank leaves this list when it
+ * publishes a consumer schedule.
+ */
+export const NO_CONSUMER_SCHEDULE: readonly NoConsumerSchedule[] = [
+  {
+    institutionId: 7,
+    institutionName: "Goldman Sachs Bank USA",
+    reason: "Marcus online savings and CDs charge no account fees; web search found no consumer fee schedule (paid web search)",
+  },
+  {
+    institutionId: 10,
+    institutionName: "The Bank of New York Mellon",
+    reason: "Custody and wholesale bank; the only schedule is Pershing's broker-client bank sweep charges; web search found no consumer fee schedule",
+  },
+  {
+    institutionId: 817,
+    institutionName: "The Bank of New York Mellon Trust Company, National Association",
+    reason: "Trust company; same Pershing sweep schedule as BNY; web search found no consumer fee schedule",
+  },
+];
+
+export const NO_CONSUMER_SCHEDULE_IDS: ReadonlySet<number> = new Set(NO_CONSUMER_SCHEDULE.map((bank) => bank.institutionId));
 
 /** A stored copy of the schedule counts as held only when it is this recent. */
 export const HELD_DOCUMENT_DAYS = 30;
@@ -591,6 +657,10 @@ async function insertHandFoundSchedule(
   schedule: Pick<OperatorSchedule, "institutionId" | "url" | "givenBy">,
   run: { runId: number | null; stepId: number | null },
 ): Promise<boolean> {
+  // A person can be fooled by a same-name bank too: First United of Durant, Oklahoma was given
+  // First United of Oakland, Maryland's mybank.com disclosures (2026-10-09). A page on another
+  // institution's own website is that bank's schedule, as in discovery.
+  if (await otherInstitutionAtHost(db, schedule.institutionId, schedule.url)) return false;
   const reason = `Consumer fee schedule given by ${schedule.givenBy}`;
   const inserted = await db`
     INSERT INTO institution_additional_sources
@@ -649,6 +719,8 @@ export async function addHandFoundLink(options: {
   `;
   if (!institution) return { ok: false, error: "Institution not found" };
   const institutionName = String(institution.institution_name);
+  const other = await otherInstitutionAtHost(db, options.institutionId, url);
+  if (other) return { ok: false, error: `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution` };
   const added = await insertHandFoundSchedule(
     db,
     { institutionId: options.institutionId, url, givenBy: options.givenBy },

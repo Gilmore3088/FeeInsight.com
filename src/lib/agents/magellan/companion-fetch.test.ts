@@ -95,6 +95,17 @@ describe("Magellan companion fetch", () => {
     expect(attempt).toContain("blocked_bot");
   });
 
+  it("does not store a bot challenge served in place of the page, and marks it blocked", async () => {
+    const arvest = { ...freedom, url: "https://www.arvest.com/personal/fee-schedule" };
+    const db = createDb([arvest]);
+    const challenge = '<html><head><title>Just a moment...</title></head><body><script src="/cdn-cgi/challenge-platform/x.js"></script></body></html>';
+    const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page(challenge)), vault: null, runId: 7 });
+
+    expect(result).toMatchObject({ fetched: 0, failed: 1 });
+    expect(result.results[0]).toMatchObject({ attemptOutcome: "blocked_bot" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO source_documents"))).toBe(false);
+  });
+
   it("waits for its migration", async () => {
     const fetchImpl = vi.fn();
     const result = await runCompanionFetch({ db: asDb(createDb([freedom], { ready: false })), fetchImpl, vault: null, runId: 7 });
@@ -112,9 +123,32 @@ describe("Magellan companion fetch", () => {
     expect(review.checked).toBe(3);
     expect(review.retired.map((page) => page.companionId)).toEqual([67]);
     expect(review.renamed).toEqual([{ companionId: 51, from: "Features and Fees", to: "Simple Checking Fees" }]);
-    const retired = db.mock.calls.find((call) => templateText(call[0]).includes("SET status = 'rejected'"));
+    const retired = db.mock.calls.find((call) => templateText(call[0]).includes("SET status = 'rejected'") && !templateText(call[0]).includes("institution_sources other"));
     expect(String(retired?.[1])).toMatch(/^not_consumer_fee_page/);
     expect(retired).toContain(67);
+  });
+
+  it("retires a stored page on another institution's own website, even one found by hand", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = templateText(strings);
+      if (sqlText.includes("FROM institution_sources inst, institution_sources other")) {
+        return Promise.resolve([{ id: 2514, institution_id: 118, url: "https://mybank.com/wp-content/uploads/OAC_Account_Disclosures.pdf", account_name: null, other_name: "First United Bank & Trust" }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: null, institutionId: 118 });
+
+    expect(review.retired.map((page) => page.companionId)).toEqual([2514]);
+    const update = db.mock.calls.find((call) => templateText(call[0]).includes("institution_sources other"));
+    const updateText = templateText(update?.[0]).replace(/\s+/g, " ");
+    expect(updateText).toContain("SET status = 'rejected'");
+    expect(updateText).toContain("other.id <> inst.id");
+    expect(updateText).toContain("IS DISTINCT FROM");
+    expect(updateText).not.toContain("found_by_strategy");
+    // Not limited to the lane's state.
+    expect(updateText).not.toContain("inst.state_code");
+    expect(update).toContain("other_bank_host");
   });
 
   it("never retires a schedule found by hand for its link words, and puts back the ones it did", async () => {

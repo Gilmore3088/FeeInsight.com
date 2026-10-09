@@ -23,13 +23,12 @@ import { guideCategories, resolveTokensToText } from "@/lib/guides";
 import {
   loadGuide,
   loadRelatedGuides,
-  loadConsumerGuideSlugs,
 } from "@/lib/guides/source";
 import {
-  getFeeCategoryDetail,
-  getCheapestAndMostExpensive,
-  getDataFreshness,
-} from "@/lib/data-store";
+  getCheapestAndMostExpensiveCached,
+  getDataFreshnessCached,
+  getFeeCategoryDetailCached,
+} from "@/lib/data-store/public-cached-reads";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
@@ -47,8 +46,14 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Nothing is prerendered at build time: each guide renders on its first request and is then
+ * served from cache. Every deploy, preview builds included, used to prerender all ten guides
+ * against the production database with a cold data cache: about 70 sidebar reads in 15
+ * minutes on Oct 9, ten per build.
+ */
 export async function generateStaticParams() {
-  return (await loadConsumerGuideSlugs()).map((slug) => ({ slug }));
+  return [];
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -117,9 +122,12 @@ export default async function GuidePage({ params }: PageProps) {
   const [{ summary, categories: allSummaries }, freshness, primaryDetail, extremes, related] =
     await Promise.all([
       getPublicSnapshot(),
-      getDataFreshness(),
-      getFeeCategoryDetail(guide.primaryCategory),
-      getCheapestAndMostExpensive(guide.primaryCategory, 5),
+      // The shared public cache, as the fee pages read it: a guide rebuilt after a takedown
+      // reuses the reads the first page computed instead of running its own (Oct 9: about
+      // 190 freshness reads an hour against about 8 refreshes).
+      getDataFreshnessCached(),
+      getFeeCategoryDetailCached(guide.primaryCategory),
+      getCheapestAndMostExpensiveCached(guide.primaryCategory, 5),
       loadRelatedGuides(guide),
     ]);
 
@@ -142,7 +150,7 @@ export default async function GuidePage({ params }: PageProps) {
     (c) => c !== guide.primaryCategory,
   );
   const extraDetails = await Promise.all(
-    extraCategories.map((c) => getFeeCategoryDetail(c)),
+    extraCategories.map((c) => getFeeCategoryDetailCached(c)),
   );
   if (comparisonCategories.has(guide.primaryCategory)) {
     breakdowns.set(guide.primaryCategory, {

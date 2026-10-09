@@ -294,4 +294,16 @@ describe("contactsCsv", () => {
     expect(line).toContain('"First Bank, N.A."');
     expect(line).toContain("'=HYPERLINK()");
   });
+
+  it("adds each bank's market coverage, blank when there is none", () => {
+    const row: ProspectContactRow = {
+      institution_id: 7, institution_name: "First Bank", charter_type: "bank", state_code: "TX", city: "Waco", assets_musd: 812,
+      email: "jsmith@firstbank.bank", kind: "person", name: "Jane Smith", title: "CFO", role: "finance",
+      source_url: "https://firstbank.com/leadership", found_at: "2026-10-08T15:30:00.000Z",
+    };
+    const [header, line] = contactsCsv([row], new Map([[7, { share: 0.846, shareOverdraft: 0.6 }]])).trim().split("\n");
+    expect(header.endsWith("market_coverage_pct,market_coverage_overdraft_pct")).toBe(true);
+    expect(line.endsWith(",85,60")).toBe(true);
+    expect(contactsCsv([row]).trim().split("\n")[1].endsWith(",,")).toBe(true);
+  });
 });

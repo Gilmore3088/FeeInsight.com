@@ -9,6 +9,7 @@ import { sql } from "@/lib/data-store/connection";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
 import { getMarketStudyData } from "@/lib/data-store/market-study";
+import { getBranchlessIds, getLiveFeeFacts, summarizeMarketCoverage, type MarketCoverage } from "@/lib/data-store/competitor-coverage";
 import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/hamilton/studies-exhibits/market";
 import { branchNetworkMap, type NetworkCity } from "@/lib/hamilton/branch-network-map";
 import { geoContains } from "d3-geo";
@@ -63,6 +64,8 @@ export interface LocalMarketAnswer {
   unmapped: number;
   /** Each institution's map colour, so the table beside the map uses the same one. */
   colours: Record<number, string>;
+  /** How many of the market's competitors show live fees, and their share of its bank deposits. */
+  coverage?: MarketCoverage | null;
 }
 
 /** The footprint map for the county that holds most of the market, in the report look. */
@@ -216,6 +219,12 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
   );
 
   const own = footprint?.byInstitution[institutionId];
+  const footprintIds = Object.keys(footprint?.byInstitution ?? {}).map(Number).filter((id) => id !== institutionId);
+  const coverage = footprint
+    ? await Promise.all([getLiveFeeFacts(footprintIds), getBranchlessIds(footprintIds)])
+        .then(([live, branchless]) => summarizeMarketCoverage(footprint.byInstitution, institutionId, live, branchless))
+        .catch(() => null)
+    : null;
   return {
     institutionId,
     institutionName: String(inst.institution_name),
@@ -241,5 +250,6 @@ export async function getLocalMarketAnswer(institutionId: number): Promise<Local
     network: responsive((size) => branchNetworkMap(cities, marketCounties, size)),
     unmapped: (ownBranches?.rows ?? []).filter((b) => b.latitude == null || b.longitude == null).length,
     colours: drawn.colours,
+    coverage,
   };
 }

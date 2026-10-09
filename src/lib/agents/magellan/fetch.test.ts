@@ -265,6 +265,19 @@ describe("Magellan agentic fetch", () => {
     expect(db.mock.calls[0]).toContain(MAGELLAN_STALE_LINK_REFETCH_DAYS);
   });
 
+  it("re-fetches a bank with a live fee flagged since its last fetch, in backlog and full runs, ahead of stale links", async () => {
+    const db = createDbMock([]);
+
+    await runMagellanFetch({ runId: 107, db: asFetchDb(db), fetchImpl: vi.fn(), newLinksOnly: true });
+
+    const sqlText = templateText(db.mock.calls[0][0]);
+    expect(sqlText).toContain("pending.kind = 'takedown_pending'");
+    expect(sqlText).toContain("pending_fee.rolled_back_at IS NULL");
+    // Inside the 12-hour window too: the flag is newer than the last fetch.
+    expect(sqlText).toContain("(pending.evidence->>'flagged_at')::timestamptz > inst.last_crawl_at");
+    expect(sqlText.indexOf("THEN 0 ELSE 1 END,\n       inst.last_crawl_at ASC NULLS FIRST")).toBeGreaterThan(sqlText.indexOf("takedown_pending"));
+  });
+
   it("filters fetch candidates by state lane and profile memory", async () => {
     const db = createDbMock([]);
     const fetchImpl = vi.fn();

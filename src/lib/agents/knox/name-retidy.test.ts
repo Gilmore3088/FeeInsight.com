@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { isMessyName, planRetidy, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -83,12 +83,71 @@ describe("retidiedFeeName", () => {
     expect(isMessyName("Bill Payment Service)")).toBe(true);
   });
 
+  it("repairs the cut-off shapes (v6: 292 of 1,125 live cut-off names on 2026-10-09)", () => {
+    // Accuracy's two and Ambler's (in the public sample report): a sentence ending at its own price.
+    expect(retidiedFeeName("Inactive fee: This account may be subject to an Inactive fee of", "dormant_account")).toBe("Inactive fee");
+    expect(retidiedFeeName("to open the account. A Maintenance Service Charge of", "monthly_maintenance")).toBe("Maintenance Service Charge");
+    expect(retidiedFeeName("Our overdraft fee of", "overdraft")).toBe("Overdraft fee");
+    expect(retidiedFeeName("AFTER SUCH TIME YOU WILL BE CHARGE A MONTHLY FEE OF", "monthly_maintenance")).toBe("Monthly Fee");
+    expect(retidiedFeeName("1Accounts will be charged the standard Overdraft fee of", "overdraft")).toBe("Overdraft fee");
+    // The sample report's three (Customers Bank 84015, Wells Fargo 68707, UEFCU 55904).
+    expect(retidiedFeeName("at all times. If you do not, a monthly fee of", "monthly_maintenance")).toBe("Monthly fee");
+    expect(retidiedFeeName("Our overdraft fee for Consumer checking accounts is", "overdraft")).toBe("Overdraft fee");
+    expect(retidiedFeeName("minimum daily balance is required to avoid a monthly minimum balance fee of", "minimum_balance")).toBe("Monthly minimum balance fee");
+    expect(retidiedFeeName("Per hour for assistance with statement reconciliation – with a minimum charge of", "account_research")).toBeNull();
+    // A column header glued on either end, and a condition in parentheses.
+    expect(
+      retidiedFeeName("Charge Return Statement or Dormant Account Monthly Fee (Dormant Account Fee assessed after 12 months of inactivity.) | F", "dormant_account"),
+    ).toBe("Return Statement or Dormant Account Monthly Fee");
+    expect(retidiedFeeName("Fee Wire Transfer In", "wire_domestic_incoming")).toBe("Wire Transfer In");
+    expect(retidiedFeeName("Charge Stop Payment Fee", "stop_payment")).toBe("Stop Payment Fee");
+    // A condition clause, a dangling range or unit, a list bullet, a sentence cell.
+    expect(retidiedFeeName("service charge per month if balance drops below", "monthly_maintenance")).toBe("Service charge");
+    expect(retidiedFeeName("Service Charge Charged If Minimum Balance Is Not Met", "monthly_maintenance")).toBe("Service Charge");
+    expect(retidiedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
+    expect(retidiedFeeName("Late Fee | Up to", "late_payment")).toBe("Late Fee");
+    expect(retidiedFeeName("NSF fee (ACH, ATM, or check) - per", "nsf")).toBe("NSF fee (ACH, ATM, or check)");
+    expect(retidiedFeeName("+Returned Item Fee – per item returned", "deposited_item_return")).toBe("Returned Item Fee – per item returned");
+    expect(retidiedFeeName("Stop Payment CU Check | Charged when the CU places a stop payment on a CU issued check prior to 10 business days from is", "stop_payment")).toBe(
+      "Stop Payment CU Check",
+    );
+    expect(retidiedFeeName("Closing of an account | If an account is closed within 6 months of the opening date, a service charge of", "early_closure")).toBe(
+      "Closing of an account",
+    );
+  });
+
+  it("keeps a cut-off name that no rule can turn into a fee's name (v6)", () => {
+    expect(retidiedFeeName("Charge Back Fee", "deposited_item_return")).toBeNull();
+    expect(retidiedFeeName("Charge Backs (Deposited Items Returned)", "deposited_item_return")).toBeNull();
+    expect(retidiedFeeName("Fee Amount", "late_payment")).toBeNull();
+    expect(retidiedFeeName("GUASFCU charges a", "check_image")).toBeNull();
+    expect(retidiedFeeName("If your card is lost/stolen, you may receive a replacement card for a fee of", "card_replacement")).toBeNull();
+    expect(retidiedFeeName("Dormant Account: Checking accounts are considered dormant when inactive for a period of one (1) year.", "dormant_account")).toBeNull();
+    expect(retidiedFeeName("+ Inactive for 1 year", "dormant_account")).toBeNull();
+    expect(retidiedFeeName("Fee if acct. closed within 3 months opening", "early_closure")).toBeNull();
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
+    expect(retidiedFeeName("Overdraft – paid per day per account", "overdraft")).toBeNull();
   });
 });
 
 describe("isMessyName", () => {
+  it("matches the v6 cut-off shapes", () => {
+    for (const name of [
+      "+ drilling cost",
+      "Fee Wire Transfer In",
+      "Our overdraft fee of",
+      "Service Charge if balance falls below",
+      "Late Fee | Up to",
+      "You will be charged a monthly service fee of",
+    ]) {
+      expect(isMessyName(name), name).toBe(true);
+    }
+    expect(isMessyName("Charge Back Fee")).toBe(false);
+  });
+
   it("matches joined cells, a dangling lead-in and a run-on", () => {
     expect(isMessyName("Stop Payment | Item")).toBe(true);
     expect(isMessyName("Replacement card fee of")).toBe(true);
@@ -132,5 +191,82 @@ describe("planRetidy", () => {
     const plan = planRetidy([fee({})], [text], [fee({}), twin]);
     expect(plan.renames).toHaveLength(0);
     expect(plan.skipped.same_name_live).toBe(1);
+  });
+});
+
+describe("v7: stored names Knox v57/v60 would read differently", () => {
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("puts a cut threshold figure back from the fee's own text (101115, 102568)", () => {
+    expect(restoreStrippedAmount("Cashier's Checks ( and Over)", ["Cashier's Checks ($10,000.01 and Over) | $10.00"])).toBe(
+      "Cashier's Checks ($10,000.01 and Over)",
+    );
+    expect(
+      restoreStrippedAmount("Inactive and Low Balance Account (Inactive for 12 months and balances of less than )", [
+        "Inactive and Low Balance Account (Inactive for 12 months and balances of less than $500.00) $5.00",
+      ]),
+    ).toBe("Inactive and Low Balance Account (Inactive for 12 months and balances of less than $500.00)");
+    expect(restoreStrippedAmount("Classic Money Market Account (balance below", ["Classic Money Market Account (balance below $1,000) | $5.00"])).toBe(
+      "Classic Money Market Account (balance below $1,000)",
+    );
+    expect(restoreStrippedAmount("Cashier's Checks ( and Over)", ["Cashier's Checks and Over $10.00"])).toBeNull();
+    expect(restoreStrippedAmount("Stop Payment", ["Stop Payment $30"])).toBeNull();
+  });
+
+  it("renames a stored name with its threshold back, and only while it traces", () => {
+    const row = fee({ canonical_fee_key: "cashiers_check", fee_name: "Cashier's Checks ( and Over)", amount: 10 });
+    expect(isMessyName(row.fee_name)).toBe(true);
+    expect(planRetidy([row], text("Cashier's Checks ($10,000.01 and Over) | $10.00")).renames.map((rename) => rename.newName)).toEqual([
+      "Cashier's Checks ($10,000.01 and Over)",
+    ]);
+  });
+
+  it("drops a \"Name\" column label (Maple FCU)", () => {
+    const rows = ["Stop Payment", "NSF", "Tax Levy"].map((name, index) =>
+      fee({ fee_published_id: index + 1, canonical_fee_key: "stop_payment", fee_name: `Name ${name}`, amount: 25 + index }),
+    );
+    const page = text("Name Stop Payment | Fee $25.00\nName NSF | Fee $26.00\nName Tax Levy | Fee $27.00");
+    expect(planRetidy([rows[0]], page, rows).renames[0]?.newName).toBe("Stop Payment");
+    expect(isMessyName("Name Change Fee")).toBe(false);
+  });
+
+  it("drops a leading \"Otherwise,\" only when what is left is a name", () => {
+    const page = text("Otherwise, a monthly service fee of $6.95.\nOtherwise, the monthly service charge is only $15.00.");
+    const named = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "Otherwise, a monthly service fee", amount: 6.95 });
+    const sentence = fee({ fee_published_id: 2, canonical_fee_key: "monthly_maintenance", fee_name: "Otherwise, the monthly service charge is only", amount: 15 });
+    expect(planRetidy([named, sentence], page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[1, "Monthly service fee"]]);
+  });
+
+  it("drops a dot leader left on a stored name (Wildfire 14754)", () => {
+    expect(isMessyName("ATM Adjustment ......................................................")).toBe(true);
+    expect(isMessyName("Stop Payment…………..……….")).toBe(true);
+    expect(isMessyName("ATM Adjustment")).toBe(false);
+    const atm = fee({ canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment ......................................................", amount: 5 });
+    const leader = fee({ fee_published_id: 2, canonical_fee_key: "stop_payment", fee_name: "Stop Payment…………..……….", amount: 30 });
+    const page = text("ATM Adjustment ...................................................... $5.00\nStop Payment…………..………. $30.00");
+    expect(planRetidy([atm, leader], page).renames.map((rename) => rename.newName)).toEqual(["ATM Adjustment", "Stop Payment"]);
+  });
+
+  it("drops an account heading read onto another fee's name, but never a business one", () => {
+    const skip = fee({ canonical_fee_key: "skip_a_pay", fee_name: "PERSONAL CHECKING ACCOUNT FEES | Skip-a-Pay", amount: 35 });
+    const box = fee({
+      fee_published_id: 2,
+      canonical_fee_key: "safe_deposit_box",
+      fee_name: "Freedom Checking: Pinnacle Checking: Safe Deposit Box Rental begins at",
+      amount: 12,
+    });
+    const page = text("LOAN FEES\nSkip-a-Pay | $35.00\nSafe Deposit Box Rental begins at $12.00");
+    const renames = planRetidy([skip, box], page).renames.map((rename) => rename.newName);
+    expect(renames[0]).toBe("Skip-a-Pay");
+    expect(renames[1]).toMatch(/^Safe Deposit Box Rental/);
+    // Hamilton's business_schedule check reads a leading "Business" on a name with no "|" or ":":
+    // a rename keeps it there, and a heading glued on with "|" still goes (Dirigo 45029).
+    const glued = fee({ fee_published_id: 3, canonical_fee_key: "skip_a_pay", fee_name: "BUSINESS CHECKING ACCOUNT FEES | Skip-a-Pay", amount: 35 });
+    expect(planRetidy([glued], text("Skip-a-Pay | $35.00")).renames.map((rename) => rename.newName)).toEqual(["Skip-a-Pay"]);
+    const business = fee({ fee_published_id: 4, canonical_fee_key: "minimum_balance", fee_name: "Business Checking (per month if average daily balance falls below $500)", amount: 10 });
+    expect(planRetidy([business], text("Business Checking (per month if average daily balance falls below $500) $10.00")).renames).toEqual([]);
+    // A monthly fee's account heading is its name.
+    const monthly = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "Gold Checking: Monthly Fee", amount: 10 });
+    expect(planRetidy([monthly], text("Gold Checking: Monthly Fee $10.00")).renames).toEqual([]);
   });
 });

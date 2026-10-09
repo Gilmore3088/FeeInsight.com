@@ -164,8 +164,18 @@ function longLineParts(line: string): string[] {
   const parts = line.split(LONG_LINE_SPLIT);
   const cells = line.split("|").map((cell) => cell.trim());
   const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
-  return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
+  if (title && PRICE_CELL.test(cells[1])) return [...parts, `${title} | ${cells[1]}`];
+  // A table row whose details column runs long ("| Overdraft (OD) - Paid Item | A fee may be
+  // charged ... | $17.00 | per item |", Arvest): split at its sentences, the name and the price
+  // land in different parts, so the row is also read without its long cells.
+  const filled = cells.filter(Boolean);
+  const short = filled.filter((cell) => cell.length <= TABLE_CELL_MAX_LENGTH);
+  if (filled.length >= 3 && short.length >= 2 && short.length < filled.length && short[0] === filled[0]) {
+    return [...parts, short.join(" | ")];
+  }
+  return parts;
 }
+const TABLE_CELL_MAX_LENGTH = 80;
 
 /** A fee card's name field ("Fee TypeCheckOK Fee", "Fee Name: Rush Order") and its price field ("Fee$5.00"). */
 const CARD_NAME = /^\s*fee\s*(?:type|name)\s*:?\s*(?=[A-Za-z])([^|]+)$/i;
