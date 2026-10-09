@@ -54,7 +54,7 @@ const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|yea
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
 const PRONOUN = /\b(?:i|we|you|my|our|your|will|would|may|must|shall)\b/i;
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
-const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|receive|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
+const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
 const SENTENCE_END = /\b(?:of|to|from|for|at|is|and|or|with|by|a|an|the|per|than|below|above|up to|each)$/i;
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
@@ -207,7 +207,8 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
 export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 6 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
-export const NAME_RETIDY_INSTITUTION_LIMIT = 40;
+// 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
+export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
 
 export type RetidySkip = "no_better_name" | "would_not_trace" | "category_guard" | "same_name_live";
 

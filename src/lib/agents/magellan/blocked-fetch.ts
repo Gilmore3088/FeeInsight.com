@@ -168,6 +168,10 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
          OR (ias.status IN ('found', 'fetched') AND (
            SELECT CASE
                     WHEN plain.outcome IN ('http_403', 'blocked_bot') THEN TRUE
+                    -- One timeout is enough for a page a person found: Northern Trust's deposit
+                    -- fee PDF times out on this network every time (2026-10-07 and 2026-10-09),
+                    -- and a plain retry waits a day.
+                    WHEN plain.outcome = 'timeout' AND ias.found_by_strategy = ${OPERATOR_SCHEDULE_STRATEGY.strategy} THEN TRUE
                     WHEN plain.outcome = 'timeout' THEN COALESCE(ias.fetch_failures, 0) >= ${BLOCKED_TIMEOUT_MIN_FAILURES}
                     ELSE FALSE
                   END

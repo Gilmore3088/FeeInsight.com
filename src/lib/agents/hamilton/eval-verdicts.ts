@@ -30,6 +30,11 @@ type SqlTag = typeof sql;
  *   - two fees on one line published as one ("Wire Domestic In/Out $10/$20"): the name pairs two
  *     directions or scopes and the line Knox read carries two prices, so the one published is at
  *     best half right (v3; 3 live on Oct 9).
+ *   - a price inside the name that is not the published amount ("Courtesy Pay (Paid Overdraft)
+ *     Fee .. . . .$35.005" at $50: the $50 was the next cell's box rent; UAT, Oct 9). The name
+ *     says what the fee costs, so the amount is in doubt (v4, `price_in_name`). The same shape at
+ *     publish is `publish_hold:price_in_name`; this is the live-row twin, because a hold acts
+ *     only on a row not yet live.
  *
  * Three shapes are flagged, never taken down (v3): each writes one `pipeline_feedback` row per
  * fee (weight 0.5, a judgement, not proof) that a report or a later rule can read:
@@ -50,7 +55,7 @@ type SqlTag = typeof sql;
  * Knox's learning reads what was wrong.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 3;
+export const EVAL_VERDICT_VERSION = 4;
 const EVAL_REASON_PREFIX = "eval_critical";
 const RULE_REASON_PREFIX = "not_a_fee";
 const ROLLBACK_LIMIT = 500;
@@ -151,6 +156,16 @@ const WIRE_KEYS = new Set(["wire_domestic_incoming", "wire_domestic_outgoing", "
 const WIRE_SCOPE_A = /\b(domestic|incoming|in)\b/i;
 const WIRE_SCOPE_B = /\b(international|foreign|outgoing|out)\b/i;
 const PRICE = /\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/g;
+/** A price printed in a fee's name; a footnote digit glued to the cents ("$35.005") is dropped. */
+const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
+
+/** The price a fee's name states, or null when it states none. Pure. */
+export function priceInName(feeName: string | null | undefined): number | null {
+  const match = feeName ? PRICE_IN_NAME.exec(feeName) : null;
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(value) ? value : null;
+}
 
 /** How many distinct dollar prices a schedule line carries. Pure. */
 export function distinctPrices(text: string | null | undefined): number {
@@ -158,13 +173,14 @@ export function distinctPrices(text: string | null | undefined): number {
   return new Set(Array.from(text.matchAll(PRICE), (match) => Number(match[1].replace(/,/g, "")))).size;
 }
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line";
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
   waiver_sentence: "not_a_fee",
   merchant_payer: "wrong_payer",
   two_fees_one_line: "wrong_amount",
+  price_in_name: "wrong_amount",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -172,6 +188,7 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   waiver_sentence: "The condition that waives a fee, or the balance that avoids it, published as a $0 fee",
   merchant_payer: "A fee the merchant or payee pays, published as the account holder's fee",
   two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
+  price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
@@ -182,6 +199,10 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
   if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
+  if (amount != null) {
+    const stated = priceInName(name);
+    if (stated != null && Math.abs(stated - amount) > 0.005) return "price_in_name";
+  }
   return null;
 }
 
@@ -273,6 +294,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
+            OR fp.fee_name ~ '\\$\\s?[0-9]'
             OR fp.fee_name ~* '\\yin\\s*/\\s*out\\y|\\yout\\s*/\\s*in\\y|incoming\\s*/\\s*outgoing|outgoing\\s*/\\s*incoming|domestic\\s*/\\s*international|international\\s*/\\s*domestic'
             OR fp.fee_name ~* 'non[- ]?(customer|member|account ?holder)s?\\y|\\ynot\\s+a\\s+(customer|member)\\y|\\yfor\\s+non-?(members|customers)\\y|non-?clients?\\y'
             OR (fp.canonical_fee_key LIKE 'wire\\_%' AND fr.conditions ~ '\\$.*\\$'))

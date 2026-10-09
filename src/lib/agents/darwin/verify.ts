@@ -8,6 +8,8 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
+import { settledFrequency } from "@/lib/fee-frequency";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -25,6 +27,7 @@ import {
   isExplicitZeroFee,
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
+  CATEGORY_AMOUNT_ENVELOPES,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
@@ -53,6 +56,13 @@ type SqlTag = typeof sql;
 // re-selects every decided row, and rows once held back as `duplicate_in_batch` would
 // then be verified as second copies of an already verified fee (only `fee_raw_id` is unique).
 export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } as const;
+/**
+ * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
+ * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency
+ * contradicted it or was never stated there: "$1.00 per withdrawal in excess of six per month"
+ * read as monthly is charged per item (held excess-withdrawal rows, Oct 9).
+ */
+export const FREQUENCY_SETTLED_FLAG = "darwin_frequency_settled";
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
@@ -355,6 +365,11 @@ async function selectRawFees(
     // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
     // rejected, or one a new re-file rule now places, is not lost.
     const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
+    // A row held outside its category's hand-set amount envelope is re-checked once when
+    // today's envelope would take its amount (the account_research floor went from $5 to $1 on
+    // 2026-10-09 for the returned mail and fax fees pooled there), so an envelope change reaches
+    // the rows it was made for. Learned envelopes move with the data and never re-select.
+    const envelopesParam = `$${params.push(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}`;
     // A row held as an in-batch duplicate under the old URL key is re-checked once when it
     // sits on the bank's current copy and nothing on that same document is verified as the
     // same fee; a row with a verified twin on its own document stays a duplicate. Needs the
@@ -386,6 +401,13 @@ async function selectRawFees(
               AND NOT (
                 pa.detail->>'reason_code' = 'category_mismatch'
                 AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND ${envelopesParam}::jsonb ? (pa.detail->>'canonical_fee_key')
+                AND (pa.detail->>'amount')::numeric
+                    BETWEEN (${envelopesParam}::jsonb->(pa.detail->>'canonical_fee_key')->>'min')::numeric
+                        AND (${envelopesParam}::jsonb->(pa.detail->>'canonical_fee_key')->>'max')::numeric
               )
 ${duplicateRecheck}
          )`);
@@ -452,6 +474,9 @@ export async function insertVerifiedFee(
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags);
+  const stated = options.row.frequency ?? null;
+  const frequency = amount == null ? stated : settledFrequency(excerptOf(options.row.conditions), amount, stated, options.canonicalFeeKey);
+  if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -485,7 +510,7 @@ export async function insertVerifiedFee(
       ${eventId}::uuid,
       ${options.row.fee_name},
       ${amount},
-      ${options.row.frequency},
+      ${frequency},
       'verified',
       ${percent ? "percent" : "flat"},
       ${percent ? ratePercentOf(options.row) : null},

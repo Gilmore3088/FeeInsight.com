@@ -73,8 +73,10 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   {
     institutionId: 27,
     institutionName: "Regions Bank",
-    url: "https://www.regions.com/virtualDocuments/Checking-Pricing-Schedule.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+    // The virtualDocuments copy is Rev. 8/20 (found stale by the accuracy check, 2026-10-09);
+    // regions.com now serves the personal pricing schedule from its media library.
+    url: "https://www.regions.com/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf",
+    givenBy: "web search for the accuracy check's stale Regions schedule, 2026-10-09 02:30",
   },
   {
     institutionId: 30,
