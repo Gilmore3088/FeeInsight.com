@@ -4,7 +4,7 @@ import { withTransaction } from "@/lib/data-store/connection";
 import { applyStripeEvent, recordStripeEvent, type StripeEventEffects } from "@/lib/stripe-webhook";
 import { sendProWelcomeEmail } from "@/lib/email/pro-welcome";
 import { trackServerEvent } from "@/lib/analytics-server";
-import { alertDuplicateReportPayment, deliverPaidReport } from "@/lib/leads/report-paid";
+import { alertDuplicateReportPayment, alertReportRefunded, deliverPaidReport } from "@/lib/leads/report-paid";
 import { headers } from "next/headers";
 import type Stripe from "stripe";
 
@@ -53,6 +53,9 @@ async function handlePOST(req: Request) {
   }
   for (const duplicate of (effects as StripeEventEffects | null)?.reportDuplicate ?? []) {
     await alertDuplicateReportPayment(duplicate);
+  }
+  for (const refunded of (effects as StripeEventEffects | null)?.reportRefunded ?? []) {
+    await alertReportRefunded(refunded);
   }
 
   return new Response(JSON.stringify({ received: true }), { status: 200 });

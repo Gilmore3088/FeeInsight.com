@@ -42,6 +42,26 @@ export async function deliverPaidReport(paid: ReportPaidEffect): Promise<void> {
   }
 }
 
+/** A paid report refunded in full in Stripe: its private link no longer opens. */
+export async function alertReportRefunded(refund: { leadId: number; name: string; email: string; cents: number; chargeId: string }): Promise<void> {
+  try {
+    await sendLeadAlert({
+      subject: `Refunded: report request ${refund.leadId} (${formatUsd(refund.cents)})`,
+      status: { label: "Refunded", tone: "warn" },
+      lines: [
+        `Stripe refunded ${formatUsd(refund.cents)} to ${refund.name} (${refund.email}) for report request ${refund.leadId}.`,
+        "",
+        "The request now reads Refunded and its private report link no longer opens. Nothing was emailed to them.",
+        "",
+        `Stripe charge: ${refund.chargeId}`,
+      ],
+      cta: { label: "Open /admin/leads", href: adminLeadsUrl() },
+    });
+  } catch (error) {
+    console.error("[report-payment] refund alert failed", { leadId: refund.leadId, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 /** A second card payment for a request already paid (two tabs, a resubmit): James refunds it. */
 export async function alertDuplicateReportPayment(duplicate: { leadId: number; cents: number; checkoutSessionId: string }): Promise<void> {
   try {

@@ -59,6 +59,26 @@ function ExpiredPayLink() {
   );
 }
 
+function RefundedPayLink() {
+  return (
+    <div className="min-h-screen bg-[#FAF7F2]">
+      <main className="mx-auto max-w-2xl px-4 pb-24 pt-16 sm:px-6">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
+        <h1 className="mt-2 text-[1.6rem] leading-tight text-[#1A1815]" style={SERIF}>
+          This payment was refunded
+        </h1>
+        <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
+          The report link for this request is closed. Write to{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
+            {CONTACT_EMAIL}
+          </a>{" "}
+          if you&apos;d like it again.
+        </p>
+      </main>
+    </div>
+  );
+}
+
 /**
  * Right after Stripe redirects back, the webhook may not have landed yet. The session id
  * Stripe put in the URL is checked with Stripe directly: paid, and for this request.
@@ -87,6 +107,7 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
   }
   const lead = await getReportPaymentLead(verified.leadId);
   if (!lead || !lead.quoteCents || !lead.quoteInstitutionId) notFound();
+  if (lead.refundedAt) return <RefundedPayLink />;
   const institution = await getInstitutionLabel(lead.quoteInstitutionId);
   if (!institution) notFound();
 

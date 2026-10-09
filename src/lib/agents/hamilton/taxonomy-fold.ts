@@ -311,6 +311,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 849, doc 17455: \"Inactive Account (no activity for 365 days, balances under $50) - monthly fee | $2.00\"" },
   { feePublishedId: 59464, from: "money_order", amount: 10, to: "stop_payment", name: "Stop Payment - Money Order",
     why: "inst 1604, doc 735: under \"Stop Payment Fee:\", \"o Money Order | $10.00\"" },
+  // UAT's paid report snapshot (Oct 9): card re-issues filed as ATM fees.
+  { feePublishedId: 46752, from: "atm_non_network", amount: 4, to: "card_replacement", name: "Debit/ATM Card Reissuance",
+    why: "inst 6371, doc 3645: \"Debit/ATM Card Reissuance | $4.00 each\"" },
+  { feePublishedId: 16698, from: "atm_non_network", amount: 10, to: "card_replacement", name: "ATM/Check Card Re-issuance",
+    why: "inst 338, doc 14541: \"ATM/Check Card Re-issuance | $10 /each\" (a card replacement, not an ATM use fee)" },
 ];
 
 interface HandRow {

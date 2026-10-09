@@ -21,6 +21,7 @@ function lead(overrides: Partial<LeadRow>): LeadRow {
     quote_institution_id: null,
     quote_sent_at: null,
     paid_at: null,
+    refunded_at: null,
     payment_columns: true,
     qualified_at: null,
     qualified_by: null,
