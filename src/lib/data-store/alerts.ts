@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface AlertSubscription {
   id: number;
@@ -114,7 +115,7 @@ export async function getSavedInstitutionFees(
     const r = row as unknown as SavedInstitutionFee;
     return {
       institution_id: Number(r.institution_id),
-      institution_name: r.institution_name,
+      institution_name: institutionDisplayName(r.institution_name),
       state_code: r.state_code,
       amount: r.amount === null || r.amount === undefined ? null : Number(r.amount),
     };

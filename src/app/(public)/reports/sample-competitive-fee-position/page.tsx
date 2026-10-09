@@ -157,6 +157,7 @@ export default async function SampleReportPage() {
           revenue={revenue}
           branches={branches}
           eyebrow={REPORT_OFFER.name}
+          titleAs="h2"
           preparedOn={new Date()}
           contactHref="/contact?source=sample_report"
           actions={

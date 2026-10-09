@@ -16,6 +16,7 @@ import {
 } from "@/lib/institution-quality";
 import { describePlaybook } from "@/lib/agents/learning/notes";
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -269,7 +270,7 @@ export async function getInstitution(
     });
     return {
       id: Number(r.id),
-      institution_name: String(r.institution_name),
+      institution_name: institutionDisplayName(String(r.institution_name)),
       city: r.city ? String(r.city) : null,
       state_code: r.state_code ? String(r.state_code) : null,
       charter_type: r.charter_type ? String(r.charter_type) : null,

@@ -12,6 +12,7 @@ import { journeyForInstitution, journeySchemaReady } from "@/lib/data-store/outr
 import { journeyStage, type JourneyStage } from "@/lib/outreach-journey";
 import { JOURNEY_SCORE } from "./score-label";
 import { OUTREACH_CAMPAIGN } from "./outreach";
+import { searchForScore, summarizeSearch, type SearchResult } from "./search-console";
 
 type SqlTag = typeof sql;
 
@@ -40,6 +41,12 @@ type SqlTag = typeof sql;
  * reported once rather than every week (clear `scored_at` to re-check it once a measure exists).
  * A missing touches table is not a verdict on the item: it stays in line for next week.
  * Items never posted are counted, not scored.
+ *
+ * After the queue, the step reads Google Search Console (`search-console.ts`) into `search`:
+ * clicks, impressions and average position for the 7 days ending 3 days ago (Search Console
+ * lags about 3 days) against the 7 days before, and the top 10 pages by clicks. Without
+ * `GSC_SERVICE_ACCOUNT_JSON` it records `measured: false` with the reason; a failed API call
+ * records the error the same way. It never fails the step and never estimates.
  */
 
 export const SCORE_AFTER_DAYS = 7;
@@ -135,10 +142,27 @@ export interface GrowthScoreResult {
   /** Items older than the window that were never posted, by status: nothing to score yet. */
   notPosted: Record<string, number>;
   reason: string | null;
+  /** Search Console this week vs the week before, or why it was not read. */
+  search: SearchResult;
 }
 
-export async function runGrowthScore(input: { db: SqlTag; runId: number | null; dryRun: boolean }): Promise<GrowthScoreResult> {
-  const result: GrowthScoreResult = {
+type QueueResult = Omit<GrowthScoreResult, "search">;
+
+export async function runGrowthScore(input: {
+  db: SqlTag;
+  runId: number | null;
+  dryRun: boolean;
+  /** Injectable for tests; defaults to the live Search Console read. */
+  readSearch?: () => Promise<SearchResult>;
+}): Promise<GrowthScoreResult> {
+  const queue = await scoreQueue(input);
+  // Read-only, so a dry run reads it too. searchForScore never throws.
+  const search = await (input.readSearch ?? (() => searchForScore()))();
+  return { ...queue, search };
+}
+
+async function scoreQueue(input: { db: SqlTag; runId: number | null; dryRun: boolean }): Promise<QueueResult> {
+  const result: QueueResult = {
     schemaReady: false,
     dryRun: input.dryRun,
     checked: 0,
@@ -211,6 +235,10 @@ export async function runGrowthScore(input: { db: SqlTag; runId: number | null; 
 }
 
 export function summarizeGrowthScore(result: GrowthScoreResult): string {
+  return `${summarizeQueue(result)} ${summarizeSearch(result.search)}`;
+}
+
+function summarizeQueue(result: QueueResult): string {
   if (!result.schemaReady) return `Scored nothing: ${result.reason ?? "queue not ready"}.`;
   if (result.checked === 0) return "No posted item is due a score this week.";
   const linked = result.scored.filter((item) => item.stage === undefined);

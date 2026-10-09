@@ -2,6 +2,7 @@ import { getSql } from "./connection";
 import { financialSourceFilter } from "./financial-sources";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * fdic and ncua rows report dollars in thousands. ffiec rows duplicate the fdic
@@ -123,8 +124,17 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
   // NCUA 5300 income lines are year-to-date: a credit union's quarter is its YTD minus
   // the prior quarter's YTD in the same year (Q1 stands alone). FDIC rows are already
   // quarterly. Summing NCUA YTD as quarters inflated Q2-Q4 credit union income up to 4x.
+  // Only the years the newest quarters fall in are read (plus four spare quarters for a
+  // missing filing period). Whole years, because the NCUA split looks back within a year.
+  // Reading all 768,000 filings since 2010 took 10 s on average, up to 38 s, on Oct 8.
   const rows = await sql.unsafe(
-    `WITH filed AS (
+    `WITH bounds AS (
+       SELECT TO_CHAR(DATE_TRUNC('year', MAX(inf.report_date)::date - MAKE_INTERVAL(months => 3 * ($1::int + 4))),
+                      'YYYY-MM-DD') AS from_date
+         FROM institution_financial_records inf
+        WHERE ${SAME_SCALE_SOURCES}
+     ),
+     filed AS (
        SELECT inf.institution_id,
               inf.source,
               inf.report_date,
@@ -133,7 +143,9 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
               LAG(inf.service_charge_income) OVER w AS prior_amount,
               LAG(inf.report_date::date) OVER w AS prior_rd
          FROM institution_financial_records inf
+         CROSS JOIN bounds
         WHERE ${SAME_SCALE_SOURCES}
+          AND inf.report_date >= bounds.from_date
        WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
                     ORDER BY inf.report_date::date)
      ),
@@ -249,7 +261,7 @@ export async function getTopRevenueInstitutions(
 
     return rows.map((row) => ({
       cert_number: row.cert_number,
-      institution_name: row.institution_name,
+      institution_name: institutionDisplayName(row.institution_name),
       charter_type: row.charter_type,
       report_date: row.report_date,
       service_charge_income: Number(row.service_charge_income),
