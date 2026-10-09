@@ -17,8 +17,8 @@ found 3 records wrong on account or audience while their amounts were right:
 - Hamilton's business-schedule check (`hamilton/business-schedule.ts`) only knew a business fee from
   the document address (`/business-fee-schedule.pdf`). A mixed disclosure at a neutral address passed,
   so a fee whose own name starts "Business" or "Commercial" went live beside the consumer fee. On
-  9 Oct 113 live fees were named that way from neutral addresses; 57 sat beside a consumer fee in
-  the same category at the same bank, 101925 among them.
+  9 Oct 101 live fees were named that way from neutral addresses (names with "|" or ":" left out);
+  51 sat beside a consumer fee in the same category at the same bank, 101925 among them.
 
 **Fix:** this PR.
 - Knox lineup: link lead-ins and lower-case sentences are not account names; `knox.lineup_correct`
@@ -26,7 +26,10 @@ found 3 records wrong on account or audience while their amounts were right:
   and clears a page sentence to no product when the page has no heading. Each change is a logged
   `lineup_corrected` row in `pipeline_feedback`, no deletes.
 - Hamilton: a fee named "Business …" or "Commercial …" counts as business ("Corporate" does not: a
-  corporate check is the official check a consumer buys). It goes through the same second look: flagged
+  corporate check is the official check a consumer buys). A 10-fee spot check against the source
+  text found 3 where "Business" was a heading or column carried into the name ("BUSINESS CHECKING
+  ACCOUNT FEES | Skip-a-Pay", a loan fee; Apex's safe deposit lines), so names with "|" or ":" and
+  "Business day(s)" are left out. It goes through the same second look: flagged
   `takedown_pending` first, archived 12h later only if the consumer fee is still live, restored if the
   consumer fee goes. Only a business document teaches Magellan `wrong_document`; a mixed schedule is
   not a wrong link, so its lesson is the second look's `takedown_confirmed`, which Knox reads.

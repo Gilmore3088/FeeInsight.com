@@ -65,7 +65,9 @@ describe("retireBusinessScheduleFees", () => {
     const result = await retireBusinessScheduleFees(db, options);
     expect(result.rolledBack.map((fee) => [fee.feePublishedId, fee.businessDocument])).toEqual([[1, false]]);
     expect(JSON.stringify(db.mock.calls)).not.toContain("wrong_document");
-    expect(String(db.unsafe.mock.calls[0][0])).toMatch(/fp\.fee_name ~\* '\^\\s\*\(business\|commercial\)\\M'/);
+    const query = String(db.unsafe.mock.calls[0][0]);
+    expect(query).toContain("fp.fee_name ~* '^\\s*(business|commercial)\\M[^|:]*$'");
+    expect(query).toContain("fp.fee_name !~* '^\\s*business\\s+days?\\M'");
   });
 
   it("changes nothing in a dry run", async () => {

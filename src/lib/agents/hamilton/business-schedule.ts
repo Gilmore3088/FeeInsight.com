@@ -35,9 +35,13 @@ export const BUSINESS_SCHEDULE_ROLLBACK_LIMIT = 200;
  * True for a fee whose own name says it is a business price ("Business ATM/Debit Transactions,
  * off premises", "Commercial NSF Fee per item"), read from a disclosure that lists consumer and
  * business fees together (Prosperity 61, live 101925, 9 Oct). "Corporate" is left out: a
- * corporate check is the official check a consumer buys. 113 such live fees on 9 Oct.
+ * corporate check is the official check a consumer buys. A name with "|" or ":" is left out
+ * too: there "Business" is often a heading or column carried in ("BUSINESS CHECKING ACCOUNT
+ * FEES | Skip-a-Pay", Apex's "Business Analysis Checking: replacement, and drilling"), 3 of a
+ * 10-fee spot check on 9 Oct. 101 such live fees then, 51 beside a consumer fee.
  */
-const BUSINESS_NAME_SQL = (column: string) => `${column} ~* '^\\s*(business|commercial)\\M'`;
+const BUSINESS_NAME_SQL = (column: string) =>
+  `(${column} ~* '^\\s*(business|commercial)\\M[^|:]*$' AND ${column} !~* '^\\s*business\\s+days?\\M')`;
 
 /** True for a document address whose path names a business-only schedule (SQL, host removed). */
 const BUSINESS_DOC_SQL = (column: string) =>
