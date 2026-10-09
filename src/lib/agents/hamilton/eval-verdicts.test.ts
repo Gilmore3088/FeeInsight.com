@@ -271,4 +271,29 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(result.rolledBack).toHaveLength(1);
     expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
   });
+
+  it("judges the name before a logged retidy too, so a rename alone does not clear a wrong row (v6, UAT 864)", async () => {
+    const renamed = [
+      // Hand-checked 100161: the retidy dropped the glued prefix; the $0 is still wrong.
+      { fee_published_id: 100161, fee_verified_id: 113967, institution_id: 76, source_document_id: 23020, canonical_fee_key: "cashiers_check", fee_name: "Cashier\u2019s Checks", original_fee_name: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: "0.00" },
+      // A $0 waiver renamed to its fee's name (60387).
+      { fee_published_id: 60387, fee_verified_id: 1, institution_id: 9, source_document_id: 5, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", original_fee_name: "Monthly Service Charge if any of the following qualifications are met", amount: "0.00" },
+      // A rebate renamed to "ATM fee" (13878).
+      { fee_published_id: 13878, fee_verified_id: 2, institution_id: 9, source_document_id: 5, canonical_fee_key: "atm_non_network", fee_name: "ATM fee", original_fee_name: "ATM receipt must be presented for reimbursement of an individual ATM fee of", amount: "5.00" },
+      // A rename of a right row stays live.
+      { fee_published_id: 70200, fee_verified_id: 3, institution_id: 9, source_document_id: 5, canonical_fee_key: "stop_payment", fee_name: "Stop Payment", original_fee_name: "Stop Payment | per item", amount: "30.00" },
+    ];
+    const db = createDb(null);
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(renamed));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result).toMatchObject({ handMatched: 1, ruleFailing: 2, flagged: 3, evalChanged: 0 });
+    expect(result.rolledBack).toEqual([]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("not_a_fee:waiver_sentence");
+    expect(calls).toContain("not_a_fee:rebate");
+    expect(calls).not.toContain("pub:70200");
+    expect(verdictFor({ feePublishedId: 100161, feeName: "Cashier\u2019s Checks", amount: 30, canonicalFeeKey: "cashiers_check", originalFeeName: HAND_CHECKED_VERDICTS[2].feeName })).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("pf.check_name = 'knox.name_retidy' AND pf.kind = 'name_retidied'");
+    expect(evalVerdictFeesSql(false)).toContain("OR retidy.old_name IS NOT NULL");
+  });
 });
