@@ -60,7 +60,7 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
   const mine = institution !== null;
   const compared = rows.filter((r) => r.value !== null).length;
   return (
-    <figure className="overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(26,24,21,0.06),0_12px_32px_-16px_rgba(26,24,21,0.2)] ring-1 ring-[#E8E1D6]">
+    <figure className="flex h-full flex-col overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(26,24,21,0.06),0_12px_32px_-16px_rgba(26,24,21,0.2)] ring-1 ring-[#E8E1D6]">
       <figcaption className="flex items-center justify-between gap-3 border-b border-[#EDE6DB] bg-[#FBF9F5] px-4 py-2.5 sm:px-5">
         <span className="flex items-center gap-2 text-sm font-semibold text-[#1A1815]">
           <span aria-hidden className="h-2 w-2 rounded-full bg-[#C44B2E]" />
@@ -122,7 +122,7 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
         ))}
       </ul>
 
-      <div className="border-t border-[#EDE6DB] bg-[#FBF9F5] px-4 py-2.5 text-xs leading-relaxed text-[#6B6255] sm:px-5">
+      <div className="mt-auto border-t border-[#EDE6DB] bg-[#FBF9F5] px-4 py-2.5 text-xs leading-relaxed text-[#6B6255] sm:px-5">
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden className="inline-block h-2 w-5 rounded-full bg-[#D6CBBB]" /> Middle half of institutions

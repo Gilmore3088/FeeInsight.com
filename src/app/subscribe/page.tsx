@@ -15,7 +15,7 @@ import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { ProPillars, WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
+import { WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
 import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
 import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
 import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
@@ -29,6 +29,10 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { compareSelectedInstitutionFees } from "@/lib/hamilton/report-evidence";
 import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { PricingJump } from "./pricing-jump";
+import { ShowcasePillars, ShowcaseProvider, ShowcaseStage } from "./showcase";
+import { AnalyzeDemo, type AnalyzeScenario } from "./analyze-demo";
+import { MonitorPreview, ReportPreview, type MonitorChange } from "./example-panels";
+import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
@@ -209,6 +213,37 @@ async function benchmarkRows(institutionId: number | null): Promise<BenchmarkRow
   return [...headline, ...more, ...rest].slice(0, BENCHMARK_ROWS);
 }
 
+/** The Analyze example's question: overdraft a few dollars under the live national median. */
+async function analyzeScenario(): Promise<AnalyzeScenario | null> {
+  const national = await getNationalIndexCached().catch(() => []);
+  const entry = national.find((e) => e.fee_category === "overdraft");
+  if (!entry || entry.median_amount === null || entry.institution_count < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
+  const median = Number(entry.median_amount);
+  if (!(median > 0)) return null;
+  const price = median >= 10 ? Math.round(median) - 5 : Math.round(median * 80) / 100;
+  return {
+    feeLabel: "Overdraft",
+    price,
+    median,
+    p25: entry.p25_amount === null ? null : Number(entry.p25_amount),
+    p75: entry.p75_amount === null ? null : Number(entry.p75_amount),
+    institutions: entry.institution_count,
+  };
+}
+
+/** The Monitor example's rows: the newest like-for-like published fee changes. */
+async function monitorChanges(): Promise<MonitorChange[]> {
+  const events = await getFeeChangeEvents({ limit: 3 }).catch(() => []);
+  return events.map((e) => ({
+    id: e.id,
+    institution: e.institution_name,
+    feeLabel: categoryLabel(e.fee_category),
+    oldAmount: e.old_amount,
+    newAmount: e.new_amount,
+    changedAt: e.changed_at,
+  }));
+}
+
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
@@ -233,7 +268,12 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const [summary, wire] = await Promise.all([getPublicStatsSummary(), wirePreviewData()]);
+  const [summary, wire, changes, scenario] = await Promise.all([
+    getPublicStatsSummary(),
+    wirePreviewData(),
+    monitorChanges(),
+    analyzeScenario(),
+  ]);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
   const checkoutRequested = params.checkout === "1";
@@ -324,7 +364,25 @@ export default async function SubscribePage({
   const entryPoint = entry.page ?? "direct";
   const benchmarkInstitution = selection?.institutionId && pricingInstitution ? chosenLabel : null;
 
+  // The hero image steps through one example per capability (James, 9 Oct 2026).
+  const showcase =
+    benchmark.length > 0 && scenario ? (
+      <ShowcaseStage
+        panels={[
+          <BenchmarkPreview key="benchmark" institution={benchmarkInstitution} rows={benchmark} />,
+          <AnalyzeDemo key="analyze" scenario={scenario} />,
+          <MonitorPreview
+            key="monitor"
+            changes={changes}
+            wire={wire.lead ? { source: wire.lead.source, title: wire.lead.title, detail: wire.lead.detail } : null}
+          />,
+          <ReportPreview key="report" />,
+        ]}
+      />
+    ) : null;
+
   return (
+    <ShowcaseProvider autoCycle={benchmarkInstitution === null} entry={entryPoint}>
     <div className="min-h-screen bg-[#FAF7F2]">
       <ConsumerNav />
       <main id="main-content">
@@ -386,11 +444,7 @@ export default async function SubscribePage({
                 Find your institution &amp; see pricing
               </PricingJump>
             </div>
-            {benchmark.length > 0 && (
-              <div className="mt-8">
-                <BenchmarkPreview institution={benchmarkInstitution} rows={benchmark} />
-              </div>
-            )}
+            {showcase && <div className="mt-8">{showcase}</div>}
           </div>
 
           <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1 lg:self-start">
@@ -432,7 +486,7 @@ export default async function SubscribePage({
             One platform. Four ways to understand your market.
           </h2>
           <div className="mt-8 sm:mt-10">
-            <ProPillars />
+            <ShowcasePillars interactive={showcase !== null} />
           </div>
         </div>
       </section>
@@ -477,5 +531,6 @@ export default async function SubscribePage({
       <CustomerFooter />
       <SearchModal />
     </div>
+    </ShowcaseProvider>
   );
 }

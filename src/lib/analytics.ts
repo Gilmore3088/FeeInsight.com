@@ -24,6 +24,8 @@ export type AnalyticsEvent =
   | "pricing_tier_selected"
   /** The buyer switched between annual and monthly billing on /subscribe. */
   | "billing_frequency_selected"
+  /** The buyer opened one capability's example (Benchmark, Analyze, Monitor, Report) on /subscribe. */
+  | "subscribe_example_viewed"
   /** The welcome page after Stripe returns with success=true. */
   | "checkout_complete"
   | "upgrade_click"
