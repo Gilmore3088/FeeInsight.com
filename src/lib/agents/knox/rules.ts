@@ -2,7 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { CHECKBOOK_RECONCILIATION, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -211,6 +211,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "atm_international",
     pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
+  // v59: a cross-border banking bundle or package is an account; its fee is the account's (`CROSS_BORDER_BUNDLE`).
+  { key: "monthly_maintenance", pattern: CROSS_BORDER_BUNDLE },
   // v21: plural "Foreign Transactions" (a bare "(international transactions)" is often a
   // neighbouring column's note), and the other names banks give the card's
   // currency fee ("International Point of Sale Fee", "Cross-Border", "International Service

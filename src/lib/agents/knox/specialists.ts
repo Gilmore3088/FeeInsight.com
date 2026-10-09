@@ -48,7 +48,9 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
 // v57: a long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
 // and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest, Old National).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 57 } as const;
+// v59: a "Cross-Border Banking" bundle or package is an account, so its fee is the account's
+// maintenance fee, not the card's currency fee (`CROSS_BORDER_BUNDLE`; RBC, TD, BMO).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 59 } as const;
 
 export interface SpecialistRun {
   strategy: string;
