@@ -640,6 +640,8 @@ describe("v15: a rename never drops a condition, and v14's trims get theirs back
     expect(restoredName("Please note that after 180 days of inactivity, you will be charged a monthly inactivity fee", "Monthly inactivity fee")).toBeNull();
     expect(restoredName("service charge if minimum balance is or less", "Service charge", "monthly_maintenance")).toBeNull();
     expect(restoredName("Monthly fee if account balance falls", "Monthly fee", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Service Charge if average balance <", "Service Charge", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Monthly Service Charge If Minimum", "Monthly Service Charge", "monthly_maintenance")).toBeNull();
     expect(restoredName("Premier Checking: Printed Statements", "Printed Statements", "paper_statement")).toBe("Premier Checking: Printed Statements");
   });
 
