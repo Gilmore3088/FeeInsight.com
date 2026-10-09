@@ -2,6 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -84,8 +85,8 @@ interface FeePattern {
 /**
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
- * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
- * excess-activity fees -> account research; collection items and foreign checks -> collection
+ * Each maps to the category the taxonomy already gives the fee (returned mail and
+ * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
  * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
@@ -94,6 +95,9 @@ interface FeePattern {
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
  */
 export const FOLDED_PATTERNS: FeePattern[] = [
+  // A fax service is document reproduction since Oct 9 (one home for fax and copies, as the
+  // fold has it); fax as the way a wire, payoff or closing is sent stays below.
+  { key: "document_reproduction", pattern: FAX_SERVICE },
   {
     key: "account_research",
     pattern:
@@ -289,6 +293,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
   { key: "dormant_account", pattern: /\b(dorman(?:t|cy)|inactiv(?:e|ity)|escheat\w*|abandoned)\b/i },
+  // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+  { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",

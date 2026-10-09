@@ -41,7 +41,9 @@ import { settledFrequency } from "@/lib/fee-frequency";
 // v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
 // v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
 // v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 52 } as const;
+// v53: a fax service is document reproduction, the fold's home for it (`FAX_SERVICE`).
+// v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 54 } as const;
 
 export interface SpecialistRun {
   strategy: string;

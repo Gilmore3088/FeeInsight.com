@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -76,7 +76,20 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(ruleFor("monthly_maintenance", "Maintenance fee waived for students under age 25", 0)).toBeNull();
   });
 
+  it("reads a price in the name that is not the amount as a wrong amount (v4, UAT row 100439)", () => {
+    expect(ruleFor("overdraft", "Courtesy Pay (Paid Overdraft) Fee .. . . .$35.005", 50)).toBe("price_in_name");
+    expect(ruleFor("overdraft", "Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", 50)).toBe("price_in_name");
+    expect(ruleFor("safe_deposit_box", "Safe Deposit Box 3x5 $1,250 deductible", 25)).toBe("price_in_name");
+    // The same price in the name is only glue; no price in the name says nothing.
+    expect(ruleFor("overdraft", "Courtesy Pay Fee…..$35.005", 35)).toBeNull();
+    expect(ruleFor("overdraft", "Courtesy Pay Fee", 50)).toBeNull();
+    expect(priceInName("Fee $1,250.50 each")).toBe(1250.5);
+    expect(priceInName("Stop Payment")).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("fp.fee_name ~ '\\$\\s?[0-9]'");
+  });
+
   it("reads the eval's rows and the rule candidates, scoped to a bank when asked", () => {
+
     expect(evalVerdictFeesSql(false)).toContain("fp.fee_published_id = ANY($1::bigint[])");
     expect(evalVerdictFeesSql(false)).not.toContain("$2");
     expect(evalVerdictFeesSql(true)).toContain("fp.institution_id = $2");

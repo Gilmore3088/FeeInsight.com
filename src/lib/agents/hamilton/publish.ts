@@ -23,7 +23,7 @@ import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
-import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
+import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 
 type SqlTag = typeof sql;
 
@@ -605,13 +605,11 @@ export function normalizedFeeName(name: string | null | undefined): string {
  */
 const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/;
 export function nameBeforeLeaders(name: string): string {
-  const cut = name.split(LEADER_OR_PRICE)[0].replace(/[\s:;,\-–—|]+$/u, "").trim();
+  const cut = name.split(LEADER_OR_PRICE)[0].replace(/[\s:;,.\-–—|]+$/u, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 
 /** A dollar price inside a name; a third decimal is a footnote mark printed onto it ("$35.005"). */
-const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
-
 /**
  * Why a verified row is held at publish for its name, or null: a name rule the eval takes live
  * fees down for (`ruleFor`: a waiver or no-fee sentence, a rebate, a merchant's fee, two fees on
@@ -620,15 +618,19 @@ const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/;
  * the rows the guard re-queue step passed on 2026-10-09. The row is retired with
  * `publish_hold:<code>`; no row is deleted.
  */
+const ADDON_PRICE_NAME = /(?:\bplus|\band|\+)\s*[(\s]*$/i;
 export function publishNameHold(name: string, canonicalKey: string, amount: number | null): { code: string; reason: string } | null {
   const rule = ruleFor(canonicalKey, name, amount);
+  // The price-in-name rule keeps its own hold code (PR 797); the eval check is its live-row twin.
+  if (rule === "price_in_name") return { code: rule, reason: `Price in name ($${priceInName(name)?.toFixed(2)}) is not the amount ($${amount?.toFixed(2)})` };
   if (rule) return { code: `name_rule:${rule}`, reason: `Name rule (${rule}): ${RULE_WHY[rule]}` };
-  const price = PRICE_IN_NAME.exec(name);
-  if (price && amount != null) {
-    const value = Number(price[1].replace(/,/g, ""));
-    if (Number.isFinite(value) && Math.abs(value - amount) > 0.005) {
-      return { code: "price_in_name", reason: `Price in name ($${price[1]}) is not the amount ($${amount.toFixed(2)})` };
-    }
+  // "Research Fee (plus" at $1: the price after "plus" is added to the fee's own price ($50 per
+  // hour on that line), so the amount is not the fee.
+  if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
+  // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
+  // ("GUASFCU charges a") is not published as it is.
+  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
+    return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   return null;
 }

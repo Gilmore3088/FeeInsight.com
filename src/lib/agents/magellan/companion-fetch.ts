@@ -181,7 +181,8 @@ export async function reviewStoredCompanions(
          = regexp_replace(lower(substring(ias.url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
        AND regexp_replace(lower(substring(COALESCE(inst.website_url, '') from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
          IS DISTINCT FROM regexp_replace(lower(substring(ias.url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
-       AND (${options.stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode})
+       -- Every state, not just this lane's: the query is cheap, and waiting for Oklahoma's lane
+       -- left First United's three pages live for hours after the rule shipped (2026-10-09).
        AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
     RETURNING ias.id, ias.institution_id, ias.url, ias.account_name, other.institution_name AS other_name
   `;
