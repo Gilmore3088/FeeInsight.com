@@ -864,4 +864,12 @@ describe("checkFeeCategory", () => {
     expect(guard("od_protection_transfer", "Overdraft Protection Transfer", "25.00", "Overdraft Protection Transfer | $25.00 per item")).toBe(true);
     expect(guard("od_protection_transfer", "Overdraft Protection", "5.00", "Overdraft Protection | $5.00 per item")).toBe(true);
   });
+
+  it("v48 keeps treasury service monthly charges out of monthly maintenance", () => {
+    for (const name of ["Monthly Fee (per account)", "API Service Monthly Fee (per account)", "MODULES ACH Module Monthly maintenance", "Treasury Management Monthly fee (includes Positive Pay)", "Cash Management Monthly Fee", "ACH Monthly Fee, per account"]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance charge per account.").ok).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
+  });
 });
