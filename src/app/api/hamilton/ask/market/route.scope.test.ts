@@ -18,11 +18,13 @@ const request = (body: unknown) => new Request("https://example.test/api/hamilto
 });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Reset implementations and once-queues as well as call history between scenarios.
+  vi.resetAllMocks();
   mocks.user.mockResolvedValue({ id: 7 });
   mocks.premium.mockReturnValue(true);
   mocks.resolve.mockResolvedValue({ institution: { id: 101 } });
-  mocks.answer.mockImplementation(async (id, options) => ({ institutionId: id, categories: options.categories }));
+  // This boundary returns a fixed result; argument assertions below verify scope transport.
+  mocks.answer.mockResolvedValue({ institutionId: 101, categories: ["paper_statement", "money_order"] });
 });
 
 describe("local-market scope at the authenticated route boundary", () => {
@@ -80,8 +82,21 @@ describe("local-market scope at the authenticated route boundary", () => {
   });
 
   it("keeps a missing branch market distinct from a successful empty result", async () => {
-    mocks.answer.mockResolvedValue(null);
-    expect((await POST(request({ institutionId: 101 }))).status).toBe(404);
+    mocks.answer.mockReset().mockResolvedValueOnce(null);
+    const response = await POST(request({ institutionId: 101 }));
+    expect(mocks.answer).toHaveBeenCalledTimes(1);
+    expect(mocks.answer).toHaveBeenCalledWith(101, { categories: [...DEFAULT_LOCAL_MARKET_CATEGORIES] });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "No branch market is on file for this institution yet." });
+  });
+
+  it("does not mistake a located market with no fee data for an absent market", async () => {
+    const emptyMarket = { institutionId: 101, categories: ["cashiers_check"], competitors: [], you: { fees: {} } };
+    mocks.answer.mockReset().mockResolvedValueOnce(emptyMarket);
+    const response = await POST(request({ institutionId: 101, categories: ["cashiers_check"] }));
+    expect(mocks.answer).toHaveBeenCalledWith(101, { categories: ["cashiers_check"] });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(emptyMarket);
   });
 
   it("returns a recoverable error when a dependency fails", async () => {
