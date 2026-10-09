@@ -5,7 +5,7 @@ import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/cons
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { REPORT_PRICE_LABEL } from "./pricing";
 
-const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-[#1D4ED8] underline underline-offset-2";
+const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-[#A93D25] underline underline-offset-2";
 
 const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
@@ -50,14 +50,14 @@ export function OtherOptions() {
   ];
   return (
     <section aria-labelledby="other-options-heading">
-      <h2 id="other-options-heading" className="text-2xl text-[#1E293B] font-semibold tracking-tight" style={DISPLAY}>
+      <h2 id="other-options-heading" className="text-2xl text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
         Not ready for a subscription?
       </h2>
-      <ul className="mt-5 divide-y divide-[#E2E8F0] border-y border-[#E2E8F0]">
+      <ul className="mt-5 divide-y divide-[#E8E1D6] border-y border-[#E8E1D6]">
         {rows.map((row) => (
           <li key={row.name} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3.5">
-            <p className="text-[15px] text-[#475569]">
-              <span className="font-semibold text-[#1E293B]">{row.name}</span> · {row.note}
+            <p className="text-[15px] text-[#3D3833]">
+              <span className="font-semibold text-[#1A1815]">{row.name}</span> · {row.note}
             </p>
             {row.link}
           </li>
@@ -97,31 +97,31 @@ function faqItems(summary: PublicStatsSummary) {
 export function PricingFaq({ summary }: { summary: PublicStatsSummary }) {
   return (
     <section aria-labelledby="pricing-faq-heading">
-      <h2 id="pricing-faq-heading" className="mb-4 text-xl text-[#1E293B] font-semibold tracking-tight" style={DISPLAY}>
+      <h2 id="pricing-faq-heading" className="mb-4 text-xl text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
         Questions before you start
       </h2>
-      <div className="divide-y divide-[#E2E8F0] rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC]">
+      <div className="divide-y divide-[#E8E1D6] rounded-2xl border border-[#E8E1D6] bg-[#FAF7F2]">
         {faqItems(summary).map((item) => (
           <details key={item.question} className="group px-6 py-4">
-            <summary className="cursor-pointer list-none text-sm font-semibold text-[#1E293B] marker:content-none">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-[#1A1815] marker:content-none">
               {item.question}
             </summary>
-            <p className="mt-2 text-sm leading-relaxed text-[#475569]">{item.answer}</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#3D3833]">{item.answer}</p>
           </details>
         ))}
       </div>
-      <p className="mt-4 text-sm text-[#475569]">
+      <p className="mt-4 text-sm text-[#3D3833]">
         Prefer to talk it through?{" "}
         <TrackLink
           event="contact_sales"
           eventProps={{ placement: "pricing_faq" }}
           href={CONTACT_SALES_HREF}
-          className="font-medium text-[#1E293B] underline underline-offset-2"
+          className="font-medium text-[#1A1815] underline underline-offset-2"
         >
           Send us a message
         </TrackLink>{" "}
         or email{" "}
-        <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#1E293B] underline underline-offset-2">
+        <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#1A1815] underline underline-offset-2">
           {CONTACT_EMAIL}
         </a>
         .

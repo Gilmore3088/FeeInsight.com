@@ -52,7 +52,7 @@ export const metadata: Metadata = {
 const WELCOME_PATH = "/account/welcome";
 /**
  * /subscribe follows the ui-ux-pro-max design system James asked for (9 Oct 2026): Plus Jakarta
- * Sans, trust blue with Fee Insight terracotta for buttons and marks (James, 11:04), glass over soft colour.
+ * Sans, in Fee Insight colours (James, 11:08: keep the layout, on-brand colour), glass over warm light.
  */
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -66,7 +66,7 @@ const CTA_CLASS =
 
 /** The skill's checklist, page-wide: pointer cursors, 200ms hover transitions, visible focus. */
 const INTERACTION_CLASS =
-  "[&_:is(button,summary):not(:disabled)]:cursor-pointer [&_:is(a,button,summary)]:transition-colors [&_:is(a,button,summary)]:duration-200 [&_:is(a,button,summary,input):focus-visible]:outline-2 [&_:is(a,button,summary,input):focus-visible]:outline-offset-2 [&_:is(a,button,summary,input):focus-visible]:outline-[#2563EB]";
+  "[&_:is(button,summary):not(:disabled)]:cursor-pointer [&_:is(a,button,summary)]:transition-colors [&_:is(a,button,summary)]:duration-200 [&_:is(a,button,summary,input):focus-visible]:outline-2 [&_:is(a,button,summary,input):focus-visible]:outline-offset-2 [&_:is(a,button,summary,input):focus-visible]:outline-[#A93D25]";
 
 const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
 
@@ -404,21 +404,21 @@ export default async function SubscribePage({
   return (
     <ShowcaseProvider autoCycle={benchmarkInstitution === null} entry={entryPoint}>
     <div
-      className={`${jakarta.variable} relative isolate min-h-screen overflow-x-clip bg-[#F8FAFC] ${INTERACTION_CLASS}`}
+      className={`${jakarta.variable} relative isolate min-h-screen overflow-x-clip bg-[#FAF7F2] ${INTERACTION_CLASS}`}
       style={DISPLAY}
     >
       {/* The glass surfaces need colour behind them: two soft light sources, no motion. */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[1100px]">
-        <div className="absolute -left-40 -top-32 h-[560px] w-[560px] rounded-full bg-[#3B82F6]/25 blur-3xl" />
-        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-[#C44B2E]/15 blur-3xl" />
-        <div className="absolute left-1/3 top-[620px] h-[420px] w-[520px] rounded-full bg-[#C44B2E]/15 blur-3xl" />
+        <div className="absolute -left-40 -top-32 h-[560px] w-[560px] rounded-full bg-[#E3C9A8]/45 blur-3xl" />
+        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-[#C44B2E]/10 blur-3xl" />
+        <div className="absolute left-1/3 top-[620px] h-[420px] w-[520px] rounded-full bg-[#E3C9A8]/35 blur-3xl" />
       </div>
       <ConsumerNav />
       <main id="main-content">
 
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         {reasonLine && (
-          <p role="status" className="mb-6 rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#1E293B]">
+          <p role="status" className="mb-6 rounded-2xl border border-[#E8E1D6] bg-white px-4 py-3 text-sm text-[#1A1815]">
             {reasonLine}
           </p>
         )}
@@ -450,19 +450,19 @@ export default async function SubscribePage({
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           {/* The headline spans both columns; the example and the card start on one line below it. */}
           <div className="lg:col-span-2 lg:row-start-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#1D4ED8]">{entry.context}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{entry.context}</p>
             <h1
               id="pro-title"
-              className="mt-3 text-4xl font-bold leading-[1.08] tracking-tight text-[#1E293B] sm:text-5xl" style={DISPLAY}
+              className="mt-3 text-4xl font-bold leading-[1.08] tracking-tight text-[#1A1815] sm:text-5xl" style={DISPLAY}
             >
               Understand your fees. Know your market.
             </h1>
-            <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#475569]">
+            <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
               Benchmark, analyze and monitor bank and credit union fees.
             </p>
             <div className="mt-6 lg:hidden">
-              <p className="text-sm text-[#475569]">
-                <span className="font-semibold text-[#1E293B]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
+              <p className="text-sm text-[#3D3833]">
+                <span className="font-semibold text-[#1A1815]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
                 {WORKSPACE_SEAT_LIMIT} people
               </p>
               <PricingJump
@@ -503,11 +503,11 @@ export default async function SubscribePage({
               entry={entryPoint}
             />
             </div>
-            <div className="mt-1 flex h-11 items-center justify-center text-sm text-[#475569]">
+            <div className="mt-1 flex h-11 items-center justify-center text-sm text-[#3D3833]">
               {!isLoggedIn && (
                 <p>
                   Already have an account?{" "}
-                  <a href={loginHref} className="font-medium text-[#1E293B] underline underline-offset-2">
+                  <a href={loginHref} className="font-medium text-[#1A1815] underline underline-offset-2">
                     Sign in
                   </a>
                 </p>
@@ -519,10 +519,10 @@ export default async function SubscribePage({
 
       <section
         aria-labelledby="capabilities-heading"
-        className="mt-14 border-y border-white/60 bg-[#E9EFF8]/70 backdrop-blur-md lg:mt-16"
+        className="mt-14 border-y border-white/60 bg-[#F3EEE6]/70 backdrop-blur-md lg:mt-16"
       >
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <h2 id="capabilities-heading" className="text-2xl text-[#1E293B] sm:text-3xl font-semibold tracking-tight" style={DISPLAY}>
+          <h2 id="capabilities-heading" className="text-2xl text-[#1A1815] sm:text-3xl font-semibold tracking-tight" style={DISPLAY}>
             One platform. Four ways to understand your market.
           </h2>
           <div className="mt-8 sm:mt-10">
@@ -539,10 +539,10 @@ export default async function SubscribePage({
             className="mt-12 grid gap-8 sm:mt-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
           >
             <div>
-              <h2 id="wire-heading" className="mt-2 text-2xl text-[#1E293B] font-semibold tracking-tight" style={DISPLAY}>
+              <h2 id="wire-heading" className="mt-2 text-2xl text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
                 Regulatory Wire, with the fee data
               </h2>
-              <p className="mt-3 text-[15px] leading-relaxed text-[#475569]">
+              <p className="mt-3 text-[15px] leading-relaxed text-[#3D3833]">
                 Fee rules and bills, each beside what institutions charge. Included in Pro.
               </p>
             </div>
@@ -552,12 +552,12 @@ export default async function SubscribePage({
 
         <section
           aria-labelledby="cta-heading"
-          className="mt-16 rounded-2xl bg-white/70 px-6 py-10 text-center ring-1 ring-[#E2E8F0]/80 shadow-[0_8px_32px_-12px_rgba(30,41,59,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl sm:px-10"
+          className="mt-16 rounded-2xl bg-white/70 px-6 py-10 text-center ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl sm:px-10"
         >
-          <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-[#1E293B] sm:text-3xl">
+          <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-[#1A1815] sm:text-3xl">
             See where your fees stand.
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-[#475569]">
+          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-[#3D3833]">
             From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} for up to {WORKSPACE_SEAT_LIMIT} people. Same features at every
             institution size.
           </p>
@@ -571,9 +571,9 @@ export default async function SubscribePage({
         </section>
 
         {gated ? (
-          <p className="mt-14 text-[15px] leading-relaxed text-[#475569]">
+          <p className="mt-14 text-[15px] leading-relaxed text-[#3D3833]">
             Need research for one institution instead?{" "}
-            <Link href="/for-institutions?report=institution#report" className="font-medium text-[#1E293B] underline underline-offset-2">
+            <Link href="/for-institutions?report=institution#report" className="font-medium text-[#1A1815] underline underline-offset-2">
               Explore the {REPORT_OFFER.name}
             </Link>
           </p>

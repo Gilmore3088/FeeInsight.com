@@ -32,7 +32,7 @@ export function StickyCta({ heroId, cardId, label, className }: { heroId: string
     <div
       aria-hidden={!shown}
       inert={!shown}
-      className={`fixed inset-x-0 bottom-0 z-40 border-t border-white/60 bg-white/75 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_-12px_rgba(30,41,59,0.25)] backdrop-blur-xl transition-transform duration-300 motion-reduce:transition-none lg:hidden ${
+      className={`fixed inset-x-0 bottom-0 z-40 border-t border-white/60 bg-white/75 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_-12px_rgba(26,24,21,0.25)] backdrop-blur-xl transition-transform duration-300 motion-reduce:transition-none lg:hidden ${
         shown ? "translate-y-0" : "translate-y-full"
       }`}
     >
