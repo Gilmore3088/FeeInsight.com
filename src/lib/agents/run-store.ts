@@ -1839,7 +1839,10 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         campaigns: outreachCampaignsFromEnv(process.env.OUTREACH_CAMPAIGNS),
       });
-      const followUpLine = followUps.due ? ` ${followUps.drafted} follow-ups drafted (day 6 and final day 13).` : "";
+      // Always say how many follow-ups were due, so a run with none shows the check happened.
+      const followUpLine = run.runKind === "dry_run"
+        ? ` Follow-ups (day 6 and final day 13): ${followUps.due} due, would draft ${followUps.due}.`
+        : ` Follow-ups (day 6 and final day 13): ${followUps.due} due, ${followUps.drafted} drafted.`;
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
     }
     case "growth-quote": {
