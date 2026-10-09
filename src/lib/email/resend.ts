@@ -2,6 +2,8 @@
  * Minimal Resend transport shared by transactional senders. Plain fetch, no SDK.
  * Every sender returns a discriminated result and never throws into request paths.
  */
+import { emailSendLogConfigured, insertEmailSendLog } from "@/lib/data-store/email-send-log";
+
 export type EmailDeliveryResult =
   | { status: "sent"; providerId: string | null }
   | { status: "not_configured"; reason: string }
@@ -65,14 +67,46 @@ function providerErrorMessage(payload: Record<string, unknown> | null, fallback:
   return fallback;
 }
 
+/** "the password reset email" -> "password reset email": the sender's name in the log. */
+export function sendLogLabel(failureLabel: string) {
+  return failureLabel.replace(/^the\s+/i, "").trim() || "email";
+}
+
 /**
- * Sends one message through Resend. Callers are responsible for the not_configured
- * checks on their own From address; this only guards the API key.
+ * Records one attempt in `email_send_log`. Best effort: a failed write is logged and never
+ * changes the send result or throws; without a database (tests, some previews) it does nothing.
+ */
+export async function logEmailSend(message: ResendMessage, failureLabel: string, result: EmailDeliveryResult) {
+  if (!emailSendLogConfigured()) return;
+  try {
+    await insertEmailSendLog({
+      label: sendLogLabel(failureLabel),
+      recipient: message.to,
+      subject: message.subject,
+      status: result.status,
+      providerId: result.status === "sent" ? result.providerId : null,
+      error: result.status === "failed" ? result.error : result.status === "not_configured" ? result.reason : null,
+    });
+  } catch (error) {
+    console.error("[email] could not record the send in email_send_log", error);
+  }
+}
+
+/**
+ * Sends one message through Resend and records the outcome in `email_send_log`. Callers
+ * are responsible for the not_configured checks on their own From address; this only
+ * guards the API key.
  */
 export async function sendResendEmail(
   message: ResendMessage,
   failureLabel = "the email",
 ): Promise<EmailDeliveryResult> {
+  const result = await deliverThroughResend(message, failureLabel);
+  await logEmailSend(message, failureLabel, result);
+  return result;
+}
+
+async function deliverThroughResend(message: ResendMessage, failureLabel: string): Promise<EmailDeliveryResult> {
   const apiKey = getResendApiKey();
   if (!apiKey) {
     return { status: "not_configured", reason: "RESEND_API_KEY is not configured." };
