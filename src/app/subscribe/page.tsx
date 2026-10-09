@@ -391,7 +391,7 @@ export default async function SubscribePage({
             )}
           </div>
 
-          <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
+          <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1 lg:self-start">
             <PurchaseCard
               isLoggedIn={isLoggedIn}
               chooser={
@@ -421,16 +421,26 @@ export default async function SubscribePage({
               </p>
             )}
           </div>
+        </section>
+      </div>
 
-          <div className="lg:col-start-1 lg:row-start-2">
+      <section aria-labelledby="capabilities-heading" className="mt-14 border-y border-[#E8E1D6] bg-[#F3EEE6] lg:mt-16">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <h2 id="capabilities-heading" className="text-2xl text-[#1A1815] sm:text-3xl" style={SERIF}>
+            One platform. Four ways to understand your market.
+          </h2>
+          <div className="mt-8 sm:mt-10">
             <ProPillars />
           </div>
-        </section>
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-6xl px-4 pb-6 sm:px-6 sm:pb-10">
 
         {wirePreview && (
           <section
             aria-labelledby="wire-heading"
-            className="mt-20 grid gap-8 border-t border-[#E8E1D6] pt-14 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
+            className="mt-12 grid gap-8 sm:mt-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
           >
             <div>
               <h2 id="wire-heading" className="mt-2 text-2xl text-[#1A1815]" style={SERIF}>

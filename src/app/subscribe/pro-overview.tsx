@@ -106,30 +106,43 @@ export function WirePreview({ lead }: { lead: WirePreviewLead | null }) {
 const PILLARS = [
   {
     title: "Benchmark",
-    body: "Your fees against any peer group.",
+    body: "Compare published fees against the institutions that matter to you.",
+    short: "Compare your published fees with relevant peers.",
   },
   {
     title: "Analyze",
-    body: "Ask Hamilton. Try a price.",
+    body: "Explore fee structures and test illustrative pricing scenarios with Hamilton.",
+    short: "Explore fee structures and illustrative scenarios.",
   },
   {
     title: "Monitor",
-    body: "Competitor changes and Regulatory Wire.",
+    body: "Follow competitor fee changes and relevant regulatory developments.",
+    short: "Track competitor fee changes and regulatory developments.",
   },
   {
     title: "Report",
-    body: "Source-backed reports for the board.",
+    body: "Generate source-backed research for management and pricing committees.",
+    short: "Prepare source-backed research for internal decisions.",
   },
 ] as const;
 
-/** Pro as one platform in four parts (James, 9 Oct 2026); Regulatory Wire sits under Monitor. */
+/**
+ * Pro as one platform in four parts (James, 9 Oct 2026; copy his). Rows with thin dividers on
+ * phones, four even columns on desktop; no cards and no accent rules.
+ */
 export function ProPillars() {
   return (
-    <ul className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+    <ul className="divide-y divide-[#E3DACC] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
       {PILLARS.map((pillar) => (
-        <li key={pillar.title} className="border-t-2 border-[#C44B2E] pt-3">
-          <p className="text-base font-semibold text-[#1A1815]">{pillar.title}</p>
-          <p className="mt-1 text-[15px] leading-relaxed text-[#3D3833]">{pillar.body}</p>
+        <li
+          key={pillar.title}
+          className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-4 py-4 first:pt-0 last:pb-0 sm:block sm:py-0"
+        >
+          <h3 className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</h3>
+          <p className="text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+            <span className="sm:hidden">{pillar.short}</span>
+            <span className="hidden sm:inline">{pillar.body}</span>
+          </p>
         </li>
       ))}
     </ul>
