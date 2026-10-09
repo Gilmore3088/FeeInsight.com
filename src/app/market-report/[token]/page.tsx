@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
 import { verifyReportToken } from "@/lib/custom-report/link";
 import { loadMarketReport } from "@/lib/custom-report/report-data";
+import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { TrackView } from "@/components/track-view";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
@@ -54,6 +55,7 @@ export default async function MarketReportPage({ params }: PageProps) {
     ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
     : null;
   const revenue = await getRevenueContextCached(verified.institutionId).catch(() => null);
+  const lineup = analysis.readiness.ready ? await loadMarketCheckingLineup(verified.institutionId) : null;
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
@@ -71,6 +73,7 @@ export default async function MarketReportPage({ params }: PageProps) {
           report={report}
           revenue={revenue}
           branches={branches}
+          lineup={lineup}
           eyebrow="Competitive Fee Position Report"
           preparedOn={verified.issuedOn}
           contactHref={contactHref(name)}

@@ -1,12 +1,11 @@
 import { cache } from "react";
-import { getDataFreshness, getPublicStats } from "@/lib/data-store/core";
 import { sql } from "@/lib/data-store/connection";
 import { getFeeCategorySummaries, type FeeCategorySummary } from "@/lib/data-store/fees";
 import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { maturityTier } from "@/lib/data-store/maturity";
-import { US_STATES_ONLY } from "@/lib/us-states";
+import { US_STATES_ONLY, VALID_US_CODES } from "@/lib/us-states";
 
 /**
  * Single source of truth for every public-facing headline number.
@@ -81,26 +80,65 @@ export function formatFreshness(value: string | Date | null | undefined): string
 
 const CANONICAL_CATEGORIES = new Set(Object.values(FEE_FAMILIES).flat());
 
-async function countCanonicalCategoriesWithData(): Promise<number | null> {
-  try {
-    const rows = await sql<{ fee_category: string }[]>`
-      SELECT DISTINCT fee_category FROM published_fee_catalog
-      WHERE review_status = 'approved' AND fee_category IS NOT NULL`;
-    return rows.filter((r) => CANONICAL_CATEGORIES.has(r.fee_category)).length;
-  } catch (error) {
-    return logFailedRead("categories", error);
-  }
+interface HeadlineCounts {
+  /** Distinct verified observations at institutions in a U.S. state, DC or territory. */
+  observations: number;
+  /** Institutions there with at least one verified fee. */
+  institutions: number;
+  /** Canonical taxonomy categories with verified data. */
+  categories: number;
+  /** The 50 states with at least one verified fee. */
+  states: number;
+  lastFeeAt: string | null;
+  lastCrawlAt: string | null;
 }
 
-async function countStatesWithVerifiedFees(): Promise<number | null> {
+/**
+ * Every headline count from one read of the catalog. The catalog is a view that rebuilds
+ * its depth check on each reference, so the five separate reads this replaces (counts,
+ * categories, states, newest fee, row count) cost about 2.9 s together on Oct 9; this one
+ * reads it once. Null when the read fails, so the snapshot shows the counts as unavailable
+ * and is not cached.
+ */
+async function readHeadlineCounts(): Promise<HeadlineCounts | null> {
   try {
-    const rows = await sql<{ state_code: string }[]>`
-      SELECT DISTINCT ct.state_code FROM institution_sources ct
-      JOIN published_fee_catalog ef ON ef.institution_id = ct.id
-      WHERE ef.review_status = 'approved' AND ct.state_code IS NOT NULL`;
-    return rows.filter((r) => US_STATES_ONLY.has(r.state_code)).length;
+    const [row] = await sql<{
+      observations: number | string;
+      institutions: number | string;
+      categories: string[] | null;
+      states: string[] | null;
+      last_fee_at: string | Date | null;
+      last_crawl_at: string | Date | null;
+    }[]>`
+      WITH approved AS MATERIALIZED (
+        SELECT ef.institution_id, ef.fee_name, ef.amount, ef.frequency, ef.variant_type,
+               ef.fee_category, ef.created_at, ct.state_code
+        FROM published_fee_catalog ef
+        JOIN institution_sources ct ON ct.id = ef.institution_id
+        WHERE ef.review_status = 'approved'
+      ),
+      us AS (
+        SELECT * FROM approved WHERE state_code IN ${sql([...VALID_US_CODES])}
+      )
+      SELECT
+        (SELECT COUNT(DISTINCT (institution_id, fee_name, amount,
+           COALESCE(frequency, ''), COALESCE(variant_type, ''))) FROM us) AS observations,
+        (SELECT COUNT(DISTINCT institution_id) FROM us) AS institutions,
+        ARRAY(SELECT DISTINCT fee_category FROM approved WHERE fee_category IS NOT NULL) AS categories,
+        ARRAY(SELECT DISTINCT state_code FROM approved WHERE state_code IS NOT NULL) AS states,
+        (SELECT MAX(created_at) FROM approved) AS last_fee_at,
+        (SELECT MAX(crawled_at) FROM source_documents WHERE status = 'success') AS last_crawl_at`;
+    const iso = (v: string | Date | null): string | null => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
+    return {
+      observations: Number(row.observations),
+      institutions: Number(row.institutions),
+      categories: (row.categories ?? []).filter((category) => CANONICAL_CATEGORIES.has(category)).length,
+      states: (row.states ?? []).filter((code) => US_STATES_ONLY.has(code)).length,
+      lastFeeAt: iso(row.last_fee_at),
+      lastCrawlAt: iso(row.last_crawl_at),
+    };
   } catch (error) {
-    return logFailedRead("states", error);
+    return logFailedRead("headline counts", error);
   }
 }
 
@@ -114,24 +152,20 @@ async function countMonitoredInstitutions(): Promise<number | null> {
 }
 
 async function computePublicStatsSummary(): Promise<PublicStatsSummary> {
-  const [stats, freshness, monitored, categories, states] = await Promise.all([
-    getPublicStats(),
-    getDataFreshness().catch(() => null),
-    countMonitoredInstitutions(),
-    countCanonicalCategoriesWithData(),
-    countStatesWithVerifiedFees(),
-  ]);
-  const refreshedOn = formatAbsoluteDate(freshness?.last_fee_extracted_at ?? freshness?.last_crawl_at ?? null);
-  // getPublicStats returns zeros when its read fails; the catalog is never really empty.
-  const institutions = stats.total_institutions > 0 ? stats.total_institutions : null;
-  if (institutions === null) logFailedRead("institutions", "getPublicStats returned 0 institutions");
+  const [counts, monitored] = await Promise.all([readHeadlineCounts(), countMonitoredInstitutions()]);
+  const refreshedOn = formatAbsoluteDate(counts?.lastFeeAt ?? counts?.lastCrawlAt ?? null);
+  // The catalog is never really empty: zero institutions means the read went wrong.
+  const institutions = counts && counts.institutions > 0 ? counts.institutions : null;
+  if (counts && institutions === null) logFailedRead("institutions", "headline counts returned 0 institutions");
+  const categories = counts?.categories ?? null;
+  const states = counts?.states ?? null;
   return {
     institutions: institutions ?? 0,
     institutionsLabel: formatCountOrUnavailable(institutions),
     monitored: monitored ?? 0,
     monitoredLabel: formatCountOrUnavailable(monitored),
-    observations: stats.total_observations,
-    observationsLabel: formatCountOrUnavailable(institutions === null ? null : stats.total_observations),
+    observations: counts?.observations ?? 0,
+    observationsLabel: formatCountOrUnavailable(institutions === null ? null : (counts?.observations ?? null)),
     categories: categories ?? 0,
     categoriesLabel: formatCountOrUnavailable(categories),
     states: states ?? 0,

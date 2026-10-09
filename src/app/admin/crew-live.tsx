@@ -13,6 +13,7 @@ const STATE_STYLE: Record<CrewState, { label: string; dot: string; text: string 
   waiting: { label: "Waiting", dot: "bg-sky-500", text: "text-sky-800 dark:text-sky-300" },
   blocked: { label: "Blocked", dot: "bg-red-500", text: "text-red-800 dark:text-red-300" },
   idle: { label: "Idle", dot: "bg-gray-400", text: "text-gray-600 dark:text-gray-400" },
+  unknown: { label: "Unknown", dot: "bg-amber-400", text: "text-amber-800 dark:text-amber-300" },
 };
 
 const TONE_STYLE: Record<CrewFeedItem["tone"], string> = {
@@ -96,6 +97,11 @@ export function CrewLive({
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     <span className="font-semibold">Last:</span> {member.last ?? "Nothing yet."}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Last success: {member.lastSuccessAt ? clock(member.lastSuccessAt) : "none in 30 days"}
+                    {member.lastAttemptAt && (!member.lastSuccessAt || member.lastAttemptAt > member.lastSuccessAt) ? ` · last try ${clock(member.lastAttemptAt)}` : ""}
+                    {member.nextRunAt ? ` · next scheduled ${clock(member.nextRunAt)}` : ""}
                   </p>
                   <p className="mt-2 flex items-center justify-between gap-2 text-[11px] text-gray-500">
                     <span>{member.doneToday} done today{member.lastAt ? ` · last ${clock(member.lastAt)}` : ""}</span>

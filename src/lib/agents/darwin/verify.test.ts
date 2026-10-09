@@ -1,7 +1,7 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -14,7 +14,14 @@ function templateText(strings: unknown): string {
 }
 
 /** The stored text of document 55, the schedule Knox read the test fees from. */
-const SCHEDULE_TEXT = ["Overdraft fee $35.00", "Courtesy overdraft fee $5.00", "Paper statement Free"].join("\n");
+const SCHEDULE_TEXT = [
+  "Overdraft fee $35.00",
+  "Courtesy overdraft fee $5.00",
+  "Paper statement Free",
+  "Bill Pay - FREE with E-Statements and Debit Card | $6.95 per Month",
+  "Monthly fee for balance of $500 & over | FREE",
+  "E-Statement | FREE",
+].join("\n");
 const SOURCE_TEXTS = [
   { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
   { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
@@ -325,6 +332,88 @@ describe("Darwin agentic verification", () => {
     expect(result).toMatchObject({ verifiedFees: 1, zeroFeesVerified: 1 });
     const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
     expect(insert?.slice(1)).toContain(JSON.stringify(["agentic_darwin_verified", "zero_fee"]));
+  });
+
+  it("holds a $0 fee whose own schedule line prices it instead of verifying it free", async () => {
+    const zero = (id: number, name: string, hint: string, excerpt: string) => ({
+      ...rawFee,
+      fee_raw_id: id,
+      fee_name: name,
+      amount: "0.00",
+      outlier_flags: ["knox_review:zero", "needs_darwin_verification", `canonical_hint:${hint}`],
+      conditions: `canonical_hint=${hint}; excerpt="${excerpt}"`,
+    });
+    const db = createDbMock([
+      zero(901, "Bill Pay", "bill_pay", "Bill Pay - FREE with E-Statements and Debit Card | $6.95 per Month"),
+      zero(902, "Monthly fee for balance of $500 & over", "monthly_maintenance", "Monthly fee for balance of $500 & over | FREE"),
+      zero(903, "Paper statement", "paper_statement", "Paper statement Free"),
+    ]);
+
+    const result = await runDarwinVerify({ runId: 108, db: asVerifyDb(db) });
+
+    const byId = new Map(result.results.map((row) => [row.feeRawId, row]));
+    expect(byId.get(901)).toMatchObject({ status: "skipped", decision: "needs_review", reasonCode: "conditional_zero" });
+    expect(byId.get(902)).toMatchObject({ status: "skipped", decision: "needs_review" });
+    expect(["conditional_zero", "name_rule"]).toContain(byId.get(902)?.reasonCode);
+    expect(byId.get(903)).toMatchObject({ status: "verified" });
+    expect(result.verifiedFees).toBe(1);
+  });
+
+  it("never verifies into a retired category and applies Hamilton's name rules first", async () => {
+    const db = createDbMock([
+      {
+        ...rawFee,
+        fee_raw_id: 904,
+        fee_name: "E-Statement",
+        amount: "0.00",
+        outlier_flags: ["knox_review:zero", "needs_darwin_verification", "canonical_hint:estatement_fee"],
+        conditions: 'canonical_hint=estatement_fee; excerpt="E-Statement | FREE"',
+      },
+      {
+        ...rawFee,
+        fee_raw_id: 905,
+        fee_name: "Overdraft fee if you opt in",
+        amount: "35.00",
+        conditions: 'canonical_hint=overdraft; excerpt="Overdraft fee $35.00"',
+      },
+    ]);
+
+    const result = await runDarwinVerify({ runId: 109, db: asVerifyDb(db) });
+
+    const byId = new Map(result.results.map((row) => [row.feeRawId, row]));
+    expect(byId.get(904)).toMatchObject({ status: "skipped", decision: "rejected", reasonCode: "retired_category" });
+    expect(byId.get(905)?.status).toBe("skipped");
+    expect(result.verifiedFees).toBe(0);
+    expect(JSON.stringify(db.mock.calls)).toContain("retired_category");
+  });
+
+  describe("postSourceCheck", () => {
+    it("reads '$0 if condition, else $X' as a priced fee", () => {
+      expect(conditionalZero(0, "Bill Pay - FREE with E-Statements | $6.95 per Month", "Bill Pay")).toBe(true);
+      expect(conditionalZero(0, "Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month", "Monthly Fee")).toBe(true);
+      expect(conditionalZero(0, "Paper statement Free", "Paper statement")).toBe(false);
+      expect(conditionalZero(0, "E-Statement | $0.00", "E-Statement")).toBe(false);
+      expect(conditionalZero(6.95, "Bill Pay $6.95 per Month", "Bill Pay")).toBe(false);
+      expect(conditionalZero(0, null, "Bill Pay $6.95 per Month")).toBe(true);
+      // A neighbour's price in the same table row is not this fee's (dry read of the live rows, 2026-10-09).
+      expect(conditionalZero(0, "Monthly Maintenance | Free | Assisted Phone Transactions* | $3", "Monthly Maintenance")).toBe(false);
+      expect(conditionalZero(0, "Replacement ATM Card/PIN ........ $3.50 | Member ........ N/C", "Notary Service: Member")).toBe(false);
+      expect(conditionalZero(0, "Gift Card Fee…………. $3.00 per Card | Notary/ Medallion Signature Fee ………FREE", "Notary/ Medallion Signature Fee")).toBe(false);
+      expect(conditionalZero(0, "Share Draft Copy | FREE online | Cash Advance Fee 2.00% or $10", "Share Draft Copy")).toBe(false);
+      // The fee's own price cell still counts, as does a balance band in its own cell.
+      expect(conditionalZero(0, "Paper Statement | FREE with e-statements | $2.00 per month", "Paper Statement")).toBe(false);
+      expect(conditionalZero(0, "Monthly fee for balance of $500 & over | FREE", "Monthly fee for balance of & over")).toBe(true);
+    });
+
+    it("orders retired type, conditional zero, then name rule", () => {
+      expect(postSourceCheck("estatement_fee", "E-Statement", 0, "E-Statement | FREE")).toEqual({ code: "retired_category" });
+      expect(postSourceCheck("bill_pay", "Bill Pay", 0, "Bill Pay - FREE | $6.95 per Month")).toEqual({ code: "conditional_zero" });
+      expect(postSourceCheck("monthly_maintenance", "Monthly service charge if any of the following qualifications are met", 0, "FREE")).toEqual({
+        code: "name_rule",
+        rule: "waiver_sentence",
+      });
+      expect(postSourceCheck("overdraft", "Overdraft fee", 35, "Overdraft fee $35.00")).toBeNull();
+    });
   });
 
   it("sends out-of-range amounts to review with the category's range in the signal", async () => {
