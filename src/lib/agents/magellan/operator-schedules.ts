@@ -436,7 +436,10 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     // Old National publishes no stand-alone personal fee schedule (its deposit agreement points
     // to one per account). Its overdraft page (held since 8 Oct: $36 paid item) gives two fees,
     // under the 3-fee bar; the Everyday Checking page lists the monthly, paper statement and
-    // early-closure fees (replaced the overdraft page link, 2026-10-09 03:50).
+    // early-closure fees (replaced the overdraft page link, 2026-10-09 03:50). No public
+    // schedule exists: the Mac session checked its disclosures, CRA public file, FAQs and all
+    // 2,595 sitemap URLs (2026-10-09 07:08); the deposit agreement only says "see the fee
+    // schedule", which is given at account opening.
     [41, "Old National Bank", "https://www.oldnational.com/personal/checking/onb-everyday-checking/"],
     [165, "Origin Bank", "https://www.origin.bank/deposit-account-agreement-disclosures.pdf"],
     [7559, "Idaho Central Federal Credit Union", "https://www.iccu.com/file/notices/account-agreement.pdf"],
