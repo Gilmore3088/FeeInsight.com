@@ -6,6 +6,7 @@ import {
   minBalanceFromExcerpt,
   productNameFromFeeName,
   readableProductName,
+  readableWaiver,
   withLineupFromText,
 } from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
@@ -86,6 +87,46 @@ describe("Knox account names for monthly fees (v49)", () => {
     expect(readableProductName("Sweep Transactions Money Market, or Savings")).toBeNull();
     expect(readableProductName("Market Rate")).toBeNull();
     expect(readableProductName(null)).toBeNull();
+    expect(readableProductName("Open an Advantage Checking Account")).toBe("Advantage Checking Account");
+    expect(readableProductName("Account Type")).toBeNull();
+    expect(readableProductName("Balance Account")).toBeNull();
+    expect(readableProductName("An interest-bearing account with premium")).toBeNull();
+    expect(readableProductName("Round-up savings option on card purchases")).toBeNull();
+  });
+
+  it("shows a waiver only when it names a condition", () => {
+    expect(readableWaiver("waived with $10,000+ monthly combined deposit balances")).toBe("waived with $10,000+ monthly combined deposit balances");
+    expect(readableWaiver("waived w/$500 min")).toBe("waived w/$500 min");
+    expect(readableWaiver("waived for members 17 or younger")).toBe("waived for members 17 or younger");
+    expect(readableWaiver("Avoid Monthly Service Fee ......................................")).toBeNull();
+    expect(readableWaiver("Waive Monthly Maintenance Fee")).toBeNull();
+    expect(readableWaiver("waived, and all ATM surcharge")).toBeNull();
+    expect(readableWaiver("waive the $10 monthly fee")).toBeNull();
+    expect(readableWaiver(null)).toBeNull();
+    // UAT 2026-10-09: a cut-off waiver (4886) and an interest tier read as a waiver (2220).
+    expect(readableWaiver("if age")).toBeNull();
+    expect(readableWaiver("$25,000 minimum balance requirement to earn interest with tiers")).toBeNull();
+  });
+
+  it("never takes a balance that earns interest as the balance that avoids the fee", () => {
+    expect(minBalanceFromExcerpt("$25,000 minimum balance requirement to earn interest with tiers")).toBeNull();
+    const candidate = {
+      canonicalHint: "monthly_maintenance",
+      feeName: "Rise Money Market monthly service fee",
+      excerpt: "$15 monthly service fee if minimum balance requirement not maintained",
+      lineup: {
+        productName: "Rise Money Market",
+        minBalanceToAvoid: 25000,
+        minOpeningDeposit: null,
+        waiverText: "$25,000 minimum balance requirement to earn interest with tiers",
+      },
+    };
+    expect(withLineupFromText(candidate, candidate.excerpt).lineup).toEqual({
+      productName: "Rise Money Market",
+      minBalanceToAvoid: null,
+      minOpeningDeposit: null,
+      waiverText: null,
+    });
   });
 
   it("does not take a heading's tail or a list of account types as the name", () => {

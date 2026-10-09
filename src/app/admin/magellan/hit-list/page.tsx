@@ -7,15 +7,16 @@ import {
   type HitListView,
 } from "@/lib/data-store/hit-list";
 import { getTopTenCoverage, type TopTenCoverage } from "@/lib/data-store/top-ten-coverage";
-import { COVERED_SHARE, getNationalCompetitorCoverage } from "@/lib/data-store/competitor-coverage";
+import { COVERED_SHARE, getMarketGaps, getNationalCompetitorCoverage, type MarketGap } from "@/lib/data-store/competitor-coverage";
 import { HitListLinkForm } from "./link-form";
 
 export const dynamic = "force-dynamic";
 
-type PageView = HitListView | "top10";
+type PageView = HitListView | "top10" | "gaps";
 
 const VIEWS: Array<{ view: PageView; label: string }> = [
   { view: "top10", label: "Top 10 per state" },
+  { view: "gaps", label: "Market gaps" },
   { view: "no_fees", label: "No live fees" },
   { view: "no_overdraft", label: "No overdraft fee" },
 ];
@@ -46,23 +47,29 @@ export default async function HitListPage({
 }) {
   await requireAuth("view");
   const params = await searchParams;
-  const view: PageView = params.view === "no_overdraft" || params.view === "top10" ? params.view : "no_fees";
+  const view: PageView = params.view === "no_overdraft" || params.view === "top10" || params.view === "gaps" ? params.view : "no_fees";
   const state = params.state && /^[A-Za-z]{2}$/.test(params.state) ? params.state.toUpperCase() : null;
   const coverage: TopTenCoverage | null = view === "top10" ? await getTopTenCoverage().catch(() => null) : null;
+  const gaps: MarketGap[] | null = view === "gaps" ? await getMarketGaps(undefined, 100).catch(() => null) : null;
+  const gapBy = new Map((gaps ?? []).map((gap) => [gap.institutionId, gap]));
   const markets = view === "no_fees" ? await getNationalCompetitorCoverage().catch(() => null) : null;
   const list =
-    view === "top10" && !coverage
+    (view === "top10" && !coverage) || (view === "gaps" && !gaps)
       ? { rows: [], total: 0 }
       : await getHitList({
-          view: view === "top10" ? "no_fees" : view,
+          view: view === "top10" || view === "gaps" ? "no_fees" : view,
           // Top 10 slots are per state, not home state: Goldman Sachs holds a Utah slot from New York.
           stateCode: coverage ? null : state,
           institutionIds: coverage
             ? [...coverage.missing.entries()]
                 .filter(([, slots]) => !state || slots.some((slot) => slot.stateCode === state))
                 .map(([id]) => id)
-            : null,
+            : gaps
+              ? gaps.map((gap) => gap.institutionId)
+              : null,
         }).catch((): HitList => ({ rows: [], total: 0 }));
+  // Market gaps keep their own order: most competitor coverage added first.
+  if (gaps) list.rows.sort((a, b) => (gapBy.get(b.institutionId)?.gain ?? 0) - (gapBy.get(a.institutionId)?.gain ?? 0));
 
   return (
     <div className="space-y-6">
@@ -114,6 +121,12 @@ export default async function HitListPage({
         ) : (
           <p className="text-sm text-[#9a4a1f]">The top 10 per state could not be counted just now.</p>
         )
+      ) : view === "gaps" ? (
+        <p className="text-sm text-[#6B6255]">
+          Banks with no live fees, ordered by how much competitor coverage their fees would add across every bank&rsquo;s
+          branch counties (1.0 is one whole market). Magellan&rsquo;s discovery searches the top 100 beside the market
+          leaders. Credit unions report no deposits by branch, so they are not ranked here.
+        </p>
       ) : (
         <p className="text-sm text-[#6B6255]">
           {list.total.toLocaleString("en-US")} {view === "no_fees" ? "institutions with no live fees" : "live institutions with no overdraft fee"}
@@ -142,7 +155,9 @@ export default async function HitListPage({
                 </a>
               </p>
               <span className="shrink-0 text-xs text-[#6B6255]">
-                {coverage?.missing.get(row.institutionId)?.map((slot) => `${slot.stateCode} #${slot.rank}`).join(", ") ?? row.stateCode ?? "—"}
+                {gapBy.has(row.institutionId)
+                  ? `In ${gapBy.get(row.institutionId)!.markets.toLocaleString("en-US")} banks' markets · adds ${gapBy.get(row.institutionId)!.gain.toFixed(1)}`
+                  : (coverage?.missing.get(row.institutionId)?.map((slot) => `${slot.stateCode} #${slot.rank}`).join(", ") ?? row.stateCode ?? "—")}
               </span>
             </div>
             <p className="mt-1 text-xs text-[#6B6255]">

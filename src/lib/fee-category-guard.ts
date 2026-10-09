@@ -66,6 +66,12 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
 );
 
 // v47: "Foreign Wire Research" is account research, not a wire (Darwin eval, Oct 8).
+/**
+ * v53: a business or commercial account's wire price ("Business Wire Transfer Incoming (domestic)
+ * | $20.00", 3Hill FCU 28215, shown as the consumer price in the sample report). A name that also
+ * says consumer or personal covers both and stays; "business day" is a cut-off, not a payer.
+ */
+const BUSINESS_ONLY = String.raw`^(?!.*\b(consumer|personal|retail|individual)\b).*\b(business|commercial|corporate)\b(?!\s+days?\b)`;
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
@@ -166,17 +172,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   wire_domestic_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   wire_intl_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection)`, "i"),
+    exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection|${BUSINESS_ONLY})`, "i"),
   },
   // v44: guarded so Hamilton reads it for a paired price ("$20 / $30") in the wrong slot.
-  wire_intl_incoming: { include: /\S/, exclude: /(?!)/ },
+  wire_intl_incoming: { include: /\S/, exclude: new RegExp(BUSINESS_ONLY, "i") },
   wire_domestic_incoming: {
     include: /wire/i,
-    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   stop_payment: {
     include: /stop/i,
@@ -362,7 +368,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v50: "Photocopy of Money Order" is a check copy too (v49 is Accuracy's).
 // v51: a certificate penalty paid in dividends, or a forfeited reward, filed as early closure.
 // v52: price ceilings for copies, counter checks, late payment, notary and lost keys.
-export const CATEGORY_GUARD_VERSION = 52;
+// v53: a business or commercial account's wire price leaves the consumer wire categories.
+export const CATEGORY_GUARD_VERSION = 53;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
