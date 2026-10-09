@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -107,6 +107,110 @@ describe("Hamilton agentic publish", () => {
     expect(writes).not.toContain("INSERT INTO published_fee_records");
     expect(writes).toContain("UPDATE verified_fee_observations");
     expect(JSON.stringify(db.mock.calls)).toContain("category_guard:name_contradicts");
+  });
+
+  it("holds a row whose name is not a fee's or carries another price (UAT, Oct 9 re-queued rows)", async () => {
+    const held = [
+      // A waiver sentence at $0 and a no-fee sentence are the eval's not_a_fee rules, applied before publish.
+      { ...verifiedFee, fee_verified_id: 811, canonical_fee_key: "monthly_maintenance", fee_name: "To avoid the monthly service charge, keep", amount: "0.00", hold: "publish_hold:name_rule:waiver_sentence" },
+      { ...verifiedFee, fee_verified_id: 812, canonical_fee_key: "stop_payment", fee_name: "No fee for stop payments placed online", amount: "0.00", hold: "publish_hold:name_rule:no_fee_sentence" },
+      // The price printed in the name is the fee; the stored amount is the next column's rent.
+      { ...verifiedFee, fee_verified_id: 813, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", amount: "50.00", hold: "publish_hold:price_in_name" },
+    ];
+    for (const { hold, ...row } of held) {
+      const db = createDbMock([row]);
+      const result = await runHamiltonPublish({ runId: 118, db: asPublishDb(db) });
+      expect(result.publishedFees, row.fee_name).toBe(0);
+      expect(result.results[0].status, row.fee_name).toBe("skipped");
+      const writes = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(writes).not.toContain("INSERT INTO published_fee_records");
+      expect(JSON.stringify(db.mock.calls), row.fee_name).toContain(hold);
+    }
+    // An add-on price and a sentence fragment with no repaired form are held too.
+    expect(publishNameHold("Research Fee (plus", "account_research", 1)?.code).toBe("price_is_addon");
+    expect(publishNameHold("GUASFCU charges a", "check_image", 2)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Our overdraft fee of", "overdraft", 35)).toBeNull(); // repairs to "Overdraft fee"
+    expect(publishNameHold("Fax Fee (incoming and outgoing)", "account_research", 2)).toBeNull();
+    // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
+    expect(publishNameHold("Courtesy Pay Fee…..$35.005", "overdraft", 35)).toBeNull();
+    expect(publishedFeeName("Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", "overdraft")).toBe("Courtesy Pay (Paid Overdraft) Fee");
+    expect(publishedFeeName("ATM Balance Inquiry (at non-Wildfire ATM) .........................", "atm_non_network")).toBe("ATM Balance Inquiry (at non-Wildfire ATM)");
+    expect(publishedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
+    expect(publishNameHold("paper statement fee is waived if enrolled in eStatements", "paper_statement", 5)).toBeNull();
+    // A threshold inside the name's parenthesis is not a glued price (102976 went live as "...falls below").
+    expect(publishedFeeName("Service charge (daily balance falls below $500)", "minimum_balance")).toBe("Service charge (daily balance falls below $500)");
+    expect(publishedFeeName("Classic Money Market Account (balance below $1,000)", "minimum_balance")).toBe("Classic Money Market Account (balance below $1,000)");
+    expect(publishedFeeName("Wire Transfer Fee $25", "wire_domestic_outgoing")).toBe("Wire Transfer Fee");
+  });
+
+  it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {
+    const twin = { ...verifiedFee, twin_recheck: true };
+    const schedule = (text: string) => [{ source_document_id: 77, normalized_text: text }];
+
+    // The twin's own document no longer prints a $35 overdraft fee: the reason its twin came down applies to it.
+    const failing = createDbMock([twin], [], undefined, schedule("Fee Schedule\nOverdraft fee (per item) $30.00\nStop payment fee $30.00"));
+    const failed = await runHamiltonPublish({ runId: 119, db: asPublishDb(failing) });
+    expect(failed.publishedFees).toBe(0);
+    expect(failed.results[0]).toMatchObject({ status: "skipped", reason: expect.stringContaining("Rules re-check") });
+    expect(writes(failing).join("\n")).not.toContain("INSERT INTO published_fee_records");
+    expect(JSON.stringify(failing.mock.calls)).toContain("rules_recheck_unreproduced");
+
+    // No text for the document fails too.
+    const textless = createDbMock([twin], [], undefined, []);
+    expect((await runHamiltonPublish({ runId: 120, db: asPublishDb(textless) })).publishedFees).toBe(0);
+
+    // A twin today's rules read from its own document publishes.
+    const passing = createDbMock([twin], [], undefined, schedule("Fee Schedule\nOverdraft fee (per item) $35.00\nStop payment fee $30.00"));
+    expect((await runHamiltonPublish({ runId: 121, db: asPublishDb(passing) })).publishedFees).toBe(1);
+
+    // A row that is not a twin never needs the re-check.
+    const plain = createDbMock([verifiedFee], [], undefined, []);
+    expect((await runHamiltonPublish({ runId: 122, db: asPublishDb(plain) })).publishedFees).toBe(1);
+  });
+
+  it("skips a $0 benefit read from a product page only once the product-page check is on", async () => {
+    const benefit = {
+      ...verifiedFee,
+      canonical_fee_key: "overdraft",
+      fee_name: "Overdraft Fees",
+      amount: "0.00",
+      outlier_flags: ["agentic_darwin_verified", "free_fee_verified"],
+      free_read: true,
+      document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
+    };
+    const reason = "Read from a product page's benefits, not a fee schedule";
+    expect(publishSkipReason(benefit, 0.85, false)).not.toBe(reason);
+    expect(publishSkipReason(benefit, 0.85, true)).toBe(reason);
+    expect(publishSkipReason({ ...benefit, document_url: "https://www.pnc.com/content/dam/pnc-com/pdf/personal/fee-schedule.pdf" }, 0.85, true)).not.toBe(reason);
+    expect(publishSkipReason({ ...benefit, free_read: false }, 0.85, true)).not.toBe(reason);
+  });
+
+  it("skips a product-page $0 benefit with the switch as shipped (on since Oct 9), and nothing else", async () => {
+    const benefit = {
+      ...verifiedFee,
+      canonical_fee_key: "overdraft",
+      fee_name: "Overdraft Fees",
+      amount: "0.00",
+      outlier_flags: ["agentic_darwin_verified", "free_fee_verified"],
+      free_read: true,
+      document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
+    };
+    const plain = { ...benefit, free_read: false };
+    const withSwitch = await runHamiltonPublish({ runId: 123, db: asPublishDb(createDbMock([benefit])) });
+    const without = await runHamiltonPublish({ runId: 124, db: asPublishDb(createDbMock([plain])) });
+    expect(withSwitch.results[0].reason).toBe("Read from a product page's benefits, not a fee schedule");
+    expect(without.results[0].reason).not.toBe("Read from a product page's benefits, not a fee schedule");
+  });
+
+  it("holds a twin whose name is a sentence fragment even when its own document reproduces it (101941)", async () => {
+    const twin = { ...verifiedFee, canonical_fee_key: "nsf", fee_name: "withdrawals or other means. The NSF fee", amount: "29.00", twin_recheck: true };
+    const text = [{ source_document_id: 77, normalized_text: "Fee Schedule\nNSF fee (per item) $29.00\nStop payment fee $30.00" }];
+    const db = createDbMock([twin], [], undefined, text);
+    const result = await runHamiltonPublish({ runId: 125, db: asPublishDb(db) });
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0].reason).toContain("Rules re-check");
+    expect(sentenceFragmentName("Non-Sufficient Fund (NSF) fee")).toBe(false);
+    expect(sentenceFragmentName("PERSONAL CHECKING: Monthly Cycle Service Charge")).toBe(false);
   });
 
   it("never publishes a row read from an article page", async () => {
@@ -372,9 +476,10 @@ describe("Hamilton agentic publish", () => {
     expect(change?.slice(1)).toEqual(expect.arrayContaining([42, "overdraft", 30, 35, "increase"]));
   });
 
-  it("records a real schedule change replayed from prod (MFCU non-member cashier's check, $5 to $10)", async () => {
-    // Prod, 9 Oct: verified 81480 from the 5 Oct copy of mfcu.net/Fees (document 16105), live
-    // 54570 from the 17 Feb copy (document 2253). Each copy lists the fee at one price only.
+  it("records a price change when each copy of the page lists the fee at one price", async () => {
+    // Shape taken from prod rows (MFCU 7383, 9 Oct). The real live 54570 at $5 was a misread:
+    // both copies state $10 for the non-member cashier's check and $5 for on-us check cashing
+    // on the next line, so MFCU did not raise this price. Kept as the price-change case.
     const newer = {
       ...verifiedFee,
       fee_verified_id: 81480,
@@ -583,6 +688,8 @@ describe("Hamilton agentic publish", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'verified:' || fv.fee_verified_id::text");
+      expect(query).toContain("pa.detail->>'same_line_check' IS NULL");
+      expect(JSON.stringify(db.mock.calls)).toContain("same_line_check");
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });
 
@@ -594,6 +701,20 @@ describe("Hamilton agentic publish", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key");
       expect(params).toContain("darwin_schedule_refiled");
+      // A guard rejection recorded before the guard re-queue step passed the row does not count.
+      expect(query).toContain("pa.detail->>'reason' LIKE 'Category guard%'");
+      expect(query).toContain("flag LIKE 'category_guard_requeued:%'");
+    });
+
+    it("selects again a row skipped as identical to a live fee the rules re-check took down", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 505, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("pa.outcome = 'unchanged'");
+      expect(query).toContain("NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint");
+      expect(query).toContain("prev.rolled_back_reason = 'rules_recheck_unreproduced'");
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
@@ -626,6 +747,62 @@ describe("decidePriorFee", () => {
   it("skips an amount already live on any line", () => {
     const match = live({ fee_published_id: 602, amount: "35.00" });
     expect(decidePriorFee(row, [live({ source_document_id: 77 }), match])).toEqual({ kind: "identical", prior: match });
+  });
+
+  it("publishes a second line of the same document at the same price under another name (Wildfire 8019, 9 Oct)", () => {
+    const inquiry = { ...row, fee_verified_id: 8019, canonical_fee_key: "atm_non_network", amount: "5.00", fee_name: "ATM Balance Inquiry (at non-Wildfire ATM) ........................." };
+    const adjustment = live({ fee_published_id: 14754, amount: "5.00", source_document_id: 77, fee_name: "ATM Adjustment ......................................" });
+    expect(decidePriorFee(inquiry, [adjustment], (prior) => prior === adjustment)).toEqual({ kind: "additional_line" });
+    // Without the page check saying the two lines sit apart, the price alone still decides.
+    expect(decidePriorFee(inquiry, [adjustment])).toEqual({ kind: "identical", prior: adjustment });
+    // Another read of the same line, or the same price from another document, is still identical.
+    const reread = live({ fee_published_id: 14755, amount: "5.00", source_document_id: 77, fee_name: "ATM Balance Inquiry" });
+    expect(decidePriorFee(inquiry, [reread])).toEqual({ kind: "identical", prior: reread });
+    const elsewhere = live({ fee_published_id: 14756, amount: "5.00", source_document_id: 12, fee_name: "Foreign ATM fee" });
+    expect(decidePriorFee(inquiry, [elsewhere])).toEqual({ kind: "identical", prior: elsewhere });
+  });
+
+  it("tells same-priced lines of one document apart only by their names (20-row source spot check, 9 Oct)", () => {
+    const pair = (rowName: string, priorName: string) =>
+      separateLines({ ...row, fee_name: rowName }, live({ source_document_id: 77, fee_name: priorName }));
+    // Separate lines.
+    expect(pair("ACH OD Fee", "Courtesy Pay Fee")).toBe(true);
+    expect(pair("ACH Origination Item — Debit", "ACH Origination Item — Credit ………………")).toBe(true);
+    expect(pair("Monthly service charge (if daily balance falls below $1,000 minimum)", "Monthly service charge – Prestige Checking")).toBe(true);
+    // One fee, named twice.
+    expect(pair("Check Copies", "Check Copy")).toBe(false);
+    expect(pair("Money Orders", "per Money Order")).toBe(false);
+    expect(pair("Legal | Legal Document Processing", "Legal Process")).toBe(false);
+    expect(pair("Mailed Statement Fee (Business and Public Value $3.00)", "Consumer Additional Mailed Statement Fee")).toBe(false);
+    expect(pair("Overdraft Protection Plans designed to avoid the above fees are available either by linking to another deposit account o", "Overdraft Protection Sweep Fee")).toBe(false);
+    expect(pair("RUSH DELIVERY (2-3 BUSINESS: MONEY ORDER", "MONEY ORDER")).toBe(false);
+    expect(pair("Paid NSF Item < $30 (Courtesy Pay)", "(Courtesy Pay)")).toBe(false);
+    expect(pair("The cost to purchase a prepaid travel card is", "Acadia Prepaid Travel Card")).toBe(false);
+    expect(pair("There is a Replacement Card Fee", "ATM/Debit Card Replacement Fee")).toBe(false);
+    expect(pair("Monthly Maintenance Charge", "/month{{d832 }} with an average daily balance of or more per monthly service charge cycle")).toBe(false);
+    expect(pair("Transfers: Photocopy of Documents, per copy", "SCHEDULE OF FEES AND SERVICES 1-855-TERRABK www.terrabank.com SERVICE FEE Photocopy of Doc")).toBe(false);
+    // A cut-off sentence is not set aside, so these two stay one line (as before the check).
+    expect(pair("per mailed statement", "Paper Statement Fee")).toBe(false);
+    expect(pair("Check Cashing Fee- Members (Only applies to members who do not have $100 in any combination of accounts or a loan with a", "Check Cashing Fee- Third Party")).toBe(false);
+    // Still separate.
+    expect(pair("ATM/ITM Inquiries (per instance; FREE at Service 1 FCU & Co-Op Network machines)", "ATM/ITM Transfers (per instance; FREE at Service 1 FCU & Co-Op Network machines)")).toBe(true);
+  });
+
+  it("finds both lines apart on the page, each with the price (fresh 20-row source spot checks, 9 Oct)", () => {
+    const page = "ATM FEES ATM Balance Inquiry (at non-Wildfire ATM) ........ $5.00 ATM Adjustment ........ $5.00 Wire Transfer Outgoing $25";
+    expect(linesApartOnPage(page, "ATM Balance Inquiry (at non-Wildfire ATM) ......", "ATM Adjustment ......", "5.00")).toBe(true);
+    // A name not on the current copy of the page.
+    expect(linesApartOnPage(page, "ATM Balance Inquiry", "Foreign ATM fee", "5.00")).toBe(false);
+    // The price does not follow one of the names.
+    expect(linesApartOnPage(page, "ATM Adjustment", "Wire Transfer Outgoing", "5.00")).toBe(false);
+    // A sentence about the table line ("charge of $25") is the same fee read twice.
+    const nsf = "Insufficient Funds Fee $25.00 per item. A nonsufficient funds (NSF) charge of $25.00 applies to each item.";
+    expect(linesApartOnPage(nsf, "Insufficient Funds Fee", "A nonsufficient funds (NSF) charge", "25")).toBe(false);
+    // One name inside the other line ("Inactive Checking" in "Inactive Checking3").
+    const inactive = "Inactive Checking3 $5.00 per month";
+    expect(linesApartOnPage(inactive, "Inactive Checking3", "Inactive Checking", "5")).toBe(false);
+    // Cents must match.
+    expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
   });
 
   it("keeps lines from the same document side by side", () => {

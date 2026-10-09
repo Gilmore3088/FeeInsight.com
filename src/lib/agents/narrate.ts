@@ -172,8 +172,14 @@ function narrateFinished(
       if (failing === 0) return `Checked ${count(n(detail, "scanned_fees"), "live fee")}; every one matches its category.`;
       return detail.dry_run === true
         ? `Found ${count(failing, "live fee")} filed under the wrong category (dry run, nothing rolled back).`
-        : `Rolled back ${count(n(detail, "rolled_back_fees"), "live fee")} filed under the wrong category.`;
+        : n(detail, "rolled_back_fees") > 0
+          ? `Rolled back ${count(n(detail, "rolled_back_fees"), "live fee")} filed under the wrong category.`
+          : `Flagged ${count(failing, "live fee")} filed under the wrong category for a second look.`;
     }
+    case "frequency-fill":
+      return n(detail, "frequency_fills") === 0
+        ? `Checked ${count(n(detail, "frequency_fill_scanned"), "live fee")}; every frequency matches its schedule row.`
+        : `Set the frequency of ${count(n(detail, "frequency_fills"), "live fee")} from its own schedule row.`;
     case "public-discovery":
     case "public-audit":
       return `Checked ${count(n(detail, "processed_routes"), "Fee Insight page")} ${scope}; ${count(n(detail, "public_findings"), "issue")} found.`;
@@ -202,6 +208,7 @@ function narrateFinished(
     case "registry-state-bill-news":
     case "registry-enforcement":
     case "registry-state-enforcement":
+    case "registry-wire-research":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -220,6 +227,16 @@ function narrateFinished(
     }
     case "hamilton-answer-eval":
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "bayes-replay-ledger": {
+      if (detail.schema_ready === false) return "Bayes counted nothing: the replay ledger is not created yet.";
+      const stuck = n(detail, "stuck");
+      return `Bayes counted the reach of each rule change: ${n(detail, "closed")} closed, ${n(detail, "open")} open with ${count(n(detail, "queued_records"), "record")} queued${stuck > 0 ? `, ${stuck} stuck` : ""}.`;
+    }
+    case "deming-regression": {
+      if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
+      const regressions = n(detail, "regressions");
+      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
+    }
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
@@ -261,6 +278,26 @@ function narrateFinished(
       if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
       if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
       return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
+    }
+    case "growth-quote": {
+      if (detail.schemaReady === false) return "Drafted no quotes; the queue or the leads' qualified columns are not there yet.";
+      if (!n(detail, "qualified")) return "Checked the leads; none is marked qualified, so no quote was drafted.";
+      const drafted = n(detail, "drafted");
+      if (!drafted) return `Checked ${count(n(detail, "qualified"), "qualified lead")}; each already has a quote draft.`;
+      return `Drafted ${count(drafted, "quote email")} for James to review and send himself.`;
+    }
+    case "growth-plan": {
+      if (detail.schemaReady === false) return "Wrote no Monday plan; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s Monday plan already in the queue.`;
+      return `Filed the Monday plan for the week of ${String(detail.week)} for James to read.`;
+    }
+    case "growth-proposals": {
+      if (detail.schemaReady === false) return "Wrote no proposals; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s proposals already in the queue.`;
+      const proposals = n(detail, "proposals");
+      return proposals
+        ? `Filed ${count(proposals, "proposed change")} for the week of ${String(detail.week)}, each with its counts.`
+        : `Filed no proposed change for the week of ${String(detail.week)}: too little evidence yet.`;
     }
     case "growth-intel": {
       if (detail.schemaReady === false) return "Wrote no market brief; the queue is not there yet.";
@@ -449,6 +486,13 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       const states = Array.isArray(detail.by_state) ? (detail.by_state as Array<{ pages?: number }>).filter((s) => (s.pages ?? 0) > 0).length : 0;
       return `Read ${count(states, "state banking department")} and refreshed ${count(n(detail, "upserted"), "state enforcement order")}.`;
     }
+    case "registry-wire-research": {
+      if (detail.schema_missing) return "Skipped Regulatory Wire research notes (migration not applied yet).";
+      if (detail.shadow) {
+        return `Picked ${count(n(detail, "selected"), "wire item")} for research notes and could read ${n(detail, "would_summarise")}; wrote none (shadow mode).`;
+      }
+      return `Wrote ${count(n(detail, "written"), "Regulatory Wire research note")} from ${count(n(detail, "selected"), "item")}; ${n(detail, "unreadable")} unreadable, ${n(detail, "failed")} failed.`;
+    }
     default:
       return null;
   }
@@ -509,6 +553,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-contact-picks": "growth",
   "growth-outreach": "growth",
   "growth-learning": "growth",
+  "growth-quote": "growth",
+  "growth-plan": "growth",
+  "growth-proposals": "growth",
   "growth-intel": "growth",
   "growth-conversion": "growth",
   "growth-tools": "growth",
@@ -520,6 +567,8 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-send": "growth",
   "marketing-states": "growth",
   "score-answer-key": "atlas",
+  "bayes-replay-ledger": "atlas",
+  "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",
@@ -555,6 +604,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-state-bill-news": "magellan",
   "registry-enforcement": "magellan",
   "registry-state-enforcement": "magellan",
+  "registry-wire-research": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",
@@ -570,5 +620,6 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "report-render": "hamilton",
   "report-close": "hamilton",
   "category-guard": "hamilton",
+  "frequency-fill": "hamilton",
   "public-diagnose": "hamilton",
 };

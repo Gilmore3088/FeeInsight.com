@@ -24,6 +24,8 @@ describe("whole-schedule questions", () => {
     expect(asksWholeSchedule("How do our fees stack up against the market?")).toBe(true);
     expect(asksWholeSchedule("Summarize Space Coast Federal Credit Union's fee evidence and data caveats.")).toBe(true);
     expect(asksWholeSchedule("Who in our state changed their NSF fee this year?")).toBe(false);
+    // Read only when no fee is named: a follow-up about peers asks how the schedule compares.
+    expect(asksWholeSchedule("what about national peers by size")).toBe(true);
   });
 
   it("orders fees by distance from the peer median and says higher or lower", () => {

@@ -1,5 +1,5 @@
 import { getPeerFeeValues, type PeerFilterSet } from "./fee-index";
-import { getReportRuleCheck } from "./market-readiness";
+import { getReportRuleCheck, type ReportRuleCheck } from "./market-readiness";
 
 /** The fees the free institution page ranks against peers (value funnel A3). */
 export const PEER_RANK_FEE_KEYS = ["overdraft", "monthly_maintenance"] as const;
@@ -46,7 +46,14 @@ export function rankAgainstPeers(own: number, others: number[]): Omit<PeerRankLi
  * contract the page's national medians use. Null when the report rule is not met.
  */
 export async function getInstitutionPeerRank(institutionId: number): Promise<InstitutionPeerRank | null> {
-  const rule = await getReportRuleCheck(institutionId);
+  return getInstitutionPeerRankForRule(institutionId, await getReportRuleCheck(institutionId));
+}
+
+/** The peer rank once the institution's report rule check is known (see getInstitutionPeerRank). */
+export async function getInstitutionPeerRankForRule(
+  institutionId: number,
+  rule: ReportRuleCheck | null,
+): Promise<InstitutionPeerRank | null> {
   if (!rule?.passes || !rule.charter_type) return null;
   const filters: PeerFilterSet =
     rule.peerScope === "district" && rule.fed_district !== null

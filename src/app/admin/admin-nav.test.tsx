@@ -29,14 +29,14 @@ afterEach(() => {
 
 describe("AdminRoomTabs", () => {
   it("lists the six rooms and marks the one you are in", () => {
-    render(<AdminRoomTabs badges={{ knoxPending: 4 }} />);
+    render(<AdminRoomTabs badges={{ trustPending: 4 }} />);
     const nav = screen.getByRole("navigation", { name: "Admin rooms" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((link) => link.textContent?.replace(/\d+/g, ""))).toEqual([
       "Today", "Agents", "Data", "Customers", "Publishing", "Controls",
     ]);
     expect(within(nav).getByRole("link", { name: /Agents/ })).toHaveAttribute("aria-current", "page");
-    expect(within(nav).getByRole("link", { name: /Agents/ })).toHaveTextContent("4");
+    expect(within(nav).getByRole("link", { name: /Data/ })).toHaveTextContent("4");
   });
 });
 
@@ -72,7 +72,7 @@ describe("AdminNav", () => {
 describe("AdminRoomMenu", () => {
   it("names the room and opens the list of rooms on a room's own page", () => {
     navigationState.pathname = "/admin/agents";
-    render(<AdminRoomMenu badges={{ knoxPending: 2 }} />);
+    render(<AdminRoomMenu badges={{ trustPending: 2 }} />);
     expect(screen.queryByRole("navigation", { name: "Choose a room" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Agents/ }));
     const list = screen.getByRole("navigation", { name: "Choose a room" });

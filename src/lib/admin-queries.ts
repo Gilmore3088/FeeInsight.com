@@ -1557,7 +1557,6 @@ export interface DataTrustQueueRow extends DataTrustQueueDecision {
   validation_queue_count: number;
   latest_validation_queue_status: string | null;
   latest_validation_mode: string | null;
-  knox_pending_count: number;
 }
 
 export interface DataTrustQueueResult {
@@ -1952,17 +1951,6 @@ export async function getDataTrustQueueRows({
         FROM source_validation_queue
         GROUP BY institution_id
       ),
-      knox_pending AS (
-        SELECT fv.institution_id, COUNT(*)::int AS knox_pending_count
-        FROM agent_messages am
-        LEFT JOIN knox_overrides ko ON ko.rejection_msg_id = am.message_id
-        JOIN verified_fee_observations fv
-          ON fv.fee_verified_id = NULLIF(am.payload->>'fee_verified_id','')::bigint
-        WHERE am.sender_agent = 'knox'
-          AND am.intent = 'reject'
-          AND ko.id IS NULL
-        GROUP BY fv.institution_id
-      ),
       base AS (
           SELECT
             ct.id,
@@ -2005,8 +1993,7 @@ export async function getDataTrustQueueRows({
             ls.latest_submission_created_at,
             COALESCE(vq.validation_queue_count, 0) AS validation_queue_count,
             vq.latest_validation_queue_status,
-            vq.latest_validation_mode,
-            COALESCE(kp.knox_pending_count, 0) AS knox_pending_count
+            vq.latest_validation_mode
           FROM institution_sources ct
           LEFT JOIN catalog_counts cc ON cc.institution_id = ct.id
           LEFT JOIN verified_unpublished_counts vuc ON vuc.institution_id = ct.id
@@ -2015,7 +2002,6 @@ export async function getDataTrustQueueRows({
           LEFT JOIN submission_counts sc ON sc.institution_id = ct.id
           LEFT JOIN latest_submissions ls ON ls.institution_id = ct.id
           LEFT JOIN validation_queue vq ON vq.institution_id = ct.id
-          LEFT JOIN knox_pending kp ON kp.institution_id = ct.id
           WHERE ct.status = 'active'
             AND COALESCE(ct.document_type, '') NOT IN ('offline', 'no_website')
             AND ${queryFilter}
@@ -2037,8 +2023,6 @@ export async function getDataTrustQueueRows({
                 THEN 'extracted_rows_pending_classification'
               WHEN verified_without_published_count > 0
                 THEN 'extracted_rows_pending_classification'
-              WHEN knox_pending_count > 0
-                THEN 'knox_decisions_pending'
               WHEN verified_fee_count > 0
                 THEN 'verified_public_ready'
               WHEN COALESCE(btrim(fee_schedule_url), '') = ''
@@ -2048,7 +2032,6 @@ export async function getDataTrustQueueRows({
             CASE
               WHEN pending_submission_count > 0 THEN 0
               WHEN latest_source_status = 'failed' THEN 1
-              WHEN knox_pending_count > 0 THEN 2
               WHEN raw_without_verified_count > 0 THEN 3
               WHEN verified_fee_count = 0 THEN 4
               ELSE 5
@@ -2103,7 +2086,6 @@ export async function getDataTrustQueueRows({
         pendingSubmissionCount: Number(row.pending_submission_count ?? 0),
         acceptedSubmissionCount: Number(row.accepted_submission_count ?? 0),
         validationQueueCount: Number(row.validation_queue_count ?? 0),
-        knoxPendingCount: Number(row.knox_pending_count ?? 0),
         automationEnabled,
       });
       return {
@@ -2148,7 +2130,6 @@ export async function getDataTrustQueueRows({
         latest_validation_mode: row.latest_validation_mode
           ? String(row.latest_validation_mode)
           : null,
-        knox_pending_count: Number(row.knox_pending_count ?? 0),
       } satisfies DataTrustQueueRow;
     });
 
@@ -2218,6 +2199,11 @@ export interface LeadRow {
   paid_at: string | null;
   /** False until migration 20270110000003 has added the payment columns. */
   payment_columns: boolean;
+  /** When and by whom the lead was marked qualified (migration 20270110000032); null when not. */
+  qualified_at: string | null;
+  qualified_by: string | null;
+  /** False until migration 20270110000032 has added the qualified columns. */
+  qualified_columns: boolean;
 }
 
 export interface LeadsSummary {
@@ -2256,6 +2242,16 @@ export async function getLeadsSummary(): Promise<LeadsSummary> {
   }
 }
 
+/** The qualified mark from the row's JSON, so the list works before migration 20270110000032. */
+export function qualifiedFieldsOf(fields: Record<string, unknown> | null): Pick<LeadRow, "qualified_at" | "qualified_by" | "qualified_columns"> {
+  const row = fields ?? {};
+  return {
+    qualified_at: typeof row.qualified_at === "string" && row.qualified_at ? row.qualified_at : null,
+    qualified_by: typeof row.qualified_by === "string" && row.qualified_by ? row.qualified_by : null,
+    qualified_columns: "qualified_at" in row && "qualified_by" in row,
+  };
+}
+
 export async function getLeads(limit = 200): Promise<LeadRow[]> {
   try {
     const rows = await sql`
@@ -2283,6 +2279,7 @@ export async function getLeads(limit = 200): Promise<LeadRow[]> {
       quote_sent_at: payment.quoteSentAt,
       paid_at: payment.paidAt,
       payment_columns: payment.paymentColumns,
+      ...qualifiedFieldsOf(r.fields as Record<string, unknown> | null),
       };
     });
   } catch (e) {

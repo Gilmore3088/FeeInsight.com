@@ -19,7 +19,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.08em] 
 export function StoryExhibitView({ item, number }: { item: StoryExhibit; number: number }) {
   const x = item.exhibit;
   const takeaway = item.takeaway ? (
-    <p className="mt-3 border-l-2 border-terra pl-3 text-sm font-medium text-warm-900">
+    <p className="mt-3 border-l-2 border-terra pl-3 text-base text-warm-900">
       {withFiguresBold(item.takeaway.text)}
     </p>
   ) : null;

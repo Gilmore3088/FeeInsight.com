@@ -91,7 +91,7 @@ export function ExhibitFrame({
 }) {
   const label = [number != null ? `Exhibit ${number}` : "Exhibit", topic].filter(Boolean).join(" · ");
   return (
-    <div className="rd">
+    <div className="rd w-full">
       <style href="report-design" precedence="medium">
         {REPORT_DESIGN_CSS}
       </style>

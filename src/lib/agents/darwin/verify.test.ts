@@ -1,7 +1,8 @@
+import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
-import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
+import { DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
 import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
@@ -17,6 +18,13 @@ const SCHEDULE_TEXT = ["Overdraft fee $35.00", "Courtesy overdraft fee $5.00", "
 const SOURCE_TEXTS = [
   { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
   { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
+  {
+    source_document_id: 58,
+    normalized_text: [
+      "Money Market Savings Account (below $2,500) | $15/mo. | Dormant Fee | $5/mo.",
+      "Interest Checking (below $1,500) | $15/mo. | Levies and Writs per document $75",
+    ].join("\n"),
+  },
 ];
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
@@ -153,6 +161,16 @@ describe("Darwin agentic verification", () => {
     expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
   });
 
+  it("holds no row once the guard carries its category lesson (bond returns, guard v58)", () => {
+    // Raw 246460 (2026-10-09): "Bond return items" $35 filed nsf was held as category_lesson_pending
+    // until guard v58 re-filed returned bonds and coupons to deposited_item_return.
+    expect(DARWIN_CATEGORY_HOLDS).toEqual([]);
+    expect(pendingCategoryLesson("nsf", "Bond return items")).toBeNull();
+    expect(refileCategory("nsf", "Bond return items")).toBe("deposited_item_return");
+    expect(refileCategory("nsf", "Bond/Coupon Returned Item Fee")).toBe("deposited_item_return");
+    expect(refileCategory("nsf", "NSF returned item fee")).toBe("nsf");
+  });
+
   it("rejects a fee its own stored schedule does not state", async () => {
     const db = createDbMock([{ ...rawFee, amount: "36.00" }]);
 
@@ -162,6 +180,31 @@ describe("Darwin agentic verification", () => {
     expect(result.results[0]).toMatchObject({ status: "skipped", decision: "rejected", reasonCode: "not_in_source" });
     const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
+  it("settles a stated frequency the fee's own line contradicts, and flags the row", async () => {
+    // Held excess-withdrawal rows (Oct 9): Knox read "monthly" from the allowance, the line charges per withdrawal.
+    const perWithdrawal = {
+      ...rawFee,
+      fee_raw_id: 802,
+      frequency: "monthly",
+      conditions: "canonical_hint=overdraft; excerpt=\"Overdraft fee $35.00 per item in excess of one during a month\"",
+    };
+    const db = createDbMock([perWithdrawal]);
+    await runDarwinVerify({ runId: 101, limit: 999, db: asVerifyDb(db) });
+    const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
+    expect(insert).toBeDefined();
+    const params = JSON.stringify(insert!.slice(1));
+    expect(params).toContain('"per_item"');
+    expect(params).not.toContain('"monthly"');
+    expect(params).toContain(FREQUENCY_SETTLED_FLAG);
+
+    // A line that agrees keeps Knox's frequency and gets no flag.
+    const agreeing = createDbMock([rawFee]);
+    await runDarwinVerify({ runId: 102, limit: 999, db: asVerifyDb(agreeing) });
+    const agreeingInsert = agreeing.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO verified_fee_observations"));
+    expect(JSON.stringify(agreeingInsert!.slice(1))).toContain('"per_item"');
+    expect(JSON.stringify(agreeingInsert!.slice(1))).not.toContain(FREQUENCY_SETTLED_FLAG);
   });
 
   describe("statedInOwnSource", () => {
@@ -305,6 +348,25 @@ describe("Darwin agentic verification", () => {
     expect(result.results[1]).toMatchObject({ decision: "duplicate" });
   });
 
+  it("verifies two products' fees with one price on one document as two fees (batch key v3, SCCU 8109)", async () => {
+    const moneyMarket = {
+      ...rawFee, fee_name: "Money Market Savings Account (below $2,500)", amount: "15.00", frequency: "monthly", source_document_id: 58,
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:minimum_balance"],
+      conditions: "canonical_hint=minimum_balance; excerpt=\"Money Market Savings Account (below $2,500) | $15/mo. | Dormant Fee | $5/mo.\"",
+    };
+    const interestChecking = {
+      ...moneyMarket, fee_raw_id: 802, fee_name: "Interest Checking (below $1,500)",
+      conditions: "canonical_hint=minimum_balance; excerpt=\"Interest Checking (below $1,500) | $15/mo. | Levies and Writs per document $75\"",
+    };
+    const db = createDbMock([moneyMarket, interestChecking, { ...interestChecking, fee_raw_id: 803 }]);
+
+    const result = await runDarwinVerify({ runId: 109, db: asVerifyDb(db) });
+
+    // The same line read twice (raw 803) is still one fee.
+    expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 1, reasonCounts: { duplicate_in_batch: 1 } });
+    expect(DARWIN_BATCH_KEY_VERSION).toBe(3);
+  });
+
   it("verifies the same fee once on each stored copy of a page", async () => {
     // An older and a newer copy of the same URL are different documents: the fee on the
     // bank's current copy is not a duplicate of the one on the older copy.
@@ -352,6 +414,11 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
       expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+      // A hold outside a hand-set envelope is re-checked once today's envelope takes the amount.
+      expect(query).toContain("pa.detail->>'reason_code' = 'outside_envelope'");
+      expect(query).toContain("->>'min')::numeric");
+      expect(params).toContain(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES));
+      expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
     });
 
     it("records the learned category model's dispute without changing the decision", async () => {
@@ -386,8 +453,18 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
+      expect(query).toMatch(/reason_code' IN \('category_mismatch', 'category_lesson_pending'\)[\s\S]*category_guard_version/);
       expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
+    });
+
+    it("re-reads not_in_source rejections once after the source check changes", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 405, db: asVerifyDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'not_in_source'[\s\S]*COALESCE\(\(pa\.detail->>'source_check_version'\)::int, 0\) </);
+      expect(params).toEqual(expect.arrayContaining([DARWIN_SOURCE_CHECK_VERSION]));
     });
 
     it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {
@@ -396,7 +473,7 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id/);
+      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id[\s\S]*twin_raw.conditions from 'excerpt=/);
       expect(params).toEqual(expect.arrayContaining([DARWIN_BATCH_KEY_VERSION]));
     });
 

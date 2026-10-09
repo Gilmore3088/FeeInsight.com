@@ -3,6 +3,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } fr
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { BRANCHLESS_MAX_OFFICES, BRANCHLESS_MIN_DEPOSITS, BRANCHLESS_ONE_OFFICE_SHARE } from "@/lib/data-store/branchless-banks";
 
 /**
  * The free market snapshot a prospect's first email links to (GTM plan, James 15:25 and 15:33
@@ -71,6 +72,8 @@ export interface SnapshotFeeRow {
   /** When the schedule was last read, not its effective date. */
   read_at: string | Date | null;
   normalized_text: string | null;
+  /** The catalog's charge frequency ("monthly", "annual", "per_item"...), null when unknown. */
+  frequency?: string | null;
 }
 
 export interface SnapshotValue {
@@ -87,6 +90,11 @@ export interface SnapshotValue {
   notes: string[];
   /** The published rows behind the value, so a draft quoting it can be withdrawn if one is taken down. */
   publishedIds: number[];
+  /**
+   * The catalog's charge frequency shared by every row behind the value; null when any row's is
+   * unknown or they differ. Two values compare like for like only at the same frequency.
+   */
+  frequency: string | null;
 }
 
 export interface SnapshotFee {
@@ -119,6 +127,13 @@ function notesFor(rows: SnapshotFeeRow[]): string[] {
     if (row.waiver_text) notes.add(`Waived: ${row.waiver_text}`);
   }
   return [...notes];
+}
+
+/** The frequency every row carries, or null when one is unknown or they differ. */
+function sharedFrequency(rows: SnapshotFeeRow[]): string | null {
+  const frequencies = new Set(rows.map((row) => row.frequency ?? null));
+  const [only] = [...frequencies];
+  return frequencies.size === 1 && only ? only : null;
 }
 
 /** The schedule line the pipeline read this row from (`excerpt="..."` in its conditions), if stored. */
@@ -174,6 +189,7 @@ export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | nul
     readAt: iso(lead.read_at),
     notes: notesFor(checked),
     publishedIds: checked.map((row) => Number(row.fee_published_id)).filter((id) => Number.isInteger(id) && id > 0),
+    frequency: sharedFrequency(checked),
   };
 }
 
@@ -233,7 +249,7 @@ function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
  * but they are not its local competitors, so a snapshot or state comparison leaves them out of the peers
  * (coordinator, 23:57 UTC Oct 8, after Accuracy confirmed the four Salt Lake City $0 overdraft
  * rows). Credit unions file no Summary of Deposits and are never excluded here. The same
- * filter is written into `loadStateComparison`.
+ * filter is written into `loadStateComparison`; its thresholds live in `branchless-banks.ts`.
  */
 export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ subject: SnapshotInstitution; peers: SnapshotInstitution[] } | null> {
   const [subjectRow] = await db`
@@ -252,7 +268,7 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
              SELECT b.institution_id FROM institution_branch_deposits b
               WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
               GROUP BY b.institution_id
-             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
+             HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS} AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits))
      ORDER BY s.institution_name
   `;
   return { subject, peers: peerRows.map(toInstitution) };
@@ -263,7 +279,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
-            ef.conditions, ef.account_product_type, ef.waiver_text,
+            ef.conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text
@@ -322,7 +338,7 @@ export async function loadStateComparison(db: SqlTag, subject: SnapshotInstituti
              SELECT b.institution_id FROM institution_branch_deposits b
               WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
               GROUP BY b.institution_id
-             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
+             HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS} AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits))
   `;
   const names = new Map<number, string>(peerRows.map((row) => [Number(row.id), String(row.institution_name)]));
   const rows = await loadSnapshotRows(db, [subject.id, ...names.keys()], [category]);

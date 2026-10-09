@@ -20,7 +20,7 @@
 
 import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, SUBORDINATION } from "@/lib/fee-fold";
 
-export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
+export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
 /** What a caller knows about the fee besides its name; enables the rate check. */
 export interface CategoryGuardContext {
@@ -66,6 +66,12 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
 );
 
 // v47: "Foreign Wire Research" is account research, not a wire (Darwin eval, Oct 8).
+/**
+ * v53: a business or commercial account's wire price ("Business Wire Transfer Incoming (domestic)
+ * | $20.00", 3Hill FCU 28215, shown as the consumer price in the sample report). A name that also
+ * says consumer or personal covers both and stays; "business day" is a cut-off, not a payer.
+ */
+const BUSINESS_ONLY = String.raw`^(?!.*\b(consumer|personal|retail|individual)\b).*\b(business|commercial|corporate)\b(?!\s+days?\b)`;
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
@@ -80,7 +86,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
     // account's monthly fee by the balance that waives it.
-    include: /(maintenance|monthly service|service charge|monthly fee|(minimum|balance)\b.{0,80}\bavoid\b.{0,30}\bservice fee)/i,
+    // v57: a cross-border banking bundle's annual fee is the account's fee, paid yearly (RBC's
+    // U.S. Premium Checking "Cross-Border Banking Bundle annual fee", $99.50 a year or $9.95 a month).
+    include: /(maintenance|monthly service|service charge|monthly fee|(minimum|balance)\b.{0,80}\bavoid\b.{0,30}\bservice fee|\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) annual fee)/i,
     // A per-transaction charge or an earnings-credit note is not the account's monthly fee, nor a
     // business service's own monthly charge (remote deposit scanners, IntraFi/ICS sweeps, a fee per
     // location) or a sentence about waiving it ("Waiving the Monthly Service Fee") (v21).
@@ -89,8 +97,13 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // monthly fee, an ATM card's monthly fee and table or waiver fragments are not it either.
     // v49: a treasury service's monthly charge (ACH or wire module, API service, Positive Pay,
     // cash management, "Monthly Fee (per account)" on BankUnited's treasury schedule) is not it.
+    // v55: a merchant service's monthly charge ("Merchant Capture Monthly Service Charge") or an
+    // early termination fee (ProGrowth's $49.95 "Monthly Service Fee Early Termination Fee",
+    // Merchant Capture) is not it either; a bank named "First Merchants" still is.
+    // v58: "... the balance requirement to avoid the monthly service charge is met. Otherwise, a fee
+    // of" prices what the sentence waives, here a non-network ATM withdrawal (Westamerica 96164).
     exclude:
-      /(\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -131,7 +144,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v47: a business-only ACH return and a payment the payee sent back ("Payee-returned Check
     // Payment Due to Member Error") are not the member's NSF fee (Darwin eval, Oct 8).
     exclude:
-      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b|\bbonds?\b|\bcoupons?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
     capInNotes: {
@@ -166,17 +179,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   wire_domestic_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   wire_intl_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection)`, "i"),
+    exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection|${BUSINESS_ONLY})`, "i"),
   },
   // v44: guarded so Hamilton reads it for a paired price ("$20 / $30") in the wrong slot.
-  wire_intl_incoming: { include: /\S/, exclude: /(?!)/ },
+  wire_intl_incoming: { include: /\S/, exclude: new RegExp(BUSINESS_ONLY, "i") },
   wire_domestic_incoming: {
     include: /wire/i,
-    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   stop_payment: {
     include: /stop/i,
@@ -257,7 +270,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(charge-?back (on )?(loan|deposit)|charge-?back (items?|message)\b|return\/charge-?back)/i,
   },
   deposited_item_return: {
-    include: /(deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/i,
+    // v58: a returned bond or coupon is a deposited item coming back ("Bond return items",
+    // "Bond/Coupon Returned Item Fee"; Darwin 883's dry read).
+    include: /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|return(ed)? deposit|deposit return|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/i,
     exclude: /(night|safe|box|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
@@ -340,7 +355,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
 };
 
-export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
+/** Categories with only a price ceiling (`PRICE_CEILINGS`), checked by the live sweep too. */
+const CEILING_ONLY_CATEGORIES = ["counter_check", "document_reproduction", "late_payment", "notary_fee", "safe_deposit_box"];
+export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys(CATEGORY_GUARD_RULES), ...CEILING_ONLY_CATEGORIES])];
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
 // v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
@@ -359,7 +376,17 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v49: treasury service monthly charges filed as monthly maintenance (Darwin eval 94121).
 // v50: "Photocopy of Money Order" is a check copy too (v49 is Accuracy's).
 // v51: a certificate penalty paid in dividends, or a forfeited reward, filed as early closure.
-export const CATEGORY_GUARD_VERSION = 51;
+// v52: price ceilings for copies, counter checks, late payment, notary and lost keys.
+// v53: a business or commercial account's wire price leaves the consumer wire categories.
+// v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
+// a safe deposit box late fee above $250.
+// v55: a merchant service's monthly charge or an early termination fee is not monthly maintenance.
+// v56: one product priced differently on two current pages keeps the newer page's price
+// (`hamilton/cross-page-conflict.ts`; a publish-step check, not a name rule here).
+// v57: a cross-border banking bundle's annual fee is monthly maintenance (RBC; v56 is Accuracy's).
+// v58: a returned bond or coupon filed as NSF is a returned deposited item (Darwin 883; raw 246460,
+// 277863); a waiver sentence's "Otherwise, a fee of" is not monthly maintenance (96164).
+export const CATEGORY_GUARD_VERSION = 58;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -403,7 +430,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
   { from: "nsf", to: "overdraft", when: /(paid nsf|paid (?:[\w&]+ ){1,3}nsf items?|nsf[- ]paid|items? paid|\(\s*paid\s*\)|paid (?:non[-\s]?|in)sufficient|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/i },
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
-  { from: "nsf", to: "deposited_item_return", when: /(deposit|written to you)/i },
+  { from: "nsf", to: "deposited_item_return", when: /(deposit|written to you|\bbonds?\b|\bcoupons?\b)/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
   // v41: a charge-off processing fee sits with the other charge-off fees under account research.
@@ -548,8 +575,12 @@ export function checkFeeCategory(
   context?: CategoryGuardContext,
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
-  if (!canonicalFeeKey || !rule) return { ok: true };
+  if (!canonicalFeeKey) return { ok: true };
   const name = plainQuotes(feeName ?? "").trim();
+  if (!rule) {
+    const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
+    return ceilingReason ? { ok: false, code: "amount_implausible", reason: ceilingReason } : { ok: true };
+  }
   const rate = statesRate(canonicalFeeKey, name, context);
   if (rate) {
     return {
@@ -590,7 +621,53 @@ export function checkFeeCategory(
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
   if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
+  const ownAtmReason = freeAtOwnAtm(canonicalFeeKey, name, context);
+  if (ownAtmReason) return { ok: false, code: "name_unsupported", reason: ownAtmReason };
+  const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
+  if (ceilingReason) return { ok: false, code: "amount_implausible", reason: ceilingReason };
   return { ok: true };
+}
+
+/**
+ * v52: prices no bank charges for these fees. A scan that dropped the decimal point prints
+ * "$200" for $2.00 (Central Bank's document 4422: temporary checks $200, photocopy $200, notary
+ * $500, lost key $1000, safe deposit late fee $1000, beside "$5.00" and "$100.00" on the same
+ * page). The fee is flagged for the second look, never re-priced.
+ */
+const PRICE_CEILINGS: ReadonlyArray<{ key: string; max: number; when?: RegExp }> = [
+  { key: "counter_check", max: 100 },
+  { key: "document_reproduction", max: 100 },
+  { key: "late_payment", max: 250 },
+  { key: "notary_fee", max: 300 },
+  // A lost key with rekeying runs up to about $250; drilling the box open ($250-$500) is not capped.
+  { key: "safe_deposit_box", max: 300, when: /^(?!.*drill).*\b(lost|replace\w*|duplicate)\s+keys?\b/i },
+  // v54: a late payment on the box (Central Bank's "$1000", fee 23863, read from "$10.00").
+  { key: "safe_deposit_box", max: 250, when: /^(?!.*drill).*\blate\b/i },
+];
+
+function aboveCeiling(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  const amount = Number(context?.amount);
+  if (!Number.isFinite(amount)) return null;
+  const ceiling = PRICE_CEILINGS.find((entry) => entry.key === canonicalFeeKey && (!entry.when || entry.when.test(name)));
+  if (!ceiling || amount <= ceiling.max) return null;
+  return `$${amount.toFixed(2)} is above any ${canonicalFeeKey} price ($${ceiling.max} ceiling); a scan may have dropped its decimal point`;
+}
+
+/** Words that place an ATM fee at another bank's or network's machine. */
+const OTHER_NETWORK_CUE =
+  /\b(non|foreign|others?|another|network|surcharg\w*|outside|out[- ]of|not\s+(own|operate)|do(es)?\s+not|don['’]t|any|nationwide|national|shared|co-?op|allpoint|moneypass|cirrus|plus|star|pulse|presto|international|third[- ]party|refund\w*|rebate\w*)\b/i;
+
+/**
+ * v54: a free ATM line that names no other bank or network is the bank's own machine ("MidFirst
+ * ATM $0", "Transactions at Orrstown Bank ATMs | No charge", Regions' "Balance Inquiry $0.00"
+ * under "Regions ATM:") or a card's own fee ("ATM Enrollment | No Charge"), not what a customer
+ * pays at another network's ATM. 41 live rows on Oct 9; a priced line is left alone.
+ */
+function freeAtOwnAtm(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "atm_non_network" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  if (!Number.isFinite(amount) || amount !== 0 || OTHER_NETWORK_CUE.test(name)) return null;
+  return `"${name}" is free and names no other bank's or network's ATM, so it is not the atm_non_network fee`;
 }
 
 const PAIRED_PRICES = /\$\s?(\d[\d,]*(?:\.\d{2})?)\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/;

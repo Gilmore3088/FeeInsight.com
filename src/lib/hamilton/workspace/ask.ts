@@ -131,6 +131,17 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
   };
 }
 
+/**
+ * A question about a segment ("all institutions above $10 billion") that names no fee is
+ * answered for overdraft, the fee segments are most often compared on, instead of asking back;
+ * the answer names the fee in its first line.
+ */
+export const SEGMENT_DEFAULT_FEE = "overdraft";
+
+export function withSegmentDefault(intent: AskIntent): AskIntent {
+  return !intent.feeCategory && intent.segment ? { ...intent, feeCategory: SEGMENT_DEFAULT_FEE } : intent;
+}
+
 // ─── Questions Hamilton asks back ────────────────────────────────────────────
 
 export const OBJECTIVE_LABELS: Record<AskObjective, string> = {

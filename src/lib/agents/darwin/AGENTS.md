@@ -25,13 +25,22 @@ Darwin owns verification and classification.
 | `peer_outlier` | pass 2: not far outside the state's peer range (below); a district or national comparison never holds | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
+| `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
 
 - Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
-  as `category_mismatch` under an older guard are selected once more. No other decided row is.
+  as `category_mismatch` or held as `category_lesson_pending` under an older guard are selected
+  once more. The hold list (2026-10-09) carries "Bond return items" $35 filed `nsf` (raw 246460), a
+  returned deposited item the v57 guard let through; the lesson went to Accuracy, and the entry
+  leaves the list in the change that teaches the guard.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
   decided row, and rows once held as `duplicate_in_batch` would be verified as second copies.
+  Each decision also records `source_check_version` (`DARWIN_SOURCE_CHECK_VERSION`, 2026-10-09):
+  when it rises, `not_in_source` rejections stamped lower (or unstamped) are read once more, so a
+  fix to the shared source check reaches the rows it was made for. Before that a `not_in_source`
+  rejection was final; 1,126 rows at 499 banks were waiting on fixes already live (Northern Trust's
+  wrapped-name $25 overdraft, raw 457013, among them).
 - The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,
   2026-10-07). Version 1 named the URL, so a fee on a bank's current copy of a page was held
   as a duplicate of the same fee on an older copy and never verified. A version 1 duplicate on
@@ -98,7 +107,10 @@ Darwin owns verification and classification.
   (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
   outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
   `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent
-  misses for the categories in a batch as lessons. Coverage is small: about 5% of the
+  tuning-key misses for the categories in a batch as lessons. Holdout-key misses are recorded
+  at weight 0 (`lesson: false`) and never read back, so `detail.holdout.hit_rate` measures the
+  review on fees it was never corrected on (2026-10-09; before that, 29 holdout misses had
+  been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule

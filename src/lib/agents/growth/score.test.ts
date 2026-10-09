@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import { measureFor, NO_MEASURE_REASONS, runGrowthScore, summarizeGrowthScore, trackedLinkOf } from "./score";
+import { GSC_NOT_CONFIGURED, type SearchResult } from "./search-console";
+
+const NOT_READ = ` Search: not measured (${GSC_NOT_CONFIGURED})`;
+
+// No test reads the real Search Console.
+beforeEach(() => vi.stubEnv("GSC_SERVICE_ACCOUNT_JSON", ""));
+afterEach(() => vi.unstubAllEnvs());
 
 type Db = Parameters<typeof runGrowthScore>[0]["db"];
 
@@ -115,7 +122,7 @@ describe("growth-score step", () => {
     expect(writes[1].query).not.toContain("score =");
     expect(writes[1].values).toEqual([2]);
     expect(summarizeGrowthScore(result)).toBe(
-      "Scored 1 of 2 posted items (14 tracked visits, 1 lead); 1 left unscored with no measure; reasons are in the step result.",
+      "Scored 1 of 2 posted items (14 tracked visits, 1 lead); 1 left unscored with no measure; reasons are in the step result." + NOT_READ,
     );
   });
 
@@ -130,7 +137,7 @@ describe("growth-score step", () => {
     expect(journeyReads[0]).toEqual([4715, "outreach-launch", "2026-09-21T10:00:00.000Z", "2026-09-28T10:00:00.000Z"]);
     expect(result.scored).toEqual([expect.objectContaining({ draftId: 7, stage: "interest", score: 4, visits: 1, content: "inst-4715" })]);
     expect(writes[0].values).toEqual([4, 7]);
-    expect(summarizeGrowthScore(result)).toBe("Scored 1 of 1 posted item (1 outreach email, 1 reaching commercial interest).");
+    expect(summarizeGrowthScore(result)).toBe(`Scored 1 of 1 posted item (1 outreach email, 1 reaching commercial interest).${NOT_READ}`);
   });
 
   it("scores an outreach email with no recorded response as 0, and waits when the journey tables are missing", async () => {
@@ -163,6 +170,43 @@ describe("growth-score step", () => {
     const result = await runGrowthScore({ db, runId: 5, dryRun: false });
     expect(result.schemaReady).toBe(false);
     expect(summarizeGrowthScore(result)).toContain("20270110000025");
+  });
+
+  it("records that Search Console is not read when no key is set, even before the queue migration", async () => {
+    const { db } = fakeDb([], { queueColumns: 0 });
+    const result = await runGrowthScore({ db, runId: 5, dryRun: false });
+    expect(result.search).toEqual({ measured: false, reason: "GSC_SERVICE_ACCOUNT_JSON is not set; Search Console is not read." });
+    expect(summarizeGrowthScore(result)).toContain(NOT_READ.trim());
+  });
+
+  it("adds this week's search numbers against the week before to the result and summary", async () => {
+    const search: SearchResult = {
+      measured: true,
+      site: "sc-domain:feeinsight.com",
+      lagNote: "lag",
+      thisWeek: { startDate: "2026-09-30", endDate: "2026-10-06", clicks: 12, impressions: 340, averagePosition: 18.4 },
+      weekBefore: { startDate: "2026-09-23", endDate: "2026-09-29", clicks: 7, impressions: 210, averagePosition: 22.1 },
+      topPages: [{ page: "https://feeinsight.com/", clicks: 9, impressions: 100, averagePosition: 5.2 }],
+    };
+    const readSearch = vi.fn(async () => search);
+    const { db } = fakeDb([]);
+    const result = await runGrowthScore({ db, runId: 5, dryRun: true, readSearch });
+    expect(readSearch).toHaveBeenCalledTimes(1);
+    expect(result.search).toBe(search);
+    expect(summarizeGrowthScore(result)).toBe(
+      "No posted item is due a score this week. Search 2026-09-30 to 2026-10-06: 12 clicks (week before 7), 340 impressions (210), average position 18.4 (22.1).",
+    );
+  });
+
+  it("records a failed Search Console read without failing the step", async () => {
+    const { db } = fakeDb([]);
+    const result = await runGrowthScore({
+      db,
+      runId: 5,
+      dryRun: false,
+      readSearch: async () => ({ measured: false, site: "sc-domain:feeinsight.com", reason: "Search Console read failed: Search Console query answered 403: no access" }),
+    });
+    expect(result.search).toMatchObject({ measured: false, reason: expect.stringContaining("403") });
   });
 
   it("is a free marketing step (the marketing pause holds it; run-store.test checks heldByPause)", () => {
