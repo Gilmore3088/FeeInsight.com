@@ -4,7 +4,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { RETIRED_CATEGORY_KEYS } from "@/lib/fee-fold";
 
-import { HAND_REFILES, planHandRefiles } from "./taxonomy-fold";
+import { HAND_REFILES, handFixedPassing, planHandRefiles } from "./taxonomy-fold";
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
@@ -90,6 +90,19 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
     // Under its target with any other name (a later rename), it is left alone.
     expect(planHandRefiles([liveRow(96164, "atm_non_network", "2.50", "Non-network ATM withdrawal")])).toEqual([]);
     expect(planHandRefiles([liveRow(96164, "atm_non_network", "2.50", "Non-Westamerica ATM withdrawal (balance requirement not met)")])).toEqual([]);
+  });
+
+  it("clears the rules re-check's pending takedown only on a hand-fixed fee that traces in its own text (61848, 98747)", () => {
+    const texts = new Map([[9, PAGE_LINES[61848]], [10, PAGE_LINES[98747]]]);
+    const fixed = { ...liveRow(61848, "minimum_balance", "2.00", "Minimum balance fee (minimum daily balance of $5)"), source_document_id: 9 };
+    const other = { ...liveRow(98747, "monthly_maintenance", "15.00", "Service charge (balance falls below $1,000.00)"), source_document_id: 10 };
+    expect(handFixedPassing([fixed, other], texts)).toEqual([61848, 98747]);
+    // Not renamed yet, re-priced, or without its text: left for the re-check itself.
+    expect(handFixedPassing([{ ...fixed, fee_name: "in your account to avoid a minimum balance fee of" }], texts)).toEqual([]);
+    expect(handFixedPassing([{ ...fixed, amount: "3.00" }], texts)).toEqual([]);
+    expect(handFixedPassing([{ ...fixed, source_document_id: 11 }], texts)).toEqual([]);
+    // The name no longer traces in the page: no clear.
+    expect(handFixedPassing([fixed], new Map([[9, "Share Account dividends compound monthly."]]))).toEqual([]);
   });
 
   it("renames a fee in place once, leaving it alone when the live name already reads as listed", () => {

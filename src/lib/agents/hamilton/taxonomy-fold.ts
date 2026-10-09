@@ -4,6 +4,9 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { RULES_RECHECK_CHECK } from "@/lib/agents/hamilton/rules-recheck";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 import {
   FOLD_RULES_VERSION,
   RETIRED_CATEGORIES,
@@ -408,6 +411,27 @@ export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] 
   return moves;
 }
 
+/**
+ * Hand-fixed fees that still carry the rules re-check's pending takedown from before their
+ * rename (61848, 98747, Oct 9): the re-check reads a document only now and then, so its own
+ * clear can come after the archive is due. A fee here passes the same test the re-check's second
+ * look applies (its name and price trace in its own text, and the category guard accepts the
+ * name), so the same second look clears it. A fee not yet fixed, or one that fails, is left alone.
+ */
+export function handFixedPassing(rows: HandRow[], texts: Map<number, string>, refiles: readonly HandRefile[] = HAND_REFILES): number[] {
+  const passing: number[] = [];
+  for (const row of rows) {
+    const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
+    const amount = amountOf(row.amount);
+    if (!refile || amount == null || row.canonical_fee_key !== refile.to || (row.fee_name ?? "").trim() !== refile.name) continue;
+    const text = row.source_document_id == null ? undefined : texts.get(Number(row.source_document_id));
+    if (!text) continue;
+    const traced = checkFeeAgainstSource(text, refile.name, amount, ".", refile.to);
+    if ((traced.ok || traced.reason === "tiered_fee") && checkFeeCategory(refile.to, refile.name).ok) passing.push(refile.feePublishedId);
+  }
+  return passing;
+}
+
 async function selectHandRows(db: SqlTag, institutionId?: number): Promise<HandRow[]> {
   return db<HandRow[]>`
     SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.source_document_id,
@@ -510,6 +534,8 @@ export interface TaxonomyFoldResult {
   feedbackRows: number;
   /** Live fees re-filed by hand (`HAND_REFILES`); a dry run counts those it would move. */
   handRefiled: number;
+  /** Hand-fixed fees whose rules re-check pending takedown was cleared (`handFixedPassing`). */
+  handFlagsCleared: number;
   dryRun: boolean;
   rulesVersion: number;
   /** A sample of the takedowns, for the step's detail. */
@@ -533,6 +559,7 @@ export async function foldRetiredCategories(
     unplacedVerified: 0,
     feedbackRows: 0,
     handRefiled: 0,
+    handFlagsCleared: 0,
     dryRun: options.dryRun,
     rulesVersion: FOLD_RULES_VERSION,
     noHomeSample: [],
@@ -547,6 +574,18 @@ export async function foldRetiredCategories(
   else if (handMoves.length > 0) {
     base.handRefiled = await inSavepoint(db, (scope) => applyHandMoves(scope, handMoves, options.runId));
     if (base.handRefiled > 0) invalidatePublicReadCache();
+  }
+  try {
+    const handRows = await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId));
+    const handDocuments = [...new Set(handRows.filter((row) => row.source_document_id != null).map((row) => Number(row.source_document_id)))];
+    const passing = handFixedPassing(handRows, await inSavepoint(db, (scope) => loadTexts(scope, handDocuments)));
+    if (passing.length > 0) {
+      const look = await secondLook(db, { check: RULES_RECHECK_CHECK, runId: options.runId, failing: [], passing, dryRun: options.dryRun });
+      base.handFlagsCleared = look.cleared;
+      if (look.cleared > 0 && !options.dryRun) invalidatePublicReadCache();
+    }
+  } catch (error) {
+    console.error("taxonomy fold hand flag clear failed:", error);
   }
   let rows: FoldRow[];
   let texts: Map<number, string>;
