@@ -14,18 +14,23 @@ import {
 import { getFederalRuleTracker } from "@/lib/data-store/federal-rules";
 import { getStateWire, getStatesWithNews } from "@/lib/data-store/state-news";
 import { getFederalRelated, getResearchNotes, getStateRelated } from "@/lib/data-store/wire-research";
+import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
+import { MAX_WATCHED_STATES, getWatchedStates, markWatchedStatesViewed } from "@/lib/data-store/wire-watch";
 import {
   WIRE_PAGE_SIZE,
+  opensOnMyStates,
   pageWindow,
   parseWireParams,
   rangePhrase,
   rangeSince,
 } from "@/lib/regulatory/wire";
+import { buildFeeDataStrips, indexesNeeded, type StripItem } from "@/lib/regulatory/wire-fee-links";
 import { STATE_NAMES } from "@/lib/us-states";
 import { NewsFeed } from "./news-feed";
 import { RefreshButton } from "./refresh-button";
-import { JurisdictionField, StateWire, stateItemKey } from "./state-wire";
+import { JurisdictionField, StateWire, stateItemKey, stateStripKey } from "./state-wire";
 import { WireControls, WireHeader } from "./wire-controls";
+import { watchStateFormAction } from "./watch-actions";
 
 export const metadata: Metadata = {
   title: "Regulatory Wire",
@@ -51,7 +56,12 @@ export default async function NewsPage({
   if (!user) redirect(`/login?from=${encodeURIComponent(returnPath)}`);
   if (!canAccessPremium(user)) redirect(`/subscribe?from=${encodeURIComponent(returnPath)}`);
 
-  const params = parseWireParams(raw, (code) => Boolean(STATE_NAMES[code]));
+  const parsed = parseWireParams(raw, (code) => Boolean(STATE_NAMES[code]));
+  const watched = await getWatchedStates(user.id);
+  const watchedCodes = watched.map((w) => w.stateCode);
+  // The States view opens on the reader's watched states unless the link chose a jurisdiction.
+  const mine = opensOnMyStates(parsed, watchedCodes.length);
+  const params = { ...parsed, mine: mine || undefined };
   const now = new Date();
   const since = rangeSince(params.range, now) ?? undefined;
   const phrase = rangePhrase(params.range, now);
@@ -60,6 +70,8 @@ export default async function NewsPage({
     const [wire, states] = await Promise.all([
       getStateWire({
         stateCode: params.state,
+        stateCodes: mine ? watchedCodes : null,
+        newSince: mine ? Object.fromEntries(watched.map((w) => [w.stateCode, w.lastViewedAt])) : null,
         kind: params.kind,
         since,
         q: params.q,
@@ -87,7 +99,20 @@ export default async function NewsPage({
         ? [{ key, state: item.state_code, title: item.publisher ? `${item.headline} - ${item.publisher}` : item.headline, url: item.link, date: item.date }]
         : [];
     });
-    const [notes, related] = await Promise.all([getResearchNotes(refs), getStateRelated(billRefs, pressRefs)]);
+    const stripItems: StripItem[] = wire.items.map((item) => ({
+      key: stateStripKey(item),
+      title: item.kind === "press" ? item.headline : item.title,
+      stateCode: item.state_code,
+    }));
+    const [notes, related, feeIndexes] = await Promise.all([
+      getResearchNotes(refs),
+      getStateRelated(billRefs, pressRefs),
+      getWireFeeIndexes(indexesNeeded(stripItems)),
+    ]);
+    const feeData = buildFeeDataStrips(stripItems, feeIndexes);
+    const lastViewedAt = watched.map((w) => w.lastViewedAt).filter((d): d is string => Boolean(d)).sort().pop() ?? null;
+    // Opening My states is the visit the next "new" count starts from.
+    if (mine) await markWatchedStatesViewed(user.id, now);
     // The reader clamps a page past the end to the last page; show that page's numbers.
     const win = pageWindow(wire.offset / WIRE_PAGE_SIZE + 1, wire.total);
     const shown = { ...params, page: win.page };
@@ -95,9 +120,28 @@ export default async function NewsPage({
       <div className="max-w-4xl">
         <WireHeader params={shown} />
         <div className="mt-5">
-          <WireControls params={shown} lead={<JurisdictionField states={states} active={params.state} />} />
+          <WireControls
+            params={shown}
+            lead={<JurisdictionField states={states} active={params.state} watched={watchedCodes} mine={mine} />}
+          />
         </div>
-        <StateWire params={shown} wire={wire} win={win} phrase={phrase} now={now} notes={notes} related={related} />
+        <StateWire
+          params={shown}
+          wire={wire}
+          win={win}
+          phrase={phrase}
+          now={now}
+          notes={notes}
+          related={related}
+          feeData={feeData}
+          watch={{
+            states: watchedCodes,
+            newByState: lastViewedAt ? wire.newByState : undefined,
+            lastViewedAt,
+            action: watchStateFormAction,
+            max: MAX_WATCHED_STATES,
+          }}
+        />
       </div>
     );
   }
@@ -113,10 +157,13 @@ export default async function NewsPage({
     getSourceCounts(since, params.q || undefined, params.fee),
     getFederalRuleTracker({ now, q: params.q, source: params.source }),
   ]);
-  const [notes, related] = await Promise.all([
+  const stripItems: StripItem[] = articles.map((a) => ({ key: a.guid, title: a.title, stateCode: null }));
+  const [notes, related, feeIndexes] = await Promise.all([
     getResearchNotes(articles.map((a) => ({ kind: "article" as const, id: a.guid }))),
     getFederalRelated(articles),
+    getWireFeeIndexes(indexesNeeded(stripItems)),
   ]);
+  const feeData = buildFeeDataStrips(stripItems, feeIndexes);
 
   return (
     <div>
@@ -138,6 +185,7 @@ export default async function NewsPage({
         canRefreshFeeds={canRefreshFeeds}
         notes={notes}
         related={related}
+        feeData={feeData}
       />
     </div>
   );
