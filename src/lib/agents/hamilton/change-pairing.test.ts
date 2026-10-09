@@ -25,6 +25,20 @@ describe("judgeChangePair", () => {
     expect(judgeChangePair(business, [])).toBe("cross_page");
   });
 
+  it("counts a newer dated edition on a moved page as like for like (UMassFive, 7 Oct)", () => {
+    const moved = pair({
+      fee_name: "Levy Compliance",
+      previous_amount: 30,
+      new_amount: 40,
+      previous_url: "https://umassfive.coop/business-fees",
+      new_url: "https://www.umassfive.coop/business/helpful-links/business-banking-fees-and-service-prices",
+      previous_text: "Levy Compliance | $30.00\nFees Effective September 1, 2023",
+      new_text: "Levy Compliance | $40.00\nService Prices Effective January 1, 2026",
+    });
+    expect(judgeChangePair(moved, [])).toBe("like_for_like");
+    expect(judgeChangePair({ ...moved, new_text: "Levy Compliance | $40.00" }, [])).toBe("cross_page");
+  });
+
   it("rejects a change with no published pair or no known page", () => {
     expect(judgeChangePair(pair({ previous_fee_published_id: null }), [])).toBe("no_pair");
     expect(judgeChangePair(pair({ new_url: null, previous_url: null }), [])).toBe("cross_page");
