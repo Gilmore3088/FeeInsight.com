@@ -22,6 +22,8 @@ export type AnalyticsEvent =
   | "subscription_gate_viewed"
   /** The buyer said who the plan covers on /subscribe. */
   | "pricing_tier_selected"
+  /** The buyer switched between annual and monthly billing on /subscribe. */
+  | "billing_frequency_selected"
   /** The welcome page after Stripe returns with success=true. */
   | "checkout_complete"
   | "upgrade_click"

@@ -41,28 +41,28 @@ export function gatedPageLabel(from: string | null | undefined): string | null {
 
 /**
  * What /subscribe leads with for a visitor sent from a Pro page (James, 9 Oct 2026). A fixed
- * list of routes, so no headline is ever built from URL text. `pillar` is the PRO_PILLARS key
- * listed first.
+ * list of routes, so no headline is ever built from URL text. `pillar` is the benefit listed
+ * first on the page (ProBenefits).
  */
 const ENTRY_POINTS: { path: string; headline: string; pillar: string }[] = [
   { path: "/pro/news", headline: "Unlock Regulatory Wire", pillar: "wire" },
   { path: "/pro/analyze", headline: "Unlock Hamilton analysis", pillar: "analysis" },
-  { path: "/pro/reports", headline: "Create board-ready fee reports", pillar: "reports" },
+  { path: "/pro/reports", headline: "Create board-ready fee reports", pillar: "analysis" },
   { path: "/pro/simulate", headline: "Model potential fee changes", pillar: "analysis" },
-  { path: "/pro/monitor", headline: "Monitor competitor fee activity", pillar: "reports" },
+  { path: "/pro/monitor", headline: "Monitor competitor fee activity", pillar: "intelligence" },
 ];
 
 export interface SubscribeEntry {
   /** The Pro page the visitor tried to open, or null for a direct visit. */
   page: string | null;
   headline: string;
-  /** PRO_PILLARS key to list first, or null. */
+  /** ProBenefits key to list first, or null. */
   pillar: string | null;
 }
 
 export function subscribeEntry(from: string | null | undefined, siteName: string): SubscribeEntry {
   const page = gatedPageLabel(from);
-  if (!from || !page) return { page: null, headline: `Choose your ${siteName} plan`, pillar: null };
+  if (!from || !page) return { page: null, headline: "Know what's changing. Understand what matters.", pillar: null };
   const path = pathOf(from);
   const entry = ENTRY_POINTS.find((point) => underPath(path, point.path));
   return entry

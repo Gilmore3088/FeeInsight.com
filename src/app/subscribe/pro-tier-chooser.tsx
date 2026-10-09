@@ -37,9 +37,17 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
 
   if (chosenLabel) {
     return (
-      <div className="rounded-lg border border-[#E0D7C9] bg-white p-4 text-sm">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">This plan covers</p>
-        <p className="mt-1 font-semibold text-[#1A1815]">{chosenLabel}</p>
+      <div className="text-sm">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-base font-semibold leading-snug text-[#1A1815]">{chosenLabel}</p>
+          <button
+            type="button"
+            onClick={() => go(() => {})}
+            className="inline-flex min-h-11 flex-shrink-0 items-start text-sm font-medium text-[#A93D25] underline underline-offset-2"
+          >
+            Change
+          </button>
+        </div>
         {problem && <p className="mt-2 text-[#A93D25]">{problem}</p>}
         {bandChoices && (
           <fieldset className="mt-3">
@@ -67,33 +75,23 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
                   {band.label}
                 </button>
               ))}
-            </div>          </fieldset>
+            </div>
+          </fieldset>
         )}
-        <p className="mt-2 text-xs text-[#6B6255]">
-          Pick the organization the plan is for. If it&apos;s used for a larger one, we may move it to the right price.
-          We&apos;ll email you first.
-        </p>
-        <button
-          type="button"
-          onClick={() => go(() => {})}
-          className="mt-1 inline-flex min-h-11 items-center text-xs font-medium text-[#A93D25] underline underline-offset-2"
-        >
-          Change
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-[#E0D7C9] bg-white p-4">
+    <div>
       <InstitutionPicker
         inputId="pro_tier_institution"
         name="pro_tier_institution_id"
-        label="Who is this subscription for?"
-        help="Search your bank or credit union. Its total assets from the latest call report set the price."
-        labelClassName="text-sm font-medium text-[#1A1815]"
+        label="Find your institution"
+        help="Search your bank or credit union to see its price."
+        labelClassName="text-sm font-semibold text-[#1A1815]"
         labelStyle={{}}
-        inputClassName="w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm text-[#1A1815] outline-none focus:border-[#C44B2E]"
+        inputClassName="w-full rounded-lg border border-[#CFC5B7] bg-white px-3.5 py-3 text-base text-[#1A1815] outline-none focus:border-[#C44B2E] focus:ring-2 focus:ring-[#C44B2E]/20"
         inputStyle={{}}
         onSelect={(result) => {
           if (!result) return;
@@ -107,9 +105,9 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
           trackEvent("pricing_tier_selected", { kind: "other_organization" });
           go((params) => params.set("org", "other"));
         }}
-        className="mt-2 inline-flex min-h-11 items-center text-left text-xs font-medium text-[#5A5347] underline underline-offset-2 hover:text-[#1A1815]"
+        className="mt-1 inline-flex min-h-11 items-center text-left text-sm text-[#3D3833] underline underline-offset-2 hover:text-[#1A1815]"
       >
-        I&apos;m a consultant or another organization
+        Consultant or another organization?
       </button>
     </div>
   );

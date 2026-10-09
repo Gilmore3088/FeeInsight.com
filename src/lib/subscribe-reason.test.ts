@@ -38,7 +38,8 @@ describe("subscribeReason", () => {
       headline: "Unlock Fee Insight Pro",
       pillar: "intelligence",
     });
-    expect(subscribeEntry("/pro/<script>", "Fee Insight").headline).toBe("Choose your Fee Insight plan");
-    expect(subscribeEntry(null, "Fee Insight")).toEqual({ page: null, headline: "Choose your Fee Insight plan", pillar: null });
+    const direct = "Know what's changing. Understand what matters.";
+    expect(subscribeEntry("/pro/<script>", "Fee Insight").headline).toBe(direct);
+    expect(subscribeEntry(null, "Fee Insight")).toEqual({ page: null, headline: direct, pillar: null });
   });
 });

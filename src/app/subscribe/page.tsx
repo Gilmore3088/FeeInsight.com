@@ -12,18 +12,19 @@ import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { gatedPageLabel, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
-import { ProPlanCards, type ProTierSelection } from "./pro-plan-cards";
+import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { ProPillars, ProTierCards, PurchaseSteps } from "./pro-overview";
+import { EverythingInPro, ProBenefits, WirePreview, type WirePreviewItem } from "./pro-overview";
+import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
 import { AdvisoryLine, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
-import { PLAN_TEAM_LABEL, isProPlan, type ProPlan } from "./pricing";
+import { PLAN_TEAM_LABEL, REPORT_PRICE_LABEL, isProPlan, type ProPlan } from "./pricing";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -53,6 +54,21 @@ interface SubscribeSearchParams {
   canceled?: string;
 }
 
+/**
+ * The newest federal releases for the Wire preview, fee and rulemaking topics first. The page
+ * still renders, with the benchmark preview, if the feed can't be read.
+ */
+async function latestWireItems(): Promise<WirePreviewItem[]> {
+  const articles = await getArticles({ limit: 12 }).catch(() => []);
+  const ranked = [...articles.filter((a) => a.topic !== "general"), ...articles.filter((a) => a.topic === "general")];
+  return ranked.slice(0, 4).map((article) => ({
+    source: article.source,
+    title: article.title,
+    topic: article.topic && article.topic !== "general" ? (TOPIC_LABELS[article.topic] ?? null) : null,
+    date: article.published_at,
+  }));
+}
+
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
@@ -77,7 +93,11 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
+  const [summary, sampleLive, wireItems] = await Promise.all([
+    getPublicStatsSummary(),
+    sampleReportAvailable(),
+    latestWireItems(),
+  ]);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
   const checkoutRequested = params.checkout === "1";
@@ -96,17 +116,19 @@ export default async function SubscribePage({
   // when checkout opens. activateIfPaid just asked Stripe and found no live subscription, so
   // "if you've just paid" would only tell someone who backed out of checkout to wait.
   const entry = subscribeEntry(returnTo, SITE_NAME);
+  // A Pro page that sent no reason (e.g. the Wire digest) still counts as a gate.
+  const reason =
+    (params.reason === "activating" && user) || (!params.reason && gatedPageLabel(returnTo))
+      ? "pro_required"
+      : params.reason;
+  // A gated visitor's line is the hero's own ("One step away from ..."), not a banner.
+  const gated = reason === "pro_required" && entry.page !== null && params.canceled !== "1";
   const reasonLine =
     params.canceled === "1"
       ? "Checkout was canceled. Nothing was charged."
-      : subscribeReasonLine(
-          // A Pro page that sent no reason (e.g. the Wire digest) still gets its name said.
-          (params.reason === "activating" && user) || (!params.reason && gatedPageLabel(returnTo))
-            ? "pro_required"
-            : params.reason,
-          SITE_NAME,
-          returnTo,
-        );
+      : gated
+        ? null
+        : subscribeReasonLine(reason, SITE_NAME, returnTo);
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
   const autoStartPlan = isLoggedIn && checkoutRequested ? requestedPlan : null;
   const pendingInvitations =
@@ -157,12 +179,17 @@ export default async function SubscribePage({
     requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
+  // A Wire visitor sees the Wire; everyone else sees the benchmark from the sample report.
+  const wirePreview = wireItems.length > 0 ? <WirePreview items={wireItems} /> : null;
+  const preview =
+    entry.pillar === "wire" || !SAMPLE_REPORT_LIVE ? (wirePreview ?? <HamiltonBenchmarkPreview />) : <HamiltonBenchmarkPreview />;
+
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
       <ConsumerNav />
       <main id="main-content">
 
-      <div className="mx-auto max-w-5xl px-6 py-14">
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
         {reasonLine && (
           <p role="status" className="mb-6 rounded-xl border border-[#E8DFD1] bg-white px-4 py-3 text-sm text-[#1A1815]">
             {reasonLine}
@@ -192,73 +219,94 @@ export default async function SubscribePage({
           </div>
         )}
 
-        <section id="pro" aria-labelledby="pro-title" className="scroll-mt-20">
+        <section id="pro" aria-labelledby="pro-title" className="grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14">
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page }} />}
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">{SITE_NAME} Pro</p>
-          <h1 id="pro-title" className="mt-1 text-3xl font-normal tracking-tight text-[#1A1815] sm:text-4xl" style={SERIF}>
-            {entry.headline}
-          </h1>
-          <p className="mt-3 max-w-3xl text-base leading-relaxed text-[#1A1815]">
-            Competitive fee intelligence, regulatory monitoring and analysis tools for banks and credit unions,
-            in Hamilton, the {SITE_NAME} Pro workspace.
-          </p>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#5A5347]">
-            From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} {PLAN_TEAM_LABEL}. Every plan has the same full feature
-            set; the price follows your institution&apos;s total assets.
-          </p>
-
-          <h2 id="pro-heading" className="mt-10 mb-4 scroll-mt-20 text-xl text-[#1A1815]" style={SERIF}>
-            Choose your plan
-          </h2>
-          <ProTierCards highlighted={selection?.otherOrganization ? "consultant" : selection?.tier ?? null} />
-          <div className="mt-5 mb-4">
-            <PurchaseSteps isLoggedIn={isLoggedIn} destination={entry.page} />
+          <div className="lg:col-start-1 lg:row-start-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
+              {gated ? `One step away from ${entry.page}` : `${SITE_NAME} Pro`}
+            </p>
+            <h1
+              id="pro-title"
+              className="mt-3 text-4xl font-normal leading-[1.08] tracking-tight text-[#1A1815] sm:text-5xl"
+              style={SERIF}
+            >
+              {entry.headline}
+            </h1>
+            <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
+              Regulatory intelligence and competitive fee research for banks and credit unions, in Hamilton, the{" "}
+              {SITE_NAME} Pro workspace.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 lg:hidden">
+              <a
+                href="#pro-heading"
+                className="rounded-lg bg-[#C44B2E] px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-[#A93D25]"
+              >
+                Find your institution
+              </a>
+              <span className="text-sm text-[#3D3833]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} {PLAN_TEAM_LABEL}</span>
+            </div>
+            <div className="mt-8">{preview}</div>
           </div>
-          <ProPlanCards
-            isLoggedIn={isLoggedIn}
-            chooser={
-              <ProTierChooser
-                chosenLabel={chosenLabel}
-                problem={chooserProblem}
-                bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
-                pickedBand={selection?.tierPicked ? selection.tier : null}
-              />
-            }
-            selection={selection}
-            returnTo={returnTo ?? undefined}
-            destination={entry.page}
-            registerHrefFor={registerHrefFor}
-            autoStartPlan={selection ? autoStartPlan : null}
-          />
 
-          <h2 className="mt-12 mb-4 text-xl text-[#1A1815]" style={SERIF}>
-            What your team gets
-          </h2>
-          <ProPillars lead={entry.pillar} />
-          <HamiltonBenchmarkPreview className="mt-6" />
+          <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
+            <PurchaseCard
+              isLoggedIn={isLoggedIn}
+              chooser={
+                <ProTierChooser
+                  chosenLabel={chosenLabel}
+                  problem={chooserProblem}
+                  bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
+                  pickedBand={selection?.tierPicked ? selection.tier : null}
+                />
+              }
+              selection={selection}
+              returnTo={returnTo ?? undefined}
+              destination={entry.page}
+              registerHrefFor={registerHrefFor}
+              initialPlan={requestedPlan}
+              autoStartPlan={selection ? autoStartPlan : null}
+            />
+            {!isLoggedIn && (
+              <p className="mt-4 text-center text-sm text-[#3D3833]">
+                Already have an account?{" "}
+                <a href={loginHref} className="font-medium text-[#1A1815] underline underline-offset-2">
+                  Sign in
+                </a>
+              </p>
+            )}
+          </div>
+
+          <div className="lg:col-start-1 lg:row-start-2">
+            <ProBenefits lead={entry.pillar} />
+          </div>
         </section>
 
-        <section aria-labelledby="other-options-heading" className="mt-14 space-y-6">
-          <h2 id="other-options-heading" className="text-xl text-[#1A1815]" style={SERIF}>
-            Not ready for an ongoing subscription?
-          </h2>
-          <ReportCard sampleLive={sampleLive} />
-          <FreeTierCard summary={summary} />
-        </section>
-
-        <div className="mt-14">
-          <PricingFaq summary={summary} />
-          <AdvisoryLine />
+        <div className="mt-20 border-t border-[#E8E1D6] pt-14">
+          <EverythingInPro />
         </div>
 
-        {!isLoggedIn && (
-          <p className="mt-8 text-center text-xs text-[#6B6255]">
-            Already have an account?{" "}
-            <a href={loginHref} className="text-[#5A5347] underline underline-offset-2 hover:text-[#1A1815]">
-              Sign in
-            </a>
+        {gated ? (
+          <p className="mt-14 text-[15px] leading-relaxed text-[#3D3833]">
+            <span className="font-semibold text-[#1A1815]">Not ready for a subscription?</span> A one-time{" "}
+            {REPORT_OFFER.name} for one institution, {REPORT_PRICE_LABEL.toLowerCase()}.{" "}
+            <Link href="/for-institutions?report=institution#report" className="font-medium text-[#1A1815] underline underline-offset-2">
+              Request a report
+            </Link>
           </p>
+        ) : (
+          <section aria-labelledby="other-options-heading" className="mt-20 space-y-6">
+            <h2 id="other-options-heading" className="text-2xl text-[#1A1815]" style={SERIF}>
+              Not ready for a subscription?
+            </h2>
+            <ReportCard sampleLive={sampleLive} />
+            <FreeTierCard summary={summary} />
+          </section>
         )}
+
+        <div className="mt-20">
+          <PricingFaq summary={summary} />
+          {!gated && <AdvisoryLine />}
+        </div>
       </div>
       </main>
       <CustomerFooter />
