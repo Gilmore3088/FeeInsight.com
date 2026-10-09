@@ -30,17 +30,20 @@ export function FeeRowsEditor({
   onAdd: () => void;
   onRemove: (index: number) => void;
 }) {
+  // Closed by default: a link alone is a complete submission, and five open rows read as
+  // required work. Typed amounts survive closing it again.
   return (
-    <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            Individual fees (optional)
-          </p>
-          <p className="mt-1 text-xs text-[#6B6255]">
-            Leave amounts blank to send the link only.
-          </p>
-        </div>
+    <details className="group">
+      <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255] hover:text-[#A93D25] [&::-webkit-details-marker]:hidden">
+        <span className="inline-flex items-center gap-1">
+          <Plus className="h-3.5 w-3.5 transition-transform group-open:rotate-45" aria-hidden="true" />
+          Add individual fees (optional)
+        </span>
+      </summary>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-[#6B6255]">
+          Leave amounts blank to send the link only.
+        </p>
         <button
           type="button"
           onClick={onAdd}
@@ -97,7 +100,6 @@ export function FeeRowsEditor({
           </div>
         ))}
       </div>
-    </div>
-
+    </details>
   );
 }

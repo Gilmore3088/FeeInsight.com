@@ -78,9 +78,11 @@ export function InstitutionOfferBand({
   correctSourceHref: string;
 }) {
   return (
-    <section className="border border-[#E0D7C9] bg-white px-4 py-4 sm:px-5">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="min-w-0">
+    <section className="@container border border-[#E0D7C9] bg-white px-4 py-4 sm:px-5">
+      {/* Side by side only when the card itself is wide enough: in the narrow profile column
+          the heading stacks above the actions instead of squeezing to a word per line. */}
+      <div className="flex flex-col gap-3 @2xl:flex-row @2xl:items-center @2xl:justify-between">
+        <div className="min-w-0 @2xl:min-w-[16rem] @2xl:flex-1">
           <div className="flex items-center gap-1.5 text-sm font-semibold text-[#1A1815]">
             <p>Work at {institutionName}? See every fee vs. your peers.</p>
             <InfoTip label="About the report">
@@ -90,7 +92,7 @@ export function InstitutionOfferBand({
             </InfoTip>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-start gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Link
             href={reportOfferHref}
             className="inline-flex items-center gap-2 rounded-md bg-[#C44B2E] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"

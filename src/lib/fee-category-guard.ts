@@ -330,7 +330,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // here on purpose (fee-taxonomy.ts).
   early_closure: {
     include: /\S/,
-    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat)/i,
+    // v51: a certificate penalty paid in dividends ("A penalty of seven days dividends will be
+    // imposed", Y-12 FCU 59002) has no dollar price; the figure beside it is a forfeited reward.
+    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/i,
   },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
@@ -356,7 +358,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v48: subordination leaves legal process for other lending; a money order copy is a check copy.
 // v49: treasury service monthly charges filed as monthly maintenance (Darwin eval 94121).
 // v50: "Photocopy of Money Order" is a check copy too (v49 is Accuracy's).
-export const CATEGORY_GUARD_VERSION = 50;
+// v51: a certificate penalty paid in dividends, or a forfeited reward, filed as early closure.
+export const CATEGORY_GUARD_VERSION = 51;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
