@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { restoreTarget, runHamiltonCategoryGuard } from "./category-guard";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -122,6 +123,32 @@ describe("Hamilton category guard repair", () => {
     // Only spot-checked re-file rules bring a fee back: this one has not been checked yet.
     expect(restoreTarget({ ...row, canonical_fee_key: "overdraft", fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" })).toBeNull();
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
+  });
+
+  it("brings a night deposit bag key back as a night deposit fee, and leaves bag supplies down (guard v60)", () => {
+    const row = { conditions: null, document_nsf_amount: null };
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Depository Replacement Key", amount: "5.00" })).toBe("night_deposit");
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Replacement Key for Bag", amount: "5.00" })).toBe("night_deposit");
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Bag Replacement/Lost Key", amount: "15.00" })).toBe("night_deposit");
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle", amount: "15.00" })).toBeNull();
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Zipper with Lock (9\" X 16”)", amount: "20.00" })).toBeNull();
+  });
+
+  it("brings a returned bond or coupon back as a returned deposited item, and only those (guard v58)", () => {
+    const row = { conditions: null, document_nsf_amount: null };
+    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond/Coupon Returned Item Fee", amount: "45.00" })).toBe("deposited_item_return");
+    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond return items", amount: "35.00" })).toBe("deposited_item_return");
+    // A collection of bonds is a collection item, and the rule's unchecked "deposit" names stay down.
+    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Items sent for Collection (i.e.: foreign items, NSF, Bonds, Etc.)", amount: "30.00" })).toBeNull();
+    expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Returned Deposit Item NSF Fee (deposit)", amount: "10.00" })).toBeNull();
+  });
+
+  it("brings a hand-checked fee back under its checked type, only while it reads as checked (96164, guard v58)", () => {
+    const row = { conditions: null, document_nsf_amount: null, canonical_fee_key: "monthly_maintenance", fee_name: "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of", amount: "2.50" };
+    expect(checkFeeCategory("monthly_maintenance", row.fee_name).ok).toBe(false);
+    expect(restoreTarget({ ...row, fee_published_id: 96164 })).toBe("atm_non_network");
+    expect(restoreTarget({ ...row, fee_published_id: 96164, amount: "3.00" })).toBeNull();
+    expect(restoreTarget({ ...row, fee_published_id: 96165 })).toBeNull();
   });
 
   it("brings an express card replacement back as the rush card fee, once per institution and price", async () => {

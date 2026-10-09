@@ -138,7 +138,7 @@ export const DARWIN_CATEGORY_HOLDS: ReadonlyArray<{
   when: RegExp;
   since: string;
 }> = [
-  { filedAs: "nsf", shouldBe: "deposited_item_return", when: /\bbonds?\b[\s\S]*\breturn|\breturn\w*\b[\s\S]*\bbonds?\b/i, since: "2026-10-09" },
+  // The bond-return hold (2026-10-09) ended with guard v58, which re-files those rows.
 ];
 
 /** The pending category lesson that holds this row, if any. */
@@ -358,11 +358,19 @@ export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promis
  * Version of the in-batch duplicate key, recorded on each attempt. Version 1 keyed on the
  * source URL, so a fee on a bank's current copy of a page was held as a duplicate of the
  * same fee on an older copy at that URL, and only the older copy was ever verified.
- * Version 2 keys on the stored document.
+ * Version 2 keys on the stored document. Version 3 adds the fee's own source line, so two
+ * products' fees with one price on one document ("Money Market Savings Account (below $2,500) |
+ * $15/mo." and "Interest Checking (below $1,500) | $15/mo.", SCCU 8109) are two fees, while the
+ * same line read twice (two Knox runs of one document) is still one.
  */
-export const DARWIN_BATCH_KEY_VERSION = 2;
+export const DARWIN_BATCH_KEY_VERSION = 3;
 
-/** Same institution, category, amount, frequency and document: the same fee line. */
+/** The source line Knox read, spacing folded; empty when the row has none. */
+function sourceLineKey(conditions: string | null): string {
+  return (excerptOf(conditions) ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Same institution, category, amount, frequency, document and source line: the same fee line. */
 function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
   return [
     Number(row.institution_id),
@@ -373,6 +381,7 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
     row.source_document_id != null
       ? `doc:${Number(row.source_document_id)}`
       : (row.source_url ?? row.document_r2_key ?? "").trim(),
+    sourceLineKey(row.conditions),
   ].join("|");
 }
 
@@ -414,10 +423,10 @@ async function selectRawFees(
     // 2026-10-09 for the returned mail and fax fees pooled there), so an envelope change reaches
     // the rows it was made for. Learned envelopes move with the data and never re-select.
     const envelopesParam = `$${params.push(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}`;
-    // A row held as an in-batch duplicate under the old URL key is re-checked once when it
-    // sits on the bank's current copy and nothing on that same document is verified as the
-    // same fee; a row with a verified twin on its own document stays a duplicate. Needs the
-    // current-copy column (source_documents.superseded_by_id).
+    // A row held as an in-batch duplicate under an older key is re-checked once when it sits
+    // on the bank's current copy and nothing on that same document is verified as the same fee
+    // from the same source line (v3); a row with a verified twin on its own line stays a
+    // duplicate. Needs the current-copy column (source_documents.superseded_by_id).
     const batchKeyParam = currentCopy ? `$${params.push(DARWIN_BATCH_KEY_VERSION)}` : null;
     const duplicateRecheck = batchKeyParam ? `
               AND NOT (
@@ -434,6 +443,8 @@ async function selectRawFees(
                    WHERE twin_raw.source_document_id = fr.source_document_id
                      AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
                      AND twin.amount IS NOT DISTINCT FROM fr.amount
+                     AND lower(regexp_replace(COALESCE(substring(twin_raw.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                         = lower(regexp_replace(COALESCE(substring(fr.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
     filters.push(`AND NOT EXISTS (

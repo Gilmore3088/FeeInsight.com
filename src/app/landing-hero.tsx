@@ -60,7 +60,7 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
 
   return (
     <section className="border-b border-[#E0D7C9] bg-[#FAF7F2]">
-      <div className="mx-auto max-w-6xl px-4 pb-8 pt-8 sm:px-6 sm:pb-10 sm:pt-12 lg:pt-14">
+      <div className="mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pb-10 sm:pt-12 lg:pt-14">
         <div className="max-w-3xl">
           <h1
             className="text-[clamp(2.25rem,8vw,3.75rem)] font-normal leading-none tracking-[-0.01em] text-[#1A1815]"

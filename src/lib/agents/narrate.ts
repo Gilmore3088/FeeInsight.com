@@ -227,6 +227,10 @@ function narrateFinished(
     }
     case "hamilton-answer-eval":
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "schedule-check": {
+      const missed = n(detail, "missed") + n(detail, "failed");
+      return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
+    }
     case "bayes-replay-ledger": {
       if (detail.schema_ready === false) return "Bayes counted nothing: the replay ledger is not created yet.";
       const stuck = n(detail, "stuck");
@@ -273,6 +277,11 @@ function narrateFinished(
       const drafted = n(detail, "drafted");
       if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
       return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
+    }
+    case "growth-withdraw": {
+      const withdrawn = n(detail, "withdrawn");
+      if (!withdrawn) return "Withdrew no first emails; every unreviewed draft still qualifies.";
+      return `Withdrew ${count(withdrawn, "unreviewed first email")} that no longer qualified.`;
     }
     case "growth-learning": {
       if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
@@ -552,6 +561,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-contacts": "growth",
   "growth-contact-picks": "growth",
   "growth-outreach": "growth",
+  "growth-withdraw": "growth",
   "growth-learning": "growth",
   "growth-quote": "growth",
   "growth-plan": "growth",
@@ -568,6 +578,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-states": "growth",
   "score-answer-key": "atlas",
   "bayes-replay-ledger": "atlas",
+  "schedule-check": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",

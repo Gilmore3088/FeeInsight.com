@@ -364,7 +364,7 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("live_overdraft.rolled_back_at IS NULL");
     });
 
-    it("reads a requested institution's current page again in its own run while it has no live overdraft fee", async () => {
+    it("reads a requested institution's current page again in its own run, live overdraft fee or not", async () => {
       const db = createDbMock([]);
       db.mockImplementation((strings: TemplateStringsArray) => {
         const text = templateText(strings);
@@ -379,7 +379,11 @@ describe("Knox agentic extraction", () => {
       const leaderParam = query.match(/adt\.institution_id = ANY\(\$(\d+)::bigint\[\]\)/);
       expect(leaderParam).not.toBeNull();
       expect(params[Number(leaderParam?.[1]) - 1]).toBe("{1223}");
-      expect(query).toContain("live_overdraft.canonical_fee_key = 'overdraft'");
+      // SCCU (8109) has a live overdraft fee and kept a v33 read the v64 box-table fix needed.
+      const start = query.indexOf("adt.institution_id = ANY(");
+      const trigger = query.slice(start, query.indexOf(")\n         AND NOT EXISTS", start));
+      expect(trigger).toContain("copy.superseded_by_id IS NOT NULL");
+      expect(trigger).not.toContain("live_overdraft");
     });
 
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {

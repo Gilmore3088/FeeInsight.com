@@ -67,7 +67,7 @@ export default async function ResearchHubPage() {
       <ResearchHero summary={summary} stateCount={stateCount} hasDc={hasDc} territoryCount={territoryCount} />
       <ResearchSectionNav />
 
-      <div className="mx-auto max-w-7xl space-y-20 px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
         <KeyFindings findings={findings} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} institutionsLabel={summary.institutionsLabel} asOf={asOf} />
