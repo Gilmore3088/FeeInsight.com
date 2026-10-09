@@ -377,6 +377,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
 // a safe deposit box late fee above $250.
 // v55: a merchant service's monthly charge or an early termination fee is not monthly maintenance.
+// v56: one product priced differently on two current pages keeps the newer page's price
+// (`hamilton/cross-page-conflict.ts`; a publish-step check, not a name rule here).
 // v57: a cross-border banking bundle's annual fee is monthly maintenance (RBC; v56 is Accuracy's).
 export const CATEGORY_GUARD_VERSION = 57;
 
