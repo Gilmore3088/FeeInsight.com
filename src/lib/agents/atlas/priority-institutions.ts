@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
-import { startAgentRun } from "@/lib/agents/run-store";
+import { currentDeploy, startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunStepDefinition } from "@/lib/agents/types";
 import { DARWIN_VERIFY_MAX_LIMIT } from "@/lib/agents/darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "@/lib/agents/hamilton/publish";
@@ -23,6 +23,14 @@ export const PRIORITY_MAX_ACTIVE = 2;
 export const PRIORITY_RETRY_HOURS = 24;
 /** A large bank or market leader with no live overdraft fee runs again at most this often. */
 export const PRIORITY_GAP_RETRY_DAYS = 7;
+/**
+ * A failure shared by at least this many runs in 24 hours is a break in our code, the
+ * same bar as wakeLanesAfterRecovery. A priority run that failed on such a break, with no
+ * failure of that step and reason since the current deploy went live, is presumed fixed
+ * and does not hold its institution for the retry window: Tennessee's largest bank
+ * (2877) failed on the 12:06 Oct 8 publish break and waited a full day after the 12:36 fix.
+ */
+export const PRIORITY_FIXED_BREAK_RUNS = 3;
 /** $10B in assets; `asset_size` is in thousands. */
 export const PRIORITY_MIN_ASSETS_THOUSANDS = 10_000_000;
 
@@ -156,7 +164,8 @@ export interface PriorityInstitutionRow {
 /**
  * Institutions due for a direct run, best first:
  *  1. a fee schedule found by hand (Magellan's operator list) not yet fetched;
- *  2. a document Magellan's paid fetch stored that no reader has read yet: the paid step
+ *  2. a document Magellan's paid fetch, or a hand-found schedule fetched in another
+ *     state's lane, stored that no reader has read yet: the paid step
  *     fetches blocked links for banks in every state, and the read step of a state run reads
  *     only that state, so Citizens' and Fifth Third's documents (7 Oct 2026) waited for their
  *     own state's lane;
@@ -167,9 +176,10 @@ export interface PriorityInstitutionRow {
  */
 export async function selectPriorityInstitutions(
   db: SqlTag,
-  options: { limit: number; leaderIds: readonly number[] },
+  options: { limit: number; leaderIds: readonly number[]; deploy?: string | null },
 ): Promise<PriorityInstitutionRow[]> {
   const limit = Math.max(0, Math.floor(options.limit));
+  const deploy = options.deploy === undefined ? currentDeploy() : options.deploy;
   if (limit === 0) return [];
   const requested = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
   const leaders = [...options.leaderIds].map(Number);
@@ -221,19 +231,42 @@ export async function selectPriorityInstitutions(
              AND hand.last_fetched_at IS NULL
         ) hand_new ON TRUE
         LEFT JOIN LATERAL (
-          SELECT MAX(paid.source_document_id) AS paid_document_id, MAX(paid.created_at) AS paid_at
-            FROM pipeline_attempts paid
-            JOIN source_documents doc ON doc.id = paid.source_document_id
-           WHERE paid.institution_id = inst.id
-             AND paid.stage = 'fetch'
-             AND paid.strategy LIKE 'fetch.paid_web_fetch%'
-             AND paid.outcome = 'ok'
-             AND paid.created_at > NOW() - make_interval(days => ${PAID_FETCH_READ_DAYS}::int)
-             AND doc.status = 'success'
-             AND doc.superseded_by_id IS NULL
-             AND NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)
+          SELECT MAX(unread.document_id) AS paid_document_id, MAX(unread.stored_at) AS paid_at
+            FROM (
+              SELECT paid.source_document_id AS document_id, paid.created_at AS stored_at
+                FROM pipeline_attempts paid
+                JOIN source_documents doc ON doc.id = paid.source_document_id
+               WHERE paid.institution_id = inst.id
+                 AND paid.stage = 'fetch'
+                 AND paid.strategy LIKE 'fetch.paid_web_fetch%'
+                 AND paid.outcome = 'ok'
+                 AND paid.created_at > NOW() - make_interval(days => ${PAID_FETCH_READ_DAYS}::int)
+                 AND doc.status = 'success'
+                 AND doc.superseded_by_id IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)
+              UNION ALL
+              -- A hand-found schedule fetched by another state's lane (companion fetch takes
+              -- them in any lane) is read only by its own state's lane: First United's
+              -- (OK) fetched in the NC lane at 23:55 on 8 Oct 2026 and sat unread.
+              SELECT hand_doc.id, hand_doc.crawled_at
+                FROM institution_additional_sources hand
+                JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id
+               WHERE hand.institution_id = inst.id
+                 AND hand.found_by_strategy = 'discover.operator_schedule'
+                 AND hand_doc.institution_id = inst.id
+                 AND hand_doc.crawled_at > NOW() - make_interval(days => ${PAID_FETCH_READ_DAYS}::int)
+                 AND hand_doc.status = 'success'
+                 AND hand_doc.superseded_by_id IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = hand_doc.id)
+            ) unread
         ) paid_new ON TRUE
        WHERE COALESCE(inst.status, 'active') = 'active'
+          -- A bank whose own link went dormant is why its schedule was found by hand.
+          OR (inst.status = 'dormant' AND EXISTS (
+                SELECT 1 FROM institution_additional_sources hand
+                 WHERE hand.institution_id = inst.id
+                   AND hand.found_by_strategy = 'discover.operator_schedule'
+              ))
     )
     SELECT c.id, c.institution_name, c.state_code, c.tier, c.hand_link_id, c.paid_document_id
       FROM candidates c
@@ -256,6 +289,33 @@ export async function selectPriorityInstitutions(
                 -- A request by name is new work after an overdraft-gap run of the same bank
                 -- (Bluestone FCU's 06:45 gap run held Marketing's 18:44 request for a day).
                 AND (c.tier <> 2 OR r.params_json->>'tier' = 'requested')
+                -- A run that failed on a break since fixed holds nothing: it reruns once
+                -- under the new deploy (a second failure records that deploy and holds).
+                AND NOT (
+                  r.status = 'failed'
+                  AND ${deploy}::text IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1 FROM agent_run_steps step
+                     WHERE step.agent_run_id = r.id
+                       AND step.status = 'failed'
+                       AND step.error_summary IS NOT NULL
+                       AND (
+                         SELECT COUNT(DISTINCT other.agent_run_id) FROM agent_run_steps other
+                          WHERE other.step_key = step.step_key
+                            AND other.error_summary = step.error_summary
+                            AND other.status = 'failed'
+                            AND other.completed_at > NOW() - INTERVAL '24 hours'
+                       ) >= ${PRIORITY_FIXED_BREAK_RUNS}::int
+                       AND NOT EXISTS (
+                         SELECT 1 FROM agent_run_steps other
+                           JOIN agent_run_events event ON event.step_id = other.id AND event.event_type = 'step.failed'
+                          WHERE other.step_key = step.step_key
+                            AND other.error_summary = step.error_summary
+                            AND other.status = 'failed'
+                            AND event.detail->>'deploy' = ${deploy}::text
+                       )
+                  )
+                )
               )
             )
        )
@@ -288,7 +348,7 @@ export function priorityInstitutionSteps(institutionId: number): AgentRunStepDef
 
 const TIER_REASON: Record<PriorityTier, string> = {
   hand_found: "fee schedule found by hand, not yet fetched",
-  paid_fetched: "document stored by the paid fetch, not yet read",
+  paid_fetched: "document stored by the paid fetch or a hand-found link, not yet read",
   requested: "asked for by name",
   overdraft_gap: "$10B+ or market leader with no live overdraft fee",
 };

@@ -847,6 +847,14 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v51: a certificate penalty paid in dividends is not an early closure fee", () => {
+    expect(checkFeeCategory("early_closure", "11. Early Withdrawal Penalty for Jump Start Share certificate - A penalty of seven days dividends will be imposed if the").ok).toBe(false);
+    expect(checkFeeCategory("early_closure", "Forfeiture of Rewards at maturity").ok).toBe(false);
+    expect(checkFeeCategory("early_closure", "Account Forfeiture Fee").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "CD Early Withdrawal Penalty").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "Early closing (account closed within 6 months of opening) Not applicable to CD accounts").ok).toBe(true);
+  });
+
   it("v47 covers Darwin's Oct 8 eval rows", () => {
     const guard = (key: string, name: string, amount: string, excerpt = name) =>
       checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
@@ -855,6 +863,7 @@ describe("checkFeeCategory", () => {
     expect(guard("bill_pay", "Bill Pay", "5.00")).toBe(true);
     expect(guard("money_order", "Money Order Research Fee", "10.00")).toBe(false);
     expect(guard("money_order", "Cashier’s Check or Money Order Copy", "5.00")).toBe(false);
+    expect(guard("money_order", "Photocopy of Money Order", "5.00")).toBe(false);
     expect(guard("money_order", "Cashier's Check/Money Order", "3.00")).toBe(true);
     expect(guard("wire_intl_outgoing", "Foreign Wire Research", "15.00")).toBe(false);
     expect(guard("nsf", "Returned ACH Items (business only)", "6.00")).toBe(false);
@@ -863,5 +872,13 @@ describe("checkFeeCategory", () => {
     expect(guard("od_protection_transfer", "Overdraft Protection", "29.00", "Overdraft Protection $29.00 each Overdraft Protection - if opted in $29.00 each item")).toBe(false);
     expect(guard("od_protection_transfer", "Overdraft Protection Transfer", "25.00", "Overdraft Protection Transfer | $25.00 per item")).toBe(true);
     expect(guard("od_protection_transfer", "Overdraft Protection", "5.00", "Overdraft Protection | $5.00 per item")).toBe(true);
+  });
+
+  it("v49 keeps treasury service monthly charges out of monthly maintenance", () => {
+    for (const name of ["Monthly Fee (per account)", "API Service Monthly Fee (per account)", "MODULES ACH Module Monthly maintenance", "Treasury Management Monthly fee (includes Positive Pay)", "Cash Management Monthly Fee", "ACH Monthly Fee, per account"]) {
+      expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+    }
+    expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance charge per account.").ok).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
   });
 });

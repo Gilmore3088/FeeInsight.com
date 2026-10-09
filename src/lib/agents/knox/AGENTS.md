@@ -515,3 +515,8 @@ v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
 - The Reg E notice sentence "We will charge you a fee of up to $35.00 each time we pay an
   overdraft" is read as the overdraft fee. The shared source check still reads "up to $35.00"
   as a threshold, so it is held as untraced until that check changes (accuracy thread).
+- v50: in a two-column schedule flattened row by row, a "Personal ........ $10 per item paid"
+  cell under an "Overdrafts / Non-Sufficient Funds (NSF)" heading cell is the personal overdraft
+  fee: "Overdraft - personal, per item paid" (a returned item is "NSF - personal, ..."). Footnote
+  numbers after the heading ("(NSF)10, 12") are dropped. A business row, or one priced "paid or
+  returned", is not read (Amerant Bank, a $10B bank with no live overdraft fee).

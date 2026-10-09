@@ -20,7 +20,7 @@ export function AgentHandoffStrip({
     <section aria-labelledby="agent-handoff-heading" className="border-y border-black/[0.06] py-4 dark:border-white/[0.06]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <p id="agent-handoff-heading" className="admin-label">{title}</p>
-        <Link href="/admin#atlas-live-status" className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)]">
+        <Link href="/admin/live" className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--brand-primary)] hover:text-[var(--brand-primary-hover)]">
           Live status<ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>

@@ -11,7 +11,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
-import { borrowedFrequency, frequencyFamily, frequencyFromLine } from "@/lib/fee-frequency";
+import { settledFrequency } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -37,7 +37,11 @@ import { borrowedFrequency, frequencyFamily, frequencyFromLine } from "@/lib/fee
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
 // v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 48 } as const;
+// v49: a monthly fee with no account name takes it from its own name or the heading above it.
+// v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
+// v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
+// v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 52 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -148,10 +152,10 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       // from another fee's row is dropped ("... per year .. $10.00 | Reverse Stop Payment
       // .. $20.00" gave the $20 fee "annual"); 25 of 131 stated frequencies in the seven-state
       // keys were wrong this way.
-      const ownFrequency = frequencyFromLine(read.excerpt, read.amount);
-      const frequency = ownFrequency && frequencyFamily(ownFrequency) !== frequencyFamily(read.frequency)
-        ? ownFrequency
-        : read.frequency && !borrowedFrequency(read.excerpt, read.amount, read.frequency) ? read.frequency : ownFrequency;
+      // v52: the same rule as Hamilton's frequency fill (`settledFrequency`), so a period the line
+      // never states is dropped on a per-event fee and a per-item reading never lands on a period
+      // category.
+      const frequency = settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
       const candidate = { ...read, feeName: tidyFeeName(read.feeName), frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;

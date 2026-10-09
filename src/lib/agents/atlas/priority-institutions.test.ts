@@ -6,13 +6,14 @@ const { startAgentRunMock, loadMarketLeaderIdsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(), getSql: vi.fn() }));
-vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
+vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock, currentDeploy: () => "deploy-now" }));
 vi.mock("@/lib/data-store/market-leaders", () => ({ loadMarketLeaderIds: loadMarketLeaderIdsMock }));
 vi.mock("@/lib/agents/darwin/verify", () => ({ DARWIN_VERIFY_MAX_LIMIT: 500 }));
 vi.mock("@/lib/agents/hamilton/publish", () => ({ HAMILTON_PUBLISH_MAX_LIMIT: 500 }));
 
 import {
   PRIORITY_INSTITUTION_REQUESTS,
+  PRIORITY_FIXED_BREAK_RUNS,
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
   priorityInstitutionSteps,
@@ -98,6 +99,11 @@ describe("priority institutions", () => {
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
     expect(select).toContain("CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END");
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
+    // A hand-found schedule fetched in another state's lane is unread work too (First United, 8 Oct).
+    expect(select).toContain("JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id");
+    expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = hand_doc.id)");
+    // A dormant bank with a hand-found schedule still gets its run; a closed charter does not.
+    expect(select).toContain("OR (inst.status = 'dormant' AND EXISTS (");
     // A request by name does not wait out the retry window of an earlier overdraft-gap run.
     expect(select).toContain("c.tier <> 2 OR r.params_json->>'tier' = 'requested'");
   });
@@ -168,5 +174,20 @@ describe("priority institutions", () => {
 
     expect(result.failed).toEqual([{ institutionId: 1, error: "constraint" }]);
     expect(result.scheduled).toBe(1);
+  });
+
+  it("does not let a run that failed on a since-fixed break hold its institution (2877, Oct 8)", async () => {
+    const { db, calls } = createDb(() => []);
+    await selectPriorityInstitutions(db, { limit: 2, leaderIds: [], deploy: "abc123" });
+    const { text, values } = calls[0];
+    expect(text).toContain("r.status = 'failed'");
+    expect(text).toContain("event.detail->>'deploy' = ?::text");
+    expect(values).toContain("abc123");
+    expect(values).toContain(PRIORITY_FIXED_BREAK_RUNS);
+
+    // Off Vercel there is no deploy to compare, so every failed run still holds.
+    const off = createDb(() => []);
+    await selectPriorityInstitutions(off.db, { limit: 2, leaderIds: [], deploy: null });
+    expect(off.calls[0].values).toContain(null);
   });
 });

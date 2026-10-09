@@ -2,6 +2,7 @@ import { sql } from "./connection";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * Live data for an automatic Competitive Fee Position Report: the institution, its local
@@ -199,7 +200,7 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
       const deposits = num(row.market_deposits);
       return {
         institution_id: Number(row.institution_id),
-        institution_name: row.institution_name,
+        institution_name: institutionDisplayName(row.institution_name),
         city: row.city,
         state_code: row.state_code,
         charter_type: row.charter_type,
@@ -222,7 +223,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
 
   const subjectRow = {
     institution_id: Number(subject.id),
-    institution_name: subject.institution_name,
+    institution_name: institutionDisplayName(subject.institution_name),
     city: subject.city,
     state_code: subject.state_code,
     charter_type: subject.charter_type,
@@ -344,7 +345,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       const deposits = num(row.market_deposits);
       competitors.set(id, {
         institution_id: id,
-        institution_name: row.institution_name,
+        institution_name: institutionDisplayName(row.institution_name),
         city: row.city,
         state_code: row.state_code,
         charter_type: row.charter_type,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, evalVerdictFeesSql, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -15,6 +15,10 @@ const rows = [
   { fee_published_id: 97905, fee_verified_id: 110000, institution_id: 9, source_document_id: 5, canonical_fee_key: "atm_non_network", fee_name: "ATM Fee Reimbursement", amount: "10.00" },
   // A non-refundable set-up fee is a fee.
   { fee_published_id: 62322, fee_verified_id: 110001, institution_id: 9, source_document_id: 5, canonical_fee_key: "safe_deposit_box", fee_name: "Safe Deposit Non-Refundable Set-up Fee", amount: "25.00" },
+  // A non-customer price: flagged, stays live (v3).
+  { fee_published_id: 70100, fee_verified_id: 110002, institution_id: 9, source_document_id: 5, canonical_fee_key: "money_order", fee_name: "Money Orders (Non-Customer)", amount: "3.00", conditions: 'excerpt="Money Orders (Non-Customer) $3.00"' },
+  // Two fees on one line: second look (v3).
+  { fee_published_id: 70101, fee_verified_id: 110003, institution_id: 9, source_document_id: 5, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Wire Domestic In/Out", amount: "10.00", conditions: 'excerpt="Wire Domestic In/Out | $10/$20"' },
 ];
 
 function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | null) {
@@ -60,16 +64,33 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(ruleFor("counter_check", "Temporary counter checks (no charge with account opening)")).toBeNull();
   });
 
+  it("reads a $0 waiver or threshold sentence as not a fee (v2, Chase 75915)", () => {
+    expect(ruleFor("monthly_maintenance", "Monthly Service Fee when you have any ONE of the following during each monthly", 0)).toBe("waiver_sentence");
+    expect(ruleFor("monthly_maintenance", "Monthly Service Charge if any of the following qualifications are met", 0)).toBe("waiver_sentence");
+    expect(ruleFor("monthly_maintenance", "Minimum Balance Required to avoid service charge", 0)).toBe("waiver_sentence");
+    expect(ruleFor("monthly_maintenance", "To avoid a monthly maintenance fee, most accounts have a stated minimum balance.", 0)).toBe("waiver_sentence");
+    // The same wording at a price is the fee with its waiver; the name is for the retidy, not a takedown.
+    expect(ruleFor("monthly_maintenance", "monthly service charge; waived if you maintain a daily balance", 5)).toBeNull();
+    // A $0 fee that says it is waived is a fee.
+    expect(ruleFor("monthly_maintenance", "Dividend Checking Monthly Fee - Waived", 0)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "Maintenance fee waived for students under age 25", 0)).toBeNull();
+  });
+
   it("reads the eval's rows and the rule candidates, scoped to a bank when asked", () => {
     expect(evalVerdictFeesSql(false)).toContain("fp.fee_published_id = ANY($1::bigint[])");
     expect(evalVerdictFeesSql(false)).not.toContain("$2");
     expect(evalVerdictFeesSql(true)).toContain("fp.institution_id = $2");
+    expect(evalVerdictFeesSql(false)).toContain("fp.amount = 0 AND");
+    expect(evalVerdictFeesSql(false)).toContain("fr.conditions");
+    expect(evalVerdictFeesSql(false)).toContain("non[- ]?(customer|member|account ?holder)s?");
+    expect(evalVerdictFeesSql(false)).toContain("LIKE 'wire\\_%'");
   });
 
   it("archives an unchanged eval row on the first run and only flags a rule row", async () => {
     const db = createDb(null);
     const result = await retireEvalVerdictFees(db, options);
-    expect(result).toMatchObject({ evalMatched: 1, evalChanged: 1, ruleFailing: 1, flagged: 2 });
+    expect(result).toMatchObject({ evalMatched: 1, evalChanged: 1, ruleFailing: 2, flagged: 3, flags: { non_customer_price: 1, wire_shared_line: 0 } });
+    expect(result.flagSamples.map((fee) => [fee.feePublishedId, fee.flag])).toEqual([[70100, "non_customer_price"]]);
     expect(result.rolledBack.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[95816, "eval_critical:not_a_fee"]]);
     expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(true);
     expect(writes(db).some((text) => text.includes("SET review_status = 'rejected'"))).toBe(true);
@@ -77,6 +98,8 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("takedown_pending");
     expect(calls).toContain("hamilton.eval_verdict:pub:95816");
+    expect(calls).toContain("hamilton.eval_verdict:flag:non_customer_price:pub:70100");
+    expect(calls).toContain("wrong_amount:two_fees_one_line");
     expect(writes(db).some((text) => text.includes("hamilton.eval_verdict_rolled_back"))).toBe(true);
   });
 
@@ -87,9 +110,28 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(result.rolledBack.find((fee) => fee.feePublishedId === 97905)?.reason).toBe("not_a_fee:rebate");
   });
 
+  it("reads the merchant's fee and two fees on one line as takedowns, and flags the rest (v3)", () => {
+    expect(ruleFor("nsf", "Merchant presenting NSF check from member", 5)).toBe("merchant_payer");
+    expect(ruleFor("nsf", "Returned item paid by the merchant", 5)).toBe("merchant_payer");
+    expect(ruleFor("bill_pay", "Merchant Return (Bill Pay)", 25)).toBeNull();
+    expect(ruleFor("wire_domestic_outgoing", "Wire Domestic In/Out", 10, "Wire Domestic In/Out | $10/$20")).toBe("two_fees_one_line");
+    expect(ruleFor("wire_domestic_outgoing", "Outgoing Domestic / International Wire", 30, "Outgoing Domestic / International Wire $30 / $50 per wire")).toBe("two_fees_one_line");
+    // One price for both directions is one fee.
+    expect(ruleFor("wire_domestic_outgoing", "Wire Transfer In/Out", 25, "Wire Transfer In/Out $25")).toBeNull();
+    expect(distinctPrices("$10/$20 and $10.00")).toBe(2);
+    expect(flagFor("money_order", "Money Orders (Non-Customer)")).toBe("non_customer_price");
+    expect(flagFor("account_research", "Fax: Nonmember")).toBe("non_customer_price");
+    expect(flagFor("money_order", "Money Orders")).toBeNull();
+    expect(flagFor("wire_domestic_incoming", "Incoming Wire", "$ 17.00 Incoming Wire | $ 25.00 Foreign Currency Sell")).toBe("wire_shared_line");
+    expect(flagFor("wire_domestic_incoming", "Incoming Wire", "Incoming Wire | $17.00")).toBeNull();
+    // A heading joined to another fee is the category guard's name_contradicts, not a flag here.
+    expect(flagFor("early_closure", "Accounts closed within 90 days: International Wire")).toBeNull();
+  });
+
   it("changes nothing in a dry run", async () => {
     const db = createDb(null);
     const result = await retireEvalVerdictFees(db, { ...options, dryRun: true });
+    expect(result.flags.non_customer_price).toBe(1);
     expect(result.rolledBack).toHaveLength(1);
     expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
   });

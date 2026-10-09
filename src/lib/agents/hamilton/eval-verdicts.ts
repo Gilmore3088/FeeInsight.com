@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -19,9 +20,29 @@ type SqlTag = typeof sql;
  *   - a surcharge rebate or reimbursement published as an ATM fee ("ATM Fee Reimbursement $10":
  *     the bank gives it, it does not charge it): 20 live fees on Oct 8;
  *   - a product-feature sentence ("No fee for cashier's checks or money orders") published as a
- *     $0 fee: 4 live fees on Oct 8. A table row priced "No Charge" is a fee and stays.
- * A non-customer price beside the bank's own customer price (316 live fees) is not taken down
- * here: whether it is a payer error or a flag is James's open call (confirm list, row 16).
+ *     $0 fee: 4 live fees on Oct 8. A table row priced "No Charge" is a fee and stays;
+ *   - a waiver or threshold sentence published as a $0 fee ("Monthly Service Fee when you have any
+ *     ONE of the following during each monthly", "Minimum Balance Required to avoid service
+ *     charge"): the bank's monthly fee is another row, this one is its condition (Accuracy's
+ *     Chase row 75915, Oct 9; 13 live). A $0 fee named "... - Waived" is a fee and stays.
+ *   - a fee the merchant or payee pays ("Merchant presenting NSF check from member"), published
+ *     as the member's fee (v3);
+ *   - two fees on one line published as one ("Wire Domestic In/Out $10/$20"): the name pairs two
+ *     directions or scopes and the line Knox read carries two prices, so the one published is at
+ *     best half right (v3; 3 live on Oct 9).
+ *
+ * Three shapes are flagged, never taken down (v3): each writes one `pipeline_feedback` row per
+ * fee (weight 0.5, a judgement, not proof) that a report or a later rule can read:
+ *   - `non_customer_price`: a price for non-customers or non-members published beside the bank's
+ *     own customer price (1,244 live on Oct 9). Whether to show it flagged or hide it is James's
+ *     open call (confirm list, row 16); the default is Flag.
+ *   - `wire_shared_line`: a wire fee read from a line that names both scopes (domestic and
+ *     international, or incoming and outgoing) and carries two prices (173 live on Oct 9): the
+ *     column read needs a second look, as in Skyline's and WNB's eval rows.
+ * A name that joins a heading to another category's fee ("Accounts closed within 90 days:
+ * International Wire" under early closure, Koin's eval row) is the category guard's
+ * `name_contradicts` (v49) and is not repeated here: of 201 such live names on Oct 9, none needed
+ * a second flag.
  *
  * Archived, never deleted: `rolled_back_reason = 'eval_critical:<verdict>'` or
  * `'not_a_fee:<rule>'`, the verified row rejected with the same flag so it is not republished,
@@ -29,7 +50,7 @@ type SqlTag = typeof sql;
  * Knox's learning reads what was wrong.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 1;
+export const EVAL_VERDICT_VERSION = 3;
 const EVAL_REASON_PREFIX = "eval_critical";
 const RULE_REASON_PREFIX = "not_a_fee";
 const ROLLBACK_LIMIT = 500;
@@ -117,14 +138,65 @@ const ATM_KEYS = new Set(["atm_non_network", "atm_international"]);
 /** A sentence about what is free ("No fee for stop payments"), not a priced row. */
 const NO_FEE_SENTENCE = /^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\b/i;
 
-/** Postgres pre-filter for the two name rules; `ruleFor` decides. */
-export const RULE_NAME_PATTERN = String.raw`(rebate|reimburse|refund)|^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)\y`;
+/** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
+const WAIVER_SENTENCE = /\b(if|when|unless)\s+you\b|\bof\s+the\s+following\b|\bqualifications?\s+(are|is)\s+met\b|^\s*to\s+avoid\b|\bto\s+avoid\s+(a\s+|an\s+|the\s+)?(monthly\s+|maintenance\s+)?(service\s+charge|monthly\s+fee|maintenance\s+fee|fee)/i;
 
-/** Which name rule, if any, takes a live fee down. Pure. */
-export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined): "rebate" | "no_fee_sentence" | null {
+/** A fee the merchant or payee pays, not the account holder. */
+const MERCHANT_PAYER = /\b(merchant|payee)\s+(pays|presenting|presented)\b|\bpaid\s+by\s+(the\s+)?(merchant|payee)\b/i;
+/** A name that pairs two directions or scopes of one service: two fees, one row. */
+const TWO_FEES_NAME = /\bin\s*\/\s*out\b|\bout\s*\/\s*in\b|incoming\s*\/\s*outgoing|outgoing\s*\/\s*incoming|domestic\s*\/\s*international|international\s*\/\s*domestic/i;
+/** A price for people who are not the bank's customers. */
+const NON_CUSTOMER = /non[- ]?(customer|member|account ?holder)s?\b|\bnot\s+a\s+(customer|member)\b|\bfor\s+non-?(members|customers)\b|non-?clients?\b/i;
+const WIRE_KEYS = new Set(["wire_domestic_incoming", "wire_domestic_outgoing", "wire_intl_incoming", "wire_intl_outgoing"]);
+const WIRE_SCOPE_A = /\b(domestic|incoming|in)\b/i;
+const WIRE_SCOPE_B = /\b(international|foreign|outgoing|out)\b/i;
+const PRICE = /\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/g;
+
+/** How many distinct dollar prices a schedule line carries. Pure. */
+export function distinctPrices(text: string | null | undefined): number {
+  if (!text) return 0;
+  return new Set(Array.from(text.matchAll(PRICE), (match) => Number(match[1].replace(/,/g, "")))).size;
+}
+
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line";
+export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
+  rebate: "not_a_fee",
+  no_fee_sentence: "not_a_fee",
+  waiver_sentence: "not_a_fee",
+  merchant_payer: "wrong_payer",
+  two_fees_one_line: "wrong_amount",
+};
+const RULE_WHY: Readonly<Record<NameRule, string>> = {
+  rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
+  no_fee_sentence: "A sentence about what is free, not a priced fee line",
+  waiver_sentence: "The condition that waives a fee, or the balance that avoids it, published as a $0 fee",
+  merchant_payer: "A fee the merchant or payee pays, published as the account holder's fee",
+  two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
+};
+
+/** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
+export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null, excerpt?: string | null): NameRule | null {
   const name = feeName ?? "";
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
   if (NO_FEE_SENTENCE.test(name)) return "no_fee_sentence";
+  if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
+  if (MERCHANT_PAYER.test(name)) return "merchant_payer";
+  if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
+  return null;
+}
+
+export type FlagRule = "non_customer_price" | "wire_shared_line";
+export const FLAG_RULES: readonly FlagRule[] = ["non_customer_price", "wire_shared_line"];
+const FLAG_WHY: Readonly<Record<FlagRule, string>> = {
+  non_customer_price: "A price for non-customers, published beside the bank's own customer price (Flag until James decides Flag or Hide)",
+  wire_shared_line: "A wire fee read from a line that names both scopes and carries two prices; the column read needs a second look",
+};
+
+/** Which flag, if any, a live fee gets (never a takedown). Pure. */
+export function flagFor(canonicalFeeKey: string, feeName: string | null | undefined, excerpt?: string | null): FlagRule | null {
+  const name = feeName ?? "";
+  if (NON_CUSTOMER.test(name)) return "non_customer_price";
+  if (WIRE_KEYS.has(canonicalFeeKey) && distinctPrices(excerpt) >= 2 && WIRE_SCOPE_A.test(excerpt ?? "") && WIRE_SCOPE_B.test(excerpt ?? "")) return "wire_shared_line";
   return null;
 }
 
@@ -145,6 +217,7 @@ interface LiveRow {
   canonical_fee_key: string;
   fee_name: string | null;
   amount: number | string | null;
+  conditions: string | null;
 }
 
 export interface EvalTakedown {
@@ -173,6 +246,9 @@ export interface EvalVerdictResult {
   flagged: number;
   waiting: number;
   rolledBack: EvalTakedown[];
+  /** Live fees flagged, never taken down, by flag. */
+  flags: Record<FlagRule, number>;
+  flagSamples: Array<{ feePublishedId: number; flag: FlagRule; feeName: string; canonicalFeeKey: string; amount: number | null }>;
   dryRun: boolean;
 }
 
@@ -186,7 +262,7 @@ function num(value: number | string | null | undefined): number | null {
 export function evalVerdictFeesSql(byInstitution: boolean): string {
   return `
     SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
-           fp.canonical_fee_key, fp.fee_name, fp.amount
+           fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -194,7 +270,12 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
        ${byInstitution ? "AND fp.institution_id = $2" : ""}
        AND (fp.fee_published_id = ANY($1::bigint[])
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
-            OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y')
+            OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
+            OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
+            OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
+            OR fp.fee_name ~* '\\yin\\s*/\\s*out\\y|\\yout\\s*/\\s*in\\y|incoming\\s*/\\s*outgoing|outgoing\\s*/\\s*incoming|domestic\\s*/\\s*international|international\\s*/\\s*domestic'
+            OR fp.fee_name ~* 'non[- ]?(customer|member|account ?holder)s?\\y|\\ynot\\s+a\\s+(customer|member)\\y|\\yfor\\s+non-?(members|customers)\\y|non-?clients?\\y'
+            OR (fp.canonical_fee_key LIKE 'wire\\_%' AND fr.conditions ~ '\\$.*\\$'))
      ORDER BY fp.fee_published_id`;
 }
 
@@ -208,7 +289,10 @@ export async function retireEvalVerdictFees(
   options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; limit?: number },
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
-  const result: EvalVerdictResult = { evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, rolledBack: [], dryRun: options.dryRun };
+  const result: EvalVerdictResult = {
+    evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, rolledBack: [],
+    flags: { non_customer_price: 0, wire_shared_line: 0 }, flagSamples: [], dryRun: options.dryRun,
+  };
   let rows: LiveRow[];
   try {
     const ids = EVAL_CRITICAL_VERDICTS.map((entry) => entry.feePublishedId);
@@ -225,6 +309,7 @@ export async function retireEvalVerdictFees(
 
   const evalRows: EvalTakedown[] = [];
   const ruleRows: EvalTakedown[] = [];
+  const flagRows: FeedbackRow[] = [];
   for (const row of rows) {
     const base = {
       feePublishedId: Number(row.fee_published_id),
@@ -244,16 +329,49 @@ export async function retireEvalVerdictFees(
       result.evalChanged += 1;
       continue;
     }
-    const rule = ruleFor(base.canonicalFeeKey, base.feeName);
-    if (!rule) continue;
-    const why =
-      rule === "rebate"
-        ? "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges"
-        : "A sentence about what is free, not a priced fee line";
-    ruleRows.push({ ...base, kind: "not_a_fee", reason: `${RULE_REASON_PREFIX}:${rule}`, why, source: "rule" });
+    const excerpt = excerptOf(row.conditions);
+    const rule = ruleFor(base.canonicalFeeKey, base.feeName, base.amount, excerpt);
+    if (rule) {
+      const kind = RULE_VERDICTS[rule];
+      const prefix = kind === "not_a_fee" ? RULE_REASON_PREFIX : kind;
+      ruleRows.push({ ...base, kind, reason: `${prefix}:${rule}`, why: RULE_WHY[rule], source: "rule" });
+      continue;
+    }
+    const flag = flagFor(base.canonicalFeeKey, base.feeName, excerpt);
+    if (!flag) continue;
+    result.flags[flag] += 1;
+    if (result.flagSamples.length < 30) {
+      result.flagSamples.push({ feePublishedId: base.feePublishedId, flag, feeName: base.feeName, canonicalFeeKey: base.canonicalFeeKey, amount: base.amount });
+    }
+    flagRows.push({
+      aboutStage: "extract",
+      signal: "wrong",
+      kind: flag,
+      reportedBy: "hamilton",
+      checkName: EVAL_VERDICT_CHECK,
+      institutionId: base.institutionId,
+      sourceDocumentId: base.sourceDocumentId,
+      feeVerifiedId: base.feeVerifiedId,
+      feePublishedId: base.feePublishedId,
+      canonicalFeeKey: base.canonicalFeeKey,
+      amount: base.amount,
+      weight: 0.5,
+      runId: options.runId,
+      dedupeKey: `${EVAL_VERDICT_CHECK}:flag:${flag}:pub:${base.feePublishedId}`,
+      evidence: { reason: `flag:${flag}`, why: FLAG_WHY[flag], fee_name: base.feeName, excerpt: excerpt ? excerpt.slice(0, 300) : null, version: EVAL_VERDICT_VERSION },
+    });
   }
   result.evalMatched = evalRows.length;
   result.ruleFailing = ruleRows.length;
+  if (flagRows.length > 0 && !options.dryRun) {
+    // A flag is a judgement on the record, not a takedown: the fee stays live and the row is
+    // re-judged (same dedupe key) on every step while the shape holds.
+    try {
+      await inSavepoint(db, (scope) => recordFeedback(scope, flagRows));
+    } catch (error) {
+      console.error("eval verdict flags failed:", error);
+    }
+  }
   if (evalRows.length === 0 && ruleRows.length === 0) return result;
 
   // Every takedown is logged; the eval rows come down now (James, Oct 8), the rule rows after
