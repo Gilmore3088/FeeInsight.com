@@ -163,6 +163,37 @@ describe("top-50 fold", () => {
     expect(split("money_order", "Cashier's Check / Money Order")).toBeNull();
   });
 
+  test("night deposit keys, box rent late charges, IRA transfers out, lien releases, prepaid card buys and returned statements move to their own types (Oct 9)", () => {
+    const moves: [string, string, number, string | null][] = [
+      ["safe_deposit_box", "Night Drop Key Replacement", 15, "night_deposit"],
+      ["safe_deposit_box", "Replacement Night Depository Bag or Lost Key", 35, "night_deposit"],
+      ["safe_deposit_box", "Lost Key - Safe Deposit Box", 25, null],
+      ["late_payment", "Box Rental Late Fee", 25, "safe_deposit_box"],
+      ["late_payment", "Late charge for safety deposit box rental after 10 days", 10, "safe_deposit_box"],
+      ["late_payment", "Late Payment Fee - Consumer Loans", 25, null],
+      ["account_research", "IRA Transfer (outgoing)", 50, "ira_termination"],
+      ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
+      ["account_research", "IRA Excessive Withdrawal", 10, null],
+      ["account_research", "IRA Transfer Incoming", 0, null],
+      ["account_research", "Account Research (per hour)", 25, null],
+      ["legal_process", "Lien Release for Lost Title", 15, "other_lending_fee"],
+      ["legal_process", "Legal Process (Liens, levies, restraining orders, etc,) Per Action", 100, null],
+      ["atm_non_network", "Reloadable ATM/Debit Card – Reload Fee", 2, "gift_card_purchase"],
+      ["atm_non_network", "ATM/Debit Card/ Prepaid Card - Fee for Purchase", 5, "gift_card_purchase"],
+      ["atm_non_network", "VISA Reloadable Card - ATM Withdrawal Fees", 1.5, null],
+      ["atm_non_network", "Visa travel card ($3,000 max.) Initial purchase Reload ATM withdrawal ATM balance inquiry", 5, null],
+      ["atm_non_network", "Non-Network ATM Withdrawal", 3, null],
+      ["paper_statement", "Returned Mailed Statement", 5, "account_research"],
+      ["paper_statement", "Returned statement fee for returned mail", 5, "account_research"],
+      ["paper_statement", "Paper Statement Fee", 3, null],
+    ];
+    for (const [key, name, amount, want] of moves) {
+      const got = splitLiveCategory(key, name)?.to ?? null;
+      expect([key, name, got]).toEqual([key, name, want]);
+      if (want) expect([name, passesDarwinChecks(want, name, amount)]).toEqual([name, true]);
+    }
+  });
+
   test("foldContext returns the text before the fee's line", () => {
     const text = "ATM Fees Non-Bank ATM ........ Withdrawal $2.00\nBalance Inquiry .......... $1.00";
     expect(foldContext(text, "Balance Inquiry")).toBe("ATM Fees Non-Bank ATM Withdrawal $2.00 ");
