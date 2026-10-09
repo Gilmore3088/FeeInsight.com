@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * The free market snapshot a prospect's first email links to (GTM plan, James 15:25 and 15:33
@@ -212,7 +213,7 @@ function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
   const text = (value: unknown) => (value === null || value === undefined || value === "" ? null : String(value));
   return {
     id: Number(row.id),
-    name: String(row.institution_name),
+    name: institutionDisplayName(String(row.institution_name)),
     city: text(row.city),
     stateCode: text(row.state_code),
     cbsaCode: text(row.cbsa_code),

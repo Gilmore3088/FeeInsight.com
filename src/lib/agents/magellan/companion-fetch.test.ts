@@ -116,4 +116,23 @@ describe("Magellan companion fetch", () => {
     expect(String(retired?.[1])).toMatch(/^not_consumer_fee_page/);
     expect(retired).toContain(67);
   });
+
+  it("never retires a schedule found by hand for its link words, and puts back the ones it did", async () => {
+    // Valley's fee schedule PDF is named "Schedule of Fees-Privacy Policy-ADA"; First United's
+    // overdraft notice is "opt-in-form.pdf".
+    const valley = {
+      id: 2301, institution_id: 44, account_name: null, found_by_strategy: "discover.operator_schedule",
+      url: "https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf",
+    };
+    const db = createDb([valley]);
+
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: "NJ", institutionId: null });
+
+    expect(review.retired).toEqual([]);
+    const restore = db.mock.calls.find((call) => templateText(call[0]).includes("SET status = 'found'"));
+    const restoreText = templateText(restore?.[0]).replace(/\s+/g, " ");
+    expect(restoreText).toContain("ias.found_by_strategy = 'discover.operator_schedule'");
+    expect(restoreText).toContain("ias.status = 'rejected'");
+    expect(restore).toContain("not_consumer_fee_page: loan or other non-deposit document");
+  });
 });
