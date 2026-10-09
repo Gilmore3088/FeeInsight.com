@@ -233,7 +233,7 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
   });
 
   it("labels the Oct 9 hand-checked rows no live type fits, each only while it reads as labelled", () => {
-    const ids = [36498, 90839, 15199, 17477, 76242, 104697];
+    const ids = [36498, 90839, 15199, 17477, 76242, 104697, 87808, 88092, 88453];
     for (const id of ids) {
       const entry = HAND_CHECKED_VERDICTS.find((row) => row.feePublishedId === id);
       expect(entry, String(id)).toBeDefined();

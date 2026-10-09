@@ -237,6 +237,18 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_amount", pattern: "fee_in_sentence",
     why: "Doc 24024: \"Maximum Overdraft Continuation Fee is $30.00 during each consecutive OD period\": $30 caps the continuation fees, it is not the fee",
   },
+  // "Free [perk]" $0 rows (UAT, Oct 9): 142 of the 148 live already hold the product page check's
+  // flag. These three sit on marketing pages that check does not class as product pages. A
+  // fee schedule's own "Free incoming wires" line (64904, 100941) is the bank's price and stays.
+  ...([
+    [87808, "Iq Federal Credit Union", "Free online banking, bill pay", "doc 21644, a high-yield bundle page"],
+    [88092, "Ridgeline Federal Credit Union", "Free bill pay", "doc 20882, a rates page (\"VISA Debit and free bill pay\")"],
+    [88453, "FNB Picayune Bank", "Free online banking, mobile banking and bill payment", "doc 13040, a services brochure"],
+  ] as const).map(([feePublishedId, institution, feeName, where]) => ({
+    feePublishedId, institution, feeName, amount: 0, canonicalFeeKey: "bill_pay",
+    verdict: "not_a_fee" as const, pattern: "perk_claim",
+    why: `${where}: an account perk in a feature list, not a fee line`,
+  })),
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */
