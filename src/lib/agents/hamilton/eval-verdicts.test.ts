@@ -254,6 +254,16 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(writes(db).some((text) => text.includes("DELETE"))).toBe(false);
   });
 
+  it("reads a rate fee's floor or cap published as the fee as a wrong amount (UAT 103410)", () => {
+    expect(ruleFor("cash_advance", "Signature Authorization Cash Advance Fee: 4% of transaction amount. Minimum", 4)).toBe("rate_bound");
+    expect(ruleFor("cashiers_check", "Cashiers Check 1% of Check Amt Max", 5)).toBe("rate_bound");
+    expect(ruleFor("check_cashing", "Check Cashing 2% or minimum", 5)).toBe("rate_bound");
+    // A percent with the floor stated after it, or no percent at all, is not this shape.
+    expect(ruleFor("check_cashing", "Check Cashing 2%, minimum $5", 5)).toBeNull();
+    expect(ruleFor("account_research", "Research Fee minimum", 10)).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("(minimum|maximum|min|max)");
+  });
+
   it("changes nothing in a dry run", async () => {
     const db = createDb(null);
     const result = await retireEvalVerdictFees(db, { ...options, dryRun: true });

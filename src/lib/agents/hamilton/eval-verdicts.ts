@@ -256,7 +256,14 @@ export function distinctPrices(text: string | null | undefined): number {
   return new Set(Array.from(text.matchAll(PRICE), (match) => Number(match[1].replace(/,/g, "")))).size;
 }
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name";
+/**
+ * A rate fee's floor or cap published as the fee ("Signature Authorization Cash Advance Fee: 4% of
+ * transaction amount. Minimum" at $4, UAT 07:50 Oct 9): the name states the percent and ends on
+ * the word that makes the dollar figure a minimum or maximum. The rate is its own row.
+ */
+const RATE_BOUND_NAME = /\d\s*%.*\b(minimum|maximum|min|max)\.?:?\s*$/i;
+
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
@@ -264,6 +271,7 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   merchant_payer: "wrong_payer",
   two_fees_one_line: "wrong_amount",
   price_in_name: "wrong_amount",
+  rate_bound: "wrong_amount",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -272,6 +280,7 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   merchant_payer: "A fee the merchant or payee pays, published as the account holder's fee",
   two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
   price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
+  rate_bound: "The name states a percent and ends on minimum or maximum: the amount is the rate fee's floor or cap, not the fee",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
@@ -282,6 +291,7 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
   if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
+  if (amount != null && amount > 0 && RATE_BOUND_NAME.test(name)) return "rate_bound";
   if (amount != null) {
     const stated = priceInName(name);
     if (stated != null && Math.abs(stated - amount) > 0.005) return "price_in_name";
@@ -398,6 +408,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
             OR fp.fee_name ~ '\\$\\s?[0-9]'
+            OR (fp.fee_name ~ '[0-9]\\s*%' AND fp.fee_name ~* '\\y(minimum|maximum|min|max)\\.?:?\\s*$')
             OR fp.fee_name ~* '\\yin\\s*/\\s*out\\y|\\yout\\s*/\\s*in\\y|incoming\\s*/\\s*outgoing|outgoing\\s*/\\s*incoming|domestic\\s*/\\s*international|international\\s*/\\s*domestic'
             OR fp.fee_name ~* 'non[- ]?(customer|member|account ?holder)s?\\y|\\ynot\\s+a\\s+(customer|member)\\y|\\yfor\\s+non-?(members|customers)\\y|non-?clients?\\y'
             OR (fp.canonical_fee_key LIKE 'wire\\_%' AND fr.conditions ~ '\\$.*\\$'))
