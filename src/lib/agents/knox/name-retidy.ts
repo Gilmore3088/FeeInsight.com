@@ -207,7 +207,8 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
 export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 6 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
-export const NAME_RETIDY_INSTITUTION_LIMIT = 40;
+// 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
+export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
 
 export type RetidySkip = "no_better_name" | "would_not_trace" | "category_guard" | "same_name_live";
 
