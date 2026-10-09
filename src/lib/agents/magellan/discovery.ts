@@ -31,6 +31,7 @@ import {
   type TrailEntry,
 } from "./finders";
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
+import { NO_CONSUMER_SCHEDULE_IDS } from "./operator-schedules";
 import { OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
@@ -1630,7 +1631,7 @@ export async function runMagellanDiscovery(
     [
       ...new Set([
         ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => [])),
-        ...(await loadMarketGapIds(db).catch(() => [])),
+        ...(await loadMarketGapIds(db).catch(() => [])).filter((id) => !NO_CONSUMER_SCHEDULE_IDS.has(id)),
       ]),
     ];
   const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
