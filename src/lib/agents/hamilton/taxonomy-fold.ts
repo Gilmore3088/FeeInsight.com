@@ -332,6 +332,10 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 6272, doc 8005: \"Non-Sufficient Funds ... $30/item\"; the ATM line before it was glued on" },
   { feePublishedId: 98064, from: "dormant_account", amount: 5, to: "dormant_account", name: "Inactive Account",
     why: "inst 8511, doc 13054: \"Inactive Account (after [months unreadable] of inactivity) ... $5.00/month\"" },
+  // UAT's 13:41 sample (Oct 9): a box rental's late fee filed as a loan late fee.
+  { feePublishedId: 92156, from: "late_payment", amount: 10, to: "safe_deposit_box",
+    name: "Safe Deposit Box Late Payment Fee - if payment is not made within 60 days of due date",
+    why: "inst 1638, doc 22021: under \"Safe Deposit Boxes\", \"Late Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\"" },
 ];
 
 interface HandRow {

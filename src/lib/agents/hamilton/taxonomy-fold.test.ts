@@ -35,6 +35,7 @@ const PAGE_LINES: Record<number, string> = {
   77918: "\u0125page Return Mail Fee (no forwarding) ……………$5.00",
   97560: "Out of Network ATMs \ufffd\ufffd\ufffd $2\ufffd00/Transaction | Non-Sufficient Funds \ufffd\ufffd\ufffd\ufffd$30/item",
   98064: "Copies of a canceled draft (check) .................... $2.00 each | Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b$5.00\u0125month",
+  92156: "Safe Deposit Boxes\n\nLost Key Replacement - each key | $20.00\n\nDrilling Box | Actual Cost\n\nLate Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\n\nBox prices vary based on size.",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
