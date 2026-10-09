@@ -566,6 +566,43 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.northerntrust.com/content/dam/northerntrust/pws/nt/documents/wealth-management/banking/disclosures/deposit-account-descriptions-and-fees.pdf",
     givenBy: "Magellan's paid schedule search (proposed 4 times, 2026-10-07), for the market-gap list 2026-10-09",
   },
+  // Magellan batch 1: banks and credit unions with no fee link, checked by the Mac session's
+  // signed-out headless browser (2026-10-09 06:46). Where the site publishes no schedule PDF,
+  // the link is the product or overdraft page that lists the fees. Sunwest's, Leader's,
+  // Morton's and INB's links came from the search index because bot protection blocked the
+  // browser; mysunwest.com and yourcnb.com are different banks and were left out. Builtwell
+  // and Falcon are not listed (nothing found).
+  ...([
+    [193, "Metropolitan Commercial Bank", "https://mcbankny.com/personal/checking/"],
+    [222, "Old Second National Bank", "https://www.oldsecond.com/personal-banking/personal-checking-accounts-in-chicagoland/"],
+    [273, "Morton Community Bank", "https://hometownbanks.com/general/feeschedule"],
+    [286, "Leader Bank, National Association", "https://www.leaderbank.com/personal/rates-fees"],
+    [314, "Inwood National Bank", "https://www.inwoodbank.com/personal-checking-savings-and-cds"],
+    [354, "Sunwest Bank", "https://www.sunwestbank.com/wp-content/uploads/2023/10/swb-fee-schedule-personal.pdf"],
+    [385, "Bank of Ann Arbor", "https://www.bankofannarbor.com/personal/checking/"],
+    [412, "Bristol County Savings Bank", "https://www.bristolcountysavings.com/BristolCountySavingsBank/media/Documents/courtesy-overdraft-privilege-service-description.pdf"],
+    [413, "The Bank of Missouri", "https://www.bankofmissouri.com/personal/bank/checking/bounce-protection"],
+    [476, "Citizens & Northern Bank", "https://www.cnbankpa.com/Personal/Bank/Overdraft-Options"],
+    [501, "INB, National Association", "https://www.inb.com/Resources/3b2cb3b8-b76d-467f-9bd5-8d8b225870df/Fee%20schedule%201.23.261%20updated.pdf"],
+    [524, "Community National Bank", "https://www.cnbtx.bank/personal-checking"],
+    [573, "Planters Bank & Trust Company", "https://www.planters-bank.com/preferred-checking"],
+    [4493, "South Carolina Federal Credit Union", "https://www.scfederal.org/rates-fees/fee-schedule"],
+    [4700, "Jovia Financial Federal Credit Union", "https://www.jovia.org/personal-banking/tools-resources/fee-schedule"],
+    [5090, "Members 1St Federal Credit Union", "https://www.members1st.org/ask-us/rate-center/truth-in-savings-and-rate-and-fee-disclosures"],
+    [5834, "Stanford Federal Credit Union", "https://www.sfcu.org/schedule-of-fees"],
+    [6720, "Altra Federal Credit Union", "https://www.altra.org/wp-content/uploads/2025/02/servicefees.pdf"],
+    // The consumer fee schedule effective 2026-01-14, served from the credit union's Salesforce
+    // file host; corningcu.org/disclosures links to it.
+    [4568, "Corning Federal Credit Union", "https://corningcreditunion.my.salesforce.com/sfc/dist/version/renditionDownload?rendition=ORIGINAL_Pdf&versionId=068Vr00000fIvwU&operationContext=DELIVERY&contentId=05TVr00000oro0p&page=0&d=/a/KY000000sbru/1DBdnBaAkbA5bDRkjaoXFLCcC0yf62NNxZfy3o3DUQE&oid=00D4x0000030hGS&dpt=null&viewId="],
+    // No fee schedule is posted (the old /deposit/common-fee-schedule is gone); the personal
+    // checking page lists the account fees.
+    [3827, "Angelina Savings Bank, SSB", "https://www.angelinabankonline.com/deposit/checking-products/personal-checking-accounts"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "Mac session headless browser check, Magellan batch 1, 2026-10-09 06:46",
+  })),
 ];
 
 export interface NoConsumerSchedule {
@@ -595,6 +632,11 @@ export const NO_CONSUMER_SCHEDULE: readonly NoConsumerSchedule[] = [
     institutionId: 817,
     institutionName: "The Bank of New York Mellon Trust Company, National Association",
     reason: "Trust company; same Pershing sweep schedule as BNY; web search found no consumer fee schedule",
+  },
+  {
+    institutionId: 420,
+    institutionName: "TIB National Association",
+    reason: "Bankers' bank with no consumer accounts; the link on file is a card disclosure (Mac session browser check, 2026-10-09 06:46)",
   },
 ];
 
