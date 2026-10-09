@@ -50,7 +50,7 @@ import {
 import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
-import { buildSegmentResearch } from "./segment";
+import { buildSegmentResearch, shortSegmentLabel } from "./segment";
 import { MIN_PEERS_FOR_POSITION } from "./scenario";
 import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type ServiceChargeRow } from "./revenue";
 import {
@@ -723,7 +723,7 @@ export async function getFeeResearch(
   const current = base.ownValues.get(feeCategory) ?? null;
   const structureGroup =
     segment && !segment.problem
-      ? { label: segment.segment.label, members: segment.members }
+      ? { label: shortSegmentLabel(segment.segment), members: segment.members }
       : local.competitors && local.competitors.length >= MIN_PEERS_FOR_POSITION
         ? { label: "competitors in your market", members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };

@@ -5,6 +5,8 @@ import { Activity, Ban, CircleAlert, Gauge, LockKeyhole, Route, ShieldCheck } fr
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { requireAuth } from "@/lib/auth";
 import { getApiTrustOverview } from "@/lib/api-hardening/admin";
+import { formatAdminDateTime } from "@/lib/admin-time";
+import { providerStopLabel } from "@/lib/console/control-labels";
 
 function money(microusd: number): string {
   const dollars = microusd / 1_000_000;
@@ -17,13 +19,7 @@ function money(microusd: number): string {
 }
 
 function time(value: string | null): string {
-  if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return value ? formatAdminDateTime(value) : "Never";
 }
 
 function Stat({
@@ -65,11 +61,11 @@ export default async function ApiTrustPage() {
           </div>
           <div className="flex flex-wrap gap-2">
           <Link
-            href="/admin#atlas-safety"
+            href="/admin/controls"
             className="inline-flex items-center justify-center gap-2 rounded-md border border-black/[0.08] px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/[0.1] dark:text-gray-200 dark:hover:bg-white/[0.05]"
           >
             <ShieldCheck className="size-4" />
-            Atlas safety
+            Stop switches
           </Link>
           <Link
             href="/admin/api-keys"
@@ -141,15 +137,13 @@ export default async function ApiTrustPage() {
         <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.03]">
           <div className="flex items-center gap-2">
             <Ban className="size-4 text-gray-500" />
-            <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-100">Automation stop</h2>
+            <h2 className="text-sm font-semibold text-gray-950 dark:text-gray-100">Provider stop</h2>
           </div>
           <dl className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-gray-500">State</dt>
-              <dd className="font-semibold text-gray-950 dark:text-gray-100">
-                {overview.automation.enabled === null
-                  ? "Unknown"
-                  : overview.automation.enabled ? "Enabled" : "Stopped"}
+              <dd className="text-right font-semibold text-gray-950 dark:text-gray-100">
+                {providerStopLabel(overview.automation.enabled)}
               </dd>
             </div>
             <div className="flex justify-between gap-3">
