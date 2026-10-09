@@ -15,6 +15,7 @@ vi.mock("@ai-sdk/react", () => ({
     setMessages: vi.fn(),
     error: undefined,
     clearError: vi.fn(),
+    stop: vi.fn(),
   }),
 }));
 const saveAnalysis = vi.hoisted(() => vi.fn(async () => ({ id: "client-row" })));

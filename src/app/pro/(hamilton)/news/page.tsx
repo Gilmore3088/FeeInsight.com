@@ -71,7 +71,7 @@ export default async function NewsPage({
     const win = pageWindow(wire.offset / WIRE_PAGE_SIZE + 1, wire.total);
     const shown = { ...params, page: win.page };
     return (
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+      <div className="max-w-4xl">
         <WireHeader params={shown} />
         <div className="mt-5">
           <WireControls params={shown} lead={<JurisdictionField states={states} active={params.state} />} />
@@ -94,7 +94,7 @@ export default async function NewsPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
+    <div>
       <WireHeader params={shown} />
       <div className="mt-5">
         <WireControls params={shown} actions={canRefreshFeeds ? <RefreshButton /> : undefined} />

@@ -43,7 +43,7 @@ export function JobLaunchReceipt({
           <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">{detail}</p>
         </div>
         <Link
-          href="/admin#atlas-live-status"
+          href="/admin/live"
           className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md bg-emerald-900 px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-emerald-800 dark:bg-emerald-100 dark:text-emerald-950 dark:hover:bg-white"
         >
           Track live<ExternalLink className="h-3.5 w-3.5" />

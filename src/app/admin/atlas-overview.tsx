@@ -59,6 +59,11 @@ interface FunnelStep {
   note: string;
 }
 
+function unsourcedNote(funnel: PipelineFunnel): string {
+  const gap = funnel.publishedInstitutions - funnel.sourcedInstitutions;
+  return gap > 0 ? ` (${count(gap)} with no source link on any live fee)` : "";
+}
+
 export function funnelSteps(funnel: PipelineFunnel): FunnelStep[] {
   const universe = funnel.institutions;
   return [
@@ -71,7 +76,10 @@ export function funnelSteps(funnel: PipelineFunnel): FunnelStep[] {
     {
       label: "Institutions published",
       value: funnel.sourcedInstitutions,
-      note: `institutions · ${share(funnel.sourcedInstitutions, universe)} sourced · ${count(funnel.publishedInstitutions)} any`,
+      // Both read published_fee_catalog: "with a source link" counts institutions with at
+      // least one live fee carrying a source_url; the second counts every institution
+      // with any live fee. The gap is institutions whose live fees all lack a source link.
+      note: `institutions with a source link · ${share(funnel.sourcedInstitutions, universe)} of universe · ${count(funnel.publishedInstitutions)} with any live fee${unsourcedNote(funnel)}`,
     },
   ];
 }

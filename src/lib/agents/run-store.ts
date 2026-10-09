@@ -5,19 +5,28 @@ import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
+import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
+import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
+import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
+import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
+import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
+import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
+import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
+import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
@@ -42,6 +51,7 @@ import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
+import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
   clusterPublicDiscoveryFindings,
@@ -58,18 +68,28 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
+import { runProSeatCheck, summarizeProSeatCheck } from "@/lib/hamilton/pro-seat-check";
 import { PREVIEW_INSTITUTION_ID, runCompetitorAlerts, summarizeCompetitorAlerts } from "@/lib/hamilton/competitor-alerts";
 import { runBriefingRefresh, summarizeBriefingRefresh } from "@/lib/hamilton/briefing-snapshots";
 import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
-import { runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
-import { runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
+import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
+import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
+import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
+import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
+import { runQuoteDrafts, summarizeQuoteDrafts } from "@/lib/agents/growth/quote";
+import { runMondayPlan, runProposals, summarizeMondayPlan, summarizeProposals } from "@/lib/agents/growth/draper";
+import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
+import { runConversionCheck, summarizeConversionCheck } from "@/lib/agents/growth/norman";
+import { runToolCheck, summarizeToolCheck } from "@/lib/agents/growth/edison";
 import { runGrowthIntake, summarizeGrowthIntake } from "@/lib/agents/growth/intake";
-import { lessonsLine, recentLessons } from "@/lib/agents/growth/lessons";
+import { lessonsLine, recentLessons, skippedSubjects } from "@/lib/agents/growth/lessons";
+import { PRESS_WORKFLOW, runPressPitches, summarizePressPitches } from "@/lib/agents/growth/bernays";
 import { runGrowthScore, summarizeGrowthScore } from "@/lib/agents/growth/score";
 import { isStudyStep, runStudyStep, summarizeStudyStep } from "@/lib/agents/hamilton/studies";
 import { assertAutomationEnabled, getAutomationControl, getMarketingControl, getPipelineControl, type AutomationControlState } from "@/lib/automation-control";
@@ -375,6 +395,17 @@ async function executeAgenticStep(
     });
   }
 
+  // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
+  if (step.stepKey === "hamilton-answer-eval") {
+    const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
+    return {
+      status: "completed",
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      detail: { ...result },
+    };
+  }
+
   // Hamilton's studies (study-*) share one dispatcher in hamilton/studies.
   if (isStudyStep(step.stepKey)) {
     const result = await runStudyStep(step.stepKey, {
@@ -454,12 +485,15 @@ async function executeAgenticStep(
       // Error review: every chunk of judged links is scored against Darwin and the answer
       // key, per finder; finders that keep failing run last (magellan/batch-review.ts).
       const batchReview = await reviewLinkBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // MG-4: retrain the shadow fee-page classifier from the ledger when it is 6+ hours old.
+      const pageClassifier = await refreshPageClassifier(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       return {
         status: "completed",
         summary: `Magellan processed ${discovery.processed.toLocaleString()} institutions and discovered ${discovery.discovered.toLocaleString()} fee schedule URLs (${discovery.retryAfter.toLocaleString()} retry later, ${discovery.dead.toLocaleString()} no source, ${discovery.needsHuman.toLocaleString()} need human review).`,
         detail: {
           link_outcomes: linkOutcomes,
           batch_review: batchReview,
+          page_classifier: { ...pageClassifier, scored_with: discovery.pageClassifier },
           selected_institutions: discovery.selected,
           processed_institutions: discovery.processed,
           discovered_fee_urls: discovery.discovered,
@@ -577,7 +611,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: paid.budgetStopped && paid.processed === 0
           ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
-          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? " (stopped at the budget cap)" : ""}.`,
+          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
         detail: {
           selected: paid.selected,
           processed: paid.processed,
@@ -625,6 +659,7 @@ async function executeAgenticStep(
           reopened_fee_pages: read.reopenedFeePages,
           reopened_bans_lifted: read.reopenedBansLifted,
           reopened_links_restored: read.reopenedLinksRestored,
+          reopened_unreadable_pdfs: read.reopenedUnreadablePdfs,
           thin_copies_set_aside: read.thinCopiesSetAside,
           text_survival_refreshed: read.textSurvivalRefreshed,
           texts_held_up: read.textsHeldUp,
@@ -933,8 +968,37 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Another bank's fee: read from a document on another institution's own website.
+      const otherBank = await retireOtherBankDocumentFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // The complete-record eval's critical rows (down now, James Oct 8) and the two name
+      // shapes they taught: a rebate published as an ATM fee, a "no fee for" sentence as a fee.
+      const evalVerdicts = await retireEvalVerdictFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A fee read from an article (a blog post quoting a national average), not a schedule.
       const articlePage = await retireArticlePageFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
+      const productPage = await retireProductPageFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // One product priced differently on two current pages: the older page's price comes down.
+      const crossPage = await retireCrossPageConflicts(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -953,6 +1017,14 @@ async function executeAgenticStep(
       const categoryGuardRollbacks = categoryGuard.dryRun
         ? Math.min(categoryGuard.failingFees, categoryGuard.limit)
         : categoryGuard.rolledBackFees;
+      // A verified row the guard rejected at publish and never published is re-read once per
+      // guard version under publish's own name; one today's guard passes goes back in the queue.
+      const guardRequeue = await requeueGuardRejectedFees(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
       // derivatives notice) come down before anything new publishes.
       const companionRetire = await rollBackRetiredCompanionFees(tx, {
@@ -966,6 +1038,13 @@ async function executeAgenticStep(
       const duplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // A live fee's frequency follows its own schedule row: a blank gets the one the row states
+      // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
+      const frequencyFill = await fillBlankFrequencies(tx, {
+        runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
@@ -1024,11 +1103,32 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A live fee named only "Monthly Service Fee" takes the account heading above it in its
+      // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
+      const accountNames = await nameLiveFeesByAccount(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
+      // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
+      const lineupCorrect = await correctStoredLineups(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       // Fees an older re-check restored with no check at all get the restore bar on a second look.
       const restoreRecheck = await recheckUncheckedRestores(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // Recorded fee changes name their two rows and whether they compare one page with
+      // itself, before the restore below reopens any superseded row.
+      const changePairing = await pairFeeChangeRecords(tx, {
+        runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
@@ -1091,11 +1191,15 @@ async function executeAgenticStep(
               limitRollbacks.length > 0 ||
               businessSchedule.rolledBack.length > 0 ||
               businessSchedule.restored > 0 ||
+              otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
+              productPage.rolledBack.length > 0 ||
+              crossPage.rolledBack.length > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
+              frequencyFill.filled.length > 0 ||
               newerCopyRetired > 0 ||
               newerCopyRestored > 0 ||
               currentCopy.takenDown.length > 0 ||
@@ -1128,6 +1232,14 @@ async function executeAgenticStep(
         businessSchedule.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${businessSchedule.rolledBack.length.toLocaleString()} business-schedule fee(s) beside the bank's consumer fee.`
           : "";
+      const otherBankNote =
+        otherBank.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website or a host that does not name the bank.`
+          : "";
+      const evalVerdictNote =
+        evalVerdicts.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${evalVerdicts.rolledBack.length.toLocaleString()} fee(s) the complete-record eval or a name rule found wrong.`
+          : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
@@ -1140,9 +1252,21 @@ async function executeAgenticStep(
         articlePage.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${articlePage.rolledBack.length.toLocaleString()} fee(s) read from an article page, not a fee schedule.`
           : "";
+      const productNote =
+        productPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${productPage.rolledBack.length.toLocaleString()} $0 fee(s) read from a product page's benefits, not a fee schedule.`
+          : "";
+      const crossPageConflictNote =
+        crossPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${crossPage.rolledBack.length.toLocaleString()} older price(s) for a product another current page prices differently.`
+          : "";
       const categoryGuardNote =
         categoryGuardRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
+          : "";
+      const guardRequeueNote =
+        guardRequeue.requeued.length > 0
+          ? ` ${published.dryRun ? "Would re-queue" : "Re-queued"} ${guardRequeue.requeued.length.toLocaleString()} guard-rejected row(s) today's guard passes.`
           : "";
       const companionNote =
         companionRollbacks.length > 0
@@ -1175,9 +1299,13 @@ async function executeAgenticStep(
         duplicateCollapses.length > 0
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
+      const frequencyNote =
+        frequencyFill.filled.length > 0
+          ? ` ${published.dryRun ? "Would set" : "Set"} the frequency of ${frequencyFill.filled.length.toLocaleString()} live fee(s) from their own schedule row (${frequencyFill.filled.filter((row) => row.from == null).length.toLocaleString()} blank).`
+          : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${articleNote}${categoryGuardNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1212,12 +1340,52 @@ async function executeAgenticStep(
             rolled_back: businessSchedule.rolledBack.length,
             restored: businessSchedule.restored,
           },
+          other_bank_document: {
+            other_bank_fees: otherBank.otherBankFees,
+            names_own_bank: otherBank.namesOwnBank,
+            flagged: otherBank.flagged,
+            waiting: otherBank.waiting,
+            unconfirmed_host_fees: otherBank.unconfirmedHostFees,
+            unconfirmed_host_flagged: otherBank.unconfirmedHostFlagged,
+            unconfirmed_host_waiting: otherBank.unconfirmedHostWaiting,
+            rolled_back: otherBank.rolledBack.length,
+            links_cleared: otherBank.linksCleared,
+          },
+          eval_verdict: {
+            eval_matched: evalVerdicts.evalMatched,
+            eval_changed: evalVerdicts.evalChanged,
+            rule_failing: evalVerdicts.ruleFailing,
+            flagged: evalVerdicts.flagged,
+            waiting: evalVerdicts.waiting,
+            rolled_back: evalVerdicts.rolledBack.length,
+            flags: evalVerdicts.flags,
+            flag_samples: evalVerdicts.flagSamples.slice(0, 10).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              flag: fee.flag,
+              canonical_fee_key: fee.canonicalFeeKey,
+              fee_name: fee.feeName,
+              amount: fee.amount,
+            })),
+            samples: evalVerdicts.rolledBack.slice(0, 11).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              fee_name: fee.feeName,
+              reason: fee.reason,
+            })),
+          },
           cross_page_restore: {
             superseded: crossPageRestore.superseded,
             cross_page: crossPageRestore.crossPage,
             restored: crossPageRestore.restored.length,
             failing: crossPageRestore.failing.length,
             business_left_down: crossPageRestore.businessLeftDown,
+          },
+          change_pairing: {
+            unpaired: changePairing.unpaired,
+            like_for_like: changePairing.likeForLike,
+            cross_page: changePairing.crossPage,
+            lists_both: changePairing.listsBoth,
+            no_pair: changePairing.noPair,
+            written: changePairing.written,
           },
           restore_recheck: {
             unchecked: restoreRecheck.unchecked,
@@ -1234,6 +1402,20 @@ async function executeAgenticStep(
             waiting: articlePage.waiting,
             rolled_back: articlePage.rolledBack.length,
           },
+          cross_page_conflict: {
+            fees_checked: crossPage.pairsChecked,
+            conflicts: crossPage.conflicts,
+            flagged: crossPage.flagged,
+            waiting: crossPage.waiting,
+            rolled_back: crossPage.rolledBack.length,
+          },
+          product_page: {
+            enabled: productPage.enabled,
+            product_fees: productPage.productFees,
+            flagged: productPage.flagged,
+            waiting: productPage.waiting,
+            rolled_back: productPage.rolledBack.length,
+          },
           limit_rollbacks: limitRollbacks.length,
           limit_rollback_samples: limitRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
@@ -1243,6 +1425,19 @@ async function executeAgenticStep(
             amount: rollback.amount,
             reason: rollback.reason,
           })),
+          guard_requeue: {
+            scanned: guardRequeue.scanned,
+            requeued: guardRequeue.requeued.length,
+            still_failing: guardRequeue.stillFailing,
+            guard_version: guardRequeue.guardVersion,
+            samples: guardRequeue.requeued.slice(0, 10).map((fee) => ({
+              fee_verified_id: fee.feeVerifiedId,
+              institution_id: fee.institutionId,
+              canonical_fee_key: fee.canonicalFeeKey,
+              fee_name: fee.feeName,
+              publish_name: fee.publishName,
+            })),
+          },
           category_guard_rollbacks: categoryGuardRollbacks,
           category_guard_failing: categoryGuard.failingFees,
           category_guard_version: categoryGuard.guardVersion,
@@ -1273,6 +1468,17 @@ async function executeAgenticStep(
             messy_names: nameRetidy.messyFees,
             renamed: nameRetidy.renames.length,
             skipped: nameRetidy.skipped,
+          },
+          account_names: {
+            institutions_checked: accountNames.institutionsChecked,
+            generic_names: accountNames.genericFees,
+            renamed: accountNames.renames.length,
+            skipped: accountNames.skipped,
+          },
+          lineup_correct: {
+            documents_checked: lineupCorrect.documentsChecked,
+            rows_checked: lineupCorrect.rowsChecked,
+            rows_corrected: lineupCorrect.corrected.length,
           },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
@@ -1341,6 +1547,14 @@ async function executeAgenticStep(
             amount: row.amount,
             reason: row.reason,
           })),
+          frequency_fills: frequencyFill.filled.length,
+          frequency_fill_scanned: frequencyFill.scanned,
+          frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            from: row.from,
+            frequency: row.frequency,
+            source_line: row.sourceLine.slice(0, 120),
+          })),
           duplicate_collapses: duplicateCollapses.length,
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
@@ -1406,6 +1620,9 @@ async function executeAgenticStep(
           failing_fees: guard.failingFees,
           rolled_back_fees: guard.rolledBackFees,
           rejected_verified_fees: guard.rejectedVerifiedFees,
+          flagged_fees: guard.flaggedFees,
+          awaiting_second_look: guard.awaitingSecondLook,
+          restored_fees: guard.restoredFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -1420,6 +1637,37 @@ async function executeAgenticStep(
             fee_name: failure.feeName,
             amount: failure.amount,
             code: failure.code,
+          })),
+        },
+      };
+    }
+    case "frequency-fill": {
+      // The frequency half of a guard catch-up run (hamilton/guard-catch-up.ts): every live fee,
+      // not one lane's, so a frequency fix reaches live rows on the tick after its deploy.
+      const fill = await fillBlankFrequencies(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const blanks = fill.filled.filter((row) => row.from == null).length;
+      const cleared = fill.filled.filter((row) => row.frequency == null).length;
+      return {
+        status: "completed",
+        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared).`,
+        detail: {
+          frequency_fill_version: FREQUENCY_FILL_VERSION,
+          frequency_fill_scanned: fill.scanned,
+          frequency_fills: fill.filled.length,
+          frequency_filled_blank: blanks,
+          frequency_cleared: cleared,
+          dry_run: fill.dryRun,
+          frequency_fill_samples: fill.filled.slice(0, 25).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            amount: row.amount,
+            from: row.from,
+            to: row.frequency,
           })),
         },
       };
@@ -1559,6 +1807,16 @@ async function executeAgenticStep(
         detail: { ...result },
       };
     }
+    case "pro-seat-check": {
+      const result = await runProSeatCheck({ dryRun: run.runKind === "dry_run" });
+      // A failed check fails the step, so it shows red on the run ledger.
+      if (!result.passed && !result.dryRun) throw new Error(summarizeProSeatCheck(result));
+      return {
+        status: "completed",
+        summary: summarizeProSeatCheck(result),
+        detail: { ...result },
+      };
+    }
     case "lead-watch": {
       const result = await runLeadWatch({ dryRun: run.runKind === "dry_run" });
       return {
@@ -1628,20 +1886,86 @@ async function executeAgenticStep(
       };
     }
     case "content-market-spread": {
-      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts.
+      // The brief: the drafting agent's lessons from skipped drafts, read before it drafts; a
+      // subject James skipped stays out of the next drafts.
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
-      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runMarketSpread({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, MARKET_SPREAD_WORKFLOW) });
       return { status: "completed", summary: [summarizeMarketSpread(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-fee-depth": {
       const lessons = await recentLessons(tx, DEFAULT_DRAFT_AGENT);
-      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runFeeDepth({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, FEE_DEPTH_WORKFLOW) });
       return { status: "completed", summary: [summarizeFeeDepth(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
     }
     case "content-od-by-state": {
       const lessons = await recentLessons(tx, "ernest");
       const result = await runOdByState({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
       return { status: "completed", summary: [summarizeOdByStateResult(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "growth-contacts": {
+      const result = await runContactFinder({
+        db: tx,
+        runId: run.id,
+        limit: numericRunParam(params, ["limit"]),
+        dryRun: run.runKind === "dry_run",
+      });
+      return { status: "completed", summary: summarizeContactFinder(result), detail: { ...result } };
+    }
+    case "growth-contact-picks": {
+      // Ranks every saved contact with today's rules and stores its role, confidence and
+      // primary/backup pick; on its first run this is the backfill for rows saved before the columns.
+      const result = await refreshContactPicks({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeContactPicks(result), detail: { ...result } };
+    }
+    case "growth-outreach": {
+      const followUps = await runOutreachFollowUps({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      const result = await runOutreachDrafts({
+        db: tx,
+        runId: run.id,
+        limit: numericRunParam(params, ["limit"]),
+        dryRun: run.runKind === "dry_run",
+        campaigns: outreachCampaignsFromEnv(process.env.OUTREACH_CAMPAIGNS),
+      });
+      // Always say how many follow-ups were due, so a run with none shows the check happened.
+      const followUpLine = run.runKind === "dry_run"
+        ? ` Follow-ups (day 6 and final day 13): ${followUps.due} due, would draft ${followUps.due}.`
+        : ` Follow-ups (day 6 and final day 13): ${followUps.due} due, ${followUps.drafted} drafted.`;
+      return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
+    }
+    case "growth-quote": {
+      // Free: a quote email per qualified lead, drafted into the queue; nothing sends.
+      const result = await runQuoteDrafts({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeQuoteDrafts(result), detail: { ...result } };
+    }
+    case "growth-learning": {
+      const result = await runLearningReport({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeLearning(result), detail: { ...result } };
+    }
+    case "growth-proposals": {
+      const result = await runProposals({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeProposals(result), detail: { ...result } };
+    }
+    case "growth-plan": {
+      const result = await runMondayPlan({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMondayPlan(result), detail: { ...result } };
+    }
+    case "growth-intel": {
+      const result = await runMarketIntel({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeMarketIntel(result), detail: { ...result } };
+    }
+    case "growth-conversion": {
+      const result = await runConversionCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeConversionCheck(result), detail: { ...result } };
+    }
+    case "growth-press": {
+      // BERNAYS's brief: an outlet or finding James skipped with a reason stays out while the lesson stands.
+      const lessons = await recentLessons(tx, "bernays");
+      const result = await runPressPitches({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", avoidSubjects: skippedSubjects(lessons, PRESS_WORKFLOW) });
+      return { status: "completed", summary: [summarizePressPitches(result), lessonsLine(lessons)].filter(Boolean).join(" "), detail: { ...result, lessons } };
+    }
+    case "growth-tools": {
+      const result = await runToolCheck({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run", state: stringRunParam(params, ["state"]) });
+      return { status: "completed", summary: summarizeToolCheck(result), detail: { ...result } };
     }
     case "growth-intake": {
       const result = await runGrowthIntake({ db: tx, runId: run.id, item: params.item, dryRun: run.runKind === "dry_run" });
@@ -2688,7 +3012,8 @@ export async function executeQueuedAgentRuns({
                 AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
             )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page. Then a
+     -- Report runs go first: someone pressed Generate and is watching the page. Then a guard
+     -- catch-up run. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
      -- lane), then a retry of a failed state lane, then a state whose report James is
@@ -2696,6 +3021,9 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
+              -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
+              COALESCE(r.params_json->>'source' = 'hamilton.guard_catch_up', false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'

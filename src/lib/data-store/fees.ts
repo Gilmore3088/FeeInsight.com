@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import type { FeeReview } from "./types";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface FeeCategorySummary {
   fee_category: string;
@@ -197,7 +198,7 @@ export async function getCheapestAndMostExpensive(
     (rows as FeeExtreme[]).map((r) => ({
       id: Number(r.id),
       institution_id: Number(r.institution_id),
-      institution_name: r.institution_name,
+      institution_name: institutionDisplayName(r.institution_name),
       amount: Number(r.amount),
     }));
 
@@ -226,15 +227,20 @@ export async function getFeeCategoryDetail(category: string): Promise<{
            ct.charter_type, ct.state_code, ct.asset_size_tier,
            ct.asset_size, ef.review_status, ef.extraction_confidence,
            ef.canonical_fee_key, ef.variant_type, ef.source_document_id,
-           ef.fee_name, COALESCE(ef.document_url, ef.source_url) AS document_url
+           ef.fee_name, COALESCE(ef.document_url, ef.source_url) AS document_url,
+           ct.fed_district
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
     ORDER BY ef.amount DESC NULLS LAST
-  ` as (Omit<FeeInstance, "source_document_id"> & { source_document_id: number | string | null })[];
+  ` as (Omit<FeeInstance, "source_document_id"> & {
+    source_document_id: number | string | null;
+    fed_district: number | null;
+  })[];
 
   // Normalize numeric fields (Postgres NUMERIC returns strings)
-  const fees: FeeInstance[] = rawFees.map((f) => ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const fees: FeeInstance[] = rawFees.map(({ fed_district, ...f }) => ({
     ...f,
     id: Number(f.id),
     institution_id: Number(f.institution_id),
@@ -272,15 +278,11 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   );
   const by_asset_tier = buildBreakdown(sourcedFees, (f) => f.asset_size_tier);
 
-  const districtRows = await sql`
-    SELECT ct.fed_district, ef.amount, ef.institution_id
-    FROM published_fee_catalog ef
-    JOIN institution_sources ct ON ef.institution_id = ct.id
-    WHERE ef.fee_category = ${category}
-      AND ef.review_status = 'approved'
-      AND ef.source_document_id IS NOT NULL
-      AND ct.fed_district IS NOT NULL
-  ` as { fed_district: number; amount: number | null; institution_id: number }[];
+  // The district rows come from the same read rather than a second pass over the catalog
+  // (229 ms a call, 13,000 calls Oct 5-9); same rows and fields as that query returned.
+  const districtRows = rawFees
+    .filter((f) => f.source_document_id !== null && f.fed_district !== null)
+    .map((f) => ({ fed_district: f.fed_district as number, amount: f.amount, institution_id: f.institution_id }));
 
   const by_fed_district_real = buildBreakdown(districtRows.map((row) => ({ ...row, fee_category: category })), (row) => `District ${Number(row.fed_district)}`);
   by_fed_district_real.sort((a, b) => {
@@ -303,6 +305,9 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       FROM fee_change_records fce
       JOIN institution_sources ct ON fce.institution_id = ct.id
       WHERE fce.fee_category = ${category}
+        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+        AND fce.like_for_like IS TRUE
+        AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
         AND EXISTS (
           SELECT 1 FROM published_fee_catalog live
           WHERE live.institution_id = fce.institution_id
@@ -390,7 +395,8 @@ export async function getFeeHistory(institutionId: number, category: string): Pr
 export async function getRecentPriceChanges(days: number = 90, category?: string): Promise<PriceChange[]> {
   try {
     const params: (string | number)[] = [days];
-    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`];
+    // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts).
+    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`, "fce.like_for_like IS TRUE", "EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))"];
     if (category) {
       conditions.push("fce.fee_category = $2");
       params.push(category);
@@ -422,6 +428,8 @@ export async function getPriceMovementSummary(days: number = 90): Promise<PriceM
               COUNT(*) as total_changes
        FROM fee_change_records
        WHERE detected_at > NOW() - INTERVAL '1 day' * $1
+         AND like_for_like IS TRUE
+         AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fee_change_records.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        GROUP BY fee_category
        ORDER BY total_changes DESC`,
       [days]

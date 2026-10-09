@@ -12,6 +12,8 @@ import { NOT_CONSUMER_FEE_PAGE_REASON, companionStreamsReady } from "@/lib/agent
 
 import { accountNameFor, isGenericAccountName, isNonDepositLink } from "./second-document";
 import { markCurrentCopy } from "./current-copy";
+import { OTHER_BANK_HOST_CODE } from "./other-bank-host";
+import { looksLikeBotChallenge } from "./site-signals";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -68,6 +70,8 @@ export interface CompanionReviewResult {
   checked: number;
   retired: Array<{ companionId: number; institutionId: number; url: string; accountName: string | null }>;
   renamed: Array<{ companionId: number; from: string | null; to: string }>;
+  /** Hand-found schedules a link-word rule had retired, put back to be fetched. */
+  restored?: Array<{ companionId: number; institutionId: number; url: string }>;
 }
 
 export interface RunCompanionFetchResult {
@@ -89,8 +93,20 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.status IN ('found', 'fetched')
        AND ias.document_role <> 'business'
-       AND COALESCE(inst.status, 'active') = 'active'
-       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+       AND (
+         COALESCE(inst.status, 'active') = 'active'
+         -- A schedule found by hand is fetched for a bank whose own link went dormant (Stock
+         -- Yards, $10B, 2026-10-08): that is why it was found by hand. A closed charter is not.
+         OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')
+       )
+       AND (
+         ${stateCode}::text IS NULL
+         OR upper(btrim(inst.state_code)) = ${stateCode}
+         -- A schedule found by hand is fetched by the next state lane, whatever its state:
+         -- waiting for its own state's lane left Comerica, Cadence and three more unfetched
+         -- for six hours on 2026-10-08.
+         OR (ias.found_by_strategy = 'discover.operator_schedule' AND ias.last_fetched_at IS NULL)
+       )
        AND (${institutionId}::bigint IS NULL OR ias.institution_id = ${institutionId}::bigint)
        AND (
          ias.last_fetched_at IS NULL
@@ -114,7 +130,10 @@ interface ReviewRow {
   institution_id: number | string;
   url: string;
   account_name: string | null;
+  found_by_strategy?: string | null;
 }
+
+const NON_DEPOSIT_REASON = `${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`;
 
 /**
  * Re-applies today's finder rules to the companion pages already stored for a state, so
@@ -127,8 +146,49 @@ export async function reviewStoredCompanions(
   db: SqlTag,
   options: { stateCode: string | null; institutionId: number | null; limit?: number },
 ): Promise<CompanionReviewResult> {
+  // A schedule a person found is judged by reading it, not by words in its link: Valley's
+  // "Schedule of Fees-Privacy Policy" PDF and First United's overdraft "opt-in-form" were
+  // retired by the link words "privacy" and "opt in" (2026-10-09). Put them back.
+  const restored = await db<Array<{ id: number | string; institution_id: number | string; url: string }>>`
+    UPDATE institution_additional_sources ias
+       SET status = 'found',
+           reason = 'Consumer fee schedule given by hand; restored after a link-word rule retired it',
+           updated_at = NOW()
+      FROM institution_sources inst
+     WHERE inst.id = ias.institution_id
+       AND ias.status = 'rejected'
+       AND ias.found_by_strategy = 'discover.operator_schedule'
+       AND ias.reason = ${NON_DEPOSIT_REASON}
+       AND (${options.stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode})
+       AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
+    RETURNING ias.id, ias.institution_id, ias.url
+  `;
+  // A page on another institution's own website is that bank's schedule, even when a person
+  // gave it: First United of Durant, Oklahoma (118) was given First United Bank & Trust of
+  // Oakland, Maryland's mybank.com disclosures (595) and First Bank of St. Louis's first.bank
+  // schedule, and every re-read published Maryland's fees under Oklahoma (2026-10-09).
+  // Discovery already refuses such links (`other-bank-host.ts`); this retires stored ones.
+  const otherBank = await db<Array<{ id: number | string; institution_id: number | string; url: string; account_name: string | null; other_name: string }>>`
+    UPDATE institution_additional_sources ias
+       SET status = 'rejected',
+           reason = ${OTHER_BANK_HOST_CODE} || ': on the website of ' || other.institution_name || COALESCE(' (' || other.state_code || ')', ''),
+           updated_at = NOW()
+      FROM institution_sources inst, institution_sources other
+     WHERE inst.id = ias.institution_id
+       AND ias.status IN ('found', 'fetched')
+       AND other.id <> inst.id
+       AND other.website_url IS NOT NULL
+       AND regexp_replace(lower(substring(other.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+         = regexp_replace(lower(substring(ias.url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+       AND regexp_replace(lower(substring(COALESCE(inst.website_url, '') from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+         IS DISTINCT FROM regexp_replace(lower(substring(ias.url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+       -- Every state, not just this lane's: the query is cheap, and waiting for Oklahoma's lane
+       -- left First United's three pages live for hours after the rule shipped (2026-10-09).
+       AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
+    RETURNING ias.id, ias.institution_id, ias.url, ias.account_name, other.institution_name AS other_name
+  `;
   const rows = await db<ReviewRow[]>`
-    SELECT ias.id, ias.institution_id, ias.url, ias.account_name
+    SELECT ias.id, ias.institution_id, ias.url, ias.account_name, ias.found_by_strategy
       FROM institution_additional_sources ias
       JOIN institution_sources inst ON inst.id = ias.institution_id
      WHERE ias.status IN ('found', 'fetched')
@@ -137,15 +197,22 @@ export async function reviewStoredCompanions(
      ORDER BY ias.id ASC
      LIMIT ${options.limit ?? COMPANION_REVIEW_LIMIT}
   `;
-  const result: CompanionReviewResult = { checked: rows.length, retired: [], renamed: [] };
+  const result: CompanionReviewResult = {
+    checked: rows.length,
+    retired: otherBank.map((row) => ({
+      companionId: Number(row.id), institutionId: Number(row.institution_id), url: row.url, accountName: row.account_name,
+    })),
+    renamed: [],
+    restored: restored.map((row) => ({ companionId: Number(row.id), institutionId: Number(row.institution_id), url: row.url })),
+  };
   for (const row of rows) {
     const companionId = Number(row.id);
     const label = row.account_name ?? "";
-    if (isNonDepositLink(label, row.url)) {
+    if (row.found_by_strategy !== "discover.operator_schedule" && isNonDepositLink(label, row.url)) {
       await db`
         UPDATE institution_additional_sources
            SET status = 'rejected',
-               reason = ${`${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`},
+               reason = ${NON_DEPOSIT_REASON},
                updated_at = NOW()
          WHERE id = ${companionId}
       `;
@@ -239,6 +306,11 @@ async function fetchOne(
   // would hand Rosetta an error page; the paid fetch (blocked-fetch.ts) tries it instead.
   if (format === "html" && isPdfLink(row.url)) {
     return fail(response.status, "PDF link answered with a web page (bot wall)", undefined, "blocked_bot");
+  }
+  // A challenge page in place of the page itself, as discovery judges a homepage: Arvest's
+  // fee page came back as a 928-byte challenge (8 Oct 2026) and was stored and read blank.
+  if (format === "html" && looksLikeBotChallenge(new TextDecoder("utf-8").decode(bytes))) {
+    return fail(response.status, "Page answered with a bot challenge", undefined, "blocked_bot");
   }
 
   // Same bytes as this page's last copy, or as any stored document of the bank (the

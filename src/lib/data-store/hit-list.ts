@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { FINANCIAL_SOURCES } from "./financial-sources";
 import { OPERATOR_SCHEDULE_STRATEGY } from "@/lib/agents/magellan/operator-schedules";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 type SqlTag = typeof sql;
 
@@ -78,6 +79,8 @@ export interface HitListOptions {
   db?: SqlTag;
   view?: HitListView;
   stateCode?: string | null;
+  /** Only these institutions (the top 10 per state view); every institution when left out. */
+  institutionIds?: number[] | null;
   limit?: number;
 }
 
@@ -92,6 +95,7 @@ export async function getHitList(options: HitListOptions = {}): Promise<HitList>
   const view: HitListView = options.view === "no_overdraft" ? "no_overdraft" : "no_fees";
   const stateCode = options.stateCode && /^[A-Za-z]{2}$/.test(options.stateCode.trim()) ? options.stateCode.trim().toUpperCase() : null;
   const limit = Math.min(Math.max(Math.floor(options.limit ?? HIT_LIST_DEFAULT_LIMIT), 1), 1000);
+  const ids = options.institutionIds ? options.institutionIds.map(Number).filter(Number.isInteger) : null;
   const sources = [...FINANCIAL_SOURCES];
   const rows = await db<
     Array<{
@@ -139,6 +143,7 @@ export async function getHitList(options: HitListOptions = {}): Promise<HitList>
          AND COALESCE(inst.regulatory_status, 'active') <> 'inactive'
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+         AND (${ids}::bigint[] IS NULL OR inst.id = ANY(${ids}::bigint[]))
          AND CASE WHEN ${view}::text = 'no_overdraft'
                   THEN live.institution_id IS NOT NULL AND NOT live.has_overdraft
                   ELSE live.institution_id IS NULL END
@@ -186,7 +191,7 @@ export async function getHitList(options: HitListOptions = {}): Promise<HitList>
       const lastTried = row.last_tried_at == null ? null : new Date(row.last_tried_at).toISOString();
       return {
         institutionId: Number(row.id),
-        name: String(row.institution_name),
+        name: institutionDisplayName(String(row.institution_name)),
         stateCode: row.state_code ? String(row.state_code).trim().toUpperCase() : null,
         charterType: row.charter_type,
         deposits: row.deposits == null ? null : Number(row.deposits),

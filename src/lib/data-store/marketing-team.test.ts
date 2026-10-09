@@ -5,10 +5,10 @@ vi.mock("./connection", () => ({ sql: vi.fn(), getSql: vi.fn() }));
 import { summarizeMarketingTeam, teamStop } from "./marketing-team";
 
 describe("marketing team", () => {
-  it("lists all eight agents in roster order, even with nothing filed", () => {
+  it("lists all nine agents in roster order, even with nothing filed", () => {
     const team = summarizeMarketingTeam([], null);
     expect(team.map((member) => member.name)).toEqual([
-      "Carnegie", "Draper", "Edison", "Ernest", "Murrow", "Nielsen", "Norman", "Sherlock",
+      "Bernays", "Carnegie", "Draper", "Edison", "Ernest", "Murrow", "Nielsen", "Norman", "Sherlock",
     ]);
     expect(team.every((member) => member.status === "Not started yet" && member.tone === "idle")).toBe(true);
   });
@@ -18,8 +18,8 @@ describe("marketing team", () => {
     expect(teamStop(true, "off")).toBe("Paused: growth budget is off");
     expect(teamStop(true, "missing")).toBe("Paused: growth budget is off");
     expect(teamStop(true, "enabled")).toBeNull();
-    const [carnegie] = summarizeMarketingTeam([], teamStop(true, "off"));
-    expect(carnegie).toMatchObject({ status: "Paused: growth budget is off", tone: "paused" });
+    const [first] = summarizeMarketingTeam([], teamStop(true, "off"));
+    expect(first).toMatchObject({ status: "Paused: growth budget is off", tone: "paused" });
   });
 
   it("counts what each agent filed and what still waits for James", () => {

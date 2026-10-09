@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * Hamilton Pro accounts: every user with the premium role or a subscription status
@@ -64,7 +65,7 @@ export async function getProPricingInstitution(id: number): Promise<ProPricingIn
   const assets = row.asset_size === null ? null : Number(row.asset_size);
   return {
     id: Number(row.id),
-    name: row.institution_name,
+    name: institutionDisplayName(row.institution_name),
     city: row.city,
     stateCode: row.state_code,
     assetsThousands: assets !== null && Number.isFinite(assets) ? assets : null,
@@ -115,7 +116,7 @@ export async function getWatchInstitutions(
         Number(row.id),
         {
           id: Number(row.id),
-          name: row.institution_name,
+          name: institutionDisplayName(row.institution_name),
           websiteUrl: row.website_url,
           assetsThousands: assets !== null && Number.isFinite(assets) ? assets : null,
         },

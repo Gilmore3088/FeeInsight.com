@@ -249,7 +249,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
 
   const modelHref = hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(ws.fee)}`, instId);
   const askHref = hrefWithInstitutionContext(
-    `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}`,
+    `/pro/analyze?q=${encodeURIComponent(`What should I know about our ${ws.feeName.toLowerCase()} fee against ${layer.label}?`)}&send=1`,
     instId,
   );
   const own = research?.institutionFinancials ?? null;
@@ -288,7 +288,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             ? ws.ownAmount != null
               ? `Your published fee is ${fmtMoney(ws.ownAmount)}.`
               : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
-            : "Choose your institution in Data to see your own position."
+            : "Choose your institution in Settings to see your own position."
         }
         actions={
           <>

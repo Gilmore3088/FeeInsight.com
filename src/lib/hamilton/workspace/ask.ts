@@ -50,7 +50,7 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   wire_domestic_incoming: ["incoming wire"],
   wire_intl_outgoing: ["international wire", "foreign wire"],
   stop_payment: ["stop payment"],
-  card_foreign_txn: ["foreign transaction"],
+  card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
   cashiers_check: ["cashier's check", "cashiers check", "official check"],
   paper_statement: ["paper statement"],
 };
@@ -82,7 +82,8 @@ export function matchFeeCategory(question: string): string | null {
   return null;
 }
 
-const OPINION = /what would you do|what do you (recommend|suggest|advise)|what should (we|i)\b|should (we|i)\b|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
+// "What should I know about ..." asks for facts, not a decision.
+const OPINION = /what would you do|what do you (recommend|suggest|advise)|\bshould (we|i)\b(?! (know|be aware|understand|note|keep in mind|watch))|your (opinion|recommendation|advice|view)|which (price|option|scenario|one) (is|was|would be) best|best (price|option)/i;
 const COMPETITORS = /competitor|competition|compet(e|ing)|local|nearby|down the street|who charges|in (our|my) market/i;
 const TREND = /trend|over time|history|historical|income|revenue|earn/i;
 const ELIMINATE = /\b(eliminat\w*|remov\w*|get rid of|scrap\w*|drop(ping)? (it|the fee)|go to (zero|\$0)|no fee|free)\b/i;
@@ -97,6 +98,8 @@ export interface AskIntent {
   focus: ExhibitFocus;
   /** The question is about caps, transfers or how the fee is charged, not only its price. */
   structure?: boolean;
+  /** The question asks about rules, regulators or compliance. */
+  regulation?: boolean;
 }
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
@@ -111,6 +114,9 @@ export function pricesIn(question: string): number[] {
   return out.slice(0, MAX_TESTED_PRICES);
 }
 
+/** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
+const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
+
 export function parseAsk(question: string, fallbackCategory: string | null = null): AskIntent {
   const segment = parseSegment(question);
   return {
@@ -121,7 +127,19 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
     wantsOpinion: OPINION.test(question),
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
+    regulation: REGULATION_QUESTION.test(question),
   };
+}
+
+/**
+ * A question about a segment ("all institutions above $10 billion") that names no fee is
+ * answered for overdraft, the fee segments are most often compared on, instead of asking back;
+ * the answer names the fee in its first line.
+ */
+export const SEGMENT_DEFAULT_FEE = "overdraft";
+
+export function withSegmentDefault(intent: AskIntent): AskIntent {
+  return !intent.feeCategory && intent.segment ? { ...intent, feeCategory: SEGMENT_DEFAULT_FEE } : intent;
 }
 
 // ─── Questions Hamilton asks back ────────────────────────────────────────────
@@ -398,7 +416,7 @@ function respond(input: AskInput): AskResponse {
 
   const answer = buildFeeAnswer(research, {
     focus: intent.focus,
-    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure },
+    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure, regulation: intent.regulation },
   });
   const section = intent.focus === "competitors" ? "competitors" : intent.focus === "trend" ? "economy" : "position";
   return {

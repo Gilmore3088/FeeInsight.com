@@ -18,9 +18,9 @@ async function caller(request: NextRequest): Promise<"schedule" | "admin" | null
 
 /**
  * The weekly growth scoring run (growth-os BUILD-PLAN 1.12): scores posted queue items from
- * tracked visits and leads. Free, no model calls, nothing posts or sends. Not registered in
- * vercel.json yet: it runs on a schedule only once James says go; until then an admin can
- * start it by hand.
+ * tracked visits and leads, and sent outreach emails by journey stage. Free, no model calls,
+ * nothing posts or sends. Runs Mondays from vercel.json (James turned the weekly schedules on,
+ * 15:33 UTC Oct 8); an admin can also start it by hand.
  */
 async function handleGET(request: NextRequest) {
   const triggerSource = await caller(request);

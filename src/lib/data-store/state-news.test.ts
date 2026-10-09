@@ -129,4 +129,25 @@ describe("state news shaping", () => {
     const [bill] = toFeeBills([{ jurisdiction: "ny", identifier: "A 3428", title: "Limits overdraft fees", stage: "in_committee", stage_on: new Date("2026-03-02T00:00:00Z"), url: null }]);
     expect(bill).toEqual({ state_code: "NY", identifier: "A 3428", title: "Limits overdraft fees", stage: "in_committee", stage_on: "2026-03-02", url: null });
   });
+
+  it("sets all-caps headlines in title case and moves date-only bulletins last (prod, Oct 8 2026)", () => {
+    const posts = toRegulatorPosts([
+      { source: "state:MO", title: "2026-09-17 Electronic Bulletin", link: "https://mo1", published_at: "2026-09-17T00:00:00.000Z" },
+      { source: "state:MO", title: "2026-09-01 Electronic Bulletin", link: "https://mo2", published_at: "2026-09-01T00:00:00.000Z" },
+      { source: "state:MO", title: "2025-11-04 - Electronic Bulletin", link: "https://mo3", published_at: "2025-11-04T00:00:00.000Z" },
+      {
+        source: "state:HI",
+        title: "HAWAIʻI OFFICE OF CONSUMER PROTECTION ANNOUNCES SETTLEMENT WITH SUBPRIME AUTO LENDER CREDIT ACCEPTANCE CORPORATION",
+        link: "https://hi",
+        published_at: "2026-09-23T18:41:08.000Z",
+      },
+      { source: "state:KS", title: "Banking Commissioner Announces 2026 Deposit Index", link: "https://ks", published_at: "2025-06-01T00:00:00.000Z" },
+    ]);
+    expect(posts.map((p) => [p.link, p.title])).toEqual([
+      ["https://hi", "Hawaiʻi Office of Consumer Protection Announces Settlement with Subprime Auto Lender Credit Acceptance Corporation"],
+      ["https://ks", "Banking Commissioner Announces 2026 Deposit Index"],
+      // Only the newest bulletin per state, under its plain name; the date is shown beside it.
+      ["https://mo1", "Electronic bulletin"],
+    ]);
+  });
 });

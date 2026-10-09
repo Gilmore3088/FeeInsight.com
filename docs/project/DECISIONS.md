@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-08
 
+**No rollback; finish the work.** James, 22:44 UTC, Rollback thread: "i dont want rollback. i want
+the fucking work done." He had asked about going back to Oct 4 or Oct 5; the cost check is in
+`/mnt/project-files/audits/rollback-oct4-oct5-2026-10-08.md`. Work is reported per ask as live,
+built not live, or missing, and only the UAT thread marks an ask done.
+
+**Darwin's 11 critical eval rows come down now.** James, 23:18 UTC, Darwin thread ("please resolve
+each of thes. all of them"), answering Hide or Guard for the 11 critical rows and Split or Pool for
+the taxonomy. #714 archives the 11 on the first publish step, with the eval label as the audit
+record; nothing is deleted. Collection Items split out (#701); the other four pooled groups wait on
+the Top 50 card.
+
 **A paying Pro buyer holds their bank's owner seat at checkout, before claim review.** James, 13:44
 UTC ("Grant at checkout" on the decision card). The plan sells 5 seats, so they work the moment the
 buyer pays. The claim is still filed for James to review, and rejecting it revokes that seat
@@ -55,6 +66,11 @@ are archived, so Hamilton's fold step flags them but keeps them live
 (`TAXONOMY_FOLD_ARCHIVE_NO_HOME` is off) until he decides. At 15:42 UTC, after seeing the list
 of 248, he said "drop them -- the 248", so the switch is on: they are archived (rolled back with
 reason `taxonomy_fold:`, logged) once their 12-hour second look passes. Nothing is deleted.
+Around 16:00 UTC he gave collection items their own type ("Own type": about 1,000 check
+cashing fees with a $20 median beside check cashing's $5 move to `collection_item`), and picked
+Foreign Card to give up a spot for it. Foreign Transaction and International ATM became one type,
+International ATM & Card. It keeps the `card_foreign_txn` key, which holds the 277 rate fees,
+the spotlight and the consumer guide, and the 59 International ATM fees fold into it.
 
 **One marketing loop, built from a 55-task plan.** James, 04:23 to 07:20 UTC. Marketing is one
 automated loop that extends the existing content and email workflows and runs on the same run
@@ -476,6 +492,26 @@ to the $5,000 price, which has no cap (`src/lib/hamilton/report-cap.ts`). The si
 everything in stripe"; `src/lib/stripe-prices.ts`); a Vercel variable per tier only overrides
 (`src/lib/pro-tiers.ts`).
 
+**Outreach is founder-led: agents draft, James sends, after the site is launch-ready.** 2026-10-08.
+James chose "Yes, 75 a week" (15:15 UTC) for personal outreach emails that the agents draft and
+he sends from Outlook; "agents DRAFT, never send these" (15:14). Sends start only once the site
+passes the launch-ready check in the Q4 go-to-market plan (James 15:16: "ONCE we get the site
+ready to launch"). Contacts come from the same process as fee schedules, aimed at executive
+emails the institution publishes (`src/lib/agents/growth/contacts.ts`); nothing is guessed.
+
+**Month one is a sales experiment; the free snapshot launches Oct 13.** 2026-10-08. James's two
+reviews of the go-to-market plan (about 15:25 and 15:33 UTC) replaced 75 emails a week with 25 to
+40 personalized emails, scaling only on qualified replies. The Nov 6 floor is 5 qualified
+conversations and 2 explicit purchase discussions (10 is the stretch). Every number in outreach
+and paid deliverables is checked against the bank's current schedule for value, account type,
+effective date and conditions, and a person audits each comparison in the first 25 to 40 emails.
+The market report and annual Pro are separate products. Consultants may share reports with
+clients with Fee Insight attribution; white-label is a separate premium offer; reselling the
+database is not allowed. Founding customers get a two-year price lock; Pro trials are 14 days by
+hand; LinkedIn is 2 posts a week; growth budget $0; free channels only. The weekly growth
+schedules (scores, prospect contacts) are on. Gates: a free snapshot needs the source and
+contact checks; charging also needs checkout, security, legal and data quality.
+
 **The paid report shows "From $300"; banks with no asset size pick their own Pro band.** James,
 15:24 to 15:25 UTC 8 Oct, UAT thread, agreeing with the executive and marketing teams' picks on
 calls A to E and choosing $300 on the card. Each report is still quoted per institution
@@ -484,3 +520,28 @@ asset size on file, the buyer picks the size band at checkout; the subscription 
 `tier_picked_by_buyer` and the Customers room's "Plans to check" lists it. Assets on file always
 set the tier when they exist. Also agreed: a pay-by-invoice option for the report, and the Pro
 price picker first on phones (design, waits for James's review).
+
+**Darwin releases are paused, and a released fee counts as right only when the whole record is right.**
+James, 21:30 and 21:50 UTC 8 Oct, Darwin thread. He chose "Pause" after the v13 hand check, then
+set the standard: name, amount, frequency, who pays and category must all match the bank's
+schedule. A fee filed under the right category with the wrong frequency is wrong. On that measure
+v13 scored 16 of 20. Darwin's autonomy does not grow until a stronger evaluation passes. That means
+about 200 labelled fees across fee types, scored separately for amount, category, payer and
+frequency, plus critical errors per 1,000 newly published fees. The 20-fee check is a smoke test,
+not the bar. `DARWIN_RELEASE_ACTS` stays false until then. Immediate takedown of a demonstrably
+corrupted amount, without the 12-hour second look, still needs his explicit yes.
+
+**Small-metro banks are compared with their state.** James, 21:31 UTC 8 Oct, Marketing thread card:
+when a prospect's metro has fewer than 5 verified competitors with an overdraft fee, the first
+email compares it with the verified institutions across its state and says so ("across Nebraska").
+The same source check and 5-institution minimum apply statewide. Local stays first whenever it has enough.
+
+**Outreach sells research, not a median gap, and every link must work.** James, 22:23 and 22:34 UTC
+8 Oct, Marketing thread (feedback, then a full audit grading the campaign C-). Fee Insight does not
+advise institutions to change their fees; being above or below a median is not a sales reason; a
+statewide group is not a prospect's competitors; every email needs a verified, working destination
+that delivers what it promises. The first emails are a 30-prospect pilot in three campaigns: A
+research efficiency (no figures, no link), B personalized research (names local institutions, no
+figures, no link), C one tier-A comparison with a link checked live. James approves every first
+email. This supersedes the 21:31 statewide fallback. The 21 single-fee drafts from run 3157 were held
+and are withdrawn by the next run. Plan: https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c

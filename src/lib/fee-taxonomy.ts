@@ -26,7 +26,6 @@ export const FEE_FAMILIES: Record<string, string[]> = {
   ],
   "ATM & Card": [
     "atm_non_network",
-    "atm_international",
     "card_replacement",
     "rush_card",
     "card_foreign_txn",
@@ -44,6 +43,7 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "stop_payment",
     "counter_check",
     "check_cashing",
+    "collection_item",
     "check_image",
   ],
   "Digital & Electronic": [
@@ -106,7 +106,9 @@ export const DISPLAY_NAMES: Record<string, string> = {
   atm_international: "International ATM",
   card_replacement: "Debit Card Replacement",
   rush_card: "Rush Card Delivery",
-  card_foreign_txn: "Foreign Transaction",
+  // International ATM folded in (James, Oct 8: "Foreign Card" gave up its spot; one type for
+  // using an ATM or a card abroad).
+  card_foreign_txn: "International ATM & Card",
   // Wire Transfers
   wire_domestic_outgoing: "Wire Transfer (Domestic Out)",
   wire_domestic_incoming: "Wire Transfer (Domestic In)",
@@ -119,6 +121,7 @@ export const DISPLAY_NAMES: Record<string, string> = {
   stop_payment: "Stop Payment",
   counter_check: "Counter/Temporary Check",
   check_cashing: "Check Cashing",
+  collection_item: "Collection Items",
   check_image: "Check Image/Copy",
   // Digital & Electronic
   ach_origination: "ACH Origination",
@@ -197,6 +200,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   stop_payment: "stop_payment",
   counter_check: "counter_check",
   check_cashing: "check_cashing",
+  collection_item: "collection_item",
+  collection_items: "collection_item",
   check_image: "check_image",
   // Digital & Electronic
   ach_origination: "ach_origination",
@@ -260,7 +265,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   overdraft_each_overdraft_paid: "overdraft",
   overdraft_privilege: "overdraft",
   over_fee: "overdraft",
-  excessive_withdrawal_fee: "overdraft",
+  // A savings or money market excess withdrawal (Reg D-style) is account servicing, not overdraft.
+  excessive_withdrawal_fee: "account_research",
   // --- Card / debit variants ---
   debit_fee: "card_replacement",
   debit_card_fee: "card_replacement",
@@ -311,12 +317,13 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   skipapayment: "late_payment",
   reinstatement: "late_payment",
   // --- Fax / research / admin variants ---
-  fax_fee: "account_research",
+  // A fax or a document copy is document reproduction (Oct 9: one home for fax and copies).
+  fax_fee: "document_reproduction",
   account_balancing_assistance: "account_research",
   account_balancing_assistance_per_hour: "account_research",
   balancing_assistance_fee: "account_research",
   inquiries_fee: "account_research",
-  document_copy: "account_research",
+  document_copy: "document_reproduction",
   more_fee: "account_research",
   less_fee: "account_research",
   // --- Early closure / club variants ---
@@ -332,8 +339,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   check_by_phone: "check_cashing",
   corporate_check: "cashiers_check",
   cashed_fee: "check_cashing",
-  foreign_check_collection: "check_cashing",
-  items_sent_for_collection: "deposited_item_return",
+  foreign_check_collection: "collection_item",
+  items_sent_for_collection: "collection_item",
   // --- Safe deposit / key variants ---
   lost_key_fee: "safe_deposit_box",
   lost_key: "safe_deposit_box",
@@ -352,11 +359,11 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   "5_x_10_box": "safe_deposit_box",
   "10_x_10": "safe_deposit_box",
   "10_x_10_box": "safe_deposit_box",
-  // --- Legal / subordination variants ---
-  subordination_fee: "legal_process",
-  subordination: "legal_process",
-  mortgage_subordination: "legal_process",
-  mortgage_subordination_fee: "legal_process",
+  // --- Subordination: a lending service, not legal process (Oct 8) ---
+  subordination_fee: "other_lending_fee",
+  subordination: "other_lending_fee",
+  mortgage_subordination: "other_lending_fee",
+  mortgage_subordination_fee: "other_lending_fee",
   duplicate_lien_release: "legal_process",
   lien_fee: "legal_process",
   // --- Lending variants ---
@@ -366,7 +373,7 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   // --- Coin / deposit variants ---
   coin_deposited_fee: "coin_counting",
   deposited_fee: "deposited_item_return",
-  collection_fee: "deposited_item_return",
+  collection_fee: "collection_item",
   // --- ATM variants ---
   all_other_atms: "atm_non_network",
   atm_deposit_adjustment: "deposited_item_return",
@@ -382,9 +389,9 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   charitable_donation: "account_research",
   operate_fee: "account_research",
   // --- Production Postgres audit (2026-04-10) ---
-  fax: "account_research",
-  fax_service: "account_research",
-  fax_services: "account_research",
+  fax: "document_reproduction",
+  fax_service: "document_reproduction",
+  fax_services: "document_reproduction",
   christmas_club_early_withdrawal: "early_closure",
   christmas_club_withdrawal_fee: "early_closure",
   skipapayment_fee: "late_payment",
@@ -392,7 +399,7 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   zipper_bags: "night_deposit",
   membership_share: "monthly_maintenance",
   western_union: "wire_domestic_outgoing",
-  document_copy_fee: "account_research",
+  document_copy_fee: "document_reproduction",
   visa_travel_card: "card_replacement",
   loan_extension: "loan_origination",
   excessive_transaction_fee: "account_research",
@@ -551,6 +558,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   od_daily_cap: "comprehensive",
   counter_check: "comprehensive",
   check_cashing: "comprehensive",
+  collection_item: "comprehensive",
   check_image: "comprehensive",
   bill_pay: "comprehensive",
   mobile_deposit: "comprehensive",
