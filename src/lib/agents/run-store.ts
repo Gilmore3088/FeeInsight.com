@@ -600,7 +600,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: paid.budgetStopped && paid.processed === 0
           ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
-          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? " (stopped at the budget cap)" : ""}.`,
+          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
         detail: {
           selected: paid.selected,
           processed: paid.processed,
