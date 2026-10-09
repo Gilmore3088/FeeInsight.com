@@ -49,11 +49,11 @@ export async function getInstitutionPeerRank(institutionId: number): Promise<Ins
   return getInstitutionPeerRankForRule(institutionId, await getReportRuleCheck(institutionId));
 }
 
-/** The peer rank once the institution's report rule check is known (see getInstitutionPeerRank). */
-export async function getInstitutionPeerRankForRule(
-  institutionId: number,
-  rule: ReportRuleCheck | null,
-): Promise<InstitutionPeerRank | null> {
+/**
+ * The peer group the report rule picks: same charter in the state, or in the Fed district
+ * when the state is thin. Null when the rule fails or names no group.
+ */
+export function peerFiltersForRule(rule: ReportRuleCheck | null): PeerFilterSet | null {
   if (!rule?.passes || !rule.charter_type) return null;
   const filters: PeerFilterSet =
     rule.peerScope === "district" && rule.fed_district !== null
@@ -62,15 +62,40 @@ export async function getInstitutionPeerRankForRule(
         ? { charter_type: rule.charter_type, state_code: rule.state_code }
         : { charter_type: rule.charter_type };
   if (!filters.state_code && !filters.fed_districts) return null;
+  return filters;
+}
 
+/** One institution's value for one ranked fee: [institution id, fee key, amount]. */
+export type PeerGroupValue = [institutionId: number, key: PeerRankLine["key"], amount: number];
+
+/**
+ * Every institution's ranked-fee values in one peer group. Institutions in the same group
+ * share this read, so a crawler walking institution pages costs one read per group, not one
+ * per page.
+ */
+export async function getPeerGroupValues(filters: PeerFilterSet): Promise<PeerGroupValue[]> {
   const [byCategory] = await getPeerFeeValues([filters], [...PEER_RANK_FEE_KEYS]);
+  const values: PeerGroupValue[] = [];
+  for (const key of PEER_RANK_FEE_KEYS) {
+    for (const value of byCategory?.get(key) ?? []) values.push([value.institution_id, key, value.amount]);
+  }
+  return values;
+}
+
+/** The institution's rank within its peer group's values (see getInstitutionPeerRank). */
+export function peerRankFromGroupValues(
+  institutionId: number,
+  rule: ReportRuleCheck,
+  filters: PeerFilterSet,
+  values: PeerGroupValue[],
+): InstitutionPeerRank | null {
   const lines: PeerRankLine[] = [];
   for (const key of PEER_RANK_FEE_KEYS) {
-    const values = byCategory?.get(key) ?? [];
-    const own = values.find((value) => value.institution_id === institutionId);
-    const others = values.filter((value) => value.institution_id !== institutionId).map((value) => value.amount);
+    const forKey = values.filter((value) => value[1] === key);
+    const own = forKey.find((value) => value[0] === institutionId);
+    const others = forKey.filter((value) => value[0] !== institutionId).map((value) => value[2]);
     if (!own || others.length < MIN_PEERS_FOR_RANK) continue;
-    lines.push({ key, own: own.amount, ...rankAgainstPeers(own.amount, others) });
+    lines.push({ key, own: own[2], ...rankAgainstPeers(own[2], others) });
   }
   if (lines.length === 0) return null;
   return {
@@ -80,4 +105,14 @@ export async function getInstitutionPeerRankForRule(
     charter_type: rule.charter_type,
     lines,
   };
+}
+
+/** The peer rank once the institution's report rule check is known (see getInstitutionPeerRank). */
+export async function getInstitutionPeerRankForRule(
+  institutionId: number,
+  rule: ReportRuleCheck | null,
+): Promise<InstitutionPeerRank | null> {
+  const filters = peerFiltersForRule(rule);
+  if (!rule || !filters) return null;
+  return peerRankFromGroupValues(institutionId, rule, filters, await getPeerGroupValues(filters));
 }
