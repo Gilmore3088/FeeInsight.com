@@ -847,6 +847,26 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v53: a business account's wire price is not the consumer wire price", () => {
+    for (const [key, name] of [
+      ["wire_domestic_incoming", "Business Wire Transfer Incoming (domestic)"],
+      ["wire_domestic_outgoing", "Outgoing Wire Transfer (Business)"],
+      ["wire_intl_outgoing", "Commercial International Wire Fee"],
+      ["wire_intl_incoming", "Business Wire Transfer Incoming (international)"],
+      ["wire_intl_outgoing", "Wire Funds, International (For Business Accounts Only)"],
+    ]) {
+      expect(checkFeeCategory(key, name).ok, name).toBe(false);
+    }
+    for (const [key, name] of [
+      ["wire_domestic_outgoing", "Consumer & Business Domestic Wire Transfer: Outgoing"],
+      ["wire_domestic_incoming", "Incoming Wire Transfer"],
+      ["wire_domestic_outgoing", "Outgoing wire requested after 2 business days"],
+      ["wire_intl_incoming", "Incoming International Wire"],
+    ]) {
+      expect(checkFeeCategory(key, name).ok, name).toBe(true);
+    }
+  });
+
   it("v52: a price no bank charges is flagged, not re-priced", () => {
     const verdict = checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
     expect(verdict.ok).toBe(false);
