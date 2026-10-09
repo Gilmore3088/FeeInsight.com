@@ -40,7 +40,7 @@ export function computeFindings(benchmarks: FeeCategorySummary[]): Finding[] {
         key: "charter-gap",
         figure: formatAmount(Math.abs(gap)),
         headline: `${cheaper} charge less for ${lowerName(widest.fee_category)}`,
-        detail: `Median ${formatAmount(widest.cu_median_amount)} at credit unions vs ${formatAmount(widest.bank_median_amount)} at banks. Credit unions are cheaper on ${cuCheaper.length} of ${paired.length} everyday fees compared.`,
+        detail: `Median ${formatAmount(widest.cu_median_amount)} at credit unions vs ${formatAmount(widest.bank_median_amount)} at banks. Credit unions are lower on ${cuCheaper.length} of ${paired.length} everyday fees compared.`,
         exhibit: "charters",
       });
     }

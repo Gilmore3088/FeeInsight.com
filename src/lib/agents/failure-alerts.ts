@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
+import { SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "@/lib/agents/hamilton/source-check";
 
 type SqlTag = typeof sql;
 
@@ -21,6 +21,21 @@ export const FAILURE_ALERT_MIN_FAILURES = 3;
  * (a 404 or a wrong document is the bank's problem and is expected at some rate).
  */
 export const BROKEN_ATTEMPT_OUTCOMES = ["parse_error", "error"] as const;
+/**
+ * A step type whose last this-many finished steps all failed is broken, whatever its
+ * share. On 2026-10-08 a deploy broke every Hamilton publish from 12:06, but 38 publishes
+ * from before the deploy kept the two-hour share at 12% and no alert fired.
+ */
+export const FAILURE_STREAK_MIN_FAILURES = 3;
+/** How far back a failure streak is looked for. */
+export const FAILURE_STREAK_WINDOW_HOURS = 24;
+/**
+ * A step type that failed with the same error in this many runs, with no success of that
+ * step type since the latest of them, is broken even if one success broke the streak. On
+ * 2026-10-08 one publish with nothing to write succeeded at 12:25 mid-break, the streak
+ * alert went quiet, and two more publishes failed with the same error before the fix.
+ */
+export const SHARED_FAILURE_MIN_RUNS = 3;
 
 export interface FailureAlert {
   /** Stable key, e.g. `step:read` or `attempt:read.ocr_tesseract`. */
@@ -39,6 +54,24 @@ interface StepRateRow {
   total: number;
   latest_error: string | null;
   latest_at: Date | string | null;
+}
+
+interface StepStreakRow {
+  step_key: string;
+  /** Finished steps of this type that failed since its last success. */
+  failed: number;
+  latest_error: string | null;
+  latest_at: Date | string | null;
+  since: Date | string | null;
+}
+
+interface SharedFailureRow {
+  step_key: string;
+  error_summary: string;
+  /** Distinct runs this step type failed in with this error, within the streak window. */
+  runs: number;
+  latest_at: Date | string | null;
+  since: Date | string | null;
 }
 
 interface AttemptRateRow {
@@ -76,6 +109,46 @@ export function stepAlerts(rows: StepRateRow[]): FailureAlert[] {
       total: row.total,
       latestAt: iso(row.latest_at),
     }));
+}
+
+/** Step types whose most recent finished steps have all failed (a break, not bad luck). */
+export function stepStreakAlerts(rows: StepStreakRow[]): FailureAlert[] {
+  return rows
+    .filter((row) => row.failed >= FAILURE_STREAK_MIN_FAILURES)
+    .map((row) => ({
+      key: `step:${row.step_key}`,
+      title: `"${row.step_key}" steps are failing`,
+      message: `The last ${row.failed} "${row.step_key}" steps all failed${row.since ? ` (since ${iso(row.since)?.slice(11, 16)} UTC)` : ""}, with none succeeding since. Latest reason: ${reason(row.latest_error)}`,
+      failures: row.failed,
+      total: row.failed,
+      latestAt: iso(row.latest_at),
+    }));
+}
+
+/** Step types failing the same way in several runs, with no success since the latest. */
+export function sharedFailureAlerts(rows: SharedFailureRow[]): FailureAlert[] {
+  return rows
+    .filter((row) => row.runs >= SHARED_FAILURE_MIN_RUNS)
+    .map((row) => ({
+      key: `step:${row.step_key}`,
+      title: `"${row.step_key}" steps are failing`,
+      message: `"${row.step_key}" failed the same way in ${row.runs} runs${row.since ? ` since ${iso(row.since)?.slice(11, 16)} UTC` : ""}, with none succeeding since the latest. Reason: ${reason(row.error_summary)}`,
+      failures: row.runs,
+      total: row.runs,
+      latestAt: iso(row.latest_at),
+    }));
+}
+
+/** Alerts on the same step type say one thing: keep the first group's (streak, then shared, then rate). */
+export function mergeStepAlerts(...groups: FailureAlert[][]): FailureAlert[] {
+  const keys = new Set<string>();
+  const merged: FailureAlert[] = [];
+  for (const alert of groups.flat()) {
+    if (keys.has(alert.key)) continue;
+    keys.add(alert.key);
+    merged.push(alert);
+  }
+  return merged;
 }
 
 export function attemptAlerts(rows: AttemptRateRow[]): FailureAlert[] {
@@ -125,7 +198,50 @@ export function sourceCheckCoverageAlert(rows: UncheckedStateRow[]): FailureAler
 export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]> {
   try {
     const window = `${FAILURE_ALERT_WINDOW_MINUTES} minutes`;
-    const [steps, attempts, unchecked] = await Promise.all([
+    const [streaks, shared, steps, attempts, unchecked] = await Promise.all([
+      db<StepStreakRow[]>`
+        WITH finished AS (
+          SELECT step_key, status, error_summary, updated_at,
+                 ROW_NUMBER() OVER (PARTITION BY step_key ORDER BY updated_at DESC) AS rn
+            FROM agent_run_steps
+           WHERE status IN ('completed', 'failed')
+             AND updated_at > NOW() - ${`${FAILURE_STREAK_WINDOW_HOURS} hours`}::interval
+        ), marked AS (
+          SELECT finished.*,
+                 MIN(rn) FILTER (WHERE status = 'completed') OVER (PARTITION BY step_key) AS first_ok
+            FROM finished
+        )
+        SELECT step_key,
+               COUNT(*)::int AS failed,
+               (ARRAY_AGG(error_summary ORDER BY updated_at DESC))[1] AS latest_error,
+               MAX(updated_at) AS latest_at,
+               MIN(updated_at) AS since
+          FROM marked
+         WHERE status = 'failed' AND (first_ok IS NULL OR rn < first_ok)
+         GROUP BY step_key
+      `,
+      db<SharedFailureRow[]>`
+        SELECT failed.step_key, failed.error_summary, failed.runs, failed.latest_at, failed.since
+          FROM (
+            SELECT step_key, error_summary,
+                   COUNT(DISTINCT agent_run_id)::int AS runs,
+                   MAX(updated_at) AS latest_at,
+                   MIN(updated_at) AS since
+              FROM agent_run_steps
+             WHERE status = 'failed'
+               AND error_summary IS NOT NULL
+               AND updated_at > NOW() - ${`${FAILURE_STREAK_WINDOW_HOURS} hours`}::interval
+             GROUP BY step_key, error_summary
+            HAVING COUNT(DISTINCT agent_run_id) >= ${SHARED_FAILURE_MIN_RUNS}
+          ) failed
+         WHERE NOT EXISTS (
+           SELECT 1 FROM agent_run_steps ok
+            WHERE ok.step_key = failed.step_key
+              AND ok.status = 'completed'
+              AND ok.updated_at > failed.latest_at
+         )
+         ORDER BY failed.runs DESC
+      `,
       db<StepRateRow[]>`
         SELECT step_key,
                COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
@@ -158,6 +274,8 @@ export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]
                  WHERE pa.institution_id = fp.institution_id
                    AND pa.stage = 'publish'
                    AND pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                   -- A restore marker is not a check (markRestoredForSourceCheck).
+                   AND pa.input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
               ) last_check ON true
              WHERE fp.rolled_back_at IS NULL
                AND fp.published_at < NOW() - ${`${SOURCE_CHECK_GRACE_HOURS} hours`}::interval
@@ -169,7 +287,11 @@ export async function getFailureAlerts(db: SqlTag = sql): Promise<FailureAlert[]
          ORDER BY 2 DESC, 1
       `,
     ]);
-    return [...sourceCheckCoverageAlert(unchecked), ...attemptAlerts(attempts), ...stepAlerts(steps)];
+    return [
+      ...sourceCheckCoverageAlert(unchecked),
+      ...attemptAlerts(attempts),
+      ...mergeStepAlerts(stepStreakAlerts(streaks), sharedFailureAlerts(shared), stepAlerts(steps)),
+    ];
   } catch (error) {
     console.error("getFailureAlerts failed:", error);
     return [];

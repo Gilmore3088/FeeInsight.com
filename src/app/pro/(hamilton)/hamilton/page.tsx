@@ -2,155 +2,102 @@ import { Suspense } from "react";
 import { unstable_cache, unstable_noStore } from "next/cache";
 import Link from "next/link";
 import type { Metadata } from "next";
-import {
-  fetchCacheableHomeBriefing,
-  fetchHomeBriefingData,
-  fetchHomeBriefingSignals,
-  type HomeBriefingData,
-} from "@/lib/hamilton/home-data";
-import { getCurrentUser } from "@/lib/auth";
+import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilton/home-data";
+import { getCurrentUser, type User } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { HamiltonViewCard } from "@/components/hamilton/home/HamiltonViewCard";
-import { PositioningEvidence } from "@/components/hamilton/home/PositioningEvidence";
-import { WhatChangedCard } from "@/components/hamilton/home/WhatChangedCard";
-import { PriorityAlertsCard } from "@/components/hamilton/home/PriorityAlertsCard";
-import { MonitorFeedPreview } from "@/components/hamilton/home/MonitorFeedPreview";
-import { RecommendedActionCard } from "@/components/hamilton/home/RecommendedActionCard";
-import { InstitutionPositionCard } from "@/components/hamilton/home/InstitutionPositionCard";
-import {
-  fetchInstitutionPositioning,
-  type InstitutionPositioning,
-} from "@/lib/hamilton/institution-position";
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
-import type { HomeBriefingSignals } from "@/lib/hamilton/home-data";
+import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
+import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
+import { FeeScorecard } from "@/components/hamilton/benchmark/FeeScorecard";
+import { buildAttentionItems, FLAGSHIP_FEE } from "@/lib/hamilton/briefing-observations";
+import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
+import { COMPETITOR_MOVE_WINDOW_DAYS, getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
+import { POSITION_EXTREME_PCT, REVENUE_SHIFT_PCT } from "@/lib/hamilton/workspace/observations";
+import type { Briefing, FeeResearch } from "@/lib/hamilton/workspace/types";
+import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage } from "@/components/hamilton/memo/memo";
 
 export const dynamic = "force-dynamic";
 
-const getCachedHomeBriefing = unstable_cache(
-  fetchCacheableHomeBriefing,
-  ["hamilton-home-briefing"],
-  { revalidate: 86400 },
-);
+export const metadata: Metadata = { title: "This month" };
 
-/** The cached briefing, or (when it can't be built) the data view without the AI thesis, uncached. */
-async function loadHomeBriefing(): Promise<{ data: HomeBriefingData; unavailable: boolean }> {
-  try {
-    return { data: await getCachedHomeBriefing(), unavailable: false };
-  } catch {
-    const data = await fetchHomeBriefingData({ includeThesis: false }).catch(() => ({
-      thesis: null,
-      confidence: "low" as const,
-      positioning: [],
-      spotlightCount: 0,
-      totalInstitutions: 0,
-    }));
-    return { data, unavailable: true };
-  }
-}
-
-/** Per-institution positioning; the cache key carries the institution id (unstable_cache keys on arguments). */
-const getCachedInstitutionPositioning = unstable_cache(
-  fetchInstitutionPositioning,
-  ["hamilton-home-briefing-institution"],
+/**
+ * The engine's Briefing and overdraft research, cached for an hour per institution and peer
+ * group (keyed on both, so a bank's own group from Settings never serves another reader).
+ */
+const getCachedBriefing = unstable_cache(
+  async (institutionId: number, peerSet: EnginePeerOptions["peerSet"]) => {
+    const peers: EnginePeerOptions = { peerSet };
+    const [briefing, overdraft] = await Promise.all([
+      getWorkspaceBriefing(institutionId, new Date(), peers),
+      getFeeResearch(institutionId, FLAGSHIP_FEE, new Date(), peers),
+    ]);
+    return { briefing, overdraft };
+  },
+  ["hamilton-this-month-briefing-v1"],
   { revalidate: 3600 },
 );
 
-async function loadInstitutionPositioning(
+async function loadBriefing(
+  user: User | null,
   selectedInstitutionId: string | null,
-): Promise<{ positioning: InstitutionPositioning | null; unavailable: boolean }> {
+): Promise<{ briefing: Briefing | null; overdraft: FeeResearch | null; unavailable: boolean }> {
   const institutionId = parseInstitutionId(selectedInstitutionId);
-  if (!institutionId) return { positioning: null, unavailable: false };
+  if (!institutionId) return { briefing: null, overdraft: null, unavailable: false };
   try {
-    return { positioning: await getCachedInstitutionPositioning(institutionId), unavailable: false };
+    const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
+    const peerSet = active ? { filters: active.filters, label: active.label } : null;
+    return { ...(await getCachedBriefing(institutionId, peerSet)), unavailable: false };
   } catch {
-    return { positioning: null, unavailable: true };
+    return { briefing: null, overdraft: null, unavailable: true };
   }
 }
 
-export const metadata: Metadata = { title: "Benchmark" };
+const BRIEFING_METHOD = [
+  ...STANDARD_METHOD,
+  `Overdraft leads when you publish it. After it come your fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group, institutions in your state that changed a fee you charge in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in your service charge income, most unusual first.`,
+];
 
-interface HamiltonHomePageProps {
-  searchParams: Promise<{
-    instId?: string;
-    intent?: string;
-  }>;
+function ChangesSkeleton() {
+  return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
 }
 
-/**
- * Skeleton placeholder for fresh-data signal components while loading.
- * Uses .skeleton shimmer class from globals.css.
- */
-function SignalsSkeleton() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
-        <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
-        <div className="hamilton-card skeleton" style={{ minHeight: "12rem" }} />
-      </div>
-      <div className="hamilton-card skeleton" style={{ minHeight: "5rem" }} />
-    </div>
-  );
-}
-
-/**
- * BriefingSignals — fetches time-sensitive signal/alert data fresh on every load.
- * Per D-11: unstable_noStore() opts this async component out of ISR caching.
- */
-async function BriefingSignals({
+/** Signals and alerts are fresh on every load (never cached). */
+async function ChangesForInstitution({
+  user,
   selectedInstitutionId,
 }: {
+  user: User | null;
   selectedInstitutionId: string | null;
 }) {
   unstable_noStore();
-
-  let signals: HomeBriefingSignals = {
-    whatChanged: [],
-    priorityAlerts: [],
-    monitorFeed: [],
-  };
-
-  try {
-    const user = await getCurrentUser();
-    if (user) {
+  let signals: HomeBriefingSignals = { whatChanged: [], priorityAlerts: [], monitorFeed: [] };
+  if (user) {
+    try {
       signals = await fetchHomeBriefingSignals(user.id, {
         institutionIds: selectedInstitutionId ? [selectedInstitutionId] : [],
       });
+    } catch {
+      // DB unavailable: the list shows its empty state.
     }
-  } catch {
-    // Auth or DB unavailable — render empty states
   }
-
   return (
-    <>
-      {/* Second Row: WhatChanged (8 col) + PriorityAlerts (4 col) */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
-        <WhatChangedCard
-          signals={signals.whatChanged}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-        <PriorityAlertsCard alerts={signals.priorityAlerts} />
-      </div>
-
-      {/* Monitor Feed — full-width timeline */}
-      <MonitorFeedPreview
-        signals={signals.monitorFeed}
-        selectedInstitutionId={selectedInstitutionId}
-      />
-    </>
+    <RecentChanges
+      alerts={signals.priorityAlerts}
+      signals={signals.whatChanged}
+      selectedInstitutionId={selectedInstitutionId}
+    />
   );
 }
 
-async function resolveSelectedInstitutionId(params: {
-  instId?: string;
-  intent?: string;
-}): Promise<string | null> {
+async function resolveSelectedInstitutionId(
+  user: User | null,
+  params: { instId?: string; intent?: string },
+): Promise<string | null> {
   if (params.instId) return params.instId;
-
+  if (!user) return null;
   try {
-    const user = await getCurrentUser();
-    if (!user) return null;
-
     const { institution } = await resolveHamiltonInstitutionContext({
       userId: user.id,
       instId: null,
@@ -162,142 +109,81 @@ async function resolveSelectedInstitutionId(params: {
   }
 }
 
+/**
+ * This month: one memo built by the Hamilton engine. What is worth a look (overdraft first), what
+ * changed, and how it was built. Deterministic: no model call on this page.
+ */
 export default async function HamiltonHomePage({
   searchParams,
-}: HamiltonHomePageProps) {
+}: {
+  searchParams: Promise<{ instId?: string; intent?: string }>;
+}) {
   const params = await searchParams;
-  const { data, unavailable: briefingUnavailable } = await loadHomeBriefing();
-  const selectedInstitutionId = await resolveSelectedInstitutionId(params);
-  const { positioning, unavailable: positioningUnavailable } =
-    await loadInstitutionPositioning(selectedInstitutionId);
-  const reportsHref = hrefWithInstitutionContext(
-    "/pro/reports?intent=executive-briefing",
-    selectedInstitutionId,
-  );
-  const monitorHref = hrefWithInstitutionContext("/pro/monitor", selectedInstitutionId);
+  const user = await getCurrentUser().catch(() => null);
+  const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
+  const { briefing, overdraft, unavailable } = await loadBriefing(user, selectedInstitutionId);
+  const items = buildAttentionItems(briefing, overdraft);
+  const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const trail = briefing
+    ? provenanceToTrail(briefing.provenance, {
+        method: BRIEFING_METHOD,
+        extraAssumptions:
+          overdraft && items[0]?.id === `position:${FLAGSHIP_FEE}`
+            ? [`Overdraft is compared with ${overdraft.peerLabel}, ${overdraft.band?.n ?? 0} institutions.`]
+            : [],
+      })
+    : null;
 
   return (
-    <div>
-      {/* Page header — "Benchmark" (the nav label) + subtitle pills */}
-      <header
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          gap: "1rem",
-          marginBottom: "3rem",
-        }}
-      >
+    <MemoPage>
+      <MemoHeader
+        kicker={`This month · ${month}`}
+        title={briefing ? briefing.institutionName : "Your briefing"}
+        dek={
+          briefing
+            ? `${briefing.feesReviewed} published fees, read against ${briefing.peerLabel}.`
+            : "Choose your bank and Hamilton reads its published fees against its market every month."
+        }
+      />
+
+      {briefing && trail && items.length > 0 ? (
+        <WorthYourAttention observations={items} institutionId={selectedInstitutionId} trail={trail} />
+      ) : unavailable ? (
+        <p role="status" className="text-sm text-terra-text">
+          Your briefing couldn&apos;t load just now.{" "}
+          <Link href={hrefWithInstitutionContext("/pro/hamilton", selectedInstitutionId)} className="underline">
+            Try again
+          </Link>
+        </p>
+      ) : briefing && trail && briefing.feesReviewed > 0 ? (
+        <div className="flex flex-col gap-4">
+          <Callout>
+            Nothing stood out this month: no fee in its peer group&apos;s top or bottom {POSITION_EXTREME_PCT}%, no state
+            competitor changes in {COMPETITOR_MOVE_WINDOW_DAYS} days, and fee income within {REVENUE_SHIFT_PCT}% of last year.
+          </Callout>
+          <AuditPanel trail={trail} />
+        </div>
+      ) : briefing ? (
+        <Callout>
+          We don&apos;t have enough of {briefing.institutionName}&apos;s published fees to compare yet. My fees still shows
+          the market for any fee.
+        </Callout>
+      ) : (
         <div>
-          <h1
-            className="font-headline"
-            style={{
-              fontSize: "3rem",
-              fontStyle: "italic",
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--hamilton-on-surface)",
-              lineHeight: 1.1,
-              marginBottom: "0.5rem",
-            }}
-          >
-            Benchmark
-          </h1>
-          <span
-            className="font-label"
-            style={{
-              fontSize: "0.625rem",
-              fontWeight: 600,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              color: "var(--hamilton-on-surface-variant)",
-            }}
-          >
-            {data.thesis ? "Analysis current" : "Analysis unavailable"}
-          </span>
-          {briefingUnavailable && (
-            <p role="status" style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)" }}>
-              Hamilton&apos;s written briefing is temporarily unavailable; the fee data below is current.{" "}
-              <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
-                Try again
-              </Link>
-            </p>
-          )}
+          <LinkButton href={hrefWithInstitutionContext("/pro/settings", selectedInstitutionId)} primary>
+            Choose your bank
+          </LinkButton>
         </div>
+      )}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", flexShrink: 1 }}>
-          <Link
-            href={reportsHref}
-            className="no-underline"
-            style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "var(--hamilton-surface-container-high)",
-              color: "var(--hamilton-on-surface)",
-              fontSize: "0.875rem",
-              fontWeight: 500,
-              borderRadius: "var(--hamilton-radius-lg)",
-              border: "1px solid var(--hamilton-border)",
-            }}
-          >
-            Generate Brief
-          </Link>
-          <Link
-            href={monitorHref}
-            className="burnished-cta editorial-shadow no-underline"
-            style={{
-              padding: "0.5rem 1rem",
-              color: "var(--hamilton-on-primary)",
-              fontSize: "0.875rem",
-              fontWeight: 500,
-              borderRadius: "var(--hamilton-radius-lg)",
-            }}
-          >
-            Open Watchlist
-          </Link>
-        </div>
-      </header>
+      {/* Every fee against its own peer group, in the engine's order. */}
+      {briefing && briefing.positions.length > 0 ? (
+        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} />
+      ) : null}
 
-      {/* Content grid */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-        {/* Row 1: Hamilton's View — full width */}
-        <HamiltonViewCard
-          thesis={data.thesis}
-          confidence={data.confidence}
-          priority={positioning?.priority ?? null}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-
-        {/* Row 2: the selected institution against its benchmark */}
-        {positioning && <InstitutionPositionCard positioning={positioning} />}
-        {positioningUnavailable && (
-          <p role="status" style={{ fontSize: "0.875rem", color: "var(--hamilton-on-surface-variant)", margin: 0 }}>
-            Your institution&apos;s position is temporarily unavailable.{" "}
-            <Link href="/pro/hamilton" style={{ textDecoration: "underline" }}>
-              Try again
-            </Link>
-          </p>
-        )}
-
-        {/* National benchmark for the lead spotlight category */}
-        <PositioningEvidence
-          entries={data.positioning}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-
-        {/* Row 3: Recommended Action — full width */}
-        <RecommendedActionCard
-          topGap={positioning?.topGap ?? null}
-          benchmarkLabel={positioning?.benchmarkLabel ?? null}
-          institutionName={positioning?.institutionName ?? null}
-          selectedInstitutionId={selectedInstitutionId}
-        />
-
-        {/* Fresh signal rows via Suspense (WhatChanged + PriorityAlerts + MonitorFeed) */}
-        <Suspense fallback={<SignalsSkeleton />}>
-          <BriefingSignals selectedInstitutionId={selectedInstitutionId} />
-        </Suspense>
-      </div>
-    </div>
+      <Suspense fallback={<ChangesSkeleton />}>
+        <ChangesForInstitution user={user} selectedInstitutionId={selectedInstitutionId} />
+      </Suspense>
+    </MemoPage>
   );
 }

@@ -39,4 +39,38 @@ describe("buildRegulatoryContext", () => {
     expect(result.data.cfpb_complaints).toBeNull();
     expect(result.exhibit?.title).toContain("no CFPB complaints are matched to Prairie CU");
   });
+
+  it("passes public enforcement actions only for the lists checked, and says when none cover the institution", () => {
+    const base = {
+      institutionName: "Flora Bank",
+      stateCode: "IL",
+      charterType: "bank",
+      fees: [{ fee_category: "overdraft", institution_amount: 35 }],
+      complaintYears: [],
+    };
+    const withRecord = buildRegulatoryContext({
+      ...base,
+      enforcement: {
+        agenciesChecked: ["OCC"],
+        open: [{ agency: "OCC", party_name: "Flora Bank, N.A.", against_holding_company: false, action_type: "Formal Agreement", subject: null, start_date: "2025-03-01", termination_date: null, penalty_amount: null, document_url: null }],
+        past: [],
+        pastCount: 2,
+        asOf: "2026-10-07",
+      },
+    });
+    expect(withRecord.data.enforcement_actions).toEqual({
+      lists_checked: ["OCC enforcement actions"],
+      as_of: "2026-10-07",
+      no_end_date_on_file: [{ agency: "OCC", against: "Flora Bank, N.A.", type: "Formal Agreement", start_date: "2025-03-01", termination_date: null, penalty_amount: null }],
+      past_count: 2,
+      latest_past: [],
+    });
+    expect(withRecord.data.limits).toContain("FDIC and NCUA orders are not loaded");
+    expect(withRecord.data.limits).not.toContain("no source of enforcement");
+    expect(withRecord.sources.map((s) => s.label)).toContain("Federal enforcement actions");
+
+    const without = buildRegulatoryContext(base);
+    expect(without.data.enforcement_actions).toBeNull();
+    expect(without.data.limits).toContain("Do not state whether it has enforcement actions");
+  });
 });

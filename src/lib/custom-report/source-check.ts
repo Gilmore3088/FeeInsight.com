@@ -13,10 +13,13 @@
  * point to.
  */
 
+import { newestColumnText } from "@/lib/fee-change-columns";
+
 export type SourceCheckFailure =
   | "no_source_text"
   | "name_not_in_text"
   | "amount_not_the_fee"
+  | "priced_per_amount"
   | "amount_is_a_threshold"
   | "tiered_fee"
   | "category_not_in_text";
@@ -26,11 +29,14 @@ export type SourceCheckResult = { ok: true; sourceLine: string } | { ok: false; 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
 const PRICE_FIRST_MAX_LENGTH = 120;
+/** Words after a figure that make it the rate for each extra unit, not the fee's own price. */
+const ADD_ON_RATE = /^\s*(?:each|per|for each|\/)\s*(?:additional|add'?l|extra)\s+(?:½\s*|half\s+)?(?:pages?|hours?|signatures?|items?|checks?|cop(?:y|ies)|withdrawals?|minutes?|statements?|sheets?)\b/i;
 /**
  * A line that is a price ("$10.00", "Free", "Per Item | $25.00", "- $5 each"), not another
  * fee's row ("Incoming | $10.00").
  */
-const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
+// A box size opening a line ("3x5 | $60") is that box's row, not a price for the row above.
+const PRICE_LINE = /^\s*[-–:•*~]?\s*~?\s*(\$|\d(?!\d*\s*["”']?\s*x\s*\d)|free\b|no charge|no fee|n\/c|none\b|waived|per\b|each\b|\/)/i;
 /** A box or item size ("3 X 10", "5\" x 10\"") read as one word. */
 const SIZE = /\b(\d+)\s*["”']?\s*x\s*(\d+)\b(?:\s*["”']?\s*x\s*\d+\b)?/gi;
 /** A price printed under its fee's name: up to this many following lines, each this short. */
@@ -43,6 +49,22 @@ const PRICE_BELOW_MAX_LENGTH = 40;
  */
 const PRICE_THEN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per \w+|each)?\s*\|\s*[a-z]/;
 /**
+ * Or a price, its unit, and a qualifier ("$5.00 per month for each acct., following 18
+ * consecutive months of inactivity"), or a price labelled "Fee" ("Stop Payment" / "Fee $35.00").
+ */
+const PRICE_THEN_QUALIFIER = /^\s*(?:\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:\/\s*[a-z]+|per\s+[a-z]+|each)\s*,?\s*(?:for|following|after|if|when|until)\b|(?:fee|charge)s?\s*:?\s*@?\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per\s+[a-z]+|each|\/\s*[a-z]+)?\s*\.?\s*$)/i;
+/**
+ * A table's column heading repeated on every row ("ATM withdrawals on non-CU ATMs" / "Fees &
+ * Charges" / "$2.00"): it may sit between a name and its price.
+ */
+const COLUMN_LABEL_LINE = /^(?:(?:current|standard|regular|member)\s+)?(?:fees?(?:\s*(?:&|and)\s*charges?)?|charges?|amount|price|cost|rate)\s*:?$/i;
+/** Or a price, its unit and a sentence about it ("$25.00 Per Month. Applicable after 1 year of inactivity."). */
+// "$2.00 - *Service not available to non-customers": a price, then a dash and its note.
+const PRICE_THEN_DASH_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*[-–—]\s+\*?\s*[a-z]/i;
+const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*\.\s+\S/i;
+/** An allowance before the price ("5 Free per month," / "$2.50 each additional") is not the price. */
+const FREE_ALLOWANCE = /\b\d+\s+(?:free|no\s+charge)\b/gi;
+/**
  * Or a price, its unit, and a note in parentheses ("$29.00/presentment (applies to
  * transactions of $10 or more...)", "$10.00 per card replacement (normally up to 7 to 10
  * business days delivery)").
@@ -50,12 +72,21 @@ const PRICE_THEN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:per \w+|each)?\s*\|\
 const PRICE_THEN_PAREN_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:\/|per\b|each\b|for\b)[^|()$]{0,40})?\(\s*[a-z]/i;
 const CATEGORY_LOOKBACK_LINES = 3;
 const NAME_HEADING_LINES = 8;
+/** Rows that must split into exactly two cells before a page is read as two columns. */
+const TWO_COLUMN_MIN_ROWS = 5;
+/** ...and the share of two-cell rows that carry words in both cells. */
+const TWO_COLUMN_MIN_SHARE = 0.6;
+const PRICE_FIRST_CELL = /^\s*(?:\$|\d|¢|free\b|no\s+(?:charge|fee|cost)\b|none\b|n\/a\b|waived\b|varies\b|the\s+greater\b|the\s+lesser\b)/i;
 const NAME_WORD_SHARE = 0.75;
 const STEM_LENGTH = 5;
 const STOP_WORDS = new Set(["the", "and", "for", "per", "each", "fee", "fees", "charge", "with", "from", "your", "our", "any", "item", "items", "occurrence", "occurance", "transfer"]);
 const ZERO_WORDS = /\b(free|none|no charge|no fee|n\/c|waived)\b|\$\s*0(?:\.00)?(?![\d.])/i;
-const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance|minimum|min\.?|up to|less than|more than|greater than|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
-const THRESHOLD_AFTER = /^\s*(or more|and more|or less|and over|and above|or greater|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
+const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative|balance(?: of)?|minimum|min\.?|maintain(?:s|ed)?|keep|[<>≤≥]|&[lg]t;?|up to|less than|more than|greater than|or equal to|at least|between|\$\s*[\d,.]+\s*[-–])\s*$/i;
+// "$200+" (attached) is a threshold; "$100.00 + Locksmith Fee" (spaced) adds a cost to a price.
+// A spaced "+" whose next cell is a price ("$1,000.01 + | $10.00") is a band's open top, as
+// is "$1,000.01-Over"; "$500 or under = $5.00" is a band too. A spaced "+" alone ("International
+// Wire $50.00 +") is a price plus costs.
+const THRESHOLD_AFTER = /^\+|^\s+\+\s*\|\s*\$|^\s*[-–]\s*(?:over|up|above)\b|^\s*(or more|and more|or less|and over|and above|or greater|or (?:under|below)|and (?:under|below)|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
 const CAP_STEMS = new Set(["maxim", "max", "cap", "limit"]);
@@ -176,15 +207,97 @@ export function joinLabeledFeeCardText(text: string): string {
   return joinLabeledFeeCards(text.split(/\r?\n/)).join("\n");
 }
 
+/**
+ * A price alone on its line can carry the fee's footnote marks, read off their superscripts
+ * onto the baseline: Starion's "$33⁴,⁵" comes out "$334, 5". The price's last digit is the
+ * first mark when the marks count up from it (4, 5) and the text prints each one as a
+ * numbered footnote ("4. Please be aware ..."); only then are the marks dropped. A single
+ * mark ("$331") is left alone: nothing tells it from a price.
+ */
+export function stripPriceFootnoteMarks(text: string): string {
+  if (!/^\s*\$\d+, ?\d/m.test(text)) return text;
+  const notes = new Set([...text.matchAll(/^\s*(\d)\.\s+[A-Z]/gm)].map((match) => Number(match[1])));
+  return text.replace(/^(\s*)\$(\d+)(\d)((?:, ?\d)+)[ \t]*$/gm, (whole, indent: string, price: string, first: string, rest: string) => {
+    const marks = [Number(first), ...rest.split(",").slice(1).map((mark) => Number(mark.trim()))];
+    const counted = marks.every((mark, index) => index === 0 || mark === marks[index - 1] + 1);
+    return counted && marks.every((mark) => notes.has(mark)) ? `${indent}$${price}` : whole;
+  });
+}
+
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
-    text
-      .split(/\r?\n/)
-      .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter((line) => line.length > 0),
+    regridRows(
+      text
+        .split(/\r?\n/)
+        .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+        .map((line) => line.replace(/\s+/g, " ").trim())
+        .filter((line) => line.length > 0),
+    ),
   ).filter((line) => line.length > 0);
+}
+
+const SIZE_CELL = /^\d+\s*["”']?\s*x\s*\d+(?:\s*["”']?\s*x\s*\d+)?\s*["”']?$/i;
+const PRICE_ONLY_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
+const NAME_CELL = /^[A-Z][^$|]*[a-z]{3}[^$|]*$/;
+const PRICE_OR_FREE_CELL = /^(?:\$\s?\d[\d,]*(?:\.\d{2})?|free|no charge|none|n\/c)$/i;
+// A second column's own fee name has at least two words of its own, not a qualifier of the first
+// ("Monthly Statement – Electronic", "Withdrawals at Allpoint & Presto! ATMs"; not "Non-network").
+const SECOND_COLUMN_NAME = /^[A-Z]\S*\s+\S+/;
+
+/**
+ * Two table layouts that print a fee's price on a different row than its name are rewritten
+ * to one fee per row, so no other fee's price sits on the name's row:
+ * - a size grid: box sizes closing one row ("... | 3x5 | 5x5 | 10x10") and their prices
+ *   closing the next ("... | $60 | $80 | $185") become "3x5 | $60" rows after the pair;
+ * - a price wrapped under its name: "Returned Check | Verification of Deposit | $20" over
+ *   "$30 | (Business ...)" is two fees, the first priced by the price opening the next row
+ *   ("Returned Check | $30", "Verification of Deposit | $20").
+ */
+function regridRows(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const cells = lines[i].split(" | ");
+    const next = lines[i + 1]?.split(" | ");
+    if (!next) {
+      out.push(lines[i]);
+      continue;
+    }
+    let sizes = 0;
+    while (sizes < cells.length && SIZE_CELL.test(cells[cells.length - 1 - sizes])) sizes += 1;
+    let prices = 0;
+    while (prices < next.length && PRICE_ONLY_CELL.test(next[next.length - 1 - prices])) prices += 1;
+    if (sizes >= 2 && prices === sizes) {
+      const head = cells.slice(0, cells.length - sizes);
+      const tail = next.slice(0, next.length - prices);
+      if (head.length > 0) out.push(head.join(" | "));
+      if (tail.length > 0) out.push(tail.join(" | "));
+      cells.slice(-sizes).forEach((size, k) => out.push(`${size} | ${next[next.length - prices + k]}`));
+      i += 1;
+      continue;
+    }
+    if (
+      cells.length === 3 &&
+      NAME_CELL.test(cells[0]) &&
+      NAME_CELL.test(cells[1]) &&
+      PRICE_ONLY_CELL.test(cells[2]) &&
+      next.length >= 2 &&
+      PRICE_ONLY_CELL.test(next[0]) &&
+      !PRICE_ONLY_CELL.test(next[1])
+    ) {
+      out.push(`${cells[0]} | ${next[0]}`, `${cells[1]} | ${cells[2]}`, next.slice(1).join(" | "));
+      i += 1;
+      continue;
+    }
+    // Two columns' names on one row and one price ("Stop Payment | Monthly Statement – Electronic |
+    // Free"): the price is the second name's; the first name's price is printed under it.
+    if (cells.length === 3 && NAME_CELL.test(cells[0]) && NAME_CELL.test(cells[1]) && SECOND_COLUMN_NAME.test(cells[1]) && PRICE_OR_FREE_CELL.test(cells[2])) {
+      out.push(cells[0], `${cells[1]} | ${cells[2]}`);
+      continue;
+    }
+    out.push(lines[i]);
+  }
+  return out;
 }
 
 function nameStems(feeName: string): string[] {
@@ -211,7 +324,10 @@ function stemCount(text: string, stems: string[]): number {
 function statesAmount(line: string, amount: number, stems: string[]): SourceCheckFailure | null {
   const money = moneyTokens(line);
   if (amount === 0 && !money.some((t) => t.value > 0 && !isThreshold(line, t))) {
-    return ZERO_WORDS.test(line) ? null : "amount_not_the_fee";
+    // A $0 balance in a condition ("if your Available Balance ... is at least $0") is not a $0 fee.
+    const zeroBands = money.filter((t) => t.value === 0 && isThreshold(line, t));
+    const unbanded = zeroBands.reduce((text, t) => text.slice(0, t.start) + " ".repeat(t.end - t.start) + text.slice(t.end), line);
+    return ZERO_WORDS.test(unbanded) ? null : "amount_not_the_fee";
   }
   // A $0 fee on a line with other prices (a schedule flattened to one line: "Monthly Fee
   // NONE Return Check Fee $30.00") is read like any price: its free word is its price.
@@ -227,7 +343,11 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   // when the row prints one outside it; a row whose only figure is in parentheses keeps it.
   const unlimited = tokens.filter((t) => !isThreshold(line, t));
   const outside = unlimited.filter((t) => !inNote(line, t));
-  const prices = outside.length > 0 ? outside : unlimited;
+  const noted = outside.length > 0 ? outside : unlimited;
+  // An add-on rate ("Account statement reprints (5 page max/$1 each additional page | $4.00") is
+  // not the fee's price when the row prints another; alone ("5 free, $2.00 each additional") it is.
+  const base = noted.filter((t) => !ADD_ON_RATE.test(line.slice(t.end)));
+  const prices = base.length > 0 ? base : noted;
   const before = prices.map((price, i) => stemCount(line.slice(i === 0 ? 0 : prices[i - 1].end, price.start), stems));
   const after = prices.map((price, i) => stemCount(line.slice(price.end, prices[i + 1]?.start ?? line.length), stems));
   // A line that opens with a price and ends with a name ("$25 (3 X 5), $35 (3 X 10)")
@@ -257,7 +377,12 @@ function statesAmount(line: string, amount: number, stems: string[]): SourceChec
   const from = index === 0 ? 0 : prices[index - 1].end;
   // A minimum charge ("$10.00 minimum / $25.00 per hour") or a note in the name
   // ("Gift Cards (load $10-$1000)") is not a balance band.
-  const band = (t: MoneyToken) => isThreshold(line, t) && !/^\s*min/i.test(line.slice(t.end)) && !inNote(line, t);
+  // Nor is a balance the fee asks you to keep ("failure to maintain $1,000 daily balance | $3.00").
+  const band = (t: MoneyToken) =>
+    isThreshold(line, t) &&
+    !/^\s*min/i.test(line.slice(t.end)) &&
+    !inNote(line, t) &&
+    !/\b(?:maintain(?:s|ed)?|keep)\s*$/i.test(line.slice(Math.max(0, t.start - 16), t.start));
   return tokens.some((t) => t.start >= from && t.start < prices[index].start && band(t)) ? "tiered_fee" : null;
 }
 
@@ -328,29 +453,98 @@ function feeRow(lines: string[], index: number): string {
   if (leader && line.length <= PRICE_FIRST_MAX_LENGTH) return leader;
   // A figure that is only a limit in the name's note ("Non-Customer check cashing (or 1% if
   // check is over $500)") is not the row's price; the price may still be printed under it.
-  if (moneyTokens(line).some((t) => !isThreshold(line, t) && !inNote(line, t)) || ZERO_WORDS.test(line)) return line;
+  // A free word in a note ("ATM Withdrawal (first 6 free)" / "$1.00") is an allowance, not the price.
+  if (moneyTokens(line).some((t) => !isThreshold(line, t) && !inNote(line, t)) || ZERO_WORDS.test(line.replace(/\([^()]*\)/g, " ").replace(FREE_ALLOWANCE, " "))) return line;
   // Only a price line may follow; another name ("Incoming" then "Outgoing" then "$25")
   // ends the row, so one fee never takes the next fee's price.
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
-    .find((next) => (next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) && PRICE_LINE.test(next) && (moneyTokens(next).length > 0 || ZERO_WORDS.test(next)));
+    .find(
+      (next) =>
+        PRICE_THEN_QUALIFIER.test(next) ||
+        PRICE_THEN_SENTENCE.test(next) ||
+        PRICE_THEN_DASH_NOTE.test(next) ||
+        ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
+          PRICE_LINE.test(next) &&
+          (moneyTokens(next).length > 0 || ZERO_WORDS.test(next))),
+    );
   if (!price) return line;
   const between = lines.slice(index + 1, lines.indexOf(price, index + 1));
   // Units ("/Item") and notes that only qualify the name ("If checks are not on order
   // (10 maximum)", "(up to $1,000)") may sit between a name and its price.
-  return between.every((next) => /^\s*(\/|per\b)/i.test(next) || QUALIFIER_LINE.test(next)) ? `${line} | ${price}` : line;
+  // An "Area | Per | Fee" table flattened one cell per line prints the unit between the name
+  // and its price ("Wire Fees - Domestic Outgoing" / "Wire" / "$20.00").
+  const perColumn = hasPerColumn(lines, index);
+  // A note the name line leaves open runs on until it closes ("Overdraft Fee (per item, ...
+  // in person withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per
+  // day.)" / "$36.00"); it carries no price of its own.
+  const openNote =
+    /\([^()]*$/.test(line) &&
+    between.length > 0 &&
+    /\)\s*\.?\s*$/.test(between.at(-1) ?? "") &&
+    between.every((next) => moneyTokens(next).length === 0 && !ZERO_WORDS.test(next));
+  if (openNote) return `${line} | ${price}`;
+  return between.every(
+    (next) =>
+      /^\s*(\/|per\b)/i.test(next) ||
+      QUALIFIER_LINE.test(next) ||
+      COLUMN_LABEL_LINE.test(next.trim()) ||
+      (perColumn && next.length <= 20 && moneyTokens(next).length === 0 && !ZERO_WORDS.test(next)),
+  )
+    ? `${line} | ${price}`
+    : line;
+}
+
+/** A "Per" column heading followed by "Fee" sits above this row, in the same table. */
+function hasPerColumn(lines: string[], index: number): boolean {
+  for (let j = index - 1; j >= Math.max(0, index - 60); j -= 1) {
+    if (/^per$/i.test(lines[j].trim()) && /^(?:fee|fees|amount|charge)$/i.test((lines[j + 1] ?? "").trim())) return true;
+  }
+  return false;
 }
 
 /** The figure sits inside parentheses. */
-function inNote(line: string, token: MoneyToken): boolean {
-  return line.lastIndexOf("(", token.start) > line.lastIndexOf(")", token.start);
+function inNote(text: string, token: MoneyToken): boolean {
+  // A plural "(s)" ("direct deposit(s) of $200+") opens no note.
+  const line = text.replace(/\((?:s|es)\)/gi, (plural) => " ".repeat(plural.length));
+  const open = line.lastIndexOf("(", token.start);
+  // A parenthesis left open across a cell ("Replacement Key (1 key | $25.00" / "lost)") is
+  // a name wrapped onto the next line, not a note around the price.
+  // A parenthesis that never closes in its cell ("Check Copy (Front and Back and assisted by CU
+  // Employee. $2.00 per copy | 3 X 5 ...") is a name's unbalanced note, not a note around the price.
+  const closes = line.slice(token.end).split("|")[0].includes(")");
+  return open > line.lastIndexOf(")", token.start) && !line.slice(open, token.start).includes("|") && closes;
 }
 
 function isThreshold(line: string, token: MoneyToken): boolean {
   const before = line.slice(Math.max(0, token.start - 16), token.start);
   const after = line.slice(token.end, token.end + 12);
-  return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after);
+  // "Under $1000 - $5.00 fee per month": a dash after a balance, then a price named as the fee,
+  // is a separator, not a band's upper end.
+  if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;
+  if (statesMaximumFee(line, token) && !THRESHOLD_AFTER.test(after)) return false;
+  return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after) || OBJECT_BEFORE.test(before);
 }
+
+// "We will charge you a fee of up to $35.00 each time we pay an overdraft" and "Late Payment Fee
+// Up to $20.00" state the fee's maximum, which is its published price (SmartBank, Oct 7).
+// "No fee up to $5,000, then $0.30" and "check cashing fee up to $4,999.99 | $5.00" are bands:
+// a price follows them. Plural "fees up to $25" is a reimbursement cap, not a price.
+const MAX_FEE_BEFORE = /\b(?:fee|charge)\s+(of\s+)?up to\s*$/i;
+
+function statesMaximumFee(line: string, token: MoneyToken): boolean {
+  const before = line.slice(Math.max(0, token.start - 40), token.start).split("|").pop() ?? "";
+  const rest = line.slice(token.end);
+  const nothingPricedAfter = moneyTokens(rest).length === 0 && !ZERO_WORDS.test(rest);
+  if (/^\s*up to\s*$/i.test(line.slice(0, token.start)) && rest.trim() === "") return true;
+  const max = MAX_FEE_BEFORE.exec(before);
+  if (!max || /\bno\s+(?:fee|charge)\s+(?:of\s+)?up to\s*$/i.test(before)) return false;
+  return Boolean(max[1]) || nothingPricedAfter;
+}
+
+// "the $34 Overdraft Fee on the $60 gasoline transaction": a figure after "on the" is what the fee
+// is charged on, not a price (Chase, Oct 7).
+const OBJECT_BEFORE = /\bon\s+(?:the|a|an|your|each)\s*$/i;
 
 /** The fee's name carries a band figure that sits in its row as a threshold. */
 function namesItsBand(row: string, feeName: string): boolean {
@@ -362,12 +556,38 @@ function namesItsBand(row: string, feeName: string): boolean {
 // live fees); split it once.
 let lastText: string | null = null;
 let lastLines: string[] = [];
+let lastColumns: string[][] = [];
+
 function cachedSourceLines(text: string): string[] {
   if (text !== lastText) {
-    lastLines = sourceLines(text);
+    const read = stripPriceFootnoteMarks(text);
+    lastLines = sourceLines(read);
+    lastColumns = columnLines(read);
     lastText = text;
   }
   return lastLines;
+}
+
+/**
+ * A two-column page flattened row by row ("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" /
+ * "($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00") interleaves two fee lists,
+ * so a right-column name and its price sit on different rows of other fees. Each column is
+ * read again on its own, top to bottom. Only pages where many rows split into exactly two
+ * cells count as two-column; a column can only add a trace, never take one away.
+ */
+function columnLines(text: string): string[][] {
+  const rows = text.split(/\r?\n/).map((row) => row.split(" | "));
+  // A table row's cells ("Stop Payment | $30") are one fee; a column's cell carries words
+  // ("($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00").
+  const words = (cell: string) => (cell.match(/[a-z]{3,}/gi) ?? []).length;
+  // A cell that opens with its price ("| $2.00 per page", "| No Charge") is the row's price cell.
+  const split = rows.map((cells) => cells.length === 2 && words(cells[1]) >= 2 && !PRICE_FIRST_CELL.test(cells[1]));
+  const pairs = rows.filter((cells) => cells.length === 2).length;
+  const columns = rows.filter((cells) => cells.length === 2 && cells.every((cell) => words(cell) >= 2)).length;
+  if (columns < TWO_COLUMN_MIN_ROWS || columns < pairs * TWO_COLUMN_MIN_SHARE) return [];
+  const left = rows.map((cells, index) => (split[index] ? cells[0] : cells.join(" | ")));
+  const right = rows.filter((_, index) => split[index]).map((cells) => cells[1]);
+  return [sourceLines(left.join("\n")), sourceLines(right.join("\n"))];
 }
 
 /**
@@ -377,6 +597,55 @@ function cachedSourceLines(text: string): string[] {
  * category (`canonicalFeeKey` in DAILY_CAP_CATEGORIES) that does not trace as a price is
  * read once more as a cap on its fee's row, so the cap can only gain a trace, never lose one.
  */
+/** Fees charged per item, never per day of a lasting overdraft. */
+const PER_ITEM_CATEGORIES: ReadonlySet<string> = new Set(["overdraft", "nsf"]);
+
+/**
+ * "$5.00 per day after 10 business days", "$5.00/day after 7th day": a sustained overdraft charge.
+ * So is "an overdrawn account fee of $10.00 on the 5th consecutive business day your account is
+ * overdrawn ... an additional $10.00 per week" (Origin, Oct 8), named before its price when the
+ * line breaks right after it.
+ */
+const SUSTAINED_AFTER =
+  /^\s*(?:(?:per|a|each|\/)\s*(?:business |calendar )?day\b[^|$]{0,25}\b(?:after|beginning|starting|once)\b|[^|$]{0,40}\bafter (?:the )?\d+(?:st|nd|rd|th)? (?:business |calendar |consecutive )?days?\b|on the \d+(?:st|nd|rd|th) (?:consecutive )?(?:business |calendar )?day\b)/i;
+/** "an additional $10.00 per week": a weekly charge on top of the overdraft fee. A weekly price alone
+ * ("Overdraft Fee | $30.00 each week overdrawn" / "$30.00 per item paid") may be the item fee too. */
+const ADDITIONAL_BEFORE = /\badditional\s*$/i;
+const WEEKLY_AFTER = /^\s*(?:per|a|each|\/)\s*week\b/i;
+
+/** "we will charge you an overdrawn account fee of $10.00": the sustained charge names itself. */
+const SUSTAINED_BEFORE = /\b(?:overdrawn account|sustained overdraft|extended overdraft|continuous overdraft|overdrawn balance) (?:fee|charge)s? (?:of )?$/i;
+
+/**
+ * A page that glues footnote marks onto its prices ("Debit Card Payment Fee … $4.951", a third
+ * decimal no price has) prints whole prices the same way ("Early Account Closure … $251 | 1" for
+ * $25 with note 1). On such a page a whole price ending in that mark is not a price it states.
+ */
+const GLUED_MARK_PRICE = /\$\s?\d+\.\d{2}([1-3])(?!\d)/g;
+
+function gluedFootnotePrice(text: string, amount: number): boolean {
+  if (!Number.isInteger(amount) || amount < 10) return false;
+  const marks = new Set(Array.from(text.matchAll(GLUED_MARK_PRICE), (match) => Number(match[1])));
+  if (!marks.has(amount % 10)) return false;
+  return new RegExp(`\\$\\s?${amount}(?![\\d.,])`).test(text);
+}
+
+/**
+ * The fee's price on its own row is charged by the day once an account stays overdrawn
+ * ("Overdraft Fee .... $5.00 per day after 10 business day", Oct 8): a sustained overdraft
+ * charge, not the per-item overdraft or NSF fee. Every mention of the price on the row must say so.
+ */
+function chargedOnceOverdrawnDays(row: string, amount: number, nextLine?: string): boolean {
+  const prices = moneyTokens(row).filter((token) => Math.abs(token.value - amount) < 0.005);
+  return prices.length > 0 && prices.every((token) => {
+    // A price that ends its line reads on into the next ("an additional $10.00" / "per week").
+    const after = row.slice(token.end).trim() === "" && nextLine ? ` ${nextLine}` : row.slice(token.end);
+    const before = row.slice(Math.max(0, token.start - 50), token.start);
+    return SUSTAINED_AFTER.test(after.slice(0, 60)) || SUSTAINED_BEFORE.test(before) || (ADDITIONAL_BEFORE.test(before) && WEEKLY_AFTER.test(after));
+  });
+}
+
+
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
@@ -384,21 +653,33 @@ export function checkFeeAgainstSource(
   categoryPattern: string,
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
-  const asPrice = checkAgainstLines(text, feeName, amount, categoryPattern, false);
-  if (asPrice.ok || !canonicalFeeKey || !DAILY_CAP_CATEGORIES.has(canonicalFeeKey)) return asPrice;
-  const asCap = checkAgainstLines(text, feeName, amount, categoryPattern, true);
-  return asCap.ok ? asCap : asPrice;
+  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
+  // A fee-change notice's earlier column is what the fee was ("Money Orders | $2.00 | $5.00"
+  // under "Fee through | Fee as of"): only the newest column is read as the fee now.
+  const pages = [cachedSourceLines(newestColumnText(text)), ...lastColumns];
+  const asCap = canonicalFeeKey != null && DAILY_CAP_CATEGORIES.has(canonicalFeeKey);
+  const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);
+  let first: SourceCheckResult | null = null;
+  for (const lines of pages) {
+    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
+    if (asPrice.ok) return asPrice;
+    first ??= asPrice;
+    if (!asCap) continue;
+    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
+    if (cap.ok) return cap;
+  }
+  return first ?? { ok: false, reason: "no_source_text" };
 }
 
 function checkAgainstLines(
-  text: string | null | undefined,
+  lines: string[],
   feeName: string,
   amount: number,
   categoryPattern: string,
   dailyCap: boolean,
+  perItem = false,
 ): SourceCheckResult {
-  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
-  const lines = cachedSourceLines(text);
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
   const stems = dailyCap ? nameStems(feeName).filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)) : nameStems(feeName);
   const category = new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i");
@@ -409,9 +690,10 @@ function checkAgainstLines(
     no_source_text: 0,
     name_not_in_text: 1,
     amount_not_the_fee: 2,
-    amount_is_a_threshold: 3,
-    tiered_fee: 4,
-    category_not_in_text: 5,
+    priced_per_amount: 3,
+    amount_is_a_threshold: 4,
+    tiered_fee: 5,
+    category_not_in_text: 6,
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -446,6 +728,28 @@ function checkAgainstLines(
       row = leader;
       amountProblem = null;
     }
+    // A fee named inside another row's note ("Cost to drill a box: Actual cost plus $25.00. (Lost
+    // key replacement $75.00)") is stated by that note.
+    // The note must open with the fee's own name, so a qualifier in a price's note ("Research Fee
+    // (hourly fee; 15 minute minimum charge of $10.00) | $40.00") never stands in for the price.
+    const nameStart = comparable(feeName).replace(/[^a-z0-9' ]/g, " ").trim().split(/\s+/).slice(0, 2).join(" ");
+    const ownNote =
+      amountProblem && !dailyCap && nameStart.length >= 3
+        ? Array.from(row.matchAll(/\(([^()]*)\)/g), (match) => match[1]).find(
+            (note) => comparable(note).replace(/[^a-z0-9' ]/g, " ").trim().startsWith(nameStart) && namesFee(note, stems) && !statesAmount(note, rounded, stems),
+          )
+        : undefined;
+    if (ownNote) {
+      row = ownNote;
+      amountProblem = null;
+    }
+    const wrapped = amountProblem && !dailyCap ? wrappedNameRow(lines, i, feeName) : null;
+    if (wrapped && !statesAmount(wrapped, rounded, stems)) {
+      row = wrapped;
+      amountProblem = null;
+    }
+    if (!amountProblem && !dailyCap && pricedPerAmount(row, rounded)) amountProblem = "priced_per_amount";
+    if (!amountProblem && perItem && chargedOnceOverdrawnDays(row, rounded, row === line ? lines[i + 1] : undefined)) amountProblem = "amount_not_the_fee";
     if (amountProblem) {
       if (rank[amountProblem] > rank[best]) best = amountProblem;
       continue;
@@ -458,6 +762,49 @@ function checkAgainstLines(
     return { ok: true, sourceLine: row.slice(0, 240) };
   }
   return { ok: false, reason: best };
+}
+
+/**
+ * A name that runs onto the next row ("PROCESSING OF LEVIES**" / "IRS or Court-ordered
+ * Garnishments ...... $100.00", read as "PROCESSING OF LEVIES IR"): when the fee's name ends
+ * with the start of the next row, the two rows up to that row's first price are the fee's row.
+ * The line itself must carry no price, so a priced row never takes the next row's price.
+ */
+function wrappedNameRow(lines: string[], index: number, feeName: string): string | null {
+  const line = lines[index];
+  const next = lines[index + 1];
+  if (!next || moneyTokens(line).length > 0) return null;
+  // The row runs to the next row's first price ("on us only $5.00 Bad Address Correction Fee $3.00").
+  const price = moneyTokens(next)[0];
+  if (!price) return null;
+  const words = comparable(feeName).replace(/[^a-z0-9' ]/g, " ").trim().split(/\s+/);
+  const here = ` ${comparable(line).replace(/[^a-z0-9' ]/g, " ")} `;
+  let cut = words.length;
+  while (cut > 0 && !here.includes(` ${words[cut - 1]} `)) cut -= 1;
+  const tail = words.slice(cut).join(" ");
+  if (cut === 0 || tail.length < 2) return null;
+  return comparable(next).startsWith(tail) ? `${line} ${next.slice(0, price.end)}` : null;
+}
+
+/**
+ * "Cashier Check (per $100.00) $1.00", "CHECK CASHING FEE (NOT ON US- PER $100) | ...": the
+ * price is charged for each $100 of the item, so it scales with the item and is not a flat
+ * fee. The basis must sit in the fee's label, before the price, so a neighbouring row on the
+ * same line ("Incoming Wire | $10.00 | Loose Currency (per $100) | $0.50") does not count.
+ */
+const PER_AMOUNT_BASIS = /\bper\s*\$\s?\d[\d,]*(?:\.\d{2})?(?=\s*(?:\)|\||of\b|in\b|face\b|worth\b|value\b|$))/i;
+
+function pricedPerAmount(row: string, amount: number): boolean {
+  const price = moneyTokens(row).find(
+    (token) => Math.abs(token.value - amount) < 0.005 && !/\bper\s*$/i.test(row.slice(Math.max(0, token.start - 6), token.start)),
+  );
+  if (!price) return false;
+  const label = row.slice(0, price.start);
+  // A basis printed right after another price is that price's ("Coin deposited | $0.0062 per $1 |
+  // Escheat/abandoned account notice | $2"): the notice is a flat $2.
+  return Array.from(label.matchAll(new RegExp(PER_AMOUNT_BASIS.source, "gi"))).some(
+    (basis) => !/\$\s?\d[\d,]*(?:\.\d+)?\s*$/.test(label.slice(Math.max(0, (basis.index ?? 0) - 16), basis.index)),
+  );
 }
 
 /** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.

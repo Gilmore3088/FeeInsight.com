@@ -1,11 +1,13 @@
 import type { User } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
-import { acceptPendingWorkspaceInvitationsForUser } from "@/lib/hamilton/institution-membership";
+import { trackServerEvent } from "@/lib/analytics-server";
+import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 
 /**
  * Activation fallback for when the Stripe webhook has not landed yet: if the user's
  * Stripe customer has an active subscription, mark the account active now. Used by the
- * welcome page and by /subscribe, so a payer is never offered checkout a second time.
+ * welcome page, by /subscribe, so a payer is never offered checkout a second time, and by
+ * /account/billing-issue, so a late "payment failed" webhook never locks out a subscriber who paid.
  */
 export async function activateIfPaid(
   user: Pick<User, "id" | "username" | "email" | "role" | "subscription_status" | "stripe_customer_id">,
@@ -16,19 +18,18 @@ export async function activateIfPaid(
     try {
       const { getStripe } = await import("@/lib/stripe");
       const stripe = getStripe();
-      const subs = await stripe.subscriptions.list({
-        customer: user.stripe_customer_id,
-        status: "active",
-        limit: 1,
-      });
+      const listed = await stripe.subscriptions.list({ customer: user.stripe_customer_id, status: "all", limit: 10 });
+      // A trial is paid-for access too (mapStripeStatus treats it as active).
+      const subs = { data: listed.data.filter((s) => s.status === "active" || s.status === "trialing") };
       if (subs.data.length > 0) {
         await sql`
           UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
           WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
-        await acceptPendingWorkspaceInvitationsForUser({
-          userId: user.id,
-          email: user.email ?? user.username,
-        }).catch(() => []);
+        const institutionId = paidInstitutionId(subs.data[0].metadata);
+        if (institutionId) {
+          await anchorPaidInstitution(sql, { userId: user.id, institutionId, note: `Filed at Pro checkout (${subs.data[0].id}).` });
+        }
+        await trackServerEvent("pro_activated", { source: "fallback" });
         return true;
       }
     } catch (e) {

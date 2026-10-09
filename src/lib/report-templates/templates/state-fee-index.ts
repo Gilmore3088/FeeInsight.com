@@ -28,7 +28,16 @@ import { HAMILTON_ATTRIBUTION, PRODUCT_NAME, SITE_DOMAIN, SITE_NAME } from "@/li
 import type { StateReportData } from "@/lib/research-report/state-report-data";
 import type { DevelopmentsBlock, FeeChangesBlock, StateRegulatorRef } from "@/lib/report-assemblers/developments";
 import { feeChangesContent, stateDevelopmentsContent } from "./developments";
+import {
+  charterExhibit,
+  countyMapSection,
+  economySection,
+  feeLadderSection,
+  holdersSection,
+  type StateReportVisuals,
+} from "./state-exhibits";
 import { regulatoryExtras } from "./regulatory-section";
+import type { StateNews } from "@/lib/data-store/state-news";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import {
   POSITION_AXIS_MAX_PCT,
@@ -52,7 +61,11 @@ export interface StateFeeIndexReportInput {
     regulator: StateRegulatorRef | null;
     /** CFPB complaints, fee-change rules and the district's Beige Book line. */
     regulatory?: RegulatoryContext | null;
+    /** The state's regulator posts, fee bills and press coverage; absent means not read. */
+    stateNews?: StateNews | null;
   };
+  /** County map, fee ladder, deposit holders and economy. Left out (no sections) when not loaded. */
+  visuals?: StateReportVisuals;
 }
 
 /** Differences under this (in percent) read as "in line", as on the public page. */
@@ -103,7 +116,7 @@ function findingsSection(data: StateReportData): string {
   );
 }
 
-function everydaySection(data: StateReportData): string {
+function everydaySection(data: StateReportData, label: string): string {
   const rows = data.everyday.map((r) => ({
     fee: `${getDisplayName(r.fee_category)}${r.institution_count < STATE_FINDING_MIN_INSTITUTIONS ? " (small sample)" : ""}`,
     state_median: formatAmount(r.median_amount),
@@ -130,7 +143,7 @@ function everydaySection(data: StateReportData): string {
         );
   return reportSection(
     {
-      label: "Exhibit 1 · Everyday fees",
+      label,
       title: `${data.stateName} against the national benchmark`,
       subheading: "The median, and the middle half of prices (25th to 75th percentile), in the state and nationally.",
     },
@@ -160,11 +173,11 @@ function positionRow(r: StateComparison, axis: number): string {
   </div>`;
 }
 
-function positionSection(data: StateReportData): string {
+function positionSection(data: StateReportData, label: string): string {
   const rows = data.comparisons.filter((r) => r.delta_pct != null).sort((a, b) => b.delta_pct! - a.delta_pct!);
   if (rows.length === 0) {
     return reportSection(
-      { label: "Exhibit 2 · Position vs national", title: `${data.stateName} against national medians` },
+      { label, title: `${data.stateName} against national medians` },
       emptyNotice(`No ${data.stateName} fee has both a state median and a national median yet, so there is nothing to compare.`),
       "position",
     );
@@ -176,13 +189,13 @@ function positionSection(data: StateReportData): string {
 <div class="position-chart">${rows.map((r) => positionRow(r, axis)).join("")}
   <div class="position-scale">
     <span></span>
-    <span class="position-scale-axis"><span>Cheaper (−${axis}%)</span><span>National</span><span>Pricier (+${axis}%)</span></span>
+    <span class="position-scale-axis"><span>Lower (−${axis}%)</span><span>National</span><span>Higher (+${axis}%)</span></span>
     <span></span>
   </div>
 </div>`;
   return reportSection(
     {
-      label: "Exhibit 2 · Position vs national",
+      label,
       title: `${plural(above, "fee", "fees")} above national, ${formatCount(below)} below`,
       subheading: `Each bar is the ${data.stateName} median relative to the national median for the same fee.`,
     },
@@ -195,11 +208,11 @@ function positionSection(data: StateReportData): string {
   );
 }
 
-function charterSection(data: StateReportData): string {
+function charterSection(data: StateReportData, label: string, designed: boolean): string {
   const pairs = data.charterPairs;
   if (pairs.length === 0) {
     return reportSection(
-      { label: "Exhibit 3 · Banks vs credit unions", title: `${data.stateName} banks and credit unions` },
+      { label, title: `${data.stateName} banks and credit unions` },
       emptyNotice(
         `Too few ${data.stateName} banks and credit unions publish the same fees yet for a charter comparison. A comparison needs a median for both charters.`,
       ),
@@ -207,7 +220,7 @@ function charterSection(data: StateReportData): string {
     );
   }
   const cuCheaper = pairs.filter((p) => p.cu_median_amount! < p.bank_median_amount!).length;
-  const chart = comparisonChart({
+  const chart = (designed ? charterExhibit(data) : null) ?? comparisonChart({
     bars: pairs.map((p) => ({
       label: getDisplayName(p.fee_category),
       leftValue: p.bank_median_amount!,
@@ -221,8 +234,8 @@ function charterSection(data: StateReportData): string {
   });
   return reportSection(
     {
-      label: "Exhibit 3 · Banks vs credit unions",
-      title: `${data.stateName} credit unions are cheaper on ${formatCount(cuCheaper)} of ${plural(pairs.length, "fee", "fees")}`,
+      label,
+      title: `${data.stateName} credit unions are lower on ${formatCount(cuCheaper)} of ${plural(pairs.length, "fee", "fees")}`,
       subheading: `Median price at ${data.stateName} banks and at ${data.stateName} credit unions for each fee where both charters have a median.`,
     },
     chart + source(data.asOf, "One value per institution; each charter median needs at least 5 institutions."),
@@ -309,7 +322,7 @@ function developmentsSection(
   return reportSection(
     { label: "Regulatory developments", title: `Regulation and supervision affecting ${data.stateName} institutions` },
     [
-      stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt),
+      stateDevelopmentsContent(context.developments, data.stateName, context.regulator, generatedAt, context.stateNews),
       regulatoryExtras(context.regulatory, data.stateName),
     ].join("\n"),
   );
@@ -331,12 +344,20 @@ export function renderStateFeeIndexReport(input: StateFeeIndexReportInput): stri
     series: `${PRODUCT_NAME} · State Report · ${data.stateCode}`,
   });
 
+  let exhibits = 0;
+  const label = (name: string) => `Exhibit ${++exhibits} · ${name}`;
+  const visuals = input.visuals;
+
   const body = [
     cover,
     findingsSection(data),
-    everydaySection(data),
-    positionSection(data),
-    charterSection(data),
+    visuals ? countyMapSection(data, visuals, label("Overdraft by county")) : "",
+    everydaySection(data, label("Everyday fees")),
+    visuals ? feeLadderSection(data, visuals, label("Every institution")) : "",
+    positionSection(data, label("Position vs national")),
+    charterSection(data, label("Banks vs credit unions"), Boolean(visuals)),
+    visuals ? holdersSection(data, visuals, label("Deposit holders")) : "",
+    visuals ? economySection(data, visuals, label("Economy")) : "",
     context ? changesSection(data, context) : "",
     context ? developmentsSection(data, context, generatedAt) : "",
     coverageSection(data),

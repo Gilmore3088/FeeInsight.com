@@ -1,4 +1,5 @@
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
+import { retiredKeysInFamilies } from "@/lib/fee-fold";
 import { CANONICAL_KEY_MAP, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import {
   AMOUNT_PATTERN,
@@ -49,8 +50,10 @@ export interface FamilyExpert {
   patterns: Array<{ key: string; pattern: RegExp }>;
 }
 
+// A family still reads the categories folded out of it into the top 50; `refileCategory`
+// places those reads among the 50 before Darwin and Hamilton see them.
 function familyKeys(...families: string[]): ReadonlySet<string> {
-  return new Set(families.flatMap((family) => FEE_FAMILIES[family] ?? []));
+  return new Set([...families.flatMap((family) => FEE_FAMILIES[family] ?? []), ...retiredKeysInFamilies(families)]);
 }
 
 /** The five fee families with their own expert; every other family goes to `services`. */
@@ -104,6 +107,8 @@ export interface PriceWindow {
   /** Text right after the price, up to the next price or 80 characters. */
   after: string;
   heading: string | null;
+  /** v42: the nearest line above, with no price, that names a fee ("Paid Consumer & Business NSF Items"). */
+  feeLine?: string | null;
   lineIndex: number;
   excerpt: string;
 }
@@ -146,6 +151,7 @@ export function priceWindows(text: string): PriceWindow[] {
   const windows: PriceWindow[] = [];
   let heading: string | null = null;
   let pending: string | null = null;
+  let feeLine: { name: string; lineIndex: number } | null = null;
 
   lines.forEach((line, lineIndex) => {
     if (windows.length >= MAX_WINDOWS) return;
@@ -155,6 +161,9 @@ export function priceWindows(text: string): PriceWindow[] {
       if (!(pending != null && qualifiesName(line))) pending = line.length <= 160 ? line : null;
       // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.
       if (looksLikeHeading(line) && !line.includes(CELL_SEPARATOR)) heading = line;
+      if (/^[A-Z]/.test(line) && !line.includes(CELL_SEPARATOR) && line.length <= 120 && classifyPatternKey(line)) {
+        feeLine = { name: line, lineIndex };
+      }
       return;
     }
     let nameStart = 0;
@@ -194,6 +203,7 @@ export function priceWindows(text: string): PriceWindow[] {
         before: line.slice(Math.max(0, value.start - 40), value.start),
         after,
         heading,
+        feeLine: feeLine && lineIndex - feeLine.lineIndex <= 3 ? feeLine.name : null,
         lineIndex,
         excerpt: `${stacked ? `${pending} / ` : ""}${line.slice(value.start - own.length, value.end + qualifier.length)}`.trim().slice(-280),
       });
@@ -220,6 +230,7 @@ const CAP_BEFORE = /\b(max(?:imum)?|cap(?:ped)?|up to|not to exceed|limit(?:ed)?
 const CAP_AFTER = /^\s*\)?\s*(?:per|a|each)\s+(?:business\s+)?day\b|^\s*\)?\s*daily\b/i;
 /** A cap named after its figure: "$25 per item ($50 maximum per day)". */
 const CAP_NAMED_AFTER = /^\s*(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b/i;
+const THRESHOLD_ROW = /^(?:per|each)\s+(?:item|check|transaction|occurrence|presentment)s?\s+(?:greater|more|over|above|exceeding|less|under|below)\b/i;
 const NEGATIVE_NAME = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i;
 
 /** "Overdraft fee 1st item" → "Overdraft fee": the fee a later tier row belongs to. */
@@ -309,6 +320,13 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     let match = matchFor(expert, name, heading);
     if (!match && recent && TIER_LABEL.test(name) && !classifyPatternKey(name)) {
       match = { hint: recent.hint, feeName: `${tierBase(recent.feeName)} (${name})` };
+    }
+    // v42: a price row named only by its threshold ("Per Item greater than $10.01 | $30") under a
+    // fee line with no price ("Paid Consumer & Business NSF Items", NIH FCU) is that fee's.
+    if (!match && window.feeLine && THRESHOLD_ROW.test(name) && !classifyPatternKey(name)) {
+      const hint = classifyFor(expert, window.feeLine);
+      const feeLineName = cleanFeeName(window.feeLine.replace(/\s*[-–]\s*[a-z]\S*$/, ""));
+      if (hint && feeLineName) match = { hint, feeName: feeLineName };
     }
     if (!match) return;
     last = { ...match, lineIndex: window.lineIndex };

@@ -3,13 +3,22 @@ import { startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
 import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
+import { FFIEC_OVERDRAFT_PARSER_VERSION, FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/magellan/registry/ffiec-overdraft";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
-import { CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
+import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
+import { IRS_ZIP_INCOME_SOURCE, irsZipIncomePartitions } from "@/lib/agents/magellan/registry/irs-zip-income";
 import { NCUA_BRANCHES_SOURCE, ncuaBranchPartitions } from "@/lib/agents/magellan/registry/ncua-branches";
-import { SEC_FILINGS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
+import { SEC_FILINGS_SOURCE, SEC_LINKS_PARSER_VERSION, SEC_LINKS_SOURCE, secBatchPartitions } from "@/lib/agents/magellan/registry/sec";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
+import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
+import { FEDERAL_BILLS_PARTITION, FEDERAL_BILLS_SOURCE } from "@/lib/agents/magellan/registry/federal-bills";
+import { ENFORCEMENT_MATCHER_VERSION, ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/enforcement";
+import { STATE_ENFORCEMENT_PARSER_VERSION, STATE_ENFORCEMENT_SOURCE } from "@/lib/agents/magellan/registry/state-enforcement";
+import { STATE_NEWS_PARSER_VERSION, STATE_REG_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-reg-news";
+import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bill-news";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
 import {
   latestPublishableQuarter,
@@ -39,18 +48,51 @@ const CLAIM_RETRY_HOURS = 6;
 
 /**
  * Sources whose parser has read new accounts since some partitions were pulled. A
- * succeeded partition recorded under an older `detail.parser_version` (missing = 1) is due
+ * succeeded or empty partition recorded under an older `detail.parser_version` (missing = 1) is due
  * again, so new fields fill in through ordinary, visible registry runs, newest first.
  */
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
+  [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
+  [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,
+  [STATE_REG_NEWS_SOURCE]: STATE_NEWS_PARSER_VERSION,
+  [STATE_BILL_NEWS_SOURCE]: STATE_NEWS_PARSER_VERSION,
+  [CENSUS_ACS_SOURCE]: CENSUS_ACS_PARSER_VERSION,
+  [CFPB_SOURCE]: CFPB_PARSER_VERSION,
+  [SEC_LINKS_SOURCE]: SEC_LINKS_PARSER_VERSION,
+  [FFIEC_OVERDRAFT_SOURCE]: FFIEC_OVERDRAFT_PARSER_VERSION,
 };
 
-export function isParserStale(source: string, status: string | null, parserVersion: number | null): boolean {
+/**
+ * True when a partition should run again now because the parser changed: a succeeded or empty
+ * partition recorded by an older parser, or a claimed partition (still "scheduled" after a failed
+ * run) claimed under an older parser. The second case means a code fix retries its failures on
+ * the next tick instead of waiting out the claim's retry hours.
+ */
+export function isParserStale(
+  source: string,
+  status: string | null,
+  parserVersion: number | null,
+  claimedParserVersion: number | null = null,
+): boolean {
   const current = REGISTRY_PARSER_VERSIONS[source];
-  return current !== undefined && status === "succeeded" && (parserVersion ?? 1) < current;
+  if (current === undefined) return false;
+  if (status === "succeeded" || status === "empty") return (parserVersion ?? 1) < current;
+  if (status === "scheduled") return (claimedParserVersion ?? 1) < current;
+  return false;
 }
+
+/**
+ * A Census vintage skipped because no CENSUS_API_KEY was set is due as soon as a key is set,
+ * instead of waiting out its daily re-check. A vintage Census rejected with a key stays put.
+ */
+export function isKeylessSkipNowKeyed(keylessSkip: boolean, key: string | undefined = process.env.CENSUS_API_KEY): boolean {
+  return keylessSkip && Boolean(key?.trim());
+}
+
+/** SQL test for a partition recorded as skipped because no Census key was set. */
+const KEYLESS_SKIP_REASON = "No CENSUS_API_KEY set%";
 
 export interface RegistryPartitionCandidate {
   source: string;
@@ -77,17 +119,28 @@ function years(from: number, to: number): string[] {
 }
 
 /** Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES. */
-export function registryPartitionsBySource(now: Date, from: Quarter = backfillStart()): Array<{ source: string; partitions: string[] }> {
+export function registryPartitionsBySource(
+  now: Date,
+  from: Quarter = backfillStart(),
+  env: NodeJS.ProcessEnv = process.env,
+): Array<{ source: string; partitions: string[] }> {
   const quarters = (lagDays: number) =>
     quartersNewestFirst(from, latestPublishableQuarter(now, lagDays)).map(quarterKey);
   const dynamic: Record<string, string[]> = {
     [FDIC_FINANCIALS_SOURCE]: quarters(FDIC_FILING_LAG_DAYS),
     [NCUA_FINANCIALS_SOURCE]: quarters(NCUA_FILING_LAG_DAYS),
+    [FFIEC_OVERDRAFT_SOURCE]: ffiecOverdraftPartitions(now),
     [NCUA_BRANCHES_SOURCE]: ncuaBranchPartitions(now),
     [FDIC_SOD_SOURCE]: years(Math.max(SOD_FIRST_YEAR, from.year), latestSodYear(now)),
+    [CENSUS_ACS_SOURCE]: censusAcsPartitions(now),
+    [IRS_ZIP_INCOME_SOURCE]: irsZipIncomePartitions(now),
     [CFPB_SOURCE]: years(Math.max(CFPB_FIRST_YEAR, from.year), now.getUTCFullYear()),
     [SEC_FILINGS_SOURCE]: secBatchPartitions(),
     [BEIGE_BOOK_SOURCE]: beigeBookCandidates(now),
+    // No key, no runs: state bills wait for OPEN_STATES_API_KEY rather than queue skips.
+    // One partition; each run works through the states that are due (state-bills.ts).
+    [STATE_BILLS_SOURCE]: env.OPEN_STATES_API_KEY?.trim() ? [STATE_BILLS_PARTITION] : [],
+    [FEDERAL_BILLS_SOURCE]: env.CONGRESS_GOV_API_KEY?.trim() ? [FEDERAL_BILLS_PARTITION] : [],
   };
   return REGISTRY_SOURCES.map((definition) => ({
     source: definition.source,
@@ -153,18 +206,27 @@ async function hasActiveRegistryRun(): Promise<boolean> {
 /** Atomically claim a partition so two ticks never schedule the same one. */
 async function claimPartition(candidate: RegistryPartitionCandidate): Promise<boolean> {
   const parserVersion = REGISTRY_PARSER_VERSIONS[candidate.source] ?? 0;
+  const censusKeySet = isKeylessSkipNowKeyed(true);
   const rows = await sql`
-    INSERT INTO registry_ingest_partitions (source, partition_key, status, attempts, next_attempt_after)
+    INSERT INTO registry_ingest_partitions (source, partition_key, status, attempts, next_attempt_after, detail)
     VALUES (${candidate.source}, ${candidate.partitionKey}, 'scheduled', 1,
-            NOW() + (${CLAIM_RETRY_HOURS} * INTERVAL '1 hour'))
+            NOW() + (${CLAIM_RETRY_HOURS} * INTERVAL '1 hour'),
+            jsonb_build_object('claimed_parser_version', ${parserVersion}::int))
     ON CONFLICT (source, partition_key) DO UPDATE SET
       status = 'scheduled',
       attempts = registry_ingest_partitions.attempts + 1,
       next_attempt_after = EXCLUDED.next_attempt_after,
+      detail = COALESCE(registry_ingest_partitions.detail, '{}'::jsonb)
+               || jsonb_build_object('claimed_parser_version', ${parserVersion}::int),
       updated_at = NOW()
     WHERE registry_ingest_partitions.next_attempt_after <= NOW()
-       OR (registry_ingest_partitions.status = 'succeeded'
+       OR (registry_ingest_partitions.status IN ('succeeded', 'empty')
            AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
+       OR (registry_ingest_partitions.status = 'scheduled'
+           AND COALESCE((registry_ingest_partitions.detail->>'claimed_parser_version')::int, 1) < ${parserVersion})
+       OR (${censusKeySet}::boolean
+           AND registry_ingest_partitions.status = 'empty'
+           AND registry_ingest_partitions.detail->>'reason' LIKE ${KEYLESS_SKIP_REASON})
     RETURNING id
   `;
   return [...rows].length > 0;
@@ -212,16 +274,23 @@ export async function scheduleDueRegistryRuns({
     if (await hasActiveRegistryRun()) return { scheduled: false, reason: "active_run" };
 
     const candidates = registryCandidates(now);
-    const rows = await sql<(PartitionStateRow & { status: string | null; parser_version: string | null })[]>`
+    const rows = await sql<(PartitionStateRow & { status: string | null; parser_version: string | null; claimed_parser_version: string | null; keyless_skip: boolean })[]>`
       SELECT source, partition_key, (next_attempt_after <= NOW()) AS due, status,
-             detail->>'parser_version' AS parser_version
+             detail->>'parser_version' AS parser_version,
+             detail->>'claimed_parser_version' AS claimed_parser_version,
+             (status = 'empty' AND COALESCE(detail->>'reason', '') LIKE ${KEYLESS_SKIP_REASON}) AS keyless_skip
         FROM registry_ingest_partitions
        WHERE source IN ${sql([...new Set(candidates.map((c) => c.source))])}
     `;
     const states = [...rows].map((row) => ({
       source: row.source,
       partition_key: row.partition_key,
-      due: row.due || isParserStale(row.source, row.status, row.parser_version === null ? null : Number(row.parser_version)),
+      due: row.due || isKeylessSkipNowKeyed(Boolean(row.keyless_skip)) || isParserStale(
+        row.source,
+        row.status,
+        row.parser_version === null ? null : Number(row.parser_version),
+        row.claimed_parser_version === null ? null : Number(row.claimed_parser_version),
+      ),
     }));
     const candidate = pickDueCandidate(candidates, states);
     if (!candidate) return { scheduled: false, reason: "nothing_due" };

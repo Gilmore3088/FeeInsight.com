@@ -2,42 +2,44 @@
 
 import Link from "next/link";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { SERIF } from "@/components/hamilton/memo/memo";
 
 const FEATURES = [
   {
-    key: "analysis",
-    label: "Analyze",
-    status: "Included",
-    href: "/pro/analyze",
-    description: "Ask Hamilton about any institution; every figure is checked against the data it used.",
-  },
-  {
     key: "benchmarking",
-    label: "Benchmark",
-    status: "Included",
+    label: "This month",
     href: "/pro/hamilton",
     description: "Where your fees sit against peer medians, with the number of institutions behind each one.",
   },
   {
+    key: "my_fees",
+    label: "My fees",
+    href: "/pro/research",
+    description: "One fee at a time against your peers, your state and the nation, with the filings behind it.",
+  },
+  {
+    key: "analysis",
+    label: "Ask Hamilton",
+    href: "/pro/analyze",
+    description: "Ask about any bank or credit union; every figure is checked against the data it came from.",
+  },
+  {
     key: "scenario_modeling",
-    label: "Scenario",
-    status: "Included",
+    label: "Try a price",
     href: "/pro/simulate",
-    description: "Model a fee change against your peers and save it for a board summary.",
+    description: "See where a different fee would land among your peers, and the notice and approvals a change takes.",
   },
   {
     key: "reports",
-    label: "Report",
-    status: "Included",
+    label: "Reports",
     href: "/pro/reports",
-    description: "Board-ready reports written from your institution's verified fee evidence.",
+    description: "Board-ready reports written from your bank's verified fee schedule.",
   },
   {
     key: "market_monitor",
-    label: "Monitor",
-    status: "Included",
+    label: "All changes",
     href: "/pro/monitor",
-    description: "Alerts when a watched institution's published fees change.",
+    description: "Alerts when a bank you watch changes its published fees.",
   },
 ];
 
@@ -47,42 +49,20 @@ interface FeatureTogglesProps {
 
 export function FeatureToggles({ selectedInstitutionId = null }: FeatureTogglesProps) {
   return (
-    <div className="space-y-3">
+    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {FEATURES.map((feature) => (
-        <Link
-          key={feature.key}
-          href={hrefWithInstitutionContext(feature.href, selectedInstitutionId)}
-          className="block rounded-md border px-3 py-2 no-underline transition-colors hover:bg-white"
-          style={{
-            borderColor: "var(--hamilton-border)",
-            backgroundColor: "var(--hamilton-surface-container-lowest, #fffdf9)",
-          }}
-        >
-          <span className="flex items-start justify-between gap-3">
-            <span className="min-w-0">
-              <span className="block text-sm font-medium" style={{ color: "var(--hamilton-text-primary)" }}>
-                {feature.label}
-              </span>
-              <span className="mt-0.5 block text-xs leading-5" style={{ color: "var(--hamilton-text-tertiary)" }}>
-                {feature.description}
-              </span>
+        <li key={feature.key}>
+          <Link
+            href={hrefWithInstitutionContext(feature.href, selectedInstitutionId)}
+            className="group block h-full rounded-lg border border-warm-300 bg-warm-50 px-4 py-3 no-underline transition-colors hover:border-warm-500"
+          >
+            <span className="block text-base text-warm-900 group-hover:text-terra-text" style={SERIF}>
+              {feature.label}
             </span>
-            <span
-              className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-              style={{
-                borderColor: "var(--hamilton-border)",
-                color: "var(--hamilton-text-secondary)",
-                backgroundColor: "var(--hamilton-surface-elevated)",
-              }}
-            >
-              {feature.status}
-            </span>
-          </span>
-        </Link>
+            <span className="mt-1 block text-sm leading-relaxed text-warm-700">{feature.description}</span>
+          </Link>
+        </li>
       ))}
-      <p className="text-[10px] leading-4" style={{ color: "var(--hamilton-text-tertiary)" }}>
-        Hamilton capabilities are governed by selected institution context, evidence tier, and workspace access.
-      </p>
-    </div>
+    </ul>
   );
 }

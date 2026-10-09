@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   HAMILTON_NAV,
   HAMILTON_REFERENCE_NAV,
+  HAMILTON_WIRE_NAV,
   HAMILTON_BASE,
   LEFT_RAIL_CONFIG,
   PRIMARY_ACTION_HREF,
@@ -24,20 +25,13 @@ describe("HAMILTON_BASE", () => {
 });
 
 describe("HAMILTON_NAV", () => {
-  it("has exactly 6 entries", () => {
-    expect(HAMILTON_NAV).toHaveLength(6);
+  it("has exactly 5 entries (four tabs plus Admin, which lives in the account menu)", () => {
+    expect(HAMILTON_NAV).toHaveLength(5);
   });
 
-  it("has exact labels in order: Analyze, Benchmark, Scenario, Report, Monitor, Admin", () => {
+  it("has exact labels in order: This month, My fees, Try a price, Reports, Admin", () => {
     const labels = HAMILTON_NAV.map((item) => item.label);
-    expect(labels).toEqual([
-      "Analyze",
-      "Benchmark",
-      "Scenario",
-      "Report",
-      "Monitor",
-      "Admin",
-    ]);
+    expect(labels).toEqual(["This month", "My fees", "Try a price", "Reports", "Admin"]);
   });
 
   it("all hrefs are unique (no duplicates)", () => {
@@ -78,11 +72,10 @@ describe("LEFT_RAIL_CONFIG", () => {
   });
 
   it("routes primary actions to the matching Hamilton workflow", () => {
-    expect(getPrimaryActionHref("Analyze")).toBe("/pro/simulate");
-    expect(getPrimaryActionHref("Benchmark")).toBe("/pro/simulate");
-    expect(getPrimaryActionHref("Scenario")).toBe("/pro/reports");
-    expect(getPrimaryActionHref("Report")).toBe("/pro/reports");
-    expect(getPrimaryActionHref("Monitor")).toBe("/pro/analyze");
+    expect(getPrimaryActionHref("This month")).toBe("/pro/research");
+    expect(getPrimaryActionHref("My fees")).toBe("/pro/simulate");
+    expect(getPrimaryActionHref("Try a price")).toBe("/pro/reports");
+    expect(getPrimaryActionHref("Reports")).toBe("/pro/reports?intent=executive-briefing");
     expect(getPrimaryActionHref("Admin")).toBe("/admin");
     expect(Object.keys(PRIMARY_ACTION_HREF).sort()).toEqual(
       HAMILTON_NAV.map((item) => item.label).sort(),
@@ -91,30 +84,29 @@ describe("LEFT_RAIL_CONFIG", () => {
 });
 
 describe("CTA_HIERARCHY", () => {
-  it("has entries for non-Admin screens (Analyze, Benchmark, Scenario, Report, Monitor)", () => {
-    const expectedKeys = [
-      "Analyze",
-      "Benchmark",
-      "Scenario",
-      "Report",
-      "Monitor",
-    ];
+  it("has entries for the workspace screens and the Ask answer screen", () => {
+    const expectedKeys = ["Analyze", "This month", "My fees", "Try a price", "Reports"];
     for (const key of expectedKeys) {
       expect(CTA_HIERARCHY).toHaveProperty(key);
     }
     expect(CTA_HIERARCHY).not.toHaveProperty("Admin");
   });
 
-  it("Analyze primary CTA is 'Simulate a Change'", () => {
-    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Simulate a Change");
+  it("Analyze primary CTA is 'Try a Price'", () => {
+    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Try a Price");
   });
 
-  it("Scenarios primary CTA is 'Generate Board Scenario Summary'", () => {
-    expect(CTA_HIERARCHY["Scenario"].primary).toBe("Generate Board Scenario Summary");
+  it("Try a price primary CTA is 'Plan the Change'", () => {
+    expect(CTA_HIERARCHY["Try a price"].primary).toBe("Plan the Change");
   });
 
-  it("Reports & Briefs primary CTA is 'Generate Brief'", () => {
-    expect(CTA_HIERARCHY["Report"].primary).toBe("Generate Brief");
+  it("Reports primary CTA is 'Generate Brief'", () => {
+    expect(CTA_HIERARCHY["Reports"].primary).toBe("Generate Brief");
+  });
+
+  it("no CTA tells the bank what to charge", () => {
+    const text = JSON.stringify(CTA_HIERARCHY) + JSON.stringify(LEFT_RAIL_CONFIG);
+    expect(text).not.toMatch(/recommend|raise|lower/i);
   });
 
   it("each entry has primary string and secondary array", () => {
@@ -164,17 +156,26 @@ describe("no Sovereign branding (D-05)", () => {
 });
 
 describe("labels open the screen of the same name", () => {
-  it("Analyze opens /pro/analyze and Benchmark opens the briefing", () => {
+  it("This month opens /pro/hamilton and each screen keeps its old URL", () => {
     const byLabel = Object.fromEntries(HAMILTON_NAV.map((item) => [item.label, item.href]));
-    expect(byLabel.Analyze).toBe("/pro/analyze");
-    expect(byLabel.Benchmark).toBe("/pro/hamilton");
-    expect(byLabel.Scenario).toBe("/pro/simulate");
-    expect(byLabel.Report).toBe("/pro/reports");
+    expect(byLabel["This month"]).toBe("/pro/hamilton");
+    expect(byLabel["My fees"]).toBe("/pro/research");
+    expect(byLabel["Try a price"]).toBe("/pro/simulate");
+    expect(byLabel.Reports).toBe("/pro/reports");
+  });
+
+  it("keeps no more than four tabs a client sees", () => {
+    expect(HAMILTON_NAV.filter((item) => item.label !== "Admin")).toHaveLength(4);
   });
 
   it("reference pages stay inside Pro", () => {
-    expect(HAMILTON_REFERENCE_NAV.length).toBeGreaterThanOrEqual(5);
+    expect(HAMILTON_REFERENCE_NAV.length).toBeGreaterThanOrEqual(4);
     for (const item of HAMILTON_REFERENCE_NAV) expect(item.href.startsWith("/pro/")).toBe(true);
+  });
+
+  it("puts Regulatory Wire in the top nav and not also under Reference", () => {
+    expect(HAMILTON_WIRE_NAV).toEqual({ label: "Regulatory Wire", href: "/pro/news" });
+    expect(HAMILTON_REFERENCE_NAV.map((item) => item.href)).not.toContain("/pro/news");
   });
 });
 

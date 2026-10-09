@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
 import { trackEvent } from "@/lib/analytics";
+import { REPORT_OFFER } from "@/lib/constants";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
+import { readFirstTouch } from "@/lib/marketing-touch";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
@@ -18,7 +20,10 @@ const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
+/** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
+const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
+const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 const SUCCESS_HEADLINE = "Request received.";
@@ -111,7 +116,10 @@ export function RequestReportForm(props: RequestReportFormProps) {
 
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
-  return <RequestReportFormInner {...props} prefill={readPrefill(params, props.defaultSrc ?? DEFAULT_SRC)} />;
+  const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
+  // Keyed on the query so a same-page link that changes `?report=` or the bank reloads the
+  // form with that option selected (useState reads the prefill only on first render).
+  return <RequestReportFormInner key={params.toString()} {...props} prefill={prefill} />;
 }
 
 function RequestReportFormInner({
@@ -171,6 +179,7 @@ function RequestReportFormInner({
       source: REPORT_SOURCE,
       institutionId: lockedInstitutionId ?? pickedInstitution?.id ?? null,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: honeypotValue(event.currentTarget),
     };
 
@@ -184,7 +193,7 @@ function RequestReportFormInner({
       if (!response.ok) {
         throw new Error(body?.error || GENERIC_ERROR);
       }
-      trackEvent("request_report", { src });
+      trackEvent("request_report", { src, report: "institution" });
       setConfirmation(toConfirmationStatus(body));
       setStatus("success");
     } catch (error) {
@@ -203,6 +212,7 @@ function RequestReportFormInner({
       source: reportType === "district" ? DISTRICT_REPORT_SOURCE : NATIONAL_REPORT_SOURCE,
       district: reportType === "district" ? district : undefined,
       src,
+      firstTouch: readFirstTouch(),
       [LEAD_HONEYPOT_FIELD]: String(formData.get(LEAD_HONEYPOT_FIELD) ?? "").trim() || undefined,
     };
     try {
@@ -226,7 +236,7 @@ function RequestReportFormInner({
   }
 
   if (status === "success" && freeReport) {
-    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} />;
+    return <FreeReportSuccess scope={freeReport} confirmation={confirmation} requestHref={institutionReportHref(prefill)} />;
   }
   if (status === "success") {
     return <RequestReportSuccess contactEmail={contactEmail} confirmation={confirmation} />;
@@ -280,7 +290,7 @@ function RequestReportFormInner({
                       (option.paid ? "bg-[#EADFCB] text-[#7A5A1E]" : "bg-[#E3EFE8] text-[#2F6B4F]")
                     }
                   >
-                    {option.paid ? "Paid" : "Free, instant"}
+                    {option.paid ? REPORT_OFFER.priceLabel : "Free, instant"}
                   </span>
                 </span>
                 <span className="mt-0.5 block text-[13px] text-[#6B6255]">{option.detail}</span>
@@ -288,6 +298,13 @@ function RequestReportFormInner({
             </label>
           ))}
         </div>
+        <p className="mt-2 text-[13px] text-[#6B6255]">
+          Want your own bank or credit union right now?{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+            Look it up free
+          </Link>{" "}
+          to see its published fees against state and national medians.
+        </p>
       </fieldset>
 
       {reportType === "district" && (
@@ -522,12 +539,26 @@ function RequestReportSuccess({
   );
 }
 
+/** The paid-report link after a free report, keeping the bank the reader arrived with. */
+export function institutionReportHref(prefill: Pick<Prefill, "institutionId" | "institutionName" | "src"> | null): string {
+  if (!prefill?.institutionId || !prefill.institutionName) return INSTITUTION_REPORT_HREF;
+  const params = new URLSearchParams({
+    report: "institution",
+    institution: String(prefill.institutionId),
+    name: prefill.institutionName,
+    src: prefill.src,
+  });
+  return `/for-institutions?${params.toString()}#report`;
+}
+
 function FreeReportSuccess({
   scope,
   confirmation,
+  requestHref,
 }: {
   scope: BenchmarkScope;
   confirmation: ConfirmationStatus;
+  requestHref: string;
 }) {
   return (
     <div
@@ -542,6 +573,13 @@ function FreeReportSuccess({
       >
         Open your report
       </Link>
+      <p className="mt-4 text-[#5A5347]">
+        Want your own institution against named competitors?{" "}
+        <Link href={requestHref} className="font-medium underline underline-offset-2">
+          Request your institution report
+        </Link>
+        .
+      </p>
     </div>
   );
 }

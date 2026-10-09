@@ -61,8 +61,9 @@ const HOMEPAGE = `
   </nav>
   <form action="/search" method="get" role="search"><input type="search" name="q"><button>Search</button></form>`;
 const FREEDOM = `<h1>Freedom Checking</h1><p>No minimum balance</p><p>Monthly service fee $5.00, waived with a $500 balance</p>
-  <p>Paper statement fee $2.00 per month</p><a href="/assets/files/IkShrDjx">Courtesy Pay Policy</a>`;
-const VALUE = `<h1>Value Checking</h1><p>Dividends paid monthly</p>`;
+  <p>Paper statement fee $2.00 per month</p><p>Debit card replacement fee $10.00</p><a href="/assets/files/IkShrDjx">Courtesy Pay Policy</a>`;
+// One fee line is not enough: such pages gave live fees 1 time in 10 on prod.
+const VALUE = `<h1>Value Checking</h1><p>Dividends paid monthly</p><p>Paper statement fee $2.00 per month</p>`;
 const SEARCH = `<ul><li><a href="/assets/files/IkShrDjx">Discretionary Courtesy Pay Policy</a></li></ul>`;
 const COURTESY_PAY = `<h1>Courtesy Pay</h1><p>NSF fee $25.00 per item</p><p>Overdraft fee $25.00 per item</p><p>Daily overdraft charge $5.00</p>`;
 
@@ -89,7 +90,7 @@ describe("Magellan companion finder", () => {
       expect.objectContaining({ url: "https://www.triangle.example/accounts/personal-checking/freedom-checking", kind: "account_page", role: "account_page", accountName: "Freedom Checking" }),
       expect.objectContaining({ url: "https://www.triangle.example/assets/files/IkShrDjx", kind: "fee_document", accountName: "Discretionary Courtesy Pay Policy" }),
     ]);
-    // Value Checking lists no fees; loans and business pages are never opened.
+    // Value Checking lists one fee, under the bar; loans and business pages are never opened.
     const opened = fetchImpl.mock.calls.map((call) => String(call[0]));
     expect(opened).toContain("https://www.triangle.example/accounts/personal-checking/value-checking");
     expect(opened.some((url) => url.includes("auto-loans") || url.includes("/business/"))).toBe(false);
@@ -106,6 +107,8 @@ describe("Magellan companion finder", () => {
     expect(db.mock.calls.some((call) => templateText(call[0]).includes("UPDATE institution_sources"))).toBe(false);
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("FROM published_fee_records"));
     expect(select).toContain(THIN_BANK_CATEGORY_LIMIT);
+    // Banks past the thin limit still qualify when a headline fee (maintenance, overdraft) is missing.
+    expect(templateText(select![0])).toMatch(/OR NOT has_monthly_fee\s+OR NOT has_overdraft/);
   });
 
   it("fills spare slots with hidden banks from any state, never the same bank twice", async () => {
@@ -294,5 +297,59 @@ describe("Magellan site search for fee schedules and agreements", () => {
     const searchRequests = fetchImpl.mock.calls.map((call) => String(call[0])).filter((url) => url.includes("/search?"));
     expect(searchRequests.length).toBeGreaterThan(1);
     expect(searchRequests.length).toBeLessThanOrEqual(MAX_SEARCH_PAGES_PER_BANK);
+  });
+});
+
+describe("companion links that are never fee documents", () => {
+  const site = new URL("https://bank.example");
+  const classify = (label: string, path: string) => classifyCompanionLink({ url: `https://bank.example${path}`, label } as never, site);
+
+  it("skips funds-availability notices, opt-in forms, Zelle terms, rates pages, calculators and join pages", () => {
+    expect(classify("Funds Availability", "/uploads/Funds-Availability-Disclosure.pdf")).toBeNull();
+    expect(classify("Overdraft Opt-In", "/uploads/Overdraft-Opt-InForm-5-14-20.pdf")).toBeNull();
+    expect(classify("Zelle terms", "/docs/zelle-consumer-terms.pdf")).toBeNull();
+    expect(classify("Savings Rates", "/Rates/Savings-Rates")).toBeNull();
+    expect(classify("Share & Deposit Account Rates", "/rates-fees/account-rates")).toBeNull();
+    expect(classify("Savings Calculators", "/Save-and-Spend/Savings-Calculators")).toBeNull();
+    expect(classify("The Credit Union Difference", "/savings/join/")).toBeNull();
+  });
+
+  it("still takes fee schedules and account pages", () => {
+    expect(classify("Fee Schedule", "/fee-schedule.pdf")?.kind).toBe("fee_document");
+    expect(classify("Free Checking", "/checking/free-checking")?.kind).toBe("account_page");
+  });
+});
+
+describe("market leaders without a live overdraft fee", () => {
+  it("searches up to two leaders from any state before the state's own banks", async () => {
+    const leader = { ...thinBank, id: 839, institution_name: "The Yellowstone Bank", state_code: "MT" };
+    const queries: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      queries.push({ text, values });
+      if (text.includes("AS companion_ready")) return Promise.resolve([{ companion_ready: true }]);
+      if (text.includes("FROM published_fee_records")) {
+        const leaderOnly = values.some((value) => Array.isArray(value) && value.length === 2 && value.includes(839));
+        return Promise.resolve(leaderOnly ? [leader] : [thinBank]);
+      }
+      return Promise.resolve([]);
+    });
+    const result = await runSecondDocumentFind({
+      db: asDb(db),
+      fetchImpl: vi.fn(async () => notFound()),
+      runId: 5,
+      stateCode: "MS",
+      deadline: Date.now() + 60_000,
+      learning: true,
+      dryRun: true,
+      hiddenTopUp: false,
+      leaderIds: [839, 1],
+    });
+    expect(result.results.map((row) => row.institutionId)).toEqual([839, 5829]);
+    const thinQueries = queries.filter((query) => query.text.includes("FROM published_fee_records"));
+    expect(thinQueries[0].text).toContain("NOT has_overdraft");
+    expect(thinQueries[0].values).toContain(2);
+    // The state's own query leaves out the leader already taken.
+    expect(thinQueries[1].values).toContainEqual([839]);
   });
 });

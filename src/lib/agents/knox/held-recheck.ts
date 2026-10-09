@@ -1,8 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
-import { extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
+import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
-import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
+import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
@@ -18,8 +18,15 @@ type SqlTag = typeof sql;
  * category and goes to Darwin; the rest are marked with the rules version so they are not
  * re-read until the rules change again. Only lines from the document's current text are
  * re-read; lines from a replaced text stay held.
+ *
+ * v34: a line held as a range that says the bank changed a price ("We've lowered Overdraft
+ * Paid Item fees from $38 to $30", Pinnacle) is re-read too, since today's rules read the
+ * later figure as the price. It is promoted only when that price is the row's stored
+ * amount (the range's lower end), so a raised price ("increased from $4 to $5") stays held.
  */
 export const HELD_RECHECK_DEFAULT_LIMIT = 300;
+/** Range lines worth re-reading: those that say a price was changed (see `FEE_CHANGED_FROM` in rules.ts). */
+export const CHANGED_PRICE_RANGE_SQL = String.raw`\m(lowered|reduced|decreased|raised|increased|changed)\M[^$]{0,120}\mfrom\s*\$`;
 export const HELD_RECHECK_PROMOTED_FLAG = "knox_promoted_from_held";
 /**
  * A line still uncategorized after this many rules versions is set aside: flagged
@@ -141,10 +148,20 @@ export function recategorizeHeld(row: HeldRow): ExtractedFeeCandidate | null {
 export function promotedConditions(conditions: string, candidate: ExtractedFeeCandidate): string {
   return conditions
     .replace(
-      /^Knox held for review \(unclassified\)/,
+      /^Knox held for review \((?:unclassified|range)\)/,
       `Knox ${KNOX_RULES_STRATEGY.strategy} v${KNOX_RULES_STRATEGY.version} categorized a line held for review`,
     )
     .replace(/canonical_hint=none;/, `canonical_hint=${candidate.canonicalHint};`);
+}
+
+/**
+ * v34: the held row keeps its name when that name already says the category; a name
+ * that does not ("You still pay", Park National) takes the one today's rules read from
+ * the same excerpt, so Darwin's category guard can check it.
+ */
+export function promotedName(row: HeldRow, candidate: ExtractedFeeCandidate): string {
+  const name = row.fee_name?.trim();
+  return name && classifyFeeText(name) === candidate.canonicalHint ? name : candidate.feeName;
 }
 
 export async function recheckHeldRows(
@@ -168,7 +185,8 @@ export async function recheckHeldRows(
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
-       AND fr.outlier_flags ? 'knox_review:unclassified'
+       AND (fr.outlier_flags ? 'knox_review:unclassified'
+            OR (fr.outlier_flags ? 'knox_review:range' AND fr.conditions ~* ${CHANGED_PRICE_RANGE_SQL}))
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT fr.outlier_flags ? ${recheckFlag}
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
@@ -181,7 +199,9 @@ export async function recheckHeldRows(
             AND adt.text_hash IS NOT NULL
             AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
        )
-     ORDER BY fr.fee_raw_id
+     -- $10B+ banks first, as Knox's re-reads go: a full pass over every held line takes
+     -- about 12 hours at 300 a step, and the largest banks' gaps show most.
+     ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, fr.fee_raw_id
      LIMIT ${limit}
   `;
 
@@ -206,17 +226,32 @@ export async function recheckHeldRows(
       if (candidate.waivable) flags.push("waivable");
       const updated = await db`
         UPDATE raw_fee_observations fr
-           SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
+           SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:range')
                                || ${JSON.stringify(flags)}::jsonb,
                conditions = ${promotedConditions(row.conditions ?? "", candidate)},
                extraction_confidence = ${candidate.confidence},
-               frequency = COALESCE(fr.frequency, ${candidate.frequency})
+               frequency = COALESCE(fr.frequency, ${candidate.frequency}),
+               fee_name = ${promotedName(row, candidate)}
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
-           AND fr.outlier_flags ? 'knox_review:unclassified'
+           AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:range')
            AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+           -- The dedupe index is (document, name, amount): a held "Stop Payment (each)" renamed
+           -- "Stop Payment" beside the same page's "Stop Payment" row is that fee already, and
+           -- renaming it failed the whole extract step (Guaranty Bank and Trust, Oct 8).
+           AND NOT EXISTS (
+             SELECT 1 FROM raw_fee_observations other
+              WHERE other.source = 'knox'
+                AND other.source_document_id = fr.source_document_id
+                AND lower(other.fee_name) = lower(${promotedName(row, candidate)})
+                AND COALESCE(other.amount, -1) = COALESCE(fr.amount, -1)
+                AND other.fee_raw_id <> fr.fee_raw_id
+           )
         RETURNING fr.fee_raw_id
       `;
-      if (updated.length === 0) continue;
+      if (updated.length === 0) {
+        stillHeldIds.push(Number(row.fee_raw_id));
+        continue;
+      }
     }
     promoted += 1;
     promotedByCategory[candidate.canonicalHint] = (promotedByCategory[candidate.canonicalHint] ?? 0) + 1;
@@ -252,6 +287,146 @@ export async function recheckHeldRows(
     promotedByCategory,
     dryRun,
   };
+}
+
+/**
+ * A rules fix can take back a category an earlier version gave a held line (v30: "Phone Call
+ * Collection Fee" is debt collection, not a check sent for collection). Each pass re-reads
+ * the lines Knox promoted from held that Darwin has not verified yet. A line today's rules
+ * no longer price under the same category goes back on hold: it leaves Darwin's queue, gets
+ * `knox_promotion_withdrawn:vN`, and the decision is logged as `wrong`. The row is kept and
+ * the held re-check reads it again when the rules change. Lines that keep their category are
+ * marked checked for this version. Rate fees are left to the rate rules. Rows Darwin already verified are left to Hamilton's rules
+ * re-check (`hamilton/rules-recheck.ts`), which takes live fees down the same way.
+ */
+export const PROMOTION_RECHECK_LIMIT = 500;
+
+export function promotionCheckedFlag(version: number = KNOX_RULES_STRATEGY.version): string {
+  return `knox_promotion_checked:${KNOX_RULES_STRATEGY.strategy}:v${version}`;
+}
+
+export function promotionWithdrawnFlag(version: number = KNOX_RULES_STRATEGY.version): string {
+  return `knox_promotion_withdrawn:${KNOX_RULES_STRATEGY.strategy}:v${version}`;
+}
+
+/** The category Knox gave a promoted line (`canonical_hint:X`), or null. */
+export function promotedHint(row: HeldRow): string | null {
+  const flag = flagList(row.outlier_flags).find((value) => value.startsWith("canonical_hint:"));
+  return flag ? flag.slice("canonical_hint:".length) : null;
+}
+
+/** A promoted line's audit text put back as a held line's. */
+export function heldConditions(conditions: string): string {
+  return conditions
+    .replace(/^Knox \S+ v\d+ categorized a line held for review/, "Knox held for review (unclassified)")
+    .replace(/canonical_hint=[a-z_]+;/, "canonical_hint=none;");
+}
+
+export interface PromotionRecheckResult {
+  checked: number;
+  withdrawn: number;
+  /** Category -> lines taken back from it in this pass. */
+  withdrawnByCategory: Record<string, number>;
+  logged: number;
+  dryRun: boolean;
+}
+
+export async function recheckPromotedRows(
+  db: SqlTag,
+  options: { limit?: number; dryRun?: boolean; institutionId?: number | null; runId?: number | null } = {},
+): Promise<PromotionRecheckResult> {
+  const limit = Math.max(1, Math.min(Number(options.limit) || PROMOTION_RECHECK_LIMIT, 2000));
+  const dryRun = Boolean(options.dryRun);
+  const checkedFlag = promotionCheckedFlag();
+  const institutionId = options.institutionId ?? null;
+  const rows = await db<HeldRow[]>`
+    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+           fr.fee_name, fr.outlier_flags
+      FROM raw_fee_observations fr
+     WHERE fr.source = 'knox'
+       AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
+       AND NOT fr.outlier_flags ? ${checkedFlag}
+       -- Rate fees (recheckHeldRates) have no dollar amount; the rate rules judge them.
+       AND NOT fr.outlier_flags ? ${KNOX_RATE_FEE_FLAG}
+       AND fr.amount IS NOT NULL
+       AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+       AND NOT EXISTS (
+         SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
+       )
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+  `;
+
+  const keptIds: number[] = [];
+  const withdrawnByCategory: Record<string, number> = {};
+  const decisions: FeedbackRow[] = [];
+  let withdrawn = 0;
+  for (const row of rows) {
+    const hint = promotedHint(row);
+    const candidate = recategorizeHeld(row);
+    if (!hint || candidate?.canonicalHint === hint) {
+      keptIds.push(Number(row.fee_raw_id));
+      continue;
+    }
+    if (!dryRun) {
+      const updated = await db`
+        UPDATE raw_fee_observations fr
+           SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb)
+                                 - 'needs_darwin_verification'
+                                 - ${`canonical_hint:${hint}`}
+                                 - ${HELD_RECHECK_PROMOTED_FLAG})
+                               || ${JSON.stringify(["knox_review:unclassified", heldRecheckFlag(), promotionWithdrawnFlag()])}::jsonb,
+               conditions = ${heldConditions(row.conditions ?? "")}
+         WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
+           AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
+           AND NOT EXISTS (
+             SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
+           )
+        RETURNING fr.fee_raw_id
+      `;
+      if (updated.length === 0) continue;
+    }
+    withdrawn += 1;
+    withdrawnByCategory[hint] = (withdrawnByCategory[hint] ?? 0) + 1;
+    decisions.push({
+      aboutStage: "extract",
+      aboutStrategy: KNOX_RULES_STRATEGY.strategy,
+      aboutVersion: KNOX_RULES_STRATEGY.version,
+      signal: "wrong",
+      kind: "promotion_withdrawn",
+      reportedBy: "knox",
+      checkName: "knox.promotion_recheck",
+      institutionId: row.institution_id == null ? null : Number(row.institution_id),
+      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+      feeRawId: Number(row.fee_raw_id),
+      canonicalFeeKey: hint,
+      amount: row.amount == null ? null : Number(row.amount),
+      weight: 1,
+      evidence: {
+        fee_name: row.fee_name ?? null,
+        excerpt: heldExcerpt(row.conditions),
+        withdrawn_from: hint,
+        read_today_as: candidate?.canonicalHint ?? null,
+      },
+      runId: options.runId ?? null,
+      // Its own key, so the promotion's log row stays as history.
+      dedupeKey: `knox.held_withdrawn:raw:${Number(row.fee_raw_id)}`,
+    });
+  }
+
+  if (!dryRun && keptIds.length > 0) {
+    await db`
+      UPDATE raw_fee_observations
+         SET outlier_flags = COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([checkedFlag])}::jsonb
+       WHERE fee_raw_id = ANY(${keptIds}::bigint[])
+         AND NOT outlier_flags ? ${checkedFlag}
+    `;
+  }
+  let logged = 0;
+  if (!dryRun && decisions.length > 0 && (await feedbackSchemaReady(db))) {
+    logged = await recordFeedback(db, decisions);
+  }
+  return { checked: rows.length, withdrawn, withdrawnByCategory, logged, dryRun };
 }
 
 /**

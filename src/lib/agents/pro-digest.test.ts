@@ -2,11 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   sql: vi.fn(),
+  withConfirmedMovements: vi.fn(),
   sendResendEmail: vi.fn(),
   getTransactionalFromAddress: vi.fn(() => "digest@feeinsight.com"),
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
+// The same-page check has its own tests; here every movement passes unless a test says not.
+vi.mock("./fee-movement-check", async () => {
+  const actual = await vi.importActual<typeof import("./fee-movement-check")>("./fee-movement-check");
+  return { ...actual, withConfirmedMovements: mocks.withConfirmedMovements };
+});
 vi.mock("@/lib/email/resend", async () => {
   const actual = await vi.importActual<typeof import("@/lib/email/resend")>("@/lib/email/resend");
   return {
@@ -30,6 +36,7 @@ import {
   type DigestReaderRow,
   type ProDigest,
 } from "./pro-digest";
+import { markConfirmedMovements } from "./fee-movement-check";
 
 function readerRow(overrides: Partial<DigestReaderRow> = {}): DigestReaderRow {
   return {
@@ -90,6 +97,13 @@ describe("netMarketMoves", () => {
     expect(moves).toEqual([
       expect.objectContaining({ institutionId: 5, category: "overdraft", previousAmount: 30, newAmount: 33 }),
     ]);
+  });
+
+  it("drops a movement marked as not a price change", () => {
+    const moves = netMarketMoves([
+      signal(5, "Lone Star CU", "TX", 11, "2026-10-08T00:00:00Z", [{ ...od(30, 35), confirmed: false }]),
+    ]);
+    expect(moves).toEqual([]);
   });
 });
 
@@ -192,6 +206,8 @@ describe("runProDigest", () => {
     mocks.sql.mockReset();
     mocks.sendResendEmail.mockReset();
     mocks.getTransactionalFromAddress.mockReturnValue("digest@feeinsight.com");
+    mocks.withConfirmedMovements.mockReset();
+    mocks.withConfirmedMovements.mockImplementation(async (rows: unknown[]) => rows);
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -224,6 +240,35 @@ describe("runProDigest", () => {
     expect(message.headers["List-Unsubscribe"]).toContain("action=pro_digest_unsubscribe");
     expect(message.subject).toBe("This week: Home Bank's position moved on 1 fee(s)");
     expect(message.text).toContain("Gulf Bank, overdraft: $28.00 to $25.00 ($3.00 lower)");
+  });
+
+  const unchangedWeek = { stateCode: "TX", own: { institutionId: 1, positions: { overdraft: { amount: 30, lower: 1, of: 3 } } }, watched: {} };
+
+  it("leaves out market moves the same-page check did not confirm", async () => {
+    install({ snapshot: unchangedWeek });
+    mocks.withConfirmedMovements.mockImplementation(async (rows: Array<{ source_json: unknown }>) =>
+      markConfirmedMovements(rows, new Set()),
+    );
+    const result = await runProDigest({ now, dryRun: true });
+    expect(result).toMatchObject({ withNews: 0, quiet: 1 });
+  });
+
+  it("opens a reader's first digest with where their institution stands", async () => {
+    install();
+    mocks.withConfirmedMovements.mockImplementation(async (rows: Array<{ source_json: unknown }>) =>
+      markConfirmedMovements(rows, new Set()),
+    );
+    const result = await runProDigest({ now });
+    expect(result).toMatchObject({ withNews: 1, held: true, sent: 0 });
+    expect(result.previews[0].subject).toBe("This week: where Home Bank stands on 1 fee(s) in Texas");
+    expect(result.previews[0].text).toContain("Where Home Bank stands among Texas institutions");
+    expect(result.previews[0].text).toContain("$30.00: 1 of 3 institutions charge less.");
+  });
+
+  it("drops the standing section once there is a week to compare against", async () => {
+    install({ snapshot: unchangedWeek });
+    const result = await runProDigest({ now });
+    expect(result.previews[0].text).not.toContain("stands among");
   });
 
   it("skips a reader with nothing new", async () => {

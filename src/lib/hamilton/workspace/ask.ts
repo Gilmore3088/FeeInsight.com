@@ -50,7 +50,7 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   wire_domestic_incoming: ["incoming wire"],
   wire_intl_outgoing: ["international wire", "foreign wire"],
   stop_payment: ["stop payment"],
-  card_foreign_txn: ["foreign transaction"],
+  card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
   cashiers_check: ["cashier's check", "cashiers check", "official check"],
   paper_statement: ["paper statement"],
 };
@@ -97,6 +97,8 @@ export interface AskIntent {
   focus: ExhibitFocus;
   /** The question is about caps, transfers or how the fee is charged, not only its price. */
   structure?: boolean;
+  /** The question asks about rules, regulators or compliance. */
+  regulation?: boolean;
 }
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
@@ -111,6 +113,9 @@ export function pricesIn(question: string): number[] {
   return out.slice(0, MAX_TESTED_PRICES);
 }
 
+/** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
+const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
+
 export function parseAsk(question: string, fallbackCategory: string | null = null): AskIntent {
   const segment = parseSegment(question);
   return {
@@ -121,6 +126,7 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
     wantsOpinion: OPINION.test(question),
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
+    regulation: REGULATION_QUESTION.test(question),
   };
 }
 
@@ -398,7 +404,7 @@ function respond(input: AskInput): AskResponse {
 
   const answer = buildFeeAnswer(research, {
     focus: intent.focus,
-    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure },
+    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure, regulation: intent.regulation },
   });
   const section = intent.focus === "competitors" ? "competitors" : intent.focus === "trend" ? "economy" : "position";
   return {

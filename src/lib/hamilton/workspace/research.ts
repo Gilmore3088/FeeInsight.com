@@ -18,25 +18,37 @@ import {
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
+import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { stateFeeLawsFor } from "@/lib/regulatory/state-fee-laws";
-import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getComplaintBenchmark, getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getAccountLineups, summarizeLineup, type LineupAccount } from "@/lib/data-store/account-lineup";
+import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
-import { ASSET_TIER_RANGES, buildInstitutionPeerFilterCandidates, describePeerFilters, type HamiltonPeerFilters } from "../peer-index";
+import {
+  ASSET_TIER_RANGES,
+  buildInstitutionPeerFilterCandidates,
+  describePeerFilters,
+  peerSetCandidate,
+  type ActivePeerSet,
+  type HamiltonPeerFilters,
+} from "../peer-index";
 import { economicBackdrop } from "./economy";
 import { feeRegulatoryNews, feeRules, marketLayer, ruleChangeObservations, type RegArticleRow } from "./context";
 import {
   competitorMoveObservations,
   feePositionRows,
   marketPositionObservations,
+  MAX_OBSERVATIONS,
   rankObservations,
   revenueShiftObservation,
   type FeeChangeInput,
 } from "./observations";
+import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
 import { buildSegmentResearch } from "./segment";
@@ -49,6 +61,7 @@ import {
   type ChangeEvent,
   type Fact,
   type FeeResearch,
+  type AccountLineupSet,
   type FeeStructureSet,
   type InstitutionFinancials,
   type LocalMarketInfo,
@@ -106,19 +119,26 @@ function peerLabel(filters: HamiltonPeerFilters): string {
 /**
  * Peers per fee: the first of the institution's default peer groups (state, charter, size
  * and district, then progressively wider, then national) where at least
- * MIN_PEERS_FOR_POSITION other institutions publish that fee.
+ * MIN_PEERS_FOR_POSITION other institutions publish that fee. With `activeFirst`, the first
+ * candidate is the bank's own peer group from Settings; a fee it is too thin for widens to
+ * the next group, and the label says how many the bank's group had.
  */
 export function choosePeers(
   candidates: HamiltonPeerFilters[],
   valuesBySet: Map<string, PeerFeeValue[]>[],
   categories: string[],
+  options: { activeFirst?: boolean } = {},
 ): Map<string, CategoryPeers> {
   const chosen = new Map<string, CategoryPeers>();
   for (const category of categories) {
     for (const [index, filters] of candidates.entries()) {
       const values = valuesBySet[index]?.get(category) ?? [];
       if (values.length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
-        chosen.set(category, { label: peerLabel(filters), values });
+        const ownCount = valuesBySet[0]?.get(category)?.length ?? 0;
+        const label = options.activeFirst && index > 0
+          ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
+          : peerLabel(filters);
+        chosen.set(category, { label, values });
         break;
       }
     }
@@ -164,12 +184,26 @@ export function marketLayerSets(institution: {
   return sets;
 }
 
-async function loadBase(institutionId: number, categories?: string[]): Promise<WorkspaceBase | null> {
+/** Options every engine entry point takes: the bank's own peer group from Settings, when it set one. */
+export interface EnginePeerOptions {
+  peerSet?: Pick<ActivePeerSet, "filters" | "label"> | null;
+}
+
+async function loadBase(
+  institutionId: number,
+  categories?: string[],
+  options: EnginePeerOptions = {},
+): Promise<WorkspaceBase | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
   const ownValues = await getInstitutionFeeValues(institutionId, categories);
   const wanted = categories ?? [...ownValues.keys()];
-  const candidates: HamiltonPeerFilters[] = [...buildInstitutionPeerFilterCandidates(institution), {}];
+  const activeFirst = Boolean(options.peerSet);
+  const candidates: HamiltonPeerFilters[] = [
+    ...(options.peerSet ? [peerSetCandidate(options.peerSet)] : []),
+    ...buildInstitutionPeerFilterCandidates(institution),
+    {},
+  ];
   const layerSets = marketLayerSets(institution);
   // One read for the peer candidates and the layers; national is already the last candidate.
   const extra = layerSets.filter((l) => l.scope !== "national");
@@ -189,7 +223,7 @@ async function loadBase(institutionId: number, categories?: string[]): Promise<W
     ],
     peerLabel: peerLabel(candidates[0]),
     ownValues,
-    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted),
+    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, { activeFirst }),
   };
 }
 
@@ -276,6 +310,56 @@ async function loadServiceChargeRows(institutionId: number): Promise<ServiceChar
   }));
 }
 
+/** The current fee dependence study's yearly median and middle half, per charter; empty before its first run. */
+export async function loadDependenceSeries(): Promise<Record<string, DependenceYear[]>> {
+  try {
+    const [row] = await sql`
+      SELECT findings->'series' AS series FROM hamilton_studies WHERE study_key = 'fee_dependence' AND is_current`;
+    const series = row?.series && typeof row.series === "object" ? (row.series as Record<string, unknown[]>) : {};
+    return Object.fromEntries(
+      Object.entries(series).map(([charter, points]) => [
+        charter,
+        (Array.isArray(points) ? points : []).map((p) => {
+          const v = p as Record<string, unknown>;
+          return { year: Number(v.year), median: Number(v.median), p25: Number(v.p25), p75: Number(v.p75) };
+        }),
+      ]),
+    );
+  } catch (error) {
+    console.error("[workspace] dependence series failed", error);
+    return {};
+  }
+}
+
+/** The institution's placements in Hamilton's current studies; none before the first studies run. */
+export async function loadStudyPlacements(institutionId: number): Promise<StudyPlacementRow[]> {
+  try {
+    const rows = await sql`
+      SELECT s.study_key, s.title, s.as_of, s.n, s.findings->>'headline' AS study_headline,
+             p.metric, p.value, p.peer_group, p.peer_n, p.peer_median, p.percentile, p.detail
+        FROM hamilton_study_placements p
+        JOIN hamilton_studies s ON s.id = p.study_id AND s.is_current
+       WHERE p.institution_id = ${institutionId}`;
+    return rows.map((r) => ({
+      studyKey: String(r.study_key),
+      title: String(r.title),
+      asOf: String(r.as_of),
+      studyN: Number(r.n),
+      studyHeadline: r.study_headline == null ? null : String(r.study_headline),
+      metric: String(r.metric),
+      value: numOrNull(r.value),
+      peerGroup: String(r.peer_group),
+      peerN: Number(r.peer_n),
+      peerMedian: numOrNull(r.peer_median),
+      percentile: numOrNull(r.percentile),
+      detail: r.detail && typeof r.detail === "object" ? (r.detail as Record<string, unknown>) : {},
+    }));
+  } catch (error) {
+    console.error("[workspace] study placements failed", error);
+    return [];
+  }
+}
+
 /** Regulator releases (FDIC, Fed, OCC, CFPB) published in the window, newest first. */
 async function loadRegArticles(days: number, now = new Date()): Promise<RegArticleRow[]> {
   try {
@@ -283,6 +367,7 @@ async function loadRegArticles(days: number, now = new Date()): Promise<RegArtic
       SELECT source, title, link, topic, published_at
         FROM reg_articles
        WHERE published_at >= ${sinceDate(days, now)}
+         AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
        ORDER BY published_at DESC
        LIMIT 300`;
     return rows.map((r) => ({
@@ -372,14 +457,19 @@ export function localMarketView(
   return { layer, competitors, info };
 }
 
-export async function getWorkspaceBriefing(institutionId: number, now = new Date()): Promise<Briefing | null> {
-  const base = await loadBase(institutionId);
+export async function getWorkspaceBriefing(
+  institutionId: number,
+  now = new Date(),
+  options: EnginePeerOptions = {},
+): Promise<Briefing | null> {
+  const base = await loadBase(institutionId, undefined, options);
   if (!base) return null;
-  const [changes, financialRows, articles, nationalIncomeSeries] = await Promise.all([
+  const [changes, financialRows, articles, nationalIncomeSeries, studyRows] = await Promise.all([
     loadStateChanges(base.stateCode),
     loadServiceChargeRows(institutionId),
     loadRegArticles(RULE_CHANGE_WINDOW_DAYS, now),
     loadNationalIncomeSeries(),
+    loadStudyPlacements(institutionId),
   ]);
   const nationalIncome = nationalIncomeSeries[0] ?? null;
   const positions = [...base.ownValues].map(([feeCategory, current]) => {
@@ -396,12 +486,18 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
   const shift = revenueShiftObservation(trend);
   const bankCategories = new Set(base.ownValues.keys());
   const rules = ruleChangeObservations(articles, bankCategories);
-  const observations = rankObservations([
-    ...marketPositionObservations(positions),
-    ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "your state"),
-    ...(shift ? [shift] : []),
-    ...rules,
-  ]);
+  const studies = studyObservations(studyRows);
+  const observations = withStudyPlace(
+    rankObservations([
+      ...marketPositionObservations(positions),
+      ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "your state"),
+      ...(shift ? [shift] : []),
+      ...rules,
+      ...studies,
+    ]),
+    studies,
+    MAX_OBSERVATIONS,
+  );
   return {
     institutionId,
     institutionName: base.institutionName,
@@ -429,6 +525,7 @@ export async function getWorkspaceBriefing(institutionId: number, now = new Date
         ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(nationalIncome ? [nationalIncome.sourceRef] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${RULE_CHANGE_WINDOW_DAYS} days`, table: "reg_articles" },
+        ...(studyRows.length ? [{ label: "Hamilton studies (call reports, branch deposits, household income, published fees)", table: "hamilton_studies" }] : []),
       ],
       assumptions: [
         `Each fee is compared with the narrowest default peer group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish it, widening to national.`,
@@ -461,7 +558,8 @@ export async function loadEconomy(stateCode: string | null, district: number | n
 }
 
 /** The daily cap category that goes with a per-item fee, when there is one. */
-const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "nsf_daily_cap" };
+// One daily cap covers overdraft and NSF since the top-50 fold (James, Oct 8).
+const DAILY_CAP: Record<string, string> = { overdraft: "od_daily_cap", nsf: "od_daily_cap" };
 
 async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: AskSegment): Promise<SegmentResearch> {
   const current = base.ownValues.get(feeCategory) ?? null;
@@ -528,7 +626,39 @@ async function loadStructure(
   }
 }
 
-const RATE_SOURCE_LABEL = "Fees stated as a rate on each institution's own published schedule (verified, live)";
+const LINEUP_SOURCE: SourceRef = {
+  label: "Monthly maintenance fees on each institution's own published schedule, with the account each one belongs to (verified, live)",
+  table: "published_fee_catalog",
+};
+
+/** Monthly maintenance only: the bank's account lineup beside each group member's. */
+async function loadLineup(
+  base: WorkspaceBase,
+  group: { label: string; members: { institutionId: number; institutionName: string }[] },
+): Promise<AccountLineupSet | null> {
+  try {
+    const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
+    const accounts = await getAccountLineups(ids);
+    const byInstitution = new Map<number, LineupAccount[]>();
+    for (const account of accounts) {
+      byInstitution.set(account.institutionId, [...(byInstitution.get(account.institutionId) ?? []), account]);
+    }
+    const ownAccounts = byInstitution.get(base.institutionId) ?? [];
+    if (ownAccounts.length === 0) return null;
+    const rows = [
+      { institutionId: base.institutionId, name: base.institutionName, own: true, summary: summarizeLineup(ownAccounts) },
+      ...group.members
+        .filter((m) => m.institutionId !== base.institutionId && byInstitution.has(m.institutionId))
+        .map((m) => ({ institutionId: m.institutionId, name: m.institutionName, own: false, summary: summarizeLineup(byInstitution.get(m.institutionId)!) })),
+    ];
+    return { groupLabel: group.label, rows, ownAccounts: [...ownAccounts].sort((a, b) => a.monthlyFee - b.monthlyFee), source: LINEUP_SOURCE };
+  } catch (error) {
+    console.error("[hamilton-research] lineup read failed", { error });
+    return null;
+  }
+}
+
+const RATE_SOURCE_LABEL ="Fees stated as a rate on each institution's own published schedule (verified, live)";
 
 /**
  * The fee where it is stated as a rate, for the fees that may publish as one. Rates are read
@@ -565,11 +695,11 @@ export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
   now = new Date(),
-  options: { segment?: AskSegment | null } = {},
+  options: { segment?: AskSegment | null } & EnginePeerOptions = {},
 ): Promise<FeeResearch | null> {
-  const base = await loadBase(institutionId, [feeCategory]);
+  const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
@@ -581,6 +711,7 @@ export async function getFeeResearch(
     loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),
     getInstitutionRegulators(institutionId).catch(() => null),
     getInstitutionComplaintYears(institutionId).catch(() => []),
+    getComplaintBenchmark(institutionId).catch(() => null),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
@@ -598,6 +729,7 @@ export async function getFeeResearch(
         ? { label: "competitors in your market", members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
   const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
+  const lineup = feeCategory === LINEUP_CATEGORY ? await loadLineup(base, structureGroup) : null;
   const changeEvents: ChangeEvent[] = changes.map((c) => ({
     date: c.changedAt.slice(0, 10),
     institutionName: c.institutionName,
@@ -646,6 +778,8 @@ export async function getFeeResearch(
           charterType: base.charterType,
           charterAgency: regulators?.charterAgency,
         }),
+        complaintBenchmark,
+        readOn: now.toISOString().slice(0, 10),
       }),
       ...feeRules(feeCategory, base.charterType),
       ...feeRegulatoryNews(articles, feeCategory),
@@ -654,6 +788,7 @@ export async function getFeeResearch(
     segment,
     changeEvents,
     structure,
+    lineup,
     rates,
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
@@ -676,6 +811,7 @@ export async function getFeeResearch(
         ...(economy?.beigeBook ? [economy.beigeBook.source] : []),
         ...(segment ? [segment.source] : []),
         ...(rates ? [rates.source] : []),
+        ...(lineup ? [lineup.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
       ],
       assumptions: [

@@ -10,9 +10,10 @@ import { getStatesWithFeeData } from "@/lib/data-store";
 import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
+import { Figure, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
 
 export const metadata: Metadata = {
-  title: "Data Explorer",
+  title: "Institutions",
 };
 
 interface PageProps {
@@ -43,7 +44,8 @@ export default async function ProDataPage({ searchParams }: PageProps) {
   const query = params.q || "";
   const stateCode = params.state || "";
   const charterType = params.charter || "";
-  const page = parseInt(params.page || "1", 10);
+  // A bad ?page= (letters, 0, negative) opens page 1 rather than an empty NaN page.
+  const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
   const pageSize = 50;
 
   const stats = await getPublicStats();
@@ -65,7 +67,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
         day: "numeric",
         year: "numeric",
       })
-    : "---";
+    : "Not recorded";
 
   function buildUrl(overrides: Record<string, string>) {
     const p = new URLSearchParams();
@@ -76,253 +78,206 @@ export default async function ProDataPage({ searchParams }: PageProps) {
     return `/pro/data?${p.toString()}`;
   }
 
+  const fieldClass =
+    "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra";
+  const pagerClass =
+    "rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 no-underline hover:border-warm-500";
+  const filtered = Boolean(query || stateCode || charterType);
+
   return (
-    <div>
-    <div className="mx-auto max-w-7xl px-6 py-14">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-terra/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-terra/60">
-          Data Explorer
-        </span>
+    <MemoPage>
+      <MemoHeader
+        kicker="Reference"
+        title="Institutions"
+        dek={
+          <>
+            Find any bank or credit union. {stats.total_institutions.toLocaleString()} institutions have{" "}
+            {stats.total_observations.toLocaleString()} verified, published fees in the Bank Fee Index.
+            Open any one to see its fees beside its peers.
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-x-6 gap-y-5 border-b border-warm-200 pb-6 sm:grid-cols-4">
+        <Figure label="Institutions" value={stats.total_institutions.toLocaleString()} note="with published fees" />
+        <Figure label="Published fees" value={stats.total_observations.toLocaleString()} />
+        <Figure label="States" value={String(statesData.length)} note={`${stats.total_categories} fee categories`} />
+        <Figure label="Last schedule checked" value={lastUpdated} />
       </div>
 
-      <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-warm-900"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+      <form
+        className="grid gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+        action="/pro/data"
+        method="get"
       >
-        Institution Database
-      </h1>
-      <p className="mt-2 text-[14px] text-warm-600">
-        Browse the complete Bank Fee Index dataset. {stats.total_institutions.toLocaleString()} institutions
-        with {stats.total_observations.toLocaleString()} fee observations across {TAXONOMY_COUNT} categories.
-        <span className="ml-2 text-warm-500">Updated {lastUpdated}</span>
-      </p>
-
-      {/* Stat cards */}
-      <div className="mt-6 grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {[
-          { label: "Institutions", value: stats.total_institutions.toLocaleString() },
-          { label: "Observations", value: stats.total_observations.toLocaleString() },
-          { label: "States", value: String(statesData.length) },
-          { label: "Fee Categories", value: String(stats.total_categories) },
-          { label: "Showing", value: `${results.total.toLocaleString()} results` },
-        ].map((card) => (
-          <div
-            key={card.label}
-            className="rounded-xl border border-warm-200/80 bg-white/70 backdrop-blur-sm px-4 py-3"
-          >
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-              {card.label}
-            </p>
-            <p
-              className="mt-1 text-[18px] font-light tabular-nums text-warm-900"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-            >
-              {card.value}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter bar */}
-      <form className="mt-6 flex flex-wrap items-center gap-3" action="/pro/data" method="get">
-        <div className="relative flex-1 min-w-[200px]">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-warm-500"
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.35-4.35" />
-          </svg>
-          <label htmlFor="pro-data-q" className="sr-only">Search institutions by name</label>
+        <label htmlFor="pro-data-q" className="flex flex-col gap-1 text-sm text-warm-800">
+          Name
           <input
             id="pro-data-q"
             type="text"
             name="q"
             defaultValue={query}
-            placeholder="Search by name..."
-            className="w-full rounded-xl border border-warm-200 bg-white pl-10 pr-4 py-2.5 text-[13px] text-warm-900 placeholder:text-warm-500 focus:outline-none focus:ring-2 focus:ring-terra/30 focus:border-transparent"
+            placeholder="For example, First National"
+            className={fieldClass}
           />
-        </div>
-
-        <label htmlFor="pro-data-state" className="sr-only">Filter by state</label>
-        <select
-          id="pro-data-state"
-          name="state"
-          defaultValue={stateCode}
-          className="rounded-xl border border-warm-200 bg-white px-3 py-2.5 text-[13px] text-warm-900 focus:outline-none focus:ring-2 focus:ring-terra/30"
-        >
-          <option value="">All States</option>
-          {Object.entries(STATE_NAMES)
-            .sort(([, a], [, b]) => a.localeCompare(b))
-            .map(([code, name]) => (
-              <option key={code} value={code}>{name}</option>
-            ))}
-        </select>
-
-        <label htmlFor="pro-data-charter" className="sr-only">Filter by charter type</label>
-        <select
-          id="pro-data-charter"
-          name="charter"
-          defaultValue={charterType}
-          className="rounded-xl border border-warm-200 bg-white px-3 py-2.5 text-[13px] text-warm-900 focus:outline-none focus:ring-2 focus:ring-terra/30"
-        >
-          <option value="">All Charters</option>
-          <option value="bank">Banks</option>
-          <option value="credit_union">Credit Unions</option>
-        </select>
-
-        <button
-          type="submit"
-          className="rounded-xl bg-terra px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-terra-dark transition-colors"
-        >
-          Filter
-        </button>
-
-        {(query || stateCode || charterType) && (
-          <Link
-            href="/pro/data"
-            className="text-[12px] text-warm-500 hover:text-terra transition-colors"
+        </label>
+        <label htmlFor="pro-data-state" className="flex flex-col gap-1 text-sm text-warm-800">
+          State
+          <select id="pro-data-state" name="state" defaultValue={stateCode} className={fieldClass}>
+            <option value="">All states</option>
+            {Object.entries(STATE_NAMES)
+              .sort(([, a], [, b]) => a.localeCompare(b))
+              .map(([code, name]) => (
+                <option key={code} value={code}>{name}</option>
+              ))}
+          </select>
+        </label>
+        <label htmlFor="pro-data-charter" className="flex flex-col gap-1 text-sm text-warm-800">
+          Charter
+          <select id="pro-data-charter" name="charter" defaultValue={charterType} className={fieldClass}>
+            <option value="">Banks and credit unions</option>
+            <option value="bank">Banks</option>
+            <option value="credit_union">Credit unions</option>
+          </select>
+        </label>
+        <div className="flex items-end gap-3">
+          <button
+            type="submit"
+            className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark"
           >
-            Clear
-          </Link>
-        )}
+            Search
+          </button>
+          {filtered && (
+            <Link
+              href="/pro/data"
+              className="py-2 text-sm font-medium text-terra-text underline decoration-terra/40 underline-offset-2 hover:decoration-terra"
+            >
+              Clear
+            </Link>
+          )}
+        </div>
       </form>
 
-      {/* Results table */}
-      <div className="mt-6 rounded-xl border border-warm-200/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-warm-200/60 bg-warm-100/60">
-                <th className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                  Institution
-                </th>
-                <th className="hidden sm:table-cell px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                  State
-                </th>
-                <th className="hidden md:table-cell px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                  Charter
-                </th>
-                <th className="hidden lg:table-cell px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                  Asset Tier
-                </th>
-                <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-warm-500">
-                  Published Fees
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-warm-200/40">
-              {results.rows.map((r) => (
-                <tr key={r.id} className="hover:bg-warm-100/60 transition-colors">
-                  <td className="px-4 py-2.5">
-                    <Link
-                      href={`/pro/analyze?instId=${r.id}&intent=institution`}
-                      className="font-medium text-warm-900 hover:text-terra transition-colors"
-                    >
-                      {r.institution_name}
-                    </Link>
-                    <span className="sm:hidden ml-2 text-[11px] text-warm-500">
-                      {r.state_code}
-                    </span>
-                  </td>
-                  <td className="hidden sm:table-cell px-4 py-2.5 text-warm-600">
-                    {r.state_code ? (
-                      <Link
-                        href={`/research/state/${r.state_code}`}
-                        className="hover:text-terra transition-colors"
-                      >
-                        {STATE_NAMES[r.state_code] ?? r.state_code}
-                      </Link>
-                    ) : (
-                      <span className="text-warm-300">--</span>
-                    )}
-                  </td>
-                  <td className="hidden md:table-cell px-4 py-2.5 text-warm-600">
-                    {r.charter_type === "bank" ? "Bank" : "Credit Union"}
-                  </td>
-                  <td className="hidden lg:table-cell px-4 py-2.5 text-warm-600">
-                    {r.asset_size_tier ? (
-                      <span className="text-[11px]">
-                        {FDIC_TIER_LABELS[r.asset_size_tier] ?? r.asset_size_tier}
-                      </span>
-                    ) : (
-                      <span className="text-warm-300">--</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
-                    {r.fee_count > 0 ? (
-                      <span className="font-medium text-warm-900">{r.fee_count}</span>
-                    ) : (
-                      <span className="text-warm-300">--</span>
-                    )}
-                  </td>
+      <MemoSection
+        title={filtered ? "Matching institutions" : "All institutions"}
+        note={
+          <>
+            <span className="[font-variant-numeric:tabular-nums]">{results.total.toLocaleString()}</span>{" "}
+            {results.total === 1 ? "institution" : "institutions"}
+            {totalPages > 1 ? `, ${pageSize} to a page` : ""}. Published fees counts only fees checked against
+            the bank&apos;s own schedule.
+          </>
+        }
+      >
+        <div className="overflow-hidden rounded-lg border border-warm-300 bg-warm-50">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-warm-300 bg-warm-150 text-warm-700">
+                  <th scope="col" className="sticky left-0 z-10 bg-warm-150 px-4 py-2.5 font-medium">Institution</th>
+                  <th scope="col" className="hidden px-4 py-2.5 font-medium sm:table-cell">State</th>
+                  <th scope="col" className="hidden px-4 py-2.5 font-medium md:table-cell">Charter</th>
+                  <th scope="col" className="hidden px-4 py-2.5 font-medium lg:table-cell">Asset size</th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium">Published fees</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-warm-200">
+                {results.rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-warm-700">
+                      No institutions match. Try a shorter name or clear the filters.
+                    </td>
+                  </tr>
+                ) : (
+                  results.rows.map((r) => (
+                    <tr key={r.id} className="group hover:bg-warm-100">
+                      <td className="sticky left-0 z-10 bg-warm-50 px-4 group-hover:bg-warm-100">
+                        <Link
+                          href={`/pro/research?instId=${r.id}`}
+                          className="flex min-h-11 flex-wrap items-center gap-x-2 py-2 font-medium text-warm-900 no-underline hover:text-terra-text"
+                        >
+                          {r.institution_name}
+                          {r.state_code ? <span className="text-xs font-normal text-warm-600 sm:hidden">{r.state_code}</span> : null}
+                        </Link>
+                      </td>
+                      <td className="hidden px-4 py-3 text-warm-700 sm:table-cell">
+                        {r.state_code ? (
+                          <Link
+                            href={`/pro/data?state=${r.state_code}`}
+                            title={`Every institution in ${STATE_NAMES[r.state_code] ?? r.state_code}`}
+                            className="hover:text-terra-text"
+                          >
+                            {STATE_NAMES[r.state_code] ?? r.state_code}
+                          </Link>
+                        ) : (
+                          <span className="text-warm-600">Not recorded</span>
+                        )}
+                      </td>
+                      <td className="hidden px-4 py-3 text-warm-700 md:table-cell">
+                        {r.charter_type === "bank" ? "Bank" : "Credit union"}
+                      </td>
+                      <td className="hidden px-4 py-3 text-warm-700 lg:table-cell">
+                        {r.asset_size_tier ? (
+                          FDIC_TIER_LABELS[r.asset_size_tier] ?? r.asset_size_tier
+                        ) : (
+                          <span className="text-warm-600">Not recorded</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right [font-variant-numeric:tabular-nums]">
+                        {r.published_fee_count > 0 ? (
+                          <span className="text-warm-900">{r.published_fee_count}</span>
+                        ) : (
+                          <span className="text-warm-600">None yet</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 mt-6">
-          {page > 1 && (
-            <Link
-              href={buildUrl({ page: String(page - 1) })}
-              className="rounded-full border border-warm-200 px-4 py-1.5 text-[12px] font-medium text-warm-700 hover:border-terra/30 hover:text-terra transition-colors no-underline"
-            >
-              Previous
-            </Link>
-          )}
-          <span className="text-[12px] text-warm-500 tabular-nums">
-            Page {page} of {totalPages}
-          </span>
-          {page < totalPages && (
-            <Link
-              href={buildUrl({ page: String(page + 1) })}
-              className="rounded-full border border-warm-200 px-4 py-1.5 text-[12px] font-medium text-warm-700 hover:border-terra/30 hover:text-terra transition-colors no-underline"
-            >
-              Next
-            </Link>
-          )}
-        </div>
-      )}
+        {totalPages > 1 && (
+          <nav aria-label="Pages" className="flex items-center justify-center gap-3">
+            {page > 1 && (
+              <Link href={buildUrl({ page: String(page - 1) })} className={pagerClass}>
+                Previous
+              </Link>
+            )}
+            <span className="text-sm text-warm-700 [font-variant-numeric:tabular-nums]">
+              Page {page} of {totalPages}
+            </span>
+            {page < totalPages && (
+              <Link href={buildUrl({ page: String(page + 1) })} className={pagerClass}>
+                Next
+              </Link>
+            )}
+          </nav>
+        )}
+      </MemoSection>
 
-      {/* Quick nav */}
-      <div className="mt-14">
-        <div className="flex items-center gap-3 mb-5">
-          <h2
-            className="text-[16px] font-medium text-warm-900"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-          >
-            Explore the Dataset
-          </h2>
-          <span className="h-px flex-1 bg-warm-200" />
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <MemoSection title="More ways into the data">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "Fee Index", desc: `All ${TAXONOMY_COUNT} categories`, href: "/fees" },
-            { label: "National Benchmarks", desc: "Medians & percentiles", href: "/research/national-fee-index" },
-            { label: "Hamilton", desc: "Analysis workspace", href: "/pro/analyze" },
-            { label: "State Reports", desc: `${statesData.length} states`, href: "/research" },
+            { label: "Fee categories", desc: `All ${TAXONOMY_COUNT} fee types and their medians`, href: "/pro/categories" },
+            { label: "National benchmarks", desc: "Your fees against the nation, in My fees", href: "/pro/research?layer=national" },
+            { label: "Ask Hamilton", desc: "Questions about any institution", href: "/pro/analyze" },
+            { label: "State reports", desc: `${statesData.length} states, on the public site`, href: "/research" },
           ].map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="group rounded-xl border border-warm-200/80 bg-white/70 px-5 py-4 transition-all duration-300 hover:border-terra/20 hover:shadow-md hover:shadow-terra/5 no-underline"
+              className="group block min-h-11 rounded-lg border border-warm-300 bg-warm-50 px-4 py-3 no-underline hover:border-warm-500"
             >
-              <span className="text-[13px] font-medium text-warm-900 group-hover:text-terra transition-colors">
+              <span className="block text-base text-warm-900 group-hover:text-terra-text" style={SERIF}>
                 {item.label}
               </span>
-              <span className="block mt-0.5 text-[11px] text-warm-500">{item.desc}</span>
+              <span className="mt-0.5 block text-sm text-warm-600">{item.desc}</span>
             </Link>
           ))}
         </div>
-      </div>
-    </div>
-    </div>
+      </MemoSection>
+    </MemoPage>
   );
 }

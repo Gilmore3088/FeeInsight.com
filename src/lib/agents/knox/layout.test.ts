@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { tidyFeeName } from "./layout";
+import { readsAMeasuredAmount, repairNameShape, tidyFeeName } from "./layout";
 
 describe("tidyFeeName", () => {
   it.each([
@@ -47,5 +47,55 @@ describe("tidyFeeName", () => {
 
   it("keeps the raw name when tidying would leave nothing usable", () => {
     expect(tidyFeeName("3 x 5")).toBe("3 x 5");
+  });
+});
+
+describe("readsAMeasuredAmount (v32)", () => {
+  it("drops a waiver threshold and a worked example's transaction amount", () => {
+    const usBank = "if your Available Balance (excluding the Overdraft Paid Fees and\nincluding immediate and same day deposits), is at least $0 we will waive Overdraft Paid Fee(s) charged.";
+    expect(readsAMeasuredAmount(usBank, "(excluding the Overdraft Paid Fees and including immediate and same day deposits), is at least", 0)).toBe(true);
+    const chase = "To avoid the $34 Overdraft Fee on the $60 gasoline transaction from Tuesday";
+    expect(readsAMeasuredAmount(chase, "Overdraft Fee on", 60)).toBe(true);
+  });
+
+  it("keeps the price when the threshold is a different figure", () => {
+    expect(readsAMeasuredAmount("$5 service charge if balance falls below $300", "service charge if balance falls below", 5)).toBe(false);
+    expect(readsAMeasuredAmount("Overdraft Fee on the $600 purchase", "Overdraft Fee on", 60)).toBe(false);
+    expect(readsAMeasuredAmount("Overdraft fee $34", "Overdraft fee", 34)).toBe(false);
+  });
+});
+
+describe("repairNameShape (Extraco, Oct 8)", () => {
+  it("ends the name before a parenthesis the line break cut off", () => {
+    expect(repairNameShape("Consumer, Inactivity Fee (Notification sent at 10")).toBe("Consumer, Inactivity Fee");
+    expect(repairNameShape("Early Account Closure (by Extraco – no")).toBe("Early Account Closure");
+    expect(repairNameShape("Free official checks (subject to maximum of five (5) per month; additional check fee")).toBe(
+      "Free official checks",
+    );
+    expect(repairNameShape("(Lost key replacement")).toBe("Lost key replacement");
+    expect(repairNameShape("Bill Payment Service)")).toBe("Bill Payment Service");
+    expect(repairNameShape("ATM's and Presto Network ATMs)")).toBe("ATM's and Presto Network ATMs");
+    expect(repairNameShape("Stop Payment (per item)")).toBe("Stop Payment (per item)");
+    expect(repairNameShape("Early Account Closure (by customer)")).toBe("Early Account Closure (by customer)");
+  });
+
+  it("reads a doubled word once", () => {
+    expect(repairNameShape("Account Research Research")).toBe("Account Research");
+    expect(repairNameShape("Personal Loan Loan Application Fee")).toBe("Personal Loan Application Fee");
+    expect(repairNameShape("MORTGAGE Mortgage Fax Fee")).toBe("Mortgage Fax Fee");
+    expect(repairNameShape("Monthly Fee Fee is waived if average daily balance is over")).toBe("Monthly Fee");
+    expect(repairNameShape("Safe Deposit Box 10x10")).toBe("Safe Deposit Box 10x10");
+  });
+
+  it("keeps the name when the repair would leave nothing usable", () => {
+    expect(repairNameShape("(")).toBe("(");
+  });
+});
+
+describe("tidyFeeName footnote numbers", () => {
+  it("drops a footnote number left once the dot leaders are gone", () => {
+    expect(tidyFeeName("Check Cashing Fee1. . . . . . . . . . . . . .")).toBe("Check Cashing Fee");
+    expect(tidyFeeName("OVERDRAFT & NSF FEES | Statement Copy Fee8 . . . . . . .")).toBe("OVERDRAFT & NSF FEES: Statement Copy Fee");
+    expect(tidyFeeName("Safe Deposit Box 10x10")).toBe("Safe Deposit Box 10x10");
   });
 });

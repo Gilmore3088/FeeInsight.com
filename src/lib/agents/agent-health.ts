@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { KNOX_EXTRACT_STRATEGY } from "./knox/extract";
-import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -17,7 +17,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_STRATEGY } from "./hamilton/source-ch
 
 type SqlTag = typeof sql;
 
-export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton"] as const;
+export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth"] as const;
 export type HealthAgent = (typeof HEALTH_AGENTS)[number];
 
 /** A number that moved more than this share (and by at least 2) since yesterday is flagged. */
@@ -504,6 +504,7 @@ export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
       (SELECT COUNT(*) FROM published_fee_records WHERE rolled_back_at IS NULL)::int AS live_fees,
       (SELECT COUNT(*) FROM pipeline_attempts
         WHERE strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+          AND input_fingerprint NOT LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
           AND created_at > NOW() - INTERVAL '24 hours')::int AS source_checks,
       (SELECT COUNT(*)
          FROM (
@@ -519,6 +520,13 @@ export async function readHamiltonNumbers(db: SqlTag): Promise<HealthNumbers> {
            WHERE pa.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
              AND pa.institution_id = live.institution_id
              AND pa.input_fingerprint = 'v' || ${SOURCE_CHECK_STRATEGY.version}::text || ':' || live.max_id::text
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts restore
+                WHERE restore.strategy = ${SOURCE_CHECK_STRATEGY.strategy}
+                  AND restore.institution_id = live.institution_id
+                  AND restore.input_fingerprint LIKE ${`${SOURCE_CHECK_RESTORE_PREFIX}%`}
+                  AND restore.id > pa.id
+             )
         ))::int AS banks_not_source_checked,
       (SELECT MIN(hard_daily_microusd) FROM api_budget_policies
         WHERE policy_key = 'agent:hamilton' AND enabled) AS daily_cap_microusd
@@ -546,6 +554,36 @@ export function hamiltonRules(n: HealthNumbers): HealthRule[] {
   ];
 }
 
+// ---------------------------------------------------------------- Growth
+
+/** Growth (marketing): its steps and its spend against the `agent:growth` daily cap. */
+export async function readGrowthNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const common = await readCommon(db, "growth");
+  const [row] = await db`
+    SELECT MIN(hard_daily_microusd) AS daily_cap_microusd
+      FROM api_budget_policies
+     WHERE policy_key = 'agent:growth' AND enabled
+  `;
+  return {
+    ...common,
+    dailyCapUsd: row?.daily_cap_microusd == null ? null : dollars(row.daily_cap_microusd),
+  };
+}
+
+export function growthRules(n: HealthNumbers): HealthRule[] {
+  const spend = num(n.spendUsd);
+  const cap = n.dailyCapUsd;
+  return [
+    noFailedSteps(n),
+    {
+      key: "within_daily_cap",
+      label: "Growth's spend stays inside its daily cap",
+      ok: cap == null || spend <= cap,
+      detail: `$${spend.toFixed(2)} of ${cap == null ? "no cap" : `$${cap.toFixed(2)}`}`,
+    },
+  ];
+}
+
 // ---------------------------------------------------------------- report
 
 const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
@@ -555,6 +593,7 @@ const READERS: Record<HealthAgent, (db: SqlTag) => Promise<HealthNumbers>> = {
   knox: readKnoxNumbers,
   darwin: readDarwinNumbers,
   hamilton: readHamiltonNumbers,
+  growth: readGrowthNumbers,
 };
 
 const RULES: Record<HealthAgent, (numbers: HealthNumbers) => HealthRule[]> = {
@@ -564,6 +603,7 @@ const RULES: Record<HealthAgent, (numbers: HealthNumbers) => HealthRule[]> = {
   knox: knoxRules,
   darwin: darwinRules,
   hamilton: hamiltonRules,
+  growth: growthRules,
 };
 
 /** Numbers that moved more than HEALTH_CHANGE_SHARE (and by at least 2) since yesterday. */

@@ -6,6 +6,8 @@ import { getArticleBySlug, incrementViewCount, getPublishedArticles } from "@/li
 import { ensureResearchTables } from "@/lib/research/history";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME } from "@/lib/constants";
+import { linkPreview } from "@/lib/link-preview";
+import { renderArticleMarkdown } from "@/lib/article-markdown";
 
 export async function generateMetadata({
   params,
@@ -18,9 +20,14 @@ export async function generateMetadata({
   if (!article || article.status !== "published") {
     return { title: "Article Not Found" };
   }
+  const title = `${article.title} — Research`;
+  const description = article.subtitle || article.content.substring(0, 160).replace(/[#*_]/g, "");
+  const path = `/research/articles/${article.slug}`;
   return {
-    title: `${article.title} — Research`,
-    description: article.subtitle || article.content.substring(0, 160).replace(/[#*_]/g, ""),
+    title,
+    description,
+    alternates: { canonical: path },
+    ...linkPreview({ title: article.title, description, path }),
   };
 }
 
@@ -187,42 +194,5 @@ export default async function ArticlePage({
 }
 
 function MarkdownContent({ content }: { content: string }) {
-  // Escape raw HTML first to prevent XSS
-  const safe = content
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    // Quotes too: links below become href="…" attributes, and a raw " would end the attribute.
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-  // Then apply markdown transformations on escaped content
-  const html = safe
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Links (only http/https)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-    // Unordered lists
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    // Tables (simple)
-    .replace(/^\|(.+)\|$/gm, (match) => {
-      const cells = match.split('|').filter(Boolean).map(c => c.trim());
-      if (cells.every(c => /^-+$/.test(c))) return '';
-      const tag = match.includes('---') ? 'th' : 'td';
-      return `<tr>${cells.map(c => `<${tag}>${c}</${tag}>`).join('')}</tr>`;
-    })
-    // Paragraphs
-    .replace(/\n\n/g, '</p><p>')
-    // Line breaks
-    .replace(/\n/g, '<br/>');
-
-  return (
-    <div dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />
-  );
+  return <div dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(content) }} />;
 }

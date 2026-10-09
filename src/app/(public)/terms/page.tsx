@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CONTACT_EMAIL, REPORT_OFFER } from "@/lib/constants";
+import { CONTACT_EMAIL, SITE_NAME, LEGAL_ENTITY_LINE, LEGAL_ENTITY_STATE, REPORT_OFFER } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -24,7 +24,7 @@ export default function TermsPage() {
         Terms of Service
       </h1>
       <p className="mt-2 text-[13px] text-[#6B6255]">
-        Last updated: August 2026
+        Last updated: October 8, 2026
       </p>
 
       <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
@@ -34,9 +34,11 @@ export default function TermsPage() {
             1. Acceptance of Terms
           </h2>
           <p>
-            By accessing or using Fee Insight, including the Bank Fee Index and
-            Hamilton (together, &ldquo;the Service&rdquo;),
-            you agree to be bound by these Terms of Service. If you are using
+            Fee Insight is operated by {LEGAL_ENTITY_LINE} (&ldquo;Fee
+            Insight&rdquo;, &ldquo;we&rdquo; or &ldquo;us&rdquo;). By accessing or
+            using Fee Insight, including the Bank Fee Index and Hamilton (together,
+            &ldquo;the Service&rdquo;), you agree to be bound by these Terms of
+            Service. If you are using
             the Service on behalf of an organization, you represent that you
             have authority to bind that organization to these terms.
           </p>
@@ -77,12 +79,26 @@ export default function TermsPage() {
           <ul className="list-disc pl-6 space-y-1.5">
             <li>
               Subscriptions are billed in advance on a monthly or annual basis
-              depending on the plan selected.
+              depending on the plan selected, and renew automatically at the end
+              of each billing period until you cancel. You can cancel from your
+              account&apos;s billing page at any time.
             </li>
             <li>
-              All fees are non-refundable except where required by law. You may
-              cancel your subscription at any time; access continues until the
-              end of the current billing period.
+              Annual plans: if you cancel within 14 days of your first annual
+              payment, we refund it in full. After that, an annual plan runs to
+              the end of its paid year and the unused part is not refunded.
+              Monthly plans are not refunded. You may cancel at any time; access
+              continues until the end of the current billing period. Other fees
+              are non-refundable except where required by law.
+            </li>
+            <li>
+              Pro pricing tier: {SITE_NAME} Pro is priced by the total assets of
+              the bank or credit union the plan covers, or at the consultant rate
+              for organizations that are not a bank or credit union. If the plan
+              is used for a different or larger organization than the one chosen
+              at checkout, we may move the subscription to the correct tier.
+              We&apos;ll tell you by email first, and the new price starts at the
+              next billing period.
             </li>
             <li>
               We reserve the right to change subscription pricing with 30 days
@@ -224,7 +240,20 @@ export default function TermsPage() {
         <section>
           <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-            13. Changes to Terms
+            13. Governing Law
+          </h2>
+          <p>
+            These terms are governed by the laws of the State of {LEGAL_ENTITY_STATE},
+            without regard to its conflict of law rules. Any dispute arising from these
+            terms or the Service will be heard in the state or federal courts located in{" "}
+            {LEGAL_ENTITY_STATE}, and you consent to their jurisdiction.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
+            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+            14. Changes to Terms
           </h2>
           <p>
             We may modify these terms at any time. Material changes will be

@@ -19,6 +19,7 @@ import {
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { generateVerifiedSection, type VerifiedSectionOutput } from "@/lib/hamilton/generate";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
+import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/report-cap";
 import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
@@ -43,6 +44,7 @@ import { buildRegulatoryContext, REGULATORY_REPORT_RULES } from "@/lib/hamilton/
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { stateFeeLawsFor } from "@/lib/regulatory/state-fee-laws";
 import { getInstitutionComplaintYears } from "@/lib/data-store/complaints";
+import { getEnforcementRecord } from "@/lib/data-store/registry-profile";
 import { getFeeIncomeTrend } from "@/lib/hamilton/report-trend";
 import {
   ANSWER_SECTION_FORMAT,
@@ -51,6 +53,7 @@ import {
   parseTradeoffSection,
 } from "@/lib/hamilton/report-answer";
 import { validateHamiltonReportArtifact } from "@/lib/hamilton/report-quality";
+import { basketItemsFor, sanitizeBasketItems } from "@/lib/hamilton/report-basket";
 import { resolveHamiltonPeerIndex } from "@/lib/hamilton/peer-index";
 import { completeHamiltonRefreshJobsForInstitution } from "@/lib/hamilton/refresh-jobs";
 import {
@@ -93,6 +96,8 @@ export interface GenerateReportParams {
   selectedSourceLabel?: string | null;
   /** The Audience picker: shapes the narrative's register, never its figures. */
   narrativeTone?: ReportNarrativeTone;
+  /** Report basket: findings and tests the user added from Position, Ask and Test (re-validated here). */
+  addedFindings?: unknown;
   /** The Goal picker: shapes how decisions are ranked and framed, never the figures. */
   clientGoal?: ReportClientGoal;
 }
@@ -421,6 +426,10 @@ export async function generateReport(
     const selectedVerifiedFees = selectedVisibleFees.filter((fee) => fee.review_status === "approved");
     const selectedProvisionalFees = selectedVisibleFees.filter((fee) => fee.review_status !== "approved");
     const evidencePolicy = params.evidencePolicy ?? "provisional-first";
+    const addedFindings = basketItemsFor(
+      sanitizeBasketItems(params.addedFindings),
+      selectedInstitution ? String(selectedInstitution.id) : null,
+    );
     const selectedSourceContext = resolveReportSelectedSource(params);
     const selectedFeeDeltas = buildSelectedInstitutionFeeDeltas({
       selectedFees: selectedVisibleFees,
@@ -575,6 +584,9 @@ export async function generateReport(
       complaintYears: selectedInstitution
         ? await getInstitutionComplaintYears(selectedInstitution.id).catch(() => [])
         : [],
+      enforcement: selectedInstitution
+        ? await getEnforcementRecord(selectedInstitution.id).catch(() => null)
+        : null,
     });
     // Fee income over time: real (GDP price index), seasonally adjusted, tested for
     // trend, stationarity and structural breaks, against the industry. Computed, never modeled.
@@ -598,6 +610,7 @@ export async function generateReport(
           state_peers: statePeers,
           exhibits: exhibitData,
           focus_category: params.focusCategory ?? null,
+          findings_added_by_reader: addedFindings.map((f) => ({ from: f.source, finding: f.title, detail: f.detail })),
           categories: topCategories.map((c) => ({
             fee_category: c.fee_category,
             median_amount: c.median_amount,
@@ -607,7 +620,16 @@ export async function generateReport(
             maturity: c.maturity_tier,
           })),
         },
-        context: withTone(withExpertRules(buildExecutiveSummaryContext(params, institutionName, period)), params.narrativeTone, params.clientGoal),
+        context: withTone(
+          withExpertRules(
+            buildExecutiveSummaryContext(params, institutionName, period) +
+              (addedFindings.length > 0
+                ? "\n\nThe reader added the findings in findings_added_by_reader from their own analysis. Address each one in the summary, using only figures present in DATA."
+                : ""),
+          ),
+          params.narrativeTone,
+          params.clientGoal,
+        ),
       },
       {
         type: strategicSectionType,
@@ -664,6 +686,8 @@ export async function generateReport(
     // (one usage row per report, one pro_request run in the ledger) however it ends.
     const quota = await checkProAiQuota(user);
     if (!quota.allowed) return { success: false, error: quotaExceededMessage(quota) };
+    const reportCap = await checkConsultantReportCap(user);
+    if (!reportCap.allowed) return { success: false, error: reportCapMessage(reportCap) };
     const ledgerBase = {
       userId: user.id,
       institutionId: selectedInstitution?.id ?? null,
@@ -782,20 +806,20 @@ export async function generateReport(
     const [summarySection, strategicSection, recommendationSection] = verifiedSections.map((result) => result.section);
 
     const snapshotRows = selectedFeeDeltas.slice(0, 5).map((delta) => ({
-      label: delta.fee_category.replace(/_/g, " "),
+      label: getDisplayName(delta.fee_category),
       current: `${formatAmount(delta.institution_amount)} (${delta.evidence_tier})`,
       proposed: `${formatAmount(delta.peer_median)} peer median`,
     }));
     const tradeoffRows =
       selectedInstitution && selectedFeeDeltas.length > 0
         ? selectedFeeDeltas.slice(0, 3).map((delta) => ({
-            label: delta.fee_category.replace(/_/g, " "),
+            label: getDisplayName(delta.fee_category),
             value:
               `${formatAmount(delta.institution_amount)} vs ${formatAmount(delta.peer_median)} peer median ` +
               `(${formatSignedAmount(delta.delta_amount)})`,
           }))
         : topCategories.slice(0, 3).map((c) => ({
-            label: c.fee_category.replace(/_/g, " "),
+            label: getDisplayName(c.fee_category),
             value:
               c.median_amount != null
                 ? `$${c.median_amount.toFixed(2)} median`
@@ -839,6 +863,9 @@ export async function generateReport(
         shareEnabled: false,
       },
     };
+    if (addedFindings.length > 0) {
+      report.addedFindings = addedFindings.map((f) => ({ source: f.source, title: f.title, detail: f.detail }));
+    }
     const artifactQuality = validateHamiltonReportArtifact({
       report,
       selectedInstitutionId: selectedInstitution?.id ?? null,

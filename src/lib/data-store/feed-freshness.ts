@@ -55,6 +55,13 @@ export const SCHEDULED_REPORT_TRIGGERS = [
   "atlas.fee_alerts",
   "atlas.lead_watch",
   "atlas.scoreboard",
+  // Growth's marketing runs keep the triggered_by they had under Hamilton.
+  "hamilton.content",
+  "hamilton.marketing",
+  "growth.score",
+  "growth.contacts",
+  "growth.outreach",
+  "growth.learning",
 ] as const;
 
 export async function getRegistryFeedFreshness(): Promise<RegistryFeedFreshness[]> {
@@ -84,6 +91,7 @@ export async function getCallReportFreshness(): Promise<CallReportFreshness[]> {
   const rows = await sql<Array<Record<string, unknown>>>`
     SELECT source, MAX(report_date) AS latest_period, MAX(fetched_at) AS last_fetched_at
       FROM institution_financial_records
+     WHERE source IN ('fdic', 'ncua')
      GROUP BY source
      ORDER BY source`;
   const mapped = rows.map((r) => ({

@@ -20,6 +20,20 @@ describe("choosePeers", () => {
     expect(chosen.get("overdraft")?.label).not.toContain("Fed district");
     expect(chosen.get("rare_fee")).toMatchObject({ label: "Verified national index" });
   });
+
+  it("leads with the bank's own peer group and says how many it had when a fee widens", () => {
+    const candidates = [
+      { institutionIds: [1, 2, 3, 4, 5, 6], label: "Lancaster rivals" },
+      { state_code: "PA", charter_type: "bank", asset_tiers: ["community_mid"] },
+      {},
+    ];
+    const own = new Map([["overdraft", [1, 2, 3, 4, 5].map((i) => peer(35, i))], ["wire_domestic", [1, 2, 3].map((i) => peer(25, i))]]);
+    const state = new Map([["wire_domestic", [1, 2, 3, 4, 5, 6, 7].map((i) => peer(20, i))]]);
+    const chosen = choosePeers(candidates, [own, state, new Map()], ["overdraft", "wire_domestic"], { activeFirst: true });
+    expect(chosen.get("overdraft")).toMatchObject({ label: "Lancaster rivals" });
+    expect(chosen.get("wire_domestic")?.values).toHaveLength(7);
+    expect(chosen.get("wire_domestic")?.label).toMatch(/; your group Lancaster rivals has 3 publishing this fee$/);
+  });
 });
 
 describe("marketLayerSets", () => {
@@ -55,6 +69,7 @@ describe("localMarketView", () => {
   const market = {
     basis: "branch_counties" as const,
     places: ["Austin, TX"],
+    county_fips: ["48453"],
     sod_year: 2026,
     members: [
       { institution_id: 1, institution_name: "Subject Bank", city: "Austin", state_code: "TX", charter_type: "bank", market_deposits: 5e8, is_subject: true },

@@ -1,4 +1,4 @@
-import type { AdminAgent } from "./types";
+import { isMarketingStep, type AdminAgent } from "./types";
 
 /**
  * Turns run-ledger events into one plain-English sentence each, for the crew
@@ -34,8 +34,21 @@ function joinParts(parts: Array<string | null | false>): string {
   return kept.length > 0 ? `: ${kept.join(", ")}` : "";
 }
 
-/** One sentence for a finished step, from the step key and its recorded detail. */
+/**
+ * One sentence for a finished step, from the step key and its recorded detail. A marketing
+ * step's dry run (the daily growth loop) says so first, so "Drafted 3 emails" isn't read as
+ * three drafts in the queue.
+ */
 export function narrateStepFinished(
+  stepKey: string,
+  detail: Detail,
+  stateCode?: string | null,
+): string | null {
+  const sentence = narrateFinished(stepKey, detail, stateCode);
+  return sentence && detail.dryRun === true && isMarketingStep(stepKey) ? `Dry run, nothing saved: ${sentence}` : sentence;
+}
+
+function narrateFinished(
   stepKey: string,
   detail: Detail,
   stateCode?: string | null,
@@ -179,7 +192,16 @@ export function narrateStepFinished(
     case "registry-beige-book":
     case "registry-fred":
     case "registry-reg-news":
+    case "registry-fomc-minutes":
+    case "registry-fed-publications":
+    case "registry-federal-register":
+    case "registry-federal-bills":
+    case "registry-state-bills":
     case "registry-state-regulators":
+    case "registry-state-reg-news":
+    case "registry-state-bill-news":
+    case "registry-enforcement":
+    case "registry-state-enforcement":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -187,10 +209,82 @@ export function narrateStepFinished(
       if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
       return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
+    case "study-fee-dependence":
+    case "study-local-income":
+    case "study-concentration":
+    case "study-fee-income":
+    case "study-inferred-volume": {
+      if (detail.schema_ready === false) return "Read the study; its tables are not created yet, so nothing was stored.";
+      const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
+      return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
+    }
+    case "hamilton-answer-eval":
+      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
       return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+    }
+    case "content-market-spread": {
+      const picked = (detail.picked ?? null) as Detail | null;
+      if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a market-spread post for ${String(picked.metro)} for James to approve.`;
+      return `Drafted no market-spread post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
+    }
+    case "content-fee-depth": {
+      const picked = (detail.picked ?? null) as Detail | null;
+      if (detail.draftId !== null && detail.draftId !== undefined && picked) return `Drafted a fee-depth post for ${String(picked.metro)} for James to approve.`;
+      return `Drafted no fee-depth post this week (${String(detail.reason ?? "no metro passed the checks")}).`;
+    }
+    case "content-od-by-state": {
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Drafted this week's fees-by-state article for James to publish.`;
+      return `Drafted no fees-by-state article (${String(detail.reason ?? "the data did not pass the checks")}).`;
+    }
+    case "growth-contacts": {
+      if (detail.schemaReady === false) return "Read no websites; the contacts tables are not there yet.";
+      const checked = n(detail, "checked");
+      if (!checked) return "No prospect was due a contact check.";
+      return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
+    }
+    case "growth-outreach": {
+      if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
+      const drafted = n(detail, "drafted");
+      if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
+      return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
+    }
+    case "growth-learning": {
+      if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
+      if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
+      return `Filed what we learned for the week of ${String(detail.week)} for James to read.`;
+    }
+    case "growth-intel": {
+      if (detail.schemaReady === false) return "Wrote no market brief; the queue is not there yet.";
+      const findings = Array.isArray(detail.findings) ? detail.findings.length : 0;
+      if (!findings) return "Read the regulator feeds and competitor pages; nothing new worth a brief.";
+      return `Filed a market brief with ${count(findings, "finding")} for James to read.`;
+    }
+    case "growth-conversion": {
+      if (detail.schemaReady === false) return "Wrote no conversion check; the queue is not there yet.";
+      const broken = Array.isArray(detail.broken) ? detail.broken.length : 0;
+      return broken
+        ? `Found ${count(broken, "broken destination")} and filed the week's conversion check.`
+        : "Checked every destination and the week's funnel, and filed the conversion check.";
+    }
+    case "growth-tools": {
+      const fees = Array.isArray(detail.fees) ? (detail.fees as Array<{ fee?: unknown; checked?: unknown }>) : [];
+      const counts = fees.map((fee) => `${String(fee.fee)} ${Number(fee.checked ?? 0)}`).join(", ");
+      return `Ran the free price check for ${String(detail.state)}${counts ? ` (source-checked institutions: ${counts})` : ""}.`;
+    }
+    case "growth-intake": {
+      if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
+      if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
+      return "Filed nothing into the queue.";
+    }
+    case "growth-score": {
+      const scored = Array.isArray(detail.scored) ? detail.scored.length : 0;
+      const unscored = Array.isArray(detail.unscored) ? detail.unscored.length : 0;
+      if (detail.schemaReady === false) return "Scored nothing; the queue's score columns are not there yet.";
+      if (!scored && !unscored) return "No posted item was due a score this week.";
+      return `Scored ${count(scored, "posted item")} from tracked visits and leads${unscored ? `; ${count(unscored, "item")} had no measure and stays unscored` : ""}.`;
     }
     case "marketing-score": {
       const scored = n(detail, "scored");
@@ -216,11 +310,40 @@ export function narrateStepFinished(
         ? `Emailed James about ${count(owed, "lead")} waiting on a reply.`
         : `Found ${count(owed, "lead")} waiting on a reply but could not email James (${String(detail.alert_reason ?? detail.alert ?? "unknown")}).`;
     }
+    case "indexnow-ping": {
+      const submitted = n(detail, "submitted");
+      if (submitted > 0) return `Told Bing about ${count(submitted, "changed page")}.`;
+      return detail.skipped === "no pages changed"
+        ? "No institution pages changed in the last day."
+        : `Did not notify Bing (${String(detail.skipped ?? "unknown")}).`;
+    }
+    case "briefing-refresh": {
+      const stored = n(detail, "stored");
+      const quarter = String(detail.quarter ?? "this quarter");
+      if (detail.dryRun === true) return `Dry run: built ${quarter} briefings without storing them.`;
+      return stored === 0
+        ? `Every workspace already has its ${quarter} briefing.`
+        : `Stored ${count(stored, `${quarter} briefing`)}.`;
+    }
+    case "competitor-alerts": {
+      const alerts = n(detail, "alerts");
+      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Monitor.`;
+      return alerts === 0
+        ? "Checked local competitors; no verified fee change to show."
+        : `Showed ${count(alerts, "competitor change alert")} in Monitor.`;
+    }
     case "pro-digest": {
       const withNews = n(detail, "withNews");
       if (detail.dryRun === true) return `Dry run: ${count(withNews, "Pro reader")} would get a Monday digest.`;
       if (detail.held === true) return `Counted ${count(withNews, "Pro reader")} for the Monday digest; sending is switched off.`;
       return `Sent ${count(n(detail, "sent"), "Monday digest")}.`;
+    }
+    case "pro-seat-check": {
+      if (detail.passed === true) return "Checked team seats and peer groups end to end with test accounts; both work.";
+      const problems = Array.isArray(detail.problems) ? detail.problems.length : 0;
+      return detail.dryRun === true
+        ? "Dry run: read the test workspace without changing it."
+        : `Seat and peer-group check found ${count(problems, "problem")}.`;
     }
     case "daily-brief":
       return detail.delivery_status === "sent"
@@ -275,8 +398,43 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
     case "registry-reg-news":
       return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
+    case "registry-fomc-minutes":
+      return `Stored ${count(n(detail, "stored"), "new set of FOMC minutes", "new sets of FOMC minutes")}; ${n(detail, "remaining")} still to pull.`;
+    case "registry-fed-publications":
+      return `Stored ${count(n(detail, "inserted"), "new regional Fed publication")} of ${n(detail, "fetched")} read.`;
+    case "registry-federal-register": {
+      const stages = (detail.stages ?? {}) as Record<string, unknown>;
+      const open = typeof stages.comment_open === "number" ? stages.comment_open : 0;
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Read ${count(n(detail, "fetched"), "Federal Register rule")}, ${open} open for comment; ${stored}.`;
+    }
+    case "registry-federal-bills": {
+      if (detail.missing_key) return "Skipped federal bills: the Congress.gov key is not set.";
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "federal bank fee bill")} in ${n(detail, "scanned")} bills; ${stored}.`;
+    }
+    case "registry-state-bills": {
+      if (detail.missing_key) return "Skipped state bills: the Open States key is not set.";
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      const states = Array.isArray(detail.states) ? detail.states.length : 0;
+      return `Read ${count(states, "state")} and found ${count(n(detail, "fetched"), "state bank fee bill")}; ${stored}.`;
+    }
     case "registry-state-regulators":
       return `Synced ${count(n(detail, "agencies"), "state regulator")}.`;
+    case "registry-state-reg-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Read news from ${n(detail, "read")} of ${count(n(detail, "agencies"), "state regulator site")}: ${count(n(detail, "fetched"), "item")}, ${n(detail, "fee_related")} about fees; ${stored}.`;
+    }
+    case "registry-state-bill-news": {
+      const stored = detail.shadow ? "stored none (shadow mode)" : `stored ${n(detail, "stored")}`;
+      return `Found ${count(n(detail, "fetched"), "news story", "news stories")} on state fee bills (${n(detail, "bills_with_news")} of ${n(detail, "bills")} bills covered); ${stored}.`;
+    }
+    case "registry-enforcement":
+      return `Refreshed ${count(n(detail, "upserted"), "enforcement action")} from the OCC and the Federal Reserve.`;
+    case "registry-state-enforcement": {
+      const states = Array.isArray(detail.by_state) ? (detail.by_state as Array<{ pages?: number }>).filter((s) => (s.pages ?? 0) > 0).length : 0;
+      return `Read ${count(states, "state banking department")} and refreshed ${count(n(detail, "upserted"), "state enforcement order")}.`;
+    }
     default:
       return null;
   }
@@ -325,13 +483,34 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "state-expert": "atlas",
   "daily-brief": "atlas",
   "lead-watch": "atlas",
+  "indexnow-ping": "atlas",
   "pro-digest": "atlas",
-  "marketing-score": "hamilton",
-  "marketing-write": "hamilton",
-  "marketing-send": "hamilton",
-  "marketing-states": "hamilton",
+  "pro-seat-check": "atlas",
+  "competitor-alerts": "hamilton",
+  "briefing-refresh": "hamilton",
+  "content-fee-depth": "growth",
+  "content-market-spread": "growth",
+  "content-od-by-state": "growth",
+  "growth-contacts": "growth",
+  "growth-outreach": "growth",
+  "growth-learning": "growth",
+  "growth-intel": "growth",
+  "growth-conversion": "growth",
+  "growth-tools": "growth",
+  "growth-intake": "growth",
+  "growth-score": "growth",
+  "marketing-score": "growth",
+  "marketing-write": "growth",
+  "marketing-send": "growth",
+  "marketing-states": "growth",
   "score-answer-key": "atlas",
   "scoreboard-snapshot": "atlas",
+  "hamilton-answer-eval": "hamilton",
+  "study-fee-dependence": "hamilton",
+  "study-local-income": "hamilton",
+  "study-concentration": "hamilton",
+  "study-fee-income": "hamilton",
+  "study-inferred-volume": "hamilton",
   discover: "magellan",
   "discover-paid": "magellan",
   rescue: "magellan",
@@ -350,7 +529,16 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-beige-book": "magellan",
   "registry-fred": "magellan",
   "registry-reg-news": "magellan",
+  "registry-fomc-minutes": "magellan",
+  "registry-fed-publications": "magellan",
+  "registry-federal-register": "magellan",
+  "registry-federal-bills": "magellan",
+  "registry-state-bills": "magellan",
   "registry-state-regulators": "magellan",
+  "registry-state-reg-news": "magellan",
+  "registry-state-bill-news": "magellan",
+  "registry-enforcement": "magellan",
+  "registry-state-enforcement": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

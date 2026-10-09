@@ -19,12 +19,27 @@ export interface Publication {
   /** Freshness key from getReportFreshness. */
   freshnessKey: string;
   next: (now: Date) => Date;
+  /**
+   * False for a schedule that is built but not yet registered in vercel.json (waiting on
+   * James's go). It is listed with its planned cadence and has no next date.
+   */
+  scheduled?: boolean;
 }
 
 function nextDaily(hourUtc: number, minute: number) {
   return (now: Date) => {
     const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, minute));
     if (at.getTime() <= now.getTime()) at.setUTCDate(at.getUTCDate() + 1);
+    return at;
+  };
+}
+
+/** `weekday` 0 = Sunday, as in cron. */
+function nextWeekly(weekday: number, hourUtc: number, minute: number) {
+  return (now: Date) => {
+    const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, minute));
+    at.setUTCDate(at.getUTCDate() + ((weekday - at.getUTCDay() + 7) % 7));
+    if (at.getTime() <= now.getTime()) at.setUTCDate(at.getUTCDate() + 7);
     return at;
   };
 }
@@ -40,7 +55,7 @@ function nextMonthly(day: number, hourUtc: number, minute: number, months?: numb
   };
 }
 
-/** Keep in step with vercel.json. */
+/** Keep in step with vercel.json (every entry but `scheduled: false` ones has a cron there). */
 export const PUBLICATIONS: Publication[] = [
   {
     key: "national_index",
@@ -78,6 +93,89 @@ export const PUBLICATIONS: Publication[] = [
     freshnessKey: "run:atlas.fee_alerts",
     next: nextDaily(13, 23),
   },
+  {
+    // Growth drafts; James approves each and posts it on the company page himself.
+    key: "linkedin_posts",
+    name: "LinkedIn post drafts",
+    audience: "Public",
+    cadence: "Weekly, Sundays (drafts for your approval)",
+    href: "/admin/customers/content",
+    freshnessKey: "run:hamilton.content",
+    next: nextWeekly(0, 13, 37),
+  },
+  {
+    // Growth drafts on the 1st; nothing sends until James approves the month.
+    key: "marketing_email",
+    name: "Monthly marketing email",
+    audience: "Public",
+    cadence: "Monthly, drafted on the 1st, sent when you approve",
+    href: "/admin/customers/marketing",
+    freshnessKey: "run:hamilton.marketing",
+    next: nextMonthly(1, 14, 7),
+  },
+  {
+    // Growth scores posted queue items from tracked visits and leads. Turned on by James
+    // ("Weekly agent schedules: Enable", 15:33 UTC Oct 8).
+    key: "growth_scores",
+    name: "Weekly growth scores",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/customers/content",
+    freshnessKey: "run:growth.score",
+    next: nextWeekly(1, 13, 7),
+  },
+  {
+    // NIELSEN reads prospects' published leadership and contact pages. Nothing sends:
+    // the contacts feed outreach drafts James sends himself.
+    key: "prospect_contacts",
+    name: "Prospect contacts",
+    audience: "You",
+    cadence: "Weekly, Mondays (up to 60 prospect websites)",
+    href: "/admin/growth?view=team",
+    freshnessKey: "run:growth.contacts",
+    next: nextWeekly(1, 12, 37),
+  },
+  {
+    // CARNEGIE's first-email drafts. James audits each one and sends it himself; nothing sends.
+    key: "outreach_drafts",
+    name: "Outreach email drafts",
+    audience: "You",
+    cadence: "Weekly, Mondays (drafts for you to audit and send)",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.outreach",
+    next: nextWeekly(1, 14, 7),
+  },
+  {
+    // DRAPER's weekly report from what buyers did and said. Read by James only.
+    key: "learning_report",
+    name: "What we learned",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.learning",
+    next: nextWeekly(1, 14, 37),
+  },
+  {
+    // SHERLOCK's brief from new regulator items and competitors' public pages; filed only on
+    // days with something new. Read by James and DRAPER only.
+    key: "market_brief",
+    name: "Market brief",
+    audience: "You",
+    cadence: "Daily, when there is something new",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.intel",
+    next: nextDaily(14, 17),
+  },
+  {
+    // NORMAN checks every buying page and unsent outreach link loads, and counts the funnel.
+    key: "conversion_check",
+    name: "Conversion check",
+    audience: "You",
+    cadence: "Weekly, Mondays",
+    href: "/admin/growth",
+    freshnessKey: "run:growth.conversion",
+    next: nextWeekly(1, 13, 47),
+  },
 ];
 
 export interface CalendarRow {
@@ -86,7 +184,8 @@ export interface CalendarRow {
   lastStatus: string | null;
   lastError: string | null;
   count: number | null;
-  nextAt: string;
+  /** Null when the schedule is not turned on yet (`scheduled: false`). */
+  nextAt: string | null;
 }
 
 export function buildPublishingCalendar(reports: ReportFreshness[], now = new Date()): CalendarRow[] {
@@ -98,7 +197,7 @@ export function buildPublishingCalendar(reports: ReportFreshness[], now = new Da
       lastStatus: freshness?.lastStatus ?? null,
       lastError: freshness?.lastError ?? null,
       count: freshness?.count ?? null,
-      nextAt: publication.next(now).toISOString(),
+      nextAt: publication.scheduled === false ? null : publication.next(now).toISOString(),
     };
   });
 }

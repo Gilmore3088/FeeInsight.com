@@ -29,9 +29,18 @@ type SqlTag = typeof sql;
  *
  * A person's label (`label-queue.ts`) is a lesson for the name under any other
  * category: it applies after the bank's own lesson and before the global ones.
+ *
+ * v3, restores: a fee Hamilton restored after a takedown (`restored_after_takedown`, the
+ * second look and the restore bar) is a verified fee under the category it came back
+ * with, and a takedown of that fee under that same category no longer counts as wrong.
+ * A takedown under another category stands: "International Wire, outgoing" taken down as
+ * a domestic wire and restored as an international one confirms the lesson. Only the
+ * category kinds are read. `unreproduced` (a newer rules version disagreeing with an
+ * older one), `not_on_schedule`, `wrong_amount` and `threshold` say nothing about a
+ * category and are often restored, so Knox does not learn from them.
  */
 
-export const KNOX_LESSONS_VERSION = 2;
+export const KNOX_LESSONS_VERSION = 3;
 /** `wrongKey` of a person's label, which applies whatever category the rules chose. */
 export const LABEL_WRONG_KEY = "*";
 export const LESSON_MIN_BANKS = 2;
@@ -81,14 +90,30 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
     return await inSavepoint(db, async (scope) => {
       if (!(await feedbackSchemaReady(scope))) return new Map();
       const rows = await scope<Array<{ institution_id: number | string | null; name: string; wrong_key: string; right_key: string; wrong_banks: number | string; right_banks: number | string }>>`
-        WITH judged AS (
+        WITH restored AS MATERIALIZED (
+          -- A fee Hamilton put back, under the category it went live with again.
+          SELECT DISTINCT r.fee_raw_id, r.canonical_fee_key, r.institution_id,
+                 regexp_replace(btrim(lower(regexp_replace(fr.fee_name, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name
+            FROM pipeline_feedback r
+            JOIN raw_fee_observations fr ON fr.fee_raw_id = r.fee_raw_id
+           WHERE r.kind = 'restored_after_takedown'
+             -- Restored with no check (before 7 Oct): no verdict that the takedown was wrong.
+             AND COALESCE(r.evidence->>'restored_by', '') <> 'rules_recheck_restored:text_gone'
+             AND r.canonical_fee_key IS NOT NULL
+             AND fr.fee_name IS NOT NULL
+        ), judged AS (
           SELECT regexp_replace(btrim(lower(regexp_replace(f.evidence->>'fee_name', '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
                  f.canonical_fee_key AS fee_key, f.signal, f.institution_id
             FROM pipeline_feedback f
+            LEFT JOIN restored rs
+              ON f.signal = 'wrong' AND rs.fee_raw_id = f.fee_raw_id AND rs.canonical_fee_key = f.canonical_fee_key
            WHERE f.about_stage = 'extract'
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
+             AND rs.fee_raw_id IS NULL
+          UNION ALL
+          SELECT name, canonical_fee_key, 'right', institution_id FROM restored
         ), tally AS (
           SELECT name, fee_key,
                  count(DISTINCT institution_id) FILTER (WHERE signal = 'wrong') AS wrong_banks,
@@ -103,20 +128,35 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
             FROM judged
            WHERE name <> '' AND institution_id IS NOT NULL
            GROUP BY institution_id, name, fee_key
+        ),
+        -- The wrong-only and right-only categories of each name, side by side. A self-join of the
+        -- tallies is equivalent, but the planner misjudged the CTE sizes as a few rows and
+        -- chose a nested loop: 53 s average over 538 runs on Oct 8, near the 120 s timeout.
+        global_sides AS (
+          SELECT name,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE wrong_banks >= ${LESSON_MIN_BANKS} AND right_banks = 0) AS wrong_keys,
+                 array_agg(wrong_banks ORDER BY fee_key) FILTER (WHERE wrong_banks >= ${LESSON_MIN_BANKS} AND right_banks = 0) AS wrong_counts,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE right_banks >= ${LESSON_MIN_BANKS} AND wrong_banks = 0) AS right_keys,
+                 array_agg(right_banks ORDER BY fee_key) FILTER (WHERE right_banks >= ${LESSON_MIN_BANKS} AND wrong_banks = 0) AS right_counts
+            FROM tally
+           GROUP BY name
+        ), bank_sides AS (
+          SELECT institution_id, name,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE wrong_count > 0 AND right_count = 0) AS wrong_keys,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE right_count > 0 AND wrong_count = 0) AS right_keys
+            FROM bank_tally
+           GROUP BY institution_id, name
         )
-        (SELECT NULL::bigint AS institution_id, w.name, w.fee_key AS wrong_key, r.fee_key AS right_key, w.wrong_banks, r.right_banks
-          FROM tally w
-          JOIN tally r ON r.name = w.name AND r.fee_key <> w.fee_key
-         WHERE w.wrong_banks >= ${LESSON_MIN_BANKS} AND w.right_banks = 0
-           AND r.right_banks >= ${LESSON_MIN_BANKS} AND r.wrong_banks = 0
-         ORDER BY w.wrong_banks DESC
+        (SELECT NULL::bigint AS institution_id, s.name, w.fee_key AS wrong_key, r.fee_key AS right_key,
+                w.banks AS wrong_banks, r.banks AS right_banks
+          FROM global_sides s,
+               unnest(s.wrong_keys, s.wrong_counts) AS w(fee_key, banks),
+               unnest(s.right_keys, s.right_counts) AS r(fee_key, banks)
+         ORDER BY w.banks DESC
          LIMIT ${LESSON_LIMIT})
         UNION ALL
-        (SELECT w.institution_id, w.name, w.fee_key AS wrong_key, r.fee_key AS right_key, 1 AS wrong_banks, 1 AS right_banks
-          FROM bank_tally w
-          JOIN bank_tally r ON r.institution_id = w.institution_id AND r.name = w.name AND r.fee_key <> w.fee_key
-         WHERE w.wrong_count > 0 AND w.right_count = 0
-           AND r.right_count > 0 AND r.wrong_count = 0
+        (SELECT s.institution_id, s.name, w AS wrong_key, r AS right_key, 1 AS wrong_banks, 1 AS right_banks
+          FROM bank_sides s, unnest(s.wrong_keys) AS w, unnest(s.right_keys) AS r
          LIMIT ${LESSON_LIMIT})
 
         UNION ALL

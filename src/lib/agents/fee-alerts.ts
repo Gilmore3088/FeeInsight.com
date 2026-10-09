@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { sql } from "@/lib/data-store/connection";
+import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -83,6 +84,7 @@ interface MovementJson {
   previous_amount?: unknown;
   new_amount?: unknown;
   amount_delta?: unknown;
+  confirmed?: unknown;
 }
 
 function parseJson(value: unknown): Record<string, unknown> {
@@ -175,6 +177,8 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
         const previousAmount = Number(movement.previous_amount);
         const newAmount = Number(movement.new_amount);
         if (!category || !follows(row.fee_categories, category)) continue;
+        // A re-read, recategorization or other page's copy is not a price change.
+        if (!isConfirmedMovement(movement)) continue;
         if (!Number.isFinite(previousAmount) || !Number.isFinite(newAmount)) continue;
         const target = ensureInstitution();
         // A later movement of the same fee in this run supersedes the earlier one.
@@ -469,11 +473,15 @@ export async function runFeeAlertDispatch({
   maxRecipients = 200,
 }: { dryRun?: boolean; maxRecipients?: number } = {}): Promise<FeeAlertDispatchResult> {
   const sendWatchlist = isProEmailSendingEnabled();
-  const subscriptionRows = await loadCandidates();
-  const watchlistRows = await loadWatchlistCandidates().catch((error: unknown) => {
+  const loadedSubscriptionRows = await loadCandidates();
+  const loadedWatchlistRows = await loadWatchlistCandidates().catch((error: unknown) => {
     console.error("[fee-alerts] watchlist candidates failed", error instanceof Error ? error.message : String(error));
     return [] as CandidateRow[];
   });
+  // Mark which movements are real price changes on the same page (fee-movement-check.ts).
+  const checked = await withConfirmedMovements([...loadedSubscriptionRows, ...loadedWatchlistRows]);
+  const subscriptionRows = checked.slice(0, loadedSubscriptionRows.length);
+  const watchlistRows = checked.slice(loadedSubscriptionRows.length);
   const site = SITE_URL.replace(/\/$/, "");
 
   // Count and render every Pro reader's watchlist news, whether or not it may be sent.

@@ -4,10 +4,12 @@
  * Rules come from a short reviewed list (no live regulation feed exists yet), so
  * Hamilton cites only these and never invents a rule or a state law.
  */
+import { enforcementAgencyLabel } from "@/lib/regulatory/state-enforcement";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
 import type { InstitutionComplaintYear } from "@/lib/data-store/complaints";
+import type { EnforcementActionRow, EnforcementRecord } from "@/lib/data-store/registry-profile";
 import type { ReportExhibit, ReportSource } from "./types";
 
 export interface RegulatoryRule {
@@ -64,7 +66,7 @@ export const REGULATORY_RULES: readonly RegulatoryRule[] = [
     date: "August 2022",
     applies_to: ["nsf"],
     summary:
-      "Charging an NSF fee each time the same item is re-presented, without clear disclosure, raises unfairness and deception risk in FDIC examinations.",
+      "Charging an NSF fee on each re-presentment of the same item, without clear disclosure, risks unfairness and deception findings.",
     url: null,
   },
   {
@@ -100,14 +102,51 @@ export interface RegulatoryReportData {
     prior_year: string | null;
     prior_year_total_complaints: number | null;
   } | null;
+  /** Public OCC and Federal Reserve enforcement actions; null when no list covers this institution. */
+  enforcement_actions: {
+    lists_checked: string[];
+    as_of: string | null;
+    /** Orders with no end date on file from the last ten years; they may have ended. */
+    no_end_date_on_file: EnforcementActionSummary[];
+    past_count: number;
+    latest_past: EnforcementActionSummary[];
+  } | null;
   limits: string;
+}
+
+export interface EnforcementActionSummary {
+  agency: string;
+  against: string;
+  type: string | null;
+  start_date: string | null;
+  termination_date: string | null;
+  penalty_amount: number | null;
+}
+
+const agencyListName = (agency: string) => `${enforcementAgencyLabel(agency)} enforcement actions`;
+
+function summarizeAction(action: EnforcementActionRow): EnforcementActionSummary {
+  return {
+    agency: action.agency === "OCC" ? "OCC" : "Federal Reserve",
+    against: action.against_holding_company ? `holding company (${action.party_name})` : action.party_name,
+    type: action.action_type,
+    start_date: action.start_date,
+    termination_date: action.termination_date,
+    penalty_amount: action.penalty_amount,
+  };
 }
 
 const NO_STATE_RULES =
   "There is no source of state fee laws for this state in the data yet. Do not state what a state law requires.";
 
-const REGULATORY_LIMITS =
-  "There is no source of enforcement actions in the data yet. CFPB complaints are counted only where the CFPB company name matched this institution; no match is not proof of no complaints.";
+const COMPLAINT_LIMITS =
+  "CFPB complaints are counted only where the CFPB company name matched this institution; no match is not proof of no complaints.";
+
+const NO_ENFORCEMENT_LIST =
+  "No enforcement-action list in the data covers this institution (FDIC and NCUA orders are not loaded). Do not state whether it has enforcement actions.";
+
+const ENFORCEMENT_LIMITS =
+  "Enforcement actions come only from the lists named in enforcement_actions.lists_checked; FDIC and NCUA orders are not loaded. Report an action as fact, with its agency and dates, and never characterize the institution beyond it. Never call an action in no_end_date_on_file active or ongoing: the agencies don't always record an end date, so say it has no end date on file. An empty list means none on those lists, not none anywhere.";
 
 export function stateAgency(stateCode: string | null | undefined, charterType: string | null | undefined): string | null {
   const regulator = STATE_REGULATORS.find((entry) => entry.stateCode === stateCode);
@@ -124,6 +163,8 @@ export function buildRegulatoryContext(params: {
   complaintYears: InstitutionComplaintYear[];
   /** Reviewed state rules for this institution (stateFeeLawsFor); none until reviewed. */
   stateRules?: readonly StateRule[];
+  /** getEnforcementRecord; null or absent when no loaded list covers the institution. */
+  enforcement?: EnforcementRecord | null;
 }): { data: RegulatoryReportData; exhibit: ReportExhibit | null; sources: ReportSource[] } {
   const feeByCategory = new Map(params.fees.map((fee) => [fee.fee_category, fee.institution_amount]));
   const all = rulesForInstitution(params.stateRules);
@@ -144,6 +185,7 @@ export function buildRegulatoryContext(params: {
       }
     : null;
   const agency = stateAgency(params.stateCode, params.charterType);
+  const enforcement = params.enforcement && params.enforcement.agenciesChecked.length > 0 ? params.enforcement : null;
 
   const data: RegulatoryReportData = {
     state_chartering_agency: agency,
@@ -156,7 +198,18 @@ export function buildRegulatoryContext(params: {
       applies_to_fees: applies.length > 0 ? applies.map(getDisplayName) : ["every published consumer deposit fee"],
     })),
     cfpb_complaints: complaints,
-    limits: hasStateRules ? REGULATORY_LIMITS : `${NO_STATE_RULES} ${REGULATORY_LIMITS}`,
+    enforcement_actions: enforcement
+      ? {
+          lists_checked: enforcement.agenciesChecked.map(agencyListName),
+          as_of: enforcement.asOf,
+          no_end_date_on_file: enforcement.open.map(summarizeAction),
+          past_count: enforcement.pastCount,
+          latest_past: enforcement.past.map(summarizeAction),
+        }
+      : null,
+    limits: [hasStateRules ? null : NO_STATE_RULES, enforcement ? ENFORCEMENT_LIMITS : NO_ENFORCEMENT_LIST, COMPLAINT_LIMITS]
+      .filter(Boolean)
+      .join(" "),
   };
 
   const ruleListNote = hasStateRules
@@ -197,6 +250,13 @@ export function buildRegulatoryContext(params: {
     detail: `${rule.citation}, ${rule.date}.`,
     url: rule.url,
   }));
+  if (enforcement) {
+    sources.push({
+      label: "Federal enforcement actions",
+      detail: `${enforcement.agenciesChecked.map(agencyListName).join(" and ")}${enforcement.asOf ? `, read ${enforcement.asOf}` : ""}.`,
+      url: null,
+    });
+  }
   if (complaints) {
     sources.push({ label: "CFPB Consumer Complaint Database", detail: `Complaints matched to ${params.institutionName}, ${complaints.year}.`, url: null });
   }
@@ -205,7 +265,7 @@ export function buildRegulatoryContext(params: {
 
 export const REGULATORY_REPORT_RULES = `
 REGULATORY RULES:
-1. exhibits.regulatory lists the federal rules that bear on this institution's fees, its state chartering agency, and its CFPB complaint record. Name a rule by its name and citation exactly as given when a decision touches a fee it covers.
+1. exhibits.regulatory lists the federal rules that bear on this institution's fees, its state chartering agency, its CFPB complaint record, and any public OCC or Federal Reserve enforcement actions. Name a rule by its name and citation exactly as given when a decision touches a fee it covers.
 2. Every decision on an overdraft or NSF fee must state its regulatory exposure (the rule, and the complaint count when present).
 3. Never cite a rule, a state law, an enforcement action or a regulator's view that is not in exhibits.regulatory. Follow exhibits.regulatory.limits.
 `.trim();

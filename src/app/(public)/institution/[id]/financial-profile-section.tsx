@@ -2,8 +2,10 @@ import { UpgradeGate } from "@/components/upgrade-gate";
 import type { FinancialPoint, GrowthRow, OutlierFlag, PeerMedianPoints, PeerRankRow } from "./financial-history";
 import { FinancialInsights } from "./financial-insights";
 import { FinancialProfileCharts } from "./financial-profile";
-import { BranchFootprintCard, ComplaintsCard, HoldingCompanyCard } from "./registry-cards";
-import type { BranchFootprint, ComplaintTrend, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
+import { BranchFootprintCard, ComplaintsCard, EnforcementCard, HoldingCompanyCard } from "./registry-cards";
+import { RegulatoryWatchSection } from "./regulatory-watch";
+import type { RegulatoryWatch } from "@/lib/data-store/regulatory-watch";
+import type { BranchFootprint, ComplaintTrend, EnforcementRecord, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
 
 /** Decorative silhouette for the locked state; contains no institution data. */
 function LockedPreview() {
@@ -44,6 +46,10 @@ export function FinancialProfileSection({
   footprint = null,
   complaints = null,
   holdingCompany = null,
+  enforcement = null,
+  regulatoryWatch = null,
+  exportHref = null,
+  institutionName = null,
 }: {
   isPro: boolean;
   points: FinancialPoint[];
@@ -53,8 +59,14 @@ export function FinancialProfileSection({
   footprint?: BranchFootprint | null;
   complaints?: ComplaintTrend | null;
   holdingCompany?: HoldingCompanyProfile | null;
+  enforcement?: EnforcementRecord | null;
+  regulatoryWatch?: RegulatoryWatch | null;
+  /** Pro: the analyst CSV of this institution's fees against peer benchmarks. */
+  exportHref?: string | null;
+  /** Named in the regulatory watch, which is read about the institution, not to it. */
+  institutionName?: string | null;
 }) {
-  const hasRegistryCards = Boolean(footprint || complaints || holdingCompany);
+  const hasRegistryCards = Boolean(footprint || complaints || holdingCompany || enforcement || regulatoryWatch);
   if (isPro && points.length === 0 && !hasRegistryCards) return null;
   const years = points.length > 0 ? Math.max(1, Math.round(points.length / 4)) : null;
 
@@ -88,8 +100,10 @@ export function FinancialProfileSection({
                 {footprint && <BranchFootprintCard footprint={footprint} />}
                 <div className="grid gap-4 lg:grid-cols-2">
                   {complaints && <ComplaintsCard trend={complaints} />}
+                  {enforcement && <EnforcementCard record={enforcement} />}
                   {holdingCompany && <HoldingCompanyCard profile={holdingCompany} />}
                 </div>
+                {regulatoryWatch && <RegulatoryWatchSection watch={regulatoryWatch} exportHref={exportHref} institutionName={institutionName} />}
               </div>
             )}
           </>
@@ -98,7 +112,7 @@ export function FinancialProfileSection({
             <LockedPreview />
             <div className="absolute inset-0 flex items-center justify-center p-4">
               <div className="w-full max-w-md">
-                <UpgradeGate message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, and SEC filings" />
+                <UpgradeGate message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, enforcement actions, and SEC filings" />
               </div>
             </div>
           </div>

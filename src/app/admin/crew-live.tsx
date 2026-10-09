@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { CrewFeedItem, CrewMemberStatus, CrewState } from "@/lib/agents/crew";
 import type { AdminAgent } from "@/lib/agents/types";
 
@@ -32,9 +32,12 @@ function clock(iso: string): string {
 export function CrewLive({
   initialCrew,
   initialFeed,
+  children,
 }: {
   initialCrew: CrewMemberStatus[];
   initialFeed: CrewFeedItem[];
+  /** Shown between the crew cards and the activity log (the marketing team). */
+  children?: ReactNode;
 }) {
   const [crew, setCrew] = useState(initialCrew);
   const [feed, setFeed] = useState(initialFeed);
@@ -64,6 +67,8 @@ export function CrewLive({
   }, [filter]);
 
   const visibleFeed = filter ? feed.filter((item) => item.agent === filter) : feed;
+  // Growth is the ledger name the marketing team runs under; the team has its own cards (children).
+  const pipelineCrew = crew.filter((member) => member.agent !== "growth");
   const nameOf = (agent: AdminAgent) => crew.find((member) => member.agent === agent)?.name ?? agent;
 
   return (
@@ -71,20 +76,14 @@ export function CrewLive({
       <section aria-label="The crew">
         <p className="admin-section-title">The crew</p>
         <ul className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {crew.map((member) => {
+          {pipelineCrew.map((member) => {
             const style = STATE_STYLE[member.state];
-            const selected = filter === member.agent;
             return (
               <li key={member.agent}>
-                <button
-                  type="button"
-                  onClick={() => setFilter(selected ? null : member.agent)}
-                  aria-pressed={selected}
-                  className={`h-full w-full rounded-lg border px-4 py-3 text-left transition-colors ${
-                    selected
-                      ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]/5"
-                      : "border-black/[0.08] hover:border-black/20 dark:border-white/[0.1]"
-                  }`}
+                <Link
+                  href={member.href}
+                  prefetch={false}
+                  className="block h-full w-full rounded-lg border border-black/[0.08] px-4 py-3 text-left transition-colors hover:border-black/20 dark:border-white/[0.1] dark:hover:border-white/25"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{member.name}</p>
@@ -100,33 +99,40 @@ export function CrewLive({
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     <span className="font-semibold">Last:</span> {member.last ?? "Nothing yet."}
                   </p>
-                  <p className="mt-2 text-[11px] text-gray-500">
-                    {member.doneToday} done today{member.lastAt ? ` · last ${clock(member.lastAt)}` : ""}
+                  <p className="mt-2 flex items-center justify-between gap-2 text-[11px] text-gray-500">
+                    <span>{member.doneToday} done today{member.lastAt ? ` · last ${clock(member.lastAt)}` : ""}</span>
+                    <span aria-hidden="true" className="text-sm font-semibold text-[var(--brand-primary)]">›</span>
                   </p>
-                </button>
+                </Link>
               </li>
             );
           })}
         </ul>
       </section>
 
+      {children}
+
       <section aria-label="Activity log">
         <div className="flex items-baseline justify-between">
           <p className="admin-section-title">
             Activity log{filter ? ` · ${nameOf(filter)}` : ""}
           </p>
-          <div className="flex items-center gap-3 text-xs">
-            {filter && (
-              <>
-                <button type="button" className="font-semibold text-[var(--brand-primary)]" onClick={() => setFilter(null)}>
-                  Show everyone
-                </button>
-                <Link href={crew.find((member) => member.agent === filter)?.href ?? "/admin"} className="text-gray-500 hover:text-gray-800">
-                  Open {nameOf(filter)}&apos;s tools
-                </Link>
-              </>
-            )}
-          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            Show
+            <select
+              id="crew-log-filter"
+              value={filter ?? ""}
+              onChange={(event) => setFilter((event.target.value || null) as AdminAgent | null)}
+              className="min-h-11 rounded-md border border-black/15 bg-white px-2 py-1 text-sm text-gray-800 sm:min-h-0 sm:text-xs dark:border-white/15 dark:bg-transparent dark:text-gray-200"
+            >
+              <option value="">Everyone</option>
+              {crew.map((member) => (
+                <option key={member.agent} value={member.agent}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {visibleFeed.length === 0 ? (
           <p className="mt-3 text-sm text-gray-500">No activity yet. When the crew works, every step shows up here.</p>

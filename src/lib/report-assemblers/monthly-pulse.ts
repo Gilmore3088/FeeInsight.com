@@ -16,6 +16,7 @@ import { createHash } from "crypto";
 import { getSql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { urlIdentity } from "@/lib/agents/magellan/finders";
 import type { DataManifest } from "@/lib/report-engine/types";
 
 export const PULSE_WINDOW_DAYS = 30;
@@ -65,6 +66,8 @@ export interface RecordedChangeRow {
   new_amount: number | string | null;
   changed_at: string | Date;
   source_url: string | null;
+  /** Page the superseded old-price row was read from. */
+  old_source_url?: string | null;
   new_document_text: string | null;
   /** Text of the schedule the old price was read from. */
   old_document_text: string | null;
@@ -101,7 +104,7 @@ export function sameEdition(a: string | null | undefined, b: string | null | und
 
 /**
  * Pure: did the bank change this fee? Yes only when the old and new prices sit on the
- * same fee line (same name), the earlier schedule states the old price, and the newest
+ * same fee line (same page, same name), the earlier schedule states the old price, and the newest
  * schedule states the new price and no longer states the old one for that fee.
  * Two readings of the same edition (both texts state exactly the same dollar amounts) are
  * not a change: a PDF read twice can pair a fee with a neighbouring column's price. Nor is
@@ -113,6 +116,9 @@ export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;
   if (oldAmount === newAmount || !row.fee_name || !row.new_document_text) return null;
   if (!row.old_fee_name || !sameFeeName(row.old_fee_name, row.fee_name)) return null;
+  // Same page: a price on a different schedule (business against consumer, another
+  // product's page) is a second fee line, not a change.
+  if (row.old_source_url && row.source_url && urlIdentity(row.old_source_url) !== urlIdentity(row.source_url)) return null;
   const newStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, newAmount, ".");
   if (!newStated.ok) return null;
   if (!checkFeeAgainstSource(row.old_document_text, row.fee_name, oldAmount, ".").ok) return null;
@@ -148,9 +154,12 @@ const CHANGES_SQL = `
       FROM fee_change_records c
      WHERE COALESCE(c.changed_at, c.detected_at) >= $1
        AND c.change_type IN ('increase', 'increased', 'decrease', 'decreased')
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
   )
   SELECT i.institution_name, i.state_code, i.charter_type, ch.fee_key, ch.old_amount, ch.new_amount, ch.changed_at,
-         n.fee_name, n.source_url, o.fee_name AS old_fee_name,
+         n.fee_name, n.source_url, o.fee_name AS old_fee_name, o.source_url AS old_source_url,
          (SELECT t.normalized_text
             FROM agent_source_texts t
            WHERE t.source_document_id = o.source_document_id
@@ -179,7 +188,7 @@ const CHANGES_SQL = `
        LIMIT 1
     ) n ON true
     LEFT JOIN LATERAL (
-      SELECT fp.fee_name, fr.source_document_id
+      SELECT fp.fee_name, fp.source_url, fr.source_document_id
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id

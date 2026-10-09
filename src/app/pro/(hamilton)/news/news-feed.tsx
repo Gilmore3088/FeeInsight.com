@@ -24,7 +24,7 @@ interface NewsFeedProps {
   activeSource?: string;
   activeTopic?: string;
   activeRange: string;
-  /** Feed ingestion is an operator task: only admins see the Refresh control. */
+  /** Feed ingestion is an operator task: only admins and analysts see the Refresh control. */
   canRefreshFeeds?: boolean;
 }
 
@@ -122,7 +122,7 @@ export function NewsFeed({
                   : "text-warm-600 hover:text-warm-900 hover:bg-warm-100"
               }`}
             >
-              {range === "today" ? "24h" : range === "week" ? "7d" : range === "month" ? "30d" : "All"}
+              {range === "today" ? "Today" : range === "week" ? "7d" : range === "month" ? "30d" : "All"}
             </button>
           ))}
         </div>
@@ -152,7 +152,7 @@ export function NewsFeed({
         )}
 
         {/* Count */}
-        <span className="ml-auto text-[11px] tabular-nums text-warm-500">
+        <span className="ml-auto text-[11px] [font-variant-numeric:tabular-nums] text-warm-500">
           {totalCount.toLocaleString()} articles
         </span>
       </div>
@@ -163,8 +163,10 @@ export function NewsFeed({
           {articles.length === 0 ? (
             <div className="rounded-xl border border-warm-200 bg-white/70 px-6 py-12 text-center">
               <p className="text-[14px] text-warm-600">No articles found.</p>
-              <p className="mt-1 text-[12px] text-warm-500">
-                Click Refresh to fetch the latest regulatory news.
+              <p className="mt-1 text-[12px] text-warm-600">
+                {canRefreshFeeds
+                  ? "Click Refresh to fetch the latest regulatory news."
+                  : "Nothing matches these filters. Try a longer time range or all sources and topics."}
               </p>
             </div>
           ) : (
@@ -196,7 +198,7 @@ export function NewsFeed({
                         {topicLabels[article.topic] ?? article.topic}
                       </span>
                       <span className="text-warm-300">&middot;</span>
-                      <span className="text-warm-500 tabular-nums">
+                      <span className="text-warm-500 [font-variant-numeric:tabular-nums]">
                         {timeAgo(article.published_at || article.created_at)}
                       </span>
                     </div>
@@ -233,7 +235,7 @@ export function NewsFeed({
                 }`}
               >
                 <span>All Sources</span>
-                <span className="tabular-nums text-[10px] opacity-60">
+                <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">
                   {Object.values(sourceCounts).reduce((a, b) => a + b, 0)}
                 </span>
               </button>
@@ -249,7 +251,7 @@ export function NewsFeed({
                     <span className={`inline-block h-2 w-2 rounded-sm ${SOURCE_COLORS[key]?.split(" ")[0] ?? "bg-gray-800"}`} />
                     {label}
                   </span>
-                  <span className="tabular-nums text-[10px] opacity-60">
+                  <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">
                     {sourceCounts[key] ?? 0}
                   </span>
                 </button>
@@ -270,7 +272,7 @@ export function NewsFeed({
                 }`}
               >
                 <span>All Topics</span>
-                <span className="tabular-nums text-[10px] opacity-60">
+                <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">
                   {Object.values(topicCounts).reduce((a, b) => a + b, 0)}
                 </span>
               </button>
@@ -289,7 +291,7 @@ export function NewsFeed({
                       <span className={`text-[10px] ${TOPIC_COLORS[key] ?? ""}`}>&bull;</span>
                       {label}
                     </span>
-                    <span className="tabular-nums text-[10px] opacity-60">{count}</span>
+                    <span className="[font-variant-numeric:tabular-nums] text-[10px] opacity-60">{count}</span>
                   </button>
                 );
               })}
@@ -304,7 +306,7 @@ export function NewsFeed({
             <p className="text-[11px] leading-relaxed text-warm-600">
               Aggregated from official RSS feeds of the Federal Reserve, FDIC,
               OCC, and CFPB. Articles are classified by topic using keyword
-              analysis. Click Refresh to pull the latest updates.
+              analysis. {canRefreshFeeds ? "Click Refresh to pull the latest updates." : "New releases are read once a day."}
             </p>
           </div>
         </aside>

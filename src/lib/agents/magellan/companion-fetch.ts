@@ -38,7 +38,7 @@ const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
 const RETRY_AFTER_FAILURE_HOURS = 24;
 const MAX_FAILURES = 5;
 
-interface CompanionRow {
+export interface CompanionRow {
   id: number | string;
   institution_id: number | string;
   url: string;
@@ -89,8 +89,20 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.status IN ('found', 'fetched')
        AND ias.document_role <> 'business'
-       AND COALESCE(inst.status, 'active') = 'active'
-       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode})
+       AND (
+         COALESCE(inst.status, 'active') = 'active'
+         -- A schedule found by hand is fetched for a bank whose own link went dormant (Stock
+         -- Yards, $10B, 2026-10-08): that is why it was found by hand. A closed charter is not.
+         OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')
+       )
+       AND (
+         ${stateCode}::text IS NULL
+         OR upper(btrim(inst.state_code)) = ${stateCode}
+         -- A schedule found by hand is fetched by the next state lane, whatever its state:
+         -- waiting for its own state's lane left Comerica, Cadence and three more unfetched
+         -- for six hours on 2026-10-08.
+         OR (ias.found_by_strategy = 'discover.operator_schedule' AND ias.last_fetched_at IS NULL)
+       )
        AND (${institutionId}::bigint IS NULL OR ias.institution_id = ${institutionId}::bigint)
        AND (
          ias.last_fetched_at IS NULL
@@ -99,7 +111,10 @@ async function selectDue(db: SqlTag, stateCode: string | null, institutionId: nu
            ELSE make_interval(days => ${COMPANION_REFETCH_DAYS})
          END
        )
-     ORDER BY ias.last_fetched_at ASC NULLS FIRST, ias.id ASC
+     -- Schedules found by hand go first, so a state with more due pages than the limit
+     -- never leaves one waiting (NY had 12 due on 2026-10-07 and skipped Morgan Stanley).
+     ORDER BY (ias.found_by_strategy = 'discover.operator_schedule') DESC,
+              ias.last_fetched_at ASC NULLS FIRST, ias.id ASC
      LIMIT ${limit}
   `;
 }
@@ -192,6 +207,12 @@ async function recordFailure(db: SqlTag, row: CompanionRow, status: number | nul
   `;
 }
 
+const PDF_LINK = /\.pdf($|[?#])/i;
+
+export function isPdfLink(url: string): boolean {
+  return PDF_LINK.test(url);
+}
+
 async function fetchOne(
   db: SqlTag,
   row: CompanionRow,
@@ -223,7 +244,14 @@ async function fetchOne(
   const contentType = response.headers.get("content-type");
   const finalUrl = response.url || row.url;
   const contentHash = createHash("sha256").update(bytes).digest("hex");
-  const documentType = documentTypeForFormat(detectFormat(bytes, contentType, finalUrl));
+  const format = detectFormat(bytes, contentType, finalUrl);
+  const documentType = documentTypeForFormat(format);
+  // A PDF link answered with a web page is the site's bot wall, not the document: 53.com
+  // served Fifth Third's fee PDFs as a "page doesn't exist" page (7 Oct 2026). Storing it
+  // would hand Rosetta an error page; the paid fetch (blocked-fetch.ts) tries it instead.
+  if (format === "html" && isPdfLink(row.url)) {
+    return fail(response.status, "PDF link answered with a web page (bot wall)", undefined, "blocked_bot");
+  }
 
   // Same bytes as this page's last copy, or as any stored document of the bank (the
   // unique index on institution and content allows one): reuse it.
@@ -330,34 +358,11 @@ export async function runCompanionFetch(options: {
   const results: CompanionFetchResult[] = [];
   for (const row of rows) {
     if (Date.now() > deadline) break;
-    const startedAt = Date.now();
-    const result = await fetchOne(db, row, options.fetchImpl, options.vault);
-    results.push(result);
-    await recordAttempt(db, {
-      institutionId: result.institutionId,
-      sourceDocumentId: result.sourceDocumentId,
-      stage: "fetch",
-      strategy: COMPANION_FETCH_STRATEGY.strategy,
-      version: COMPANION_FETCH_STRATEGY.version,
-      fingerprint: row.url,
-      outcome: result.attemptOutcome,
-      yieldCount: result.outcome === "success" ? 1 : 0,
-      costMicrousd: 0,
-      durationMs: Date.now() - startedAt,
+    results.push(await fetchAndRecordCompanion(db, row, options.fetchImpl, options.vault, {
       runId: options.runId,
       stepId: options.stepId ?? null,
-      // The bank's playbook describes its main fee link; companion pages stay out of it.
-      foldIntoPlaybook: false,
-      detail: {
-        url: result.url,
-        companion_source_id: result.companionId,
-        account: result.accountName,
-        role: row.document_role,
-        document_type: result.documentType,
-        bytes: result.bytes,
-        reason: result.reason,
-      },
-    });
+      strategy: COMPANION_FETCH_STRATEGY,
+    }));
   }
   return {
     status: "ran",
@@ -368,4 +373,47 @@ export async function runCompanionFetch(options: {
     failed: results.filter((result) => result.outcome === "failed").length,
     results,
   };
+}
+
+/**
+ * Fetches one companion page and records the attempt. The plain companion fetch and the
+ * paid fetch for blocked pages (blocked-fetch.ts) share it, so a page stored either way is
+ * kept the same way.
+ */
+export async function fetchAndRecordCompanion(
+  db: SqlTag,
+  row: CompanionRow,
+  fetchImpl: Fetcher,
+  vault: DocumentVault | null,
+  ctx: { runId: number; stepId: number | null; strategy: { strategy: string; version: number }; costMicrousd?: number; note?: string | null },
+): Promise<CompanionFetchResult> {
+  const startedAt = Date.now();
+  const result = await fetchOne(db, row, fetchImpl, vault);
+  await recordAttempt(db, {
+    institutionId: result.institutionId,
+    sourceDocumentId: result.sourceDocumentId,
+    stage: "fetch",
+    strategy: ctx.strategy.strategy,
+    version: ctx.strategy.version,
+    fingerprint: row.url,
+    outcome: result.attemptOutcome,
+    yieldCount: result.outcome === "success" ? 1 : 0,
+    costMicrousd: ctx.costMicrousd ?? 0,
+    durationMs: Date.now() - startedAt,
+    runId: ctx.runId,
+    stepId: ctx.stepId,
+    // The bank's playbook describes its main fee link; companion pages stay out of it.
+    foldIntoPlaybook: false,
+    detail: {
+      url: result.url,
+      companion_source_id: result.companionId,
+      account: result.accountName,
+      role: row.document_role,
+      document_type: result.documentType,
+      bytes: result.bytes,
+      reason: result.reason,
+      ...(ctx.note ? { note: ctx.note } : {}),
+    },
+  });
+  return result;
 }

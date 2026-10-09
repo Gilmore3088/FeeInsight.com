@@ -2,6 +2,7 @@ import { sql } from "./data-store/connection";
 import {
   findOpenProviderCreditFailure,
   getAutomationControl,
+  getMarketingControl,
   getPipelineControl,
   type AutomationControlState,
 } from "./automation-control";
@@ -62,6 +63,8 @@ export interface AtlasCommandCenter {
   attention: AttentionItem[];
   automation: AutomationControlState;
   pipeline: AutomationControlState;
+  /** Growth's marketing pause, separate from the pipeline pause. */
+  marketing: AutomationControlState;
   provider: ProviderReadiness;
   trustReview: TrustReviewOverview;
   apiUsage: ApiUsageOverview;
@@ -458,7 +461,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     getJobFreshness(),
   ]);
 
-  const [knoxCounts, sourceSubmissionCounts, automation, pipeline, apiUsage, agentHealth, openCreditFailure] = await Promise.all([
+  const [knoxCounts, sourceSubmissionCounts, automation, pipeline, marketing, apiUsage, agentHealth, openCreditFailure] = await Promise.all([
     getKnoxReviewCounts(),
     getSourceSubmissionCounts(),
     getAutomationControl().catch((error) => {
@@ -476,6 +479,16 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       return {
         enabled: false,
         reason: "Pipeline control is unavailable; deterministic work is treated as paused",
+        changedBy: "system",
+        changedAt: new Date().toISOString(),
+        revision: 0,
+      } satisfies AutomationControlState;
+    }),
+    getMarketingControl().catch((error) => {
+      console.error("Atlas marketing control query failed", error);
+      return {
+        enabled: false,
+        reason: "Marketing control is unavailable; marketing work is treated as paused",
         changedBy: "system",
         changedAt: new Date().toISOString(),
         revision: 0,
@@ -563,7 +576,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
         ? "darwin"
         : schedule.job_name.includes("pulse")
           ? "hamilton"
-          : schedule.job_name.includes("discovery") || schedule.job_name.includes("extraction") || schedule.job_name.includes("magellan")
+          : schedule.job_name.includes("registry") || schedule.job_name.includes("magellan")
             ? "magellan"
             : "atlas";
     attention.push({
@@ -658,6 +671,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     attention: attention.slice(0, 8),
     automation,
     pipeline,
+    marketing,
     provider,
     trustReview,
     apiUsage,

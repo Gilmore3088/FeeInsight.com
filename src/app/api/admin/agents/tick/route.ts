@@ -6,8 +6,10 @@ import {
   hasQueuedProviderSteps,
   reapStaleAgentSteps,
 } from "@/lib/agents/run-store";
+import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
+import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
-import { getPipelineControl } from "@/lib/automation-control";
+import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import { assertCronTickBudgetAllowed } from "@/lib/api-hardening/budget";
@@ -28,11 +30,13 @@ const DEFAULT_MAX_STEPS_PER_RUN = 10;
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
- * No new step starts this long after the tick began. Ticks fire every 5 minutes and a
- * killed tick leaves its query running on the database, so a tick must end well inside
- * its interval; this leaves a slow last step about two minutes to finish.
+ * Started steps should finish this long after the tick began: a step starts only when its
+ * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 5 minutes and a
+ * killed tick leaves its query running on the database, so a tick must end inside its
+ * interval and maxDuration. Until 2026-10-07 no step started after 150 s, which left
+ * ticks idle for 10 to 150 s and lane passes spread over three ticks.
  */
-const STEP_START_BUDGET_MS = 150_000;
+const STEP_FINISH_BUDGET_MS = 270_000;
 
 async function isAuthorized(request: NextRequest): Promise<boolean> {
   if (matchesConfiguredCronSecret(request.headers.get("authorization"))) return true;
@@ -53,23 +57,36 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [pipeline, execution] = await Promise.all([
+  const [pipeline, marketing, execution] = await Promise.all([
     getPipelineControl(),
+    getMarketingControl(),
     Promise.resolve(getExecutionBackendStatus()),
   ]);
-  if (!pipeline.enabled || !execution.enabled) {
+  const controls = {
+    pipeline: {
+      enabled: pipeline.enabled,
+      reason: pipeline.reason,
+      changedAt: pipeline.changedAt,
+      changedBy: pipeline.changedBy,
+    },
+    marketing: {
+      enabled: marketing.enabled,
+      reason: marketing.reason,
+      changedAt: marketing.changedAt,
+      changedBy: marketing.changedBy,
+    },
+  };
+  // The pipeline pause and the marketing pause are separate: with only the pipeline
+  // paused, the tick still drains growth's marketing runs (and the reverse). Only when
+  // both are paused, or execution is off, does the tick do nothing.
+  if ((!pipeline.enabled && !marketing.enabled) || !execution.enabled) {
     return NextResponse.json({
       ok: true,
       paused: true,
-      pauseReason: !pipeline.enabled
-        ? pipeline.reason ?? "Pipeline is paused."
-        : execution.detail,
-      pipeline: {
-        enabled: pipeline.enabled,
-        reason: pipeline.reason,
-        changedAt: pipeline.changedAt,
-        changedBy: pipeline.changedBy,
-      },
+      pauseReason: !execution.enabled
+        ? execution.detail
+        : pipeline.reason ?? "Pipeline is paused.",
+      ...controls,
       execution: {
         backend: execution.backend,
         enabled: execution.enabled,
@@ -132,10 +149,33 @@ async function handleGET(request: NextRequest) {
     }
   }
 
-  const scheduledStateLanes = await scheduleDueStateLaneRuns({
-    limit: stateLaneLimit,
-    triggeredBy: "api.admin.agents.tick",
-  });
+  // New data runs are scheduled only while the pipeline runs; a paused pipeline still
+  // lets the tick drain growth's marketing runs below.
+  const emptySchedule = { selected: 0, scheduled: 0, reused: 0, failed: [], results: [] };
+  const scheduledStateLanes = pipeline.enabled
+    ? await scheduleDueStateLaneRuns({
+        limit: stateLaneLimit,
+        triggeredBy: "api.admin.agents.tick",
+      })
+    : emptySchedule;
+  // Institutions that must not wait on their state's lane get their own run.
+  let priorityInstitutions: Awaited<ReturnType<typeof schedulePriorityInstitutionRuns>> | { error: string } | null = null;
+  // A state whose missed banks must not wait on its lane gets a direct re-search run.
+  let priorityStateResearch: Awaited<ReturnType<typeof schedulePriorityStateResearchRuns>> | { error: string } | null = null;
+  if (pipeline.enabled) {
+    try {
+      priorityInstitutions = await schedulePriorityInstitutionRuns();
+    } catch (error) {
+      console.error("Priority institution scheduling failed:", error);
+      priorityInstitutions = { error: error instanceof Error ? error.message : String(error) };
+    }
+    try {
+      priorityStateResearch = await schedulePriorityStateResearchRuns();
+    } catch (error) {
+      console.error("Priority state re-search scheduling failed:", error);
+      priorityStateResearch = { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -144,9 +184,25 @@ async function handleGET(request: NextRequest) {
     maxProviderCallsPerRun,
     maxEstimatedCostMicrousd,
     providerRunLimit,
-    deadlineAt: tickStartedAt + STEP_START_BUDGET_MS,
+    deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
+    paused: { pipeline: !pipeline.enabled, marketing: !marketing.enabled },
   });
-  return NextResponse.json({ ok: true, reaped, providerBudget, scheduledStateLanes, ...result });
+  return NextResponse.json({
+    ok: true,
+    // One of the two pauses is in force: say which, while the other side keeps draining.
+    ...(!pipeline.enabled || !marketing.enabled
+      ? {
+          partlyPaused: !pipeline.enabled ? "pipeline" : "marketing",
+          ...controls,
+        }
+      : {}),
+    reaped,
+    providerBudget,
+    scheduledStateLanes,
+    priorityInstitutions,
+    priorityStateResearch,
+    ...result,
+  });
 }
 
 async function handlePOST(request: NextRequest) {

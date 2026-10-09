@@ -4,6 +4,17 @@ import type { User } from "@/lib/auth";
 
 type CustomerOwner = Pick<User, "id" | "email" | "username" | "display_name" | "stripe_customer_id">;
 
+/** False only when Stripe says this customer is missing or deleted for the current key. */
+async function customerUsable(customerId: string): Promise<boolean> {
+  try {
+    const customer = await getStripe().customers.retrieve(customerId);
+    return !("deleted" in customer && customer.deleted);
+  } catch (error) {
+    if ((error as { code?: string } | null)?.code === "resource_missing") return false;
+    throw error;
+  }
+}
+
 /**
  * The user's Stripe customer id, created on first need.
  *
@@ -13,9 +24,19 @@ type CustomerOwner = Pick<User, "id" | "email" | "username" | "display_name" | "
  * customers (the loser's customer is deleted, best effort).
  */
 export async function ensureStripeCustomer(user: CustomerOwner): Promise<string> {
-  if (user.stripe_customer_id) return user.stripe_customer_id;
-
   const stripe = getStripe();
+
+  // A saved id can belong to the other mode (a test-mode customer after the switch to live
+  // keys) or to a customer deleted in the dashboard; checkout then fails with "No such
+  // customer". Such an id is dropped and a fresh customer made for the current account.
+  if (user.stripe_customer_id) {
+    if (await customerUsable(user.stripe_customer_id)) return user.stripe_customer_id;
+    await sql`
+      UPDATE users SET stripe_customer_id = NULL
+      WHERE id = ${user.id} AND stripe_customer_id = ${user.stripe_customer_id}
+    `;
+  }
+
   const created = await stripe.customers.create({
     email: user.email || user.username,
     name: user.display_name || undefined,

@@ -59,7 +59,7 @@ export const PAGE_TRAILING_SLASH_SQL = "/+(\\?|$)";
  * another spelling of their page would supersede (`magellan.same_page_copies`) but changes
  * none, and exact-address superseding goes on as before. Live since a shadow review on prod
  * (5 fetch steps, 7 Oct 2026): the same 109 pairs every step, each a true respelling (www,
- * :443, http, trailing slash, #fragment), no thin current copy, 667 live fees on the older
+ * :443, http, trailing slash, #fragment), no thin current copy, 277 live fees on the older
  * copies. Superseding moves no fee by itself: Hamilton's refresh moves a live fee to the
  * current copy only when the current copy reads the same line, and its newer-copy check
  * still pairs exact addresses, so no fee comes down because a spelling changed.

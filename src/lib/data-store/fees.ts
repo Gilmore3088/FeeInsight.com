@@ -303,6 +303,9 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       FROM fee_change_records fce
       JOIN institution_sources ct ON fce.institution_id = ct.id
       WHERE fce.fee_category = ${category}
+        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+        AND fce.like_for_like IS TRUE
+        AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
         AND EXISTS (
           SELECT 1 FROM published_fee_catalog live
           WHERE live.institution_id = fce.institution_id
@@ -390,7 +393,8 @@ export async function getFeeHistory(institutionId: number, category: string): Pr
 export async function getRecentPriceChanges(days: number = 90, category?: string): Promise<PriceChange[]> {
   try {
     const params: (string | number)[] = [days];
-    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`];
+    // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts).
+    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`, "fce.like_for_like IS TRUE", "EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))"];
     if (category) {
       conditions.push("fce.fee_category = $2");
       params.push(category);
@@ -422,6 +426,8 @@ export async function getPriceMovementSummary(days: number = 90): Promise<PriceM
               COUNT(*) as total_changes
        FROM fee_change_records
        WHERE detected_at > NOW() - INTERVAL '1 day' * $1
+         AND like_for_like IS TRUE
+         AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fee_change_records.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        GROUP BY fee_category
        ORDER BY total_changes DESC`,
       [days]

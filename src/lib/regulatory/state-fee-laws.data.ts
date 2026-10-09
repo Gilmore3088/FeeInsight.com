@@ -3067,7 +3067,6 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
       "overdraft",
       "nsf",
       "od_daily_cap",
-      "nsf_daily_cap",
       "continuous_od"
     ],
     "summary": "DFS draft rules, not formally proposed, would bar bank and credit union overdraft fees on overdrafts under $20 and over 3 such fees daily.",

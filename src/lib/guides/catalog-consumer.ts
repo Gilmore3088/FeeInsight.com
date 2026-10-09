@@ -194,7 +194,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     primaryCategory: "nsf",
     // `overdraft` is declared because the guide's central comparison cites its median.
     // A guide may only cite fees it declares — see guides.test.ts.
-    relatedCategories: ["nsf_daily_cap", "deposited_item_return", "overdraft"],
+    relatedCategories: ["od_daily_cap", "deposited_item_return", "overdraft"],
     family: "Overdraft & NSF",
     featured: true,
     relatedSlugs: ["overdraft-fees", "check-fees", "digital-banking-fees"],
@@ -232,7 +232,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Where a daily cap exists, the median is {{nsf_daily_cap.median}}. Caps matter more for NSF than for overdraft, because a single failed payment is often retried by the merchant two or three times, and an uncapped bank can charge you on every attempt.",
+            text: "Where a bank caps its overdraft and NSF charges per day, the median cap is {{od_daily_cap.median}}. Caps matter more for NSF than for overdraft, because a single failed payment is often retried by the merchant two or three times, and an uncapped bank can charge you on every attempt.",
           },
         ],
       },
@@ -335,7 +335,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "Why one ATM withdrawal can carry two separate fees, what banks and credit unions charge, and how to stop paying to reach your own money.",
     primaryCategory: "atm_non_network",
-    relatedCategories: ["atm_international", "balance_inquiry"],
+    relatedCategories: ["card_foreign_txn"],
     family: "ATM & Card",
     featured: true,
     relatedSlugs: ["foreign-transaction-fees", "monthly-maintenance-fees", "overdraft-fees"],
@@ -371,12 +371,12 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Using an ATM abroad adds another layer: the median international ATM fee is {{atm_international.median}}, and that is before any currency conversion charge on the same transaction.",
+            text: "Using an ATM abroad adds another layer: the median flat charge for using an ATM or a card abroad is {{card_foreign_txn.median}}, and that is before any currency conversion charge on the same transaction.",
           },
           {
             type: "callout",
             tone: "warning",
-            text: "Some banks charge for a balance inquiry at an out-of-network machine — a median {{balance_inquiry.median}} to be told a number you can see for free in your app. Check your balance before you leave, not at the ATM.",
+            text: "Some banks also charge for a balance inquiry at an out-of-network machine, to be told a number you can see for free in your app. Check your balance before you leave, not at the ATM.",
           },
           {
             type: "paragraph",
@@ -777,7 +777,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "What your card charges when you spend abroad, the conversion trick that costs more than the fee, and how to pay nothing at all.",
     primaryCategory: "card_foreign_txn",
-    relatedCategories: ["atm_international"],
+    relatedCategories: [],
     family: "International",
     featured: false,
     relatedSlugs: ["atm-fees", "wire-transfer-fees", "digital-banking-fees"],
@@ -807,11 +807,11 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Across the institutions we track, the median foreign transaction charge is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing.",
+            text: "Across the institutions we track, the median flat charge for using a card or an ATM abroad is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing. Most cards charge a percentage instead, which these flat figures leave out.",
           },
           {
             type: "paragraph",
-            text: "Withdrawing cash abroad stacks charges. The median international ATM fee is {{atm_international.median}}, and the foreign transaction percentage frequently applies on top of it, alongside the machine owner's own surcharge. Three charges, one withdrawal.",
+            text: "Withdrawing cash abroad stacks charges: your bank's international ATM fee, the foreign transaction percentage that frequently applies on top of it, and the machine owner's own surcharge. Three charges, one withdrawal.",
           },
           {
             type: "paragraph",
@@ -1073,7 +1073,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     description:
       "Which electronic banking services still carry a charge, what a returned electronic payment costs, and how to move money without paying for it.",
     primaryCategory: "ach_origination",
-    relatedCategories: ["ach_return", "bill_pay", "mobile_deposit", "zelle_fee"],
+    relatedCategories: ["ach_return", "bill_pay", "mobile_deposit"],
     family: "Digital Banking",
     featured: false,
     relatedSlugs: ["wire-transfer-fees", "nsf-fees", "monthly-maintenance-fees"],
@@ -1106,9 +1106,8 @@ export const CONSUMER_GUIDES: Guide[] = [
             items: [
               "Sending an ACH transfer: median {{ach_origination.median}}, and free at most institutions",
               "Returned ACH payment: median {{ach_return.median}} — by far the most expensive item here",
-              "Bill pay: median {{bill_pay.median}}, generally included at no charge",
+              "Bill pay and person-to-person payments such as Zelle: median {{bill_pay.median}}, generally included at no charge",
               "Mobile deposit: median {{mobile_deposit.median}}, though some banks charge for expedited availability",
-              "Person-to-person payment: median {{zelle_fee.median}}",
             ],
           },
           {

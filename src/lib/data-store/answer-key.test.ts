@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { normalizeFeeAmount, parseAnswerKeyPrefill } from "./answer-key";
+import { banksToCheck, isPersonChecked, normalizeFeeAmount, parseAnswerKeyPrefill } from "./answer-key";
 
 describe("normalizeFeeAmount", () => {
   it("derives the amount kind when it is missing", () => {
@@ -51,5 +51,20 @@ describe("parseAnswerKeyPrefill", () => {
   it("rejects a file that is not version 1", () => {
     expect(parseAnswerKeyPrefill({ institutions: [] }).errors[0]).toMatch(/version 1/);
     expect(parseAnswerKeyPrefill({ version: 1, institutions: [{ institution_id: 1, document_url: "u", document_type: "docx" }] }).institutions).toEqual([]);
+  });
+});
+
+describe("person-checked answer keys", () => {
+  const bank = (id: number, status: "confirmed" | "prefilled", confirmed_by: string | null, fee_count: number) => ({ id, status, confirmed_by, fee_count });
+
+  it("never counts a key a Claude thread confirmed as checked by a person (Oct 8)", () => {
+    expect(isPersonChecked(bank(1, "confirmed", "knox-hand-key", 14))).toBe(false);
+    expect(isPersonChecked(bank(2, "confirmed", "james", 14))).toBe(true);
+    expect(isPersonChecked(bank(3, "prefilled", null, 14))).toBe(false);
+  });
+
+  it("queues every bank a person still has to check, shortest key first", () => {
+    const rows = [bank(1, "confirmed", "knox-hand-key", 38), bank(2, "confirmed", "james", 5), bank(3, "prefilled", null, 21), bank(4, "confirmed", "knox-hand-key", 14)];
+    expect(banksToCheck(rows).map((row) => row.id)).toEqual([4, 3, 1]);
   });
 });

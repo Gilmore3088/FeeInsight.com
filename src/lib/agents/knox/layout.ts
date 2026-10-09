@@ -1,6 +1,6 @@
 import { withinAmountEnvelope } from "@/lib/agents/darwin/envelopes";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
-import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, usableName } from "@/lib/agents/knox/rules";
+import { MAX_REASONABLE_FEE_AMOUNT, nameFrom, stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
 
 /**
  * Layout helpers shared by Knox's pass 2 specialists (`table-rows.ts`, `families.ts`).
@@ -32,6 +32,13 @@ export function cleanFeeName(raw: string): string | null {
     .replace(/[=*+†‡¹²³⁴⁵⁶⁷⁸⁹]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  // v42: a long name that ends in a note keeps its title, not the note's last clause
+  // ("Overdraft Fee - each debit or check presentment paid (Consumer Accts: 5 max total OD
+  // or Returned Item fees daily)", BankIowa).
+  const noteless = name.replace(/\s*\([^()]*\)?$/, "").trim();
+  if (name.split(" ").length > MAX_NAME_WORDS && noteless !== name && noteless.split(" ").length <= MAX_NAME_WORDS && usableName(noteless)) {
+    name = noteless;
+  }
   if (name.split(" ").length > MAX_NAME_WORDS) {
     const tail = name.split(/[.;:!?]\s+/).pop() ?? name;
     name = tail.trim();
@@ -114,7 +121,8 @@ export function tidyFeeName(raw: string): string {
     .replace(LEADERS, " ")
     .replace(/::/g, ":")
     .split(/\s+\|\s+|\s*\|\s*/)
-    .map((cell) => cell.replace(/\s+/g, " ").trim())
+    // A footnote number left behind once the dot leaders are gone ("Check Cashing Fee1. . . $5").
+    .map((cell) => stripFootnoteMarks(cell.replace(/\s+/g, " ").trim()))
     .filter(Boolean);
   // A unit cell at either end is the price's qualifier or the next row's, not the name.
   // So is the end of the previous row's sentence ("than 22 years. | Out-of-Network ATMs",
@@ -137,6 +145,12 @@ export function tidyFeeName(raw: string): string {
     .replace(/[\s:;,\-–|/]+$/, "")
     .trim();
   name = trimEnd(name);
+  // v46: "Normal bank fees and charges, including returned item charge/overdraft item charge of"
+  // (Origin Bank): after a general "fees and charges", the fee is what the sentence lists after
+  // "including". "NSF for each presentment, including if the same item is presented" keeps its name.
+  const listed = name.match(/\b(?:fees|charges)(?:\s+and\s+(?:fees|charges))?,\s+including\s+(.+)$/i)?.[1];
+  // A name at the 120-character cap may end mid-word, so it keeps its words.
+  if (listed && raw.trim().length < 120 && listed.split(" ").length <= MAX_TITLE_WORDS) name = `${listed.charAt(0).toUpperCase()}${listed.slice(1)}`;
   // The words that led into the price ("Replacement Card Fee of", "ATM Fee for",
   // "Debit Card Replacement A fee of") and an article in front ("A minimum balance fee").
   // A sentence keeps its ending: "required to avoid a minimum balance fee of" is how the
@@ -148,6 +162,56 @@ export function tidyFeeName(raw: string): string {
   // "(Money Order)" alone is the name in parentheses.
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();
+  return usableName(name) ? name : raw.trim();
+}
+
+/**
+ * Two shapes a PDF's columns leave in a name, fixed without changing its words otherwise:
+ * - a parenthesis the line break cut off ("Early Account Closure (by Extraco – no",
+ *   "Consumer, Inactivity Fee (Notification sent at 10"): the name ends before the first
+ *   unclosed "(", or loses a lone opening "(" when nothing comes before it;
+ * - a word printed twice where a row label meets its cell ("Account Research Research",
+ *   "MORTGAGE Mortgage Fax Fee", "Monthly Fee Fee is waived if ..."): an ALL-CAPS heading
+ *   word is dropped, a description after the repeat ("is waived ...") is dropped, and
+ *   otherwise the repeat is read once ("Personal Loan Loan Application Fee").
+ * Returns the input when the result would not be a usable name.
+ */
+export function repairNameShape(raw: string): string {
+  let name = raw.replace(/\s+/g, " ").trim();
+  const open: number[] = [];
+  for (let index = 0; index < name.length; index += 1) {
+    if (name[index] === "(") open.push(index);
+    else if (name[index] === ")") open.pop();
+  }
+  if (open.length > 0) {
+    const cut = open[0];
+    name = cut === 0 ? name.slice(1).trim() : name.slice(0, cut).replace(/[\s,;:\-–—]+$/u, "").trim();
+  }
+  // The other cut: a ")" whose "(" was on the line above ("Bill Payment Service)").
+  let depth = 0;
+  let unmatched = "";
+  for (const char of name) {
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      if (depth === 0) continue;
+      depth -= 1;
+    }
+    unmatched += char;
+  }
+  if (unmatched !== name) name = unmatched.replace(/[\s,;:\-–—]+$/u, "").trim();
+  const doubled = name.match(/\b([A-Za-z][A-Za-z'’]{2,})\s+(\1)\b/i);
+  if (doubled && doubled.index !== undefined) {
+    const [whole, first, second] = doubled;
+    const start = doubled.index;
+    const after = name.slice(start + whole.length);
+    if (first === first.toUpperCase() && second !== second.toUpperCase()) {
+      name = (name.slice(0, start) + name.slice(start + first.length)).trim();
+    } else if (/^\s+[a-z]/.test(after)) {
+      name = name.slice(0, start + first.length).trim();
+    } else {
+      name = (name.slice(0, start + first.length) + after).trim();
+    }
+  }
   return usableName(name) ? name : raw.trim();
 }
 
@@ -174,7 +238,9 @@ const COMPOSABLE_WORDS = new Set(
     // "Business accounts only" under "Non-Sufficient Funds (NSF)".
     "account accounts only " +
     // "Service assisted" and "Online" under "Stop Payments".
-    "online service assisted branch series"
+    "online service assisted branch series " +
+    // v34: "Per transaction" beside "Overdraft Fee - Items Paid" (Banc of California).
+    "transaction transactions"
   ).split(" "),
 );
 
@@ -191,20 +257,58 @@ export function composableTail(name: string, also: ReadonlySet<string> = new Set
 const CAP_CATEGORIES = new Set(["od_daily_cap", "nsf_daily_cap"]);
 /** A fee for going past a limit, which is a real price ("Over Limit Fee", "Regulation D Transfer Limit Violation"). */
 const PAST_A_LIMIT = /\b(?:over|above|exceed\w*|excess\w*|violat\w*|beyond)\b/i;
-/** A name that ends on a limit ("Zelle transfer limit", "Mobile Deposit Checks are limited to", "Cash Advance Fee (maximum"). */
+/** A name that ends on a limit ("Zelle transfer limit", "Mobile Deposit Checks are limited to", "Cash Advance Fee (maximum", v30: "the limit will increase to", "Daily ATM Limits ($/#)"). */
 const ENDS_ON_LIMIT =
-  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:per|daily|each|for)\b[^)]*\)?)?\s*$|\(\s*maximum\s*$/i;
+  /\b(?:limit(?:s|ed)?(?:\s+(?:is|are|to|of|will\s+(?:increase|be\s+(?:increased|raised))\s+to))?|(?:daily|transfer|withdrawal|deposit)\s+max(?:imum)?|max(?:imum)?\s+(?:card\s+)?load|reloadable up to \d+ times)\s*[:.]?\s*(?:\((?:(?:per|daily|each|for)\b|\$\s*\/)[^)]*\)?)?\s*$|\(\s*maximum\s*$/i;
 /** A trailing note that names a limit ("Zelle (Daily Limits)"); a fee's own note ("Mobile Deposit Fee (daily limits apply)") does not count. */
 const LIMIT_NOTE = /\(\s*(?:daily\s+|transaction\s+)?limits?\b[^)]*\)?\s*$/i;
 const FEE_WORD = /\b(?:fees?|charges?)\b/i;
+/** v31: a cap on what the bank pays back ("The maximum rebate per 12-month cycle | $240") is never a fee. */
+const REBATE_CAP = /\bmax(?:imum)?\s+(?:\w+\s+)?(?:rebates?|refunds?|reimbursements?)\b/i;
 
 /**
  * v28: a price the name says is a limit is not a fee: "If you use ... Zelle, the limit is
  * $2,500", "Mobile Deposit (daily limit) $50", "No Bounce Courtesy Pay Limit $600". A cap
  * category keeps its cap, and a fee for going past a limit keeps its price.
  */
+/**
+ * v32: a figure from a worked example ("Example: Assume you establish a bill pay payment ...
+ * in the amount of $100", "For example, if you have 1 overdraft ...", "example results in
+ * total Overdraft Transfer Fees of $18") is not a price. Hamilton's limit guard uses the same
+ * test on live fees (`WORKED_EXAMPLE_PG` is its Postgres form).
+ */
+export const WORKED_EXAMPLE = /^\W*(?:for\s+)?(?:example|e\.g\.|assume|suppose|illustration|hypothetical)\b|\bexample results?\b/i;
+export const WORKED_EXAMPLE_PG = String.raw`^\W*(for\s+)?(example|e\.g\.|assume|suppose|illustration|hypothetical)\M|\mexample results?\M`;
+
+export function namesAWorkedExample(feeName: string): boolean {
+  return WORKED_EXAMPLE.test(feeName.trim());
+}
+
+/**
+ * v32: a figure that follows a comparison or "on" at the end of the name is what the fee is
+ * measured against, not its price: "if your Available Balance ... is at least | $0" (U.S. Bank's
+ * waiver rule), "the $34 Overdraft Fee on | the $60 gasoline transaction" (Chase's worked
+ * example). Only fires when the text has the name's last words right before that same figure,
+ * so "$5 service charge if balance falls below $300" still reads $5.
+ */
+const MEASURED_AGAINST_TAIL = /(?:\bat\s+(?:least|most)|\bno\s+(?:more|less)\s+than|\b(?:more|less|greater|fewer)\s+than|\bexceeds?|\bexceeding|\bbelow|\babove|\bunder|\bover|\bon)\s*$/i;
+
+function amountPattern(amount: number): string {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const grouped = Number(whole).toLocaleString("en-US").replace(/,/g, ",?");
+  return cents === "00" ? `${grouped}(?:\\.00)?` : `${grouped}\\.${cents}`;
+}
+
+export function readsAMeasuredAmount(text: string, feeName: string, amount: number): boolean {
+  const name = feeName.trim();
+  if (!MEASURED_AGAINST_TAIL.test(name)) return false;
+  const lastWords = name.split(/\s+/).slice(-6).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  return new RegExp(`${lastWords}\\s*(?:the\\s+)?\\$\\s*${amountPattern(amount)}(?![\\d.,]*\\d)`, "i").test(text);
+}
+
 export function namesALimit(feeName: string, canonicalKey: string): boolean {
   const name = feeName.trim();
+  if (REBATE_CAP.test(name)) return true;
   const limitNote = LIMIT_NOTE.test(name) && !FEE_WORD.test(name.replace(LIMIT_NOTE, ""));
   if (PAST_A_LIMIT.test(name) || !(ENDS_ON_LIMIT.test(name) || limitNote)) return false;
   // "Overdraft daily maximum | $150" caps fees; "Courtesy Pay Limit | $600" caps the overdraft.

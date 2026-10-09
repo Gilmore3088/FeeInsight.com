@@ -48,7 +48,7 @@ export const economyContext: StateEconomicContext = {
   national_unemployment: series("UNRATE", ["2026-08-01", 3.6], ["2025-08-01", 4.2]),
   fed_funds: series("FEDFUNDS", ["2026-08-01", 3.9], ["2025-08-01", 4.6]),
   cpi_all_items: series("CUUR0000SA0", ["2026-08-01", 330], ["2025-08-01", 320]),
-  cpi_bank_services: series("CUUR0000SEMC01", ["2026-08-01", 210], ["2025-08-01", 200]),
+  cpi_bank_services: series("CUUR0000SS68021", ["2026-08-01", 210], ["2025-08-01", 200]),
   beige_book: {
     release_date: "2026-09-03",
     source_url: "https://www.federalreserve.gov/monetarypolicy/beigebook202609.htm",
@@ -57,6 +57,14 @@ export const economyContext: StateEconomicContext = {
     themes: [],
   },
   regulatory: [],
+  fomc: {
+    meeting_date: "2026-07-29",
+    policy_action: "In support of the Committee's dual-mandate goals, nine members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent.",
+    source_url: "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm",
+  },
+  district_research: [
+    { bank: "Atlanta", title: "Who Pays Overdraft Fees?", link: "https://fedinprint.org/item/fedawp/1", published_at: "2026-09-15" },
+  ],
 };
 
 export function overdraftResearch(overrides: Partial<FeeResearch> = {}): FeeResearch {
@@ -113,7 +121,7 @@ export function overdraftResearch(overrides: Partial<FeeResearch> = {}): FeeRese
     regulation: [],
     economy: economicBackdrop(economyContext, "Tennessee", 6, "Atlanta"),
     provenance: {
-      engineVersion: "1.9.0",
+      engineVersion: "1.12.1",
       generatedAt: "2026-10-06T08:00:00.000Z",
       peerGroup: { label: "Credit unions, $300M to $1B in assets, Tennessee", n: peers.length },
       dataAsOf: { fees: "2026-09-30", financials: "2026-06-30", changes: null },

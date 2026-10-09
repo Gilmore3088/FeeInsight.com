@@ -21,7 +21,6 @@ export type AnalyticsEvent =
   /** The welcome page after Stripe returns with success=true. */
   | "checkout_complete"
   | "upgrade_click"
-  | "book_walkthrough"
   | "hosted_report_view"
   /** A free national or district benchmark report was opened. */
   | "benchmark_report_view"

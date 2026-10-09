@@ -8,6 +8,7 @@
  */
 import {
   Document,
+  Font,
   Page,
   Text,
   View,
@@ -15,19 +16,18 @@ import {
 } from "@react-pdf/renderer";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { HAMILTON_ATTRIBUTION } from "@/lib/constants";
+import type { AnswerBrief } from "@/lib/hamilton/answer-brief";
+import { BriefPages, hasBriefContent } from "./BriefPages";
+import { headFigure, humanizeAnswerText, shapeHamiltonView, splitSentences, tidyEvidence } from "@/components/hamilton/analyze/parse-response";
+import { RD_PDF } from "@/lib/report-design/tokens";
+
+// Words wrap whole; react-pdf's default hyphenation broke figures and words mid-way ("medi-an").
+Font.registerHyphenationCallback((word) => [word]);
 
 // ─── Brand Colors ─────────────────────────────────────────────────────────────
 // Exact copy from PdfDocument.tsx — do not use CSS variables here.
 
-const COLORS = {
-  textPrimary: "#1c1917",
-  textSecondary: "#78716c",
-  textTertiary: "#a8a29e",
-  accent: "#b45309",
-  surface: "#fbf9f4",
-  surfaceElevated: "#f5f1e8",
-  borderDark: "#d6d0c5",
-};
+const COLORS = RD_PDF;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -41,8 +41,8 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica",
   },
   header: {
-    marginBottom: 32,
-    paddingBottom: 24,
+    marginBottom: 20,
+    paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderDark,
     borderBottomStyle: "solid",
@@ -56,8 +56,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   reportTitle: {
-    fontSize: 24,
-    fontFamily: "Helvetica-Bold",
+    fontSize: 26,
+    fontFamily: "Times-Bold",
     color: COLORS.textPrimary,
     lineHeight: 1.2,
     marginBottom: 8,
@@ -68,74 +68,113 @@ const styles = StyleSheet.create({
     fontFamily: "Helvetica",
   },
   section: {
-    marginBottom: 32,
-    paddingBottom: 24,
+    marginBottom: 22,
+    paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderDark,
     borderBottomStyle: "solid",
   },
   sectionHeading: {
-    fontSize: 16,
+    fontSize: 13,
     fontFamily: "Helvetica-Bold",
     color: COLORS.textPrimary,
     marginBottom: 12,
     lineHeight: 1.3,
   },
   paragraph: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: "Helvetica",
     color: COLORS.textPrimary,
-    lineHeight: 1.7,
+    lineHeight: 1.6,
     marginBottom: 10,
   },
-  statCalloutGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginTop: 8,
+  // The closing section carries no rule or trailing space, which would spill onto a blank page.
+  lastSection: {
+    marginBottom: 0,
   },
-  statCalloutBox: {
+  tileRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 28,
+  },
+  tile: {
+    flex: 1,
     backgroundColor: COLORS.surfaceElevated,
     padding: 12,
     borderRadius: 4,
-    width: "46%",
   },
-  statCalloutLabel: {
+  tileLabel: {
+    fontSize: 7.5,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    lineHeight: 1.3,
+  },
+  tileFigure: {
+    fontSize: 18,
+    fontFamily: "Helvetica-Bold",
+    color: COLORS.textPrimary,
+    marginBottom: 4,
+  },
+  tileComparison: {
+    fontSize: 8.5,
+    fontFamily: "Helvetica",
+    color: COLORS.textSecondary,
+    lineHeight: 1.4,
+  },
+  bulletRow: {
+    flexDirection: "row",
+    marginBottom: 5,
+  },
+  bulletMark: {
+    width: 12,
+    fontSize: 10.5,
+    color: COLORS.accent,
+    lineHeight: 1.55,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 10.5,
+    fontFamily: "Helvetica",
+    color: COLORS.textPrimary,
+    lineHeight: 1.55,
+  },
+  evidenceRow: {
+    flexDirection: "row",
+    gap: 14,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderDark,
+    borderBottomStyle: "solid",
+  },
+  evidenceLabel: {
+    width: "34%",
     fontSize: 8,
     fontFamily: "Helvetica-Bold",
     color: COLORS.textSecondary,
     textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 8,
+    letterSpacing: 0.8,
+    lineHeight: 1.4,
+    paddingTop: 1,
   },
-  statCalloutRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  evidenceBody: {
+    flex: 1,
   },
-  statValue: {
-    fontSize: 20,
+  evidenceValue: {
+    fontSize: 10.5,
     fontFamily: "Helvetica-Bold",
     color: COLORS.textPrimary,
+    lineHeight: 1.4,
   },
-  statValueAccent: {
-    fontSize: 20,
-    fontFamily: "Helvetica-Bold",
-    color: COLORS.accent,
-  },
-  statNote: {
-    fontSize: 8,
-    fontFamily: "Helvetica",
-    color: COLORS.textTertiary,
-    marginTop: 4,
-  },
-  noteItem: {
-    fontSize: 10,
+  evidenceNote: {
+    fontSize: 9,
     fontFamily: "Helvetica",
     color: COLORS.textSecondary,
-    lineHeight: 1.6,
-    marginBottom: 6,
-    paddingLeft: 12,
+    lineHeight: 1.45,
+    marginTop: 2,
   },
   footer: {
     position: "absolute",
@@ -162,12 +201,17 @@ interface AnalysisPdfDocumentProps {
   analysis: AnalyzeResponse;
   analysisFocus: string;
   institutionName?: string;
+  /** The institution's standing figures from the engine, printed after the answer. */
+  brief?: AnswerBrief | null;
 }
+
+
 
 export function AnalysisPdfDocument({
   analysis,
   analysisFocus,
   institutionName,
+  brief,
 }: AnalysisPdfDocumentProps) {
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
@@ -175,11 +219,22 @@ export function AnalysisPdfDocument({
     day: "numeric",
   });
 
-  // Split hamiltonView on double newlines for multiple paragraphs
-  const hamiltonViewParagraphs = analysis.hamiltonView
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
+  // The title is the answer's whole first sentence (older answers saved an 80-character cut);
+  // the view below carries the rest, so the lead is not printed twice.
+  const view = shapeHamiltonView(humanizeAnswerText(analysis.hamiltonView));
+  const title = view.lead || analysis.title;
+  const hamiltonViewParagraphs = view.paragraphs;
+  const evidence = tidyEvidence(analysis.evidence.metrics);
+  // Up to three Evidence rows that open with a figure become key-figure tiles under the title;
+  // the rest stay in the Evidence table, so no figure is printed twice.
+  const tiles = evidence
+    .map((metric) => ({ metric, head: headFigure(metric.value) }))
+    .filter((t): t is { metric: (typeof evidence)[number]; head: NonNullable<ReturnType<typeof headFigure>> } => t.head !== null && Boolean(t.metric.label))
+    .slice(0, 3);
+  const tableRows = evidence.filter((m) => !tiles.some((t) => t.metric === m));
+  // Implications longer than three sentences read as a list of points, not a block.
+  const meaningSentences = splitSentences(humanizeAnswerText(analysis.whatThisMeans ?? ""));
+  const meaningAsList = meaningSentences.length > 3;
 
   const readOnlyLine = institutionName
     ? `Generated by ${HAMILTON_ATTRIBUTION} | ${institutionName}`
@@ -191,59 +246,87 @@ export function AnalysisPdfDocument({
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.reportTypeBadge}>{analysisFocus} Analysis</Text>
-          <Text style={styles.reportTitle}>{analysis.title}</Text>
+          <Text style={styles.reportTitle}>{title}</Text>
           <Text style={styles.readOnlyNotice}>{readOnlyLine}</Text>
         </View>
 
-        {/* Hamilton's View */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeading}>{"Hamilton's View"}</Text>
-          {hamiltonViewParagraphs.map((para, i) => (
-            <Text key={i} style={styles.paragraph}>
-              {para}
-            </Text>
-          ))}
-        </View>
-
-        {/* What This Means */}
-        {analysis.whatThisMeans ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionHeading}>What This Means</Text>
-            <Text style={styles.paragraph}>{analysis.whatThisMeans}</Text>
+        {/* Key figures */}
+        {tiles.length > 0 ? (
+          <View style={styles.tileRow} wrap={false}>
+            {tiles.map(({ metric, head }, i) => (
+              <View key={i} style={styles.tile}>
+                <Text style={styles.tileLabel}>{metric.label}</Text>
+                <Text style={styles.tileFigure}>{head.figure}</Text>
+                <Text style={styles.tileComparison}>{head.comparison}</Text>
+              </View>
+            ))}
           </View>
         ) : null}
 
-        {/* Why It Matters */}
-        {analysis.whyItMatters.length > 0 ? (
+        {/* Hamilton's View */}
+        {hamiltonViewParagraphs.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Why It Matters</Text>
-            {analysis.whyItMatters.map((item, i) => (
-              <Text key={i} style={styles.noteItem}>
-                {"-- "}{item}
+            <Text style={styles.sectionHeading} minPresenceAhead={60}>{"Hamilton's View"}</Text>
+            {hamiltonViewParagraphs.map((para, i) => (
+              <Text key={i} style={styles.paragraph}>
+                {para}
               </Text>
             ))}
           </View>
         ) : null}
 
-        {/* Evidence */}
-        {analysis.evidence.metrics.length > 0 ? (
+        {/* What This Means */}
+        {meaningSentences.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Evidence</Text>
-            <View style={styles.statCalloutGrid}>
-              {analysis.evidence.metrics.map((metric, i) => (
-                <View key={i} style={styles.statCalloutBox}>
-                  <Text style={styles.statCalloutLabel}>{metric.label}</Text>
-                  <View style={styles.statCalloutRow}>
-                    <Text style={styles.statValue}>{metric.value}</Text>
-                  </View>
-                  {metric.note ? (
-                    <Text style={styles.statNote}>{metric.note}</Text>
-                  ) : null}
+            <Text style={styles.sectionHeading} minPresenceAhead={60}>What This Means</Text>
+            {meaningAsList ? (
+              meaningSentences.map((sentence, i) => (
+                <View key={i} style={styles.bulletRow} wrap={false}>
+                  <Text style={styles.bulletMark}>{"\u2022"}</Text>
+                  <Text style={styles.bulletText}>{sentence}</Text>
                 </View>
-              ))}
-            </View>
+              ))
+            ) : (
+              <Text style={styles.paragraph}>{meaningSentences.join(" ")}</Text>
+            )}
           </View>
         ) : null}
+
+        {/* Why It Matters */}
+        {analysis.whyItMatters.length > 0 ? (
+          <View style={styles.section} wrap={false}>
+            <Text style={styles.sectionHeading}>Why It Matters</Text>
+            {analysis.whyItMatters.map((item, i) => (
+              <View key={i} style={styles.bulletRow}>
+                <Text style={styles.bulletMark}>{"\u2022"}</Text>
+                <Text style={styles.bulletText}>{humanizeAnswerText(item)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Evidence: a two-column table, one row per figure, never split across a page */}
+        {tableRows.length > 0 ? (
+          <View style={styles.lastSection}>
+            {tableRows.map((metric, i) => (
+              <View key={i} wrap={false}>
+                {/* The heading travels with the first row so it never sits alone at a page foot. */}
+                {i === 0 ? <Text style={styles.sectionHeading}>{tiles.length > 0 ? "More Evidence" : "Evidence"}</Text> : null}
+                <View style={styles.evidenceRow}>
+                  <Text style={styles.evidenceLabel}>{metric.label}</Text>
+                  <View style={styles.evidenceBody}>
+                    <Text style={styles.evidenceValue}>{metric.value}</Text>
+                    {metric.note ? <Text style={styles.evidenceNote}>{metric.note}</Text> : null}
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* The institution's standing figures, from the engine, drawn as charts */}
+        {/* The institution's standing figures, from the engine, drawn as charts */}
+        {hasBriefContent(brief) ? <BriefPages brief={brief} institutionName={institutionName} /> : null}
 
         {/* Footer */}
         <View style={styles.footer} fixed>

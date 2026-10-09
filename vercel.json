@@ -21,6 +21,22 @@
       "schedule": "11 13 * * 1"
     },
     {
+      "path": "/api/admin/crew/pro-digest?dry_run=1",
+      "schedule": "31 13 * * *"
+    },
+    {
+      "path": "/api/admin/crew/briefing-refresh",
+      "schedule": "7 15 * * *"
+    },
+    {
+      "path": "/api/admin/crew/competitor-alerts",
+      "schedule": "51 14 * * *"
+    },
+    {
+      "path": "/api/admin/crew/indexnow",
+      "schedule": "13 16 * * *"
+    },
+    {
       "path": "/api/admin/crew/lead-watch",
       "schedule": "41 * * * *"
     },
@@ -39,6 +55,46 @@
     {
       "path": "/api/admin/crew/marketing",
       "schedule": "7 14 1 * *"
+    },
+    {
+      "path": "/api/admin/crew/studies",
+      "schedule": "37 15 * * *"
+    },
+    {
+      "path": "/api/admin/crew/answer-eval",
+      "schedule": "47 */2 * * *"
+    },
+    {
+      "path": "/api/admin/crew/content",
+      "schedule": "37 13 * * 0"
+    },
+    {
+      "path": "/api/admin/crew/contacts?limit=60",
+      "schedule": "37 12 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/growth-score",
+      "schedule": "7 13 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/outreach",
+      "schedule": "7 14 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/learning",
+      "schedule": "37 14 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/intel",
+      "schedule": "17 14 * * *"
+    },
+    {
+      "path": "/api/admin/crew/conversion",
+      "schedule": "47 13 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/growth-loop",
+      "schedule": "57 0 * * *"
     }
   ]
 }

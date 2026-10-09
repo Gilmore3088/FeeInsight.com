@@ -8,7 +8,7 @@ import {
   normalizeFinancial,
   selectFinancialsByQuarter,
 } from "./financial-units";
-import { buildProfileTitle, pickHeadlineFees } from "./profile-data";
+import { buildLocationParts, buildProfileTitle, pickHeadlineFees } from "./profile-data";
 import type { ExtractedFee } from "@/lib/data-store/types";
 
 const ncuaRecord = {
@@ -41,10 +41,8 @@ describe("financial units", () => {
     expect(financial).toBe("$158.7M");
   });
 
-  it("keeps FFIEC whole-dollar balances unscaled and hides zero ROA", () => {
-    const ffiec = normalizeFinancial({ ...ncuaRecord, source: "ffiec", total_assets: 158_694_000, roa: 0.9 });
-    expect(ffiec.totalAssets).toBe(158_694_000);
-    expect(ffiec.roaPct).toBe(0.9);
+  it("hides zero ROA and converts the fee income fraction to percent", () => {
+    expect(normalizeFinancial({ ...ncuaRecord, roa: 0.9 }).roaPct).toBe(0.9);
     expect(normalizeFinancial(ncuaRecord).roaPct).toBeNull();
     expect(normalizeFinancial(ncuaRecord).feeIncomeRatioPct).toBeCloseTo(8.23);
   });
@@ -84,18 +82,14 @@ describe("financial units", () => {
     fee_income_ratio: 0.1892,
   };
 
-  it("scales FFIEC and FDIC rows for the same quarter to the same magnitude", () => {
+  it("scales FDIC thousands to dollars", () => {
     const fdic = normalizeFinancial(firstBankFdicQ1);
-    const ffiec = normalizeFinancial(firstBankFfiecQ1);
     expect(formatCompactDollars(fdic.totalAssets)).toBe("$689.4M");
-    expect(formatCompactDollars(ffiec.totalAssets)).toBe("$689.4M");
     expect(formatCompactDollars(fdic.serviceChargeIncome)).toBe("$6K");
-    expect(ffiec.serviceChargeIncome).toBe(6_834);
     expect(fdic.feeIncomeRatioPct).toBeCloseTo(0.06, 2);
-    expect(ffiec.feeIncomeRatioPct).toBeCloseTo(0.068, 2);
   });
 
-  it("renders one row per quarter, preferring fdic over ffiec, newest first", () => {
+  it("renders one row per quarter from fdic, dropping the ffiec duplicates, newest first", () => {
     const rows = selectFinancialsByQuarter([
       firstBankFfiecQ1,
       firstBankFdicQ1,
@@ -110,11 +104,12 @@ describe("financial units", () => {
     expect(formatCompactDollars(rows[1].serviceChargeIncome)).toBe("$8K");
   });
 
-  it("falls back to ffiec, then ncua, when fdic is missing for a quarter", () => {
+  it("never renders an ffiec row, even when it is the only row for a quarter", () => {
+    expect(selectFinancialsByQuarter([firstBankFfiecQ1])).toEqual([]);
     const rows = selectFinancialsByQuarter([firstBankFfiecQ4, { ...ncuaRecord, report_date: "2025-12-31" }]);
     expect(rows).toHaveLength(1);
-    expect(rows[0].source).toBe("ffiec");
-    expect(formatCompactDollars(rows[0].totalAssets)).toBe("$677.3M");
+    expect(rows[0].source).toBe("ncua");
+    expect(formatCompactDollars(rows[0].totalAssets)).toBe("$158.7M");
   });
 
   it("leaves a single-source credit union untouched", () => {
@@ -224,5 +219,33 @@ describe("fee schedule grouping", () => {
     const overdraft = groups.find((group) => group.family === "Overdraft & NSF");
     expect(overdraft?.rows).toHaveLength(2);
     expect(groups.find((group) => group.family === "Other fees")?.provisionalCount).toBe(1);
+  });
+
+  it("lists a family's most looked-up fees first, not alphabetically", () => {
+    const groups = groupFeesByFamily([
+      fee({ feeName: "Account Research", feeCategory: "account_research", amount: 25 }),
+      fee({ feeName: "Early Account Closure", feeCategory: "early_closure", amount: 20 }),
+      fee({ feeName: "Monthly Service Charge", feeCategory: "monthly_maintenance", amount: 12 }),
+    ]);
+    expect(groups[0].rows.map((row) => row.feeName)).toEqual([
+      "Monthly Service Charge",
+      "Early Account Closure",
+      "Account Research",
+    ]);
+  });
+});
+
+describe("buildLocationParts", () => {
+  it("links the city and state fee pages", () => {
+    expect(buildLocationParts({ city: "San Antonio", stateCode: "TX", stateName: "Texas", hasApprovedFees: true })).toEqual([
+      { label: "San Antonio", href: "/fees/city/tx/san%20antonio" },
+      { label: "Texas", href: "/research/state/TX" },
+    ]);
+  });
+
+  it("leaves the city unlinked when its page would not list this institution or can't be reached", () => {
+    expect(buildLocationParts({ city: "Austin", stateCode: "TX", stateName: "Texas", hasApprovedFees: false })[0].href).toBeNull();
+    expect(buildLocationParts({ city: "Winston-Salem", stateCode: "NC", stateName: "North Carolina", hasApprovedFees: true })[0].href).toBeNull();
+    expect(buildLocationParts({ city: null, stateCode: null, stateName: null, hasApprovedFees: true })).toEqual([]);
   });
 });

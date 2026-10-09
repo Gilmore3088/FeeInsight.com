@@ -24,7 +24,11 @@ Rosetta owns source text normalization.
   row is one line with cells joined by ` | `, definition lists pair term and
   description, layout tables read as blocks. PDFs rebuild lines from item positions
   (`read.pdf_layout`, `pdf-layout.ts`), so a fee name and its amount column share a
-  line. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
+  line. A page set in columns of running prose (a deposit agreement in three columns) is
+  read column by column instead (layout version 2, `PDF_LAYOUT_VERSION`); read across, a
+  sentence took its price from the next column's sentence. Fee tables, and fee lists set
+  side by side, keep the row-by-row reading. A PDF text an older layout read across its
+  columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
@@ -52,12 +56,28 @@ Rosetta owns source text normalization.
     scan. Over the allowance the scan is `deferred` (nothing written, read next run).
     OCR that fails, is too long, or has mean confidence under `OCR_MIN_CONFIDENCE` leaves
     the text `needs_ocr` for pass 3. OCR fixes only unambiguous `$` misreads (`#35.00`).
+    Each page image is turned the way the page draws it (placement matrix and /Rotate);
+    a page that still reads poorly is probed at the other quarter turns and read in the
+    one that probes at least `OCR_TURN_MIN_GAIN` more confident. A scan an older OCR
+    version rejected or found empty gets one read with the current version.
+  - A PDF whose embedded text is noise (its font maps letters to control codes or shifted
+    letters, "7KH UDWHV" for "The rates") is read like a scan: `hasReadableWords` in
+    `learning/format.ts` finds under 2% common English or Spanish words among at least 60.
+    Free OCR finds no page images in such a PDF, so it lands `needs_ocr` for pass 3.
+    Texts stored before this check (17 PDF texts with control codes near the top, 5 of
+    them noise, TruStone's fee schedule among them) are reopened once each
+    (`reopenUnreadablePdfTexts`, step detail `reopened_unreadable_pdfs`); a readable one
+    is logged `rejected` and never checked again.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
-    `window.X = {...}`), then linked PDF/print versions, then `?print=1`, `?output=amp`,
-    `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches). The stored `source_url` is the
-    URL actually read. With no free route the text is `skipped` with outcome
+    `window.X = {...}`), then linked PDF/print versions and links that name the fee
+    schedule even with no `.pdf` ending ("Schedule of Charges", `/documents/fee-schedule`)
+    and PDFs shown in an iframe, embed or object viewer,
+    then `?print=1`, `?output=amp`, `/print` (at most `JS_FALLBACK_MAX_FETCHES` fetches).
+    A linked scan gets free OCR. A linked document the bank already has as its own
+    `source_documents` row is not fetched (it is read there); the attempt's detail lists
+    it as `covered_by`. The stored `source_url` is the URL actually read. With no free route the text is `skipped` with outcome
     `js_required`, the URL goes to `institution_source_profiles.rejected_source_urls`,
     `institution_sources.fee_schedule_url` is cleared and `failure_reason` is
     `rosetta_js_required`: Magellan's paid finder picks those up. No headless browser.
@@ -65,8 +85,8 @@ Rosetta owns source text normalization.
     whose own text reads fine but is no fee schedule (a home page or "not found" page at
     a guessed fee link) logs the fallback as `wrong_document`.
   - Pages like that rejected as `wrong_document` before the fallback existed (an html
-    text whose link names the fee page, at most one amount, never tried by
-    `read.js_fallback`) are reopened once at the start of each read step, at most
+    text whose link names the fee page, at most one amount, never tried by the current
+    `ROSETTA_JS_FALLBACK_VERSION`) are reopened once per fallback version at the start of each read step, at most
     `ROSETTA_REOPEN_LIMIT` (100) per step (`reopenScriptLoadedFeePages`): the URL leaves
     `rejected_source_urls`, a bank with no `fee_schedule_url` (and no correction lock)
     gets it back, and a `read.reopen` attempt (outcome `ok`, fingerprint = the text's
@@ -116,6 +136,10 @@ Rosetta owns source text normalization.
     on the same bytes ends it. A web page has no paid rung; a legacy text the current
     reader could not improve stays as it is. Step detail: `texts_held_up`,
     `texts_lost_fees`, `reader_escalations`, `reader_escalations_used`.
+  - A legacy PDF text (no reader recorded) longer than `FLAT_TEXT_MIN_CHARS` with no line
+    break counts like a lost text. The first PDF reader ran whole schedules onto one line,
+    which Knox's rules cannot split; the current reader reads it once, and its text replaces
+    the flat one under the same no-thinner rule.
   - Scans and JavaScript pages an older reader version gave up on (`needs_ocr`, `empty`)
     are read once more when `ROSETTA_READ_VERSION` is bumped. Auxiliary strategies
     (`AUXILIARY_READ_STRATEGIES`) never settle a read or block re-selection.
@@ -147,6 +171,31 @@ stored). Rosetta writes them only once the migration is applied.
 - Preserve institution ID, source document ID, source URL, content type, source hash, normalized text hash, character count, and error state.
 - Mark insufficient text explicitly. Do not fabricate text, fee rows, or confidence.
 - Make OCR/manual-needed states visible to Atlas and downstream review surfaces.
+
+## Batch review (after every 50 reads)
+
+`batch-review.ts` runs in each read step, before candidates are picked. It takes the next 50
+primary reads (html_dom, pdf_layout, plain_text, docx) once they are 6 hours old, so Knox and
+the later readers have had them, from the last 3 days and only of each bank's current
+document (a lesson on a replaced copy is never read). A failed review never stops the reads:
+its error is `batchReviewError` on the step result. It judges each read against what happened next, never a guess:
+
+| Miss | Rule | Fix that picks it up |
+|---|---|---|
+| `no_fees_found` | completed text, Knox ran on it, Knox has no fee from the document | web page: one read with the JavaScript fallbacks (the same rung as a lost text); PDF: lesson only |
+| `short_text` | under 600 chars and under 3 Knox fees | web page: JavaScript fallbacks; PDF: the paid read pass |
+| `missed_fee_page` | rejected as `wrong_document`, a later read of it gave Knox 3+ fees | lesson only (the fee-page check was wrong) |
+| `unresolved_fee_page` | rejected, link names the fee page, bank has no live fee, nothing read it since | the fee-page reopen (once per fallback version) |
+| `unread` | scan, script page or parse failure no reader has read since | scan: OCR then paid read; script page: Magellan's paid finder |
+
+A read that failed and was read later counts as `recovered`, not an error. Each miss is a
+`pipeline_feedback` row (`check_name = 'rosetta.batch_review'`, `evidence.remedy`, deduped per
+attempt). The candidate selection treats `remedy = 'reread_js_fallback'` like a lost text, and
+the paid pass treats `remedy = 'paid_read'` like one. Each batch also writes one
+`kind = 'batch_error_rate'` row (errors, reads, rate, misses by kind); its `last_attempt_id` is
+the cursor. At most two batches per step; a partial batch waits. The step result carries
+`batchReviews`. Knox dedupes rereads, so the fee count is every Knox fee from the document,
+not only rows since the read.
 
 ## Boundaries
 

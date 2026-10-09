@@ -5,6 +5,12 @@ export const SITE_URL =
 export const SITE_NAME = "Fee Insight";
 export const PRODUCT_NAME = "Bank Fee Index";
 export const SITE_DOMAIN = "feeinsight.com";
+// The legal entity behind the site: formed in Washington, approved by the state Oct 7 2026.
+export const LEGAL_ENTITY_NAME = "Fee Insight LLC";
+export const LEGAL_ENTITY_STATE = "Washington";
+export const LEGAL_ENTITY_LINE = `${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} limited liability company`;
+// Unregistered marks take ™; switch to ® only for a mark the USPTO has registered.
+export const TRADEMARK_NOTICE = `${SITE_NAME}™ and The ${PRODUCT_NAME}™ are trademarks of ${LEGAL_ENTITY_NAME}.`;
 export const CONTACT_EMAIL = "hello@bankfeeindex.com";
 export const RESEARCH_IMPRINT = "Fee Insight Research";
 export const HAMILTON_ATTRIBUTION = "Hamilton — Fee Insight";
@@ -21,14 +27,18 @@ export function pageTitle(section: string): string {
 }
 
 // The one commissioned product, described the same way everywhere. It is built for one
-// institution against named competitors, so it is priced on request and never promises a
+// institution against named competitors, so each one is quoted (from $300, James 2026-10-08) and never promises a
 // delivery time. The free offer is the instant national and Fed district reports, which
 // need no one's time (James, 2026-10-05: "never reference 48 hours with a free report").
 export const REPORT_OFFER = {
   name: "Competitive Fee Position Report",
   priceUsd: 0,
-  priceLabel: "Priced on request",
+  priceLabel: "From $300",
+  /** The lowest quote (James, 2026-10-08: "from $300"); each report is still quoted. */
+  fromPriceUsd: 300,
   ctaLabel: "Get a free fee report",
+  /** Label for links that open the request form on the paid institution report. */
+  institutionCtaLabel: "Request your institution report",
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
 } as const;
@@ -48,11 +58,11 @@ export const REPORT_INCLUDES = [
   "A source for every figure: the document, the page, the date",
 ] as const;
 
-export const REPORT_OFFER_LINE = "National and Fed district fee reports — free, and ready in a minute";
+export const REPORT_OFFER_LINE = "National and Fed district fee reports — free and instant";
 
 // Hamilton, described the same way everywhere. Never "our AI analyst".
 export const HAMILTON_CANONICAL =
-  `Hamilton is the ${SITE_NAME} Pro workspace: benchmark, scenario, report and monitor ` +
-  "your fee position against a verified peer set.";
-export const HAMILTON_MODES = ["Analyze", "Benchmark", "Scenario", "Report", "Monitor"] as const;
+  `Hamilton is the ${SITE_NAME} Pro workspace: research, model and report your fee position ` +
+  "against a verified market, from your own counties to the nation.";
+export const HAMILTON_MODES = ["This month", "My fees", "Try a price", "Reports"] as const;
 export type HamiltonMode = (typeof HAMILTON_MODES)[number];

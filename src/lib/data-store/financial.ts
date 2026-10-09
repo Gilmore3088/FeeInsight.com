@@ -1,3 +1,4 @@
+import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 
 // Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
@@ -60,7 +61,7 @@ export interface ComplaintSummary {
 export async function getFinancialStats(): Promise<FinancialStats> {
   const [fdic] = await sql`SELECT COUNT(*) as cnt FROM institution_financial_records WHERE source = 'fdic'`;
   const [ncua] = await sql`SELECT COUNT(*) as cnt FROM institution_financial_records WHERE source = 'ncua'`;
-  const [instFin] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_financial_records`;
+  const [instFin] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_financial_records WHERE source IN ('fdic', 'ncua')`;
   const [complaints] = await sql`SELECT COUNT(*) as cnt FROM institution_complaint_records`;
   const [instComp] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_complaint_records`;
 
@@ -88,6 +89,7 @@ export async function getFinancialsByInstitution(
            total_revenue, fee_income_ratio, overdraft_revenue
     FROM institution_financial_records
     WHERE institution_id = ${targetId}
+      AND source IN ('fdic', 'ncua')
     ORDER BY report_date DESC
     LIMIT ${rowLimit}`];
 
@@ -219,11 +221,14 @@ export async function getCountyDemographics(
   stateFips: string
 ): Promise<DemographicData[]> {
   const rows = await sql`
-    SELECT geo_id, geo_type, geo_name, state_fips,
-           median_household_income, poverty_count, total_population, year
-    FROM demographics
-    WHERE geo_type = 'county' AND state_fips = ${stateFips}
-    ORDER BY total_population DESC`;
+    SELECT * FROM (
+      SELECT DISTINCT ON (geo_id) geo_id, geo_type, geo_name, state_fips,
+             median_household_income, poverty_count, total_population, year
+      FROM demographics
+      WHERE geo_type = 'county' AND state_fips = ${stateFips}
+      ORDER BY geo_id, year DESC
+    ) latest
+    ORDER BY total_population DESC NULLS LAST`;
   return [...rows] as DemographicData[];
 }
 
@@ -281,7 +286,7 @@ export interface CpiContext {
 }
 
 export async function getCpiContext(): Promise<CpiContext> {
-  const BANK_FEES = "CUUR0000SEMC01";
+  const BANK_FEES = CPI_BANK_SERVICES_SERIES;
   const ALL_ITEMS = "CUUR0000SA0";
 
   async function getYoY(seriesId: string) {
@@ -330,13 +335,15 @@ export async function getRevenueIndexByDate(reportDate?: string): Promise<Revenu
       SELECT fee_income_ratio, service_charge_income
       FROM institution_financial_records
       WHERE fee_income_ratio IS NOT NULL AND report_date = ${reportDate}
+        AND source IN ('fdic', 'ncua')
       ORDER BY fee_income_ratio` as typeof rows;
   } else {
     rows = await sql`
       SELECT fee_income_ratio, service_charge_income
       FROM institution_financial_records
       WHERE fee_income_ratio IS NOT NULL
-        AND report_date = (SELECT MAX(report_date) FROM institution_financial_records)
+        AND source IN ('fdic', 'ncua')
+        AND report_date = (SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua'))
       ORDER BY fee_income_ratio` as typeof rows;
   }
 
@@ -359,7 +366,7 @@ export async function getRevenueIndexByDate(reportDate?: string): Promise<Revenu
   if (reportDate) {
     rd = reportDate;
   } else {
-    const [maxRow] = await sql`SELECT MAX(report_date) as d FROM institution_financial_records`;
+    const [maxRow] = await sql`SELECT MAX(report_date) as d FROM institution_financial_records WHERE source IN ('fdic', 'ncua')`;
     rd = (maxRow as { d: string }).d;
   }
 
@@ -587,8 +594,8 @@ const HISTORY_EXTRA_NUMERIC = [
 ] as const;
 
 /**
- * Up to `maxQuarters` quarters of call-report history (all sources; callers pick
- * one row per quarter). Reads only columns added by the regulatory registry
+ * Up to `maxQuarters` quarters of call-report history (fdic and ncua rows only;
+ * callers pick one row per quarter). Reads only columns added by the regulatory registry
  * migration, so it must only be called once that migration is applied; callers
  * wrap it with a fallback.
  */
@@ -614,6 +621,7 @@ export async function getFinancialHistory(
            fetched_at
     FROM institution_financial_records
     WHERE institution_id = ${targetId}
+      AND source IN ('fdic', 'ncua')
     ORDER BY report_date DESC
     LIMIT ${rowLimit}`];
 
@@ -706,7 +714,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.noncurrent_loan_rate) AS noncurrent_loan_rate,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.tier1_capital_ratio) AS tier1_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.leverage_ratio) AS leverage_ratio,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) AS total_capital_ratio,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) FILTER (WHERE f.total_capital_ratio <> 0) AS total_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS fee_income_ratio
       FROM me
       JOIN institution_sources s

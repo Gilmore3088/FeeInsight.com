@@ -1,4 +1,5 @@
 import { getSql } from "./connection";
+import { financialSourceFilter } from "./financial-sources";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
 
@@ -7,9 +8,9 @@ import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
  * quarters in other units (whole-dollar balances, service charges over-scaled
  * further; see financial-units.ts), so mixing them into one series or one peer
  * group produces fake drops and wrong ranks. Every query here reads the
- * thousands-scale sources only.
+ * thousands-scale sources only (see financial-sources.ts).
  */
-const SAME_SCALE_SOURCES = "inf.source IN ('fdic', 'ncua')";
+const SAME_SCALE_SOURCES = financialSourceFilter("inf");
 
 /**
  * NCUA 5300 income lines are year-to-date; FDIC rows are already quarterly. Single-quarter
@@ -149,7 +150,7 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
        TO_CHAR(DATE_TRUNC('quarter', inf.rd), 'YYYY-"Q"Q')       AS quarter,
        MIN(inf.report_date)                                     AS quarter_date,
        SUM(inf.service_charge_income)                           AS total_service_charges,
-       COUNT(DISTINCT ct.cert_number)                           AS total_institutions,
+       COUNT(DISTINCT ct.id)                                    AS total_institutions,
        SUM(CASE WHEN ct.charter_type = 'bank' THEN inf.service_charge_income ELSE 0 END)
                                                                  AS bank_service_charges,
        SUM(CASE WHEN ct.charter_type = 'credit_union' THEN inf.service_charge_income ELSE 0 END)
@@ -211,6 +212,7 @@ export async function getTopRevenueInstitutions(
       SELECT MAX(report_date) AS latest_date
       FROM institution_financial_records
       WHERE service_charge_income > 0
+        AND source IN ('fdic', 'ncua')
     `;
 
     if (!latestRow?.latest_date) return [];
@@ -503,6 +505,7 @@ export async function getDistrictFeeRevenue(
       SELECT MAX(report_date)::text AS latest_date
       FROM institution_financial_records
       WHERE service_charge_income > 0
+        AND source IN ('fdic', 'ncua')
     `;
     if (!row?.latest_date) return null;
     date = String(row.latest_date);
@@ -561,6 +564,7 @@ export async function getRevenueByTier(
       SELECT MAX(report_date)::text AS latest_date
       FROM institution_financial_records
       WHERE service_charge_income > 0
+        AND source IN ('fdic', 'ncua')
     `;
     if (!row?.latest_date) return [];
     date = row.latest_date as string;
@@ -600,4 +604,165 @@ export async function getRevenueByTier(
     total_sc_income: Number(r.total_sc_income),
     avg_sc_income: Number(r.avg_sc_income),
   }));
+}
+
+export interface IntensityQuarter {
+  quarterEnd: string;
+  /** The quarter's deposit service charges, annualized, per $1,000 of deposits at quarter end. */
+  own: number | null;
+  peerMedian: number | null;
+  peers: number;
+}
+
+/**
+ * The same measure quarter by quarter over the last two years, for the trend chart: each
+ * quarter's service charges times four per $1,000 of that quarter's deposits, for the
+ * institution and the median of its charter and asset tier (the subject excluded).
+ */
+export async function getServiceChargeIntensityTrend(institutionId: number): Promise<IntensityQuarter[]> {
+  const sql = getSql();
+  const rows = (await sql.unsafe(
+    `WITH subject AS (
+       SELECT id, charter_type, asset_size_tier FROM institution_sources
+        WHERE id = $1 AND charter_type IS NOT NULL AND asset_size_tier IS NOT NULL
+     ),
+     filed AS (
+       SELECT inf.institution_id,
+              inf.source,
+              inf.report_date::date AS rd,
+              inf.service_charge_income AS amount,
+              inf.total_deposits AS deposits,
+              LAG(inf.service_charge_income) OVER w AS prior_amount,
+              LAG(inf.report_date::date) OVER w AS prior_rd
+         FROM institution_financial_records inf
+         JOIN institution_sources ct ON ct.id = inf.institution_id
+         JOIN subject s ON ct.charter_type = s.charter_type AND ct.asset_size_tier = s.asset_size_tier
+        WHERE ${SAME_SCALE_SOURCES}
+          AND inf.report_date::date >= CURRENT_DATE - INTERVAL '30 months'
+       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
+                    ORDER BY inf.report_date::date)
+     ),
+     quarterly AS (
+       SELECT institution_id, rd, deposits,
+              CASE
+                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
+                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
+                ELSE NULL
+              END AS income
+         FROM filed
+     ),
+     latest AS (SELECT MAX(rd) AS rd FROM quarterly),
+     qratio AS (
+       SELECT q.institution_id, q.rd, q.income * 4000.0 / q.deposits AS r
+         FROM quarterly q, latest l
+        WHERE q.income > 0 AND q.deposits > 0 AND q.rd > l.rd - INTERVAL '2 years'
+     )
+     SELECT TO_CHAR(rd, 'YYYY-MM-DD') AS quarter_end,
+            MAX(r) FILTER (WHERE institution_id = (SELECT id FROM subject)) AS own,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY r) FILTER (WHERE institution_id <> (SELECT id FROM subject)) AS peer_median,
+            (COUNT(*) FILTER (WHERE institution_id <> (SELECT id FROM subject)))::int AS peers
+       FROM qratio
+      GROUP BY rd
+      ORDER BY rd`,
+    [institutionId],
+  )) as { quarter_end: string; own: string | number | null; peer_median: string | number | null; peers: number }[];
+  const num = (v: string | number | null) => (v === null ? null : Number(v));
+  return rows.map((r) => ({ quarterEnd: r.quarter_end, own: num(r.own), peerMedian: num(r.peer_median), peers: Number(r.peers) }));
+}
+
+export interface ServiceChargeIntensity {
+  quarterEnd: string;
+  /** Deposit service charges over the last four quarters per $1,000 of deposits at the latest quarter. */
+  own: number | null;
+  peerMedian: number | null;
+  /** Filers of the same charter and asset tier with all four quarters on file, the subject excluded. */
+  peers: number;
+  /** Peers below the subject, for its percentile. */
+  peersBelow: number;
+  charterType: string;
+  assetTier: string;
+}
+
+/**
+ * One institution's deposit service charge income scaled by its deposits, beside the median of
+ * its charter and asset tier: the income side of the "why" split. Trailing four quarters, NCUA
+ * year-to-date lines split into quarters as in getPeerServiceChargeMedians.
+ */
+export async function getServiceChargeIntensity(institutionId: number): Promise<ServiceChargeIntensity | null> {
+  const sql = getSql();
+  const rows = (await sql.unsafe(
+    `WITH subject AS (
+       SELECT id, charter_type, asset_size_tier FROM institution_sources
+        WHERE id = $1 AND charter_type IS NOT NULL AND asset_size_tier IS NOT NULL
+     ),
+     filed AS (
+       SELECT inf.institution_id,
+              inf.source,
+              inf.report_date::date AS rd,
+              inf.service_charge_income AS amount,
+              inf.total_deposits AS deposits,
+              LAG(inf.service_charge_income) OVER w AS prior_amount,
+              LAG(inf.report_date::date) OVER w AS prior_rd
+         FROM institution_financial_records inf
+         JOIN institution_sources ct ON ct.id = inf.institution_id
+         JOIN subject s ON ct.charter_type = s.charter_type AND ct.asset_size_tier = s.asset_size_tier
+        WHERE ${SAME_SCALE_SOURCES}
+          AND inf.report_date::date >= CURRENT_DATE - INTERVAL '30 months'
+       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
+                    ORDER BY inf.report_date::date)
+     ),
+     quarterly AS (
+       SELECT institution_id, rd, deposits,
+              CASE
+                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
+                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
+                ELSE NULL
+              END AS income
+         FROM filed
+     ),
+     latest AS (SELECT MAX(rd) AS rd FROM quarterly),
+     ttm AS (
+       SELECT q.institution_id,
+              SUM(q.income) AS income,
+              COUNT(q.income) AS quarters,
+              MAX(q.deposits) FILTER (WHERE q.rd = l.rd) AS deposits
+         FROM quarterly q, latest l
+        WHERE q.rd > l.rd - INTERVAL '1 year'
+        GROUP BY q.institution_id
+     ),
+     ratio AS (
+       SELECT institution_id, income * 1000.0 / deposits AS r
+         FROM ttm WHERE quarters = 4 AND income > 0 AND deposits > 0
+     )
+     SELECT TO_CHAR((SELECT rd FROM latest), 'YYYY-MM-DD') AS quarter_end,
+            s.charter_type,
+            s.asset_size_tier,
+            (SELECT r FROM ratio WHERE institution_id = s.id) AS own,
+            (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY r) FROM ratio WHERE institution_id <> s.id) AS peer_median,
+            (SELECT COUNT(*)::int FROM ratio WHERE institution_id <> s.id) AS peers,
+            (SELECT COUNT(*)::int FROM ratio p WHERE p.institution_id <> s.id
+                AND p.r < (SELECT r FROM ratio WHERE institution_id = s.id)) AS peers_below
+       FROM subject s`,
+    [institutionId],
+  )) as {
+    quarter_end: string | null;
+    charter_type: string;
+    asset_size_tier: string;
+    own: string | number | null;
+    peer_median: string | number | null;
+    peers: number;
+    peers_below: number;
+  }[];
+  const r = rows[0];
+  if (!r || !r.quarter_end) return null;
+  const num = (v: string | number | null) => (v === null ? null : Number(v));
+  return {
+    quarterEnd: r.quarter_end,
+    own: num(r.own),
+    peerMedian: r.peers >= MIN_INSTITUTIONS_FOR_MEDIAN ? num(r.peer_median) : null,
+    peers: Number(r.peers),
+    peersBelow: Number(r.peers_below),
+    charterType: r.charter_type,
+    assetTier: r.asset_size_tier,
+  };
 }

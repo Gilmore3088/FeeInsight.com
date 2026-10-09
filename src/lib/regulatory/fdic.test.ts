@@ -112,6 +112,13 @@ describe("FDIC financial parser", () => {
     expect(row?.fee_income_ratio).toBeNull();
   });
 
+  it("stores no total capital ratio for community bank leverage ratio filers", () => {
+    const cblr = parseFdicFinancial({ CERT: "9", RBC1AAJ: 11.76, RBC1RWAJ: null, RBCRWAJ: 0 }, { year: 2026, quarter: 2 });
+    expect(cblr).toMatchObject({ leverage_ratio: 11.76, tier1_capital_ratio: null, total_capital_ratio: null });
+    const full = parseFdicFinancial({ CERT: "9", RBC1RWAJ: 12.1, RBCRWAJ: 13.4 }, { year: 2026, quarter: 2 });
+    expect(full?.total_capital_ratio).toBe(13.4);
+  });
+
   it("drops records without a certificate", () => {
     expect(parseFdicFinancial({ ASSET: 1 }, { year: 2026, quarter: 1 })).toBeNull();
   });

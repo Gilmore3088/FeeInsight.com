@@ -10,7 +10,9 @@ import {
   ANSWER_KEY_AMOUNT_KINDS,
   ANSWER_KEY_DOCUMENT_TYPES,
   answerKeySchemaReady,
+  banksToCheck,
   getAnswerKeyInstitution,
+  isPersonChecked,
   listAnswerKeyInstitutions,
   VALID_ANSWER_KEY_CANONICAL_KEYS,
   type AnswerKeyFee,
@@ -97,9 +99,12 @@ export default async function AnswerKeyDetailPage({
   const [entry, all] = await Promise.all([getAnswerKeyInstitution(answerKeyId), listAnswerKeyInstitutions()]);
   if (!entry) notFound();
   const { institution, fees } = entry;
-  const index = all.findIndex((row) => row.id === answerKeyId);
-  const nextUnconfirmed = [...all.slice(index + 1), ...all.slice(0, Math.max(index, 0))]
-    .find((row) => row.status !== "confirmed" && row.id !== answerKeyId);
+  // The next bank a person still has to check, in the shortest-first order the list page uses.
+  const queue = banksToCheck(all);
+  const position = queue.findIndex((row) => row.id === answerKeyId);
+  const nextUnconfirmed = [...queue.slice(position + 1), ...queue.slice(0, Math.max(position, 0))]
+    .find((row) => row.id !== answerKeyId);
+  const personChecked = isPersonChecked(institution);
   const score = institution.score as (typeof institution.score & { missing?: string[]; extra?: string[] }) | null;
 
   return (
@@ -144,8 +149,10 @@ export default async function AnswerKeyDetailPage({
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Fee document</h2>
           <span className="text-xs text-gray-500">
-            {institution.status === "confirmed"
-              ? `Confirmed by ${institution.confirmed_by ?? "—"} ${formatAdminDateTime(institution.confirmed_at)}`
+            {personChecked
+              ? `Checked by ${institution.confirmed_by ?? "—"} ${formatAdminDateTime(institution.confirmed_at)}`
+              : institution.status === "confirmed"
+              ? `Keyed by Claude (${institution.confirmed_by}); not checked by a person`
               : `Prefilled${institution.prefill_source ? ` (${institution.prefill_source})` : ""}; not confirmed`}
           </span>
         </div>

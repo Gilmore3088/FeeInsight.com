@@ -7,6 +7,8 @@ import {
   recordFeedback,
   takedownCheck,
   takedownKind,
+  takedownPointer,
+  takedownSignal,
   type FeedbackRow,
 } from "./feedback";
 
@@ -22,9 +24,19 @@ export interface FeedbackSyncResult {
   categoryRejects: number;
   answerKeyFees: number;
   written: number;
+  /** Older takedown rows named after one fee ("hamilton.refreshed by #69017") given their fixed names. */
+  relabeled: number;
 }
 
-const NOT_READY: FeedbackSyncResult = { ready: false, takedowns: 0, restores: 0, categoryRejects: 0, answerKeyFees: 0, written: 0 };
+const NOT_READY: FeedbackSyncResult = {
+  ready: false,
+  takedowns: 0,
+  restores: 0,
+  categoryRejects: 0,
+  answerKeyFees: 0,
+  written: 0,
+  relabeled: 0,
+};
 
 interface TakedownRow {
   fee_published_id: number | string;
@@ -52,6 +64,9 @@ interface RestoreRow {
   fee_verified_id: number | string | null;
   canonical_fee_key: string | null;
   amount: number | string | null;
+  fee_name?: string | null;
+  taken_down_for?: string | null;
+  restored_by?: string | null;
 }
 
 interface CategoryRejectRow {
@@ -78,15 +93,21 @@ interface AnswerKeyRow {
   source_line: string | null;
   uncertain: boolean | null;
   document_url: string | null;
+  confirmed_by: string | null;
 }
 
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
 
-/** Hamilton took a live fee down: wrong about Knox's read and about Darwin's approval. */
+/**
+ * Hamilton took a live fee down: wrong about Knox's read and about Darwin's approval. A
+ * refresh (the same fee republished from the current copy of its page) is the opposite:
+ * both held up (`takedownSignal`).
+ */
 export function takedownFeedback(row: TakedownRow, runId: number | null): FeedbackRow[] {
   const kind = takedownKind(row.rolled_back_reason);
+  const pointer = takedownPointer(row.rolled_back_reason);
   const shared = {
-    signal: "wrong" as const,
+    signal: takedownSignal(row.rolled_back_reason),
     kind,
     reportedBy: "hamilton" as const,
     checkName: takedownCheck(row.rolled_back_reason),
@@ -98,7 +119,11 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
     feePublishedId: num(row.fee_published_id),
     canonicalFeeKey: row.canonical_fee_key,
     amount: num(row.amount),
-    evidence: { fee_name: row.fee_name, reason: row.rolled_back_reason },
+    evidence: {
+      fee_name: row.fee_name,
+      reason: row.rolled_back_reason,
+      ...(pointer == null ? {} : { pointer_fee_published_id: pointer }),
+    },
     runId,
   };
   return [
@@ -161,6 +186,14 @@ export async function syncPipelineFeedback(
          -- The bank dropped the fee from a newer copy of its page: Knox and Darwin were
          -- right about the copy they read, so this is no lesson against them.
          AND fp.rolled_back_reason NOT LIKE 'newer_copy_drops_fee:%'
+         -- A business-schedule fee was read right from the wrong page: the lesson is
+         -- Magellan's (hamilton/business-schedule.ts writes it), not Knox's or Darwin's.
+         AND fp.rolled_back_reason NOT LIKE 'business_schedule:%'
+         -- The bank's current page no longer states the fee at that price: the copy Knox and
+         -- Darwin read was right when read (hamilton/current-copy.ts).
+         AND fp.rolled_back_reason NOT LIKE 'not_on_current_copy:%'
+         -- Read right from an article page: the lesson is Magellan's (hamilton/article-page.ts).
+         AND fp.rolled_back_reason NOT LIKE 'article_page:%'
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
             WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'
@@ -173,7 +206,12 @@ export async function syncPipelineFeedback(
 
     const restores = await inSavepoint(db, (scope) => scope<RestoreRow[]>`
       SELECT f.fee_published_id, f.about_strategy, f.institution_id, f.source_document_id, f.fee_raw_id,
-             f.fee_verified_id, f.canonical_fee_key, f.amount
+             f.fee_verified_id, f.canonical_fee_key, f.amount, fp.fee_name, f.evidence->>'reason' AS taken_down_for,
+             (SELECT flag #>> '{}'
+                FROM verified_fee_observations fv, jsonb_array_elements(COALESCE(fv.outlier_flags, '[]'::jsonb)) flag
+               WHERE fv.fee_verified_id = f.fee_verified_id
+                 AND flag #>> '{}' LIKE 'rules_recheck_restored:%'
+               LIMIT 1) AS restored_by
         FROM pipeline_feedback f
         JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
        WHERE f.dedupe_key LIKE 'hamilton.takedown:pub:%:extract'
@@ -202,6 +240,13 @@ export async function syncPipelineFeedback(
         amount: num(row.amount),
         runId: options.runId,
         dedupeKey: `hamilton.restore:pub:${row.fee_published_id}`,
+        // Why it came back and what took it down, so the readers learn which checks were
+        // wrong and which fees today's rules miss ("rules_recheck_restored:restore_bar").
+        evidence: {
+          fee_name: row.fee_name ?? null,
+          taken_down_for: row.taken_down_for ?? null,
+          restored_by: row.restored_by ?? null,
+        },
       });
     }
     result.restores = restores.length;
@@ -254,7 +299,7 @@ export async function syncPipelineFeedback(
     result.categoryRejects = rejects.length;
 
     const answerKeyFees = await inSavepoint(db, (scope) => scope<AnswerKeyRow[]>`
-      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url
+      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url, f.confirmed_by
         FROM answer_key_fees f
         JOIN answer_key_institutions ak ON ak.id = f.answer_key_institution_id
        WHERE f.status = 'confirmed'
@@ -267,14 +312,15 @@ export async function syncPipelineFeedback(
         aboutStage: "extract",
         signal: "right",
         kind: "answer_key",
-        reportedBy: "human",
+        // Keys the Knox thread keyed line by line are not a person's check; say so.
+        reportedBy: row.confirmed_by === "knox-hand-key" ? "knox" : "human",
         checkName: "answer_key",
         institutionId: num(row.institution_id),
         sourceUrl: row.document_url,
         canonicalFeeKey: row.canonical_key,
         amount: num(row.amount),
         weight: row.uncertain ? 0.5 : 1,
-        evidence: { source_line: row.source_line, amount_kind: row.amount_kind },
+        evidence: { source_line: row.source_line, amount_kind: row.amount_kind, confirmed_by: row.confirmed_by ?? null },
         runId: options.runId,
         dedupeKey: `answer_key:fee:${row.id}`,
       });
@@ -286,6 +332,7 @@ export async function syncPipelineFeedback(
     return result;
   }
 
+  result.relabeled = await relabelPerFeeTakedowns(db, { limit, dryRun: options.dryRun === true });
   if (options.dryRun || rows.length === 0) return result;
   try {
     result.written = await inSavepoint(db, (scope) => recordFeedback(scope, rows));
@@ -293,4 +340,54 @@ export async function syncPipelineFeedback(
     console.error("syncPipelineFeedback write failed:", error);
   }
   return result;
+}
+
+interface PerFeeTakedownRow {
+  id: number | string;
+  reason: string;
+}
+
+/**
+ * Takedown rows synced before reasons that point at another row ("refreshed by #69017",
+ * "older document than #14909") had fixed names carry one check name and kind per fee.
+ * They get the names, signal and evidence `takedownFeedback` gives such a reason today;
+ * the row is kept, with the old check name in its evidence. Bounded per call.
+ */
+export async function relabelPerFeeTakedowns(db: SqlTag, options: { limit: number; dryRun: boolean }): Promise<number> {
+  try {
+    const stale = await inSavepoint(db, (scope) => scope<PerFeeTakedownRow[]>`
+      SELECT f.id, f.evidence->>'reason' AS reason
+        FROM pipeline_feedback f
+       WHERE f.reported_by = 'hamilton'
+         AND f.check_name ~ '#[0-9]'
+         AND f.evidence->>'reason' IS NOT NULL
+       ORDER BY f.id
+       LIMIT ${options.limit}
+    `);
+    if (options.dryRun || stale.length === 0) return stale.length;
+    const updated = await inSavepoint(db, (scope) => scope<{ id: number | string }[]>`
+      UPDATE pipeline_feedback f
+         SET check_name = v.check_name,
+             kind = v.kind,
+             signal = v.signal,
+             evidence = f.evidence
+               || jsonb_build_object('relabeled_from_check', f.check_name)
+               || CASE WHEN v.pointer IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('pointer_fee_published_id', v.pointer) END,
+             updated_at = NOW()
+        FROM unnest(
+               ${stale.map((row) => Number(row.id))}::bigint[],
+               ${stale.map((row) => takedownCheck(row.reason))}::text[],
+               ${stale.map((row) => takedownKind(row.reason))}::text[],
+               ${stale.map((row) => takedownSignal(row.reason))}::text[],
+               ${stale.map((row) => takedownPointer(row.reason))}::bigint[]
+             ) AS v(id, check_name, kind, signal, pointer)
+       WHERE f.id = v.id
+      RETURNING f.id
+    `);
+    return updated.length;
+  } catch (error) {
+    // Learning must never block the publish step it runs in.
+    console.error("relabelPerFeeTakedowns failed:", error);
+    return 0;
+  }
 }

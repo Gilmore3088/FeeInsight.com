@@ -5,14 +5,14 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
-import { loadAnalysisRecord } from "./actions";
+import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
   resolveArtifactContextInstitutionId,
   shouldPersistUrlInstitutionSelection,
 } from "@/lib/hamilton/artifact-context";
 
-export const metadata: Metadata = { title: "Analyze" };
+export const metadata: Metadata = { title: "Ask Hamilton" };
 
 /**
  * AnalyzePage — Server component that gates and hydrates the Analyze workspace.
@@ -24,14 +24,18 @@ export const metadata: Metadata = { title: "Analyze" };
 export default async function AnalyzePage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string }>;
+  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/");
 
   const params = await searchParams;
   const analysisId = params.analysis;
-  const initialAnalysisRecord = analysisId ? await loadAnalysisRecord(analysisId) : null;
+  const [initialAnalysisRecord, recent] = await Promise.all([
+    analysisId ? loadAnalysisRecord(analysisId) : null,
+    // Only the start screen lists them; an answer page doesn't need the read.
+    !analysisId && !params.q ? listSavedAnalyses(6) : [],
+  ]);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,
     artifactInstitutionId: initialAnalysisRecord?.institutionId,
@@ -53,8 +57,12 @@ export default async function AnalyzePage({
       institutionId={institutionId}
       initialAnalysis={initialAnalysisRecord?.responseJson ?? null}
       initialAnalysisId={initialAnalysisRecord?.id ?? null}
+      initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
+      recent={recent}
       selectedInstitution={selectedInstitution}
       initialIntent={params.intent ?? null}
+      initialQuestion={params.q ? params.q.slice(0, 500) : null}
+      autoSend={params.send === "1"}
     />
   );
 }

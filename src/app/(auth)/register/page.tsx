@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SITE_NAME } from "@/lib/constants";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { PLAN_DISPLAY_NAME, isProPlan, planPriceLine, type ProPlan } from "@/app/subscribe/pricing";
+import { PLAN_DISPLAY_NAME, PLAN_TEAM_LABEL, isProPlan, type ProPlan } from "@/app/subscribe/pricing";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { registerCategoryFor, registerDestinationFor, registerVariantFor } from "./register-destination";
 
@@ -24,9 +24,9 @@ const FREE_ACCOUNT_BENEFITS = [
 ];
 
 const PRO_ACCOUNT_BENEFITS = [
-  "Hamilton workspace: Analyze, Benchmark, Scenario, Report and Monitor",
+  "Hamilton workspace: This month, My fees, Try a price and Reports",
   "Unlimited peer sets and CSV exports (API access on request)",
-  "Cancel monthly seats at the end of any billing period",
+  "One plan for up to 5 people; monthly plans cancel at the end of any billing period",
 ];
 
 export default async function RegisterPage({
@@ -85,13 +85,13 @@ export default async function RegisterPage({
             style={{ fontFamily: "var(--font-newsreader), Georgia, serif", fontStyle: "italic" }}
           >
             {plan
-              ? `Finish setting up ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}, ${planPriceLine(plan)}`
+              ? `Finish setting up ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
               : "Create your free account"}
           </p>
 
           <p className="text-sm text-[#6B6255] leading-relaxed mb-10">
             {plan
-              ? "Create your account, then continue straight to checkout. Your seat is active as soon as payment clears."
+              ? "Create your account, then continue straight to checkout. Your plan is active as soon as payment clears."
               : feeLabel
                 ? `Next you'll pick your bank or credit union. We'll email you when its ${feeLabel} changes.`
                 : `Published fees for ${summary.institutionsLabel} U.S. banks and credit unions. An account keeps your place and opens the path to ${SITE_NAME} Pro.`}
@@ -157,7 +157,7 @@ export default async function RegisterPage({
                     : `Save your institution and peer group; upgrade to ${SITE_NAME} Pro whenever you need benchmarks.`}
               </p>
             </div>
-            <RegisterForm redirectTo={destination} variant={variant} />
+            <RegisterForm redirectTo={destination} variant={variant} checkout={plan !== null} />
             <p className="mt-4 text-center text-sm text-[#6B6255]">
               Already have an account?{" "}
               <Link href={loginHref} className="text-[#1A1815] font-medium hover:underline">

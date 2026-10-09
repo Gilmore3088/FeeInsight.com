@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
-import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
@@ -33,7 +33,12 @@ const ORGANIZATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: SITE_NAME,
+  legalName: LEGAL_ENTITY_NAME,
   url: SITE_URL,
+  logo: `${SITE_URL}/icon`,
+  description: `${SITE_NAME} publishes the ${PRODUCT_NAME}: fees for U.S. banks and credit unions, each traced to the institution's own published fee schedule.`,
+  brand: { "@type": "Brand", name: PRODUCT_NAME },
+  knowsAbout: ["Bank fees", "Credit union fees", "Overdraft fees", "Fee benchmarking"],
   contactPoint: {
     "@type": "ContactPoint",
     email: CONTACT_EMAIL,

@@ -22,7 +22,13 @@ import { writeStorylineMemo } from "./memo";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
-import { getFeeResearch } from "./workspace/research";
+import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
+import { getActivePeerSet } from "./active-peer-set";
+import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
+import { asksIncomeLevel, asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
+import { withDepth, type IncomeWhy } from "./workspace/story-extras";
+import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
+import { peerPhrase } from "./answer-brief";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
@@ -143,6 +149,8 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
+  // The peer group the bank picked in Settings leads every comparison in the answer.
+  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
   const actor = actorOf(user);
   const ready = await workspaceSchemaReady();
   const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
@@ -195,8 +203,16 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
-  const intent = parseAsk(question, fallbackFee);
-  const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment }) : null;
+  let intent = parseAsk(question, fallbackFee);
+  // "Where do we stand on every fee?" is answered outright: an overview of every fee,
+  // then the fee furthest from its peer median in detail.
+  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers) : null;
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  // "Why is our fee income lower than peers?" leads with what price explains of the gap, then
+  // answers in full for the fee furthest from its median when the question named none.
+  const why = await incomeWhyFor(institutionId, question, peers);
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
   const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
@@ -221,7 +237,8 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
-  const response = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
+  const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
+  const response = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null);
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
   const shown = response.scenario;
   const scenarioEvents =
@@ -266,7 +283,12 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     summary: `Answered with ${response.kind.replace(/_/g, " ")}.`,
     userId: user.id,
     institutionId,
+    // The question and Hamilton's short answer are kept (in our own database) so the answer eval
+    // can replay real Pro questions, above all the ones Hamilton asked back on instead of answering.
     detail: {
+      question,
+      short_answer: response.shortAnswer,
+      engine_version: WORKSPACE_ENGINE_VERSION,
       response_kind: response.kind,
       fee_category: intent.feeCategory,
       segment: intent.segment?.label ?? null,
@@ -279,6 +301,39 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     status: 200,
     body: { ...response, ...(decision ? { decisionId: decision.id } : {}), ...(savedAnalysisId ? { savedAnalysisId } : {}) },
   };
+}
+
+/** The whole-schedule overview for a question about every fee, or null for any other question. */
+export async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<ScheduleOverview | null> {
+  if (!asksWholeSchedule(question)) return null;
+  const briefing = await getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
+    console.error("[hamilton-ask] briefing failed", error);
+    return null;
+  });
+  return briefing ? scheduleOverview(briefing.positions) : null;
+}
+
+/** The price split of the bank's fee income gap, for a question asking why income is where it is. */
+export async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
+  // A why question, or one asking where income stands that names no single fee.
+  if (!asksIncomeWhy(question) && !(asksIncomeLevel(question) && !parseAsk(question).feeCategory)) return null;
+  const [intensity, briefing, trend] = await Promise.all([
+    getServiceChargeIntensity(institutionId).catch((error) => {
+      console.error("[hamilton-ask] income intensity failed", error);
+      return null;
+    }),
+    getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
+      console.error("[hamilton-ask] briefing failed", error);
+      return null;
+    }),
+    getServiceChargeIntensityTrend(institutionId).catch((error) => {
+      console.error("[hamilton-ask] income trend failed", error);
+      return [];
+    }),
+  ]);
+  if (!intensity || !briefing) return null;
+  const split = incomeSplit(intensity, briefing.positions, peerPhrase(intensity.charterType, intensity.assetTier));
+  return split ? { split, explained: explainIncome(split), top: scheduleOverview(briefing.positions).top, trend } : null;
 }
 
 export interface AskMemoResult {
@@ -300,17 +355,24 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
+  // The peer group the bank picked in Settings leads every comparison in the answer.
+  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
   const question = cleanText(body.question, MAX_QUESTION_CHARS);
   if (!question) return { status: 400, body: { error: "Ask a question." } };
   const ready = await workspaceSchemaReady();
   const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
-  const intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
+  let intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
+  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers) : null;
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  const why = await incomeWhyFor(institutionId, question, peers);
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
   if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
-  const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment });
+  const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
   if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
   const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
   const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
-  const response = buildAskResponse({ question, intent, research, memory, objective });
+  // The same storyline the Ask returned, overview and income split included.
+  const response = withDepth(buildAskResponse({ question, intent, research, memory, objective }), schedule, why, research.provenance.dataAsOf.fees ?? null);
   const storyline = response.answer?.storyline;
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
@@ -343,7 +405,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
       model: result.status === "written" ? result.memo.model : null,
       saved_analysis_id: savedId,
       memo_saved: memoSaved,
+      withheld_problems: result.status === "withheld" ? (result.problems ?? []) : null,
     },
   });
-  return { status: 200, body: result };
+  return { status: 200, body: result.status === "withheld" ? { status: "withheld", reason: result.reason } : result };
 }

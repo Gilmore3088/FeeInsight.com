@@ -10,6 +10,7 @@ import { isActivePath, navItemsFor, REQUEST_REPORT_NAV } from "./nav-items";
 export { isActivePath };
 import { openSearch } from "./public/search-events";
 import { useSessionChrome } from "./use-session-chrome";
+import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 
 /** 44px open/close controls: the minimum comfortable touch target. */
 const ICON_BUTTON =
@@ -98,7 +99,9 @@ export function ConsumerMobileNav() {
               </ul>
 
               <div className="mt-4 border-t border-[#E8DFD1] pt-4">
-                {isLoggedIn ? (
+                {session?.isPro ? (
+                  <ProAccountLinks isStaff={session.isStaff === true} onNavigate={close} />
+                ) : isLoggedIn ? (
                   <Link href="/account" onClick={close} className={DRAWER_LINK}>
                     Account
                   </Link>
@@ -133,5 +136,42 @@ export function ConsumerMobileNav() {
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
     </div>
+  );
+}
+
+/**
+ * On phones the desktop account menu is hidden, so Pro readers get its items here: the bank
+ * and its data, all changes, the Reference pages, Admin for staff, account and sign out.
+ */
+function ProAccountLinks({ isStaff, onNavigate }: { isStaff: boolean; onNavigate: () => void }) {
+  return (
+    <>
+      {HAMILTON_ACCOUNT_NAV.map((item) => (
+        <Link key={item.href} href={item.href} onClick={onNavigate} className={DRAWER_LINK}>
+          {item.label}
+        </Link>
+      ))}
+      <p className="px-3 pb-1 pt-3 text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Reference</p>
+      {HAMILTON_REFERENCE_NAV.map((item) => (
+        <Link key={item.href} href={item.href} onClick={onNavigate} className={DRAWER_LINK}>
+          {item.label}
+        </Link>
+      ))}
+      <div className="mt-3 border-t border-[#E8DFD1] pt-3">
+        {isStaff ? (
+          <Link href="/admin" onClick={onNavigate} className={DRAWER_LINK}>
+            Admin
+          </Link>
+        ) : null}
+        <Link href="/account" onClick={onNavigate} className={DRAWER_LINK}>
+          Account and billing
+        </Link>
+        <form action="/api/auth/logout" method="POST">
+          <button type="submit" className={`${DRAWER_LINK} w-full text-left`}>
+            Sign out
+          </button>
+        </form>
+      </div>
+    </>
   );
 }

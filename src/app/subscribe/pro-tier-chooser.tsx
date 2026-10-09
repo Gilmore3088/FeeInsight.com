@@ -1,0 +1,110 @@
+"use client";
+
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
+
+interface ProTierChooserProps {
+  /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */
+  chosenLabel: string | null;
+  /** Shown instead of a price when the chosen institution has no asset size on file. */
+  problem?: string | null;
+  /** Size bands to pick from when the chosen institution has no asset size on file. */
+  bandChoices?: { key: string; label: string }[] | null;
+  /** The band already picked (?band=), highlighted among the choices. */
+  pickedBand?: string | null;
+}
+
+/**
+ * Picks who the plan covers. The choice lives in the URL (?inst= or ?org=other) so it
+ * survives sign-up and the server can price it; checkout re-checks the tier itself.
+ */
+export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null, pickedBand = null }: ProTierChooserProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  function go(update: (params: URLSearchParams) => void) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("inst");
+    params.delete("org");
+    params.delete("checkout");
+    params.delete("band");
+    update(params);
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}#pro-heading` : `${pathname}#pro-heading`, { scroll: false });
+  }
+
+  if (chosenLabel) {
+    return (
+      <div className="rounded-lg border border-[#E0D7C9] bg-white p-4 text-sm">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Your price is for</p>
+        <p className="mt-1 font-semibold text-[#1A1815]">{chosenLabel}</p>
+        {problem && <p className="mt-2 text-[#A93D25]">{problem}</p>}
+        {bandChoices && (
+          <fieldset className="mt-3">
+            <legend className="text-xs font-medium text-[#1A1815]">Its total assets</legend>
+            <div className="mt-1 grid gap-2">
+              {bandChoices.map((band) => (
+                <button
+                  key={band.key}
+                  type="button"
+                  aria-pressed={pickedBand === band.key}
+                  onClick={() => {
+                    const inst = searchParams.get("inst");
+                    go((params) => {
+                      if (inst) params.set("inst", inst);
+                      params.set("band", band.key);
+                    });
+                  }}
+                  className={
+                    "min-h-11 rounded-md border px-3 text-left text-sm " +
+                    (pickedBand === band.key
+                      ? "border-[#C44B2E] ring-1 ring-[#C44B2E] text-[#1A1815]"
+                      : "border-[#D5CBBF] text-[#5A5347] hover:border-[#1A1815]")
+                  }
+                >
+                  {band.label}
+                </button>
+              ))}
+            </div>          </fieldset>
+        )}
+        <p className="mt-2 text-xs text-[#6B6255]">
+          Pick the organization the plan is for. If it&apos;s used for a larger one, we may move it to the right price.
+          We&apos;ll email you first.
+        </p>
+        <button
+          type="button"
+          onClick={() => go(() => {})}
+          className="mt-1 inline-flex min-h-11 items-center text-xs font-medium text-[#A93D25] underline underline-offset-2"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-[#E0D7C9] bg-white p-4">
+      <InstitutionPicker
+        inputId="pro_tier_institution"
+        name="pro_tier_institution_id"
+        label="Your bank or credit union"
+        help="Your price is set by its total assets. Start typing, then pick it from the list."
+        labelClassName="text-sm font-medium text-[#1A1815]"
+        labelStyle={{}}
+        inputClassName="w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm text-[#1A1815] outline-none focus:border-[#C44B2E]"
+        inputStyle={{}}
+        onSelect={(result) => {
+          if (result) go((params) => params.set("inst", String(result.id)));
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => go((params) => params.set("org", "other"))}
+        className="mt-2 inline-flex min-h-11 items-center text-left text-xs font-medium text-[#5A5347] underline underline-offset-2 hover:text-[#1A1815]"
+      >
+        I&apos;m a consultant or another organization
+      </button>
+    </div>
+  );
+}

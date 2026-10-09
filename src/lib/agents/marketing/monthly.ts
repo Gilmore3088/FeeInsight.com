@@ -237,7 +237,7 @@ async function writeOne(
       ? prompt
       : `${prompt}\n\nYour last draft was rejected for: ${problems.join("; ")}. Fix exactly that and reply with JSON only.`;
     const { message, costMicrousd } = await paidModelCall({
-      agent: "hamilton",
+      agent: "growth",
       operation: "marketing_write",
       runId,
       create,

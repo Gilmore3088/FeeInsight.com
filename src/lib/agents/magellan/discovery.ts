@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import {
   normalizeStateCode,
   readStrategyFromDocumentType,
@@ -28,11 +29,31 @@ import {
   type SearchContext,
   type TrailEntry,
 } from "./finders";
-import { LINK_YIELD_SLOTS, linkYieldSlot } from "./outcomes";
+import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
+import { OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, FEE_NAMED_LINK_SQL, PRODUCT_LINK_SQL } from "./link-coverage";
-import { runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
+import {
+  ARTICLE_LINK_SQL,
+  BUSINESS_PATH_SQL,
+  CONSUMER_PATH_SQL,
+  FEE_DOCUMENT_NAME_SQL,
+  FEE_NAMED_LINK_SQL,
+  FEE_SCHEDULE_NAME_SQL,
+  isArticleLink,
+  isOtherSiteLink,
+  isSingleProductDisclosureLink,
+  OTHER_SITE_LINK_SQL,
+  PRODUCT_DISCLOSURE_SQL,
+  PRODUCT_LINK_SQL,
+  SINGLE_PRODUCT_SQL,
+} from "./link-coverage";
+import { loadDemotedFinders } from "./batch-review";
+import { keepRefusedPaidAnswers, type KeepRefusedAnswersResult } from "./refused-answers";
+import { restoreSwappedFeePages, type RestoreFeePagesResult } from "./restore-fee-page";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { recordSearchMisses } from "./search-misses";
+import { LEADER_RANK, runSecondDocumentFind, type RunSecondDocumentFindResult } from "./second-document";
 import { countAnchors, detectPlatform, looksJavaScriptBuilt, looksLikeBotChallenge } from "./site-signals";
 import { repairIsWorthSaving, repairWebsiteUrl } from "./website-repair";
 
@@ -57,8 +78,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * 4: a homepage that blocks bots (HTTP 401/403 or a challenge page) no longer ends the
  * search: the known link and the site map (robots.txt rules respected) still run; the
  * stored website is repaired first ("wwwbank.com", "www.bankcom").
+ * 5: one product's disclosure is never the schedule, finders that fail two error reviews
+ * in a row run last, and links to another country's schedule are refused (7 Oct 2026).
  */
-export const DISCOVERY_METHOD_VERSION = 4;
+export const DISCOVERY_METHOD_VERSION = 5;
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**
@@ -81,6 +104,20 @@ export const UPGRADE_SEARCH_VERSION = 2;
  */
 export const BUSINESS_SEARCH_VERSION = 1;
 /**
+ * Discovery slots kept for business-only links even when banks without a link fill the
+ * step. A business link publishes business prices as the bank's consumer fees, which is
+ * worse than no link, and spare capacity alone reached 41 of 187 such banks (7 Oct 2026).
+ */
+export const BUSINESS_RESERVED_SLOTS = 3;
+/**
+ * Slots kept for product-page links and for out-of-date links. In spare capacity alone a
+ * state with many banks without a link never reached them: on 7 Oct 2026 1,208 of 5,232
+ * links (23%) were product pages, 129 searched at this version, and 260 links named 2023
+ * or earlier, 18 searched.
+ */
+export const UPGRADE_RESERVED_SLOTS = 3;
+export const FRESHNESS_RESERVED_SLOTS = 2;
+/**
  * Banks whose fee link looks out of date get one search for a newer schedule per version
  * (`detail.freshness_search`), in spare discovery capacity, after the upgrade searches.
  * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
@@ -98,6 +135,34 @@ const INSTITUTION_BUDGET_MS = 45_000;
 // no bank starts after STEP_START_BUDGET_MS and none runs past STEP_HARD_BUDGET_MS.
 const STEP_START_BUDGET_MS = 75_000;
 const STEP_HARD_BUDGET_MS = 100_000;
+/**
+ * The end of each step kept for the companion search (second-document.ts). Banks stopped
+ * starting only at STEP_START_BUDGET_MS and the search ran only if the bank loop ended
+ * before it, so once the queue was long enough to fill every step the search never ran:
+ * no second-document attempt from 07:00 UTC Oct 7 to Oct 9, while top-10 banks with a
+ * verified overdraft fee sat hidden for want of the rest of their schedule.
+ */
+export const COMPANION_RESERVE_MS = 25_000;
+
+export interface DiscoveryTimeBudget {
+  /** Nothing in the step runs past this. */
+  stepDeadline: number;
+  /** No bank starts after this. */
+  lastBankStart: number;
+  /** No bank runs past this; the rest of the step is the companion search's. */
+  bankDeadline: number;
+}
+
+/** A discovery step's clock, with the companion search's reserve when it runs. */
+export function discoveryTimeBudget(startedAt: number, secondDocuments: boolean): DiscoveryTimeBudget {
+  const reserve = secondDocuments ? COMPANION_RESERVE_MS : 0;
+  const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
+  return {
+    stepDeadline,
+    lastBankStart: startedAt + STEP_START_BUDGET_MS - reserve,
+    bankDeadline: stepDeadline - reserve,
+  };
+}
 /** Pause between crawl requests to one site. */
 const DEFAULT_POLITE_DELAY_MS = 250;
 const MAX_TRAIL = 60;
@@ -250,6 +315,8 @@ export type DiscoveryCode =
   | "js_homepage"
   | "no_fee_links"
   | "candidates_failed"
+  /** The found link is on another institution's own website (`other-bank-host.ts`). */
+  | typeof OTHER_BANK_HOST_CODE
   | "out_of_time";
 
 /** One specialist's part of a bank's search. */
@@ -314,10 +381,18 @@ export interface RunMagellanDiscoveryOptions {
   stepId?: number;
   mode?: "discover" | "rescue";
   limit?: number;
+  /**
+   * Slots kept for product-page links searched for the real schedule (default
+   * UPGRADE_RESERVED_SLOTS). A direct state re-search raises it so thin links are not
+   * left behind dead banks.
+   */
+  upgradeSlots?: number;
   dryRun?: boolean;
   stateCode?: string;
   db?: SqlTag;
   fetchImpl?: Fetcher;
+  /** The state's market leader ids, searched first; loaded from the shared ranking when left out. */
+  leaderIds?: number[];
   /** Pause between crawl requests (tests pass 0). */
   politeDelayMs?: number;
   /** Look for second documents of thin banks after the main search (default true in `discover` mode). */
@@ -347,9 +422,15 @@ export interface RunMagellanDiscoveryResult {
   /** The shadow page classifier this step scored candidates with, if one is stored. */
   pageClassifier: { trainedAt: string | null; positives: number; negatives: number } | null;
   /** Specialist strategies in the order this step ran them, and whether the state expert set it. */
-  finderOrder: { strategies: string[]; source: "state_expert" | "default" };
+  finderOrder: { strategies: string[]; source: "state_expert" | "default"; demoted?: string[] };
   methodVersion: number;
   secondDocuments: RunSecondDocumentFindResult | null;
+  /** Fee pages put back as the main link after a blank read had swapped them out. */
+  restoredFeePages: RestoreFeePagesResult | null;
+  /** Paid search answers kept although the bank's site refused our check (HTTP 403). */
+  keptRefusedAnswers: KeepRefusedAnswersResult | null;
+  /** Search-miss lessons written (`magellan.search_miss`). */
+  searchMisses: number;
   limit: number;
   dryRun: boolean;
   results: CandidateDiscoveryResult[];
@@ -814,6 +895,7 @@ async function selectCandidates(
   limit: number,
   stateCode: string | undefined,
   learning: boolean,
+  leaderIds: number[],
 ): Promise<DiscoveryCandidateRow[]> {
   const normalizedState = normalizeStateCode(stateCode);
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
@@ -834,6 +916,8 @@ async function selectCandidates(
              AND COALESCE(inst.failure_reason_note, '') LIKE 'out_of_time:%') AS discovery_cut_off,
            row_number() OVER (ORDER BY
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
+       -- The state's market leaders (top 15 by deposits or fee income) set its prices.
+       CASE WHEN inst.id = ANY(${leaderIds}::bigint[]) THEN 0 ELSE 1 END,
        -- A bank whose page was ruled out has a page whose links point the way: search it first.
        CASE WHEN jsonb_typeof(profile.rejected_source_urls) = 'array'
              AND jsonb_array_length(profile.rejected_source_urls) > 0 THEN 0 ELSE 1 END,
@@ -853,8 +937,18 @@ async function selectCandidates(
          -- A link the old crawler left behind that failed and was never read since
          -- (Southside Bank's ".../404") holds no live fee: search for the real page
          -- instead of waiting for the fetch queue to reach it.
+         -- A 404 or 410 is due at once: 51 links fetched as 404 before the fetch step
+         -- learned to clear gone links (6 Oct 2026) would otherwise wait out the 30 days.
          OR (
-           inst.last_crawl_at < NOW() - INTERVAL '30 days'
+           (
+             inst.last_crawl_at < NOW() - INTERVAL '30 days'
+             OR (
+               SELECT doc.status_code FROM source_documents doc
+                WHERE doc.institution_id = inst.id
+                ORDER BY doc.id DESC
+                LIMIT 1
+             ) IN (404, 410)
+           )
            AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
            AND (
              SELECT doc.status FROM source_documents doc
@@ -871,8 +965,23 @@ async function selectCandidates(
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
-       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
-       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND (
+         (COALESCE(profile.source_kind, 'unknown') <> 'offline'
+           AND COALESCE(profile.read_strategy, '') <> 'manual_review')
+         -- "Offline" came from the old crawler's document_type (17 banks, all with a working
+         -- website, First Bank and Denali State Bank in Alaska's top 10 among them) and kept
+         -- them out of every search. Each gets one search per discovery method version.
+         OR (
+           ${learning}::boolean
+           AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = inst.id
+                AND pa.stage = 'discover'
+                AND pa.detail @> ${currentMethod}::jsonb
+           )
+         )
+       )
        AND (
          profile.locked_by_correction IS TRUE
          OR inst.last_rescue_attempt_at IS NULL
@@ -883,7 +992,11 @@ async function selectCandidates(
          OR (
            inst.rescue_status IN ('dead', 'needs_human')
            AND (
-             inst.last_rescue_attempt_at < NOW() - CASE
+             -- An address repair can't read costs no fetch, so it is retried as repair
+             -- learns new mistakes (a scheme stored twice: 10 banks, 8 Oct 2026).
+             (COALESCE(inst.failure_reason_note, '') LIKE 'website_unrepairable:%'
+               AND inst.last_rescue_attempt_at < NOW() - INTERVAL '12 hours')
+             OR inst.last_rescue_attempt_at < NOW() - CASE
                WHEN COALESCE(profile.consecutive_failures, 0) >= 2 THEN INTERVAL '90 days'
                ELSE INTERVAL '30 days'
              END
@@ -926,8 +1039,53 @@ async function selectCandidates(
 }
 
 /**
- * Banks whose fee link is an account or product page, not yet searched for the real
- * schedule at this upgrade version. Their link is kept until a fee schedule is found.
+ * Banks in other states with no fee link that no finder has ever searched (no `discover`
+ * attempt), largest first. They fill a step's spare slots, so a state whose lane runs
+ * rarely does not hold them back. Locked, offline and manual-review banks stay out.
+ */
+async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode: string): Promise<DiscoveryCandidateRow[]> {
+  if (limit <= 0) return [];
+  const normalizedState = normalizeStateCode(stateCode);
+  return db<DiscoveryCandidateRow[]>`
+    -- never-searched banks in other states
+    SELECT inst.id,
+           inst.institution_name,
+           inst.state_code,
+           inst.website_url,
+           inst.asset_size,
+           inst.rescue_status,
+           profile.canonical_source_url AS profile_canonical_source_url,
+           profile.source_kind AS profile_source_kind,
+           profile.read_strategy AS profile_read_strategy,
+           profile.locked_by_correction AS profile_locked_by_correction,
+           profile.consecutive_failures AS profile_consecutive_failures
+      FROM institution_sources inst
+      LEFT JOIN institution_source_profiles profile
+        ON profile.institution_id = inst.id
+     WHERE COALESCE(inst.status, 'active') = 'active'
+       AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
+       AND inst.website_url IS NOT NULL
+       AND btrim(inst.website_url) <> ''
+       AND upper(btrim(COALESCE(inst.state_code, ''))) <> COALESCE(${normalizedState}::text, '')
+       AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
+       AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
+       AND COALESCE(profile.read_strategy, '') <> 'manual_review'
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.institution_id = inst.id
+            AND pa.stage = 'discover'
+       )
+     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     LIMIT ${limit}
+  `;
+}
+
+/**
+ * Banks whose fee link is an account or product page, an article, blog post or news
+ * item (`isArticleLink`), or one deposit product's disclosure such as a CD truth-in-savings
+ * sheet (`isSingleProductDisclosureLink`), or a page on another kind of site (`isOtherSiteLink`: a
+ * government, broker or car-price site), not yet searched for the real schedule at this upgrade version.
+ * Their link is kept until a fee schedule is found.
  */
 async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: string | undefined): Promise<DiscoveryCandidateRow[]> {
   if (limit <= 0) return [];
@@ -951,8 +1109,18 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
       LEFT JOIN institution_source_profiles profile
         ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
-       AND lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL}
-       AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}
+       AND (
+             (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
+             OR (lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
+             OR (lower(inst.fee_schedule_url) ~ ${SINGLE_PRODUCT_SQL}
+                 AND lower(inst.fee_schedule_url) ~ ${PRODUCT_DISCLOSURE_SQL}
+                 AND lower(inst.fee_schedule_url) !~ ${FEE_SCHEDULE_NAME_SQL})
+             -- A page on a government, broker or car-price site is never the bank's schedule,
+             -- unless that site is the bank's own (GSA FCU lives on gsafcu.gsa.gov).
+             OR (lower(inst.fee_schedule_url) ~ ${OTHER_SITE_LINK_SQL}
+                 AND substring(lower(inst.fee_schedule_url) from '^[a-z]+://(?:www\\.)?([^/:?#]+)')
+                     IS DISTINCT FROM substring(lower(btrim(inst.website_url)) from '^(?:[a-z]+://)?(?:www\\.)?([^/:?#]+)'))
+           )
        AND inst.website_url IS NOT NULL
        AND btrim(inst.website_url) <> ''
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
@@ -1032,7 +1200,9 @@ async function selectStaleCandidates(
   const normalizedState = normalizeStateCode(stateCode);
   const marker = JSON.stringify({ freshness_search: FRESHNESS_SEARCH_VERSION });
   const staleYear = now.getUTCFullYear() - STALE_AFTER_YEARS;
-  const rows = await db<Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null }>>`
+  const rows = await db<
+    Array<DiscoveryCandidateRow & { effective_year: number | null; url_year: number | null; wrong_at: string | Date | null; searched_at: string | Date | null }>
+  >`
     -- stale-link freshness search
     WITH due AS (
       SELECT inst.id,
@@ -1061,8 +1231,9 @@ async function selectStaleCandidates(
         LEFT JOIN institution_source_profiles profile
           ON profile.institution_id = inst.id
        WHERE COALESCE(inst.status, 'active') = 'active'
-         -- One slot of banks per UTC hour (as the outcome ledger), so the text check stays small.
-         AND inst.id % ${LINK_YIELD_SLOTS} = ${linkYieldSlot(now)}
+         -- One slot of banks per UTC hour when the step has no state, so the text check stays
+         -- small; a state's step checks the whole state (stepSlot, as the outcome ledger).
+         AND (${stepSlot(normalizedState, now)}::int IS NULL OR inst.id % ${LINK_YIELD_SLOTS} = ${stepSlot(normalizedState, now)}::int)
          AND inst.fee_schedule_url IS NOT NULL
          AND btrim(inst.fee_schedule_url) <> ''
          AND inst.website_url IS NOT NULL
@@ -1071,22 +1242,40 @@ async function selectStaleCandidates(
          AND COALESCE(profile.locked_by_correction, FALSE) IS FALSE
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
-         AND NOT EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.institution_id = inst.id
-              AND pa.stage = 'discover'
-              AND pa.detail @> ${marker}::jsonb
-         )
+    ),
+    marked AS (
+      SELECT due.*,
+             (
+               SELECT max(pa.created_at) FROM pipeline_attempts pa
+                WHERE pa.institution_id = due.id
+                  AND pa.stage = 'discover'
+                  AND pa.detail @> ${marker}::jsonb
+             ) AS searched_at,
+             -- The outcome ledger judged the link a wrong source of fees (confirmed takedowns).
+             (
+               SELECT max(f.updated_at) FROM pipeline_feedback f
+                WHERE f.check_name = ${LINK_YIELD_CHECK}
+                  AND f.kind = 'confirmed_wrong_fees'
+                  AND f.institution_id = due.id
+                  AND f.source_url = due.fee_schedule_url
+             ) AS wrong_at
+        FROM due
     )
-    SELECT * FROM due
-     WHERE COALESCE(effective_year, url_year) <= ${staleYear}
-     ORDER BY asset_size DESC NULLS LAST, id ASC
+    SELECT * FROM marked
+     WHERE (COALESCE(effective_year, url_year) <= ${staleYear} AND searched_at IS NULL)
+        OR (wrong_at IS NOT NULL AND (searched_at IS NULL OR searched_at < wrong_at))
+     ORDER BY (wrong_at IS NOT NULL) DESC, asset_size DESC NULLS LAST, id ASC
      LIMIT ${limit}
   `;
-  return rows.map(({ effective_year, url_year, ...row }) => ({
+  return rows.map(({ effective_year, url_year, wrong_at, ...row }) => ({
     ...row,
     freshness: true,
-    stale_reason: effective_year != null ? `effective ${effective_year}` : `address names ${url_year}`,
+    stale_reason:
+      wrong_at != null
+        ? "fees read from it were confirmed wrong on a second look"
+        : effective_year != null
+          ? `effective ${effective_year}`
+          : `address names ${url_year}`,
   }));
 }
 
@@ -1127,11 +1316,35 @@ async function keepBusinessScheduleAsCompanion(
   `;
 }
 
+/**
+ * A found link on another institution's own website is that bank's schedule (Peoples Bank of
+ * Iowa read Peoples Bank of Washington's PDF, Oct 8). It is not saved: the search is recorded
+ * as a miss to retry, and the link joins the bank's rejected sources so search skips it.
+ */
+async function refuseOtherBankLink(db: SqlTag, result: CandidateDiscoveryResult): Promise<CandidateDiscoveryResult> {
+  if (result.outcome !== "discovered" || !result.url) return result;
+  const other = await otherInstitutionAtHost(db, result.institutionId, result.url);
+  if (!other) return result;
+  const reason = `${result.url} is on ${other.host}, the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution`;
+  await db`
+    UPDATE institution_source_profiles
+       SET rejected_source_urls = (
+             SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+               FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+              WHERE entry->>'url' IS DISTINCT FROM ${result.url}
+           ) || ${JSON.stringify([{ url: result.url, reason: OTHER_BANK_HOST_CODE, at: new Date().toISOString() }])}::jsonb,
+           updated_at = NOW()
+     WHERE institution_id = ${result.institutionId}
+  `;
+  return { ...result, outcome: "retry_after", code: OTHER_BANK_HOST_CODE, url: null, documentType: null, confidence: null, reason };
+}
+
 /** Writes a bank's search result: its fee link (or miss), discovery evidence and profile. */
 export async function recordDiscoveryResult(
   db: SqlTag,
-  result: CandidateDiscoveryResult,
+  found: CandidateDiscoveryResult,
 ): Promise<void> {
+  const result = await refuseOtherBankLink(db, found);
   const rescueStatus =
     result.outcome === "discovered"
       ? "rescued"
@@ -1389,6 +1602,17 @@ export function finderOrderFromHints(hints: StateExpertHints | null): typeof FIN
   return [first, ...ordered.map((strategy) => byStrategy.get(strategy)!)];
 }
 
+/**
+ * Finders the error review marked wrong in their last two chunks (`batch-review.ts`) run
+ * after the others. The known link still runs first, and nothing is dropped.
+ */
+export function demoteFinders(order: typeof FINDER_ORDER, demoted: ReadonlySet<string>): typeof FINDER_ORDER {
+  if (demoted.size === 0) return order;
+  const [first, ...rest] = order;
+  const isDemoted = (finder: (typeof FINDER_ORDER)[number]) => demoted.has(FINDERS[finder.key].strategy);
+  return [first, ...rest.filter((finder) => !isDemoted(finder)), ...rest.filter(isDemoted)];
+}
+
 export async function runMagellanDiscovery(
   options: RunMagellanDiscoveryOptions,
 ): Promise<RunMagellanDiscoveryResult> {
@@ -1398,15 +1622,47 @@ export async function runMagellanDiscovery(
   const dryRun = Boolean(options.dryRun);
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
-  const missing = await selectCandidates(db, limit, options.stateCode, learning);
-  // Spare capacity searches banks whose link is a product page, then banks whose link
-  // looks out of date (both need the attempt log).
-  const business = learning ? await selectBusinessCandidates(db, limit - missing.length, options.stateCode) : [];
-  const upgrades = learning ? await selectUpgradeCandidates(db, limit - missing.length - business.length, options.stateCode) : [];
-  const stale = learning
-    ? await selectStaleCandidates(db, limit - missing.length - business.length - upgrades.length, options.stateCode)
+  const leaderIds = options.leaderIds ?? (await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []));
+  const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
+  // Links that are not the schedule each keep a few reserved slots, searched right after
+  // the cut-off banks resuming their search: business-only links, then product pages, then
+  // links that look out of date. Spare capacity then takes more of each, in that order
+  // (all need the attempt log).
+  const reserved = (slots: number) => Math.min(slots, limit);
+  const business = learning
+    ? await selectBusinessCandidates(db, Math.max(limit - found.length, reserved(BUSINESS_RESERVED_SLOTS)), options.stateCode)
     : [];
-  const rows = [...missing, ...business, ...upgrades, ...stale];
+  const upgradeSlots = Math.max(0, Math.floor(options.upgradeSlots ?? UPGRADE_RESERVED_SLOTS));
+  const upgrades = learning
+    ? await selectUpgradeCandidates(db, Math.max(limit - found.length - business.length, reserved(upgradeSlots)), options.stateCode)
+    : [];
+  const stale = learning
+    ? await selectStaleCandidates(
+        db,
+        Math.max(limit - found.length - business.length - upgrades.length, reserved(FRESHNESS_RESERVED_SLOTS)),
+        options.stateCode,
+      )
+    : [];
+  const missing = found.slice(0, Math.max(0, limit - business.length - upgrades.length - stale.length));
+  // The selector puts up to RESUME_FIRST_PER_STEP cut-off banks first; they keep the front.
+  let resumeCount = 0;
+  while (resumeCount < Math.min(RESUME_FIRST_PER_STEP, missing.length) && cutOff(missing[resumeCount])) resumeCount += 1;
+  const rows = [
+    ...missing.slice(0, resumeCount),
+    ...business.slice(0, BUSINESS_RESERVED_SLOTS),
+    ...upgrades.slice(0, upgradeSlots),
+    ...stale.slice(0, FRESHNESS_RESERVED_SLOTS),
+    ...missing.slice(resumeCount),
+    ...business.slice(BUSINESS_RESERVED_SLOTS),
+    ...upgrades.slice(upgradeSlots),
+    ...stale.slice(FRESHNESS_RESERVED_SLOTS),
+  ];
+  // A state with little left to search fills its spare slots with banks no finder has ever
+  // searched, in any state, largest first (65 of 405 steps on 6-7 Oct ended in under 30 s
+  // while 1,418 banks with a website had never been searched).
+  if (learning && options.stateCode && rows.length < limit) {
+    rows.push(...(await selectNeverSearchedElsewhere(db, limit - rows.length, options.stateCode)));
+  }
   const rejected = !dryRun && rows.length > 0 && (await documentVaultSchemaReady(db))
     ? await loadRejectedUrls(db, rows.map((row) => Number(row.id)))
     : new Map<number, RejectedSources>();
@@ -1414,26 +1670,29 @@ export async function runMagellanDiscovery(
   // MG-4 in shadow: the stored classifier scores every opened candidate (trail `page_p`).
   const pageClassifier = learning ? await loadPageClassifier(db) : null;
   const hints = options.stateCode ? await stateExpertHints(options.stateCode, db).catch(() => null) : null;
-  const finderOrder = finderOrderFromHints(hints);
+  const demotedFinders = learning ? await loadDemotedFinders(db) : new Set<string>();
+  const hintedOrder = finderOrderFromHints(hints);
+  const finderOrder = demoteFinders(hintedOrder, demotedFinders);
 
-  const startedAt = Date.now();
-  const stepDeadline = startedAt + STEP_HARD_BUDGET_MS;
+  const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
+  // With the companion search on, banks stop early enough to leave it its reserve.
+  const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
   for (const row of rows) {
     // Banks not reached this step stay due and are picked up by the next one.
-    if (Date.now() - startedAt > STEP_START_BUDGET_MS) break;
+    if (Date.now() > lastBankStart) break;
     const institutionId = Number(row.id);
     const bankStarted = Date.now();
     const result = await discoverForInstitution(row, {
       fetchImpl,
       rejectedUrls: rejected.get(institutionId),
       knowledge,
-      deadline: Math.min(bankStarted + INSTITUTION_BUDGET_MS, stepDeadline),
+      deadline: Math.min(bankStarted + INSTITUTION_BUDGET_MS, bankDeadline),
       politeDelayMs,
       resume: cutOff(row) ? parseDiscoveryResume(row.discovery_resume) : null,
       // The resume state lives on the attempt log, so it needs the learning schema.
       resumable: learning,
-      fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= stepDeadline,
+      fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= bankDeadline,
       pageClassifier,
       finderOrder,
     });
@@ -1451,7 +1710,8 @@ export async function runMagellanDiscovery(
     );
     // A re-search that finds nothing new leaves the bank's link and rescue state alone.
     if (!reSearch || upgraded) await recordDiscoveryResult(db, result);
-    if (upgraded && row.upgrade && row.fee_schedule_url) {
+    // An article, blog link or one product's disclosure is not kept beside the schedule: its amounts were never the bank's schedule.
+    if (upgraded && row.upgrade && row.fee_schedule_url && !isArticleLink(row.fee_schedule_url) && !isSingleProductDisclosureLink(row.fee_schedule_url) && !isOtherSiteLink(row.fee_schedule_url, row.website_url)) {
       await keepProductPageAsCompanion(db, institutionId, row.fee_schedule_url, options.runId);
     }
     if (upgraded && row.business && row.fee_schedule_url) {
@@ -1463,8 +1723,34 @@ export async function runMagellanDiscovery(
     }
   }
 
-  const wantSecondDocuments = options.secondDocuments ?? options.mode !== "rescue";
-  const secondDocuments = wantSecondDocuments && Date.now() - startedAt < STEP_START_BUDGET_MS
+  // Database work only (no fetches), so it runs before the companion search, which uses
+  // the rest of the step's time: behind it, the restore never ran on 7 Oct (0 of 58 due).
+  const restoredFeePages = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => restoreSwappedFeePages({
+        db: scope,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        stateCode: options.stateCode ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("restoreSwappedFeePages failed:", error);
+        return null;
+      })
+    : null;
+  // Database work only, like the restore. Not limited to the lane's state: the answers were
+  // paid for already and each bank is kept once.
+  const keptRefusedAnswers = learning && options.mode !== "rescue"
+    ? await inSavepoint(db, (scope) => keepRefusedPaidAnswers({
+        db: scope,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        dryRun,
+      })).catch((error) => {
+        console.error("keepRefusedPaidAnswers failed:", error);
+        return null;
+      })
+    : null;
+  const secondDocuments = wantSecondDocuments && Date.now() < stepDeadline
     ? await runSecondDocumentFind({
         db,
         fetchImpl,
@@ -1474,8 +1760,29 @@ export async function runMagellanDiscovery(
         deadline: stepDeadline,
         dryRun,
         learning,
+        leaderIds: await loadMarketLeaderIds(db, { perState: LEADER_RANK }).catch((error) => {
+          console.error("loadMarketLeaderIds failed:", error);
+          return [];
+        }),
       })
     : null;
+
+  // A bank searched from scratch that ended with nothing leaves a lesson (search-misses.ts).
+  const searchMisses = learning && !dryRun
+    ? await recordSearchMisses(
+        db,
+        results.filter((result) => {
+          const row = rows.find((candidate) => Number(candidate.id) === result.institutionId);
+          return row && !(row.upgrade || row.business || row.freshness);
+        }),
+        {
+          runId: options.runId,
+          method: DISCOVERY_METHOD,
+          methodVersion: DISCOVERY_METHOD_VERSION,
+          websites: new Map(rows.map((row) => [Number(row.id), row.website_url])),
+        },
+      )
+    : 0;
 
   const codes: Partial<Record<DiscoveryCode, number>> = {};
   const foundBy: Partial<Record<FinderKey, number>> = {};
@@ -1501,10 +1808,14 @@ export async function runMagellanDiscovery(
     pageClassifier: pageClassifier ? { trainedAt: pageClassifier.trainedAt, positives: pageClassifier.positives, negatives: pageClassifier.negatives } : null,
     finderOrder: {
       strategies: finderOrder.map((finder) => FINDERS[finder.key].strategy),
-      source: finderOrder === FINDER_ORDER ? "default" : "state_expert",
+      source: hintedOrder === FINDER_ORDER ? "default" : "state_expert",
+      demoted: [...demotedFinders],
     },
     methodVersion: DISCOVERY_METHOD_VERSION,
     secondDocuments,
+    restoredFeePages,
+    keptRefusedAnswers,
+    searchMisses,
     limit,
     dryRun,
     results,

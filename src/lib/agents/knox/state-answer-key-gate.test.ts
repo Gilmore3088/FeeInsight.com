@@ -13,16 +13,22 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
  * them when a change improves Knox, and never lower one without saying why in the PR.
  */
 // Since v17 the gate counts only reads that pass Knox's self-check; main at v16 scored 659
-// right / 48 wrong on that basis.
+// right / 48 wrong on that basis. Floors raised to main at v29 (2026-10-07), and CA, GA, MN and
+// all to the top-50 fold (Oct 8: 724 right / 46 wrong, from 723 / 47).
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 115, wrong: 8 },
-  FL: { right: 95, wrong: 7 },
-  GA: { right: 141, wrong: 12 },
-  IL: { right: 84, wrong: 7 },
-  MI: { right: 102, wrong: 0 },
-  MN: { right: 85, wrong: 7 },
-  NY: { right: 38, wrong: 7 },
-  all: { right: 660, wrong: 48 },
+  CA: { right: 130, wrong: 7 },
+  FL: { right: 102, wrong: 7 },
+  GA: { right: 150, wrong: 12 },
+  // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
+  // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
+  IL: { right: 88, wrong: 7 },
+  MI: { right: 114, wrong: 0 },
+  // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
+  // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
+  // as a collection item, so one right read became one wrong one.
+  MN: { right: 96, wrong: 8 },
+  NY: { right: 40, wrong: 6 },
+  all: { right: 724, wrong: 46 },
 };
 
 const fixture = JSON.parse(

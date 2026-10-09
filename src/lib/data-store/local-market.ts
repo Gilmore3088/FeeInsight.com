@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 
 /**
  * Local competitors for a Hamilton report: the institutions with branches in the
@@ -114,6 +115,9 @@ export async function getLocalMarketCompetitors(params: {
          AND c.review_status = 'approved'
          AND c.amount IS NOT NULL
          AND c.fee_category = ANY(${params.categories})
+         -- Business-only schedules are not the rival's consumer price (fee-stats rule 6).
+         AND NOT (lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
+                  AND lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL})
        GROUP BY c.institution_id, c.fee_category
     )
     SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type,
@@ -191,6 +195,9 @@ export async function getLocalFeeMoves(params: {
      WHERE c.institution_id = ANY(${params.institutionIds}::int[])
        AND c.fee_category = ANY(${params.categories}::text[])
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        AND COALESCE(c.previous_amount, c.old_amount) IS NOT NULL
        AND c.new_amount IS NOT NULL
      ORDER BY c.detected_at DESC

@@ -8,12 +8,15 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
+import { groundLineup, LINEUP_CATEGORY, withAccountName } from "@/lib/agents/knox/lineup";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
+import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
+import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
@@ -44,6 +47,65 @@ export const KNOX_REEXTRACT_MAX_FEES = 5;
  * large bank's missing overdraft fee would otherwise wait for a new copy of its page.
  */
 export const KNOX_REREAD_ASSET_FLOOR = 10_000_000;
+
+// Among $10B+ banks' texts due a re-read, a bank with no live overdraft fee goes first,
+// then the text Knox's rules read longest ago. Ordered by newest text alone, each rules
+// version bump restarted the same banks: on 2026-10-08 v34-v43 reached 97 of the 192
+// banks, and GreenState (no live overdraft fee, last read at v33) never came up. Only
+// large banks' rows pay for the two lookups.
+const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR} THEN NOT EXISTS (
+           SELECT 1 FROM published_fee_records live_overdraft
+            WHERE live_overdraft.institution_id = adt.institution_id
+              AND live_overdraft.canonical_fee_key = 'overdraft'
+              AND live_overdraft.rolled_back_at IS NULL
+         ) END DESC NULLS LAST,
+         CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR} THEN (
+           SELECT MAX(last_read.created_at)
+             FROM pipeline_attempts last_read
+            WHERE last_read.stage = 'extract'
+              AND last_read.institution_id = adt.institution_id
+              AND last_read.input_fingerprint = adt.text_hash
+              AND last_read.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+         ) END ASC NULLS FIRST, `;
+
+/**
+ * A current copy last read by a rules version below this is read again once (2026-10-07:
+ * 5,474 current copies at 4,265 banks were last read before v26, when Knox missed plural
+ * wires, low-balance rows and two-column pages; Space Coast CU had 7 live fees of 22 prices).
+ * Raise it only when a rules change is worth reading every page again.
+ */
+export const KNOX_STALE_READ_BELOW_VERSION = 26;
+/**
+ * A current copy with a monthly fee row that has no account name, last read below this
+ * version, is read again once so v49 can name the account (2026-10-09: 8,928 such rows on
+ * 3,223 current copies). Free: rules only.
+ */
+export const KNOX_ACCOUNT_NAME_READ_BELOW_VERSION = 49;
+/**
+ * Banks whose pages are read first while the stale backlog lasts, besides each state's market
+ * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
+ * a priced line for the missing fee (report-ready thread, 2026-10-07), and Space Coast CU.
+ */
+export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
+  // In this order: S&T (most missing-fee leads), Space Coast, then First National Bank Alaska
+  // (last read at v22, which missed its two outgoing wires; v32 reads both. 8 of 15 report fees).
+  161, 8109, 281, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
+  749, 1680, 2334, 2580, 2756, 156, 528, 641, 1068, 1200, 1411, 1104, 3262, 7096, 8078, 6775, 6358, 5058, 7503,
+  6788, 5998,
+  // Magellan confirmed these current copies are full fee pages (2026-10-07).
+  321, 836, 1170, 1024, 8082, 7723, 8606, 5622,
+  // Report-gap list re-run on current copies only (2026-10-07).
+  1995, 7929,
+  // Full schedules Rosetta saw read empty by v4-v15 (State Street, Openland, NY Times CU, Downriver,
+  // Wisdom Heritage, Education First); v32 reads them.
+  2300, 7156, 5401, 4895, 1582, 6809,
+  // Tennessee banks with Darwin-verified fees held back because Knox read only 1 or 2 fees from
+  // their current copy, all last read at v2-v22 (2026-10-07). Hand checks show most current
+  // copies are checking product pages listing 1-3 prices, so a re-read may add few fees.
+  5447, 2066, 371, 2791, 2855, 1158, 2153, 8055, 1553, 1965, 3663, 1248, 2819, 5840, 1147, 579,
+  2607, 1240, 3574, 8328, 2024, 1587, 6010, 2527, 1198, 2696, 680, 1712, 1829, 551, 1827, 1046,
+  2061, 980, 7636, 8268, 1628, 669, 6050, 4100, 2154, 251, 8267, 8371,
+];
 export const KNOX_EXTRACT_DEFAULT_LIMIT = 25;
 export const KNOX_EXTRACT_MAX_LIMIT = 100;
 
@@ -121,6 +183,10 @@ export interface RunKnoxExtractResult {
   /** Lessons read from the shared learning store, and fees they re-filed (`lessons.ts`). */
   lessonsLoaded: number;
   lessonRefiles: Record<string, number>;
+  /** Confirmed, still-down takedowns read before the run (`takedown-lessons.ts`). */
+  takedownLessonsLoaded: number;
+  /** Fees written held because they repeat a confirmed takedown, by check. */
+  takedownHolds: Record<string, number>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -157,6 +223,7 @@ async function selectTextArtifacts(
   currentCopy: boolean,
   institutionId?: number,
   stateCode?: string,
+  priorityIds: readonly number[] = [],
 ): Promise<TextArtifactRow[]> {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
@@ -242,6 +309,73 @@ async function selectTextArtifacts(
               WHERE older_copy.superseded_by_id = adt.source_document_id
            )`;
     }
+    // A current copy last read before KNOX_STALE_READ_BELOW_VERSION is read again once.
+    if (currentCopy) {
+      const staleParam = `$${params.push(KNOX_STALE_READ_BELOW_VERSION)}`;
+      thinTextReextract += `
+           OR (
+             NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${staleParam}
+             )
+           )`;
+      // A current copy whose monthly fee rows have no account name is read again once.
+      const namedParam = `$${params.push(KNOX_ACCOUNT_NAME_READ_BELOW_VERSION)}`;
+      thinTextReextract += `
+           OR (
+             EXISTS (
+               SELECT 1 FROM raw_fee_observations unnamed
+                WHERE unnamed.source = 'knox'
+                  AND unnamed.source_document_id = adt.source_document_id
+                  AND unnamed.product_name IS NULL
+                  AND unnamed.conditions LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${namedParam}
+             )
+           )`;
+    }
+    // A priority bank or market leader with no live overdraft fee has its current page read
+    // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
+    // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
+    // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
+    if (currentCopy && priorityIds.length > 0) {
+      const leaderParam = `$${params.push(`{${priorityIds.join(",")}}`)}`;
+      thinTextReextract += `
+           OR (
+             adt.institution_id = ANY(${leaderParam}::bigint[])
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records live_overdraft
+                WHERE live_overdraft.institution_id = adt.institution_id
+                  AND live_overdraft.canonical_fee_key = 'overdraft'
+                  AND live_overdraft.rolled_back_at IS NULL
+             )
+           )`;
+    }
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
@@ -313,7 +447,7 @@ async function selectTextArtifacts(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ORDER BY ${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ` : ""}adt.updated_at DESC, adt.id DESC
+       ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC
        LIMIT $1
     `,
     params,
@@ -404,6 +538,8 @@ export async function insertCandidate(
     method?: string;
     /** Shadow calibrated confidence (`calibration.ts`), recorded in the audit text only. */
     calibratedConfidence?: number;
+    /** The check whose confirmed takedown this fee repeats: written held, not sent to Darwin. */
+    takenDownBy?: string | null;
   },
 ): Promise<boolean> {
   const documentTextId = Number(options.row.document_text_id);
@@ -412,7 +548,9 @@ export async function insertCandidate(
   const agentEventId = stableUuid(
     `knox:${options.runId}:${documentTextId}:${sourceDocumentId}:${options.candidate.canonicalHint}:${options.candidate.feeName}:${options.candidate.amount}`,
   );
-  const flags = ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
+  const flags = options.takenDownBy
+    ? [TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag(options.takenDownBy), `canonical_hint:${options.candidate.canonicalHint}`]
+    : ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
   if (options.candidate.waivable) flags.push("waivable");
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
@@ -423,6 +561,9 @@ export async function insertCandidate(
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
+  // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
+  // monthly maintenance fee carries them.
+  const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
   // The dedupe index is (document, fee name, amount), so a line an older version held
   // as unclassified would block this fee forever. A held row with no category takes the
   // category instead; any other existing row stays as it is.
@@ -439,7 +580,11 @@ export async function insertCandidate(
       frequency,
       conditions,
       outlier_flags,
-      source
+      source,
+      product_name,
+      min_balance_to_avoid,
+      min_opening_deposit,
+      waiver_text
     )
     VALUES (
       ${institutionId},
@@ -453,7 +598,11 @@ export async function insertCandidate(
       ${options.candidate.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox'
+      'knox',
+      ${lineup?.productName ?? null},
+      ${lineup?.minBalanceToAvoid ?? null},
+      ${lineup?.minOpeningDeposit ?? null},
+      ${lineup?.waiverText ?? null}
     )
     ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric))
       WHERE source = 'knox' AND source_document_id IS NOT NULL
@@ -462,6 +611,10 @@ export async function insertCandidate(
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       conditions = EXCLUDED.conditions,
+      product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
+      min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
+      min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
+      waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
       outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
                       || EXCLUDED.outlier_flags
                       || '["knox_promoted_from_held"]'::jsonb
@@ -470,6 +623,21 @@ export async function insertCandidate(
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
     RETURNING fee_raw_id
   `;
+  if (inserted.length === 0 && lineup) {
+    // The same fee read again from the same document: fill lineup fields an earlier read
+    // left empty, and change nothing else about the row.
+    await db`
+      UPDATE raw_fee_observations
+         SET product_name = COALESCE(product_name, ${lineup.productName}),
+             min_balance_to_avoid = COALESCE(min_balance_to_avoid, ${lineup.minBalanceToAvoid}),
+             min_opening_deposit = COALESCE(min_opening_deposit, ${lineup.minOpeningDeposit}),
+             waiver_text = COALESCE(waiver_text, ${lineup.waiverText})
+       WHERE source = 'knox'
+         AND source_document_id = ${sourceDocumentId}
+         AND lower(fee_name) = lower(${options.candidate.feeName})
+         AND amount = ${options.candidate.amount}
+    `;
+  }
   return inserted.length > 0;
 }
 
@@ -755,10 +923,22 @@ export async function runKnoxExtract(
   const learning = !dryRun && (await learningSchemaReady(db));
   // Dry runs stay off the database beyond the text read, like the lessons below.
   const currentCopy = !dryRun && (await currentCopySchemaReady(db));
-  const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode);
+  // The named priority banks (in list order), then market leaders, are read first while the
+  // stale backlog lasts.
+  // A run for one institution (Atlas's read-now runs) reads its current page again once per
+  // rules version while it has no live overdraft fee, so a rules fix reaches a requested bank
+  // without waiting for its state lane (2026-10-08: Marketing's outreach batch).
+  const priorityIds = !(learning && currentCopy)
+    ? []
+    : options.institutionId
+      ? [options.institutionId]
+      : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
+  const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
+  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+  const takedownHolds: Record<string, number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
@@ -800,13 +980,17 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
+        const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
+        if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
+        const named = withAccountName(candidate, row.normalized_text);
         if (
           await insertCandidate(db, {
             runId: options.runId,
             row,
-            candidate,
+            candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
+            takenDownBy,
           })
         ) inserted += 1;
       }
@@ -909,6 +1093,8 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
+    takedownLessonsLoaded: takedownLessons.size,
+    takedownHolds,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

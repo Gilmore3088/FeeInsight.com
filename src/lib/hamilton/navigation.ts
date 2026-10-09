@@ -2,33 +2,48 @@
  * Hamilton Navigation — Single source of truth.
  * Top nav labels, left rail structure, CTA hierarchy, and label constants.
  *
- * Label set: Analyze | Benchmark | Scenario | Report | Monitor | Admin (the five Fee Insight Pro workspace modes,
- * HAMILTON_MODES in constants.ts). Each label opens the screen of the same name, and that
- * screen's <h1> and metadata title use the same word (2026-10-04 Pro audit: "Analyze"
- * used to open the briefing and "Benchmark" the Analyze screen).
+ * Label set: This month | My fees | Try a price | Reports, in a banker's words (HAMILTON_MODES in
+ * constants.ts carries them for public copy). Changes to watch live in This month; the bank and its
+ * data, Reference pages and Admin live in the account menu. Hamilton is a neutral research and
+ * modeling workspace (docs/project/DECISIONS.md, 2026-10-05): research, compare, model any
+ * price, then plan and report. Ask Hamilton is a bar on every screen rather than a nav item;
+ * its answers open in /pro/analyze. Each label's screen uses the same word in its metadata title.
  * URLs are unchanged to preserve bookmarks.
- *
- * Per D-17: Left rail + CTA hierarchy defined here, not in components.
  *
  * History:
  *   - D-16 (Phase 38) locked labels to Home | Analyze | Simulate | Reports | Monitor.
  *   - 2026-04-17 UX audit H-4 superseded D-16 with job-oriented labels (Option A).
- *   - 2026-08-17 executive-panel audit F8: one list of five mode names across public copy and the workspace.
+ *   - 2026-08-17 executive-panel audit F8: one list of mode names across public copy and the workspace.
+ *   - 2026-10-05 James: Briefing | Research | Model | Reports | Watch | Data, with a docked Ask bar.
+ *   - 2026-10-06 James: too many tabs, and "a banker doesn't wake up wanting to model or watch".
+ *     Four tabs in plain words; Watch folds into This month, Data and Admin into the account menu.
+ *   - 2026-10-08 James: Regulatory Wire becomes a top nav item (HAMILTON_WIRE_NAV).
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
 export const HAMILTON_BASE = "/pro" as const;
 
 export const HAMILTON_NAV = [
-  { label: "Analyze",          href: `${HAMILTON_BASE}/analyze`   },
-  { label: "Benchmark",        href: `${HAMILTON_BASE}/hamilton`  },
-  { label: "Scenario",        href: `${HAMILTON_BASE}/simulate`  },
-  { label: "Report", href: `${HAMILTON_BASE}/reports`   },
-  { label: "Monitor",        href: `${HAMILTON_BASE}/monitor`   },
-  { label: "Admin",            href: "/admin"                     },
+  { label: "This month",  href: `${HAMILTON_BASE}/hamilton` },
+  { label: "My fees",     href: `${HAMILTON_BASE}/research` },
+  { label: "Try a price", href: `${HAMILTON_BASE}/simulate` },
+  { label: "Reports",     href: `${HAMILTON_BASE}/reports`  },
+  { label: "Admin",       href: "/admin"                    },
+] as const;
+
+/** Account menu: the bank and its data, and what changed, outside the four tabs. */
+export const HAMILTON_ACCOUNT_NAV = [
+  { label: "My bank and data", href: `${HAMILTON_BASE}/settings` },
+  { label: "All changes",      href: `${HAMILTON_BASE}/monitor`  },
 ] as const;
 
 export type HamiltonScreen = (typeof HAMILTON_NAV)[number]["label"];
+
+/**
+ * Regulatory Wire sits in the top nav after the four tabs (James, 2026-10-08: "i wish the
+ * regulatory wire was a nav item"), so it left the Reference menu.
+ */
+export const HAMILTON_WIRE_NAV = { label: "Regulatory Wire", href: `${HAMILTON_BASE}/news` } as const;
 
 /** Reference pages: Pro data you look things up in, under one "Reference" menu. */
 export const HAMILTON_REFERENCE_NAV = [
@@ -36,7 +51,6 @@ export const HAMILTON_REFERENCE_NAV = [
   { label: "Institutions", href: `${HAMILTON_BASE}/data`,       description: "Find any bank or credit union" },
   { label: "Fee categories", href: `${HAMILTON_BASE}/categories`, description: "Every fee type and its national median" },
   { label: "Fed districts", href: `${HAMILTON_BASE}/districts`, description: "Fees and coverage by Federal Reserve district" },
-  { label: "Regulatory news", href: `${HAMILTON_BASE}/news`,    description: "CFPB, OCC and Fed updates" },
 ] as const;
 
 /** Left rail workspace memory config per screen (per D-17, 02-navigation doc) */
@@ -44,37 +58,37 @@ export const LEFT_RAIL_CONFIG: Record<HamiltonScreen, {
   primaryAction: string;
   sections: string[];
 }> = {
-  "Analyze":   { primaryAction: "Simulate a Change",        sections: ["Saved Analyses", "Recent Work", "Pinned Institutions"] },
-  "Benchmark": { primaryAction: "Simulate Change",          sections: ["Saved Analyses", "Recent Work"] },
-  "Scenario":  { primaryAction: "Generate Board Summary",   sections: ["Scenarios", "Saved Analyses"] },
-  "Report":    { primaryAction: "Generate Brief",           sections: ["Your Reports", "Templates"] },
-  "Monitor":   { primaryAction: "Review Pricing",           sections: ["Watchlist", "Signal Feed"] },
-  "Admin":     { primaryAction: "",                         sections: [] },
+  "This month":  { primaryAction: "Look at My Fees", sections: ["Saved Analyses", "Recent Work", "Pinned Institutions"] },
+  "My fees":     { primaryAction: "Try a Price",     sections: ["Saved Analyses", "Recent Work"] },
+  "Try a price": { primaryAction: "Build a Report",  sections: ["Scenarios", "Saved Analyses"] },
+  "Reports":     { primaryAction: "Generate Brief",  sections: ["Your Reports", "Templates"] },
+  "Admin":       { primaryAction: "",                sections: [] },
 } as const;
 
 export const PRIMARY_ACTION_HREF: Record<HamiltonScreen, string> = {
-  "Analyze":   "/pro/simulate",
-  "Benchmark": "/pro/simulate",
-  "Scenario":  "/pro/reports",
-  "Report":    "/pro/reports",
-  "Monitor":   "/pro/analyze",
-  "Admin":     "/admin",
+  "This month":  "/pro/research",
+  "My fees":     "/pro/simulate",
+  "Try a price": "/pro/reports",
+  // Opens the builder with the executive brief template already chosen,
+  // not the page the user is already on.
+  "Reports":     "/pro/reports?intent=executive-briefing",
+  "Admin":       "/admin",
 } as const;
 
 export function getPrimaryActionHref(screen: HamiltonScreen): string {
   return PRIMARY_ACTION_HREF[screen];
 }
 
-/** CTA hierarchy per screen (per 09-copy-and-ux-rules.md) */
-export const CTA_HIERARCHY: Record<Exclude<HamiltonScreen, "Admin">, {
+/** CTA hierarchy per screen (per 09-copy-and-ux-rules.md). "Analyze" is where Ask answers open. */
+export const CTA_HIERARCHY: Record<Exclude<HamiltonScreen, "Admin"> | "Analyze", {
   primary: string;
   secondary: string[];
 }> = {
-  "Analyze":   { primary: "Simulate a Change",               secondary: ["Show Peer Distribution", "View Risk Drivers"] },
-  "Benchmark": { primary: "Simulate Change",                 secondary: [] },
-  "Scenario":  { primary: "Generate Board Scenario Summary", secondary: [] },
-  "Report":    { primary: "Generate Brief",                  secondary: [] },
-  "Monitor":   { primary: "Review Pricing",                  secondary: ["Run Scenario"] },
+  "Analyze":     { primary: "Try a Price",     secondary: ["Show the Market", "View Risk Drivers"] },
+  "This month":  { primary: "Look at My Fees", secondary: [] },
+  "My fees":     { primary: "Try a Price",     secondary: [] },
+  "Try a price": { primary: "Plan the Change", secondary: [] },
+  "Reports":     { primary: "Generate Brief",  secondary: [] },
 } as const;
 
 /** Analysis Focus tabs — used inside Analyze screen (per 02-navigation doc) */
@@ -87,7 +101,7 @@ export const HAMILTON_LABELS = {
   whatChanged:         "What Changed",
   whatThisMeans:       "What This Means",
   whyItMatters:        "Why It Matters",
-  recommendedPosition: "Recommended Position",
+  recommendedPosition: "Market Position",
   priorityAlert:       "Priority Alert",
   signalFeed:          "Signal Feed",
   analysisFocus:       "Analysis Focus",
