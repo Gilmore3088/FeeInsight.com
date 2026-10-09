@@ -850,5 +850,6 @@ describe("condition restores, batches 2 and 3", () => {
       ),
     ).toBeNull();
     expect(restoredName("Return Check (due to if due to your error)", "Return Check", "nsf")).toBeNull();
+    expect(restoredName("Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b", "Inactive Account", "dormant_account")).toBeNull();
   });
 });

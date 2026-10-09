@@ -879,8 +879,8 @@ const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
  */
 export function restoredName(oldName: string, trimmedName: string, canonicalKey?: string): string | null {
   const name = oldName.replace(/\s+/g, " ").replace(/(?:\s*\.){2,}\s*$/, "").replace(/\s*\.$/, "").replace(/[\s,;:\-–—]+$/u, "").trim();
-  // An HTML entity ("closed &lt; 90 days") is markup the extract kept, not the bank's words.
-  if (RESTORE_NOT_A_CONDITION.test(name) || /^\s*\(/.test(trimmedName) || HTML_ENTITY.test(name)) return null;
+  // An HTML entity ("closed &lt; 90 days") or a junk glyph or font code is what the extract kept, not the bank's words.
+  if (RESTORE_NOT_A_CONDITION.test(name) || /^\s*\(/.test(trimmedName) || HTML_ENTITY.test(name) || JUNK_GLYPH.test(name) || FONT_DIGIT.test(name) || CONTROL_CHARACTER.test(name)) return null;
   const cut = (oldName.length >= RESTORE_CUT_LENGTH && !/[).]\s*$/.test(oldName)) || DANGLING_WORD.test(name);
   let restored = name;
   if (cut || openParens(name) > 0) {
