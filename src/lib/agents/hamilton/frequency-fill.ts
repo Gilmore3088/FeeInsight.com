@@ -23,10 +23,11 @@ type SqlTag = typeof sql;
  * same change when it held the same value, so a republish keeps it.
  */
 export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
-export const FREQUENCY_FILL_VERSION = 2;
+// v3: "ea.", "/page", "/transfer", "/card", "per order" and similar per-item wording.
+export const FREQUENCY_FILL_VERSION = 3;
 export const FREQUENCY_FILL_LIMIT = 2_000;
 /** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
-const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|/\s?(mo|month|yr|year|item|check|transaction)\y)`;
+const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?(mo|month|yr|year|item|check|transaction|ea|each|copy|page|request|transfer|wire|card|occurrence)\y)`;
 /** Postgres pre-filter for a stated frequency: a line holding more than one cell or price. */
 const SHARED_LINE = String.raw`excerpt=.*(\|.*\$|\$.*\$)`;
 
