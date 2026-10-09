@@ -106,13 +106,19 @@ export async function retireBusinessScheduleFees(
            JOIN source_documents sd ON sd.id = fr.source_document_id
           WHERE fp.rolled_back_at IS NULL
             ${options.institutionId ? "AND fp.institution_id = $1" : ""}
+       ),
+       -- The first live consumer fee per bank and category, grouped once. A subquery per
+       -- business fee rescanned the whole CTE each time: 12.5 s average on Oct 8.
+       consumer AS (
+         SELECT institution_id, canonical_fee_key, min(fee_published_id) AS consumer_fee_id
+           FROM live
+          WHERE NOT business
+          GROUP BY institution_id, canonical_fee_key
        )
        SELECT b.fee_published_id, b.fee_verified_id, b.institution_id, b.source_document_id, b.document_url,
-              b.canonical_fee_key, b.amount,
-              (SELECT min(c.fee_published_id) FROM live c
-                WHERE c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
-                  AND NOT c.business) AS consumer_fee_id
+              b.canonical_fee_key, b.amount, c.consumer_fee_id
          FROM live b
+         LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
         WHERE b.business
         ORDER BY b.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],

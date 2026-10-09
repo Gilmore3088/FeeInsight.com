@@ -34,6 +34,26 @@ describe("DataFeedsPanel", () => {
     expect(screen.getByText("Pipeline scoreboard")).toBeTruthy();
   });
 
+  it("puts call report figures on their registry feed's row instead of a second, ledgerless row", () => {
+    render(
+      <DataFeedsPanel
+        now="2026-10-05T20:07:00.000Z"
+        freshness={{
+          ...freshness,
+          callReports: [
+            { source: "fdic", latestPeriod: "2026-06-30", lastFetchedAt: "2026-10-05T11:17:43.000Z", behind: false },
+            { source: "ffiec", latestPeriod: "2026-03-31", lastFetchedAt: "2026-08-10T10:51:17.000Z", behind: true },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(/Figures through 2026-06-30/)).toBeTruthy();
+    expect(screen.queryByText("FDIC call report figures")).toBeNull();
+    expect(screen.getByText("FFIEC call report figures")).toBeTruthy();
+    expect(screen.getByText(/No registry feed loads this source/)).toBeTruthy();
+    expect(screen.getByText("(7 minutes old)")).toBeTruthy();
+  });
+
   it("counts whole days", () => {
     expect(daysBetween("2026-10-04T16:00:00.000Z", "2026-10-05T20:00:00.000Z")).toBe(1);
     expect(daysBetween(null, "2026-10-05T20:00:00.000Z")).toBeNull();

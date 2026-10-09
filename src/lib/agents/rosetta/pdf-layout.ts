@@ -14,6 +14,10 @@
  * charge" read as $10 from the next column's overdrawn-account fee). Fee tables never
  * qualify: a column in which many lines carry a price, or whose lines are short cells,
  * keeps the row-by-row reading that pairs a fee name with its amount.
+ *
+ * Layout version 3: a gutter is found by how many lines cross it, not how many text items.
+ * First United's overdraft notice draws each letter as its own item, so version 2 found no
+ * gutter and read "we will charge an additional $5.00 per day" as a fee named "additional".
  */
 
 import { CELL_SEPARATOR } from "./html-dom";
@@ -23,7 +27,7 @@ import { CELL_SEPARATOR } from "./html-dom";
  * columns column by column; a text an older layout read across the columns is read again
  * once (`INTERLEAVED_PROSE_CELLS_SQL` in read.ts).
  */
-export const PDF_LAYOUT_VERSION = 2;
+export const PDF_LAYOUT_VERSION = 3;
 
 export interface PdfTextItem {
   str: string;
@@ -65,8 +69,11 @@ const MIN_COLUMN_SHARE = 0.2;
 const MIN_PROSE_LINE_CHARS = 25;
 /** In a prose column fewer than this share of lines carry a price; a fee table's do. */
 const MAX_PRICED_LINE_SHARE = 0.3;
-/** A gutter may be covered by at most this share of the page's items (a title, a page number). */
-const GUTTER_COVERAGE_SHARE = 0.03;
+/**
+ * A gutter may be covered by at most this share of the page's lines: a title over the
+ * columns, a page number, the full-width lines of a form below them.
+ */
+const GUTTER_COVERAGE_SHARE = 0.1;
 /** Items that may cross a gutter (titles over the columns), as a share of the page's items. */
 const MAX_CROSSING_SHARE = 0.1;
 /** Pages with fewer text items are never read as columns. */
@@ -135,13 +142,23 @@ function proseColumns(all: PositionedItem[]): Band[] | null {
   const right = Math.max(...items.map((item) => item.end));
   const width = Math.ceil(right - left);
   if (width <= 0) return null;
+  // Coverage counts lines, not items: a PDF that draws each word or letter as its own item
+  // (First United's overdraft notice) would otherwise allow a gutter as many items as a
+  // whole column has lines, and no strip of the page would ever be covered.
+  const lines = baselineLines(items);
   const coverage = new Array<number>(width + 1).fill(0);
-  for (const item of items) {
-    const from = Math.max(0, Math.floor(item.x - left));
-    const to = Math.min(width, Math.ceil(item.end - left));
-    for (let point = from; point < to; point += 1) coverage[point] += 1;
+  for (const line of lines) {
+    const covered = new Array<boolean>(width + 1).fill(false);
+    for (const item of line) {
+      const from = Math.max(0, Math.floor(item.x - left));
+      const to = Math.min(width, Math.ceil(item.end - left));
+      for (let point = from; point < to; point += 1) covered[point] = true;
+    }
+    covered.forEach((on, point) => {
+      if (on) coverage[point] += 1;
+    });
   }
-  const coverageAllowed = Math.floor(items.length * GUTTER_COVERAGE_SHARE);
+  const coverageAllowed = Math.floor(lines.length * GUTTER_COVERAGE_SHARE);
   const minGutter = median(items.map((item) => item.size)) * GUTTER_EM;
   const middles: number[] = [];
   let runStart = -1;

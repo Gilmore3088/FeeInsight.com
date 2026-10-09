@@ -77,7 +77,7 @@ function narrateFinished(
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
-      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? ", stopped at the budget cap" : ""}.`;
+      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
     case "discover":
     case "rescue": {
@@ -245,6 +245,12 @@ function narrateFinished(
       if (!checked) return "No prospect was due a contact check.";
       return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
     }
+    case "growth-contact-picks": {
+      if (detail.schemaReady === false) return "Ranked no contacts; the ranking columns are not there yet.";
+      const contacts = n(detail, "contacts");
+      if (!contacts) return "No saved contact to rank.";
+      return `Ranked ${count(contacts, "saved contact")} and marked ${count(n(detail, "primary"), "primary buyer contact")} and ${count(n(detail, "backup"), "backup")}.`;
+    }
     case "growth-outreach": {
       if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
       const drafted = n(detail, "drafted");
@@ -273,6 +279,14 @@ function narrateFinished(
       const fees = Array.isArray(detail.fees) ? (detail.fees as Array<{ fee?: unknown; checked?: unknown }>) : [];
       const counts = fees.map((fee) => `${String(fee.fee)} ${Number(fee.checked ?? 0)}`).join(", ");
       return `Ran the free price check for ${String(detail.state)}${counts ? ` (source-checked institutions: ${counts})` : ""}.`;
+    }
+    case "growth-press": {
+      if (detail.schemaReady === false) return "Drafted no press pitches; the queue is not there yet.";
+      const pitches = Array.isArray(detail.pitches) ? (detail.pitches as Array<{ draftId?: unknown }>) : [];
+      const drafted = pitches.filter((pitch) => pitch.draftId !== null && pitch.draftId !== undefined).length;
+      if (drafted) return `Drafted ${count(drafted, "press pitch", "press pitches")} for James to review and send himself.`;
+      if (pitches.length) return `Picked ${count(pitches.length, "press pitch", "press pitches")} and wrote nothing (${String(detail.reason ?? "dry run")}).`;
+      return `Drafted no press pitches (${String(detail.reason ?? "no outlet or finding passed the checks")}).`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
@@ -492,11 +506,13 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
   "growth-contacts": "growth",
+  "growth-contact-picks": "growth",
   "growth-outreach": "growth",
   "growth-learning": "growth",
   "growth-intel": "growth",
   "growth-conversion": "growth",
   "growth-tools": "growth",
+  "growth-press": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",

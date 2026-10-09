@@ -177,7 +177,7 @@ describe("GrowthBoard", () => {
     expect(screen.getByRole("heading", { name: "ERNEST" })).toBeTruthy();
     expect(screen.getByText(/Too long/)).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "CARNEGIE" })).toBeNull();
-    expect(screen.getByText("No activity yet: carnegie, draper, edison, nielsen, norman, sherlock, team work.")).toBeTruthy();
+    expect(screen.getByText("No activity yet: bernays, carnegie, draper, edison, nielsen, norman, sherlock, team work.")).toBeTruthy();
     // No queue on the team view.
     expect(screen.queryByText("Nothing waiting for review.")).toBeNull();
   });

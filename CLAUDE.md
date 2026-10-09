@@ -21,8 +21,10 @@ expertise. Kept fully separate from the CSI day job.
 ## Project memory
 `docs/project/` is the project's durable memory; `docs/project/README.md` explains it.
 - Before starting work, read the latest file in `docs/project/checkpoints/`.
-- When you hit a structural or infrastructure problem, add it to `docs/project/FINDINGS.md`
-  in the same PR as the fix (or its own PR if there is no fix yet).
+- When you hit a structural or infrastructure problem, add it as its own file,
+  `docs/project/findings/YYYY-MM-DD-short-slug.md`, in the same PR as the fix (or its own PR if
+  there is no fix yet). `docs/project/FINDINGS.md` holds entries through 2026-10-09 and takes no
+  new ones; `scripts/ci-guards.sh findings-file-kill` enforces it.
 - When James makes a decision that changes how work is done, add it to `docs/project/DECISIONS.md`.
 - A daily routine writes the checkpoint and `docs/project/CHANGELOG.md` from merged PRs.
 - This file holds rules that stay true. Status and next steps go in a checkpoint, never here.
