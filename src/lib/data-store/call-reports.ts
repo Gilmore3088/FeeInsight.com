@@ -150,7 +150,7 @@ export async function getRevenueTrend(quarterCount = 8): Promise<RevenueTrend> {
        TO_CHAR(DATE_TRUNC('quarter', inf.rd), 'YYYY-"Q"Q')       AS quarter,
        MIN(inf.report_date)                                     AS quarter_date,
        SUM(inf.service_charge_income)                           AS total_service_charges,
-       COUNT(DISTINCT ct.cert_number)                           AS total_institutions,
+       COUNT(DISTINCT ct.id)                                    AS total_institutions,
        SUM(CASE WHEN ct.charter_type = 'bank' THEN inf.service_charge_income ELSE 0 END)
                                                                  AS bank_service_charges,
        SUM(CASE WHEN ct.charter_type = 'credit_union' THEN inf.service_charge_income ELSE 0 END)

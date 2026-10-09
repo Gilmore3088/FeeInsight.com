@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, SUBORDINATION } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
@@ -65,7 +65,8 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
   "i",
 );
 
-const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
+// v47: "Foreign Wire Research" is account research, not a wire (Darwin eval, Oct 8).
+const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
 /** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
@@ -86,8 +87,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v38: an "Overdraft Privilege Service Charge" ($20) is the overdraft fee; a paper statement
     // fee ("Maintenance Fee – Paper Stmt Fee"), a transfer service charge, a wire module's
     // monthly fee, an ATM card's monthly fee and table or waiver fragments are not it either.
+    // v49: a treasury service's monthly charge (ACH or wire module, API service, Positive Pay,
+    // cash management, "Monthly Fee (per account)" on BankUnited's treasury schedule) is not it.
     exclude:
-      /(\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -125,8 +128,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   nsf: {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
+    // v47: a business-only ACH return and a payment the payee sent back ("Payee-returned Check
+    // Payment Due to Member Error") are not the member's NSF fee (Darwin eval, Oct 8).
     exclude:
-      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|\b\d+ ?x ?\d+\b|\bmerchants?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
     capInNotes: {
@@ -181,7 +186,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
       /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
   // v43: guarded so Hamilton reads them for names cut from another fee's note (noteTailOfAnotherFee).
-  bill_pay: { include: /\S/, exclude: /\breload fee\b/i },
+  // v47: a bill payment's stop or cancel is the stop payment fee, and a membership fee is not
+  // bill pay ("Bill Pay Stop/Cancel Payment" $25, "Lifetime Membership Fee" $5; Darwin eval).
+  bill_pay: { include: /\S/, exclude: /(\breload fee\b|\bstop\b|cancel(l?ed)? payment|membership closure|lifetime membership)/i },
+  // v47: researching, copying, replacing, mailing or reporting lost a money order is not the price
+  // of buying one ("Money Order Research Fee" $10; Darwin eval).
+  money_order: {
+    include: /\S/,
+    exclude: /(research|\bcop(y|ies)\b|declaration of loss|replacement|abandoned|returned|delivery|mailing)/i,
+  },
   ach_origination: { include: /\S/, exclude: /(?!)/ },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
@@ -197,9 +210,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v39: wire fees read under a "Subordination Request" heading ("SUBORDINATION REQUEST: Incoming"
   // $10, "...: Outgoing Domestic" $25) are not the lien subordination fee.
+  // v47: a mortgage or lien subordination is another lending fee, not legal process.
   legal_process: {
     include: /./,
-    exclude: /subordination request:\s*(incoming|outgoing)/i,
+    exclude: new RegExp(String.raw`subordination request:\s*(incoming|outgoing)|${SUBORDINATION.source}`, "i"),
   },
   paper_statement: {
     include: /statement/i,
@@ -310,6 +324,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(check|draft|order|print|book|style|box|design|cheque)/i,
     exclude: /\btemporar/i,
   },
+  // v46: a fee printed under a "closed within 90 days" heading is that heading's own fee only
+  // when the row names no other: Koin's "Accounts closed within 90 days: International Wire" $45
+  // (closure is $30), a rush card shipment, a reinstatement. A club's early withdrawal is filed
+  // here on purpose (fee-taxonomy.ts).
+  early_closure: {
+    include: /\S/,
+    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat)/i,
+  },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
@@ -326,7 +348,14 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v44: a paired wire price ("In/Out | $10/$35") in the wrong slot.
 // v45: collection items leave check cashing for their own type; ATMs abroad are International
 // ATM & Card (Top 50, PR 701).
-export const CATEGORY_GUARD_VERSION = 45;
+// v46: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
+// reinstatement fee filed as early closure under a "closed within 90 days" heading.
+// v47: Darwin's Oct 8 eval rows: bill pay stops and membership fees, money order research,
+// copies and replacements, wire research, business-only and payee-returned NSF rows, and a
+// per-item "Overdraft Protection" fee priced like courtesy pay.
+// v48: subordination leaves legal process for other lending; a money order copy is a check copy.
+// v49: treasury service monthly charges filed as monthly maintenance (Darwin eval 94121).
+export const CATEGORY_GUARD_VERSION = 49;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -380,6 +409,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
+  { from: "legal_process", to: "other_lending_fee", when: SUBORDINATION },
+  { from: "money_order", to: "check_image", when: ITEM_COPY },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },
@@ -451,6 +482,21 @@ function cheapOverdraftProtection(canonicalFeeKey: string, name: string, context
   if (!Number.isFinite(amount) || amount > OVERDRAFT_PROTECTION_MAX) return null;
   if (!/overdraft protection/i.test(name) || PAID_ITEM_WORDS.test(name)) return null;
   return `"${name}" at $${amount.toFixed(2)} is an overdraft protection transfer's fee, not the overdraft fee`;
+}
+
+/**
+ * v47: an "Overdraft Protection" fee charged per item at an overdraft fee's price ("Free with
+ * Overdraft Protection, $25.00 per item", "Overdraft Protection - if opted in $29.00 each item")
+ * is courtesy pay, the overdraft fee, when its row names no transfer (Darwin eval, Oct 8).
+ */
+const PER_ITEM_OVERDRAFT_MIN = 20;
+function perItemOverdraftProtection(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "od_protection_transfer" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1] ?? "";
+  if (!Number.isFinite(amount) || amount < PER_ITEM_OVERDRAFT_MIN || /transfer|sweep|advance|from (your )?(savings|share|line|credit)/i.test(`${name} ${excerpt}`)) return null;
+  if (!/\$\s?\d+(\.\d\d)?\s*(?:(?:per|each|\/)\s*item\b|each\b)/i.test(excerpt)) return null;
+  return `"${name}" at $${amount.toFixed(2)} per item is the overdraft (courtesy pay) fee, not a transfer's fee`;
 }
 
 /**
@@ -534,6 +580,8 @@ export function checkFeeCategory(
   if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
   const protectionReason = cheapOverdraftProtection(canonicalFeeKey, name, context);
   if (protectionReason) return { ok: false, code: "name_contradicts", reason: protectionReason };
+  const courtesyReason = perItemOverdraftProtection(canonicalFeeKey, name, context);
+  if (courtesyReason) return { ok: false, code: "name_contradicts", reason: courtesyReason };
   const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
@@ -569,17 +617,32 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
   if (first === second || Math.abs(amount - first) >= 0.005) return null;
   const words = excerpt.replace(prices[0], " ");
   const keyValues = [canonicalFeeKey.includes("_intl_") ? "intl" : "domestic", canonicalFeeKey.endsWith("_outgoing") ? "out" : "in"];
-  for (const pair of words.matchAll(SLASH_PAIR)) {
-    const left = WIRE_SIDES.find((side) => side.pattern.test(pair[1]))?.value ?? null;
-    const right = WIRE_SIDES.find((side) => side.pattern.test(pair[2]))?.value ?? null;
-    for (const values of Object.values(WIRE_DIMENSIONS)) {
-      const l = left && values.includes(left) ? left : null;
-      const r = right && values.includes(right) ? right : null;
-      if (l === r || (l == null && r == null)) continue;
-      const own = keyValues.find((value) => values.includes(value))!;
-      const slot = l === own || (l == null && r !== own) ? 1 : 2;
-      return slot === 2 ? `"${pair[0]}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
-    }
+  // v46: a spaced slash between two named wires ("Wire Out / Wire Out Foreign | $25.00 /
+  // $45.00") names each slot by its whole phrase; the word next to the slash ("Out") is shared.
+  const phrasePairs = words
+    .split(/[|:–—]/)
+    .map((cell) => cell.split(/\s\/\s/))
+    .filter((sides) => sides.length === 2 && sides.every((side) => /[A-Za-z]/.test(side)))
+    .map((sides) => ({ text: sides.join(" / ").trim(), sides: sides.map((side) => side.match(/[A-Za-z'’]+/g) ?? []) }));
+  const pairs = phrasePairs.length > 0
+    ? phrasePairs
+    : [...words.matchAll(SLASH_PAIR)].map((pair) => ({ text: pair[0], sides: [[pair[1]], [pair[2]]] }));
+  for (const pair of pairs) {
+    const named = pair.sides.map((side) => side.map((word) => WIRE_SIDES.find((wire) => wire.pattern.test(word))?.value).filter(Boolean) as string[]);
+    const dimensions = Object.values(WIRE_DIMENSIONS)
+      .map((values) => named.map((found) => {
+        const hits = [...new Set(found.filter((value) => values.includes(value)))];
+        return hits.length === 1 ? hits[0] : null;
+      }))
+      .map(([l, r], index) => ({ l, r, values: Object.values(WIRE_DIMENSIONS)[index] }))
+      .filter(({ l, r }) => l !== r)
+      // A dimension both sides name decides before one only a side names.
+      .sort((a, b) => Number(b.l != null && b.r != null) - Number(a.l != null && a.r != null));
+    const decider = dimensions[0];
+    if (!decider) continue;
+    const own = keyValues.find((value) => decider.values.includes(value))!;
+    const slot = decider.l === own || (decider.l == null && decider.r !== own) ? 1 : 2;
+    return slot === 2 ? `"${pair.text}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
   }
   return null;
 }

@@ -423,6 +423,30 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(text, "Overdraft Fee", 5, ".", "overdraft").ok).toBe(false);
     expect(checkFeeAgainstSource(text, "Courtesy Pay Fee", 30, ".", "overdraft").ok).toBe(true);
     expect(checkFeeAgainstSource("Overdraft | $30.00 per day, per account", "Overdraft", 30, ".", "overdraft").ok).toBe(true);
+    // Origin's text breaks its lines right after each $10.00, so the row names the charge before
+    // its price or continues on the next line.
+    const origin = [
+      "a $500 overdraft (negative) balance in your account. Normal bank fees and",
+      "charges, including returned item charge/overdraft item charge of $35.00 for",
+      "each item will be included in the calculation of this limit.",
+      "However, we will charge you no more than five overdraft item charges per",
+      "day and will not charge an overdraft item charge if your checking account",
+      "is overdrawn $5 or less at the end of each business day. The $35.00",
+      "overdraft item charge applies to overdrafts created by check, in-person",
+      "withdrawal, ATM withdrawal or other electronic means if you opted in to",
+      "the authorization and payment of ATM and everyday debit card transactions",
+      "(Regulation E). Also, we will charge you an overdrawn account fee of $10.00",
+      "on the 5th consecutive business day your account is overdrawn; if your",
+      "account is overdrawn for more than 5 consecutive business days, we will",
+      "charge an additional $10.00 per week. You acknowledge that the charging",
+      "and collection of these charges and fees are not interest or compensation",
+    ].join("\n");
+    expect(checkFeeAgainstSource(origin, "overdraft item charge applies to overdrafts created by check, in-person withdrawal, ATM withdrawal or other electronic m", 10, ".", "overdraft").ok).toBe(false);
+    expect(checkFeeAgainstSource(origin, "charge you no more than five overdraft item charges per day and will not applies to overdrafts created by check, in-pers", 10, ".", "overdraft").ok).toBe(false);
+    expect(checkFeeAgainstSource(origin, "charges, including returned item charge/overdraft item charge", 35, ".", "overdraft").ok).toBe(true);
+    // A weekly price on its own may be the item fee too (Oct 8).
+    const weekly = "Overdraft Fee | $30.00 each week overdrawn\n\n$30.00 per item paid *\n\nReturn Item Fee | $30.00";
+    expect(checkFeeAgainstSource(weekly, "Overdraft Fee", 30, ".", "overdraft").ok).toBe(true);
     // Only the per-item categories: a sustained-overdraft fee keeps its own row.
     expect(checkFeeAgainstSource(text, "Sustained Overdraft", 5, ".", "od_sustained").ok).toBe(true);
   });

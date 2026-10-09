@@ -156,7 +156,8 @@ export interface PriorityInstitutionRow {
 /**
  * Institutions due for a direct run, best first:
  *  1. a fee schedule found by hand (Magellan's operator list) not yet fetched;
- *  2. a document Magellan's paid fetch stored that no reader has read yet: the paid step
+ *  2. a document Magellan's paid fetch, or a hand-found schedule fetched in another
+ *     state's lane, stored that no reader has read yet: the paid step
  *     fetches blocked links for banks in every state, and the read step of a state run reads
  *     only that state, so Citizens' and Fifth Third's documents (7 Oct 2026) waited for their
  *     own state's lane;
@@ -221,19 +222,42 @@ export async function selectPriorityInstitutions(
              AND hand.last_fetched_at IS NULL
         ) hand_new ON TRUE
         LEFT JOIN LATERAL (
-          SELECT MAX(paid.source_document_id) AS paid_document_id, MAX(paid.created_at) AS paid_at
-            FROM pipeline_attempts paid
-            JOIN source_documents doc ON doc.id = paid.source_document_id
-           WHERE paid.institution_id = inst.id
-             AND paid.stage = 'fetch'
-             AND paid.strategy LIKE 'fetch.paid_web_fetch%'
-             AND paid.outcome = 'ok'
-             AND paid.created_at > NOW() - make_interval(days => ${PAID_FETCH_READ_DAYS}::int)
-             AND doc.status = 'success'
-             AND doc.superseded_by_id IS NULL
-             AND NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)
+          SELECT MAX(unread.document_id) AS paid_document_id, MAX(unread.stored_at) AS paid_at
+            FROM (
+              SELECT paid.source_document_id AS document_id, paid.created_at AS stored_at
+                FROM pipeline_attempts paid
+                JOIN source_documents doc ON doc.id = paid.source_document_id
+               WHERE paid.institution_id = inst.id
+                 AND paid.stage = 'fetch'
+                 AND paid.strategy LIKE 'fetch.paid_web_fetch%'
+                 AND paid.outcome = 'ok'
+                 AND paid.created_at > NOW() - make_interval(days => ${PAID_FETCH_READ_DAYS}::int)
+                 AND doc.status = 'success'
+                 AND doc.superseded_by_id IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)
+              UNION ALL
+              -- A hand-found schedule fetched by another state's lane (companion fetch takes
+              -- them in any lane) is read only by its own state's lane: First United's
+              -- (OK) fetched in the NC lane at 23:55 on 8 Oct 2026 and sat unread.
+              SELECT hand_doc.id, hand_doc.crawled_at
+                FROM institution_additional_sources hand
+                JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id
+               WHERE hand.institution_id = inst.id
+                 AND hand.found_by_strategy = 'discover.operator_schedule'
+                 AND hand_doc.institution_id = inst.id
+                 AND hand_doc.crawled_at > NOW() - make_interval(days => ${PAID_FETCH_READ_DAYS}::int)
+                 AND hand_doc.status = 'success'
+                 AND hand_doc.superseded_by_id IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = hand_doc.id)
+            ) unread
         ) paid_new ON TRUE
        WHERE COALESCE(inst.status, 'active') = 'active'
+          -- A bank whose own link went dormant is why its schedule was found by hand.
+          OR (inst.status = 'dormant' AND EXISTS (
+                SELECT 1 FROM institution_additional_sources hand
+                 WHERE hand.institution_id = inst.id
+                   AND hand.found_by_strategy = 'discover.operator_schedule'
+              ))
     )
     SELECT c.id, c.institution_name, c.state_code, c.tier, c.hand_link_id, c.paid_document_id
       FROM candidates c
@@ -288,7 +312,7 @@ export function priorityInstitutionSteps(institutionId: number): AgentRunStepDef
 
 const TIER_REASON: Record<PriorityTier, string> = {
   hand_found: "fee schedule found by hand, not yet fetched",
-  paid_fetched: "document stored by the paid fetch, not yet read",
+  paid_fetched: "document stored by the paid fetch or a hand-found link, not yet read",
   requested: "asked for by name",
   overdraft_gap: "$10B+ or market leader with no live overdraft fee",
 };
