@@ -199,14 +199,19 @@ const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transf
 /** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"), a charge on the IRA itself. */
 const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
 
+/** Lines where "fax" is how something else is requested or sent, not a fax service. */
+const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)`;
+
 /**
- * Sending a fax or copying a document ("Fax (Outgoing)", "Copy of previous statement"), which
- * document reproduction holds. Fax as the way a wire, transfer or closing is requested, a
- * verification or loan payoff sent by fax, a Carfax report, and research priced with copies stay
- * where they are.
+ * Sending or receiving a fax ("Fax (Outgoing)"), which document reproduction holds. Fax as the
+ * way a wire, transfer or closing is requested, a verification or loan payoff sent by fax, a
+ * Carfax report, and research priced with copies stay where they are. Knox reads fax lines
+ * with this too (`FOLDED_PATTERNS`), so its reads and the fold agree.
  */
-const FAX_OR_COPY =
-  /^(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)/i;
+export const FAX_SERVICE = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*\bfax(?:es|ed|ing)?\b`, "i");
+
+/** A fax or a document copy ("Copy of previous statement"), outside the same exceptions. */
+const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)`, "i");
 
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
