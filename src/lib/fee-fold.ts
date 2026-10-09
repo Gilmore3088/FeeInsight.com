@@ -189,8 +189,12 @@ const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btra
 const PREPAID_BUY_OR_RELOAD =
   /^(?=[\s\S]*\b(?:pre-?paid|reloadable)\b)(?![\s\S]*\b(?:withdrawals?|inquiry|inquiries)\b)[\s\S]*\b(?:purchase|reload)\b/i;
 
-/** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"). */
-const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
+/**
+ * A charge for savings or money market activity past the free count ("Excess withdrawal fee
+ * (MMDA)", "Savings account excess debit fee"), a Reg D-style fee. Within the top 50 it is
+ * account servicing, which account research holds, as it already does for ~290 such fees.
+ */
+const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
 
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
@@ -198,8 +202,6 @@ const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 interface SplitCategory {
   to: string;
   name: RegExp;
-  /** Further rules for the same source key, tried in order when `name` does not match. */
-  also?: ReadonlyArray<{ to: string; name: RegExp }>;
   /** A cheap SQL pre-filter (case-insensitive regex) for the rows the rule might move. */
   sqlPattern: string;
 }
@@ -222,17 +224,14 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
   late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent" },
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
-  // excess withdrawal charge is the IRA's own fee.
-  account_research: {
-    to: "ira_termination",
-    name: IRA_TRANSFER_OUT,
-    also: [{ to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL }],
-    sqlPattern: "\\mira\\M",
-  },
+  // excess withdrawal charge stays: excess activity is account servicing wherever it occurs.
+  account_research: { to: "ira_termination", name: IRA_TRANSFER_OUT, sqlPattern: "\\mira\\M" },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
   atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
   // A statement mailed back undelivered is returned mail, which account research holds.
   paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
+  // Excess savings or money market activity is account servicing, not a lending fee.
+  other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -241,10 +240,8 @@ export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLI
 export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
   if (!key) return null;
   const split = SPLIT_CATEGORIES[key];
-  if (!split) return null;
-  const name = plain(feeName ?? "");
-  const hit = [{ to: split.to, name: split.name }, ...(split.also ?? [])].find((rule) => rule.name.test(name));
-  return hit ? { to: hit.to, rule: `${key}#split` } : null;
+  if (!split || !split.name.test(plain(feeName ?? ""))) return null;
+  return { to: split.to, rule: `${key}#split` };
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
