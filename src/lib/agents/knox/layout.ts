@@ -95,7 +95,12 @@ export function qualifiesName(line: string): boolean {
 
 /** A cell that only qualifies a price or belongs to the row beside it: "Per Item", "/Item", "each", "N/C", "APY of .00%". */
 const UNIT_CELL =
-  /^(?:\/\s*[a-z.]+|per\s+[\w/ -]{1,30}|each|ea\.?|monthly|annual(?:ly)?|fee|amount|charge|n\/c|free|none|no charge|[^a-z]*|apy\b.*)$/i;
+  /^(?:\/\s*[a-z.]+|per\s+[\w/ -]{1,30}|each|ea\.?|monthly|annual(?:ly)?|fee|amount|charge|n\/c|n\/a|free|none|no charge|[^a-z]*|apy\b.*)$/i;
+/** v57: a details cell after the name ("ATM Transaction | Fee applies to the use of an ATM or terminal not owned ..."). */
+const DETAILS_CELL = /^(?:(?:fees?|charges?)\s+(?:applies|apply|is|are|will|may)\b|(?:if|when|unless|based on)\b)/i;
+const MAX_DETAILS_FREE_WORDS = 10;
+/** v57: a word that joins a sentence to the one before it ("Otherwise, a monthly service fee of $6.95"). */
+const LEADING_DISCOURSE = /^(?:otherwise|additionally|also|however|in addition|furthermore|further)\s*,?\s+/i;
 /** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
 // The previous row's bare price also leads a name in one-line schedules ("100.00 Overdraft (items paid)").
 const LEADING_FRAGMENT = /^(?:(?:\/\s*[A-Za-z.]+|per\s+[a-z/]+(?:\s+[a-z]+)?|each|ea\.)\s+(?=[A-Z“"(•●▪■◦➢►▸])|[a-z]\.\s+(?=[A-Z])|\d{1,2}[.)]\s+(?=[A-Z])|\$?\d[\d,]*\.\d{2}\s+(?=[A-Z]))/;
@@ -130,6 +135,9 @@ export function tidyFeeName(raw: string): string {
   const notAName = (cell: string) => UNIT_CELL.test(cell) || /^[a-z]/.test(cell) || PROSE.test(cell) || /\.$/.test(cell);
   while (cells.length > 1 && notAName(cells[0])) cells = cells.slice(1);
   while (cells.length > 1 && UNIT_CELL.test(cells[cells.length - 1])) cells = cells.slice(0, -1);
+  // v57: a details column after the name is the row's description, not the name.
+  const details = (cell: string) => DETAILS_CELL.test(cell) || PROSE.test(cell) || cell.split(" ").length > MAX_DETAILS_FREE_WORDS;
+  while (cells.length > 1 && details(cells[cells.length - 1]) && !details(cells[0])) cells = cells.slice(0, -1);
   // A "None"/"Free" cell between names is the previous row's price: the name starts after it
   // ("Monthly service fee | None | Bill payment- same day ACH").
   const lastValue = cells.findLastIndex((cell, index) => index < cells.length - 1 && ZERO_WORD.test(cell));
@@ -158,7 +166,10 @@ export function tidyFeeName(raw: string): string {
   if (name.split(" ").length <= MAX_TITLE_WORDS) {
     for (let pass = 0; pass < 2; pass += 1) name = trimEnd(name.replace(DANGLING_END, ""));
   }
-  name = name.replace(/^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());
+  const joined = LEADING_DISCOURSE.test(name);
+  name = name.replace(LEADING_DISCOURSE, "");
+  name = name.replace(joined ? /^(?:A|An|The)\s+(?=[a-z])([a-z])/i : /^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());
+  if (joined) name = name.replace(/^[a-z]/, (first) => first.toUpperCase());
   // "(Money Order)" alone is the name in parentheses.
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();

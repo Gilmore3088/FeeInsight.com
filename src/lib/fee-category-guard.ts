@@ -86,7 +86,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   monthly_maintenance: {
     // v10: "Minimum daily balance of $500 required to avoid a $5.00 service fee" names the
     // account's monthly fee by the balance that waives it.
-    include: /(maintenance|monthly service|service charge|monthly fee|(minimum|balance)\b.{0,80}\bavoid\b.{0,30}\bservice fee)/i,
+    // v57: a cross-border banking bundle's annual fee is the account's fee, paid yearly (RBC's
+    // U.S. Premium Checking "Cross-Border Banking Bundle annual fee", $99.50 a year or $9.95 a month).
+    include: /(maintenance|monthly service|service charge|monthly fee|(minimum|balance)\b.{0,80}\bavoid\b.{0,30}\bservice fee|\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) annual fee)/i,
     // A per-transaction charge or an earnings-credit note is not the account's monthly fee, nor a
     // business service's own monthly charge (remote deposit scanners, IntraFi/ICS sweeps, a fee per
     // location) or a sentence about waiving it ("Waiving the Monthly Service Fee") (v21).
@@ -99,7 +101,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // early termination fee (ProGrowth's $49.95 "Monthly Service Fee Early Termination Fee",
     // Merchant Capture) is not it either; a bank named "First Merchants" still is.
     exclude:
-      /(\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -375,7 +377,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
 // a safe deposit box late fee above $250.
 // v55: a merchant service's monthly charge or an early termination fee is not monthly maintenance.
-export const CATEGORY_GUARD_VERSION = 55;
+// v57: a cross-border banking bundle's annual fee is monthly maintenance (RBC; v56 is Accuracy's).
+export const CATEGORY_GUARD_VERSION = 57;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

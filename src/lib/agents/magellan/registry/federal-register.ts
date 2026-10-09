@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { type RegistryFetchOptions } from "@/lib/regulatory/http";
 import { fetchFederalRegisterRules, trackerStage, type TrackerStage } from "@/lib/regulatory/federal-register";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
+import { flagOn } from "./live-flag";
 
 /**
  * Magellan registry step: pull the banking regulators' proposed and final rules from
@@ -19,7 +20,7 @@ const FEDERAL_REGISTER_REFRESH_HOURS = 24;
 export const FEDERAL_REGISTER_LOOKBACK_DAYS = 400;
 
 export function federalRegisterLive(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.FEDERAL_REGISTER_TRACKER_LIVE === "true";
+  return flagOn(env.FEDERAL_REGISTER_TRACKER_LIVE);
 }
 
 export interface RegistryFederalRegisterResult {
