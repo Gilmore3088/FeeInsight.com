@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useId, useRef } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Search } from "lucide-react";
@@ -46,6 +47,9 @@ function InstitutionSearchBarInner({
   const [results, setResults] = useState<Result[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [loading, setLoading] = useState(false);
+  /** The suggestion ArrowUp/ArrowDown has moved to; -1 means none (Enter runs a full search). */
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -77,6 +81,7 @@ function InstitutionSearchBarInner({
         const resp = await fetch(`/api/institutions?q=${encodeURIComponent(value.trim())}`);
         const data = await resp.json();
         setResults(data);
+        setActiveIndex(-1);
         setShowResults(true);
       } catch {
         setResults([]);
@@ -97,10 +102,42 @@ function InstitutionSearchBarInner({
     router.push(fee ? `/institution/${id}?fee=${encodeURIComponent(fee)}#fee-${fee}` : `/institution/${id}`);
   }
 
-  // Enter runs a full search rather than doing nothing. Previously the only way to a
-  // result list was clicking a suggestion or hand-editing ?q= into the URL.
+  const expanded = showResults && results.length > 0;
+  const optionId = (index: number) => `${listboxId}-option-${index}`;
+
+  // Combobox keys (WAI-ARIA pattern): arrows move through the suggestions while focus stays in
+  // the input, Enter opens the highlighted bank, Escape closes the list. With nothing highlighted,
+  // Enter runs a full search rather than doing nothing.
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (results.length === 0) return;
+      e.preventDefault();
+      if (!showResults) {
+        setShowResults(true);
+        setActiveIndex(e.key === "ArrowDown" ? 0 : results.length - 1);
+        return;
+      }
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) =>
+        current === -1
+          ? step === 1 ? 0 : results.length - 1
+          : (current + step + results.length) % results.length,
+      );
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!showResults) return;
+      e.preventDefault();
+      setShowResults(false);
+      setActiveIndex(-1);
+      return;
+    }
     if (e.key !== "Enter") return;
+    if (expanded && activeIndex >= 0 && activeIndex < results.length) {
+      e.preventDefault();
+      handleSelect(results[activeIndex].id);
+      return;
+    }
     const q = query.trim();
     if (q.length < 2) return;
     e.preventDefault();
@@ -120,7 +157,12 @@ function InstitutionSearchBarInner({
         />
         <input
           type="text"
+          role="combobox"
           aria-label={ariaLabel}
+          aria-autocomplete="list"
+          aria-expanded={expanded}
+          aria-controls={listboxId}
+          aria-activedescendant={expanded && activeIndex >= 0 ? optionId(activeIndex) : undefined}
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -142,48 +184,64 @@ function InstitutionSearchBarInner({
         )}
       </div>
 
-      {showResults && results.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[#E8DFD1] bg-[#FFFDF9] shadow-lg">
-          {results.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => handleSelect(r.id)}
-              className="fi-row-interaction w-full border-b border-[#E8DFD1] px-4 py-3 text-left last:border-0"
-            >
-              <div className="text-sm font-medium text-[#1A1815]">
-                {r.institution_name}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#6B6255]">
-                {[r.city, r.state_code].filter(Boolean).join(", ")}
-                {r.charter_type && (
-                  <span className="text-[#6B6255]">
-                    {r.charter_type === "bank" ? "Bank" : "Credit Union"}
-                  </span>
-                )}
-                {(r.published_fee_count ?? 0) > 0 && (
-                  <span className="rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                    {r.published_fee_count} fees published
-                  </span>
-                )}
-                {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) > 0 && (
-                  <span className="rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#9A5A00]">
-                    {r.provisional_fee_count} fees under review
-                  </span>
-                )}
-                {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) === 0 && (
-                  <span className="rounded-sm border border-[#E0D7C9] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#6B6255]">
-                    {r.fee_publication_status === "under_review" ? "Under review" : "No published schedule found"}
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+      <ul
+        id={listboxId}
+        role="listbox"
+        aria-label="Matching institutions"
+        hidden={!expanded}
+        className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[#E8DFD1] bg-[#FFFDF9] shadow-lg"
+      >
+        {expanded && results.map((r, index) => (
+          <li
+            key={r.id}
+            id={optionId(index)}
+            role="option"
+            aria-selected={index === activeIndex}
+            // mousedown would blur the input first; keep focus in the combobox.
+            onMouseDown={(e) => e.preventDefault()}
+            onMouseEnter={() => setActiveIndex(index)}
+            onClick={() => handleSelect(r.id)}
+            className={`fi-row-interaction w-full cursor-pointer border-b border-[#E8DFD1] px-4 py-3 text-left last:border-0 ${index === activeIndex ? "bg-[#F3ECE2]" : ""}`}
+          >
+            <div className="text-sm font-medium text-[#1A1815]">
+              {r.institution_name}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#6B6255]">
+              {[r.city, r.state_code].filter(Boolean).join(", ")}
+              {r.charter_type && (
+                <span className="text-[#6B6255]">
+                  {r.charter_type === "bank" ? "Bank" : "Credit Union"}
+                </span>
+              )}
+              {(r.published_fee_count ?? 0) > 0 && (
+                <span className="rounded-sm border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                  {r.published_fee_count} fees published
+                </span>
+              )}
+              {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) > 0 && (
+                <span className="rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#9A5A00]">
+                  {r.provisional_fee_count} fees under review
+                </span>
+              )}
+              {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) === 0 && (
+                <span className="rounded-sm border border-[#E0D7C9] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#6B6255]">
+                  {r.fee_publication_status === "under_review" ? "Under review" : "No published schedule found"}
+                </span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
 
       {showResults && results.length === 0 && query.trim().length >= 2 && !loading && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-[#E8DFD1] bg-[#FFFDF9] p-4 shadow-lg">
-          <p className="text-sm text-[#6B6255]">No institutions found for {query}</p>
+          <p className="text-sm text-[#6B6255]" role="status">No institutions found for {query}</p>
+          <Link
+            href={`/submit-fees?${new URLSearchParams({ institutionName: query.trim() }).toString()}`}
+            className="mt-2 inline-block text-sm font-semibold text-[#A93D25] underline-offset-2 hover:underline"
+          >
+            Can&apos;t find the institution? Send its fee schedule
+          </Link>
         </div>
       )}
     </div>

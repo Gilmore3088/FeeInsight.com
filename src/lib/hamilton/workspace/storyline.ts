@@ -644,8 +644,12 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const dearer = group.members.filter((m) => m.amount > current);
     const n = group.members.length;
     if (cheaper.length === 0) {
+      // Neutral: who is higher, by name, never whether that helps or hurts.
+      const highest = [...dearer].sort((a, b) => b.amount - a.amount)[0];
       out.push({
-        text: `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; price works in your favor.`,
+        text: highest
+          ? `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`
+          : `All ${count(n)} ${group.label} charge the same ${money(current)} you do.`,
         source: group.source,
         sampleSize: n,
       });
@@ -657,7 +661,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       });
       if (dearer.length === 0) {
         out.push({
-          text: `No one in that group charges more than your ${money(current)}, so every price comparison works against you.`,
+          text: `No one in that group charges more than your ${money(current)}.`,
           source: group.source,
           sampleSize: n,
         });
