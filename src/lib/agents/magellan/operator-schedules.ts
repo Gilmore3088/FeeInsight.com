@@ -542,9 +542,8 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   // signed-out headless browser (2026-10-09 06:46). Where the site publishes no schedule PDF,
   // the link is the product or overdraft page that lists the fees. Sunwest's, Leader's,
   // Morton's and INB's links came from the search index because bot protection blocked the
-  // browser; mysunwest.com and yourcnb.com are different banks and were left out. Not listed:
-  // Corning FCU (its PDF sits behind a Salesforce viewer link the check cut short), Builtwell
-  // and Falcon (nothing found).
+  // browser; mysunwest.com and yourcnb.com are different banks and were left out. Builtwell
+  // and Falcon are not listed (nothing found).
   ...([
     [193, "Metropolitan Commercial Bank", "https://mcbankny.com/personal/checking/"],
     [222, "Old Second National Bank", "https://www.oldsecond.com/personal-banking/personal-checking-accounts-in-chicagoland/"],
@@ -564,6 +563,12 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     [5090, "Members 1St Federal Credit Union", "https://www.members1st.org/ask-us/rate-center/truth-in-savings-and-rate-and-fee-disclosures"],
     [5834, "Stanford Federal Credit Union", "https://www.sfcu.org/schedule-of-fees"],
     [6720, "Altra Federal Credit Union", "https://www.altra.org/wp-content/uploads/2025/02/servicefees.pdf"],
+    // The consumer fee schedule effective 2026-01-14, served from the credit union's Salesforce
+    // file host; corningcu.org/disclosures links to it.
+    [4568, "Corning Federal Credit Union", "https://corningcreditunion.my.salesforce.com/sfc/dist/version/renditionDownload?rendition=ORIGINAL_Pdf&versionId=068Vr00000fIvwU&operationContext=DELIVERY&contentId=05TVr00000oro0p&page=0&d=/a/KY000000sbru/1DBdnBaAkbA5bDRkjaoXFLCcC0yf62NNxZfy3o3DUQE&oid=00D4x0000030hGS&dpt=null&viewId="],
+    // No fee schedule is posted (the old /deposit/common-fee-schedule is gone); the personal
+    // checking page lists the account fees.
+    [3827, "Angelina Savings Bank, SSB", "https://www.angelinabankonline.com/deposit/checking-products/personal-checking-accounts"],
   ] as const).map(([institutionId, institutionName, url]) => ({
     institutionId,
     institutionName,
