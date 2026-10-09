@@ -9,8 +9,10 @@ of Paper Statement" do not say "returned".
 **Cause:** each rule's regex was written from a few sample names. The prod check then reused that
 regex, so it could only confirm that the rule moved what the rule matched.
 **Fix:** this PR (fold rules v9) widens the box-rent, lien and returned-statement rules and adds
-an IRA excess withdrawal rule (account_research to ira_administration). A rule can now carry
-more than one target (`also`).
+a rule that moves excess savings activity filed as other lending to account research. Excess
+withdrawal and excess transaction fees (Reg D-style) stay in account research wherever they
+are, IRA savings included, and the taxonomy map no longer sends `excessive_withdrawal_fee` to
+overdraft.
 **Lesson:** prove a fold rule with a broad name search that is independent of the rule, such as
 every row in the source key that names the thing in any wording. Count what is left, and list
 why each leftover stays. A row the new type's price range rejects (a $1 box late fee, or a $2
