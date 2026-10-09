@@ -60,6 +60,29 @@ describe("retidiedFeeName", () => {
     ).toBe("Overdraft Protection Transfer Fee (from Line of Credit Advance in Increments of $100.00)");
   });
 
+  it("repairs a cut-off parenthesis and a doubled word (v4)", () => {
+    expect(retidiedFeeName("Account Research Research", "account_research")).toBe("Account Research");
+    expect(retidiedFeeName("Consumer, Inactivity Fee (Notification sent at 10", "dormant_account")).toBe(
+      "Consumer, Inactivity Fee",
+    );
+    expect(retidiedFeeName(" Overdraft Protection Sweep Fee (per sweep)", "od_protection_transfer")).toBe(
+      "Overdraft Protection Sweep Fee (per sweep)",
+    );
+  });
+
+  it("drops a price's unit left on the front of the name and a ')' cut from its '(' (v5, 115 live names)", () => {
+    expect(retidiedFeeName("/month service charge", "monthly_maintenance")).toBe("service charge");
+    expect(retidiedFeeName("/ per item Photocopies", "document_reproduction")).toBe("Photocopies");
+    expect(retidiedFeeName("/Money Order", "money_order")).toBe("Money Order");
+    expect(retidiedFeeName("/item Stop Payment - Draft, ACH, NSF Draft", "stop_payment")).toBe("Stop Payment - Draft, ACH, NSF Draft");
+    expect(retidiedFeeName("Bill Payment Service)", "bill_pay")).toBe("Bill Payment Service");
+    // A condition or a cut tail is not a name; it stays as it is for Knox to re-read.
+    expect(retidiedFeeName("/ ea.; Active if Bill Pay or Zelle are used monthly)", "bill_pay")).toBeNull();
+    expect(retidiedFeeName("/Inactive for 1 year)", "dormant_account")).toBeNull();
+    expect(isMessyName("/month service charge")).toBe(true);
+    expect(isMessyName("Bill Payment Service)")).toBe(true);
+  });
+
   it("leaves a tidy name alone", () => {
     expect(retidiedFeeName("Stop Payment", "stop_payment")).toBeNull();
   });
@@ -72,6 +95,10 @@ describe("isMessyName", () => {
     expect(isMessyName("x".repeat(81))).toBe(true);
     expect(isMessyName("Stop Payment")).toBe(false);
     expect(isMessyName("Paid NSF Item1")).toBe(true);
+    expect(isMessyName("Account Research Research")).toBe(true);
+    expect(isMessyName("Early Account Closure (by Extraco – no")).toBe(true);
+    expect(isMessyName(" Overdraft Protection Sweep Fee (per sweep)")).toBe(true);
+    expect(isMessyName("Early Account Closure (by customer)")).toBe(false);
     expect(isMessyName("Safe deposit box 10x10")).toBe(false);
     expect(isMessyName("W2 copy")).toBe(false);
   });

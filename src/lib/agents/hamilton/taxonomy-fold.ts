@@ -8,8 +8,10 @@ import {
   FOLD_RULES_VERSION,
   RETIRED_CATEGORIES,
   RETIRED_CATEGORY_KEYS,
+  SPLIT_CATEGORIES,
   foldContext,
   foldRetiredCategory,
+  splitLiveCategory,
 } from "@/lib/fee-fold";
 
 type SqlTag = typeof sql;
@@ -29,11 +31,11 @@ export const TAXONOMY_FOLD_REASON_PREFIX = "taxonomy_fold:";
 /** Fees folded per publish step; the fifteen categories held about 1,000 live fees on Oct 8. */
 export const TAXONOMY_FOLD_LIMIT = 2_000;
 /**
- * Whether a live fee with no home is archived once its second look confirms it. Off until James
- * decides on the list of no-home fees (Oct 8: "Show me the list"); until then they are only
- * flagged and stay live.
+ * Whether a live fee with no home is archived once its second look confirms it. James saw the
+ * list of 248 (Oct 8 15:42 UTC: "drop them -- the 248"), so they are archived: rolled back and
+ * logged, never deleted.
  */
-export const TAXONOMY_FOLD_ARCHIVE_NO_HOME = false;
+export const TAXONOMY_FOLD_ARCHIVE_NO_HOME = true;
 const WRITE_CHUNK = 500;
 
 interface FoldRow {
@@ -106,10 +108,13 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
     const documentId = row.source_document_id == null ? null : Number(row.source_document_id);
     const text = documentId == null ? null : texts.get(documentId) ?? null;
     const context = needsContext(row.canonical_fee_key, name) ? foldContext(text, name) : null;
-    const fold = foldRetiredCategory(row.canonical_fee_key, name, context);
+    const split = splitLiveCategory(row.canonical_fee_key, name);
+    const fold = foldRetiredCategory(row.canonical_fee_key, name, context) ?? split;
     if (!fold) continue;
     const amount = amountOf(row.amount);
     const accepted = fold.to != null && passesDarwinChecks(fold.to, name, amount ?? 0);
+    // A split fee its new type does not accept stays live where it is.
+    if (split && !accepted) continue;
     if (fold.to && accepted) {
       plan.moves.push({
         feePublishedId: row.fee_published_id == null ? null : Number(row.fee_published_id),
@@ -146,6 +151,8 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
 
 async function selectRetiredRows(db: SqlTag, institutionId?: number): Promise<FoldRow[]> {
   const keys = [...RETIRED_CATEGORY_KEYS];
+  const splitKeys = Object.keys(SPLIT_CATEGORIES);
+  const splitPatterns = splitKeys.map((key) => SPLIT_CATEGORIES[key].sqlPattern);
   return db<FoldRow[]>`
     SELECT * FROM (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id,
@@ -154,14 +161,18 @@ async function selectRetiredRows(db: SqlTag, institutionId?: number): Promise<Fo
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
-         AND fp.canonical_fee_key = ANY(${keys}::text[])
+         AND (fp.canonical_fee_key = ANY(${keys}::text[])
+              OR EXISTS (SELECT 1 FROM unnest(${splitKeys}::text[], ${splitPatterns}::text[]) AS s(k, l)
+                          WHERE fp.canonical_fee_key = s.k AND fp.fee_name ~* s.l))
          AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
       UNION ALL
       SELECT NULL, fv.fee_verified_id, fv.institution_id, fr.source_document_id, fv.canonical_fee_key,
              fv.fee_name, fv.amount
         FROM verified_fee_observations fv
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-       WHERE fv.canonical_fee_key = ANY(${keys}::text[])
+       WHERE (fv.canonical_fee_key = ANY(${keys}::text[])
+              OR EXISTS (SELECT 1 FROM unnest(${splitKeys}::text[], ${splitPatterns}::text[]) AS s(k, l)
+                          WHERE fv.canonical_fee_key = s.k AND fv.fee_name ~* s.l))
          AND fv.review_status IN ('verified', 'approved')
          AND (${institutionId ?? null}::bigint IS NULL OR fv.institution_id = ${institutionId ?? null}::bigint)
          AND NOT EXISTS (

@@ -3,8 +3,8 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
-import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
+import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
+import { stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
@@ -21,7 +21,7 @@ type SqlTag = typeof sql;
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
 const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|items?|atms?|accounts?|drafts?|stop|fax|notary|photocopy|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
+  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -32,18 +32,32 @@ const UNIT_TAIL =
 const NOT_A_NAME = /^(?:none|free|no|n\/a|(?:to\s+)?avoid)\b|\botherwise$/i;
 /** Two sentences run together ("drafts and a. Garnishment"). */
 const SENTENCE_BREAK = /[a-z]\.\s+[A-Z]/;
+/** The unit of a price left on the front of a name: "/month service charge", "/ per item Photocopies", "/Money Order". */
+const LEADING_PRICE_UNIT = /^\/\s*(?:per\s+)?(?:ea\.?|each|items?|mo\.?|month|yr\.?|year|quarter|day|hr\.?|hour|check|transaction|statement|cop(?:y|ies)|page)?(?=\s|$|[A-Z])[\s.;:,\-–—]*/;
+/** A clause about when a fee applies, not its name ("Active if Bill Pay or Zelle are used monthly"). */
+const CONDITION_CLAUSE = /\b(?:if|when|unless|otherwise|will be|are used|is used|for\s+\d)\b/i;
 
 /** The tidy name a live fee should show, or null to keep its name. */
 export function retidiedFeeName(name: string, canonicalKey: string): string | null {
-  const tidy = fullyTidiedName(name, canonicalKey);
-  if (tidy) return tidy;
-  // v3: only a footnote number to drop. The words stay as they were read, so the run-on
-  // limits don't apply ("Overdraft Protection Transfer Fee4 (from Line of Credit ...)").
   const current = name.trim();
-  const unfooted = stripFootnoteMarks(current);
-  if (!unfooted || unfooted === current) return null;
-  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, unfooted).ok) return null;
-  return unfooted;
+  // v5: "$5/month service charge" read as "/month service charge": the price's unit stayed on
+  // the front of the name. The words after it are the name when they name a fee, not a
+  // condition; otherwise the name stays as it is for Knox to re-read.
+  const unitless = repairNameShape(current).replace(LEADING_PRICE_UNIT, "").trim();
+  const start = unitless === repairNameShape(current) ? current : unitless;
+  if (start !== current && (!FEE_NOUN.test(start) || CONDITION_CLAUSE.test(start) || NOT_A_NAME.test(start) || !usableName(start))) {
+    return null;
+  }
+  const tidy = fullyTidiedName(start, canonicalKey);
+  if (tidy) return tidy;
+  // v3: only a footnote number to drop; v4: or a cut-off parenthesis or a doubled word. The
+  // other words stay as they were read, so the run-on limits don't apply ("Overdraft
+  // Protection Transfer Fee4 (from Line of Credit ...)").
+  const repaired = repairNameShape(stripFootnoteMarks(start));
+  // Compared with the stored name, so untrimmed space alone is worth a rename.
+  if (!repaired || repaired === name) return null;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return null;
+  return repaired;
 }
 
 function fullyTidiedName(name: string, canonicalKey: string): string | null {
@@ -85,8 +99,10 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
 /**
  * v2: a footnote number glued to the name ("Check Cashing Fee1") is messy too.
  * v3: a long name loses its footnote number even when the full tidy would leave it as is.
+ * v4: a cut-off parenthesis, a doubled word and untrimmed space are messy too (Extraco:
+ * "Account Research Research", "Consumer, Inactivity Fee (Notification sent at 10").
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 3 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 5 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 export const NAME_RETIDY_INSTITUTION_LIMIT = 40;
@@ -194,12 +210,18 @@ export async function retidyLiveFeeNames(
       SELECT live.institution_id, live.max_fee_id
         FROM (
           SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_fee_id,
-                 -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on, a footnote number.
+                 -- The same test as isMessyName: joined cells, a dangling lead-in word, a run-on, a
+                 -- footnote number, untrimmed space, a doubled word or an unclosed parenthesis.
                  bool_or(
                    fp.fee_name LIKE '%|%'
                    OR fp.fee_name ~* '[[:space:]](of|for|at|is|to|and|or|with|by|a|an|the)$'
                    OR length(fp.fee_name) > 80
                    OR fp.fee_name ~ ${FOOTNOTE_SQL}
+                   OR fp.fee_name <> btrim(fp.fee_name)
+                   OR fp.fee_name ~* ${DOUBLED_WORD_SQL}
+                   OR length(fp.fee_name) - length(replace(fp.fee_name, '(', ''))
+                      <> length(fp.fee_name) - length(replace(fp.fee_name, ')', ''))
+                   OR fp.fee_name ~ '^[[:space:]]*/'
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -339,15 +361,24 @@ export async function retidyLiveFeeNames(
   return result;
 }
 
-/** The live names this step looks at: joined cells, a dangling lead-in word, a run-on, or a footnote number. */
+/**
+ * The live names this step looks at: joined cells, a dangling lead-in word, a run-on, a
+ * footnote number, untrimmed space, a doubled word or a cut-off parenthesis.
+ */
 export function isMessyName(name: string): boolean {
   return (
     name.includes("|") ||
     /\s(?:of|for|at|is|to|and|or|with|by|a|an|the)$/i.test(name) ||
     name.length > 80 ||
-    stripFootnoteMarks(name) !== name.trim()
+    stripFootnoteMarks(name) !== name.trim() ||
+    name !== name.trim() ||
+    repairNameShape(name) !== name.trim() ||
+    // v5: a price's unit left on the front ("/month service charge") or a ")" cut from its "(".
+    /^\s*\//.test(name)
   );
 }
 
 /** Postgres twin of `stripFootnoteMarks`'s match, so the due query finds the same names. */
 const FOOTNOTE_SQL = "([A-Za-z][a-z]{2}|\\))[0-9]{1,2}(,[0-9]{1,2})*(\\s*\\(|\\s*$)";
+/** Postgres twin of `repairNameShape`'s doubled-word match (case-insensitive with `~*`). */
+const DOUBLED_WORD_SQL = "\\m([a-z][a-z'’]{2,})\\M\\s+\\1\\M";

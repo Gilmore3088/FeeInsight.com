@@ -98,6 +98,7 @@ export function InstitutionOfferBand({
             Request the report
             <ArrowRight className="h-4 w-4" />
           </Link>
+          <p className="text-xs text-[#6B6255]">Paid report from $300 · quote within 1 business day</p>
           <Link
             href={correctSourceHref}
             className="text-xs font-semibold text-[#6B6255] underline-offset-2 hover:text-[#A93D25] hover:underline"

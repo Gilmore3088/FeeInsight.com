@@ -67,6 +67,17 @@ describe("applyStripeEvent", () => {
     expect(tx.mock.calls[0]).toContain(7);
   });
 
+  it("activates a $0 checkout paid with a 100%-off code", async () => {
+    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: null }]);
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "subscription", payment_status: "no_payment_required", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    const [sql] = issued();
+    expect(sql).toContain("role = 'premium'");
+    expect(tx.mock.calls[0]).toContain(7);
+  });
+
   it("asks for one welcome email per newly activated subscriber", async () => {
     tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
     const effects = await applyStripeEvent(
@@ -210,6 +221,27 @@ describe("institution report payments", () => {
     const effects = await applyStripeEvent(tx as never, paidSession());
     expect(effects.reportPaid).toEqual([]);
     expect(effects.reportDuplicate).toEqual([]);
+  });
+
+  it("marks the request paid from a paid report invoice", async () => {
+    tx.mockResolvedValueOnce([{ id: "18", name: "Pat Lee", email: "pat@example.com", quote_institution_id: "201" }]);
+    const effects = await applyStripeEvent(
+      tx as never,
+      event("invoice.paid", { id: "in_1", status: "paid", amount_paid: 30000, metadata: { kind: "institution_report", lead_id: "18" } }),
+    );
+    expect(issued()[0]).toContain("SET paid_at = NOW(), status = 'paid'");
+    expect(effects.reportPaid).toEqual([
+      { leadId: 18, name: "Pat Lee", email: "pat@example.com", institutionId: 201, cents: 30000, checkoutSessionId: "in_1" },
+    ]);
+  });
+
+  it("ignores subscription invoices and never marks Pro past due for a failed report invoice", async () => {
+    await applyStripeEvent(tx as never, event("invoice.paid", { id: "in_2", status: "paid", amount_paid: 15000, metadata: {} }));
+    await applyStripeEvent(
+      tx as never,
+      event("invoice.payment_failed", { id: "in_3", customer: "cus_1", metadata: { kind: "institution_report", lead_id: "18" } }),
+    );
+    expect(tx).not.toHaveBeenCalled();
   });
 
   it("flags a second paid session for an already-paid request so James refunds it", async () => {

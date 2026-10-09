@@ -154,6 +154,9 @@ const CHANGES_SQL = `
       FROM fee_change_records c
      WHERE COALESCE(c.changed_at, c.detected_at) >= $1
        AND c.change_type IN ('increase', 'increased', 'decrease', 'decreased')
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
   )
   SELECT i.institution_name, i.state_code, i.charter_type, ch.fee_key, ch.old_amount, ch.new_amount, ch.changed_at,
          n.fee_name, n.source_url, o.fee_name AS old_fee_name, o.source_url AS old_source_url,

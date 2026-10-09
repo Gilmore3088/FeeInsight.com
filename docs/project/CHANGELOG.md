@@ -3,6 +3,53 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-10-08
+**Accuracy and data quality**
+- Darwin's held-fee release turned on with review v11 (#472), tightened in v12 to v16 (#479, #562, #683, #688), then paused while it publishes its RDI re-files (#677). Hamilton archives the 11 critical fees from the 211-fee eval, plus rebates and "no fee for" sentences published as fees (#714).
+- Category guard v21 to v44: small returned checks are RDIs, not NSF (#479, #538, #542); statement, photocopy, notary, card, ATM card, rebate and savings-limit lines leave the fees they were misfiled under (#547, #565, #600, #659); overdraft worked examples, waiver thresholds, page text, protection transfers and per-item notes are not the overdraft fee (#580, #640, #662); a combined or paid NSF price is the overdraft price (#663, #684); daily-cap notes, rush cards, early-closure and module fees (#668, #665, #670, #673, #676); more misfiles (#679, #682); an add-on rate is not the price (#678).
+- Knox v34 to v46: footnote numbers and wrapped names (#545, #563, #630, #643), one-time sentences with a daily cap (#648), threshold cells and Privilege Pay (#650), "Paid Item Fee" and state leaders with no overdraft fee (#653, #661, #666), held lines not renamed onto existing rows (#672), wrapped fee paragraphs (#705); its lessons query runs in 4 s instead of 53 s (#704).
+- Accuracy fixes: sustained overdraft charges, bare card names and filler lines (#583); Hamilton repairs cut-off and doubled names (#598), drops leftover footnote numbers (#641), supersedes a fee only by a newer copy of the same page (#591), and counts fees the current page states in another layout (#471).
+- Frequency fill for live fees and Knox v44 frequency (#686).
+- Taxonomy: the top 50 fee types with every fee folded in (#560, fix #569); the 248 fees with no home archived after their second look (#624); Collection Items gets its own type and International ATM & Card merges two (#701).
+- Never publish another bank's fee schedule; the 308 fees from another bank's document come down (#691).
+- Fee changes count only changes that compare one schedule with itself (#700, finding #581), and drop a change once its new price is taken down (#718); competitor alerts read the change pair publish recorded (#716).
+- Answer key admin shows the person-checked count (#634); the gold standard queue shows hand-given schedules (#575).
+
+**Pipeline**
+- Hand-found fee schedules for top-10-by-state institutions and $10B+ banks (#473, #586, #609, #611, #626, #628, #638, #715), fetched on the next lane of any state (#695).
+- Rosetta re-reads one-line PDF texts (#615) and reads PDFs whose embedded text is noise (#657).
+- Overdue state lanes run longest overdue first (#570); lanes woken by a recovery rerun go first (#587).
+- Recovery: alert on a failure streak and rerun failed lanes once a fix deploys (#572); a lane is starved only past its freshness target (#660); alerts keep flagging a break after one lone success (#711).
+
+**Data coming in**
+- Census vintages load as soon as a key is set (#573), and a no-key vintage shows as skipped (#561); CPI relabels every row of a mapped series (#480); the CFPB loader retries 403 and 429 (#559).
+- CFPB and SEC identity review: auto-accept clear bank names, reject non-banks, bulk decide (#578, #594).
+- Regulation tracker: state regulators' news and state fee bills (#568, #574, #579), read again once live (#625); groundwater and non-banking bills dropped (#656, #667); overdraft wording judged per sentence (#674).
+- Account lineup comparison read model (#699).
+
+**Database and speed**
+- The 6543 pooler accepts connections once `idle_session_timeout` is skipped (#632).
+- Sitemap served from cache and city pages in one query (#576); local competitors answer reads at once (#571).
+
+**Public site and Hamilton**
+- One shared report look across every report, plus state visuals, market study and merger screen (#447); competitor alerts, regulatory watch and Pro answers moved onto it (#474, #475, #478).
+- Pro redesign: Ask Hamilton as a conversation, Reference pages on the memo look (#649); Pro bug fixes, header search, account menu and the nav on first paint (#622, #639, #645); Regulatory Wire in the Pro nav and lined up with the other Pro pages (#618, #623, #687, #690); state news on the Pro news page and State report (#596); wording that names the institution (#582, #606).
+- Hamilton: memo room and the PDF on Ask answers (#620); a studies page with a fee dependence chart (#592); every bank placed in its studies on the briefing (#588); stored studies rebuilt when data moves (#593); the quality bar runs daily on live institutions (#642); live answer eval fixes and shorter storyline lines (#654, #664, #675); fee complaints in regulation answers (#697); every Pro question kept and replayed in the eval (#706); whole-schedule and income questions answered (#709).
+- Pro recurring features (alerts, briefing refresh, Monday digest) reach the bank a reader saved (#702).
+- SEO: Search Console tag (#564), llms.txt and link previews (#577), bank pages link city, state and district pages (#584), IndexNow (#613, #646), lowercase redirects and state share images (#698); research articles render lists and tables (#601); the sample report drops a stale count (#689).
+- Fee Insight LLC (Washington) named as the legal entity, with a trademark notice (#536).
+
+**Revenue and leads**
+- Pro in three tiers by institution size (#566), one plan for up to 5 people (#543), tier follows the organization in the terms (#607); report "from $300" with an invoice option and buyer-picked Pro band (#621); /pricing redirects to /subscribe (#712).
+- Checkout and billing: visible errors, prefilled paid bank, owner seat at payment (#585, #589, #590, #605, #614); password reset, plan details on /account, 14-day annual refund (#602); plain-language account page (#617); free reports lead to the paid offers (#567); Pro copy matches the live offer (#595).
+- Stripe: webhook records events (#541); admin checks for the customer portal, Privacy/Terms links and webhook events (#612, #616, #627); a $0 checkout with a 100%-off code activates Pro (#693).
+- Marketing loop (GrowthOS): skills and product context (#476), phase 0 and 1 (#537, #539, #540), /admin/growth approvals (#544), contact finder and weekly growth schedules (#619), outreach plumbing (#636), decision-maker contacts (#652, #655, #658, #671), quoted fee lines (#681), small-metro comparisons (#680), the A/B/C pilot that withdraws 21 held drafts (#692), a real dry run with day 6 and 13 follow-ups (#708), and drafts only for campaigns James approves (#717).
+- Marketing agents: ERNEST weekly fee articles (#603, #610), fee-depth posts (#599), article previews (#608), SHERLOCK market brief and NORMAN funnel check (#703), SHERLOCK files only recent releases (#710), MURROW skips subjects James skipped (#713).
+
+**Admin**
+- Simpler admin: short Today page, More fold, working Health and Learning (#546); Market folded into the Fee catalog, then the local-market screen (#597, #604).
+- Hit list of the largest institutions not shown, with a paste-a-link box (#477); email check shows the From address, domain status and send error (#631); confirmation email fix (#647).
+
 ## 2026-10-07
 **Accuracy and data quality**
 - Takedowns get a second look, a decision log and a way back; nothing is deleted (#324, #320); Knox holds re-reads of fees a second look confirmed taken down (#393).

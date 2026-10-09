@@ -16,6 +16,8 @@ export interface ProTierSelection {
   tier: ProTier;
   institutionId: number | null;
   otherOrganization: boolean;
+  /** The buyer picked the size band because the institution has no asset size on file. */
+  tierPicked?: boolean;
 }
 
 interface ProPlanCardsProps {
@@ -61,6 +63,7 @@ export function ProPlanCards({
           plan={plan}
           institutionId={chosen.institutionId}
           otherOrganization={chosen.otherOrganization}
+          pickedTier={chosen.tierPicked ? chosen.tier : null}
           returnTo={returnTo}
           label={autoStart ? "Continue to checkout" : label}
           className={className}
@@ -123,7 +126,10 @@ export function ProPlanCards({
               />
             </div>
           ) : (
-            <p className="text-sm text-[#6B6255]">Pick who the plan is for to see your price and start.</p>
+            <p className="text-sm text-[#6B6255]">
+              Pick who the plan is for to see your price and start. Plans renew monthly or yearly
+              until you cancel, and you can cancel at the end of any billing period.
+            </p>
           )}
         </div>
       </div>

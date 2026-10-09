@@ -14,12 +14,15 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
-import { tidyFeeName } from "@/lib/agents/knox/layout";
+import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
+import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
+import { retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 
 type SqlTag = typeof sql;
 
@@ -312,15 +315,22 @@ async function selectVerifiedFees(
   }
   if (learning) {
     // A row this rule version already decided on (published, skipped as identical, or
-    // rejected) is never selected again, so skipped rows cannot starve the batch.
+    // rejected) is never selected again, so skipped rows cannot starve the batch. The one
+    // exception is a row Darwin re-filed after a takedown (verify.schedule_refile): a decision
+    // made under its old category does not count, so the new filing goes through publish.
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
+    const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
               AND pa.strategy = ${strategyParam}
               AND pa.strategy_version = ${versionParam}
+              AND NOT (
+                fv.outlier_flags ? ${refiledParam}
+                AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
+              )
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -487,7 +497,7 @@ export async function insertPublishedFee(
       ${options.row.raw_agent_event_id}::uuid,
       ${options.row.verified_by_agent_event_id}::uuid,
       ${publishEventId}::uuid,
-      ${options.row.fee_name},
+      ${publishedFeeName(options.row.fee_name, options.row.canonical_fee_key)},
       ${amount},
       ${options.row.frequency},
       ${options.row.variant_type},
@@ -558,7 +568,29 @@ function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
 
 /** Compared as Knox now names it, so a line published under an older untidy name ("Per Item | Stop Payment") is still the same line. */
 export function normalizedFeeName(name: string | null | undefined): string {
-  return (name ? tidyFeeName(name) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return (name ? repairNameShape(tidyFeeName(name)) : "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * The name a published fee shows: the verified name with a cut-off parenthesis or a doubled
+ * word repaired (`repairNameShape`). Knox and Darwin keep the name as read, since its words
+ * are the category evidence; the repair applies only when the category guard still accepts
+ * the shorter name.
+ */
+export function publishedFeeName(name: string, canonicalKey: string): string {
+  const current = name.trim();
+  // A name the guard rejects only because a neighbouring cell or dot leaders ran into it ("per
+  // order | Returned Items", "Return Item . . . .") publishes under Knox's re-tidied name when
+  // that name passes the guard (Darwin's returned-check refile, Oct 9).
+  if (!checkFeeCategory(canonicalKey, current).ok) {
+    const retidied = retidiedFeeName(current, canonicalKey);
+    if (retidied && checkFeeCategory(canonicalKey, retidied).ok) return retidied;
+  }
+  // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
+  const repaired = repairNameShape(stripFootnoteMarks(current));
+  if (!repaired || repaired === current) return current;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, repaired).ok) return current;
+  return repaired;
 }
 
 function documentTime(value: string | Date | null | undefined): number | null {
@@ -625,14 +657,14 @@ export function feeValue(row: RateFields & { amount: number | string | null }): 
   return isPercentFee(row) ? `rate:${ratePercentOf(row)}` : `amount:${normalizedAmount(row.amount)}`;
 }
 
-interface ListedFeeLine {
+export interface ListedFeeLine {
   source_document_id: number | string | null;
   fee_name: string | null;
   amount: number | string | null;
 }
 
 /** Every line Knox read from these documents, for the same-name price check below. */
-async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
   const ids = documentIds.filter((id) => id != null).map(Number);
   if (ids.length === 0) return [];
   try {
@@ -652,7 +684,9 @@ async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | stri
  * fee name twice ("Returned Deposit Fee $10" and "Returned Deposit Fee $3" for two
  * accounts) has two lines, not a price change, whichever document is newer.
  */
-export function listsBothPrices(lines: ListedFeeLine[], row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+export type ListedPrice = RateFields & Pick<VerifiedFeeRow, "fee_name" | "amount" | "source_document_id">;
+
+export function listsBothPrices(lines: ListedFeeLine[], row: ListedPrice, prior: ListedPrice): boolean {
   // Knox's listed lines carry no rate here, so two rates are never read as two lines.
   if (isPercentFee(row) || isPercentFee(prior)) return false;
   const name = normalizedFeeName(row.fee_name);
@@ -711,7 +745,10 @@ async function supersedePriorFee(
         new_amount,
         change_type,
         detected_at,
-        changed_at
+        changed_at,
+        previous_fee_published_id,
+        new_fee_published_id,
+        like_for_like
       )
       VALUES (
         ${Number(options.row.institution_id)},
@@ -722,7 +759,10 @@ async function supersedePriorFee(
         ${newAmount},
         ${changeType},
         NOW(),
-        NOW()
+        NOW(),
+        ${priorId},
+        ${options.feePublishedId},
+        ${samePage(options.row, options.prior)}
       )
     `;
     return true;
@@ -1079,6 +1119,15 @@ export async function runHamiltonPublish(
     options.institutionId,
     options.stateCode,
   );
+  // Publish runs only inside state lanes and single-bank reads, so a verified row used to wait
+  // for its own state's lane to come round (the 100 re-filed returned-check fees sat across 37
+  // states while lanes published 0-44 rows each). A lane whose own queue is short now fills the
+  // rest with the oldest eligible rows from any state, as the release review does.
+  if (options.stateCode && !options.institutionId && selected.length < limit) {
+    const taken = new Set(selected.map((row) => Number(row.fee_verified_id)));
+    const others = await selectVerifiedFees(db, limit - selected.length, learning, minConfidence, minInstitutionFees);
+    selected.push(...others.filter((row) => !taken.has(Number(row.fee_verified_id))));
+  }
   const depthByInstitution = minInstitutionFees > 1
     ? await institutionFeeDepth(
         db,
@@ -1120,7 +1169,7 @@ export async function runHamiltonPublish(
     let result: HamiltonPublishResult;
     // A row whose name contradicts its category (verified before Darwin had the guard)
     // is retired instead of published.
-    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name, { amount: row.amount });
+    const category = checkFeeCategory(row.canonical_fee_key, publishedFeeName(row.fee_name, row.canonical_fee_key), { amount: row.amount });
     if (!category.ok && !dryRun) {
       await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
     }
