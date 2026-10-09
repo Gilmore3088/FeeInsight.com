@@ -117,6 +117,20 @@ describe("Hamilton rules re-check", () => {
     expect(writes).toContain("hamilton.rules_recheck");
   });
 
+  it("re-checks the documents whose last re-check is oldest first, so a Knox bump cannot starve a lane's later documents", async () => {
+    const db = createDbMock([], texts);
+
+    await rollBackUnreproducedFees(asDb(db), { runId: 302, batchId: "agentic-run-302", dryRun: true, stateCode: "WA" });
+
+    const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("ORDER BY pending.second_look_due DESC, last_check.checked_at NULLS FIRST, pending.source_document_id");
+    expect(query).not.toContain("ORDER BY live.source_document_id");
+    // The last re-check counts under any Knox version, never only the current signature.
+    const lateral = query.slice(query.indexOf("LEFT JOIN LATERAL"), query.indexOf("last_check ON TRUE"));
+    expect(lateral).toContain("pa.strategy = $2");
+    expect(lateral).not.toContain("$4");
+  });
+
   it("keeps a fee Knox's learning reader re-filed when today's rules read it under the rejected category", async () => {
     // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
     const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
