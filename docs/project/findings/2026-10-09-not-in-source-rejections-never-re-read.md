@@ -40,7 +40,31 @@ same lesson, "Bond/Coupon Returned Item Fee" $45 under `nsf` (raw 118545 and 277
 are Accuracy's to re-file. Selection order is by the raw row's creation time, so the backlog
 takes about twelve verify steps of 100 before new rows lead again.
 
+## After the re-select ran (10:42 UTC)
+
+UAT drew 20 of the first 36 rows the re-select verified and checked them by hand against the
+source line: 14 right, below the 18-of-20 bar. The dry read above had checked amount and category
+against the matched line; it had not asked whether a $0 reading was the fee at all. Four misses
+were $0 readings of lines that price the fee when a condition is not met ("Bill Pay - FREE with
+E-Statements and Debit Card | $6.95 per Month", 217716, live; "Monthly fee for balance of $500 &
+over | FREE" with $5.00 on the next row, 233082, live; "$0 with $100 minimum daily balance OR
+$2.50/month", 230322), one was a package list ("Includes: Bill Pay E-Statement...") verified into
+the retired `estatement_fee` type (251150), and two carried amounts not on their matched line
+(250826 $10, 226547 $3). Hamilton's publish-time rules would have taken the live ones down after
+the fact; nothing stopped them before verification.
+
+Fix: `postSourceCheck` in `verify.ts` runs after the source check on the matched line and stops a
+retired category (`retired_category`, rejected), a $0 whose own line or excerpt carries a price
+(`conditional_zero`, needs_review) and any of Hamilton's name rules (`name_rule`, rejected). A
+`verify.recheck` pass (`verified-recheck.ts`) reads every row v3 verified once under the same
+checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones go through the
+shared 12-hour second look before rollback. The amount-off-line misses are the source check's
+(Accuracy's `checkFeeAgainstSource`) and are reported there rather than patched here.
+
 ## Lesson
 
 Every rejection that depends on a rule needs a version the rule carries, or the rule's fixes never
 reach the rows they were written for.
+
+A dry read proves the rule it runs; a hand check of what the rule verified is the only proof of
+the verification. The first 20 verified rows get the hand check before the re-select keeps going.

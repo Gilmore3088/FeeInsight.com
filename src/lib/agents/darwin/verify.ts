@@ -7,11 +7,14 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
+import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
+import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
 import { settledFrequency } from "@/lib/fee-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
+import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -96,7 +99,10 @@ export type DarwinReasonCode =
   | "duplicate_in_batch"
   | "duplicate_verified"
   | "percent_not_publishable"
-  | "category_lesson_pending";
+  | "category_lesson_pending"
+  | "retired_category"
+  | "conditional_zero"
+  | "name_rule";
 
 /**
  * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
@@ -119,7 +125,26 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   duplicate_verified: "Duplicate verified row",
   percent_not_publishable: "A rate in a category that does not publish rates (often an interest rate, not a fee)",
   category_lesson_pending: "Fee name belongs to a category the guard does not place it in yet; held until the guard learns it",
+  retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
+  conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
+  name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
 };
+
+const NONZERO_DOLLAR = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
+
+/**
+ * A $0 fee is conditional when the line Knox read it from (or its name) also prices it:
+ * "Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month", "Bill Pay - FREE with
+ * E-Statements and Debit Card | $6.95 per Month", "Monthly fee for balance of $500 & over | FREE"
+ * (the $5 row is the line below). The customer who misses the condition pays the charge, so
+ * $0 is not the fee; the row is held, never verified as free (UAT, 2026-10-09: 4 of 6 wrong rows
+ * in a 20-row check of the not_in_source re-select were $0 readings of priced fees). Pure.
+ */
+export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
+  if (amount !== 0) return false;
+  const text = `${line ?? ""} ${feeName ?? ""}`;
+  return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
+}
 
 /**
  * Category lessons Darwin knows before the shared guard does. The guard
@@ -149,7 +174,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -212,6 +237,7 @@ export interface RunDarwinVerifyResult {
   outcomes: Partial<Record<AttemptOutcome, number>>;
   /** Skipped rows by reason code. */
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
+  recheck: VerifiedRecheckResult | null;
   /** Verified rows that are explicit $0 (free) fees. */
   zeroFeesVerified: number;
   /** Pass 2: rows held for review as far outside their state peers. */
@@ -281,7 +307,7 @@ function stableUuid(value: string): string {
   ].join("-");
 }
 
-function normalizedAmount(value: number | string | null): number | null {
+export function normalizedAmount(value: number | string | null): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -338,6 +364,39 @@ export function statedInOwnSource(
   if (!text) return false;
   const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
   return result.ok || result.reason === "tiered_fee";
+}
+
+/** The schedule line the shared source check traced the fee to, or null when it did not. */
+export function sourceLineFor(
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent">,
+  texts: ReadonlyMap<number, string>,
+  canonicalFeeKey?: string | null,
+): string | null {
+  if (isPercentFee(row)) return null;
+  const amount = normalizedAmount(row.amount);
+  if (amount == null || row.source_document_id == null) return null;
+  const text = texts.get(Number(row.source_document_id));
+  if (!text) return null;
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
+  return result.ok ? result.sourceLine : null;
+}
+
+/**
+ * The checks a verified row must still pass after the shared source check has traced it:
+ * a live category, not a conditional $0, and none of the name rules Hamilton takes a live fee
+ * down for (`ruleFor`), applied before the row is verified instead of after it is published.
+ * `line` is the traced schedule line, else Knox's excerpt. Pure.
+ */
+export function postSourceCheck(
+  canonicalFeeKey: string,
+  feeName: string,
+  amount: number | null,
+  line: string | null,
+): { code: "retired_category" | "conditional_zero" | "name_rule"; rule?: string } | null {
+  if (canonicalFeeKey in RETIRED_CATEGORIES) return { code: "retired_category" };
+  if (conditionalZero(amount, line, feeName)) return { code: "conditional_zero" };
+  const rule = ruleFor(canonicalFeeKey, feeName, amount, line);
+  return rule ? { code: "name_rule", rule } : null;
 }
 
 /** The newest completed text of each document, as Hamilton's source check reads it. */
@@ -853,6 +912,11 @@ export async function runDarwinVerify(
     const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
     if (categoryHold) reasonCode = "category_lesson_pending";
     if (!reasonCode && !statedInOwnSource(row, sourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
+    // Traced to its line: the line must also price it as read, in a live category, under
+    // Hamilton's own name rules (2026-10-09: the re-select verified "$0 if condition" fees).
+    const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, sourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
+    const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine);
+    if (postCheck) reasonCode = postCheck.code;
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }
@@ -901,7 +965,9 @@ export async function runDarwinVerify(
         reasonCode: code,
         reason: code === "peer_outlier" && peer && base.amount != null
           ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
-          : DARWIN_REASON_TEXT[code],
+          : code === "name_rule" && postCheck?.rule
+            ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
+            : DARWIN_REASON_TEXT[code],
         feeVerifiedId: null,
         peerCheck: peer,
         secondSource,
@@ -960,6 +1026,8 @@ export async function runDarwinVerify(
           category_hold: categoryHold
             ? { filed_as: categoryHold.filedAs, should_be: categoryHold.shouldBe, since: categoryHold.since }
             : undefined,
+          name_rule: postCheck?.rule,
+          source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
           amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
             ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
             : undefined,
@@ -986,6 +1054,14 @@ export async function runDarwinVerify(
     if (result.reasonCode) reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] ?? 0) + 1;
   }
 
+  // Darwin's second look at rows it verified earlier under weaker checks (verified-recheck.ts).
+  const recheck = learning
+    ? await recheckVerifiedFees(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
+        console.warn("[darwin] verified recheck failed", error instanceof Error ? error.message : error);
+        return null;
+      })
+    : null;
+
   return {
     selectedRawFees: rows.length,
     processedRawFees: results.length,
@@ -996,6 +1072,7 @@ export async function runDarwinVerify(
     learning,
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
+    recheck,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
     peerFallbackChecks: results.filter((result) => result.peerCheck && result.peerCheck.scope !== "state").length,
