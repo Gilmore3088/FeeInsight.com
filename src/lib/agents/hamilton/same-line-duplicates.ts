@@ -40,11 +40,22 @@ export const SOURCE_CHECKED_SEPARATE_LINES: ReadonlyMap<number, string> = new Ma
 ]);
 
 /**
- * Flagged fees whose older twin is the bad read (UAT, 9 Oct): the newer row stays live and the
- * older one goes through the second look instead. 14458's name runs three lines together
- * ("ACH, one-time from Credit Card, ... Night Deposit Ba").
+ * Live repeats found by review, outside the re-decide's own publishes, each mapped to the line
+ * that stays (9 Oct). Each repeat goes through the second look like any other; the line that
+ * stays is never flagged as a repeat of it.
+ * - 14458 runs three lines together ("ACH, one-time ... Night Deposit Ba"); 104758 is the clean
+ *   read (UAT).
+ * - 83889 "Returned Items: Monthly Fee" $15 is the $15 monthly fee line read under a carried-in
+ *   heading; 83890 names its balance (Data inventory).
+ * - 87575 "ATM TransacƟon Fee" $3 repeats 85596 "ATM Transaction Fee" $3 from a sibling copy of
+ *   the same schedule at institution 175 (Data inventory).
  */
-export const GARBLED_OLDER_TWINS: ReadonlyMap<number, number> = new Map([[104758, 14458]]);
+export const REVIEWED_REPEATS: ReadonlyMap<number, number> = new Map([
+  [14458, 104758],
+  [83889, 83890],
+  [87575, 85596],
+]);
+const KEPT_LINES = new Set(REVIEWED_REPEATS.values());
 
 type CandidateRow = VerifiedFeeRow & { fee_published_id: number | string };
 
@@ -121,22 +132,8 @@ export async function retireSameLineDuplicates(
   const passing: number[] = [];
   for (const row of rows) {
     const feePublishedId = Number(row.fee_published_id);
-    const garbled = GARBLED_OLDER_TWINS.get(feePublishedId);
-    if (garbled != null) {
+    if (KEPT_LINES.has(feePublishedId)) {
       passing.push(feePublishedId);
-      const twin = await liveTwin(db, garbled);
-      if (twin) {
-        failing.push({
-          feePublishedId: garbled,
-          feeVerifiedId: twin.feeVerifiedId,
-          institutionId: Number(row.institution_id),
-          canonicalFeeKey: row.canonical_fee_key,
-          amount: num(row.amount),
-          sourceDocumentId: num(row.source_document_id),
-          olderFeePublishedId: feePublishedId,
-          reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${feePublishedId}`,
-        });
-      }
       continue;
     }
     const older = SOURCE_CHECKED_SEPARATE_LINES.has(feePublishedId) ? null : await sameLineDuplicateOf(db, row, feePublishedId);
@@ -154,6 +151,10 @@ export async function retireSameLineDuplicates(
       olderFeePublishedId: older,
       reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${older}`,
     });
+  }
+  for (const [repeat, kept] of REVIEWED_REPEATS) {
+    const twin = await liveRepeat(db, repeat, kept);
+    if (twin) failing.push({ ...twin, reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${kept}` });
   }
   result.duplicates = failing.length;
 
@@ -221,16 +222,33 @@ export async function retireSameLineDuplicates(
   return result;
 }
 
-/** A live fee's verified row, for a garbled twin taken down in place of the newer read. */
-async function liveTwin(db: SqlTag, feePublishedId: number): Promise<{ feeVerifiedId: number } | null> {
+/** A reviewed repeat while both it and the line that stays are live. */
+async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Promise<Omit<SameLineDuplicate, "reason"> | null> {
   try {
-    const [twin] = await inSavepoint(db, (scope) => scope<{ lineage_ref: number | string }[]>`
-      SELECT lineage_ref FROM published_fee_records
-       WHERE fee_published_id = ${feePublishedId} AND rolled_back_at IS NULL
+    const [row] = await inSavepoint(db, (scope) => scope<{
+      lineage_ref: number | string; institution_id: number | string; canonical_fee_key: string;
+      amount: number | string | null; source_document_id: number | string | null;
+    }[]>`
+      SELECT fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.amount, fr.source_document_id
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.fee_published_id = ${feePublishedId}
+         AND fp.rolled_back_at IS NULL
+         AND EXISTS (SELECT 1 FROM published_fee_records k WHERE k.fee_published_id = ${kept} AND k.rolled_back_at IS NULL)
     `);
-    return twin ? { feeVerifiedId: Number(twin.lineage_ref) } : null;
+    if (!row) return null;
+    return {
+      feePublishedId,
+      feeVerifiedId: Number(row.lineage_ref),
+      institutionId: Number(row.institution_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      amount: num(row.amount),
+      sourceDocumentId: num(row.source_document_id),
+      olderFeePublishedId: kept,
+    };
   } catch (error) {
-    console.error("liveTwin read failed:", error);
+    console.error("liveRepeat read failed:", error);
     return null;
   }
 }
