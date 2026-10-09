@@ -1,3 +1,4 @@
+import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
@@ -352,6 +353,11 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
       expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+      // A hold outside a hand-set envelope is re-checked once today's envelope takes the amount.
+      expect(query).toContain("pa.detail->>'reason_code' = 'outside_envelope'");
+      expect(query).toContain("->>'min')::numeric");
+      expect(params).toContain(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES));
+      expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
     });
 
     it("records the learned category model's dispute without changing the decision", async () => {
