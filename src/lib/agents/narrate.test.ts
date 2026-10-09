@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { narrateEvent, narrateStepFinished } from "./narrate";
 
 describe("narrateStepFinished", () => {
+  it("names the cap that stopped a paid pass", () => {
+    expect(narrateStepFinished("discover-paid", {
+      processed: 29, succeeded: 6, cost_microusd: 1_370_000, budget_stopped: true,
+      budget_reason: "Per-run spend cap agent:magellan (agent magellan) reached in run 3155: $1.37 used of $1.25 by magellan in this run; a new run starts at $0.",
+    }, "KS")).toBe(
+      "Paid pass to find fee schedules in KS: 6 of 29 succeeded for $1.37; then stopped: Per-run spend cap agent:magellan (agent magellan) reached in run 3155: $1.37 used of $1.25 by magellan in this run; a new run starts at $0.",
+    );
+    expect(narrateStepFinished("discover-paid", { processed: 2, succeeded: 1, cost_microusd: 0, budget_stopped: true }, "KS"))
+      .toBe("Paid pass to find fee schedules in KS: 1 of 2 succeeded for $0.00; then stopped: a budget cap (which cap was not recorded).");
+  });
+
   it("describes Magellan downloads with failures and skips", () => {
     expect(narrateStepFinished("fetch", {
       processed_institutions: 25, fetched_documents: 21, failed_fetches: 3, skipped_fetches: 1,
