@@ -26,20 +26,18 @@ describe("subscribeReason", () => {
     expect(subscribeReasonLine("pro_required", "Fee Insight", "/somewhere")).toContain("Hamilton is part of");
   });
 
-  it("leads with the gated page's own headline from a fixed list, never from URL text", () => {
+  it("places the gated page inside Pro from a fixed list, never from URL text", () => {
     expect(subscribeEntry("/pro/news", "Fee Insight")).toEqual({
       page: "Regulatory Wire",
-      headline: "Unlock Regulatory Wire",
-      pillar: "wire",
+      context: "Regulatory Wire is included with Fee Insight Pro",
     });
-    expect(subscribeEntry("/pro/simulate?fee=nsf", "Fee Insight").headline).toBe("Model potential fee changes");
+    expect(subscribeEntry("/pro/simulate?fee=nsf", "Fee Insight").context).toBe("Explore pricing scenarios with Fee Insight Pro");
     expect(subscribeEntry("/pro/research", "Fee Insight")).toEqual({
       page: "My fees",
-      headline: "Unlock Fee Insight Pro",
-      pillar: "intelligence",
+      context: "My fees is included with Fee Insight Pro",
     });
-    const direct = "Know what's changing. Understand what matters.";
-    expect(subscribeEntry("/pro/<script>", "Fee Insight").headline).toBe(direct);
-    expect(subscribeEntry(null, "Fee Insight")).toEqual({ page: null, headline: direct, pillar: null });
+    const direct = "Discover everything included with Fee Insight Pro";
+    expect(subscribeEntry("/pro/<script>", "Fee Insight").context).toBe(direct);
+    expect(subscribeEntry(null, "Fee Insight")).toEqual({ page: null, context: direct });
   });
 });

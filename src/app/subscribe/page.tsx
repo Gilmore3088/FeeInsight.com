@@ -12,17 +12,21 @@ import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { gatedPageLabel, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
-import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
+import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { EverythingInPro, ProBenefits, WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
+import { EverythingInPro, ProPillars, WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
 import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
 import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
 import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
-import { buildFeeDataStrips, categoriesForFeeTypes } from "@/lib/regulatory/wire-fee-links";
+import { buildFeeDataStrips, categoriesForFeeTypes, categoryLabel } from "@/lib/regulatory/wire-fee-links";
 import { feeTypesOf, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { STATE_NAMES } from "@/lib/us-states";
+import { getCategoryChargeBases, getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { getInstitutionFees } from "@/lib/data-store/institution";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { compareSelectedInstitutionFees } from "@/lib/hamilton/report-evidence";
+import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
@@ -132,6 +136,74 @@ async function wirePreviewData(): Promise<WirePreviewData> {
   return { lead: { ...releases[0], officialTitle: null, place: null, figures: [] }, items: releases.slice(1, 3) };
 }
 
+/** The fees the benchmark preview shows first, in banker words. */
+const BENCHMARK_FEES: { category: string; label: string }[] = [
+  { category: "overdraft", label: "Overdraft" },
+  { category: "nsf", label: "NSF / returned item" },
+  { category: "monthly_maintenance", label: "Monthly maintenance" },
+  { category: "stop_payment", label: "Stop payment" },
+  { category: "wire_domestic_outgoing", label: "Domestic wire, outgoing" },
+];
+const BENCHMARK_ROWS = 5;
+
+/**
+ * The benchmark preview's rows, all read live: the national index, and for a chosen
+ * institution its own published fees compared like for like (compareSelectedInstitutionFees,
+ * the same comparison Pro reports use). Empty if the index can't be read.
+ */
+async function benchmarkRows(institutionId: number | null): Promise<BenchmarkRow[]> {
+  const national = await getNationalIndexCached().catch(() => []);
+  const usable = new Map(
+    national
+      .filter((e) => e.median_amount !== null && e.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN)
+      .map((e) => [e.fee_category, e]),
+  );
+  const row = (category: string, label: string): BenchmarkRow | null => {
+    const entry = usable.get(category);
+    if (!entry || entry.median_amount === null) return null;
+    return {
+      category,
+      label,
+      median: Number(entry.median_amount),
+      p25: entry.p25_amount === null ? null : Number(entry.p25_amount),
+      p75: entry.p75_amount === null ? null : Number(entry.p75_amount),
+      institutions: entry.institution_count,
+      value: null,
+      position: null,
+    };
+  };
+  const base = BENCHMARK_FEES.map((f) => row(f.category, f.label)).filter((r): r is BenchmarkRow => r !== null);
+  if (!institutionId || base.length === 0) return base.slice(0, BENCHMARK_ROWS);
+
+  const [fees, bases] = await Promise.all([
+    getInstitutionFees(institutionId).catch(() => []),
+    getCategoryChargeBases().catch(() => null),
+  ]);
+  const { deltas } = compareSelectedInstitutionFees({
+    selectedFees: fees,
+    indexEntries: [...usable.values()],
+    chargeBases: bases,
+    evidencePolicy: "verified-only",
+  });
+  const byCategory = new Map(deltas.map((d) => [d.fee_category, d]));
+  const withValue = (r: BenchmarkRow): BenchmarkRow => {
+    const d = byCategory.get(r.category);
+    if (!d) return r;
+    const position = d.position === "above_peer_median" ? "above" : d.position === "below_peer_median" ? "below" : "at";
+    return { ...r, value: d.institution_amount, position };
+  };
+  // The institution's own compared fees first (headline fees, then the most common), then the rest.
+  const headline = base.map(withValue).filter((r) => r.value !== null);
+  const more = deltas
+    .filter((d) => !BENCHMARK_FEES.some((f) => f.category === d.fee_category))
+    .sort((a, b) => b.institution_count - a.institution_count)
+    .map((d) => row(d.fee_category, categoryLabel(d.fee_category)))
+    .filter((r): r is BenchmarkRow => r !== null)
+    .map(withValue);
+  const rest = base.filter((r) => !byCategory.has(r.category));
+  return [...headline, ...more, ...rest].slice(0, BENCHMARK_ROWS);
+}
+
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
@@ -233,6 +305,8 @@ export default async function SubscribePage({
     chosenLabel = "A consultant or another organization";
   }
 
+  const benchmark = await benchmarkRows(pricingInstitution ? pricingInstitution.id : null);
+
   const registerHrefFor = (plan: ProPlan) => {
     const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
     return `/register?plan=${plan}&from=${encodeURIComponent(back)}`;
@@ -244,12 +318,10 @@ export default async function SubscribePage({
     requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
-  // A Wire visitor sees the Wire; everyone else sees the benchmark from the sample report.
   const wirePreview = wire.lead ? <WirePreview lead={wire.lead} items={wire.items} /> : null;
   // Sent with every funnel event so conversion can be read by entry point (James, 9 Oct 2026).
   const entryPoint = entry.page ?? "direct";
-  const preview =
-    entry.pillar === "wire" || !SAMPLE_REPORT_LIVE ? (wirePreview ?? <HamiltonBenchmarkPreview />) : <HamiltonBenchmarkPreview />;
+  const benchmarkInstitution = selection?.institutionId && pricingInstitution ? chosenLabel : null;
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
@@ -289,20 +361,17 @@ export default async function SubscribePage({
         <section id="pro" aria-labelledby="pro-title" className="grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14">
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           <div className="lg:col-start-1 lg:row-start-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
-              {gated ? `One step away from ${entry.page}` : `${SITE_NAME} Pro`}
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{entry.context}</p>
             <h1
               id="pro-title"
               className="mt-3 text-4xl font-normal leading-[1.08] tracking-tight text-[#1A1815] sm:text-5xl"
               style={SERIF}
             >
-              {entry.headline}
+              Understand your fees. Know your market.
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
-              {gated
-                ? `Follow regulatory developments, benchmark published fees, and turn research into decisions with ${SITE_NAME} Pro.`
-                : `Regulatory intelligence and competitive fee research for banks and credit unions, in Hamilton, the ${SITE_NAME} Pro workspace.`}
+              {SITE_NAME} Pro helps banks and credit unions benchmark published fees, explore scenarios, monitor
+              changes, and produce source-backed research.
             </p>
             <div className="mt-6 lg:hidden">
               <p className="text-sm text-[#3D3833]">
@@ -316,7 +385,11 @@ export default async function SubscribePage({
                 Find your institution &amp; see pricing
               </a>
             </div>
-            <div className="mt-8">{preview}</div>
+            {benchmark.length > 0 && (
+              <div className="mt-8">
+                <BenchmarkPreview institution={benchmarkInstitution} rows={benchmark} />
+              </div>
+            )}
           </div>
 
           <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
@@ -351,9 +424,28 @@ export default async function SubscribePage({
           </div>
 
           <div className="lg:col-start-1 lg:row-start-2">
-            <ProBenefits lead={entry.pillar} />
+            <ProPillars />
           </div>
         </section>
+
+        {wirePreview && (
+          <section
+            aria-labelledby="wire-heading"
+            className="mt-20 grid gap-8 border-t border-[#E8E1D6] pt-14 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
+          >
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Included in Pro</p>
+              <h2 id="wire-heading" className="mt-2 text-2xl text-[#1A1815]" style={SERIF}>
+                Regulatory Wire, beside the fee data
+              </h2>
+              <p className="mt-3 text-[15px] leading-relaxed text-[#3D3833]">
+                Federal releases and state bills that touch bank fees, in one feed. When an item names a fee, the
+                Wire shows what institutions publish for it, so a rule or bill comes with its market context.
+              </p>
+            </div>
+            {wirePreview}
+          </section>
+        )}
 
         <div className="mt-20 border-t border-[#E8E1D6] pt-14">
           <EverythingInPro />

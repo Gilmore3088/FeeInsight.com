@@ -40,34 +40,31 @@ export function gatedPageLabel(from: string | null | undefined): string | null {
 }
 
 /**
- * What /subscribe leads with for a visitor sent from a Pro page (James, 9 Oct 2026). A fixed
- * list of routes, so no headline is ever built from URL text. `pillar` is the benefit listed
- * first on the page (ProBenefits).
+ * The line above /subscribe's headline for a visitor sent from a Pro page (James, 9 Oct 2026):
+ * the page they wanted, placed inside Pro. The headline itself is the same for everyone, so
+ * no one feature is sold as the product. A fixed list of routes; no text comes from the URL.
  */
-const ENTRY_POINTS: { path: string; headline: string; pillar: string }[] = [
-  { path: "/pro/news", headline: "Unlock Regulatory Wire", pillar: "wire" },
-  { path: "/pro/analyze", headline: "Unlock Hamilton analysis", pillar: "analysis" },
-  { path: "/pro/reports", headline: "Create board-ready fee reports", pillar: "analysis" },
-  { path: "/pro/simulate", headline: "Model potential fee changes", pillar: "analysis" },
-  { path: "/pro/monitor", headline: "Monitor competitor fee activity", pillar: "intelligence" },
+const ENTRY_POINTS: { path: string; context: (siteName: string) => string }[] = [
+  { path: "/pro/news", context: (site) => `Regulatory Wire is included with ${site} Pro` },
+  { path: "/pro/analyze", context: (site) => `Hamilton analysis is included with ${site} Pro` },
+  { path: "/pro/reports", context: (site) => `Generate reports with ${site} Pro` },
+  { path: "/pro/simulate", context: (site) => `Explore pricing scenarios with ${site} Pro` },
+  { path: "/pro/monitor", context: (site) => `Monitor published fee changes with ${site} Pro` },
 ];
 
 export interface SubscribeEntry {
   /** The Pro page the visitor tried to open, or null for a direct visit. */
   page: string | null;
-  headline: string;
-  /** ProBenefits key to list first, or null. */
-  pillar: string | null;
+  /** The line above the headline. */
+  context: string;
 }
 
 export function subscribeEntry(from: string | null | undefined, siteName: string): SubscribeEntry {
   const page = gatedPageLabel(from);
-  if (!from || !page) return { page: null, headline: "Know what's changing. Understand what matters.", pillar: null };
+  if (!from || !page) return { page: null, context: `Discover everything included with ${siteName} Pro` };
   const path = pathOf(from);
   const entry = ENTRY_POINTS.find((point) => underPath(path, point.path));
-  return entry
-    ? { page, headline: entry.headline, pillar: entry.pillar }
-    : { page, headline: `Unlock ${siteName} Pro`, pillar: "intelligence" };
+  return { page, context: entry ? entry.context(siteName) : `${page} is included with ${siteName} Pro` };
 }
 
 export function subscribeReasonLine(reason: string | undefined, siteName: string, from?: string | null): string | null {

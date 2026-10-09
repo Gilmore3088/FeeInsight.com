@@ -124,33 +124,33 @@ export function WirePreview({ lead, items }: { lead: WirePreviewLead | null; ite
   );
 }
 
-const BENEFITS = [
+const PILLARS = [
   {
-    key: "wire",
-    title: "Regulatory developments",
-    body: "Federal rules and state bills that touch bank fees, in one feed.",
+    title: "Benchmark",
+    body: "See how published fees compare against selected competitors, markets and peer groups.",
   },
   {
-    key: "intelligence",
-    title: "Competitive benchmarking",
-    body: "Your published fees against the peers you choose, with the filings behind each one.",
+    title: "Analyze",
+    body: "Use Hamilton to investigate pricing structures and try illustrative fee scenarios.",
   },
   {
-    key: "analysis",
-    title: "Hamilton analysis",
-    body: "Ask about any institution, test a price, and take a board-ready report to committee.",
+    title: "Monitor",
+    body: "Track competitor fee changes and the regulatory developments in Regulatory Wire.",
+  },
+  {
+    title: "Report",
+    body: "Produce source-backed research for pricing committees, management and the board.",
   },
 ] as const;
 
-/** Three short reasons to buy; `lead` (a benefit key) goes first. */
-export function ProBenefits({ lead }: { lead: string | null }) {
-  const ordered = [...BENEFITS].sort((a, b) => Number(b.key === lead) - Number(a.key === lead));
+/** Pro as one platform in four parts (James, 9 Oct 2026); Regulatory Wire sits under Monitor. */
+export function ProPillars() {
   return (
-    <ul className="grid gap-5 sm:grid-cols-3">
-      {ordered.map((benefit) => (
-        <li key={benefit.key}>
-          <p className="text-base font-semibold text-[#1A1815]">{benefit.title}</p>
-          <p className="mt-1 text-[15px] leading-relaxed text-[#3D3833]">{benefit.body}</p>
+    <ul className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+      {PILLARS.map((pillar) => (
+        <li key={pillar.title} className="border-t-2 border-[#C44B2E] pt-3">
+          <p className="text-base font-semibold text-[#1A1815]">{pillar.title}</p>
+          <p className="mt-1 text-[15px] leading-relaxed text-[#3D3833]">{pillar.body}</p>
         </li>
       ))}
     </ul>
