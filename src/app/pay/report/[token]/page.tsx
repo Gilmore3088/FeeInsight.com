@@ -128,33 +128,42 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
         onceKey={`report-pay:${lead.id}:${paid ? "paid" : "view"}`}
       />
       <ReportChrome preparedFor={institution.name} />
-      <main className="mx-auto max-w-2xl px-4 pb-24 pt-10 sm:px-6">
+      <main className={paid ? "mx-auto max-w-page px-6 pb-16 pt-8" : "mx-auto max-w-2xl px-4 pb-24 pt-10 sm:px-6"}>
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
-        <h1 className="mt-2 text-[1.6rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[2rem]" style={SERIF}>
+        <h1 className="mt-2 break-words text-[1.6rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[2rem]" style={SERIF}>
           {institution.name}
         </h1>
         {place && <p className="mt-1 text-[14px] text-[#5A5347]">{place}</p>}
 
         {paid ? (
-          <section className={`mt-8 ${CARD}`} aria-labelledby="paid-heading">
-            <h2 id="paid-heading" className="text-xl text-[#1A1815]" style={SERIF}>
-              Payment received. Thank you.
-            </h2>
-            {reportUrl ? (
-              <>
-                <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
-                  Your report is ready. The link is private to you and works for {LINK_LIFETIME_DAYS} days; we also
-                  emailed it to {lead.email}. Stripe emails your receipt.
-                </p>
-                <a href={reportUrl} className={`mt-5 ${BUTTON}`}>
-                  Open your report
-                </a>
-              </>
-            ) : (
-              <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
-                We will email your report link to {lead.email} within one business day. Stripe emails your receipt.
+          <section className={`mt-6 ${CARD}`} aria-labelledby="paid-heading">
+            <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-10">
+              <div className="min-w-0">
+                <h2 id="paid-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+                  Payment received. Thank you.
+                </h2>
+                {reportUrl && (
+                  <>
+                    <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">Your report is ready.</p>
+                    <a href={reportUrl} className={`mt-5 ${BUTTON}`}>
+                      Open your report
+                    </a>
+                  </>
+                )}
+              </div>
+              <p className="min-w-0 break-words text-[15px] leading-relaxed text-[#5A5347]">
+                {reportUrl ? (
+                  <>
+                    The link is private to you and works for {LINK_LIFETIME_DAYS} days; we also
+                    emailed it to {lead.email}. Stripe emails your receipt.
+                  </>
+                ) : (
+                  <>
+                    We will email your report link to {lead.email} within one business day. Stripe emails your receipt.
+                  </>
+                )}
               </p>
-            )}
+            </div>
           </section>
         ) : !buyable ? (
           <section className={`mt-8 ${CARD}`} aria-labelledby="hold-heading">
@@ -246,7 +255,7 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
             </p>
           </>
         )}
-        <p className="mt-10 text-[12px] leading-relaxed text-[#6B6255]">
+        <p className={`${paid ? "mt-6" : "mt-10"} text-[12px] leading-relaxed text-[#6B6255]`}>
           The report is compiled from each institution&apos;s published fee schedule. It is market information, not
           financial, legal or compliance advice; confirm current fees with the institution.
         </p>
