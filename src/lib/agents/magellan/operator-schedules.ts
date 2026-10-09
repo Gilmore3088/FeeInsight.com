@@ -524,7 +524,6 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   // amount published (2026-10-09 00:57). The paid companion fetch reads the blocked pages.
   ...([
     [276, "Bridgewater Bank", "https://www.bridgewaterbankmn.com/personal-banking/personal-deposits/interest-checking"],
-    [276, "Bridgewater Bank", "https://www.bridgewaterbankmn.com/personal-banking/personal-deposits/checking"],
     [295, "Dacotah Bank", "https://www.dacotahbank.com/personal-checking-and-debit"],
   ] as const).map(([institutionId, institutionName, url]) => ({
     institutionId,
