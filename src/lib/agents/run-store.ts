@@ -75,6 +75,7 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -1871,6 +1872,29 @@ async function executeAgenticStep(
           by_document_type: score?.byDocumentType ?? {},
           by_category: score?.byCategory ?? {},
           dry_run: result.dryRun,
+        },
+      };
+    }
+    case "deming-regression": {
+      const result = await runDemingRegression({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      return {
+        status: "completed",
+        summary: summarizeDemingRegression(result),
+        detail: {
+          version: DEMING_REGRESSION_VERSION,
+          schema_ready: result.schemaReady,
+          dry_run: result.dryRun,
+          promoted: result.promoted,
+          promoted_active: result.promotedActive,
+          promoted_by_severity: result.promotedBySeverity,
+          replayed: result.replayed,
+          caught: result.caught,
+          regressions: result.regressions.length,
+          regression_cases: result.regressions.slice(0, 50),
+          activated: result.activated,
+          retired: result.retired,
+          active_total: result.activeTotal,
+          candidate_total: result.candidateTotal,
         },
       };
     }
