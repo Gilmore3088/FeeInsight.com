@@ -21,6 +21,12 @@ it was unfetched. Fix: the picker's unread-document tier (paid fetch) now also c
 fetched from hand-found links, and a dormant bank with a hand-found link can get its run. The paid
 fetch for blocked companion links admits the same dormant case (Stock Yards' syb.com answered 403).
 
+## 2026-10-09: The companion search stopped running on Oct 7
+**What happened:** `pipeline_attempts` holds no `discover.second_document` row after 07:00 UTC Oct 7, through 00:20 UTC Oct 9, while discover steps kept completing (1,126 in all). At 00:20 Oct 9, top-10 banks such as American Savings (HI), Trustone (MN), First Community (WV), Dupaco (IA), Hawaii State FCU and Yellowstone (MT) had a verified overdraft fee but fewer than 3 fee categories, so Hamilton held it, and the search that finds the rest of their schedule had not run for them.
+**Cause:** discovery stopped starting banks at 75 s and ran the companion search only if the bank loop had ended before 75 s. Once the queue had enough banks to fill every step (steps ran 82 to 104 s on Oct 8), the loop always ran past 75 s and the search never started.
+**Fix:** each discover step keeps its last 25 s for the companion search (`COMPANION_RESERVE_MS`): banks stop starting at 50 s and stop running at 75 s, and the search runs until the step's 100 s limit (this PR).
+**Lesson:** work that runs "with whatever time is left" needs its own reserved slice, plus a count that shows when it stops: check its attempt rows by hour after any change to the step.
+
 ## 2026-10-08: Seven of the "192 $10B+ banks" are closed charters
 **What happened:** the large-bank overdraft count (106 of 192 at 23:25 UTC) counts every `institution_sources` row at $10B+ in assets. Seven are marked closed by the FDIC or NCUA registry sync (`regulatory_status = 'inactive'`): Webster Bank (closed 2026-08-20), Comerica Bank and Cadence Bank (2026-02-01), FirstBank of Colorado (2026-06-18), First Foundation Bank (2026-04-01), Stellar Bank (2026-07-01) and First Technology FCU (no closed date; NCUA's list no longer has its charter). Six of the seven have no live overdraft fee, and companion fetch skips inactive banks, so their hand-found schedules never fetched. Stock Yards ($10B) is `dormant`, which companion fetch also skipped.
 **Cause:** the count's denominator was never filtered on registry status; the merged banks' fees now belong to the acquirers' charters.
