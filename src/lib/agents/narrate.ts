@@ -227,6 +227,11 @@ function narrateFinished(
     }
     case "hamilton-answer-eval":
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "deming-regression": {
+      if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
+      const regressions = n(detail, "regressions");
+      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
+    }
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
@@ -557,6 +562,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-send": "growth",
   "marketing-states": "growth",
   "score-answer-key": "atlas",
+  "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",

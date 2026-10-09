@@ -523,7 +523,7 @@ export const API_ROUTE_POLICIES = [
     telemetryEvent: "api.admin.crew.scoreboard",
     failBehavior: "fail_closed",
     auditPriority: "medium",
-    notes: "Daily Atlas answer-key score and scoreboard snapshot; one visible run per day, no provider calls.",
+    notes: "Daily Atlas answer-key score, Deming regression replay and scoreboard snapshot; one visible run per day, no provider calls.",
   },
   {
     routeId: "api.admin.crew.studies",
