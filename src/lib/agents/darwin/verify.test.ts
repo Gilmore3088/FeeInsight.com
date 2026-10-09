@@ -400,6 +400,19 @@ describe("Darwin agentic verification", () => {
       expect(conditionalZero(0, "Replacement ATM Card/PIN ........ $3.50 | Member ........ N/C", "Notary Service: Member")).toBe(false);
       expect(conditionalZero(0, "Gift Card Fee…………. $3.00 per Card | Notary/ Medallion Signature Fee ………FREE", "Notary/ Medallion Signature Fee")).toBe(false);
       expect(conditionalZero(0, "Share Draft Copy | FREE online | Cash Advance Fee 2.00% or $10", "Share Draft Copy")).toBe(false);
+      // A comma list or a dot-leader run is cells too; a line with no word of the name prices nothing.
+      expect(conditionalZero(0, "FREE Debit Card, FREE Online Banking, FREE Bill Pay, FREE eStatements, Buy back of unused checks up to $10 within 30 days", "Bill Pay")).toBe(false);
+      expect(conditionalZero(0, "Closure (the first 90 days)………. $10.00 per Acct Coin Acceptance Rolled………………….4% of Deposit Garnish & Levy Fee ……………………$25.00 per Item", "Occurrence Notary/ Medallion Signature Fee")).toBe(false);
+      expect(conditionalZero(0, "Levies and Writs per document $75", "Notary Fee")).toBe(false);
+      // UAT takedown check 7/10 (2026-10-09): member tiers, comparison-table columns, other labels in the cell.
+      expect(conditionalZero(0, "Notary Fee | $0 - Members $5 - Non-Members", "Notary Fee")).toBe(false);
+      expect(conditionalZero(0, "Notary Service | Members: Free, Non-members: $10 per signature", "Notary Service")).toBe(false);
+      expect(conditionalZero(0, "Monthly fee | $0 | $5* | $0", "Monthly fee")).toBe(false);
+      expect(conditionalZero(0, "Fees and Requirements | Monthly Service Charge: FREE Minimum Balance: $1.00 Minimum deposit to open: $0 | Monthly Balance Fee: $7.50 if balance falls below $1.00", "Monthly Service Charge")).toBe(false);
+      expect(conditionalZero(0, "Monthly Service Charge: $0 with $500 balance, otherwise $7.50 Minimum deposit to open: $25", "Monthly Service Charge")).toBe(true);
+      expect(conditionalZero(0, "No monthly service fee and just $1 minimum opening requirement.", "No Monthly Service Fee")).toBe(false);
+      expect(conditionalZero(0, "Monthly Service Fee: $0 Minimum to open: $50", "Monthly Service Fee")).toBe(false);
+      expect(conditionalZero(0, "$2.00 Monthly Service Charge7. Service charge waived for clients age 18 and under.", "Service Charge7. Service charge waived for clients age 18 and under.")).toBe(true);
       // The fee's own price cell still counts, as does a balance band in its own cell.
       expect(conditionalZero(0, "Paper Statement | FREE with e-statements | $2.00 per month", "Paper Statement")).toBe(false);
       expect(conditionalZero(0, "Monthly fee for balance of $500 & over | FREE", "Monthly fee for balance of & over")).toBe(true);
