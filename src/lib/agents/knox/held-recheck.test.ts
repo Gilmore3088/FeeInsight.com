@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   HELD_SET_ASIDE_FLAG,
   heldExcerpt,
+  heldHint,
   heldConditions,
   heldRecheckFlag,
   promotedConditions,
@@ -12,6 +13,9 @@ import {
   recategorizeHeld,
   recheckHeldRows,
   recheckPromotedRows,
+  recheckUntracedRows,
+  tracedRead,
+  untracedRecheckFlag,
   versionsChecked,
 } from "./held-recheck";
 
@@ -213,5 +217,56 @@ describe("Knox held-line re-check", () => {
     const result = await recheckPromotedRows(db as unknown as Db, { dryRun: true });
     expect(result).toMatchObject({ checked: 1, withdrawn: 1, logged: 0, dryRun: true });
     expect(db).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("untraced held lines re-traced with today's rules (Arvest 78, raw 449097)", () => {
+  const arvestText = [
+    "| Fax Outgoing | Long Distance | $5.00 | per fax request |",
+    `| Overdraft (OD) - Paid Item | A fee may be charged, when permitted by law, for each transaction presented to us for payment when the balance in your account after we post all credits and debits for the day ("Ledger Balance") is less than the amount we need to pay your transaction. For all consumer accounts, we will assess a maximum of four (4) OD fees per day. We do not charge a fee if we return the transaction unpaid. | $17.00 | per item |`,
+    "| Stop Payment Order | Initial order or a renewal | $30.00 | per item |",
+  ].join("\n");
+  const untraced = {
+    fee_raw_id: 449097,
+    amount: "17.00",
+    fee_name: "Overdraft (OD) - Paid Item",
+    conditions: 'Knox held for review (untraced) from Rosetta artifact #20469. canonical_hint=overdraft; text_hash=948e; excerpt="count after we post all credits"',
+    outlier_flags: ["knox_review:untraced"],
+    document_text_id: 20469,
+  };
+
+  it("reads the held row's category", () => {
+    expect(heldHint(untraced.conditions)).toBe("overdraft");
+    expect(heldHint("canonical_hint=none; text_hash=abc;")).toBeNull();
+  });
+
+  it("promotes a row only when today's rules trace the same name, amount and category", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn(async (strings: unknown, ...values: unknown[]) => {
+      const text = templateText(strings);
+      calls.push({ text, values });
+      if (text.includes("FROM raw_fee_observations fr") && text.includes("knox_review:untraced") && text.includes("SELECT")) {
+        return [untraced, { ...untraced, fee_raw_id: 449098, amount: "35.00" }];
+      }
+      if (text.includes("SELECT id, normalized_text")) return [{ id: 20469, normalized_text: arvestText }];
+      if (text.includes("UPDATE raw_fee_observations fr")) return [{ fee_raw_id: values.at(-1) ?? 449097 }];
+      return [];
+    });
+
+    const result = await recheckUntracedRows(db as never, { institutionId: 78 });
+
+    expect(result).toEqual({ checked: 2, promoted: 1, stillHeld: 1, dryRun: false });
+    const promote = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr"))!;
+    expect(promote.values).toContain(449097);
+    expect(JSON.stringify(promote.values)).toContain("needs_darwin_verification");
+    const marked = calls.find((call) => call.text.includes("WHERE fee_raw_id = ANY"))!;
+    expect(marked.values).toContainEqual([449098]);
+    expect(JSON.stringify(marked.values)).toContain(untracedRecheckFlag());
+  });
+
+  it("leaves a row whose traced read has another name", () => {
+    expect(tracedRead({ ...untraced, fee_name: "Overdraft fee" }, [
+      { feeName: "Overdraft (OD) - Paid Item", amount: 17, canonicalHint: "overdraft", frequency: "per_item", confidence: 0.9, excerpt: "", waivable: false },
+    ])).toBeNull();
   });
 });
