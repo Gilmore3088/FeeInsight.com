@@ -1,5 +1,6 @@
 import { sql } from "./connection";
-import { summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { STATS_ROW_FILTER, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
@@ -15,7 +16,7 @@ export interface FeeCategorySummary {
   p75_amount: number | null;
   bank_count: number;
   cu_count: number;
-  /** Institutions publishing this fee at $0. Consumer guides cite it directly. */
+  /** Institutions publishing this fee at $0 without a paid tier. Consumer guides cite it directly. */
   zero_count: number;
   /** Median among banks only; null below the minimum sample. */
   bank_median_amount: number | null;
@@ -103,7 +104,8 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category IS NOT NULL
       AND ef.review_status = 'approved'
-      AND ef.source_document_id IS NOT NULL
+      AND ${sql.unsafe(STATS_ROW_FILTER)}
+      AND ef.amount IS NOT NULL AND ef.amount >= 0
   ` as {
     fee_category: string;
     amount: number | null;
@@ -111,14 +113,22 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     charter_type: string;
   }[];
 
-  // Institutions listing a $0 fee per category (the guides cite "N charge nothing").
+  // "Charge nothing" is stronger than "has a free tier": every usable price for
+  // that institution/category must be zero. Missing or invalid prices add no sample.
   const zeroInstitutions = new Map<string, Set<number>>();
+  const paidInstitutions = new Map<string, Set<number>>();
   for (const row of rows) {
-    if (row.amount !== null && Number(row.amount) === 0) {
-      const set = zeroInstitutions.get(row.fee_category) ?? new Set<number>();
-      set.add(Number(row.institution_id));
-      zeroInstitutions.set(row.fee_category, set);
-    }
+    if (row.amount === null || (typeof row.amount === "string" && String(row.amount).trim() === "")) continue;
+    const amount = Number(row.amount);
+    const id = Number(row.institution_id);
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isFinite(amount) || amount < 0) continue;
+    const groups = amount === 0 ? zeroInstitutions : paidInstitutions;
+    const set = groups.get(row.fee_category) ?? new Set<number>();
+    set.add(id);
+    groups.set(row.fee_category, set);
+  }
+  for (const [category, paid] of paidInstitutions) {
+    for (const id of paid) zeroInstitutions.get(category)?.delete(id);
   }
 
   // Same rows, split by charter: no extra query for the bank vs credit union medians.
@@ -178,6 +188,7 @@ export async function getCheapestAndMostExpensive(
         AND ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
         AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
       ORDER BY ef.amount ASC, ct.institution_name ASC
       LIMIT ${bounded}
     `,
@@ -189,6 +200,7 @@ export async function getCheapestAndMostExpensive(
         AND ef.review_status = 'approved'
         AND ef.amount IS NOT NULL
         AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
       ORDER BY ef.amount DESC, ct.institution_name ASC
       LIMIT ${bounded}
     `,
@@ -232,6 +244,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
+      AND ${sql.unsafe(STATS_ROW_FILTER)}
+      AND ef.amount IS NOT NULL AND ef.amount >= 0
     ORDER BY ef.amount DESC NULLS LAST
   ` as (Omit<FeeInstance, "source_document_id"> & {
     source_document_id: number | string | null;
@@ -307,7 +321,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
       WHERE fce.fee_category = ${category}
         -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
         AND fce.like_for_like IS TRUE
-        AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+        AND ${sql.unsafe(consumerPriceMoveSql("fce"))}
         AND EXISTS (
           SELECT 1 FROM published_fee_catalog live
           WHERE live.institution_id = fce.institution_id
@@ -396,7 +410,7 @@ export async function getRecentPriceChanges(days: number = 90, category?: string
   try {
     const params: (string | number)[] = [days];
     // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts).
-    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`, "fce.like_for_like IS TRUE", "EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))"];
+    const conditions = [`fce.detected_at > NOW() - INTERVAL '1 day' * $1`, "fce.like_for_like IS TRUE", consumerPriceMoveSql("fce")];
     if (category) {
       conditions.push("fce.fee_category = $2");
       params.push(category);
@@ -429,7 +443,7 @@ export async function getPriceMovementSummary(days: number = 90): Promise<PriceM
        FROM fee_change_records
        WHERE detected_at > NOW() - INTERVAL '1 day' * $1
          AND like_for_like IS TRUE
-         AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fee_change_records.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+         AND ${consumerPriceMoveSql("fee_change_records")}
        GROUP BY fee_category
        ORDER BY total_changes DESC`,
       [days]
