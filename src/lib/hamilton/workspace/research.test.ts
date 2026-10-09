@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choosePeers, localMarketView, marketLayerSets } from "./research";
+import { briefingLocalMarket, choosePeers, localMarketView, marketLayerSets } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -91,5 +91,17 @@ describe("localMarketView", () => {
 
   it("returns nothing when no market is on file", () => {
     expect(localMarketView(base, null, "overdraft")).toEqual({ layer: null, competitors: null, info: null });
+  });
+
+  it("lists the bank first, then competitors that publish one of its fees, in market order", () => {
+    const table = briefingLocalMarket(base, market);
+    expect(table?.rows.map((r) => [r.name, r.own, r.marketDeposits, r.values.overdraft])).toEqual([
+      ["Subject Bank", true, null, 30],
+      ["Bank 2", false, 9e8, 35],
+      ["Bank 3", false, null, 25],
+    ]);
+    expect(table?.info).toMatchObject({ places: ["Austin, TX"], sodYear: 2026, institutions: 3 });
+    expect(briefingLocalMarket(base, market, 1)?.rows).toHaveLength(2);
+    expect(briefingLocalMarket(base, null)).toBeNull();
   });
 });
