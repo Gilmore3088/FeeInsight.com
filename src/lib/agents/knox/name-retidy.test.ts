@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -479,5 +479,33 @@ describe("v13: a shifted font's digits, read back when the document proves its m
       amount: 30,
     });
     expect(planRetidy([returned], page).renames).toEqual([]);
+  });
+});
+
+describe("v13: a font's ligature letters read back as their pairs", () => {
+  // MSCU (doc 17227) and Members Source (doc 16925) as stored.
+  const mscu = [
+    "ATM TransacƟon (@non-MSCU ATM) . . . . . . . . . . . . . . . . . . . . . $1.00 Temporary Check Fee . . . . . . . $1.00 for a sheet of 4",
+    "Lost Key Replacement (per key) . . . . . . . . $15.00 | Outgoing Wire – DomesƟc . . . . . . . . . . . . $25.00",
+    "Stop Payment . . . . . . . . . $35.00 Loan Refinance OriginaƟon . . . . . . . . . . . . . . . .$25.00",
+    "DraŌ/Check Copy . . . . . . . . . . . . . . . . $5.00",
+  ].join("\n");
+  const page = [{ source_document_id: 70, normalized_text: mscu }];
+
+  it("renames each ligature name and still traces it", () => {
+    const rows = [
+      fee({ fee_published_id: 56918, canonical_fee_key: "atm_non_network", fee_name: "ATM TransacƟon (@non-MSCU ATM)", amount: 1 }),
+      fee({ fee_published_id: 56921, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire – DomesƟc", amount: 25 }),
+      fee({ fee_published_id: 89910, canonical_fee_key: "other_lending_fee", fee_name: "Loan Refinance OriginaƟon", amount: 25 }),
+      fee({ fee_published_id: 56927, canonical_fee_key: "check_image", fee_name: "DraŌ/Check Copy", amount: 5 }),
+    ];
+    expect(planRetidy(rows, page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [56918, "ATM Transaction (@non-MSCU ATM)"],
+      [56921, "Outgoing Wire – Domestic"],
+      [89910, "Loan Refinance Origination"],
+      [56927, "Draft/Check Copy"],
+    ]);
+    expect(isMessyName("Account research/reconciliaƟon")).toBe(true);
+    expect(unligatedName("Outgoing Wire")).toBeNull();
   });
 });

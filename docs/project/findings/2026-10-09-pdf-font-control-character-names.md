@@ -32,5 +32,11 @@ A new takedown check for them was not added, because the permission check refuse
 publish. A Knox re-read would see the same codes, because Knox has no font decode. If Hamilton's
 rules re-check does not bring them down, the takedown goes to James as a question.
 
+**Ligatures (retidy v13):** another PDF font family extracts its ligatures as single letters:
+"ti" as U+019F ("Outgoing Wire – DomesƟc"), "ft" as U+014C ("DraŌ"), "tt" as U+01A9 and "tf" as
+U+019E. Eight live names carried them on Oct 9, at institutions 175, 8481 and 8535. v13 reads each
+letter back as its pair, in the name and in the fee's document, so the renamed fee still traces.
+Renaming 87572 to "Outgoing International Wire Fee" shows that it is filed as a domestic wire.
+
 **Lesson:** text extraction should flag control characters in the text it extracts. A clean-looking
 amount column can sit next to names in a broken font.

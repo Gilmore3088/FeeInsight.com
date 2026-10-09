@@ -547,6 +547,20 @@ function fontDecodedText(text: string): string {
   return text.replace(SHIFTED_CONTROL, (glyph) => String.fromCharCode(glyph.charCodeAt(0) + FONT_SHIFT)).replace(/[ \t]{2,}/g, " ");
 }
 
+/**
+ * v13: a PDF font's ligatures extracted as single letters: "ti" as U+019F ("Outgoing Wire –
+ * DomesƟc"), "ft" as U+014C ("DraŌ"), "tt" as U+01A9 and "tf" as U+019E. No fee word is spelled
+ * with these letters, so each always reads back as its pair.
+ */
+const LIGATURE_PAIRS: Record<string, string> = { "\u019f": "ti", "\u014c": "ft", "\u01a9": "tt", "\u019e": "tf" };
+const LIGATURE = /[\u019f\u014c\u01a9\u019e]/g;
+function readLigatures(text: string): string {
+  return text.replace(LIGATURE, (letter) => LIGATURE_PAIRS[letter]);
+}
+export function unligatedName(name: string): string | null {
+  return /[\u019f\u014c\u01a9\u019e]/.test(name) ? readLigatures(name) : null;
+}
+
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
   const head = headName(fee);
   if (!head) return null;
@@ -576,13 +590,17 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
       (text) => stored.source_document_id != null && Number(text.source_document_id) === Number(stored.source_document_id),
     );
     const fontMapped = storedTexts.some((text) => fontMapVerified(text.normalized_text));
-    const spaced = spacedControlName(stored.fee_name) ?? (fontMapped ? fontDecodedName(stored.fee_name) : null);
+    // v13: and a font's ligature letters read as their pairs ("DomesƟc").
+    const unligated = unligatedName(stored.fee_name);
+    const storedName = unligated ?? stored.fee_name;
+    const controlRead = spacedControlName(storedName) ?? (fontMapped ? fontDecodedName(storedName) : null);
+    const spaced = controlRead ?? unligated;
     const fee = spaced ? { ...stored, fee_name: spaced } : stored;
     const readTexts = spaced
       ? texts.map((text) =>
           fontMapped && storedTexts.includes(text)
-            ? { ...text, normalized_text: fontDecodedText(text.normalized_text) }
-            : { ...text, normalized_text: text.normalized_text.replace(/\u0003/g, " ").replace(/[ \t]{2,}/g, " ") },
+            ? { ...text, normalized_text: readLigatures(fontDecodedText(text.normalized_text)) }
+            : { ...text, normalized_text: readLigatures(text.normalized_text).replace(/\u0003/g, " ").replace(/[ \t]{2,}/g, " ") },
         )
       : texts;
     const headingless = ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) ? fee.fee_name : fee.fee_name.replace(LEADING_ACCOUNT_HEADINGS, "");
@@ -604,7 +622,7 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
       : restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ??
         (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ??
         // v10: the fee's own table cell at its price.
-        cellName(fee, ownTexts, { priceInNextCell: spaced != null }) ??
+        cellName(fee, ownTexts, { priceInNextCell: controlRead != null }) ??
         tidied ??
         // v11: the short name a sentence name opens with, unless another live fee at the
         // institution opens with it too (the words cut are what tell the two apart).
@@ -716,6 +734,7 @@ export async function retidyLiveFeeNames(
                    OR fp.fee_name LIKE '%: %'
                    OR fp.fee_name ~ '[[:space:]][a-z]{1,2}$'
                    OR fp.fee_name ~ '[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f]'
+                   OR fp.fee_name ~ '[\u019f\u014c\u01a9\u019e]'
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -899,7 +918,9 @@ export function isMessyName(name: string): boolean {
     name.includes(": ") ||
     CUT_WORD.test(name) ||
     // v12/v13: a font's U+0003 space or another of its codes.
-    CONTROL_CHARACTER.test(name)
+    CONTROL_CHARACTER.test(name) ||
+    // v13: a font's ligature letters.
+    /[\u019f\u014c\u01a9\u019e]/.test(name)
   );
 }
 
