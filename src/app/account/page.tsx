@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
+import { activateIfPaid } from "@/lib/subscription-activation";
 import { canAccessPremium, isInPaymentGrace } from "@/lib/access";
 import { redirect } from "next/navigation";
 import { getBillingSummary } from "@/lib/billing-summary";
@@ -35,27 +36,12 @@ export default async function AccountPage({
 
   const params = await searchParams;
   // Fallback: if webhook missed, verify payment directly with Stripe
-  if (user.subscription_status !== "active" && user.stripe_customer_id) {
-    try {
-      const { getStripe } = await import("@/lib/stripe");
-      const stripe = getStripe();
-      const subs = await stripe.subscriptions.list({
-        customer: user.stripe_customer_id,
-        status: "active",
-        limit: 1,
-      });
-      if (subs.data.length > 0) {
-        const { sql: sqlConn } = await import("@/lib/data-store/connection");
-        await sqlConn`
-          UPDATE users SET subscription_status = 'active', past_due_since = NULL, role = 'premium'
-          WHERE id = ${user.id} AND role NOT IN ('admin', 'analyst')`;
-        user.subscription_status = "active";
-        if (user.role !== "admin" && user.role !== "analyst") {
-          user.role = "premium";
-        }
-      }
-    } catch {
-      // Stripe not configured or error -- continue with current status
+  // (the same check as /account/welcome and /subscribe, which also files the bank chosen at checkout)
+  if (await activateIfPaid(user)) {
+    user.subscription_status = "active";
+    user.past_due_since = null;
+    if (user.role !== "admin" && user.role !== "analyst") {
+      user.role = "premium";
     }
   }
 
