@@ -43,15 +43,15 @@ describe("overdraftIncomeNote", () => {
     source: { label: "x", asOf: "2024-12-31" },
   };
 
-  it("labels the filing period and, for a credit union, what each $1 came to at that volume", () => {
-    expect(overdraftIncomeNote(cu, 30)).toBe(
-      "Overdraft fee income was $19.5M in the four quarters to December 31, 2024, the latest filed (NCUA 5300, IS0048). At your $30 fee that is roughly 649,000 paid items, so each $1 of the fee came to about $649,000 a year at that volume (an estimate).",
+  it("labels the filing period and form, with no per-dollar sensitivity", () => {
+    expect(overdraftIncomeNote(cu)).toBe(
+      "Overdraft fee income was $19.5M in the four quarters to December 31, 2024, the latest filed (NCUA 5300, IS0048).",
     );
   });
 
   it("gives only the filed line when a bank's line combines overdraft and NSF", () => {
     const bank = { ...cu, label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)", combinedWith: "NSF" };
-    expect(overdraftIncomeNote(bank, 35)).toBe(
+    expect(overdraftIncomeNote(bank)).toBe(
       "Consumer overdraft and NSF fee income was $19.5M in the four quarters to December 31, 2024, the latest filed (call report Schedule RI-E, RIAD H032).",
     );
   });

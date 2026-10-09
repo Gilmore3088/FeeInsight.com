@@ -154,7 +154,6 @@ export default async function HamiltonHomePage({
           overview={overview}
           windowDays={COMPETITOR_MOVE_WINDOW_DAYS}
           overdraftIncome={briefing.overdraftIncome ?? null}
-          overdraftFee={briefing.positions.find((p) => p.feeCategory === "overdraft")?.current ?? null}
         />
       ) : null}
 
