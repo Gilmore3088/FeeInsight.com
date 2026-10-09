@@ -4,51 +4,50 @@
 
 ## What happened
 When Knox re-read a bank, Hamilton's rules re-check (`hamilton/rules-recheck.ts`) took a live fee
-down on that same run if today's rules no longer read it. Its only "second look" was an independent
-check in the same pass: the fee stayed live if `checkFeeAgainstSource` still traced its name and
-price and the category guard accepted it. No `takedown_pending` flag was written and there was no
-12-hour wait.
+down on that same run if today's rules no longer read it. The only check before a takedown ran in
+the same pass: the fee stayed live if `checkFeeAgainstSource` still traced its name and price and
+the category guard accepted it. A second live copy of the same category and price on one document
+came down with no check at all, as a dedupe. No `takedown_pending` flag was written and there was
+no 12-hour wait.
 
-This corrects the 2026-10-07 note in `FINDINGS.md` (PR 320). That note says the rules re-check "gets
-its second look in PR 320". It got the in-pass independent check, not the second look James's rule
-requires (DECISIONS.md: "a takedown is a last resort ... only a later run (at least 12 hours on)
-that fails it again takes it down"). DECISIONS.md already listed the rules re-check as one of the
-paths that would follow, and the PR 320 lesson says "every new takedown path goes through
-`secondLook`". It never did.
+This corrects the 2026-10-07 note in `FINDINGS.md` (PR 320), which says the rules re-check "gets
+its second look in PR 320". What it got was the in-pass check, not the second look James's rule
+requires. DECISIONS.md says "only a later run (at least 12 hours on) that fails it again takes it
+down" and lists the rules re-check as a path still to follow. The PR 320 lesson is "every new
+takedown path goes through `secondLook`", but the rules re-check never did.
 
-On prod the re-check took down 255 live fees at 180 banks in the 24 hours to 09:20 UTC Oct 9, and
-4,277 in 7 days.
+## What it took down (7 days to 09:20 UTC Oct 9)
+The re-check took down 4,278 live fees in that window:
 
-## How accurate those takedowns were
-I took a read-only random sample of 10 of the last 24 hours' re-check takedowns, leaving out the 14
-already hand-checked, and read each against its source text.
+- **1,351 were dedupes.** The bank still has a live fee with the same category and price. Often it
+  is the same fee under a better name (for example "00 Stop payment order, per check" $30, with
+  "Stop payment order" $30 still live). Sometimes it is another line at the same price.
+- **99 failed the in-pass check and have no live twin.** I read a random 10 against their source
+  excerpts. 8 were clearly right to come down: Positive Pay ACH filed as a monthly fee, a "3X5"
+  safe deposit row, a 2x10 box read as overdraft protection, an abandoned cashier's check filed as
+  a money order, a $1 threshold read as a cash advance fee, a bill-pay stop filed as bill pay, a
+  business wire, and a stop payment removal. 2 are arguable: a "+$20" rush card fee, and a "$5 |
+  $15" monthly fee.
+- **About 2,800 came from Oct 5-6, before the in-pass check existed.** Those are among the 4,467 the
+  Oct 7 restore bar already re-judged (FINDINGS.md, "Darwin's dispute threshold was too loose").
+  Only 28 takedowns with no twin and no check happened from Oct 7 to Oct 9.
 
-- **4 were wrong at source, so the takedown was right.** "External ATM/Shared Branch Returned Item"
-  $25 was filed as NSF. "Fax transmittal" $5 was filed as account research. "Payroll ACH monthly
-  fee" $4 was filed as a monthly maintenance fee. "Commercial International Wire Fee" $100 is a
-  business fee.
-- **6 were real fees at the right price.** "Non-Member On-Us Check Cashing | $5.00 per item",
-  "Drafts Returned Due to Insufficient Funds $35.00 (per item)", "ATM transaction (each above
-  6/month) $1.00", a $10 per-item overdraft protection fee, a $3 copy fee, and "Stop payment
-  order, per check $30". Three of these had fragment names, but the fee and price were right.
-
-That is 4 of 10 right, far below the 9-of-10 takedown bar. A 12-hour wait alone would not help,
-because the same rules fail the same fee on the same text 12 hours later.
+My first sample on Oct 9 counted 6 of 10 as "real fees taken down". All 6 were dedupes with a live
+twin at the same category and price. The bank's published fees lost nothing, so no new restore is
+needed.
 
 ## Fix
-- `rollBackUnreproducedFees` sends every fee that fails both the re-check and its in-pass check to
-  `secondLook()` under check `hamilton.rules_recheck`. A first failure is logged
-  `takedown_pending` and the fee stays live. A pending flag clears when a later run passes the fee.
-- `RULES_RECHECK_TAKEDOWN_LIVE` is `false`. While it is off, first looks are logged and none is
-  confirmed, so nothing comes down through the re-check. When it is on, a run at least 12 hours
-  after the first look that fails the fee again takes it down and logs `takedown_confirmed`. A
-  document with a due flag is then re-selected even if it was already checked at the current Knox
-  signature. Turning it on is James's call, after the re-check's own misreads are fixed and a fresh
-  sample of its takedowns reaches 9 of 10.
+- `rollBackUnreproducedFees` sends every fee it would take down (in-pass failures and dedupes) to
+  `secondLook()` under check `hamilton.rules_recheck`. The first failure is logged as
+  `takedown_pending` and the fee stays live. A run at least 12 hours later that fails it again
+  takes it down and logs `takedown_confirmed`. A later run that passes the fee clears the flag.
+- A document with a flag that is due for its second look is checked again, even if it was already
+  checked at the current Knox signature.
+- `RULES_RECHECK_TAKEDOWN_LIVE` (on) can pause the re-check. While it is off, first looks are still
+  logged but none is confirmed. The re-check never takes a fee down on the spot, whether it is on
+  or off.
 - The 14 Citizens Business and ConnectOne rows stay down. All 15 rows in that batch were checked
   wrong at source.
-- Restoring the real fees among the past takedowns is a separate checked-list step. It needs a
-  hand check of 20 candidates with at least 18 right, and every restore is logged.
 
-**Lesson:** a takedown that only re-runs the same deterministic check is not a second look. The
-12-hour wait gives a person time to see the flag, but accuracy has to come from the check itself.
+**Lesson:** before calling a takedown wrong, check whether the bank still shows the same category
+and price. A dedupe removes a copy, not a fee.

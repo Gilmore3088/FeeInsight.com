@@ -321,12 +321,12 @@ describe("Hamilton rules re-check", () => {
     expect(waiting.waitingSecondLook).toBe(1);
   });
 
-  it("takes nothing down while the switch is off, even with a 12-hour-old first look", async () => {
-    expect(RULES_RECHECK_TAKEDOWN_LIVE).toBe(false);
+  it("takes nothing down while paused, even with a 12-hour-old first look", async () => {
+    expect(RULES_RECHECK_TAKEDOWN_LIVE).toBe(true);
     const rows = [live(1, "stop_payment", "Stop Payment", "30.00"), live(4, "stop_payment", "Stop Payment", "25.00")];
     const db = createDbMock(rows, texts);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 313, batchId: "b", dryRun: false });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 313, batchId: "b", dryRun: false, takedownLive: false });
 
     expect(result.rollbacks).toEqual([]);
     expect(result.waitingSecondLook).toBe(1);

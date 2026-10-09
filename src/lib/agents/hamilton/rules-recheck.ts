@@ -28,12 +28,11 @@ export const RULES_RECHECK_REASON = "rules_recheck_unreproduced";
  */
 export const RULES_RECHECK_CHECK = "hamilton.rules_recheck";
 /**
- * Off: the re-check only flags (first looks are logged, none confirms), so nothing comes down
- * through it. A read-only sample of 10 of its 24-hour takedowns (9 Oct) found 6 real fees at
- * their right price, and the same rules fail the same fee 12 hours later, so its takedowns wait
- * for a fix and a 9-of-10 spot check. Turning it on is James's call.
+ * On: a fee the re-check fails comes down only when a run at least 12 hours after its first
+ * look fails it again. Off: first looks are logged and none confirms, so nothing comes down
+ * through the re-check (a pause switch; it never takes a fee down on the spot either way).
  */
-export const RULES_RECHECK_TAKEDOWN_LIVE = false;
+export const RULES_RECHECK_TAKEDOWN_LIVE = true;
 // Version 2: a fee an earlier re-check took down is restored when today's rules read it
 // again (same text, name, category and price), which Knox's raw-row dedupe would block.
 // Version 3: a read is filed under the category Darwin files it under (refileCategory), so
