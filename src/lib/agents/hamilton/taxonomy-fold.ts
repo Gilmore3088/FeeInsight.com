@@ -290,6 +290,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 8138, doc 12676: \"Cashier's Check (set up in Bill Pay only) / Member Fee | $10.00 per check\"" },
   { feePublishedId: 104858, from: "account_research", amount: 10, to: "monthly_maintenance", name: "Cashback Checking Plus Account Monthly service charge",
     why: "inst 7025, doc 2148: \"Cashback Checking Plus Account | $10.00 /month\"" },
+  // Data inventory's live "to avoid" names (Oct 9): the right price under the wrong type.
+  { feePublishedId: 56804, from: "monthly_maintenance", amount: 5, to: "paper_statement", name: "Monthly Service Fee per paper statement",
+    why: "inst 2210, doc 17169: \"To avoid a Monthly Service Fee of $5 per paper statement, you must enroll for E-Statements\"" },
+  { feePublishedId: 79217, from: "check_cashing", amount: 6, to: "collection_item", name: "Canadian/Foreign Check Handling Charge",
+    why: "inst 51, doc 19813: the next column's \"Canadian/Foreign Check Handling Charge | $6.00 per item\"" },
 ];
 
 interface HandRow {

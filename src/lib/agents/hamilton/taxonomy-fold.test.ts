@@ -18,6 +18,8 @@ const PAGE_LINES: Record<number, string> = {
   98520: "Statement Copy Fee | $2.00/per statement\nWire Transfer Fee | $20.00\nWire Transfer Fee (International) | $50.00\nIncoming Wire Transfer Fee | $20.00 (one free per month)",
   98696: "Cashier's Check\n(set up in Bill Pay only)\nMember Fee | $10.00 per check | Between Georgia's Own Accounts | FREE\nNon Member Fee | $20.00 per check",
   104858: "and Reconciliation | ($50.00 minimum) | Cashback Checking Plus Account | $10.00 /month3\nCashier’s Check | $1.00 /check | Fresh Start Checking Account | $10.00 /month3",
+  56804: "** To avoid a Monthly Service Fee of $5 per paper statement, you must enroll for E-Statements within 30 days of account opening.",
+  79217: "deposit, OR branch deposit each statement cycle. Internal account to account | Canadian/Foreign Check Handling Charge | $6.00 per item",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
