@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -162,6 +162,23 @@ describe("Hamilton agentic publish", () => {
     // A row that is not a twin never needs the re-check.
     const plain = createDbMock([verifiedFee], [], undefined, []);
     expect((await runHamiltonPublish({ runId: 122, db: asPublishDb(plain) })).publishedFees).toBe(1);
+  });
+
+  it("skips a $0 benefit read from a product page only once the product-page check is on", async () => {
+    const benefit = {
+      ...verifiedFee,
+      canonical_fee_key: "overdraft",
+      fee_name: "Overdraft Fees",
+      amount: "0.00",
+      outlier_flags: ["agentic_darwin_verified", "free_fee_verified"],
+      free_read: true,
+      document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
+    };
+    const reason = "Read from a product page's benefits, not a fee schedule";
+    expect(publishSkipReason(benefit, 0.85)).not.toBe(reason);
+    expect(publishSkipReason(benefit, 0.85, true)).toBe(reason);
+    expect(publishSkipReason({ ...benefit, document_url: "https://www.pnc.com/content/dam/pnc-com/pdf/personal/fee-schedule.pdf" }, 0.85, true)).not.toBe(reason);
+    expect(publishSkipReason({ ...benefit, free_read: false }, 0.85, true)).not.toBe(reason);
   });
 
   it("never publishes a row read from an article page", async () => {

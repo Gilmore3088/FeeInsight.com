@@ -22,6 +22,7 @@ import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, typ
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
@@ -81,6 +82,8 @@ export interface VerifiedFeeRow extends RateFields {
   institution_name?: string | null;
   /** True when this row was skipped as identical to a live fee the rules re-check took down. */
   twin_recheck?: boolean | null;
+  /** True when Knox's free-fee reader read this row (product-page.ts). */
+  free_read?: boolean | null;
 }
 
 interface PriorPublishedFeeRow extends RateFields {
@@ -206,7 +209,7 @@ function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
-export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string | null {
+export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
   if (!flags.includes("agentic_darwin_verified")) return "Not verified by the agentic Darwin path";
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
@@ -219,6 +222,10 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   // A blog post or story quotes national averages, not this bank's price (article-page.ts).
   if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
+  // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
+  if (row.free_read && normalizedAmount(row.amount) === 0 && isProductPage(row.document_url) && productPageOn) {
+    return "Read from a product page's benefits, not a fee schedule";
+  }
   const amount = normalizedAmount(row.amount);
   if (isPercentFee(row)) {
     // A rate publishes only in a category that publishes rates, inside its range.
@@ -406,6 +413,7 @@ async function selectVerifiedFees(
                   AND twin_pa.outcome = 'unchanged'
                   AND twin.rolled_back_reason = '${RULES_RECHECK_REASON}'
              ) AS twin_recheck,
+             COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
