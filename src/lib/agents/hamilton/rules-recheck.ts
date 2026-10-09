@@ -4,7 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { refileCategory } from "@/lib/fee-category-guard";
-import { foldContext } from "@/lib/fee-fold";
+import { foldContext, isRetiredCategory } from "@/lib/fee-fold";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -283,32 +283,51 @@ export async function rollBackUnreproducedFees(
              AND fp.amount_kind = 'flat'
              ${filters.join("\n             ")}
         ),
-        docs AS (
-          SELECT DISTINCT live.source_document_id, live.institution_id
+        pending AS (
+          SELECT live.source_document_id, live.institution_id,
+                 -- A live fee flagged by an earlier run is due its second look 12 hours on,
+                 -- though its document was already checked at this signature.
+                 BOOL_OR(EXISTS (
+                   SELECT 1
+                     FROM pipeline_feedback pf
+                    WHERE pf.check_name = $6
+                      AND pf.kind = $7
+                      AND pf.fee_published_id = live.fee_published_id
+                      AND NOT live.pulled
+                      AND (pf.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => $8::int)
+                      AND $9::boolean
+                 )) AS second_look_due,
+                 BOOL_OR(NOT EXISTS (
+                   SELECT 1
+                     FROM pipeline_attempts pa
+                    WHERE pa.stage = 'publish'
+                      AND pa.strategy = $2
+                      AND pa.strategy_version = $3
+                      AND pa.institution_id = live.institution_id
+                      AND pa.source_document_id = live.source_document_id
+                      AND pa.input_fingerprint = $4
+                 )) AS unchecked
             FROM live
-           WHERE NOT EXISTS (
-             SELECT 1
-               FROM pipeline_attempts pa
-              WHERE pa.stage = 'publish'
-                AND pa.strategy = $2
-                AND pa.strategy_version = $3
-                AND pa.institution_id = live.institution_id
-                AND pa.source_document_id = live.source_document_id
-                AND pa.input_fingerprint = $4
-           )
-              -- A live fee flagged by an earlier run is due its second look 12 hours on,
-              -- though its document was already checked at this signature.
-              OR EXISTS (
-                SELECT 1
-                  FROM pipeline_feedback pf
-                 WHERE pf.check_name = $6
-                   AND pf.kind = $7
-                   AND pf.fee_published_id = live.fee_published_id
-                   AND NOT live.pulled
-                   AND (pf.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => $8::int)
-                   AND $9::boolean
-              )
-           ORDER BY live.source_document_id
+           GROUP BY live.source_document_id, live.institution_id
+        ),
+        -- Second looks that are due go first, then the documents whose last re-check (under any
+        -- Knox version) is oldest. In document-id order every Knox bump restarted the walk at the
+        -- lowest ids, so a lane's later documents went unchecked for 30 versions (2026-10-09:
+        -- doc 20570 last checked at v33, SCCU's 13776 kept a v33 read the v64 box-table fix
+        -- never reached).
+        docs AS (
+          SELECT pending.source_document_id, pending.institution_id
+            FROM pending
+            LEFT JOIN LATERAL (
+              SELECT MAX(pa.created_at) AS checked_at
+                FROM pipeline_attempts pa
+               WHERE pa.institution_id = pending.institution_id
+                 AND pa.stage = 'publish'
+                 AND pa.strategy = $2
+                 AND pa.source_document_id = pending.source_document_id
+            ) last_check ON TRUE
+           WHERE pending.unchecked OR pending.second_look_due
+           ORDER BY pending.second_look_due DESC, last_check.checked_at NULLS FIRST, pending.source_document_id
            LIMIT $1
         )
         SELECT live.*
@@ -448,6 +467,9 @@ export async function rollBackUnreproducedFees(
     for (const row of newestFirst(documentRows.filter((candidate) => candidate.pulled))) {
       const fee = asFee(row);
       if (fee.amount == null) continue;
+      // A category outside the top 50 is never restored: the taxonomy fold would flag it again
+      // (67860 "Monthly Service Fee with e-Statement" came back as estatement_fee on 9 Oct, run 3446).
+      if (isRetiredCategory(row.canonical_fee_key)) continue;
       const key = feeKey(row.canonical_fee_key, fee.amount);
       if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
       // An earlier re-check judged this fee against a text other than its own. It comes back

@@ -25,6 +25,38 @@ export const SAME_LINE_DUPLICATE_REASON = "same_line_duplicate";
 export const SAME_LINE_DUPLICATE_FLAG = "same_line_duplicate";
 export const SAME_LINE_DUPLICATE_LIMIT = 200;
 
+/**
+ * Live fees this check flagged that their source prints as a line of their own, beside the older
+ * line it named (source review of the 208 flags, 9 Oct). The same-line check cannot tell these
+ * apart (a name split across columns, a parenthetical the word rule drops, a lower-case name), so
+ * each passes here and its flag clears through the second look.
+ */
+export const SOURCE_CHECKED_SEPARATE_LINES: ReadonlyMap<number, string> = new Map([
+  [104713, "Statement Reconciliation, Research or Special Request $35, beside Wire Research Fee $35"],
+  [104650, "Stop payment (all items) $35, beside Bill Pay Stop Payment $35"],
+  [104875, "Cashiers check copy $5, beside Convenience check copy $5"],
+  [104615, "Levies $20 per levy, beside Garnishments $20 per garnishment"],
+  [104906, "Check Copy - Certified $5, beside Check Copy - Member Draft $5"],
+]);
+
+/**
+ * Live repeats found by review, outside the re-decide's own publishes, each mapped to the line
+ * that stays (9 Oct). Each repeat goes through the second look like any other; the line that
+ * stays is never flagged as a repeat of it.
+ * - 14458 runs three lines together ("ACH, one-time ... Night Deposit Ba"); 104758 is the clean
+ *   read (UAT).
+ * - 83889 "Returned Items: Monthly Fee" $15 is the $15 monthly fee line read under a carried-in
+ *   heading; 83890 names its balance (Data inventory).
+ * - 87575 "ATM TransacƟon Fee" $3 repeats 85596 "ATM Transaction Fee" $3 from a sibling copy of
+ *   the same schedule at institution 175 (Data inventory).
+ */
+export const REVIEWED_REPEATS: ReadonlyMap<number, number> = new Map([
+  [14458, 104758],
+  [83889, 83890],
+  [87575, 85596],
+]);
+const KEPT_LINES = new Set(REVIEWED_REPEATS.values());
+
 type CandidateRow = VerifiedFeeRow & { fee_published_id: number | string };
 
 export interface SameLineDuplicate {
@@ -100,7 +132,11 @@ export async function retireSameLineDuplicates(
   const passing: number[] = [];
   for (const row of rows) {
     const feePublishedId = Number(row.fee_published_id);
-    const older = await sameLineDuplicateOf(db, row, feePublishedId);
+    if (KEPT_LINES.has(feePublishedId)) {
+      passing.push(feePublishedId);
+      continue;
+    }
+    const older = SOURCE_CHECKED_SEPARATE_LINES.has(feePublishedId) ? null : await sameLineDuplicateOf(db, row, feePublishedId);
     if (older == null) {
       passing.push(feePublishedId);
       continue;
@@ -115,6 +151,10 @@ export async function retireSameLineDuplicates(
       olderFeePublishedId: older,
       reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${older}`,
     });
+  }
+  for (const [repeat, kept] of REVIEWED_REPEATS) {
+    const twin = await liveRepeat(db, repeat, kept);
+    if (twin) failing.push({ ...twin, reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${kept}` });
   }
   result.duplicates = failing.length;
 
@@ -180,6 +220,37 @@ export async function retireSameLineDuplicates(
   }
   if (result.rolledBack.length > 0) invalidatePublicReadCache();
   return result;
+}
+
+/** A reviewed repeat while both it and the line that stays are live. */
+async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Promise<Omit<SameLineDuplicate, "reason"> | null> {
+  try {
+    const [row] = await inSavepoint(db, (scope) => scope<{
+      lineage_ref: number | string; institution_id: number | string; canonical_fee_key: string;
+      amount: number | string | null; source_document_id: number | string | null;
+    }[]>`
+      SELECT fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.amount, fr.source_document_id
+        FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fp.fee_published_id = ${feePublishedId}
+         AND fp.rolled_back_at IS NULL
+         AND EXISTS (SELECT 1 FROM published_fee_records k WHERE k.fee_published_id = ${kept} AND k.rolled_back_at IS NULL)
+    `);
+    if (!row) return null;
+    return {
+      feePublishedId,
+      feeVerifiedId: Number(row.lineage_ref),
+      institutionId: Number(row.institution_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      amount: num(row.amount),
+      sourceDocumentId: num(row.source_document_id),
+      olderFeePublishedId: kept,
+    };
+  } catch (error) {
+    console.error("liveRepeat read failed:", error);
+    return null;
+  }
 }
 
 /** Brings back takedowns whose older line is no longer live, with the verified row. Returns the count. */
