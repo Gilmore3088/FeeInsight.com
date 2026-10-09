@@ -59,22 +59,25 @@ function binLabel(bin: HistogramBin): string {
   return bin.high === null ? `${money(bin.low)} and up` : `${money(bin.low)} to under ${money(bin.high)}`;
 }
 
-const VIEW_W = 440;
+/** Wide plot for tablets and up; a narrower plot on phones so the 14-unit tick labels stay near 11px. */
+const WIDE_W = 440;
+const NARROW_W = 300;
 const VIEW_H = 220;
 const PAD = { top: 16, right: 8, bottom: 30, left: 40 };
 
-export function DistributionChart({ values, median, bucketCount = 16 }: DistributionChartProps) {
-  if (values.length < 3) {
-    return (
-      <p className="py-8 text-center text-sm text-[#5A5347]">
-        Not enough institutions yet to show how this fee is spread.
-      </p>
-    );
-  }
+interface PlotProps {
+  bins: HistogramBin[];
+  median: number | null;
+  viewW: number;
+  /** At most this many dollar labels along the bottom. */
+  maxLabels: number;
+  label: string;
+  className: string;
+}
 
-  const bins = buildHistogram(values, bucketCount);
+function Plot({ bins, median, viewW, maxLabels, label, className }: PlotProps) {
   const maxCount = Math.max(...bins.map((b) => b.count), 1);
-  const plotW = VIEW_W - PAD.left - PAD.right;
+  const plotW = viewW - PAD.left - PAD.right;
   const plotH = VIEW_H - PAD.top - PAD.bottom;
   const slot = plotW / bins.length;
   const barW = Math.max(slot - 3, 1);
@@ -91,66 +94,90 @@ export function DistributionChart({ values, median, bucketCount = 16 }: Distribu
           const frac = bin.high === null ? 0.5 : (median - bin.low) / (bin.high - bin.low);
           return PAD.left + slot * (medianBinIndex + frac);
         })();
-  const labelEvery = Math.ceil(bins.length / 6);
+  const labelEvery = Math.ceil(bins.length / maxLabels);
+
+  return (
+    <svg viewBox={`0 0 ${viewW} ${VIEW_H}`} className={`h-auto w-full ${className}`} role="img" aria-label={label}>
+      {ticks.map((t) => (
+        <g key={t}>
+          <line x1={PAD.left} x2={viewW - PAD.right} y1={y(t)} y2={y(t)} stroke="#E8DFD1" strokeDasharray={t === 0 ? undefined : "3 3"} />
+          <text x={PAD.left - 6} y={y(t) + 3.5} textAnchor="end" fontSize="14" fill="#6B6255">
+            {formatCount(t)}
+          </text>
+        </g>
+      ))}
+      {bins.map((bin, i) => {
+        const x = PAD.left + slot * i + (slot - barW) / 2;
+        const top = y(bin.count);
+        return (
+          <g key={bin.low}>
+            <rect x={x} y={top} width={barW} height={PAD.top + plotH - top} rx={2} fill="#C44B2E">
+              <title>{`${binLabel(bin)}: ${formatCount(bin.count)} institutions`}</title>
+            </rect>
+            {i % labelEvery === 0 && bin.high !== null && (
+              <text
+                x={PAD.left + slot * i}
+                y={VIEW_H - 8}
+                fontSize="14"
+                fill="#6B6255"
+                textAnchor={PAD.left + slot * i > viewW - 60 ? "end" : "start"}
+              >
+                {money(bin.low)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {medianX !== null && median !== null && (
+        <g>
+          <line x1={medianX} x2={medianX} y1={PAD.top} y2={PAD.top + plotH} stroke="#1A1815" strokeWidth={1.5} strokeDasharray="4 3" />
+          <text
+            x={medianX + 5}
+            y={PAD.top + 10}
+            fontSize="14"
+            fontWeight="600"
+            fill="#1A1815"
+            textAnchor={medianX > viewW - 120 ? "end" : "start"}
+            dx={medianX > viewW - 120 ? -10 : 0}
+          >
+            Median {money(median)}
+          </text>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+/** Axis titles are HTML, not SVG, so they keep the page's text size at any chart width and never rotate. */
+const AXIS_TITLE = "text-[12px] font-semibold text-[#5A5347]";
+
+export function DistributionChart({ values, median, bucketCount = 16 }: DistributionChartProps) {
+  if (values.length < 3) {
+    return (
+      <p className="py-8 text-center text-sm text-[#5A5347]">
+        Not enough institutions yet to show how this fee is spread.
+      </p>
+    );
+  }
+
+  const bins = buildHistogram(values, bucketCount);
   const total = values.length;
   const overflowBin = bins.find((b) => b.high === null) ?? null;
   const tallest = bins.reduce((a, b) => (b.count > a.count ? b : a), bins[0]);
+  const label = `Histogram of ${formatCount(total)} institutions. Most common: ${binLabel(tallest)} (${formatCount(tallest.count)} institutions).${median !== null ? ` Median ${money(median)}.` : ""}`;
 
   return (
     <figure className="m-0">
-      <svg
-        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="h-auto w-full"
-        role="img"
-        aria-label={`Histogram of ${formatCount(total)} institutions. Most common: ${binLabel(tallest)} (${formatCount(tallest.count)} institutions).${median !== null ? ` Median ${money(median)}.` : ""}`}
-      >
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={PAD.left} x2={VIEW_W - PAD.right} y1={y(t)} y2={y(t)} stroke="#E8DFD1" strokeDasharray={t === 0 ? undefined : "3 3"} />
-            <text x={PAD.left - 6} y={y(t) + 3.5} textAnchor="end" fontSize="14" fill="#6B6255">
-              {formatCount(t)}
-            </text>
-          </g>
-        ))}
-        {bins.map((bin, i) => {
-          const x = PAD.left + slot * i + (slot - barW) / 2;
-          const top = y(bin.count);
-          return (
-            <g key={bin.low}>
-              <rect x={x} y={top} width={barW} height={PAD.top + plotH - top} rx={2} fill="#C44B2E">
-                <title>{`${binLabel(bin)}: ${formatCount(bin.count)} institutions`}</title>
-              </rect>
-              {i % labelEvery === 0 && bin.high !== null && (
-                <text
-                  x={PAD.left + slot * i}
-                  y={VIEW_H - 8}
-                  fontSize="14"
-                  fill="#6B6255"
-                  textAnchor={PAD.left + slot * i > VIEW_W - 60 ? "end" : "start"}
-                >
-                  {money(bin.low)}
-                </text>
-              )}
-            </g>
-          );
-        })}
-        {medianX !== null && median !== null && (
-          <g>
-            <line x1={medianX} x2={medianX} y1={PAD.top} y2={PAD.top + plotH} stroke="#1A1815" strokeWidth={1.5} strokeDasharray="4 3" />
-            <text
-              x={medianX + 5}
-              y={PAD.top + 10}
-              fontSize="14"
-              fontWeight="600"
-              fill="#1A1815"
-              textAnchor={medianX > VIEW_W - 120 ? "end" : "start"}
-              dx={medianX > VIEW_W - 120 ? -10 : 0}
-            >
-              Median {money(median)}
-            </text>
-          </g>
-        )}
-      </svg>
+      {/* Y-axis title, set above the axis's own numbers. */}
+      <p aria-hidden="true" className={`mb-1 ${AXIS_TITLE}`}>
+        Institutions
+      </p>
+      <Plot bins={bins} median={median} viewW={NARROW_W} maxLabels={4} label={label} className="sm:hidden" />
+      <Plot bins={bins} median={median} viewW={WIDE_W} maxLabels={6} label={label} className="hidden sm:block" />
+      {/* X-axis title, under the dollar labels. */}
+      <p aria-hidden="true" className={`mt-1 text-right ${AXIS_TITLE}`}>
+        Fee amount (US dollars)
+      </p>
       <figcaption className="mt-2 text-[12px] text-[#5A5347]">
         Each bar counts institutions whose fee falls in that range; {formatCount(total)} institutions in all.
         {overflowBin ? ` The last bar is ${money(overflowBin.low)} and up.` : ""}

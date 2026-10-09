@@ -5,6 +5,7 @@
  * buyer's signed report (/market-report/[token]) and the public sample report, so the
  * sample always shows exactly what a buyer gets.
  */
+import { ScrollRegion } from "@/components/public/scroll-region";
 import type { ReactNode } from "react";
 import { SITE_NAME } from "@/lib/constants";
 import {
@@ -268,58 +269,60 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </ul>
           </section>
 
-          <section className="mt-8 overflow-x-auto rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="lines-heading">
+          <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="lines-heading">
             <h2 id="lines-heading" className="text-xl text-[#1A1815]" style={SERIF}>
               Your fees against local competitors
             </h2>
             <p className="mt-1 text-[13px] text-[#6B6255]">
               A line is compared only when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.
             </p>
-            <table className="mt-4 w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
-                <tr>
-                  <th className="py-2 pr-3 font-semibold">Fee</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Yours</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Local median</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Middle half</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Competitors</th>
-                  <th className="py-2 pr-3 text-right font-semibold">Charging less</th>
-                  <th className="py-2 font-semibold">Position</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.lines.map((line) => (
-                  <tr key={line.key} className="border-b border-[#EFE8DD] last:border-0">
-                    <td className="py-2 pr-3 text-[#1A1815]">{line.label}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {line.own ? money(line.own.amount) : <span className="whitespace-nowrap">Not found</span>}
-                      {line.own?.tiers && line.own.tiers.length > 1 && (
-                        <span className="block text-[11px] text-warm-600">
-                          tiered: {line.own.tiers.map((tier) => money(tier.amount)).join(" / ")}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
-                    <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
-                      {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{line.peers?.n ?? 0}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
-                    </td>
-                    <td className="min-w-[15rem] py-2">
-                      {line.comparable ? <PositionChip line={line} /> : <UnavailableStatus line={line} contactHref={contactHref} />}
-                    </td>
+            <ScrollRegion label="Your fees against local competitors" initialCueClass="max-[859px]:block" cueClassName="mt-3 text-[12px] font-medium text-[#5A5347]">
+              <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+                <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
+                  <tr>
+                    <th className="py-2 pr-3 font-semibold">Fee</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Yours</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Local median</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Middle half</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Competitors</th>
+                    <th className="py-2 pr-3 text-right font-semibold">Charging less</th>
+                    <th className="py-2 font-semibold">Position</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {analysis.lines.map((line) => (
+                    <tr key={line.key} className="border-b border-[#EFE8DD] last:border-0">
+                      <td className="py-2 pr-3 text-[#1A1815]">{line.label}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {line.own ? money(line.own.amount) : <span className="whitespace-nowrap">Not found</span>}
+                        {line.own?.tiers && line.own.tiers.length > 1 && (
+                          <span className="block text-[11px] text-warm-600">
+                            tiered: {line.own.tiers.map((tier) => money(tier.amount)).join(" / ")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
+                        {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{line.peers?.n ?? 0}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
+                      </td>
+                      <td className="min-w-[15rem] py-2">
+                        {line.comparable ? <PositionChip line={line} /> : <UnavailableStatus line={line} contactHref={contactHref} />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollRegion>
           </section>
 
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
 
           {analysis.named.length > 0 && (
-            <section className="mt-8 overflow-x-auto rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="named-heading">
+            <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="named-heading">
               <h2 id="named-heading" className="text-xl text-[#1A1815]" style={SERIF}>
                 Named competitors, same lines
               </h2>
@@ -330,66 +333,68 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 {branches &&
                   ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits. Credit unions show branches only, in the market's cities, because NCUA reports no deposits by branch.`}
               </p>
-              <table className="mt-4 w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
-                  <tr>
-                    <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
-                    {tableKeys.map((key) => (
-                      <th key={key} className="py-2 pr-3 text-right font-semibold">
-                        {FEE_LINE_LABELS[key]}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-[#EFE8DD] bg-[#FBF3EF] font-semibold">
-                    <td className="py-2 pr-3">
-                      {name}
-                      {footprintLine(branches, data.subject.institution_id) && (
-                        <span className="block whitespace-nowrap text-[12px] font-normal text-[#6B6255]">{footprintLine(branches, data.subject.institution_id)}</span>
-                      )}
-                    </td>
-                    {tableKeys.map((key) => (
-                      <td key={key} className="py-2 pr-3 text-right tabular-nums">
-                        {money(ownFees[key])}
-                      </td>
-                    ))}
-                  </tr>
-                  {analysis.named.map((competitor) => (
-                    <tr key={competitor.institution_id} className="border-b border-[#EFE8DD] last:border-0">
+              <ScrollRegion label="Named competitors, same lines" initialCueClass="max-[859px]:block" cueClassName="mt-3 text-[12px] font-medium text-[#5A5347]">
+                <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+                  <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
+                    <tr>
+                      <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
+                      {tableKeys.map((key) => (
+                        <th key={key} className="py-2 pr-3 text-right font-semibold">
+                          {FEE_LINE_LABELS[key]}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-[#EFE8DD] bg-[#FBF3EF] font-semibold">
                       <td className="py-2 pr-3">
-                        <a href={`/institution/${competitor.institution_id}`} className="text-[#1A1815] underline-offset-2 hover:underline">
-                          {competitor.institution_name}
-                        </a>
-                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-warm-600"> · {cityLabel(competitor.city)}</span>}
-                        {footprintLine(branches, competitor.institution_id) && (
-                          <span className="block whitespace-nowrap text-[12px] text-[#6B6255]">{footprintLine(branches, competitor.institution_id)}</span>
+                        {name}
+                        {footprintLine(branches, data.subject.institution_id) && (
+                          <span className="block whitespace-nowrap text-[12px] font-normal text-[#6B6255]">{footprintLine(branches, data.subject.institution_id)}</span>
                         )}
                       </td>
-                      {tableKeys.map((key) => {
-                        const source = competitor.sources[key];
-                        return (
-                          <td key={key} className="py-2 pr-3 text-right tabular-nums">
-                            {source?.source_url ? (
-                              <a
-                                href={source.source_url}
-                                title={`“${source.source_line}”`}
-                                className="underline decoration-[#D5CBBF] underline-offset-2 hover:decoration-[#A93D25]"
-                                rel="noopener noreferrer"
-                                target="_blank"
-                              >
-                                {money(competitor.fees[key])}
-                              </a>
-                            ) : (
-                              money(competitor.fees[key])
-                            )}
-                          </td>
-                        );
-                      })}
+                      {tableKeys.map((key) => (
+                        <td key={key} className="py-2 pr-3 text-right tabular-nums">
+                          {money(ownFees[key])}
+                        </td>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                    {analysis.named.map((competitor) => (
+                      <tr key={competitor.institution_id} className="border-b border-[#EFE8DD] last:border-0">
+                        <td className="py-2 pr-3">
+                          <a href={`/institution/${competitor.institution_id}`} className="text-[#1A1815] underline-offset-2 hover:underline">
+                            {competitor.institution_name}
+                          </a>
+                          {competitor.city && <span className="whitespace-nowrap text-[12px] text-warm-600"> · {cityLabel(competitor.city)}</span>}
+                          {footprintLine(branches, competitor.institution_id) && (
+                            <span className="block whitespace-nowrap text-[12px] text-[#6B6255]">{footprintLine(branches, competitor.institution_id)}</span>
+                          )}
+                        </td>
+                        {tableKeys.map((key) => {
+                          const source = competitor.sources[key];
+                          return (
+                            <td key={key} className="py-2 pr-3 text-right tabular-nums">
+                              {source?.source_url ? (
+                                <a
+                                  href={source.source_url}
+                                  title={`“${source.source_line}”`}
+                                  className="underline decoration-[#D5CBBF] underline-offset-2 hover:decoration-[#A93D25]"
+                                  rel="noopener noreferrer"
+                                  target="_blank"
+                                >
+                                  {money(competitor.fees[key])}
+                                </a>
+                              ) : (
+                                money(competitor.fees[key])
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ScrollRegion>
             </section>
           )}
 
@@ -445,31 +450,33 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 Every competitor figure behind the local numbers, with its source
               </summary>
               {comparable.map((line) => (
-                <div key={line.key} className="mt-4 overflow-x-auto">
+                <div key={line.key} className="mt-4">
                   <h3 className="text-[13px] font-semibold text-[#1A1815]">
                     {line.label} ({line.peerFigures.length} competitors)
                   </h3>
-                  <table className="mt-1 w-full min-w-[640px] text-left text-[12px]">
-                    <tbody>
-                      {line.peerFigures.map((figure) => (
-                        <tr key={figure.institution_id} className="border-b border-[#EFE8DD] last:border-0 align-top">
-                          <td className="py-1 pr-3 text-[#1A1815]">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
-                          <td className="py-1 pr-3 text-right tabular-nums text-[#1A1815]">{money(figure.amount)}</td>
-                          <td className="py-1 pr-3">“{figure.source_line}”</td>
-                          <td className="whitespace-nowrap py-1">
-                            {figure.source_url ? (
-                              <a href={figure.source_url} className="underline" rel="noopener noreferrer" target="_blank">
-                                source
-                              </a>
-                            ) : (
-                              "stored copy"
-                            )}
-                            {figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <ScrollRegion label={`${line.label}: every competitor figure`} initialCueClass="max-[759px]:block" cueClassName="mt-1 text-[12px] font-medium text-[#5A5347]">
+                    <table className="mt-1 w-full min-w-[640px] text-left text-[12px]">
+                      <tbody>
+                        {line.peerFigures.map((figure) => (
+                          <tr key={figure.institution_id} className="border-b border-[#EFE8DD] last:border-0 align-top">
+                            <td className="py-1 pr-3 text-[#1A1815]">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
+                            <td className="py-1 pr-3 text-right tabular-nums text-[#1A1815]">{money(figure.amount)}</td>
+                            <td className="py-1 pr-3">“{figure.source_line}”</td>
+                            <td className="whitespace-nowrap py-1">
+                              {figure.source_url ? (
+                                <a href={figure.source_url} className="underline" rel="noopener noreferrer" target="_blank">
+                                  source
+                                </a>
+                              ) : (
+                                "stored copy"
+                              )}
+                              {figure.schedule_read_on ? `, read ${figure.schedule_read_on}` : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </ScrollRegion>
                 </div>
               ))}
             </details>

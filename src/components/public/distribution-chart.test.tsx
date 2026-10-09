@@ -28,6 +28,12 @@ describe("DistributionChart", () => {
     expect(html).toContain("6 institutions in all");
   });
 
+  it("titles both axes in visible text: institutions up the side, dollars along the bottom", () => {
+    const html = renderToStaticMarkup(<DistributionChart values={[10, 20, 25, 30, 30, 35]} median={27.5} />);
+    expect(html).toContain(">Institutions</p>");
+    expect(html).toContain(">Fee amount (US dollars)</p>");
+  });
+
   it("says so when there are too few institutions instead of drawing empty axes", () => {
     const html = renderToStaticMarkup(<DistributionChart values={[10, 20]} median={null} />);
     expect(html).not.toContain("<svg");
