@@ -16,6 +16,7 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
 | Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
+| Quote drafts (CARNEGIE) | started when James marks a lead qualified on `/admin/leads` (never cron); also in the daily loop as a dry run | `growth-quote` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
 | Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
 | Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
@@ -87,6 +88,30 @@ withdraws unreviewed drafts whose addressee fails that test, that were written u
 `OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
 institutions can be drafted again. Nothing sends.
+
+### Qualified leads and quote drafts (`quote.ts`, BUILD-PLAN 2.25)
+
+James marks a lead qualified on `/admin/leads` ("Mark qualified"); the row records when and by
+whom (`leads.qualified_at`, `leads.qualified_by`, migration `20270110000032`;
+`src/lib/data-store/lead-qualified.ts`). "Clear qualified" removes the mark. Marking starts a
+growth run with one free `growth-quote` step, so it is on the run ledger and held by the
+marketing pause. The step drafts one quote email per qualified lead that is not paid, not
+unsubscribed and not a test lead (`isTestLead`), once per lead (`subject_key` `lead:<id>`,
+workflow `quote`, skipped drafts included), into `content_drafts` as CARNEGIE's `pitch` (channel
+`email`) for James to review in `/admin/growth` and send himself. Nothing sends.
+
+Every price comes from the code: the Pro tiers on `/subscribe` (`PRO_TIERS` in
+`src/lib/pro-tiers.ts`; the lead's tier from its quoted institution's assets, else all three) and
+the one-off Competitive Fee Position Report (`REPORT_OFFER`: James's saved quote for the lead
+when there is one, else "From $300", `fromPriceUsd`). No delivery time, no fee advice, never
+"free report". The email signs off "Founder, Fee Insight" and carries the same postal-address
+placeholder and opt-out line as outreach; an audit block under it names the lead, who qualified
+it and where each price came from. Before the migration the step drafts nothing and says so.
+
+DRAPER's sales metrics count the mark: a qualified lead whose quote names an institution we
+emailed counts toward qualified conversations per 100 contacts; any other qualified lead is an
+inbound qualified lead (each institution once), reported on its own line and added to the
+month-one floor's count.
 
 ### The outreach journey (`src/lib/outreach-journey.ts`)
 
@@ -263,4 +288,6 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `prospect_contacts` (migration `20270110000031`).
 - Snapshot page events go to `snapshot_events`, and outreach outcomes to `outreach_outcomes`
   (migration `20270110000029`).
+- The qualified mark is two columns on `leads` (migration `20270110000032`); quote drafts go to
+  `content_drafts` like every other draft.
 - No other tables for marketing results.
