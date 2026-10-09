@@ -1,0 +1,52 @@
+{
+  "id": "adversarial-document-testing",
+  "version": 1,
+  "maintainer": "atlas",
+  "owning_agent": "atlas",
+  "inputs": [
+    "shape families to test (default all)",
+    "optional stored excerpts cited by source_document_id and text_hash"
+  ],
+  "outputs": [
+    "case table: family, checker, expected, actual, pass, severity if missed",
+    "proposed unit tests for the checker's own suite"
+  ],
+  "data_access": [
+    { "table": "agent_source_texts", "mode": "read" }
+  ],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "deterministic, no paid calls; pure functions on in-memory cases plus the existing test suites",
+  "triggering_workflows": [
+    "PR changing Knox rules, Rosetta layout, the source check, the limit guard or eval-verdict name rules",
+    "a new misleading fee shape seen on prod",
+    "adversarial partition run (PRD 7.3)"
+  ],
+  "evaluation_suite": [
+    "src/lib/agents/deming/regression-gate.test.ts",
+    "src/lib/custom-report/source-check-layout.test.ts",
+    "src/lib/agents/hamilton/limit-guard.test.ts",
+    "src/lib/agents/hamilton/eval-verdicts.test.ts",
+    "src/lib/agents/rosetta/pdf-layout.test.ts",
+    "src/lib/agents/rosetta/table-rows.test.ts",
+    "src/lib/fee-change-columns.test.ts"
+  ],
+  "failure_behavior": "A shape with no pure checker is listed as untested; a case without a certain expected answer is marked unclear and left out of the score.",
+  "approval_requirements": "None to run. Keeping a case means a normal code PR that waits for CI; no eval_cases rows are written.",
+  "dependencies": [
+    { "path": "src/lib/agents/hamilton/limit-guard.ts" },
+    { "path": "src/lib/custom-report/source-check.ts" },
+    { "path": "src/lib/fee-change-columns.ts" },
+    { "path": "src/lib/agents/hamilton/eval-verdicts.ts", "version_constant": "EVAL_VERDICT_VERSION" },
+    { "path": "src/lib/agents/rosetta/pdf-layout.ts", "version_constant": "PDF_LAYOUT_VERSION" },
+    { "path": "src/lib/agents/rosetta/table-rows.ts" },
+    { "path": "src/lib/agents/deming/checkers.ts" },
+    { "path": "src/lib/agents/deming/severity.ts" }
+  ],
+  "last_validated": "2026-10-09",
+  "abstain_when": [
+    "no pure checker exists for the shape",
+    "the expected verdict is not certain from the text alone",
+    "an excerpt cannot be cited to a stored document and a real-world rate is asked for"
+  ]
+}

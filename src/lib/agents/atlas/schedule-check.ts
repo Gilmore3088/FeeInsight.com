@@ -97,6 +97,18 @@ export function lastScheduledAt(schedule: string, before: Date, lookbackMinutes 
   return null;
 }
 
+/** Pure: the next scheduled minute strictly after `after`, or null within the lookahead. */
+export function nextScheduledAt(schedule: string, after: Date, lookaheadMinutes = LOOKBACK_MINUTES): Date | null {
+  const matches = cronMatcher(schedule);
+  const cursor = new Date(after);
+  cursor.setUTCSeconds(0, 0);
+  for (let step = 0; step <= lookaheadMinutes; step += 1) {
+    cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
+    if (matches(cursor)) return new Date(cursor);
+  }
+  return null;
+}
+
 export function cronEntries(config: { crons?: CronEntry[] } = vercelConfig as { crons?: CronEntry[] }): CronEntry[] {
   return (config.crons ?? []).map((cron) => ({ path: cron.path, schedule: cron.schedule }));
 }

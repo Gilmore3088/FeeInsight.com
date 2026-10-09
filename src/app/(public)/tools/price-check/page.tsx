@@ -96,6 +96,8 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
 
   return (
     <div className="mx-auto max-w-page px-4 py-14 sm:px-6">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:items-end">
+        <div className="max-w-2xl">
       <p className={EYEBROW}>Free tool</p>
       <h1 className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
         Where does a fee price sit in its state?
@@ -104,8 +106,9 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
         Enter a price, including $0, and a state. Every fee counted was checked against the institution&apos;s own
         schedule.
       </p>
+        </div>
 
-      <form method="get" className="mt-8 grid gap-4 rounded-xl border border-[#E8DFD1] bg-white/70 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <form method="get" className="grid gap-4 rounded-xl border border-[#E8DFD1] bg-white/70 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end xl:grid-cols-[1.3fr_1fr_0.7fr_auto]">
         <label className="block">
           <span className={EYEBROW}>Fee</span>
           <select name="fee" defaultValue={fee} className="mt-1.5 block w-full rounded-lg border border-[#E8DFD1] bg-white px-3 py-2.5 text-[15px] text-[#1A1815]">
@@ -129,7 +132,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             ))}
           </select>
         </label>
-        <label className="block sm:col-span-2">
+        <label className="block sm:col-span-2 xl:col-span-1">
           <span className={EYEBROW}>Price</span>
           <input
             name="price"
@@ -144,6 +147,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           Check
         </button>
       </form>
+      </div>
 
       {state !== null && priceRaw && price === null && (
         <p className="mt-6 text-[14px] text-[#A93D25]">Enter the price as a dollar amount, such as 35 or 12.50.</p>
@@ -169,17 +173,41 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <p className={EYEBROW}>
             {FEE_LABEL[fee]} in {stateName}
           </p>
-          <h2 className="mt-2 text-[1.4rem] leading-snug text-[#1A1815]" style={SERIF}>
+          <h2 className="mt-2 max-w-4xl text-[1.4rem] leading-snug text-[#1A1815]" style={SERIF}>
             {check.lower} of {check.count} institutions charge less than {money(check.price)}, {check.same} charge the same and{" "}
             {check.higher} charge more.
           </h2>
           <PositionBar lower={check.lower} same={check.same} higher={check.higher} />
-          <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-start">
+            <div>
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
             <Stat label="Institutions counted" value={String(check.count)} />
             <Stat label={`${state} median`} value={money(check.median)} />
             {nationalMedian !== null ? <Stat label="National median" value={money(nationalMedian)} /> : <Stat label="Charge less" value={`${check.lowerShare}%`} />}
             <Stat label="Charge $0" value={String(check.zero)} />
           </dl>
+          {prices.uncheckedCount > 0 && (
+            <p className="mt-4 max-w-prose text-[13px] text-[#6B6255]">
+              {plural(prices.uncheckedCount, "other institution has", "other institutions have")} a published {FEE_NOUN[fee]}{" "}
+              that hasn&apos;t been matched to its schedule yet, so {prices.uncheckedCount === 1 ? "it is" : "they are"} not counted.
+            </p>
+          )}
+          {income !== null && (
+            <p className="mt-3 text-[12px] text-[#6B6255]">
+              Median household income in {stateName}: {money(income)} (Census ACS {demographics?.year}).
+            </p>
+          )}
+
+            </div>
+            <div>
+          <h3 className="text-[1.1rem] text-[#1A1815]" style={SERIF}>
+            How the {stateName} figures are spread
+          </h3>
+          <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-3">
+            <DistributionChart values={prices.institutions.map((institution) => institution.value)} median={check.median} />
+          </div>
+            </div>
+          </div>
 
           {mapWide && (
             <>
@@ -204,63 +232,38 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
                 )}
               </div>
               <CountyPriceMap wide={mapWide} narrow={mapNarrow} details={countyDetails} price={check.price} feeNoun={FEE_NOUN[fee]} />
-              <p className="mt-2 text-[12px] text-[#6B6255]">
+              <p className="mt-2 max-w-3xl text-[12px] text-[#6B6255]">
                 Each county shows the published {FEE_NOUN[fee]} of the institutions with branches there, weighted by their deposits (FDIC Summary of Deposits
                 {countyMap?.sod_year ? `, ${countyMap.sod_year}` : ""}). Fees of $0 are left out.
               </p>
             </>
           )}
-          {prices.uncheckedCount > 0 && (
-            <p className="mt-4 text-[13px] text-[#6B6255]">
-              {plural(prices.uncheckedCount, "other institution has", "other institutions have")} a published {FEE_NOUN[fee]}{" "}
-              that hasn&apos;t been matched to its schedule yet, so {prices.uncheckedCount === 1 ? "it is" : "they are"} not counted.
-            </p>
-          )}
 
-          <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
-            How the {stateName} figures are spread
-          </h3>
-          <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-3">
-            <DistributionChart values={prices.institutions.map((institution) => institution.value)} median={check.median} />
-          </div>
-          {income !== null && (
-            <p className="mt-2 text-[12px] text-[#6B6255]">
-              Median household income in {stateName}: {money(income)} (Census ACS {demographics?.year}).
-            </p>
-          )}
-
+          <div className="mt-10 grid gap-8 lg:grid-cols-2 lg:items-start">
           {charters.length > 0 && (
-            <>
-              <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+            <div>
+              <h3 className=" text-[1.1rem] text-[#1A1815]" style={SERIF}>
                 Banks and credit unions
               </h3>
               <GroupTable rows={charters} price={check.price} firstColumn="Charter" />
-            </>
+            </div>
           )}
 
           {markets.length > 0 && (
-            <>
-              <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+            <div>
+              <h3 className=" text-[1.1rem] text-[#1A1815]" style={SERIF}>
                 By local market
               </h3>
-              <p className="mt-1 text-[13px] text-[#6B6255]">
+              <p className="mt-1 max-w-prose text-[13px] text-[#6B6255]">
                 Metro areas, or the city where an institution has no metro, with at least 3 source-checked institutions.
               </p>
               <GroupTable rows={markets} price={check.price} firstColumn="Market" />
-            </>
+            </div>
           )}
-          <p className="mt-4 text-[13px] text-[#5A5347]">
-            More on {stateName}:{" "}
-            <Link href={`/research/state/${state}`} className="font-medium text-[#A93D25] hover:underline">
-              state fee report
-            </Link>
-            {" · "}
-            <Link href={`/fees/city/${(state ?? "").toLowerCase()}`} className="font-medium text-[#A93D25] hover:underline">
-              fees by city
-            </Link>
-          </p>
-
-          <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+          </div>
+          <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start">
+            <div>
+          <h3 className="text-[1.1rem] text-[#1A1815]" style={SERIF}>
             The institutions behind the count
           </h3>
           <ul className="mt-3 divide-y divide-[#E8DFD1]/60 rounded-xl border border-[#E8DFD1]/80 bg-white/70">
@@ -290,7 +293,9 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             </p>
           )}
 
-          <div className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2] p-5">
+            </div>
+            <div className="lg:sticky lg:top-24">
+          <div className="rounded-xl border border-[#E8DFD1] bg-[#FAF7F2] p-5">
             <p className="text-[15px] leading-relaxed text-[#1A1815]">
               A market report puts one institution&apos;s full fee schedule beside its named local competitors, fee by fee, with
               every figure linked to its source.
@@ -304,6 +309,17 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
               </Link>
             </div>
           </div>
+          <p className="mt-4 text-[13px] text-[#5A5347]">
+            More on {stateName}:{" "}
+            <Link href={`/research/state/${state}`} className="font-medium text-[#A93D25] hover:underline">
+              state fee report
+            </Link>
+            {" · "}
+            <Link href={`/fees/city/${(state ?? "").toLowerCase()}`} className="font-medium text-[#A93D25] hover:underline">
+              fees by city
+            </Link>
+          </p>
+
           <p className="mt-6 text-[12px] leading-relaxed text-[#6B6255]">
             Counts show where a price sits among published fees. They are not advice on what any institution should charge. How fees
             are collected and checked is on the{" "}
@@ -312,6 +328,8 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             </Link>
             .
           </p>
+            </div>
+          </div>
         </section>
       )}
     </div>
