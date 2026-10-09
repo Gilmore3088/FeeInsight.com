@@ -8,6 +8,7 @@ import { getInstitutionById, getInstitutionsByFilter } from "@/lib/data-store";
 import { searchInstitutions } from "@/lib/data-store/search";
 import { getInstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
+import { getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { GET } from "./route";
 
 vi.mock("@/lib/api-auth", () => ({ validateApiKey: vi.fn() }));
@@ -28,6 +29,7 @@ vi.mock("@/lib/data-store/benchmark-export", async (importOriginal) => ({
   getInstitutionBenchmark: vi.fn(),
 }));
 vi.mock("@/lib/data-store/regulatory-watch", () => ({ getRegulatoryWatch: vi.fn() }));
+vi.mock("@/lib/data-store/rate-fees", () => ({ getRateFeesByInstitution: vi.fn(() => Promise.resolve([])) }));
 
 vi.mock("@/lib/data-store/search", () => ({
   searchInstitutions: vi.fn(() => Promise.resolve({ rows: [], total: 0 })),
@@ -83,6 +85,36 @@ describe("/api/v1/institutions", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ id: 12, name: "Example Bank", asset_size: 1000000, fees: [], call_reports: [] });
+  });
+
+  it("lists rate fees apart from dollar fees on institution detail", async () => {
+    vi.mocked(validateApiKey).mockResolvedValue({ valid: true, organizationId: 7, tier: "enterprise" });
+    vi.mocked(getInstitutionById).mockResolvedValue({ id: "12", institution_name: "Example Bank", state_code: "TX" } as never);
+    vi.mocked(getRateFeesByInstitution).mockResolvedValue([
+      {
+        id: 9,
+        institution_id: 12,
+        fee_name: "Foreign Transaction Fee",
+        fee_category: "foreign_transaction",
+        frequency: "per item",
+        conditions: null,
+        source_url: "https://example.com/fees.pdf",
+        amount_kind: "percent",
+        rate_percent: 3,
+        rate_min_amount: null,
+        rate_max_amount: null,
+        rate_basis: "transaction",
+        rate_label: "3% of the transaction",
+      },
+    ] as never);
+
+    const body = await (await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?id=12"))).json();
+
+    expect(getRateFeesByInstitution).toHaveBeenCalledWith(12);
+    expect(body.fee_count).toBe(0);
+    expect(body.rate_fees).toEqual([
+      expect.objectContaining({ fee_name: "Foreign Transaction Fee", rate_percent: 3, rate_terms: "3% of the transaction" }),
+    ]);
   });
 
   it("rejects a zero page size instead of dividing by zero", async () => {
