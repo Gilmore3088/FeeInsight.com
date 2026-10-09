@@ -8,6 +8,9 @@ import { HAND_REFILES, planHandRefiles } from "./taxonomy-fold";
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  107960: "Lost Card | $10.00\n\nReturn Check Fee | $25.00\n\nMiscellaneous\n\nDormant Fee | $ 3.00\n\nNSF Deposit Fee | $ 30.00",
+  108035: "NSF | $25.00 Per Item\nOne-Time Debit Overdraft | $25.00 Per Item\nOverdraft | $25.00 Per Item\nReturned Item | $25.00 Per Item\nStop Payment | $10.00 Per Request",
+  108132: "Returned Mail | $10.00 | each occurrence\n\nReturned Check | $30.00 | each\n\nStatement Copy | $1.00 | each page",
   96164: "Non-Westamerica ATM Withdrawals:\nWestamerica will not impose a Network ATM fee for\nwithdrawals made at any non-Westamerica ATM if the\nbalance requirement to avoid the monthly service charge is\nmet. Otherwise, a fee of $2.50 per posted withdrawal may\nbe imposed at the end of your statement cycle.",
   61848: "The minimum balance to open a Share Account is $5. You must maintain a minimum daily balance of $5 in your account to avoid a minimum balance fee of $2 once during the statement cycle.",
   98747: "Minimum balance to avoid imposition of fees - If your balance falls below $1,000.00 on any day in the monthly statement cycle we will impose a service charge fee of $15.00 once during the statement cycle.",
