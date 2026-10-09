@@ -523,7 +523,48 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url,
     givenBy: "Mac session browser check of blocked top-10 banks, 2026-10-09 00:57",
   })),
+  {
+    // Market-gap list (2026-10-09): Magellan's paid search proposed this PDF four times on
+    // 7 Oct ("personal deposit account fees including overdraft ($25.00)") but timed out
+    // opening it; the link on file is a page-not-found page.
+    institutionId: 25,
+    institutionName: "The Northern Trust Company",
+    url: "https://www.northerntrust.com/content/dam/northerntrust/pws/nt/documents/wealth-management/banking/disclosures/deposit-account-descriptions-and-fees.pdf",
+    givenBy: "Magellan's paid schedule search (proposed 4 times, 2026-10-07), for the market-gap list 2026-10-09",
+  },
 ];
+
+export interface NoConsumerSchedule {
+  institutionId: number;
+  institutionName: string;
+  reason: string;
+}
+
+/**
+ * Large-deposit banks with no consumer deposit fee schedule to find: their deposits are
+ * wholesale, custody or fee-free online savings. Discovery does not put them first as market
+ * gaps, and the gap ranking leaves them out (2026-10-09). A bank leaves this list when it
+ * publishes a consumer schedule.
+ */
+export const NO_CONSUMER_SCHEDULE: readonly NoConsumerSchedule[] = [
+  {
+    institutionId: 7,
+    institutionName: "Goldman Sachs Bank USA",
+    reason: "Marcus online savings and CDs charge no account fees; web search found no consumer fee schedule (paid web search)",
+  },
+  {
+    institutionId: 10,
+    institutionName: "The Bank of New York Mellon",
+    reason: "Custody and wholesale bank; the only schedule is Pershing's broker-client bank sweep charges; web search found no consumer fee schedule",
+  },
+  {
+    institutionId: 817,
+    institutionName: "The Bank of New York Mellon Trust Company, National Association",
+    reason: "Trust company; same Pershing sweep schedule as BNY; web search found no consumer fee schedule",
+  },
+];
+
+export const NO_CONSUMER_SCHEDULE_IDS: ReadonlySet<number> = new Set(NO_CONSUMER_SCHEDULE.map((bank) => bank.institutionId));
 
 /** A stored copy of the schedule counts as held only when it is this recent. */
 export const HELD_DOCUMENT_DAYS = 30;

@@ -4,6 +4,7 @@ import {
   addHandFoundLink,
   addOperatorSchedules,
   HELD_DOCUMENT_DAYS,
+  NO_CONSUMER_SCHEDULE,
   OPERATOR_SCHEDULE_STRATEGY,
   OPERATOR_SCHEDULES,
   type OperatorSchedule,
@@ -91,6 +92,14 @@ describe("schedules James found by hand", () => {
     const db = createDb([{ institution_id: 1, url: null, institution_name: chase.institutionName }], []);
     expect((await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [chase] })).added).toEqual([]);
     expect(attempts(db)).toHaveLength(0);
+  });
+
+  it("never hunts a schedule for a bank listed as having no consumer schedule", () => {
+    const hunted = new Set(OPERATOR_SCHEDULES.map((schedule) => schedule.institutionId));
+    for (const bank of NO_CONSUMER_SCHEDULE) {
+      expect(hunted.has(bank.institutionId)).toBe(false);
+      expect(bank.reason.length).toBeGreaterThan(20);
+    }
   });
 
   it("lists each bank once, Chase and Citi first, with https links", () => {
