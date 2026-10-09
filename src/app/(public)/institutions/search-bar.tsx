@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useId, useRef } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Search } from "lucide-react";
@@ -46,6 +47,9 @@ function InstitutionSearchBarInner({
   const [results, setResults] = useState<Result[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [loading, setLoading] = useState(false);
+  // The suggestion the arrow keys have moved to; -1 means the input itself.
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const listboxId = useId();
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -77,6 +81,7 @@ function InstitutionSearchBarInner({
         const resp = await fetch(`/api/institutions?q=${encodeURIComponent(value.trim())}`);
         const data = await resp.json();
         setResults(data);
+        setActiveIndex(-1);
         setShowResults(true);
       } catch {
         setResults([]);
@@ -94,13 +99,42 @@ function InstitutionSearchBarInner({
 
   function handleSelect(id: number) {
     setShowResults(false);
+    setActiveIndex(-1);
     router.push(fee ? `/institution/${id}?fee=${encodeURIComponent(fee)}#fee-${fee}` : `/institution/${id}`);
   }
 
-  // Enter runs a full search rather than doing nothing. Previously the only way to a
-  // result list was clicking a suggestion or hand-editing ?q= into the URL.
+  const listOpen = showResults && results.length > 0;
+  const optionId = (index: number) => `${listboxId}-option-${index}`;
+
+  // A combobox: the arrow keys move through the suggestions while focus stays in the input,
+  // Enter picks the highlighted one (or runs a full search when none is), Escape closes the list.
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (results.length === 0) return;
+      e.preventDefault();
+      setShowResults(true);
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((i) => {
+        const next = i + step;
+        if (next < -1) return results.length - 1;
+        return next >= results.length ? -1 : next;
+      });
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!listOpen) return;
+      e.preventDefault();
+      setShowResults(false);
+      setActiveIndex(-1);
+      return;
+    }
     if (e.key !== "Enter") return;
+    if (listOpen && activeIndex >= 0 && results[activeIndex]) {
+      e.preventDefault();
+      handleSelect(results[activeIndex].id);
+      return;
+    }
+    // Enter with no suggestion highlighted runs a full search rather than doing nothing.
     const q = query.trim();
     if (q.length < 2) return;
     e.preventDefault();
@@ -120,7 +154,12 @@ function InstitutionSearchBarInner({
         />
         <input
           type="text"
+          role="combobox"
           aria-label={ariaLabel}
+          aria-autocomplete="list"
+          aria-expanded={listOpen}
+          aria-controls={listboxId}
+          aria-activedescendant={listOpen && activeIndex >= 0 ? optionId(activeIndex) : undefined}
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -142,13 +181,26 @@ function InstitutionSearchBarInner({
         )}
       </div>
 
-      {showResults && results.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[#E8DFD1] bg-[#FFFDF9] shadow-lg">
-          {results.map((r) => (
-            <button
+      {listOpen && (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label="Matching institutions"
+          className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[#E8DFD1] bg-[#FFFDF9] shadow-lg"
+        >
+          {results.map((r, index) => (
+            <div
               key={r.id}
+              id={optionId(index)}
+              role="option"
+              aria-selected={index === activeIndex}
+              // Keep focus in the input so the arrow keys keep working after a pointer press.
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
               onClick={() => handleSelect(r.id)}
-              className="fi-row-interaction w-full border-b border-[#E8DFD1] px-4 py-3 text-left last:border-0"
+              className={`fi-row-interaction w-full cursor-pointer border-b border-[#E8DFD1] px-4 py-3 text-left last:border-0${
+                index === activeIndex ? " bg-[#F5EFE6]" : ""
+              }`}
             >
               <div className="text-sm font-medium text-[#1A1815]">
                 {r.institution_name}
@@ -176,7 +228,7 @@ function InstitutionSearchBarInner({
                   </span>
                 )}
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -184,6 +236,12 @@ function InstitutionSearchBarInner({
       {showResults && results.length === 0 && query.trim().length >= 2 && !loading && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-[#E8DFD1] bg-[#FFFDF9] p-4 shadow-lg">
           <p className="text-sm text-[#6B6255]">No institutions found for {query}</p>
+          <p className="mt-2 text-sm text-[#6B6255]">
+            Can&apos;t find your institution?{" "}
+            <Link href="/submit-fees" className="font-medium text-[#A93D25] underline underline-offset-2">
+              Send its fee schedule
+            </Link>
+          </p>
         </div>
       )}
     </div>
