@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
+import { passesDarwinChecks } from "./agents/knox/layout";
 import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -58,12 +59,15 @@ describe("top-50 fold", () => {
     expect(to("nsf_daily_cap", "Wire Transfer (over daily limit)")).toBeNull();
   });
 
-  test("international ATM fees are International ATM & Card; a line that rules them out has no home", () => {
+  test("international ATM fees are International ATM & Card; a domestic ATM line is the network ATM fee", () => {
     expect(to("atm_international", "International ATM Withdrawal Fee")).toBe("card_foreign_txn");
     expect(to("atm_international", "Non–Wells Fargo ATMs outside the U.S.")).toBe("card_foreign_txn");
     expect(to("atm_international", "Non-IBC ATM locations (outside the U.S.): Withdrawal")).toBe("card_foreign_txn");
-    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBeNull();
-    expect(to("atm_international", "ATMs inside United States & internationally")).toBeNull();
+    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBe("atm_non_network");
+    expect(to("atm_international", "ATMs inside United States & internationally")).toBe("atm_non_network");
+    expect(passesDarwinChecks("atm_non_network", "ATM Inquiry (any non-international ATM)", 0)).toBe(true);
+    expect(passesDarwinChecks("atm_non_network", "ATMs inside United States & internationally", 3)).toBe(true);
+    expect(to("atm_international", "Allpoint ATM Transactions – Domestic/International")).toBeNull();
     expect(to("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)")).toBeNull();
     expect(to("card_foreign_txn", "Foreign Transaction Fee")).toBeUndefined();
   });

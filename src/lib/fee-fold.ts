@@ -131,11 +131,17 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   // Using an ATM abroad and using a card abroad are one type, International ATM & Card (James,
   // Oct 8: Foreign Transaction gave up its spot). The survivor keeps the card_foreign_txn key,
-  // which holds the rates and the spotlight guide; a line that excludes international ATMs, or
-  // names them only beside domestic ones, is not this fee.
+  // which holds the rates and the spotlight guide. A line priced for any domestic ATM, or for
+  // domestic and international ATMs together, is the network ATM fee ("ATMs inside United States
+  // & internationally" $3 under "Not at North Shore Bank or MoneyPass network"). A reimbursement
+  // cap ("up to $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner
+  // network ("Allpoint ATM Transactions" $0 at SoFi) have no home (Oct 9 review of the last 4).
   atm_international: {
     family: "ATM & Card",
-    rules: [{ to: null, name: /\bnon[- ]?international\b|outside (?:the )?u\.?s\.?a?\.? excluded|\binside (?:the )?united states\b/i }],
+    rules: [
+      { to: null, name: /outside (?:the )?u\.?s\.?a?\.? excluded|^allpoint\b/i },
+      { to: "atm_non_network", name: /\bnon[- ]?international\b|\binside (?:the )?united states\b/i },
+    ],
     otherwise: "card_foreign_txn",
   },
   // A distribution closes out (part of) the IRA.
@@ -192,7 +198,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 5;
+export const FOLD_RULES_VERSION = 6;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
