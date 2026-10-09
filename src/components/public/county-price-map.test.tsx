@@ -42,3 +42,21 @@ describe("CountyPriceMap", () => {
     expect(screen.getByText("No published overdraft fee yet")).toBeTruthy();
   });
 });
+
+describe("CountyPriceMap counties with no branch", () => {
+  it("says there is no branch rather than counting zero institutions", () => {
+    const empty = `<svg><path data-fips="31117" d="M0 0h1v1z"></path></svg>`;
+    const { container } = render(
+      <CountyPriceMap
+        wide={empty}
+        narrow={null}
+        details={{ "31117": { name: "McPherson", fee: null, institutions: 0, deposits: 0, covered: 0, top: [] } }}
+        price={30}
+        feeNoun="overdraft fee"
+      />,
+    );
+    fireEvent.click(container.querySelector("path")!);
+    expect(screen.getByText(/No bank or credit union reports a branch here/)).toBeTruthy();
+    expect(screen.queryByText(/0 institutions/)).toBeNull();
+  });
+});
