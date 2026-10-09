@@ -17,6 +17,7 @@ const HANDLED_STRIPE_EVENTS = [
   "customer.subscription.deleted",
   "invoice.paid",
   "invoice.payment_failed",
+  "charge.refunded",
 ];
 
 const WEBHOOK_PATH = "/api/webhooks/stripe";
