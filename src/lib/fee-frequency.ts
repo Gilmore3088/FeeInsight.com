@@ -5,19 +5,22 @@
  * fee). Only wording that points one way counts; anything else stays unknown.
  */
 
-export const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))\b/i;
+export const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))(?![a-z])/i;
 export const PERIODIC_WORDING = /\b(per (month|year|quarter)|monthly|annual(ly)?|quarterly|\/\s?(mo|month|yr|year)\b|a month|a year)/i;
 
 // "/MO" after a word is a money order ("per check/MO"), not a month.
-const MONTHLY_WORDING = /\b(per (calendar month|month|mo|statement cycle|statement period|cycle)|monthly|a month)\b|(?<![a-z])\/\s?mo\b|\/\s?month\b/i;
-const ANNUAL_WORDING = /\b(per year|annual(ly)?|yearly|a year)\b|\/\s?(yr|year)\b/i;
-const QUARTERLY_WORDING = /\b(per quarter|quarterly)\b|\/\s?(qtr|quarter)\b/i;
+const MONTHLY_WORDING = /\b(per (calendar month|month|mo|statement cycle|statement period|cycle)|monthly|a month)(?![a-z])|(?<![a-z])\/\s?mo(?![a-z])|\/\s?month(?![a-z])/i;
+const ANNUAL_WORDING = /\b(per year|annual(ly)?|yearly|a year)(?![a-z])|\/\s?(yr|year)(?![a-z])/i;
+const QUARTERLY_WORDING = /\b(per quarter|quarterly)(?![a-z])|\/\s?(qtr|quarter)(?![a-z])/i;
 // v4: a fee charged per day ("$5.00 per business day" on a continuous overdraft) is daily.
 // A bare "daily" is often a limit ("this $33 fee can be charged daily"), so only "per day" counts.
 const DAILY_WORDING = /\bper (business |calendar )?day\b/i;
 const ONE_TIME_WORDING = /\bone[- ]time\b/i;
-/** Wording that makes the price something other than a flat charge per event or period. */
-const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\bper\s+\d|\bminimum\b|\bmaximum\b|\bmax\b)/i;
+/**
+ * Wording that makes the price something other than a flat charge per event or period. v6: a
+ * maximum caps a per-item fee ("$2.00 per page up to a maximum of $5.00"); it is not a basis.
+ */
+const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\bper\s+\d|\bminimum\b)/i;
 /**
  * An allowance is not the fee's period: "Cashier Checks (1 free per month) | $2.00" and "$1.00
  * ... after five (5) per month" are charged per item once the free ones are used.
@@ -34,7 +37,7 @@ function withoutAllowance(text: string): string {
 // v4: "per loan", "per notice", "per levy", "per stop payment", "per file", "/sheet", "/key"
 // and other per-event nouns, and "occurance"/"occurence" misspelt (Oct 9). "Per statement"
 // stays unknown: a paper-statement fee charged per statement is a monthly charge.
-const MORE_PER_ITEM = /\bper (presentment|transfer|wire|card|key|inquiry|document|piece|sheet|occasion|money order|notary|order|draft|signature|payment|loan|notice|garnishment|levy|submission|incident|instance|application|stop( payment)?|overdraft|returned item|return|advance|verification|replacement|file|skip|reload|event|bag|stamp|occurr?[ae]nce)\b|\/\s?(item|check|transaction|each|ea|copy|page|request|transfer|wire|card|occurrence|loan|key|sheet|withdrawal|document|draft|order|box|money order|inquiry)\b|^\s*ea\b/i;
+const MORE_PER_ITEM = /\bper (presentment|transfer|wire|card|key|inquiry|document|piece|sheet|occasion|money order|notary|order|draft|signature|payment|loan|notice|garnishment|levy|submission|incident|instance|application|stop( payment)?|overdraft|returned item|return|advance|verification|replacement|file|skip|reload|event|bag|stamp|occurr?[ae]nce)(?![a-z])|\/\s?(item|check|transaction|each|ea|copy|page|request|transfer|wire|card|occurrence|loan|key|sheet|withdrawal|document|draft|order|box|money order|inquiry)(?![a-z])|^\s*ea\b/i;
 /** A cell after the price ("| $6.00 | Per Item") is read when it is this short. */
 const NEXT_CELL_MAX = 25;
 const PRICE = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/g;
@@ -65,7 +68,8 @@ function priceWords(sourceLine: string, amount: number | null, nextCell: boolean
     // Words after the price stop at the next price, and a label ending in a colon is the next
     // price's ("$8.00 Per check: $0.20").
     const own = cells[0].split(/\$\s?\.?\d/)[0];
-    if (own !== cells[0] && own.trim().endsWith(":")) found.push("");
+    // v6: words before that label are still the fee's own ("$1.00/page Business: $3.00/page").
+    if (own !== cells[0] && own.trim().endsWith(":")) found.push(own.replace(/[A-Za-z]+:\s*$/, ""));
     else if (own.trim() === "" && own === cells[0] && cells.length > 1 && cells[1].trim().length <= NEXT_CELL_MAX && !/\$\s?\.?\d/.test(cells[1])) found.push(cells[1]);
     else found.push(own.slice(0, 40));
   }
