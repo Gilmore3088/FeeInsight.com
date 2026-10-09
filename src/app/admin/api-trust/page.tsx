@@ -5,6 +5,7 @@ import { Activity, Ban, CircleAlert, Gauge, LockKeyhole, Route, ShieldCheck } fr
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { requireAuth } from "@/lib/auth";
 import { getApiTrustOverview } from "@/lib/api-hardening/admin";
+import { formatAdminDateTime } from "@/lib/admin-time";
 
 function money(microusd: number): string {
   const dollars = microusd / 1_000_000;
@@ -17,13 +18,7 @@ function money(microusd: number): string {
 }
 
 function time(value: string | null): string {
-  if (!value) return "Never";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return value ? formatAdminDateTime(value) : "Never";
 }
 
 function Stat({
