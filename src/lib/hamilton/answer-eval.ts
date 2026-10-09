@@ -14,7 +14,7 @@ import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { getInstitutionRegulators, type InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
 import { incomeWhyFor, scheduleFor } from "./ask-service";
-import { buildAskResponse, parseAsk } from "./workspace/ask";
+import { buildAskResponse, parseAsk, withSegmentDefault } from "./workspace/ask";
 import { QUALITY_QUESTIONS, scoreResponse, type QualityQuestion } from "./workspace/quality-bar";
 import { regulatorSentence } from "./workspace/regulators";
 import { getFeeResearch } from "./workspace/research";
@@ -95,6 +95,7 @@ async function answer(institutionId: number, question: string, research: Map<str
   if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
   const why = await incomeWhyFor(institutionId, question, {});
   if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  intent = withSegmentDefault(intent);
   let found: FeeResearch | null = null;
   if (intent.feeCategory) {
     const key = `${intent.feeCategory}|${intent.segment ? JSON.stringify(intent.segment) : ""}`;
@@ -248,6 +249,8 @@ export interface AnswerEvalSummary {
   institutions: number;
   /** Institutions drawn for the run; fewer were asked when the time budget ran out. */
   planned: number;
+  /** The institutions asked, so a run can be checked against a named bank. */
+  institutionIds?: number[];
   answers: number;
   passed: number;
   /** Failure text (institution-specific values stripped) with how many answers hit it, most first. */
@@ -323,6 +326,6 @@ export async function runAnswerEval({
     for (const rows of await Promise.all(batch.map(evaluateInstitution))) results.push(...rows);
     done += batch.length;
   }
-  const summary = summarizeEval(results, done, timedOut, institutions.length);
+  const summary = { ...summarizeEval(results, done, timedOut, institutions.length), institutionIds: institutions.slice(0, done).map((i) => i.id) };
   return proResults.length > 0 ? { ...summary, pro: summarizeProReplay(proResults) } : summary;
 }

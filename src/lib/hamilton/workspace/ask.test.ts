@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  withSegmentDefault,
   buildAskResponse,
   buildOpinion,
   clarifyAgain,
@@ -150,5 +151,13 @@ describe("the bank's figures and the opinion", () => {
     const scenarios = scenariosFor(overdraftResearch(), 32, [25, 35], null);
     expect(buildOpinion(scenarios, "customer_treatment")?.chosen.tested).toBe(25);
     expect(buildOpinion(scenarios, "revenue")?.chosen.tested).toBe(35);
+  });
+});
+
+describe("withSegmentDefault", () => {
+  it("answers a segment question that names no fee for overdraft instead of asking back", () => {
+    expect(withSegmentDefault(parseAsk("talk to me about all institutison above 10billion")).feeCategory).toBe("overdraft");
+    expect(withSegmentDefault(parseAsk("How does our NSF fee compare with banks over $10 billion?")).feeCategory).toBe("nsf");
+    expect(withSegmentDefault(parseAsk("what changed this quarter")).feeCategory).toBeNull();
   });
 });
