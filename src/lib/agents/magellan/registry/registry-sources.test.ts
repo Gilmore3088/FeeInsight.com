@@ -647,6 +647,31 @@ describe("registry state bills worker", () => {
     expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
   });
 
+  it("asks once more with no date limit when a state has no search hits, and logs the count", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
+      json(String(url).includes("action_since") ? { results: [], pagination: { max_page: 1 } } : { results: [], pagination: { max_page: 1, total_items: 0 } }),
+    );
+    const result = await runRegistryStateBills({ partitionKey: "VA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ searched: 0, fetched: 0, requests: 4 });
+    const probeUrl = String(fetchImpl.mock.calls[3][0]);
+    expect(probeUrl).not.toContain("action_since");
+    expect(probeUrl).toContain("q=overdraft");
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
+    expect(JSON.parse(detail)).toMatchObject({ searched: 0, any_date_overdraft_hits: 0 });
+  });
+
+  it("skips the extra request when the searches found bills", async () => {
+    const { db, statements } = createDb([]);
+    const fetchImpl = vi.fn().mockImplementation(async () => json(page));
+    await runRegistryStateBills({ partitionKey: "CA", db, now, apiKey: "k", live: false, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+    const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
+    expect(JSON.parse(detail)).not.toHaveProperty("any_date_overdraft_hits");
+  });
+
   it("upserts bills with their stage when live", async () => {
     const { db, statements } = createDb([["INSERT INTO reg_tracker_items", (values) => payloadOf(values).map((r) => ({ external_id: r.id }))]]);
     const fetchImpl = vi.fn().mockImplementation(async () => json(page));
@@ -671,7 +696,11 @@ describe("registry state bills worker", () => {
     expect(statements.some((s) => /DELETE/i.test(s.text))).toBe(false);
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
     const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
-    expect(JSON.parse(detail)).toMatchObject({ tagging_version: STATE_BILLS_TAGGING_VERSION, untagged: 1 });
+    expect(JSON.parse(detail)).toMatchObject({
+      tagging_version: STATE_BILLS_TAGGING_VERSION,
+      untagged: 1,
+      rejected_sample: { "AB 1520": "Public resources: conservation." },
+    });
   });
 
   it("re-reads states whose stored bills were tagged under older rules", async () => {

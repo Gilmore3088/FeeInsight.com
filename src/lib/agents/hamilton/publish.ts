@@ -16,6 +16,7 @@ import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-gua
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { stripFootnoteMarks } from "@/lib/agents/knox/rules";
+import { retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -578,6 +579,13 @@ export function normalizedFeeName(name: string | null | undefined): string {
  */
 export function publishedFeeName(name: string, canonicalKey: string): string {
   const current = name.trim();
+  // A name the guard rejects only because a neighbouring cell or dot leaders ran into it ("per
+  // order | Returned Items", "Return Item . . . .") publishes under Knox's re-tidied name when
+  // that name passes the guard (Darwin's returned-check refile, Oct 9).
+  if (!checkFeeCategory(canonicalKey, current).ok) {
+    const retidied = retidiedFeeName(current, canonicalKey);
+    if (retidied && checkFeeCategory(canonicalKey, retidied).ok) return retidied;
+  }
   // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
   const repaired = repairNameShape(stripFootnoteMarks(current));
   if (!repaired || repaired === current) return current;
@@ -1161,7 +1169,7 @@ export async function runHamiltonPublish(
     let result: HamiltonPublishResult;
     // A row whose name contradicts its category (verified before Darwin had the guard)
     // is retired instead of published.
-    const category = checkFeeCategory(row.canonical_fee_key, row.fee_name, { amount: row.amount });
+    const category = checkFeeCategory(row.canonical_fee_key, publishedFeeName(row.fee_name, row.canonical_fee_key), { amount: row.amount });
     if (!category.ok && !dryRun) {
       await rejectVerifiedFeeForCategory(db, Number(row.fee_verified_id), category.code);
     }

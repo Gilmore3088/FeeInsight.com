@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 
 type TxMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -60,6 +61,7 @@ vi.mock("@/lib/automation-control", () => ({
 }));
 
 vi.mock("@/lib/agents/content/market-spread", () => ({
+  MARKET_SPREAD_WORKFLOW: "w1-market-spread",
   runMarketSpread: vi.fn().mockResolvedValue({ draftId: 9, picked: { metro: "Kansas City" } }),
   summarizeMarketSpread: vi.fn().mockReturnValue("Drafted a market-spread post for Kansas City."),
 }));
@@ -503,6 +505,8 @@ describe("agentic run store", () => {
         limit: 10,
       }),
     );
+    // MG-4: the discover step retrains the shadow fee-page classifier (PR 247 had dropped the call).
+    expect(refreshPageClassifier).toHaveBeenCalledWith(expect.anything(), { runId: 101, dryRun: false });
     const combinedSql = combinedTransactionSql();
     expect(combinedSql).not.toContain("extracted_fees");
     expect(combinedSql).toContain("step.started");

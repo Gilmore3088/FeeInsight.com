@@ -225,25 +225,17 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-         WHERE fp.institution_id = c.institution_id
-           AND fp.canonical_fee_key = COALESCE(c.canonical_fee_key, c.fee_category)
-           AND fp.amount = c.new_amount
+         -- The pair publish recorded (hamilton/change-pairing.ts), not one guessed by amount.
+         WHERE fp.fee_published_id = c.new_fee_published_id
            AND fp.rolled_back_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
-         ORDER BY fp.published_at DESC
-         LIMIT 1
       ) n ON TRUE
       LEFT JOIN LATERAL (
         SELECT fp.fee_name, fp.source_url, fr.source_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-         WHERE fp.institution_id = c.institution_id
-           AND fp.canonical_fee_key = COALESCE(c.canonical_fee_key, c.fee_category)
-           AND fp.amount = COALESCE(c.old_amount::float8, c.previous_amount)
-           AND fp.rolled_back_reason LIKE 'superseded%'
-         ORDER BY fp.rolled_back_at DESC NULLS LAST
-         LIMIT 1
+         WHERE fp.fee_published_id = c.previous_fee_published_id
       ) o ON TRUE
      WHERE c.institution_id = ANY(${competitorIds}::bigint[])
        AND COALESCE(c.canonical_fee_key, c.fee_category) = ANY(${categories}::text[])
@@ -251,6 +243,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
        AND c.detected_at <= ${agedBefore}::timestamptz
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f

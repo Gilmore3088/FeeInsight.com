@@ -127,7 +127,7 @@ export async function runRegistryStateBills(
     return result;
   }
 
-  const { items, rejectedIds, searched, requests } = await fetchStateFeeBills(
+  const { items, rejectedIds, rejectedSample, searched, requests, anyDateHits } = await fetchStateFeeBills(
     stateCode,
     since,
     apiKey,
@@ -191,11 +191,15 @@ export async function runRegistryStateBills(
       stages,
       searched,
       requests,
+      // Only when nothing matched in the lookback (PR, SD, DE, CT, DC, IN, VA and ME on Oct 8 2026):
+      // 0 points to Open States holding no searchable bill text for the state, not a quiet year.
+      ...(anyDateHits === null ? {} : { any_date_overdraft_hits: anyDateHits }),
       shadow,
       tagging_version: STATE_BILLS_TAGGING_VERSION,
       untagged: result.untagged,
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
       matches: Object.fromEntries(items.slice(0, 25).map((item) => [item.identifier, item.match])),
+      rejected_sample: rejectedSample,
     },
   });
   return result;

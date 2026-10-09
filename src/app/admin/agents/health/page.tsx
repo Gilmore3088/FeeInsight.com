@@ -5,7 +5,7 @@ import { unstable_cache } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { crewMember } from "@/lib/agents/crew";
-import { getAgentHealth, type AgentHealth } from "@/lib/data-store/agent-health";
+import { NOTIFICATION_STEPS, getAgentHealth, type AgentHealth } from "@/lib/data-store/agent-health";
 import { ScreenHeader, Unreadable } from "../../room-hub";
 
 // One grouped scan of a week of steps (about 35ms on prod); a minute old is fresh enough.
@@ -62,7 +62,7 @@ export default async function AgentsHealthPage() {
     <section className="flex flex-col gap-4 pb-10">
       <ScreenHeader
         title="Agent health"
-        lede="Every step each agent finished or failed in the last seven days, from the run log. Green is done, red is failed. An agent shows Failing when a step's newest run failed; a step that has worked again since shows grey."
+        lede="Every step each agent finished or failed in the last seven days, from the run log. Green is done, red is failed. An agent shows Failing when a step's newest run failed; a step that has worked again since shows grey. Search-engine notices (the IndexNow ping) are listed on their own and never count toward pipeline health."
       />
       {!health ? <Unreadable what="The agent run log" /> : null}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -103,6 +103,22 @@ export default async function AgentsHealthPage() {
                       <span className={`shrink-0 tabular-nums ${step.stillFailing ? "font-semibold text-red-700 dark:text-red-400" : "text-gray-500"}`}>
                         {step.failed} of {step.failed + step.done}
                       </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {agent.notifications.length > 0 ? (
+                <ul className="mt-3 space-y-1.5 border-t border-black/[0.05] pt-2 text-xs dark:border-white/[0.06]" aria-label="Search-engine notices, not pipeline health">
+                  {agent.notifications.map((step) => (
+                    <li key={step.stepKey}>
+                      <span className="block font-semibold text-gray-700 dark:text-gray-300">
+                        {NOTIFICATION_STEPS[step.stepKey]?.label ?? stepName(step.stepKey)} ·{" "}
+                        {step.stillFailing
+                          ? `last failed ${step.lastFailedAt ? formatAdminDateTime(step.lastFailedAt) : "recently"}`
+                          : `working again since ${step.lastDoneAt ? formatAdminDateTime(step.lastDoneAt) : "its last run"}`}
+                      </span>
+                      {step.lastError ? <span className="block text-[11px] text-gray-600 dark:text-gray-400">{step.lastError}</span> : null}
+                      <span className="block text-[11px] text-gray-500">{NOTIFICATION_STEPS[step.stepKey]?.recovery}</span>
                     </li>
                   ))}
                 </ul>

@@ -194,11 +194,11 @@ export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillI
   };
 }
 
-export function openStatesUrl(stateCode: string, query: string, since: string, page = 1): string {
+export function openStatesUrl(stateCode: string, query: string, since: string | null, page = 1): string {
   const params = new URLSearchParams();
   params.set("jurisdiction", openStatesJurisdictionId(stateCode));
   params.set("q", query);
-  params.set("action_since", since);
+  if (since) params.set("action_since", since);
   params.set("sort", "latest_action_desc");
   params.set("per_page", "20");
   params.set("page", String(page));
@@ -206,6 +206,9 @@ export function openStatesUrl(stateCode: string, query: string, since: string, p
   params.append("include", "abstracts");
   return `${OPEN_STATES_API}?${params.toString()}`;
 }
+
+/** Rejected search hits kept in the run log per state. */
+export const REJECTED_SAMPLE_SIZE = 10;
 
 /** Pages per query. Open States' free tier is rate limited, so a state costs at most queries x pages requests. */
 export const MAX_PAGES_PER_QUERY = 2;
@@ -231,10 +234,22 @@ export async function fetchStateFeeBills(
   apiKey: string,
   options: RegistryFetchOptions = {},
   requestIntervalMs = OPEN_STATES_REQUEST_INTERVAL_MS,
-): Promise<{ items: StateBillItem[]; rejectedIds: string[]; searched: number; requests: number }> {
+): Promise<{
+  items: StateBillItem[];
+  rejectedIds: string[];
+  searched: number;
+  requests: number;
+  /** Set only when nothing matched since `since`: hits for the first query at any date. */
+  anyDateHits: number | null;
+  /** Up to REJECTED_SAMPLE_SIZE search hits the fee test turned away, identifier to title. */
+  rejectedSample: Record<string, string>;
+}> {
   const byId = new Map<string, StateBillItem>();
   // Search hits that fail the bank fee test, so a bill an earlier rule tagged can be untagged.
   const rejected = new Set<string>();
+  // The first few rejected hits, by identifier and title, so the run log shows what the fee
+  // test turned away (most states get dozens of hits and keep none).
+  const rejectedSample = new Map<string, string>();
   let searched = 0;
   let requests = 0;
   for (const query of STATE_BILL_QUERIES) {
@@ -252,10 +267,38 @@ export async function fetchStateFeeBills(
         searched += 1;
         const item = parseOpenStatesBill(raw, stateCode);
         if (item) byId.set(item.id, item);
-        else if (raw.id) rejected.add(raw.id);
+        else if (raw.id) {
+          rejected.add(raw.id);
+          if (rejectedSample.size < REJECTED_SAMPLE_SIZE && raw.identifier) {
+            rejectedSample.set(raw.identifier, (raw.title ?? "").slice(0, 120));
+          }
+        }
       }
       if ((body.pagination?.max_page ?? 1) <= page) break;
     }
   }
-  return { items: [...byId.values()], rejectedIds: [...rejected].filter((id) => !byId.has(id)), searched, requests };
+  // No search hit at all since `since`: ask once more with no date limit, so the run log says
+  // whether Open States holds no matching bill text for the state at any date (a coverage gap)
+  // or the legislature simply had no fee bill action in the lookback.
+  let anyDateHits: number | null = null;
+  if (searched === 0) {
+    await waitForOpenStatesSlot(requestIntervalMs);
+    const probe = await registryFetchJson<RawPage>(openStatesUrl(stateCode, STATE_BILL_QUERIES[0], null), {
+      retries: 2,
+      timeoutMs: 30_000,
+      backoffMs: 6_000,
+      ...options,
+      headers: { "X-API-KEY": apiKey, ...options.headers },
+    });
+    requests += 1;
+    anyDateHits = probe.pagination?.total_items ?? probe.results?.length ?? 0;
+  }
+  return {
+    items: [...byId.values()],
+    rejectedIds: [...rejected].filter((id) => !byId.has(id)),
+    rejectedSample: Object.fromEntries(rejectedSample),
+    searched,
+    requests,
+    anyDateHits,
+  };
 }

@@ -197,6 +197,7 @@ export async function getLocalFeeMoves(params: {
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        AND COALESCE(c.previous_amount, c.old_amount) IS NOT NULL
        AND c.new_amount IS NOT NULL
      ORDER BY c.detected_at DESC

@@ -131,11 +131,17 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   // Using an ATM abroad and using a card abroad are one type, International ATM & Card (James,
   // Oct 8: Foreign Transaction gave up its spot). The survivor keeps the card_foreign_txn key,
-  // which holds the rates and the spotlight guide; a line that excludes international ATMs, or
-  // names them only beside domestic ones, is not this fee.
+  // which holds the rates and the spotlight guide. A line priced for any domestic ATM, or for
+  // domestic and international ATMs together, is the network ATM fee ("ATMs inside United States
+  // & internationally" $3 under "Not at North Shore Bank or MoneyPass network"). A reimbursement
+  // cap ("up to $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner
+  // network ("Allpoint ATM Transactions" $0 at SoFi) have no home (Oct 9 review of the last 4).
   atm_international: {
     family: "ATM & Card",
-    rules: [{ to: null, name: /\bnon[- ]?international\b|outside (?:the )?u\.?s\.?a?\.? excluded|\binside (?:the )?united states\b/i }],
+    rules: [
+      { to: null, name: /outside (?:the )?u\.?s\.?a?\.? excluded|^allpoint\b/i },
+      { to: "atm_non_network", name: /\bnon[- ]?international\b|\binside (?:the )?united states\b/i },
+    ],
     otherwise: "card_foreign_txn",
   },
   // A distribution closes out (part of) the IRA.
@@ -154,6 +160,12 @@ export const RETIRED_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(RE
 export const COLLECTION_ITEM =
   /^(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))(?:[\s\S]*\bcollections?\b|(?![\s\S]*\b(?:cash\w*|returns?|returned)\b)[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\.?)\s+(?:checks?|items?|drafts?)\b)/i;
 
+/** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
+export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
+
+/** A copy of an item, not the item. */
+export const ITEM_COPY = /\b(?:photo ?)?cop(?:y|ies)\b/i;
+
 interface SplitCategory {
   to: string;
   name: RegExp;
@@ -168,6 +180,11 @@ interface SplitCategory {
  */
 export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+  // A mortgage or lien subordination is a lending service (median $150), not legal process like
+  // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
+  legal_process: { to: "other_lending_fee", name: SUBORDINATION, sqlPattern: "subordinat" },
+  // A copy of a money order or cashier's check is a check copy, not the money order itself.
+  money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -181,7 +198,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 3;
+export const FOLD_RULES_VERSION = 6;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

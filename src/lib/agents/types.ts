@@ -116,6 +116,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "fee-alert-dispatch",
   "lead-watch",
   "pro-digest",
+  "pro-seat-check",
   "score-answer-key",
   "scoreboard-snapshot",
 ];
@@ -129,6 +130,7 @@ export const MARKETING_STEP_KEYS: readonly string[] = [
   "content-fee-depth",
   "content-market-spread",
   "content-od-by-state",
+  "growth-contact-picks",
   "growth-contacts",
   "growth-conversion",
   "growth-intel",
@@ -136,6 +138,7 @@ export const MARKETING_STEP_KEYS: readonly string[] = [
   "growth-learning",
   "growth-intake",
   "growth-score",
+  "growth-tools",
   "marketing-score",
   "marketing-send",
   "marketing-states",

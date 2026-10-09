@@ -163,6 +163,14 @@ describe("storyline", () => {
     ]);
   });
 
+  it("states where the price sits against local competitors without judging it", () => {
+    const lowest = buildFeeAnswer({ ...research(), current: 20 }).storyline!.lenses.market.map((f) => f.text);
+    expect(lowest[0]).toBe("None of the 3 local competitors charge less than your $20; the highest is Peer 101 ($35).");
+    const highest = buildFeeAnswer({ ...research(), current: 40 }).storyline!.lenses.market.map((f) => f.text);
+    expect(highest).toContain("No one in that group charges more than your $40.");
+    expect([...lowest, ...highest].join(" ")).not.toMatch(/favou?r|against you|advantage/i);
+  });
+
   it("reads the exhibits for a market reader instead of repeating their titles", () => {
     for (const intent of [{}, { structure: true }, { focus: "trend" as const }]) {
       const story = buildFeeAnswer(research(), { story: intent }).storyline!;
@@ -229,5 +237,43 @@ describe("storyline for a regulation question", () => {
     const question = "How does our overdraft fee compare?";
     const finance = buildAskResponse({ question, intent: parseAsk(question), research, memory: [] }).answer?.storyline?.lenses.finance ?? [];
     expect(finance.map((f) => f.text)).not.toContain("The OCC charters and supervises you as a national bank.");
+  });
+});
+
+describe("storyline: checking lineup", () => {
+  // Invented figures for tests only; no figure here is live data.
+  const summary = (accounts: number, lowest: number, median: number, free: boolean, balance: number | null) => ({
+    institutions: 1,
+    accounts,
+    lowestMonthlyFee: lowest,
+    medianMonthlyFee: median,
+    shareWithFreeAccount: free ? 1 : 0,
+    medianMinBalanceToAvoid: balance,
+    shareWithWayToAvoid: null,
+  });
+  const lineup: FeeResearch["lineup"] = {
+    groupLabel: "peers (Credit unions in Tennessee)",
+    rows: [
+      { institutionId: 1, name: "Example Valley Credit Union", own: true, summary: summary(2, 5, 7.5, false, 1500) },
+      ...[2, 3, 4, 5, 6, 7].map((i) => ({ institutionId: i, name: `Peer ${i}`, own: false, summary: summary(3, i <= 3 ? 0 : 4, 6, i <= 3, null) })),
+    ],
+    ownAccounts: [],
+    source: { label: "Monthly maintenance fees with the account each one belongs to", table: "published_fee_catalog" },
+  };
+
+  it("sets the bank's accounts beside each peer's lineup for a monthly fee question", () => {
+    const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup, structure: null })).storyline!;
+    const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
+    expect(piece.actionTitle).toBe("You publish 2 accounts with a monthly fee from $5; 2 of 6 peers publish an account with no monthly fee.");
+    if (piece.exhibit.kind === "structure_matrix") {
+      expect(piece.exhibit.rows[0]).toEqual({ name: "Example Valley Credit Union", own: true, cells: ["2", "$5", "$7.50", "No", "$1,500"] });
+      expect(piece.exhibit.rows[1].cells).toEqual(["3", "$0", "$6", "Yes", null]);
+      expect(piece.exhibit.rows).toHaveLength(7);
+    }
+  });
+
+  it("shows no lineup when the bank publishes none", () => {
+    const story = buildFeeAnswer(research({ lineup: null })).storyline!;
+    expect(story.exhibits.some((e) => e.exhibit.title.startsWith("Checking lineup"))).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import { SITE_DOMAIN } from "@/lib/constants";
 import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, setContentDraftStatus } from "@/lib/data-store/content-drafts";
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
-import { contactConfidence, contactsSchemaReady, isSharedMailbox, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
+import { contactConfidence, contactsSchemaReady, isDecisionMaker, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
 import { roleProblem, scoreProspect, type ProspectScore } from "./prospect-score";
@@ -124,14 +124,18 @@ export interface OutreachDraft {
 /** C needs this many tier-A comparisons; B needs this many supported fee types. */
 export const OUTREACH_MIN_FINDINGS = 3;
 
+/** Lives in `contacts.ts` now, so the stored primary/backup pick and this step choose the same way. */
+export { isDecisionMaker };
+
 /**
- * A first email goes only to a person whose printed title is a buying role (marketing, retail
- * and deposits, the executive team, finance, operations, compliance). A person's address with a
- * lender's, branch or committee title, or with a name and no title, is not a decision-maker.
+ * The pilot campaigns James chose (`OUTREACH_CAMPAIGNS`, letters such as "A,B"). Until he chooses,
+ * a real run drafts nothing (it still withdraws bad drafts); a dry run counts every campaign.
  */
-export function isDecisionMaker(contact: Pick<OutreachContact, "kind" | "role" | "email">): boolean {
-  return contact.kind === "person" && contact.role !== "other" && !isSharedMailbox(contact.email);
+export function outreachCampaignsFromEnv(value: string | undefined): OutreachCampaign[] {
+  const letters = new Set((value ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean));
+  return (Object.keys(CAMPAIGN_LETTER) as OutreachCampaign[]).filter((campaign) => letters.has(CAMPAIGN_LETTER[campaign]));
 }
+export const OUTREACH_HELD_REASON = "held: James hasn't chosen the pilot campaigns yet (OUTREACH_CAMPAIGNS is unset)";
 
 export type OutreachSkip = "no_contact" | "no_market";
 
@@ -375,7 +379,7 @@ export interface OutreachRunResult {
   considered: number;
   drafted: number;
   draftIds: number[];
-  skipped: Partial<Record<OutreachSkip | "drafted_recently", number>>;
+  skipped: Partial<Record<OutreachSkip | "drafted_recently" | "campaign_not_chosen", number>>;
   /** Drafts per campaign (A research efficiency, B personalized research, C market insight). */
   campaigns: Partial<Record<OutreachCampaign, number>>;
   /** Prospects with enough for C whose snapshot page didn't show the figures (drafted as B instead). */
@@ -471,6 +475,8 @@ export async function runOutreachDrafts(input: {
   now?: Date;
   /** The live-destination check; tests pass their own. */
   checkDestination?: typeof checkOutreachDestination;
+  /** Campaigns James approved; a real run drafts only these, and nothing when none is approved. */
+  campaigns?: OutreachCampaign[];
 }): Promise<OutreachRunResult> {
   const checkDestination = input.checkDestination ?? checkOutreachDestination;
   const db = input.db ?? sql;
@@ -483,9 +489,11 @@ export async function runOutreachDrafts(input: {
   }
   result.schemaReady = true;
   result.withdrawn = await withdrawNonBuyerDrafts(db, dryRun);
+  const approved = new Set(input.campaigns ?? []);
+  if (!dryRun && approved.size === 0) return { ...result, reason: OUTREACH_HELD_REASON };
   const recent = await recentOutreachSubjects(db);
   const candidates = await loadOutreachCandidates(db, OUTREACH_MAX_CANDIDATES);
-  const skip = (key: OutreachSkip | "drafted_recently") => {
+  const skip = (key: OutreachSkip | "drafted_recently" | "campaign_not_chosen") => {
     result.skipped[key] = (result.skipped[key] ?? 0) + 1;
   };
 
@@ -506,7 +514,8 @@ export async function runOutreachDrafts(input: {
     }
     const pendingTakedown = await pendingTakedownIds(db, snapshot);
     const options = { assetsK: candidate.assetsK, pendingTakedown };
-    let attempt = buildOutreachDraft(snapshot, candidate.contacts, { ...options, allowInsight: true });
+    const allowInsight = dryRun || approved.has("market_insight");
+    let attempt = buildOutreachDraft(snapshot, candidate.contacts, { ...options, allowInsight });
     if ("draft" in attempt && attempt.draft.campaign === "market_insight") {
       const { draft } = attempt;
       const fact = draft.findings[0];
@@ -521,6 +530,10 @@ export async function runOutreachDrafts(input: {
     }
     if ("skip" in attempt) {
       skip(attempt.skip);
+      continue;
+    }
+    if (!dryRun && !approved.has(attempt.draft.campaign)) {
+      skip("campaign_not_chosen");
       continue;
     }
     built.push({ candidate, snapshot, draft: attempt.draft });
@@ -584,16 +597,21 @@ export async function runOutreachDrafts(input: {
   return result;
 }
 
-const SKIP_LABELS: Record<OutreachSkip | "drafted_recently", string> = {
+const SKIP_LABELS: Record<OutreachSkip | "drafted_recently" | "campaign_not_chosen", string> = {
   drafted_recently: "drafted in the last 60 days",
   no_contact: "no decision-maker contact",
   no_market: "no local market",
+  campaign_not_chosen: "in a campaign James hasn't chosen",
 };
 
 export function summarizeOutreach(result: OutreachRunResult): string {
   if (!result.schemaReady) return `No drafts: ${result.reason}.`;
+  if (result.reason === OUTREACH_HELD_REASON) {
+    const withdrew = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts that no longer qualify.` : "";
+    return `No first emails drafted: ${result.reason}.${withdrew}`;
+  }
   const skipped = Object.entries(result.skipped)
-    .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently"]}`)
+    .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently" | "campaign_not_chosen"]}`)
     .join(", ");
   const byCampaign = (Object.keys(CAMPAIGN_LETTER) as OutreachCampaign[])
     .filter((campaign) => result.campaigns?.[campaign])

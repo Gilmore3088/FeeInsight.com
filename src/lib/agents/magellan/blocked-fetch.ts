@@ -151,7 +151,12 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
       JOIN institution_sources inst ON inst.id = ias.institution_id
       LEFT JOIN source_documents latest ON latest.id = ias.last_source_document_id
      WHERE ias.document_role <> 'business'
-       AND COALESCE(inst.status, 'active') = 'active'
+       AND (
+         COALESCE(inst.status, 'active') = 'active'
+         -- As in companion fetch: a hand-found schedule is fetched for a dormant bank (Stock
+         -- Yards' syb.com page answered 403 on 8 Oct 2026), never for a closed charter.
+         OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')
+       )
        AND (
          -- Stored before the bot-wall check existed: a PDF link whose copy is a web page.
          -- Rosetta then set it aside for reading blank (Fifth Third's two PDFs), which

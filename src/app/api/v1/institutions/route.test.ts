@@ -190,6 +190,7 @@ describe("/api/v1/institutions", () => {
           local_market: { median: 33, institutions: 6 },
           position: "higher", source_url: "https://example.com/fees.pdf",
         }],
+        rate_rows: [],
       });
     });
 
@@ -200,7 +201,7 @@ describe("/api/v1/institutions", () => {
       expect(response.headers.get("Content-Disposition")).toBe("attachment; filename=example-bank-n-a-fee-benchmarks.csv");
       const [header, row] = (await response.text()).split("\n");
       expect(header.split(",")[0]).toBe("fee_category");
-      expect(row).toBe("overdraft,Overdraft (OD),Overdraft & NSF,35,30,25,35,900,32,80,30,26,34,300,33,6,higher,https://example.com/fees.pdf");
+      expect(row).toBe("overdraft,Overdraft (OD),Overdraft & NSF,35,30,25,35,900,32,80,30,26,34,300,33,6,higher,https://example.com/fees.pdf,dollars,,,,,,,");
     });
 
     it("keeps the benchmark behind a paid key", async () => {

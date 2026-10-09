@@ -1,6 +1,8 @@
 import { getSql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
-import { AMOUNT_PATTERN, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
+import { minBalanceFromExcerpt, productNameFromFeeName, readableProductName, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
+
+export { minBalanceFromExcerpt, productNameFromFeeName, waiverFromExcerpt };
 
 /**
  * Account lineup: each checking or savings account a bank publishes, with its monthly fee,
@@ -67,50 +69,13 @@ export function catalogExcerpt(conditions: string | null): string | null {
   return match ? match[1].replace(/\\"/g, "\"").trim() || null : null;
 }
 
-/** Fee words at the end of a fee name; what is left in front of them may be the account. */
-const FEE_NAME_TAIL =
-  /\s*[-–:]?\s*(?:low balance\s+)?(?:monthly\s+)?(?:maintenance\s+|service\s+|account\s+)*(?:fee|charge|service charge|maintenance)s?\s*$/i;
-const GENERIC_PRODUCT_WORDS =
-  /^(?:monthly|maintenance|service|account|accounts|fee|fees|charge|low|balance|minimum|min\.?|the|a|an|for|per|month|regular|standard|basic|all|each|if|of|and|or)$/i;
-
-/** "Freedom Start-Up Monthly Fee" -> "Freedom Start-Up"; generic or sentence-like names give null. */
-export function productNameFromFeeName(feeName: string): string | null {
-  const prefix = feeName.replace(FEE_NAME_TAIL, "").replace(/[\s\-–:|]+$/, "").trim();
-  if (!prefix || prefix === feeName.trim()) return null;
-  if (!/^[A-Z0-9]/.test(prefix) || /[$\d]{2,}|[.;,]/.test(prefix)) return null;
-  const words = prefix.split(/\s+/);
-  if (words.length > 6 || words.every((word) => GENERIC_PRODUCT_WORDS.test(word))) return null;
-  return prefix.slice(0, 80);
-}
-
-/** "if balance falls below $1,000" -> 1000. Also "minimum daily balance of $20,000 ... to avoid". */
-export function minBalanceFromExcerpt(excerpt: string): number | null {
-  const clause =
-    excerpt.match(BALANCE_BELOW_CLAUSE)?.[0] ??
-    excerpt.match(/\bminimum\s+(?:(?:daily|average|monthly|collected|ledger)\s+){0,3}balance\s+of\s+\$\s?[\d,]+(?:\.\d{2})?(?=[^|]{0,60}\bavoid)/i)?.[0];
-  if (!clause) return null;
-  const figure = [...clause.matchAll(AMOUNT_PATTERN)].at(-1)?.[1];
-  const value = figure ? Number(figure.replace(/,/g, "")) : NaN;
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-const WAIVER_START = /\b(?:waived?|avoid(?:ed)?|unless|none with|no (?:monthly )?(?:fee|charge) (?:with|if|when))\b/i;
-
-/** The words in the row's own cell that say how the fee is waived ("waived if a Direct Deposit ..."). */
-export function waiverFromExcerpt(excerpt: string): string | null {
-  const start = excerpt.search(WAIVER_START);
-  if (start < 0) return null;
-  const text = excerpt.slice(start).split("|")[0].replace(/[\s.;,)]+$/, "").trim();
-  return text.length >= 8 ? text.slice(0, 160) : null;
-}
-
 /** One catalog row as a lineup account, stored fields first, derived fields where empty. */
 export function lineupAccountFromRow(row: LineupCatalogRow): LineupAccount | null {
   const monthlyFee = toNumber(row.amount);
   if (monthlyFee === null || monthlyFee < 0) return null;
   const excerpt = catalogExcerpt(row.conditions) ?? "";
 
-  const storedName = row.account_product_type?.trim() || null;
+  const storedName = readableProductName(row.account_product_type);
   const derivedName = storedName ? null : productNameFromFeeName(row.fee_name);
   const storedBalance = toNumber(row.min_balance_to_avoid);
   const derivedBalance = storedBalance === null && excerpt ? minBalanceFromExcerpt(excerpt) : null;
