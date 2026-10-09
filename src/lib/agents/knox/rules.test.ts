@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
+import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
@@ -25,7 +26,7 @@ const MVB_WRAPPED = [
 describe("Knox extract.rules", () => {
   it("v12 never reads a limit, threshold or refundable deposit as the fee", () => {
     expect(fees("Money Orders ($1,000 Limit) Non-Customer ........................ $10.00")).toEqual([
-      ["Money Orders ( Limit) Non-Customer", 10, "money_order"],
+      ["Money Orders ($1,000 Limit) Non-Customer", 10, "money_order"],
     ]);
     expect(fees("COURTESY PAY ($300 THRESHOLD, FEE PER TRANS.) $ | 30.00")).toEqual([]);
     expect(fees("Safe Deposit Box / $10.00 refundable key deposit on each box")).toEqual([]);
@@ -479,6 +480,16 @@ describe("Knox extract.rules", () => {
     ["Balance Check Book", "account_research"],
     ["Check Book Order", "check_printing"],
   ])("v56 reads %s as %s (checkbook reconciliation)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["Cross-Border Banking Bundle annual fee", "monthly_maintenance"],
+    ["Cross-Border Banking Package monthly fee", "monthly_maintenance"],
+    ["Cross-Border Fee", "card_foreign_txn"],
+    ["Cross-border transaction fee", "card_foreign_txn"],
+    ["Cross-Border Banking card purchases (3% of purchase)", "card_foreign_txn"],
+  ])("v59 reads %s as %s (cross-border banking bundle)", (name, key) => {
     expect(classifyFeeText(name)).toBe(key);
   });
 
@@ -975,5 +986,35 @@ describe("v57: long table rows and sentence-fragment names (Arvest, Old National
   it("names the fee a sentence avoids by the words after its price", () => {
     const found = runFreeSpecialists("Go green with eStatements to avoid $3 paper statement fee").candidates;
     expect(found.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Paper statement fee", 3, "paper_statement"]]);
+  });
+});
+
+describe("v60: names keep their threshold and lose a column label", () => {
+  const names = (text: string) => runFreeSpecialists(text).candidates.map((fee) => fee.feeName);
+
+  it("keeps a threshold figure in the name's parenthetical (101115, 40261)", () => {
+    expect(fees("Cashier's Checks ($10,000.01 and Over) | $10.00")).toEqual([["Cashier's Checks ($10,000.01 and Over)", 10, "cashiers_check"]]);
+    expect(fees("Dormant Account Fee-(No activity for 2 years and the balance is under $100) | $5.00 - Monthly")[0]?.[0]).toBe(
+      "Dormant Account Fee-(No activity for 2 years and the balance is under $100)",
+    );
+  });
+
+  it("still drops a price that is not a threshold", () => {
+    expect(nameFrom("Overdraft Fee ($35.00 per item)")).toBe("Overdraft Fee ( per item)");
+  });
+
+  it("drops a \"Name\" column label (Maple FCU)", () => {
+    expect(names("Name Stop Payment | Fee $25.00")).toContain("Stop Payment");
+  });
+
+  it("keeps \"In addition to\" as words of the name", () => {
+    expect(tidyFeeName("In addition to the Card Replacement Fee")).not.toMatch(/^To the/);
+    expect(tidyFeeName("Otherwise, a monthly service fee")).toBe("Monthly service fee");
+  });
+
+  it("never cuts a name down to its section heading", () => {
+    expect(
+      tidyFeeName("SERVICE FEES | Check Cashing (Less than $500, no other active service) Active = service used at least every 6 months"),
+    ).not.toBe("SERVICE FEES");
   });
 });

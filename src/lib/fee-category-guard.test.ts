@@ -956,3 +956,11 @@ describe("v55: merchant services and early termination are not monthly maintenan
     expect(checkFeeCategory("monthly_maintenance", "First Merchants Prosper Checking Monthly Maintenance Fee").ok).toBe(true);
   });
 });
+
+describe("v57: a cross-border banking bundle's annual fee is monthly maintenance", () => {
+  it("passes RBC's bundle fee and still fails other annual fees", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Cross-Border Banking Bundle annual fee").ok).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", "Annual fee").ok).toBe(false);
+    expect(checkFeeCategory("monthly_maintenance", "Safe deposit box annual fee").ok).toBe(false);
+  });
+});
