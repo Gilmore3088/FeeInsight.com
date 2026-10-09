@@ -47,8 +47,9 @@ const BATCH_IDLE_RETRY_HOURS = 24;
  * 2: groundwater "overdraft" is no longer an overdraft fee (2026-10-08).
  * 3: any "overdraft" in a water bill that never mentions banking is dropped (2026-10-08).
  * 4: overdraft and insufficient funds count only in a sentence about banking or fees (2026-10-08).
+ * 5: a fee or penalty sentence about taxes or a state agency no longer counts (NC HB 1164, 2026-10-09).
  */
-export const STATE_BILLS_TAGGING_VERSION = 4;
+export const STATE_BILLS_TAGGING_VERSION = 5;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
   return flagOn(env.STATE_BILLS_TRACKER_LIVE);
