@@ -166,7 +166,7 @@ export function countyPriceMap(stateFips: string, counties: CountyValue[], price
       const c = byFips.get(f.id);
       const has = c !== undefined && c.value !== null;
       const fill = has ? PRICE_MAP_FILLS[priceStep(c.value!, price)] : `url(#${hatchId})`;
-      return `<path d="${path(f) ?? ""}" fill="${fill}" stroke="${CHART.paper}" stroke-width="0.8"><title>${escapeHtml(
+      return `<path data-fips="${f.id}" d="${path(f) ?? ""}" fill="${fill}" stroke="${CHART.paper}" stroke-width="0.8"><title>${escapeHtml(
         `${f.properties.name}: ${has ? fmtMoney(Math.round(c.value! * 100) / 100) : "no verified fee yet"}`,
       )}</title></path>`;
     })

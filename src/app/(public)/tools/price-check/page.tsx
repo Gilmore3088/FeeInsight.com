@@ -5,6 +5,8 @@ import { formatFeeAmount } from "@/lib/format";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { DistributionChart } from "@/components/public/distribution-chart";
+import { CountyPriceMap, type CountyDetail } from "@/components/public/county-price-map";
+import { countyFeature } from "@/lib/geo/counties";
 import { getNationalIndexCached } from "@/lib/data-store/fee-index";
 import { getCountyFeeMapCached, getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
 import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/lib/report-templates/base/state-charts";
@@ -67,6 +69,22 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const mapNarrow = mapWide && check && fips ? countyPriceMap(fips, countyValues, check.price, { narrow: true }) : null;
   const countySteps = [0, 0, 0, 0, 0];
   let countiesWithout = 0;
+  const countyDetails: Record<string, CountyDetail> = {};
+  if (mapWide) {
+    for (const c of countyMap?.counties ?? []) {
+      countyDetails[c.fips] = {
+        name: countyFeature(c.fips)?.properties.name ?? "County",
+        fee: c.overdraft,
+        institutions: c.institutions,
+        deposits: c.deposits,
+        covered: c.covered_deposits,
+        top: [],
+      };
+    }
+    for (const i of countyMap?.institutions ?? []) {
+      countyDetails[i.fips]?.top.push({ id: i.institution_id, name: i.name, fee: i.fee, deposits: i.deposits });
+    }
+  }
   if (check) {
     for (const c of countyValues) {
       if (c.value === null) countiesWithout++;
@@ -185,10 +203,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
                   </span>
                 )}
               </div>
-              <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white p-2">
-                <div className={mapNarrow ? "hidden sm:block" : undefined} dangerouslySetInnerHTML={{ __html: mapWide }} />
-                {mapNarrow && <div className="sm:hidden" dangerouslySetInnerHTML={{ __html: mapNarrow }} />}
-              </div>
+              <CountyPriceMap wide={mapWide} narrow={mapNarrow} details={countyDetails} price={check.price} feeNoun={FEE_NOUN[fee]} />
               <p className="mt-2 text-[12px] text-[#6B6255]">
                 Each county shows the published {FEE_NOUN[fee]} of the institutions with branches there, weighted by their deposits (FDIC Summary of Deposits
                 {countyMap?.sod_year ? `, ${countyMap.sod_year}` : ""}). Fees of $0 are left out.

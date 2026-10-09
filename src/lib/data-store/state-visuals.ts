@@ -96,10 +96,26 @@ async function countyFeeRows(code: string, sodYear: number, feeCategory: string)
   }));
 }
 
+/** An institution with branches in a county, and its median published fee for the category. */
+export interface CountyInstitution {
+  fips: string;
+  institution_id: number;
+  name: string;
+  /** Its branch deposits in the county, in dollars. */
+  deposits: number;
+  /** Median published amount above $0; null when it has none on file. */
+  fee: number | null;
+}
+
+/** The institutions shown per county when someone opens it, largest by deposits there. */
+export const COUNTY_INSTITUTIONS_SHOWN = 8;
+
 export interface CountyFeeMapData {
   sod_year: number | null;
   /** `overdraft` holds the weighted fee for the category asked for. */
   counties: CountyOverdraft[];
+  /** Up to COUNTY_INSTITUTIONS_SHOWN institutions per county, largest first. */
+  institutions: CountyInstitution[];
 }
 
 /** One fee category's county figures for a state, from the latest Summary of Deposits year. */
@@ -107,8 +123,39 @@ export async function getCountyFeeMap(stateCode: string, feeCategory: string): P
   const code = stateCode.toUpperCase();
   const yearRows = await sql<{ y: unknown }[]>`SELECT MAX(year) AS y FROM institution_branch_deposits WHERE state = ${code}`;
   const sodYear = num(yearRows[0]?.y);
-  if (sodYear === null) return { sod_year: null, counties: [] };
-  return { sod_year: sodYear, counties: await countyFeeRows(code, sodYear, feeCategory) };
+  if (sodYear === null) return { sod_year: null, counties: [], institutions: [] };
+  const [counties, institutions] = await Promise.all([
+    countyFeeRows(code, sodYear, feeCategory),
+    sql<{ fips: string; institution_id: number; name: string; deposits: unknown; fee: unknown }[]>`
+      WITH f AS (
+        SELECT institution_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amt
+          FROM published_fee_catalog WHERE fee_category = ${feeCategory} AND amount > 0 GROUP BY institution_id
+      ), b AS (
+        SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, SUM(COALESCE(d.deposits, 0)) AS deposits
+          FROM institution_branch_deposits d
+         WHERE d.state = ${code} AND d.year = ${sodYear} AND d.county_fips IS NOT NULL AND d.institution_id IS NOT NULL
+         GROUP BY 1, 2
+      ), ranked AS (
+        SELECT b.*, row_number() OVER (PARTITION BY b.fips ORDER BY b.deposits DESC, b.institution_id) AS rn FROM b
+      )
+      SELECT r.fips, r.institution_id, s.institution_name AS name, r.deposits, f.amt AS fee
+        FROM ranked r
+        JOIN institution_sources s ON s.id = r.institution_id
+        LEFT JOIN f ON f.institution_id = r.institution_id
+       WHERE r.rn <= ${COUNTY_INSTITUTIONS_SHOWN}
+       ORDER BY r.fips, r.rn`,
+  ]);
+  return {
+    sod_year: sodYear,
+    counties,
+    institutions: institutions.map((r) => ({
+      fips: String(r.fips),
+      institution_id: Number(r.institution_id),
+      name: r.name,
+      deposits: (num(r.deposits) ?? 0) * SOD_THOUSANDS,
+      fee: num(r.fee),
+    })),
+  };
 }
 
 export async function getStateVisualsData(stateCode: string): Promise<StateVisualsData> {
