@@ -382,7 +382,7 @@ function SignInCard({ email, emailConfirmed }: { email: string; emailConfirmed: 
  */
 export function AccountView({ data }: { data: AccountViewData }) {
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
+    <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-12">
       <header className="mb-6">
         <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Account</p>
         <h1 className="mt-1 text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
