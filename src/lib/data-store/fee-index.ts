@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { frequencyFamily } from "@/lib/fee-frequency";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
   STATS_METHOD_VERSION,
@@ -60,6 +61,58 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
        AND ${statusFilter}
        AND ${STATS_ROW_FILTER}`
   ) as IndexRow[];
+}
+
+/**
+ * How peers charge a category: the most common charge basis among peer rows that state one
+ * (`frequencyFamily`: per item, monthly, annual...) and that basis's share of them.
+ */
+export interface CategoryChargeBasis {
+  fee_category: string;
+  family: string;
+  share: number;
+  stated_rows: number;
+}
+
+/**
+ * How peers charge each category: the most common stated charge basis (`frequencyFamily`)
+ * among rows that count toward statistics, and its share of the rows that state one. Pro
+ * compares a selected institution's fee only on that basis (report-evidence.ts). National,
+ * cached for an hour: a category's charge basis is a property of the fee, not of a peer set.
+ */
+const CHARGE_BASIS_CACHE_TTL_MS = 60 * 60 * 1000;
+let chargeBasisCache: { expiresAt: number; value: CategoryChargeBasis[] } | null = null;
+
+export async function getCategoryChargeBases(): Promise<CategoryChargeBasis[]> {
+  if (chargeBasisCache && chargeBasisCache.expiresAt > Date.now()) return chargeBasisCache.value;
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.frequency, count(*)::int AS n
+     FROM published_fee_catalog ef
+     WHERE ef.fee_category IS NOT NULL AND ef.frequency IS NOT NULL AND ${STATS_ROW_FILTER}
+     GROUP BY 1, 2`
+  ) as { fee_category: string; frequency: string; n: number }[];
+  const value = chargeBasesFromCounts(rows);
+  chargeBasisCache = { expiresAt: Date.now() + CHARGE_BASIS_CACHE_TTL_MS, value };
+  return value;
+}
+
+/** Fold (category, frequency, count) rows into each category's most common charge basis. */
+export function chargeBasesFromCounts(
+  rows: { fee_category: string; frequency: string; n: number | string }[],
+): CategoryChargeBasis[] {
+  const byCategory = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const family = frequencyFamily(row.frequency);
+    if (!family) continue;
+    const families = byCategory.get(row.fee_category) ?? new Map<string, number>();
+    families.set(family, (families.get(family) ?? 0) + Number(row.n));
+    byCategory.set(row.fee_category, families);
+  }
+  return [...byCategory].map(([fee_category, families]) => {
+    const stated = [...families.values()].reduce((sum, n) => sum + n, 0);
+    const [family, n] = [...families].sort((a, b) => b[1] - a[1])[0];
+    return { fee_category, family, share: n / stated, stated_rows: stated };
+  });
 }
 
 export interface ContractFeeRow {

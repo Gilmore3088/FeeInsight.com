@@ -4,9 +4,10 @@ import {
   CATEGORY_GUARD_VERSION,
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
+  refileCategory,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
-import { splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
+import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
@@ -283,14 +284,30 @@ interface Restore {
  * belongs to another top-50 type comes back under that type when a fold split names it
  * (`splitLiveCategory`) and that type's guard and price range accept it: on Oct 9 guard v57's
  * catch-up took down six "ATM Adjustment" fees ($2 to $6) as non-network ATM fees minutes
- * before fold v14 would have moved them to account research. Pure.
+ * before fold v14 would have moved them to account research. A guard re-file rule
+ * (`refileCategory`) places it the same way. Pure.
  */
 export function restoreTarget(row: Pick<TakenDownRow, "canonical_fee_key" | "fee_name" | "amount" | "conditions" | "document_nsf_amount">): string | null {
   if (checkFeeCategory(row.canonical_fee_key, row.fee_name, row).ok) return row.canonical_fee_key;
-  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to;
-  if (!to || to === row.canonical_fee_key) return null;
+  // Or the guard's own re-file rule names it: express card replacements kept coming back as
+  // card_replacement and going down again (235, 12213, 29782, Oct 6-9); rush_card is their home.
+  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? restoreRefile(row.canonical_fee_key, row.fee_name);
+  // A retired key is no home: Hamilton never publishes it.
+  if (!to || to === row.canonical_fee_key || isRetiredCategory(to)) return null;
   const amount = normalizedAmount(row.amount) ?? 0;
   return checkFeeCategory(to, row.fee_name, row).ok && passesDarwinChecks(to, row.fee_name, amount) ? to : null;
+}
+
+/**
+ * The guard re-file rules a takedown may come back under. Each one needs its own dry read and
+ * 10-row spot check first: on Oct 9 all re-file rules would have brought back 66 fees, some
+ * with sentence names, but only card_replacement -> rush_card was checked (12/12 on source).
+ */
+const RESTORE_REFILES: ReadonlySet<string> = new Set(["card_replacement>rush_card"]);
+
+function restoreRefile(canonicalFeeKey: string, feeName: string): string | null {
+  const to = refileCategory(canonicalFeeKey, feeName);
+  return to && RESTORE_REFILES.has(`${canonicalFeeKey}>${to}`) ? to : null;
 }
 
 /**
@@ -324,9 +341,18 @@ async function restorePassingTakedowns(
     return none;
   }
   const passing: Restore[] = [];
+  // One re-filed fee per institution, type and price: two copies of one schedule's express card
+  // line (350 and 27687 at institution 6042) are one fee.
+  const refiledSeen = new Set<string>();
   for (const row of rows) {
     const to = restoreTarget(row);
-    if (to) passing.push({ row, to });
+    if (!to) continue;
+    if (to !== row.canonical_fee_key) {
+      const key = `${row.institution_id}|${to}|${normalizedAmount(row.amount)}`;
+      if (refiledSeen.has(key)) continue;
+      refiledSeen.add(key);
+    }
+    passing.push({ row, to });
     if (passing.length >= CATEGORY_GUARD_RESTORE_LIMIT) break;
   }
   const refiling = passing.filter((restore) => restore.to !== restore.row.canonical_fee_key);
@@ -349,7 +375,9 @@ async function restorePassingTakedowns(
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount
-                AND live.fee_name = fp.fee_name
+                -- Re-filed, any same-priced fee of that type is the same fee under another
+                -- name: 235's twin 100126 is already live as rush_card.
+                AND (live.fee_name = fp.fee_name OR v.to_key <> fp.canonical_fee_key)
            )
         RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;
@@ -380,7 +408,7 @@ async function restorePassingTakedowns(
 
 /** The fold's own lesson row for a takedown brought back under its split type. */
 function refileFeedback({ row, to }: Restore, runId: number): FeedbackRow {
-  const rule = `${row.canonical_fee_key}#split`;
+  const rule = `${row.canonical_fee_key}#${splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to === to ? "split" : "refile"}`;
   return {
     aboutStage: "publish",
     aboutStrategy: TAXONOMY_FOLD_CHECK,
