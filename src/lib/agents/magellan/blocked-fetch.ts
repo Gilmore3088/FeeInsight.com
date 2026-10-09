@@ -165,6 +165,12 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
            AND COALESCE(latest.content_type, '') ILIKE 'text/html%'
            AND (ias.status IN ('found', 'fetched')
              OR (ias.status = 'rejected' AND lower(COALESCE(ias.reason, '')) ~ ${BLANK_READ_REASON_SQL})))
+         -- A page a person found that Rosetta read blank as "built by JavaScript": Arvest's
+         -- fee page answered our fetcher with a 928-byte bot challenge (8 Oct 2026), while
+         -- the paid web search read the real schedule. The paid fetch asks from that network.
+         OR (ias.status = 'rejected'
+           AND ias.found_by_strategy = ${OPERATOR_SCHEDULE_STRATEGY.strategy}
+           AND lower(COALESCE(ias.reason, '')) ~ 'built by javascript')
          OR (ias.status IN ('found', 'fetched') AND (
            SELECT CASE
                     WHEN plain.outcome IN ('http_403', 'blocked_bot') THEN TRUE
