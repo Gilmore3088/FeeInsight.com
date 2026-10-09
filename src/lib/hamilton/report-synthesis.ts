@@ -1,6 +1,6 @@
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import type { HamiltonEvidencePolicy } from "@/lib/hamilton/request-contract";
-import type { SelectedInstitutionFeeDelta } from "@/lib/hamilton/report-evidence";
+import type { SelectedInstitutionFeeDelta, UnlikeFeeComparison } from "@/lib/hamilton/report-evidence";
 
 export interface ReportSynthesisInstitutionInput {
   id: number;
@@ -102,6 +102,8 @@ export interface SelectedInstitutionReportData {
     evidence_tier: "provisional";
   }>;
   fee_peer_deltas: Array<Omit<SelectedInstitutionFeeDelta, "confidence">>;
+  /** Fees whose peer comparison is not like for like (business schedule or another charge basis). */
+  fee_comparisons_not_like_for_like: UnlikeFeeComparison[];
   benchmark_scope: string;
   peer_group_note: string | null;
   can_generate_verified_benchmark_conclusions: boolean;
@@ -121,7 +123,8 @@ SELECTED-INSTITUTION RULES:
 2. If fee_peer_deltas is empty, do not write benchmark conclusions or pricing recommendations. Return a diligence/readiness explanation instead.
 3. Provisional rows are directional only. When evidence_tier is provisional or excluded_from_verified_benchmark is true, label the conclusion as provisional and do not treat it as a verified benchmark score.
 4. Do not convert national category medians into selected-institution recommendations unless selected_institution.fee_peer_deltas contains a matching selected institution row.
-5. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
+5. selected_institution.fee_comparisons_not_like_for_like lists fees charged on another basis or schedule than the peers' (for example per item against a monthly median, or a business schedule against consumer peers). For these, say the comparison is not like for like and give no above or below position.
+6. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
 `.trim();
 }
 
@@ -131,6 +134,7 @@ export function buildSelectedInstitutionReportData(params: {
   selectedVisibleFees: ReportSynthesisFeeInput[];
   selectedEvidence: ReportSynthesisEvidenceInput | null;
   selectedFeeDeltas: SelectedInstitutionFeeDelta[];
+  notLikeForLike?: UnlikeFeeComparison[];
   peerIndex: ReportSynthesisPeerContextInput;
   selectedRevenueTrend: unknown[];
   selectedPeerRanking: unknown;
@@ -175,6 +179,7 @@ export function buildSelectedInstitutionReportData(params: {
     })),
     fees_under_review: feesUnderReview,
     fee_peer_deltas: params.selectedFeeDeltas.map(withoutConfidence),
+    fee_comparisons_not_like_for_like: params.notLikeForLike ?? [],
     benchmark_scope: params.peerIndex.label,
     peer_group_note: params.peerIndex.fallbackReason,
     can_generate_verified_benchmark_conclusions: params.selectedFeeDeltas.some(

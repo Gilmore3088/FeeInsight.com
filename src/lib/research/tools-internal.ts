@@ -205,12 +205,14 @@ export const getCollectionStatus = tool({
 
 export const getReviewQueueStats = tool({
   description:
-    "Returns Knox rejection-decision counts for anomaly-only human review. When: review backlog questions, approval pipeline health. Combine with: getCollectionStatus for pipeline breadth, queryDataQuality(review_status) for published fee status.",
+    "Returns the record counts of the retired Knox rejection-decision queue (retired Oct 9, 2026; nobody reviews it and an override cannot publish). When: questions about that old queue only; it is not a review backlog. Combine with: queryDataQuality(review_status) for published fee status.",
   inputSchema: z.object({}),
   execute: async () => {
     const counts = await getKnoxReviewCounts();
     return {
       queue: "knox_decisions",
+      retired: "2026-10-09",
+      note: "Retired queue: these verdicts are kept on record and are not reviewed.",
       pending: counts.pending,
       confirmed: counts.confirmed,
       overridden: counts.overridden,

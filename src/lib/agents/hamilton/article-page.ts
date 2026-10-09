@@ -22,13 +22,15 @@ type SqlTag = typeof sql;
  * skips these takedowns. Nothing is deleted.
  *
  * Prod, 7 Oct: two live fees match (Space Coast 33560, Ally 68834), plus one unverified row
- * from the same Space Coast article ($167.40).
+ * from the same Space Coast article ($167.40). A /post/ segment counts too (Oct 9): City National
+ * Bank of Florida's blog post /post/overdraft-protection-how-to-prevent-fees-... put three
+ * overdraft "fees" live (100123-100125), among them the commercial $37.
  */
 export const ARTICLE_PAGE_CHECK = "hamilton.article_page";
 export const ARTICLE_PAGE_REASON = "article_page";
 export const ARTICLE_PAGE_FLAG = "article_page";
 export const ARTICLE_PAGE_ROLLBACK_LIMIT = 200;
-const ARTICLE_SEGMENT = "/(articles?|blogs?|stories|story|news)/";
+const ARTICLE_SEGMENT = "/(articles?|blogs?|posts?|stories|story|news)/";
 const SCHEDULE_WORDS = "(schedule|disclosure|pricing|rates-fees|rates-and-fees|truth-in-savings)";
 
 /** True for a page address with an article segment that does not name a fee schedule. */

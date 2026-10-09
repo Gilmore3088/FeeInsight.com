@@ -95,6 +95,17 @@ describe("Magellan companion fetch", () => {
     expect(attempt).toContain("blocked_bot");
   });
 
+  it("does not store a bot challenge served in place of the page, and marks it blocked", async () => {
+    const arvest = { ...freedom, url: "https://www.arvest.com/personal/fee-schedule" };
+    const db = createDb([arvest]);
+    const challenge = '<html><head><title>Just a moment...</title></head><body><script src="/cdn-cgi/challenge-platform/x.js"></script></body></html>';
+    const result = await runCompanionFetch({ db: asDb(db), fetchImpl: vi.fn(async () => page(challenge)), vault: null, runId: 7 });
+
+    expect(result).toMatchObject({ fetched: 0, failed: 1 });
+    expect(result.results[0]).toMatchObject({ attemptOutcome: "blocked_bot" });
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("INSERT INTO source_documents"))).toBe(false);
+  });
+
   it("waits for its migration", async () => {
     const fetchImpl = vi.fn();
     const result = await runCompanionFetch({ db: asDb(createDb([freedom], { ready: false })), fetchImpl, vault: null, runId: 7 });
@@ -135,6 +146,8 @@ describe("Magellan companion fetch", () => {
     expect(updateText).toContain("other.id <> inst.id");
     expect(updateText).toContain("IS DISTINCT FROM");
     expect(updateText).not.toContain("found_by_strategy");
+    // Not limited to the lane's state.
+    expect(updateText).not.toContain("inst.state_code");
     expect(update).toContain("other_bank_host");
   });
 

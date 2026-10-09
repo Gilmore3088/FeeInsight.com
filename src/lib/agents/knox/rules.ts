@@ -2,7 +2,8 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
@@ -23,6 +24,7 @@ export const MAX_FEES_PER_DOCUMENT = 75;
 const MAX_HELD_PER_DOCUMENT = 40;
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
 const MAX_SEGMENT_CHARS = 280;
+const MAX_NAME_CHARS = 120;
 const MIN_SEGMENT_CHARS = 8;
 export const MAX_REASONABLE_FEE_AMOUNT = 2_500;
 
@@ -84,8 +86,8 @@ interface FeePattern {
 /**
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
- * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
- * excess-activity fees -> account research; collection items and foreign checks -> collection
+ * Each maps to the category the taxonomy already gives the fee (returned mail and
+ * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
  * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
@@ -94,6 +96,9 @@ interface FeePattern {
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
  */
 export const FOLDED_PATTERNS: FeePattern[] = [
+  // A fax service is document reproduction since Oct 9 (one home for fax and copies, as the
+  // fold has it); fax as the way a wire, payoff or closing is sent stays below.
+  { key: "document_reproduction", pattern: FAX_SERVICE },
   {
     key: "account_research",
     pattern:
@@ -207,6 +212,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "atm_international",
     pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
+  // v59: a cross-border banking bundle or package is an account; its fee is the account's (`CROSS_BORDER_BUNDLE`).
+  { key: "monthly_maintenance", pattern: CROSS_BORDER_BUNDLE },
   // v21: plural "Foreign Transactions" (a bare "(international transactions)" is often a
   // neighbouring column's note), and the other names banks give the card's
   // currency fee ("International Point of Sale Fee", "Cross-Border", "International Service
@@ -215,6 +222,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "card_foreign_txn",
     pattern: /\b(foreign transactions?|international (?:transaction\b|purchases?|point of sale|pos|currency fee|service (?:assessment|fee))|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   },
+  // v61: adjusting an ATM deposit or dispute is account research (`ATM_ADJUSTMENT`).
+  { key: "account_research", pattern: ATM_ADJUSTMENT },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
@@ -241,6 +250,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
   { key: "account_research", pattern: /\bcheck ?book balanc\w*|\bbalanc\w* (?:your |a )?check ?book\b/i },
+  // v56: balancing or reconciling a checkbook is account research, not a check order (`CHECKBOOK_RECONCILIATION`).
+  { key: "account_research", pattern: new RegExp(String.raw`^(?=[\s\S]*\bcheck ?books?\b)[\s\S]*` + CHECKBOOK_RECONCILIATION.source, "i") },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
@@ -289,6 +300,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
   { key: "dormant_account", pattern: /\b(dorman(?:t|cy)|inactiv(?:e|ity)|escheat\w*|abandoned)\b/i },
+  // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+  { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",
@@ -442,7 +455,7 @@ export function joinWrappedProse(lines: string[]): string[] {
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
-  const lines = joinWrappedProse(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()));
+  const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
   for (const rawLine of lines) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
@@ -616,8 +629,20 @@ export function confidenceFor(segment: string): number {
   return Math.min(confidence, 0.94);
 }
 
+/** v60: a parenthetical that states a threshold of the fee ("($10,000.01 and Over)", "(below $500)", "($25 minimum)"). */
+const THRESHOLD_PARENTHETICAL =
+  /\b(?:below|under|over|above|than|up to|exceed(?:s|ing)?|least|min(?:imum)?|max(?:imum)?|limit|greater|less|or more|and up)\b|[<>]/i;
+
 export function nameFrom(value: string): string {
-  return stripFootnoteMarks(normalizeSegment(value.replace(AMOUNT_PATTERN, " "))).slice(0, 120).trim();
+  // v60: a figure in a threshold parenthetical stays in the name; every other figure is the price.
+  const kept: string[] = [];
+  const masked = value.replace(/\([^()]*\$\s*\d[^()]*\)/g, (group) => {
+    if (!THRESHOLD_PARENTHETICAL.test(group.replace(AMOUNT_PATTERN, " "))) return group;
+    kept.push(group);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const stripped = masked.replace(AMOUNT_PATTERN, " ").replace(/\u0000(\d+)\u0000/g, (_, index: string) => kept[Number(index)]);
+  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, MAX_NAME_CHARS).trim();
 }
 
 /**
@@ -792,9 +817,34 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
  */
 const AVOID_FEE_OF = /\bto avoid (?:an?|the)\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
 
+/**
+ * v57: "Go green with eStatements to avoid $3 paper statement fee": the price comes first and
+ * the words after it name the fee the reader avoids.
+ */
+const AVOID_PRICE_FEE = /\bto avoid (?:an?\s+|the\s+)?\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))s?\b/i;
+
+function avoidPriceFirst(segment: string): ExtractedFeeCandidate | null {
+  const match = segment.match(AVOID_PRICE_FEE);
+  if (!match) return null;
+  const words = normalizeSegment(match[2]);
+  const hint = classifyFeeText(words);
+  const amount = Number(match[1]);
+  const feeName = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  if (!hint || !(amount > 0) || !passesDarwinChecks(hint, feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
+  };
+}
+
 export function avoidFeeFromProse(segment: string): ExtractedFeeCandidate | null {
   const match = segment.match(AVOID_FEE_OF);
-  if (!match) return null;
+  if (!match) return avoidPriceFirst(segment);
   const words = normalizeSegment(match[1]);
   const hint = classifyFeeText(words);
   if (hint !== "minimum_balance" && hint !== "monthly_maintenance") return null;
@@ -966,6 +1016,20 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
       (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null) ??
       (rowName && usableName(rowName) ? classifyFeeText(rowName) : null)
     : classifyFeeText(cells ? cells[0] : segment);
+  // v57: a markdown table row is named by its first cell when its details cell names nothing
+  // ("| Stop Payment Order | Initial order or a renewal | $30.00 | per item |", Arvest).
+  const titleCell = cells?.[0]?.replace(/^\|\s*/, "").trim() ?? "";
+  if (!hint && firstAmount && /^\s*\|/.test(segment) && (cells?.filter(Boolean).length ?? 0) >= 3 && !amountsIn(titleCell).length) {
+    hint = classifyFeeText(titleCell);
+  }
+  // v62: "Domestic Outgoing (client only) ........ $25.00 per wire" (Northern Trust) names its
+  // fee only together with the noun after the price; the name keeps that noun.
+  // The name must say which way the wire goes: "Domestic | $20.00 per wire" under an
+  // "Incoming" heading names no direction of its own.
+  const perWire = !hint && firstAmount != null && !priceFirst && usableName(name) &&
+    /\b(?:incoming|outgoing|inbound|outbound|send|sent|receive|received)\b/i.test(name) &&
+    /^\s*per\s+wire(?:\s+transfer)?\b/i.test(segment.slice(firstAmount.end)) && !/\bwires?\b/i.test(name);
+  if (perWire) hint = classifyFeeText(`${name} wire`);
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
@@ -1080,6 +1144,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  if (perWire && !/\bwires?\b/i.test(feeName)) feeName = `${feeName} wire`;
+  // v62: a name cut at its length limit inside a parenthesis ("... Nonsufficient Funds (includes
+  // but not limited to overdrafts created by check, in-") is named by the words before it.
+  const cutParen = feeName.length >= MAX_NAME_CHARS - 2 && parenBalance(feeName) > 0 ? feeName.slice(0, feeName.lastIndexOf("(")).trim() : "";
+  if (usableName(cutParen)) feeName = cutParen;
   // v38: a threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32")
   // stays in the name with its figure: "Courtesy Pay (over $5)".
   const thresholdCell = cells?.find((cell, index) => index > 0 && THRESHOLD_CELL.test(cell));
@@ -1337,9 +1406,65 @@ export function centeredNamePrices(text: string): string[] {
   return joined;
 }
 
+/**
+ * v63: a safe deposit box size and its rent printed in the next column ("Return Item Fee | 03 x
+ * 10….....$45", doc 20570, UAT Oct 9) is the box table's row, not the fee's price: the $45 went
+ * live as the return item fee (73956). The size cell starts its own line, so it reads as a box
+ * rent and the fee's own line carries no price.
+ */
+const GLUED_BOX_SIZE_CELL = /\s*\|\s*(\d{1,2}\s?[x×]\s?\d{1,2}(?![\d.])[\s.…_-]*\$\s?\d)/gi;
+/** Text before the cell that is the box table's own heading ("Safe Deposit Box Rental | 3 x 5 - $20"). */
+const BOX_HEADING = /\b(safe|safety|deposit|box(es)?|rental|rent|sizes?)\b/i;
+
+export function withBoxSizeCellsSplit(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(GLUED_BOX_SIZE_CELL, (match, cell: string, offset: number) =>
+      BOX_HEADING.test(line.slice(0, offset)) ? match : `\n${cell}`))
+    .join("\n");
+}
+
+/**
+ * v62: a fee whose name carries a footnote mark ("Overdraft - Insufficient Funds / Uncollected2
+ * $40.00") is a business price when that footnote says so ("2 Created by check, ... Only
+ * applicable to business accounts. This fee is not charged to consumer accounts.", ConnectOne
+ * 135). Its line is left out, so the consumer page never shows it.
+ */
+const BUSINESS_ONLY_NOTE =
+  /\b(?:only (?:applicable|applies) to business(?: accounts?)?|not (?:charged|assessed) (?:to|on) (?:consumer|personal) accounts?)\b/i;
+const FOOTNOTE_LINE = /^\s*(\d{1,2})\s+[A-Z]/;
+const GLUED_MARK = /[a-z)](\d{1,2})(?=\s*(?:\||\$|\.{3,}|$))/gi;
+
+export function withoutBusinessOnlyFees(text: string): string {
+  if (!BUSINESS_ONLY_NOTE.test(text)) return text;
+  const lines = text.split("\n");
+  // A note may wrap onto the next line, unless that line is the next note.
+  const businessNote = (index: number) => {
+    const next = lines[index + 1] ?? "";
+    return BUSINESS_ONLY_NOTE.test(FOOTNOTE_LINE.test(next) ? lines[index] : `${lines[index]} ${next}`);
+  };
+  // A mark points at the first note with its number below the fee: a schedule whose pages each
+  // carry their own notes numbers them again from 1 (Ameris).
+  const noteBelow = (index: number, mark: string) => {
+    for (let below = index + 1; below < lines.length; below += 1) {
+      if (lines[below].match(FOOTNOTE_LINE)?.[1] === mark) return below;
+    }
+    return -1;
+  };
+  return lines
+    .filter((line, index) => {
+      if (FOOTNOTE_LINE.test(line)) return true;
+      return ![...line.matchAll(GLUED_MARK)].some((mark) => {
+        const note = noteBelow(index, mark[1]);
+        return note >= 0 && businessNote(note);
+      });
+    })
+    .join("\n");
+}
+
 export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
-  const text = stripPriceFootnoteMarks(newestColumnText(raw));
+  const text = withoutBusinessOnlyFees(stripPriceFootnoteMarks(newestColumnText(raw)));
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];

@@ -5,7 +5,14 @@ import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { getReportFreshness, type ReportFreshness } from "@/lib/data-store/feed-freshness";
 import { buildPublishingCalendar, type Audience } from "@/lib/console/publishing-calendar";
-import { getSentEmailLog, type SentEmailLog } from "@/lib/email/resend-log";
+import { getEmailSendLog, type EmailSendLog, type EmailSendStatus } from "@/lib/data-store/email-send-log";
+import {
+  SEND_STATUS_LABEL,
+  emailCountLines,
+  emailEventLabel,
+  emailEventTone,
+  type EventTone,
+} from "@/lib/email/send-log-display";
 import { RoomHeader, Unreadable } from "../room-hub";
 
 const AUDIENCE_TONE: Record<Audience, string> = {
@@ -28,7 +35,7 @@ export default async function PublishingRoomPage() {
       console.error("Publishing room report freshness failed", error);
       return null;
     }),
-    getSentEmailLog(),
+    getEmailSendLog(25),
   ]);
   const calendar = reports ? buildPublishingCalendar(reports) : [];
   const library = reports?.find((report) => report.key === "published_reports");
@@ -117,66 +124,81 @@ export default async function PublishingRoomPage() {
   );
 }
 
-const EVENT_TONE: Record<string, string> = {
-  delivered: "text-emerald-700 dark:text-emerald-400",
-  opened: "text-emerald-700 dark:text-emerald-400",
-  clicked: "text-emerald-700 dark:text-emerald-400",
-  bounced: "text-red-700 dark:text-red-400",
-  complained: "text-red-700 dark:text-red-400",
-  failed: "text-red-700 dark:text-red-400",
+const EVENT_TONE: Record<EventTone, string> = {
+  good: "text-emerald-700 dark:text-emerald-400",
+  bad: "text-red-700 dark:text-red-400",
+  neutral: "text-gray-600 dark:text-gray-300",
 };
 
-function EmailLog({ log }: { log: SentEmailLog }) {
+const STATUS_TONE: Record<EmailSendStatus, string> = {
+  sent: "text-gray-700 dark:text-gray-200",
+  failed: "text-red-700 dark:text-red-400",
+  not_configured: "text-amber-700 dark:text-amber-400",
+};
+
+function EmailLog({ log }: { log: EmailSendLog }) {
   return (
     <section aria-label="Emails sent">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="admin-section-title">Emails sent</p>
-        <p className="text-xs text-gray-500">Latest 25, read live from Resend; status is Resend&apos;s latest event (sent = accepted)</p>
+        <p className="text-xs text-gray-500">Latest 25 from the app&apos;s own send log; delivery is Resend&apos;s latest webhook event</p>
       </div>
-      {log.status === "send_only" ? (
-        <div role="status" className="admin-card mt-2 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
-          <p className="font-medium text-gray-900 dark:text-gray-100">
-            Sending key works; Resend&apos;s sent-email list needs a read-access key.
-          </p>
-          <ul className="mt-1.5 space-y-0.5 text-xs text-gray-600 dark:text-gray-300">
-            <li>Configured: yes, RESEND_API_KEY is set.</li>
-            <li>Sending: {log.reason} A lead alert Resend refused shows as &quot;Email failed&quot; in Leads.</li>
-            <li>Delivered: not visible here. The app keeps no email log of its own; Resend&apos;s dashboard shows delivery.</li>
-          </ul>
-        </div>
-      ) : log.status !== "ok" ? (
+      {log.status === "not_migrated" ? (
+        <p role="status" className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+          The email send log table (migration 20270110000034) is not in the database yet, so no send is recorded.
+        </p>
+      ) : log.status === "failed" ? (
         <p role="status" className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
           The email log could not be read. {log.reason}
         </p>
-      ) : log.emails.length === 0 ? (
-        <p className="mt-2 text-sm text-gray-500">Resend has no sent emails on record.</p>
       ) : (
-        <div className="admin-card mt-2 overflow-x-auto">
-          <table className="w-full min-w-[620px] text-sm">
-            <thead>
-              <tr className="border-b border-black/[0.06] text-left text-[11px] uppercase tracking-wide text-gray-500 dark:border-white/[0.06]">
-                <th className="px-4 py-2 font-semibold">Subject</th>
-                <th className="px-4 py-2 font-semibold">To</th>
-                <th className="px-4 py-2 font-semibold">Status</th>
-                <th className="px-4 py-2 font-semibold">Sent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {log.emails.map((email) => (
-                <tr key={email.id} className="border-b border-black/[0.04] last:border-0 dark:border-white/[0.04]">
-                  <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">{email.subject || "(no subject)"}</td>
-                  <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">{email.to.join(", ")}</td>
-                  <td className={`px-4 py-2.5 capitalize ${EVENT_TONE[email.lastEvent ?? ""] ?? "text-gray-600 dark:text-gray-300"}`}>
-                    {email.lastEvent?.replace(/_/g, " ") ?? "Unknown"}
-                  </td>
-                  <td className="px-4 py-2.5 tabular-nums text-gray-600 dark:text-gray-300">
-                    {email.createdAt ? formatAdminDateTime(email.createdAt) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {emailCountLines(log.counts).map((line) => (
+              <div key={line.label} className="admin-card px-4 py-3">
+                <p className="text-xs text-gray-500">{line.label}</p>
+                <p className="mt-1 font-mono text-2xl font-medium tabular-nums">{line.value}</p>
+                <p className="mt-1 text-[11.5px] text-gray-500">{line.note}</p>
+              </div>
+            ))}
+          </div>
+          {log.rows.length === 0 ? (
+            <p className="mt-2 text-sm text-gray-500">No email has been sent since the log started.</p>
+          ) : (
+            <div className="admin-card mt-3 overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b border-black/[0.06] text-left text-[11px] uppercase tracking-wide text-gray-500 dark:border-white/[0.06]">
+                    <th className="px-4 py-2 font-semibold">Time</th>
+                    <th className="px-4 py-2 font-semibold">Sender</th>
+                    <th className="px-4 py-2 font-semibold">To</th>
+                    <th className="px-4 py-2 font-semibold">Subject</th>
+                    <th className="px-4 py-2 font-semibold">Send</th>
+                    <th className="px-4 py-2 font-semibold">Delivery</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {log.rows.map((row) => (
+                    <tr key={row.id} className="border-b border-black/[0.04] align-top last:border-0 dark:border-white/[0.04]">
+                      <td className="px-4 py-2.5 tabular-nums text-gray-600 dark:text-gray-300">{formatAdminDateTime(row.createdAt)}</td>
+                      <td className="px-4 py-2.5 text-gray-700 dark:text-gray-200">{row.label ?? "—"}</td>
+                      <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">{row.recipient ?? "—"}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-900 dark:text-gray-100">{row.subject || "(no subject)"}</td>
+                      <td className={`px-4 py-2.5 ${STATUS_TONE[row.status]}`}>
+                        {SEND_STATUS_LABEL[row.status]}
+                        {row.error ? <p className="mt-0.5 text-xs">{row.error}</p> : null}
+                      </td>
+                      <td className={`px-4 py-2.5 ${EVENT_TONE[emailEventTone(row.lastEvent)]}`}>
+                        {row.status === "sent" ? emailEventLabel(row.lastEvent) : "—"}
+                        {row.lastEventAt ? <p className="mt-0.5 text-xs text-gray-500">{formatAdminDateTime(row.lastEventAt)}</p> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </section>
   );

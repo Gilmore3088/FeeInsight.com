@@ -126,4 +126,35 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(frequencyFromLine("Monthly maintenance fee: $8.00 Per check: $0.20", 8)).toBe("monthly");
     expect(frequencyFromLine("Research | $25.00 ($25.00 minimum)", 25)).toBeNull();
   });
+
+  it("reads 'after 3 in a month' and 'exceeding two per month' as allowances (v7, Darwin's held rows)", () => {
+    expect(settledFrequency("| IRA Savings Excessive Withdrawal | $15 Each after 3 in a month |", 15, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("A $1.00 excess withdrawal fee will be charged for each in-person debit transaction exceeding two per month.", 1, "monthly", "excess_withdrawal")).toBeNull();
+    expect(settledFrequency("Fax | $2.00/Page", 2, null, "account_research")).toBe("per_item");
+    expect(settledFrequency("Monthly Service Fee | $5.00 a month", 5, "monthly", "monthly_maintenance")).toBe("monthly");
+  });
+});
+
+describe("a rate basis in the fee's own name (v8, whole-record sample 2)", () => {
+  it("clears a flat frequency on a fee charged per hour", () => {
+    const line = "Account Balancing (per hour) / $35.00 Each";
+    expect(frequencyFromLine(line, 35)).toBeNull();
+    expect(settledFrequency(line, 35, "per_item", "account_research")).toBeNull();
+    expect(settledFrequency("Research ($10 min) /hr | $20.00 each", 20, "per_item", "account_research")).toBeNull();
+  });
+
+  it("keeps a period when the name only mentions a minimum balance", () => {
+    expect(frequencyFromLine("Minimum Balance Fee | $5.00 per month", 5)).toBe("monthly");
+    expect(settledFrequency("Classic Money Market Account (balance below $1,000) | $3.00/monthly", 3, "monthly", "minimum_balance")).toBe("monthly");
+    expect(frequencyFromLine("Copy of Share Draft (Check) Faxed | $6.00 each", 6)).toBe("per_item");
+  });
+});
+
+describe("an allowance written as a count per month (v9, 101933)", () => {
+  it("reads the fee as per item, not the free-fee row's monthly", () => {
+    const line = "Monthly service fee …………………… N/C | ATM transaction (each above 6/month)… $ 1.00 | *Depending on location";
+    expect(frequencyFromLine(line, 1)).toBe("per_item");
+    expect(settledFrequency(line, 1, "monthly", "atm_non_network")).toBe("per_item");
+    expect(frequencyFromLine("Monthly service fee | $5.00", 5)).toBe("monthly");
+  });
 });

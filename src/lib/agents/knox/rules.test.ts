@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
+import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
+import { withBoxSizeCellsSplit, withoutBusinessOnlyFees } from "./rules";
+import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
@@ -25,7 +28,7 @@ const MVB_WRAPPED = [
 describe("Knox extract.rules", () => {
   it("v12 never reads a limit, threshold or refundable deposit as the fee", () => {
     expect(fees("Money Orders ($1,000 Limit) Non-Customer ........................ $10.00")).toEqual([
-      ["Money Orders ( Limit) Non-Customer", 10, "money_order"],
+      ["Money Orders ($1,000 Limit) Non-Customer", 10, "money_order"],
     ]);
     expect(fees("COURTESY PAY ($300 THRESHOLD, FEE PER TRANS.) $ | 30.00")).toEqual([]);
     expect(fees("Safe Deposit Box / $10.00 refundable key deposit on each box")).toEqual([]);
@@ -452,6 +455,7 @@ describe("Knox extract.rules", () => {
     ["Checkbook Balancing", "account_research"],
     ["Assistance in Balancing Checkbook", "account_research"],
     ["Check Book Order", "check_printing"],
+    ["Checkbook Order (includes balance register)", "check_printing"],
     ["NSF Fee ( Fee applies when overdraft is", "nsf"],
     ["Insufficient Funds Fee (when overdraft coverage is not available)", "nsf"],
     ["Non-Sufficient Funds (NSF)/Overdraft Fee", "overdraft"],
@@ -466,9 +470,47 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
+    ["Account Research Copies (per page)", "document_reproduction"],
+    ["Research Request - Per Page Copied", "document_reproduction"],
+    ["Account Research (Per hour + $0.50 per copy)", "account_research"],
+  ])("v54 reads %s as %s (a copy charged by the page)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["Checkbook Reconciliation (per hour)", "account_research"],
+    ["Balance Check Book", "account_research"],
+    ["Check Book Order", "check_printing"],
+  ])("v56 reads %s as %s (checkbook reconciliation)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["Cross-Border Banking Bundle annual fee", "monthly_maintenance"],
+    ["Cross-Border Banking Package monthly fee", "monthly_maintenance"],
+    ["Cross-Border Fee", "card_foreign_txn"],
+    ["Cross-border transaction fee", "card_foreign_txn"],
+    ["Cross-Border Banking card purchases (3% of purchase)", "card_foreign_txn"],
+  ])("v59 reads %s as %s (cross-border banking bundle)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["ATM Adjustment", "account_research"],
+    ["ATM Adjustment Fee $5.00 Network fee may apply", "account_research"],
+    ["Special Handling (i.e. ATM adjustment, etc.)", "account_research"],
+    ["ATM Limit Adjustment", "atm_non_network"],
+    ["ATM Transaction Adjustment", "account_research"],
+    ["ATM Balance Inquiry (at non-Wildfire ATM)", "atm_non_network"],
+  ])("v61 reads %s as %s (ATM adjustment)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
     ["Returned Mail Fee", "account_research"],
     ["Bad Address Fee", "account_research"],
-    ["Fax Outgoing", "account_research"],
+    ["Fax Outgoing", "document_reproduction"],
+    ["Loan Payoff Fax/Mail Fee", "account_research"],
     ["Excessive Withdrawal Fee", "account_research"],
     ["Withdrawal Limit Fee", "account_research"],
     ["Foreign Item Collection", "collection_item"],
@@ -920,5 +962,197 @@ describe("v46 wrapped paragraphs", () => {
     expect(joinWrappedProse(["Overdraft Fee", "per item | $35"])).toEqual(["Overdraft Fee", "per item | $35"]);
     expect(joinWrappedProse(["Stop payment fee charged for each request we receive.", "wire fee $25"])).toHaveLength(2);
     expect(joinWrappedProse(["Overdraft Fee (each item we pay into the overdraft) | $35", "per item"])).toHaveLength(2);
+  });
+});
+
+describe("v57: long table rows and sentence-fragment names (Arvest, Old National)", () => {
+  const ARVEST_OD =
+    '| Overdraft (OD) - Paid Item | A fee may be charged, when permitted by law, for each transaction presented to us for payment when the balance in your account after we post all credits and debits for the day ("Ledger Balance") is less than the amount we need to pay your transaction. For all consumer accounts, we will assess a maximum of four (4) OD fees per day. We do not charge a fee if we return the transaction unpaid. | $17.00 | per item |';
+
+  it("keeps the overdraft fee of a table row whose details column runs long", () => {
+    const found = runFreeSpecialists(ARVEST_OD).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint, fee.frequency]);
+    // Per item from its own row, not "daily" from the cap sentence before the price.
+    expect(found).toEqual([["Overdraft (OD) - Paid Item", 17, "overdraft", "per_item"]]);
+  });
+
+  it("names a table row by its first cell when its details cell names no fee", () => {
+    const found = runFreeSpecialists("| Stop Payment Order | Initial order or a renewal | $30.00 | per item |").candidates;
+    expect(found.map((fee) => [fee.amount, fee.canonicalHint])).toEqual([[30, "stop_payment"]]);
+    const billPay = runFreeSpecialists("| Online BillPay | If applicable, based on account type features | $0.50 | per item |").candidates;
+    expect(billPay.map((fee) => [fee.feeName, fee.amount])).toEqual([["Online BillPay", 0.5]]);
+  });
+
+  it("drops an N/A cell and a details cell from the name", () => {
+    expect(runFreeSpecialists("| ATM or Debit Card Replacement | N/A | $7.50 | per card |").candidates.map((fee) => fee.feeName)).toEqual([
+      "ATM or Debit Card Replacement",
+    ]);
+    const atm =
+      "| ATM Account Inquiry/ATM Transaction | Fee applies to the use of an ATM or terminal not owned and operated by Arvest Bank, including balance inquiry, deposit, or withdrawal. The ATM owner may charge an additional fee. | $2.50 | per item |";
+    expect(runFreeSpecialists(atm).candidates.map((fee) => [fee.feeName, fee.amount])).toContainEqual(["ATM Account Inquiry/ATM Transaction", 2.5]);
+  });
+
+  it("names a monthly fee without the word that joins its sentence to the one before", () => {
+    const found = runFreeSpecialists("Otherwise, a monthly service fee of $6.95.").candidates;
+    expect(found.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Monthly service fee", 6.95, "monthly_maintenance"]]);
+  });
+
+  it("names the fee a sentence avoids by the words after its price", () => {
+    const found = runFreeSpecialists("Go green with eStatements to avoid $3 paper statement fee").candidates;
+    expect(found.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Paper statement fee", 3, "paper_statement"]]);
+  });
+});
+
+describe("v60: names keep their threshold and lose a column label", () => {
+  const names = (text: string) => runFreeSpecialists(text).candidates.map((fee) => fee.feeName);
+
+  it("keeps a threshold figure in the name's parenthetical (101115, 40261)", () => {
+    expect(fees("Cashier's Checks ($10,000.01 and Over) | $10.00")).toEqual([["Cashier's Checks ($10,000.01 and Over)", 10, "cashiers_check"]]);
+    expect(fees("Dormant Account Fee-(No activity for 2 years and the balance is under $100) | $5.00 - Monthly")[0]?.[0]).toBe(
+      "Dormant Account Fee-(No activity for 2 years and the balance is under $100)",
+    );
+  });
+
+  it("still drops a price that is not a threshold", () => {
+    expect(nameFrom("Overdraft Fee ($35.00 per item)")).toBe("Overdraft Fee ( per item)");
+  });
+
+  it("drops a \"Name\" column label (Maple FCU)", () => {
+    expect(names("Name Stop Payment | Fee $25.00")).toContain("Stop Payment");
+  });
+
+  it("keeps \"In addition to\" as words of the name", () => {
+    expect(tidyFeeName("In addition to the Card Replacement Fee")).not.toMatch(/^To the/);
+    expect(tidyFeeName("Otherwise, a monthly service fee")).toBe("Monthly service fee");
+  });
+
+  it("never cuts a name down to its section heading", () => {
+    expect(
+      tidyFeeName("SERVICE FEES | Check Cashing (Less than $500, no other active service) Active = service used at least every 6 months"),
+    ).not.toBe("SERVICE FEES");
+  });
+});
+
+describe("v62: Northern Trust's wrapped names and per-wire lines", () => {
+  const read = (text: string) => runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+  const page = [
+    "Returned Unpaid ................................................................ 4.50 per item",
+    "Legal Document Processing (Levies, Garnishments,",
+    "Citations, Subpoenas, Liens, or other Court,",
+    "Regulatory, or Administrative Orders)..................................$115.00",
+    "Overdrafts Paid and Items Paid against Nonsufficient",
+    "Funds (includes but not limited to overdrafts",
+    "created by check, in-person withdrawals",
+    "at a teller or recurring electronic",
+    "debit card payments) ................................... $25.00 per Occurrence",
+    "(maximum of 3 overdraft charges per day)",
+    "Stop Payment Order............................................................ $30.00 per item",
+    "Wire Transfers",
+    "Domestic Incoming .......................................................$15.00 per wire",
+    "International Incoming ................................................$15.00 per wire",
+    "Domestic Outgoing (client only)..............................$25.00 per wire",
+    "International Outgoing (client only) .......................$45.00 per wire",
+  ].join("\n");
+
+  it("reads an overdraft fee whose name wraps over the lines above its price", () => {
+    expect(read(page)).toContainEqual(["Overdrafts Paid and Items Paid against Nonsufficient Funds", 25, "overdraft"]);
+    expect(read(page)).toContainEqual(["Legal Document Processing", 115, "garnishment_levy"]);
+  });
+
+  it("names a wire by the noun after its price, once per line", () => {
+    const wires = read(page).filter((fee) => String(fee[2]).startsWith("wire_"));
+    expect(wires).toEqual([
+      ["Domestic Incoming wire", 15, "wire_domestic_incoming"],
+      ["International Incoming wire", 15, "wire_intl_incoming"],
+      ["Domestic Outgoing (client only) wire", 25, "wire_domestic_outgoing"],
+      ["International Outgoing (client only) wire", 45, "wire_intl_outgoing"],
+    ]);
+  });
+
+  it("never reaches past a priced line, a finished sentence or an unopened tail", () => {
+    expect(joinWrappedLeaderNames(["Stop Payment ..... $30.00", "or recurring debit card payments) ..... $25.00"])).toEqual([
+      "Stop Payment ..... $30.00",
+      "or recurring debit card payments) ..... $25.00",
+    ]);
+    expect(joinWrappedLeaderNames(["Fees are listed below.", "Overdraft (paid", "items) ..... $25.00"])).toEqual([
+      "Fees are listed below.",
+      "Overdraft (paid items) ..... $25.00",
+    ]);
+  });
+});
+
+describe("v62: business-only footnotes and former-fee columns", () => {
+  const read = (text: string) => runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+  it("leaves out a fee whose footnote says it is a business fee (ConnectOne 135)", () => {
+    const text = [
+      "Dormant Account1 $5.00",
+      "Overdraft - Insufficient Funds / Uncollected2 $40.00",
+      "Stop Payment | $25.00",
+      "1 The dormant fee does not apply to the Totally Free Checking Account",
+      "2 Created by check, in-person withdrawal, ATM withdrawal, or other electronic means. Only applicable to business accounts. This",
+      "fee is not charged to consumer accounts.",
+    ].join("\n");
+    const fees = read(text);
+    expect(fees).toContainEqual(["Dormant Account", 5, "dormant_account"]);
+    expect(fees.some((fee) => fee[2] === "overdraft")).toBe(false);
+  });
+
+  it("reads a mark against the first note with its number below the fee", () => {
+    const text = [
+      "Overdraft Fee4 | $35.00",
+      "4 A maximum of 3 Overdraft Fees will be assessed per day on consumer accounts.",
+      "Business Customers",
+      "Extended Overdraft Fee4 | $40.00",
+      "4 Only applicable to business accounts.",
+    ].join("\n");
+    expect(withoutBusinessOnlyFees(text)).toContain("Overdraft Fee4 | $35.00");
+    expect(withoutBusinessOnlyFees(text)).not.toContain("Extended Overdraft Fee4");
+  });
+
+  it("reads a conversion guide at its new column (Citizens Business Bank 124)", () => {
+    const text = [
+      "PERSONAL GENERAL FEES",
+      "SERVICES | FORMER FEES | NEW FEES",
+      "Chexsystems Collection Fee | $75.00 | N/A",
+      "Legal Process Handling | $100.00 per process | $250.00 per process",
+      "NSF/UCF Item Paid Charge | No charge | Item Returned Charge fees per day. NSF/UCF",
+      "Photocopies | $4.00 per copy | $5.00 per item",
+    ].join("\n");
+    const fees = read(text);
+    expect(fees).toContainEqual(["Legal Process Handling", 250, "legal_process"]);
+    expect(fees).toContainEqual(["Photocopies", 5, "document_reproduction"]);
+    expect(fees.map((fee) => fee[1])).not.toContain(75);
+    expect(fees.map((fee) => fee[1])).not.toContain(0);
+  });
+
+  it("names a wire by its price's noun only when the name says which way it goes", () => {
+    expect(read("Domestic | $20.00 per wire")).toEqual([]);
+  });
+});
+
+describe("glued safe deposit box sizes (v63)", () => {
+  // Doc 20570 (inst 8414): the box table's rows sit in the next column of the fee table.
+  const text = [
+    "Safe Deposit Box Annual Rental",
+    "03 x 05….....$30",
+    "Return Item Fee | 03 x 10….....$45",
+    "Checks deposited drawn on your",
+    "$28 per item",
+    "account at another financial | 05 x 10….....$65",
+  ].join("\n");
+
+  it("starts a box size cell on its own line", () => {
+    expect(withBoxSizeCellsSplit(text)).toContain("Return Item Fee\n03 x 10….....$45");
+    expect(withBoxSizeCellsSplit("Stop Payment | $30.00")).toBe("Stop Payment | $30.00");
+    // A size with no price after it is a description, not the box table.
+    expect(withBoxSizeCellsSplit("Box | 3 x 5 small")).toBe("Box | 3 x 5 small");
+    // The box table's own heading keeps its sizes on its line.
+    expect(withBoxSizeCellsSplit("Safe Deposit Box Rental | 3 x 5 - $20.00 3 x 10 - $35.00")).toBe("Safe Deposit Box Rental | 3 x 5 - $20.00 3 x 10 - $35.00");
+  });
+
+  it("reads the box rent as a box rent, never as the return item fee (73956)", () => {
+    const found = runFreeSpecialists(text).candidates.map((fee) => [fee.amount, fee.canonicalHint]);
+    expect(found).not.toContainEqual([45, "nsf"]);
+    expect(found).toContainEqual([45, "safe_deposit_box"]);
   });
 });

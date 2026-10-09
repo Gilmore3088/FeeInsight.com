@@ -149,6 +149,7 @@ async function fetchSignalFeed(
             COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
           FROM hamilton_signals
           WHERE institution_id = ANY(${institutionIds}::text[])
+            AND NOT (source_json ? 'withdrawn_at')
           ORDER BY created_at DESC
           LIMIT ${limit}
         `
@@ -164,6 +165,7 @@ async function fetchSignalFeed(
             source_json ->> 'evidence_policy' AS evidence_policy,
             COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
           FROM hamilton_signals
+          WHERE NOT (source_json ? 'withdrawn_at')
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
@@ -282,6 +284,7 @@ async function fetchStatusMetrics(
             FROM hamilton_signals
             WHERE created_at >= ${cutoff}
               AND institution_id = ANY(${institutionIds}::text[])
+              AND NOT (source_json ? 'withdrawn_at')
           `,
           sql`
             SELECT COUNT(*)::int AS count
