@@ -13,6 +13,14 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: A hand-found schedule fetched in another state's lane was never read
+Companion fetch takes hand-found schedules in any state's lane (2026-10-08 fix), but every read
+step is scoped to its run's state. First United's (OK) overdraft disclosure was fetched in the NC
+lane at 23:55 UTC on 8 Oct and sat unread: the priority picker only saw it as "found by hand" while
+it was unfetched. Fix: the picker's unread-document tier (paid fetch) now also covers documents
+fetched from hand-found links, and a dormant bank with a hand-found link can get its run. The paid
+fetch for blocked companion links admits the same dormant case (Stock Yards' syb.com answered 403).
+
 ## 2026-10-09: The companion search stopped running on Oct 7
 **What happened:** `pipeline_attempts` holds no `discover.second_document` row after 07:00 UTC Oct 7, through 00:20 UTC Oct 9, while discover steps kept completing (1,126 in all). At 00:20 Oct 9, top-10 banks such as American Savings (HI), Trustone (MN), First Community (WV), Dupaco (IA), Hawaii State FCU and Yellowstone (MT) had a verified overdraft fee but fewer than 3 fee categories, so Hamilton held it, and the search that finds the rest of their schedule had not run for them.
 **Cause:** discovery stopped starting banks at 75 s and ran the companion search only if the bank loop had ended before 75 s. Once the queue had enough banks to fill every step (steps ran 82 to 104 s on Oct 8), the loop always ran past 75 s and the search never started.
