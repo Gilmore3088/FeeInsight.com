@@ -635,6 +635,12 @@ describe("v15: a rename never drops a condition, and v14's trims get theirs back
       "Performance Interest Checking: Inactive fee (per month)",
     );
     expect(restoredName("PERSONAL CHECKING ACCOUNT FEES | Skip-a-Pay", "Skip-a-Pay", "skip_a_pay")).toBeNull();
+    // Another row's cell, a sentence the name was cut from, or a figure publish cut out stays off.
+    expect(restoredName("per item | Stop payment ACH", "Stop payment ACH", "stop_payment")).toBeNull();
+    expect(restoredName("Please note that after 180 days of inactivity, you will be charged a monthly inactivity fee", "Monthly inactivity fee")).toBeNull();
+    expect(restoredName("service charge if minimum balance is or less", "Service charge", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Monthly fee if account balance falls", "Monthly fee", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Premier Checking: Printed Statements", "Printed Statements", "paper_statement")).toBe("Premier Checking: Printed Statements");
   });
 
   it("restores a logged v14 trim, and does not trim a condition off again", () => {

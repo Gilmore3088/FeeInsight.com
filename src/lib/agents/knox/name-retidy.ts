@@ -757,6 +757,10 @@ export function dropsCondition(oldName: string, newName: string, canonicalKey?: 
   const at = oldName.toLowerCase().lastIndexOf(newName.trim().toLowerCase());
   const heading =
     at > 0 && !(canonicalKey && ACCOUNT_BOUND_KEYS.has(canonicalKey)) && LEADING_HEADING_CELL.test(oldName.slice(0, at)) ? new Set(nameWords(oldName.slice(0, at))) : new Set<string>();
+  // Another row's cells joined on with "|" are not this fee's words ("per item | Stop payment ACH").
+  const cells = oldName.split("|");
+  const ownCell = cells.length > 1 ? cells.find((cell) => cell.toLowerCase().includes(newName.trim().toLowerCase())) : undefined;
+  if (ownCell !== undefined) oldName = ownCell;
   const dropped = nameWords(oldName).filter(
     (word) => !kept.has(word) && !advice.has(word) && !(heading.has(word) && ACCOUNT_WORD_CONDITION.test(word)),
   );
@@ -786,8 +790,20 @@ export function restoredName(oldName: string, trimmedName: string, canonicalKey?
     const clause = end > 0 ? closedParens(name.slice(0, end).replace(/[\s,;:\-–—]+$/u, "").trim()) : "";
     restored = clause.length > trimmedName.length && dropsCondition(clause, trimmedName, canonicalKey) ? clause : closedParens(withoutDanglingWords(name));
   }
-  return restored !== trimmedName && dropsCondition(restored, trimmedName, canonicalKey) ? restored : null;
+  if (restored === trimmedName || !dropsCondition(restored, trimmedName, canonicalKey) || AMOUNT_GAP.test(restored)) return null;
+  // The old name must open with the trimmed one, or with only its account heading before it
+  // ("Premier Checking: Printed Statements"). Another row's cells ("per item | Stop payment ACH")
+  // or a sentence the name was cut out of ("Please note that after 180 days ...") stay off.
+  const at = restored.toLowerCase().indexOf(trimmedName.trim().toLowerCase());
+  if (at === 0) return restored;
+  const prefix = at > 0 ? restored.slice(0, at) : "";
+  return RESTORE_HEADING.test(prefix) && ACCOUNT_WORD.test(prefix) && !/[\d$|]/.test(prefix) ? restored : null;
 }
+
+/** A dollar figure publish cut out of the old name ("if minimum balance is or less", "falls below during"). */
+const AMOUNT_GAP =
+  /\b(?:below|under|than|is|of|exceeds?|drops?|over|least)\s+(?:or|and|during|\))(?:\s|$)|\b(?:falls?|below|under|than|less|exceeds?|drops?|least)\s*(?:$|[.,:;)])|:\s*(?:n\/a|none)\b/i;
+const RESTORE_HEADING = /^[A-Z][\w®™’'&+./ -]{0,60}?\s*:\s*$/;
 
 /** A clause cut off after a joining word ("... is dormant if for one", "... assessed per"). */
 const DANGLING_WORD = /\s(?:of|to|from|for|at|is|are|be|may|will|if|and|or|with|by|a|an|the|per|than|below|above|each|one)$/i;
