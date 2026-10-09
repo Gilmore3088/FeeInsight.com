@@ -57,7 +57,8 @@ function laneUpdate(): { text: string; values: unknown[] } | undefined {
   // The priority refresh also updates every lane; the lane's own schedule update is the one wanted.
   const call = sqlMock.mock.calls.find((entry) => {
     const text = templateText(entry[0]);
-    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score") && !text.includes("WITH failures AS");
+    // Since #808 a wake of sleeping lanes with a pending second look also updates lanes.
+    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score") && !text.includes("WITH failures AS") && !text.includes("takedown_pending");
   });
   return call ? { text: templateText(call[0]), values: call.slice(1) } : undefined;
 }
