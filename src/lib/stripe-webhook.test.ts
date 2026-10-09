@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 
 const listSubscriptions = vi.fn();
-vi.mock("@/lib/stripe", () => ({ getStripe: () => ({ subscriptions: { list: listSubscriptions } }) }));
+const retrievePaymentIntent = vi.fn();
+vi.mock("@/lib/stripe", () => ({
+  getStripe: () => ({ subscriptions: { list: listSubscriptions }, paymentIntents: { retrieve: retrievePaymentIntent } }),
+}));
 
 import { applyStripeEvent, mapStripeStatus, recordStripeEvent } from "./stripe-webhook";
 
@@ -273,6 +276,53 @@ describe("institution report payments", () => {
     tx.mockResolvedValueOnce([]).mockResolvedValueOnce([{ stripe_checkout_session_id: "cs_first" }]);
     const effects = await applyStripeEvent(tx as never, paidSession());
     expect(effects.reportDuplicate).toEqual([{ leadId: 18, cents: 30000, checkoutSessionId: "cs_test_1" }]);
+  });
+});
+
+describe("institution report refunds", () => {
+  beforeEach(() => {
+    tx.mockReset();
+    tx.mockResolvedValue([]);
+    retrievePaymentIntent.mockReset();
+    retrievePaymentIntent.mockResolvedValue({ metadata: { kind: "institution_report", lead_id: "23" } });
+  });
+
+  const refund = (overrides: Record<string, unknown> = {}) =>
+    event("charge.refunded", { id: "ch_1", refunded: true, amount_refunded: 100, payment_intent: "pi_1", metadata: {}, ...overrides });
+
+  it("marks a fully refunded report request refunded once and queues James's alert", async () => {
+    tx.mockResolvedValueOnce([{ id: "23", name: "Pat Lee", email: "pat@example.com" }]);
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(retrievePaymentIntent).toHaveBeenCalledWith("pi_1");
+    const [sql] = issued();
+    expect(sql).toContain("SET refunded_at = NOW(), status = 'refunded'");
+    expect(sql).toContain("paid_at IS NOT NULL AND refunded_at IS NULL");
+    expect(tx.mock.calls[0].slice(1)).toEqual([23]);
+    expect(effects.reportRefunded).toEqual([{ leadId: 23, name: "Pat Lee", email: "pat@example.com", cents: 100, chargeId: "ch_1" }]);
+  });
+
+  it("reads the request from the charge itself when it carries the report metadata", async () => {
+    await applyStripeEvent(tx as never, refund({ metadata: { kind: "institution_report", lead_id: "23" } }));
+    expect(retrievePaymentIntent).not.toHaveBeenCalled();
+    expect(tx.mock.calls[0].slice(1)).toEqual([23]);
+  });
+
+  it("leaves a partly refunded report paid", async () => {
+    const effects = await applyStripeEvent(tx as never, refund({ refunded: false, amount_refunded: 50 }));
+    expect(tx).not.toHaveBeenCalled();
+    expect(effects.reportRefunded).toEqual([]);
+  });
+
+  it("ignores refunds of anything that isn't a report, such as a Pro charge", async () => {
+    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(tx).not.toHaveBeenCalled();
+    expect(effects.reportRefunded).toEqual([]);
+  });
+
+  it("alerts nothing for a redelivered refund of a request already marked refunded", async () => {
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(effects.reportRefunded).toEqual([]);
   });
 });
 

@@ -62,6 +62,7 @@ export async function getPaidReports(email: string): Promise<PaidReport[]> {
         LEFT JOIN institution_sources inst ON inst.id = (to_jsonb(l.*) ->> 'quote_institution_id')::bigint
        WHERE lower(l.email) = ${email.trim().toLowerCase()}
          AND to_jsonb(l.*) ->> 'paid_at' IS NOT NULL
+         AND to_jsonb(l.*) ->> 'refunded_at' IS NULL
          AND to_jsonb(l.*) ->> 'quote_institution_id' IS NOT NULL
        ORDER BY (to_jsonb(l.*) ->> 'paid_at') DESC
        LIMIT 10`;

@@ -2197,6 +2197,8 @@ export interface LeadRow {
   quote_institution_id: number | null;
   quote_sent_at: string | null;
   paid_at: string | null;
+  /** Set when Stripe refunded the report in full (migration 20270110000039). */
+  refunded_at: string | null;
   /** False until migration 20270110000003 has added the payment columns. */
   payment_columns: boolean;
   /** When and by whom the lead was marked qualified (migration 20270110000032); null when not. */
@@ -2278,6 +2280,7 @@ export async function getLeads(limit = 200): Promise<LeadRow[]> {
       quote_institution_id: payment.quoteInstitutionId,
       quote_sent_at: payment.quoteSentAt,
       paid_at: payment.paidAt,
+      refunded_at: payment.refundedAt,
       payment_columns: payment.paymentColumns,
       ...qualifiedFieldsOf(r.fields as Record<string, unknown> | null),
       };

@@ -82,7 +82,7 @@ export default async function CustomersRoomPage({ searchParams }: { searchParams
   const testRequests = allRequests.length - requests.length;
   const subscriptions = leads.length - allRequests.length;
   // Institution reports paid by card through /pay/report (the Stripe webhook sets paid_at).
-  const orders = requests.filter((lead) => lead.paid_at !== null);
+  const orders = requests.filter((lead) => lead.paid_at !== null && lead.refunded_at === null);
   const readyMarkets = markets ? markets.filter((market) => market.ready).length : null;
 
   return (
