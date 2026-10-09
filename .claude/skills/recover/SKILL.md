@@ -83,7 +83,7 @@ has been broken for more than 2 hours with no PR, tell the coordinator once.
 - Work on this thread's own branch. After a merge, `git fetch origin main && git merge
   origin/main`. Never reset, rebase, force-push, push to main or delete branches.
 - Keep the fix to what the failure needs. Add the failing test.
-- Add an entry to `docs/project/FINDINGS.md` in the same PR.
+- Add a finding file, `docs/project/findings/YYYY-MM-DD-short-slug.md`, in the same PR.
 - Before pushing: the changed area's `vitest`, `npx tsc --noEmit`, `eslint` on the changed
   files, and `npm run guard:legacy`.
 - Open the PR, subscribe to its activity, drive it to green, and merge on green

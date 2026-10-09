@@ -61,6 +61,7 @@ export function growthAgentForStep(stepKey: string, runParams: unknown, stepInpu
   if (stepKey === "growth-intel") return "sherlock";
   if (stepKey === "growth-conversion") return "norman";
   if (stepKey === "growth-tools") return "edison";
+  if (stepKey === "growth-press") return "bernays";
   if (stepKey.startsWith("content-")) return "murrow";
   return null;
 }
