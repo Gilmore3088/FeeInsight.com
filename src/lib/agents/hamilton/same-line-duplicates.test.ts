@@ -6,7 +6,7 @@ vi.mock("./publish", () => ({
   sameLineDuplicateOf: vi.fn((_db: unknown, _row: unknown, id: number) => Promise.resolve(id === 104684 ? 23698 : null)),
 }));
 
-import { retireSameLineDuplicates } from "./same-line-duplicates";
+import { retireSameLineDuplicates, REVIEWED_REPEATS, SOURCE_CHECKED_SEPARATE_LINES } from "./same-line-duplicates";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -57,5 +57,11 @@ describe("retireSameLineDuplicates", () => {
     const result = await retireSameLineDuplicates(db, { ...options, dryRun: true });
     expect(result.rolledBack).toHaveLength(1);
     expect(writes(db).some((text) => /UPDATE|INSERT/.test(text))).toBe(false);
+  });
+
+  it("passes the fees a source review found printed as their own line (9 Oct)", () => {
+    expect([...SOURCE_CHECKED_SEPARATE_LINES.keys()]).toEqual([104713, 104650, 104875, 104615, 104906]);
+    // Reviewed repeats map to the line that stays (104758 stays; its garbled twin 14458 goes).
+    expect([...REVIEWED_REPEATS]).toEqual([[14458, 104758], [83889, 83890], [87575, 85596]]);
   });
 });
