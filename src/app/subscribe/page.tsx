@@ -21,7 +21,7 @@ import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
 import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
 import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
 import { buildFeeDataStrips, categoriesForFeeTypes } from "@/lib/regulatory/wire-fee-links";
-import { feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import { feeTypesOf, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { STATE_NAMES } from "@/lib/us-states";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
@@ -30,7 +30,7 @@ import { AdvisoryLine, FreeTierCard, PricingFaq, ReportCard } from "./pricing-se
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
-import { REPORT_PRICE_LABEL, isProPlan, type ProPlan } from "./pricing";
+import { isProPlan, type ProPlan } from "./pricing";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -58,6 +58,21 @@ interface SubscribeSearchParams {
   band?: string;
   /** "1" when the buyer backed out of Stripe Checkout. */
   canceled?: string;
+}
+
+const FEE_TYPE_NOUNS: Record<FeeType, string> = {
+  overdraft: "overdraft fees",
+  atm: "ATM fees",
+  maintenance: "account maintenance fees",
+  wire: "wire transfer fees",
+  card: "card fees",
+  other: "bank fees",
+};
+
+/** "Illinois bill on overdraft fees": says only which fee the bill's own title names. */
+function billHeading(state: string, title: string): string {
+  const type = feeTypesOf(title)[0];
+  return type ? `${state} bill on ${FEE_TYPE_NOUNS[type]}` : title;
 }
 
 interface WirePreviewData {
@@ -100,7 +115,9 @@ async function wirePreviewData(): Promise<WirePreviewData> {
       return {
         lead: {
           source: bill.identifier ? `${state} · ${bill.identifier}` : `${state} bill`,
-          title: bill.title,
+          // A plain heading from the fee the official title names; the title itself stays shown.
+          title: billHeading(state, bill.title),
+          officialTitle: bill.title,
           detail: stage,
           date: bill.stage_on,
           url: bill.url,
@@ -112,7 +129,7 @@ async function wirePreviewData(): Promise<WirePreviewData> {
     }
   }
   if (releases.length === 0) return { lead: null, items: [] };
-  return { lead: { ...releases[0], place: null, figures: [] }, items: releases.slice(1, 3) };
+  return { lead: { ...releases[0], officialTitle: null, place: null, figures: [] }, items: releases.slice(1, 3) };
 }
 
 function buildSubscribeReturnPath(options: {
@@ -191,6 +208,8 @@ export default async function SubscribePage({
       : null;
   let selection: ProTierSelection | null = null;
   let chosenLabel: string | null = null;
+  // The size band under the name, smaller, so the price stays the card's anchor.
+  let chosenDetail: string | null = null;
   let chooserProblem: string | null = null;
   // No asset size on file: the buyer picks the band (James, 8 Oct 2026); "Plans to check" lists it.
   let needsBand = false;
@@ -200,10 +219,10 @@ export default async function SubscribePage({
     chosenLabel = [pricingInstitution.name, place].filter(Boolean).join(", ");
     if (tier) {
       selection = { tier, institutionId: pricingInstitution.id, otherOrganization: false };
-      chosenLabel = `${chosenLabel} · ${proTier(tier).assetsLabel}`;
+      chosenDetail = proTier(tier).assetsLabel;
     } else if (isProTier(params.band)) {
       selection = { tier: params.band, institutionId: pricingInstitution.id, otherOrganization: false, tierPicked: true };
-      chosenLabel = `${chosenLabel} · ${proTier(params.band).assetsLabel} (your pick)`;
+      chosenDetail = `${proTier(params.band).assetsLabel} (your pick)`;
       needsBand = true;
     } else {
       chooserProblem = `We don't have its asset size on file yet. Pick its size, or email ${CONTACT_EMAIL}.`;
@@ -237,7 +256,7 @@ export default async function SubscribePage({
       <ConsumerNav />
       <main id="main-content">
 
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         {reasonLine && (
           <p role="status" className="mb-6 rounded-xl border border-[#E8DFD1] bg-white px-4 py-3 text-sm text-[#1A1815]">
             {reasonLine}
@@ -306,6 +325,7 @@ export default async function SubscribePage({
               chooser={
                 <ProTierChooser
                   chosenLabel={chosenLabel}
+                  chosenDetail={chosenDetail}
                   problem={chooserProblem}
                   bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
                   pickedBand={selection?.tierPicked ? selection.tier : null}
@@ -341,10 +361,9 @@ export default async function SubscribePage({
 
         {gated ? (
           <p className="mt-14 text-[15px] leading-relaxed text-[#3D3833]">
-            <span className="font-semibold text-[#1A1815]">Not ready for a subscription?</span> A one-time{" "}
-            {REPORT_OFFER.name} for one institution, {REPORT_PRICE_LABEL.toLowerCase()}.{" "}
+            Need research for one institution instead?{" "}
             <Link href="/for-institutions?report=institution#report" className="font-medium text-[#1A1815] underline underline-offset-2">
-              Request a report
+              Explore the {REPORT_OFFER.name}
             </Link>
           </p>
         ) : (

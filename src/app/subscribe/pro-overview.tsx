@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SITE_NAME } from "@/lib/constants";
 import { PRO_EXTRA_FEATURES, PRO_WORKSPACE_FEATURES } from "@/lib/hamilton/pro-features";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
@@ -17,6 +18,8 @@ export interface WirePreviewItem {
 
 /** The lead item opened up, with the fee data the Wire puts beside it. */
 export interface WirePreviewLead extends WirePreviewItem {
+  /** A bill's official title, shown as stored when the heading is a plain description. */
+  officialTitle: string | null;
   /** "Illinois", or "the national index". */
   place: string | null;
   /** The index's own figures for the item's fee type, worded as the Wire words them. */
@@ -47,8 +50,8 @@ function SourceLink({ url, children }: { url: string | null; children: ReactNode
 /**
  * Real Regulatory Wire items in the Wire's own frame (James, 9 Oct 2026: show the product,
  * not a list of features). The lead item is opened up the way the Wire opens it, with the
- * published fee figures behind it; nothing here is written for the preview. Phones show the
- * lead and one headline so the purchase card stays close.
+ * published fee figures behind it; nothing here is written for the preview. Phones show only
+ * the lead so the purchase card follows straight after it.
  */
 export function WirePreview({ lead, items }: { lead: WirePreviewLead | null; items: WirePreviewItem[] }) {
   return (
@@ -67,6 +70,9 @@ export function WirePreview({ lead, items }: { lead: WirePreviewLead | null; ite
           <p className="mt-1.5 text-lg leading-snug text-[#1A1815]" style={SERIF}>
             <SourceLink url={lead.url}>{lead.title}</SourceLink>
           </p>
+          {lead.officialTitle && lead.officialTitle !== lead.title && (
+            <p className="mt-0.5 text-xs text-[#6B6255]">Official title: {lead.officialTitle}</p>
+          )}
           {lead.figures.length > 0 && (
             <div className="mt-3 rounded-lg bg-[#FBF9F5] px-3 py-2.5 ring-1 ring-[#EDE6DB]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]">
@@ -80,6 +86,9 @@ export function WirePreview({ lead, items }: { lead: WirePreviewLead | null; ite
                   </div>
                 ))}
               </dl>
+              <p className="mt-2 text-xs leading-relaxed text-[#6B6255]">
+                Market context from published fee schedules, not an estimate of the bill&apos;s effect.
+              </p>
             </div>
           )}
           {lead.url && (
@@ -96,9 +105,9 @@ export function WirePreview({ lead, items }: { lead: WirePreviewLead | null; ite
       )}
 
       {items.length > 0 && (
-        <ul className="divide-y divide-[#EDE6DB] border-t border-[#EDE6DB]">
-          {items.map((item, i) => (
-            <li key={`${item.source}-${item.title}`} className={`px-4 py-3 sm:px-5 ${i > 0 ? "hidden sm:block" : ""}`}>
+        <ul className="hidden divide-y divide-[#EDE6DB] border-t border-[#EDE6DB] sm:block">
+          {items.map((item) => (
+            <li key={`${item.source}-${item.title}`} className="px-4 py-3 sm:px-5">
               <ItemMeta item={item} />
               <p className="mt-1 text-[15px] leading-snug text-[#1A1815]">
                 <SourceLink url={item.url}>{item.title}</SourceLink>
@@ -162,7 +171,7 @@ export function EverythingInPro() {
   return (
     <section aria-labelledby="everything-heading">
       <h2 id="everything-heading" className="text-2xl text-[#1A1815]" style={SERIF}>
-        Everything in Pro
+        One subscription. The full {SITE_NAME} platform.
       </h2>
       <div className="mt-5 divide-y divide-[#E8E1D6] border-y border-[#E8E1D6]">
         {GROUPS.map((group) => (

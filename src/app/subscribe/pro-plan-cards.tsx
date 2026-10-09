@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import {
   CONSULTANT_PRICE_NOTE,
   PRO_TIERS,
@@ -7,7 +6,6 @@ import {
   tierPriceLabel,
   type ProPlan,
 } from "@/lib/pro-tiers";
-import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PLAN_TEAM_LABEL } from "./pricing";
 import { PlanCheckout, type ProTierSelection } from "./plan-checkout";
 
@@ -61,6 +59,7 @@ export function PurchaseCard({
           <span className="text-sm text-[#3D3833]">/ month {PLAN_TEAM_LABEL}</span>
         </p>
       )}
+      {!selection && <p className="mt-1 text-sm font-medium text-[#1A1815]">Same features at every institution size.</p>}
 
       <div className="mt-5">{chooser}</div>
 
@@ -74,20 +73,11 @@ export function PurchaseCard({
             initialPlan={initialPlan}
             autoStartPlan={autoStartPlan}
             entry={entry}
+            destination={destination}
           />
-          <p className="mt-4 text-sm leading-relaxed text-[#3D3833]">
-            {selection.otherOrganization ? `${CONSULTANT_PRICE_NOTE} ` : ""}
-            Up to {WORKSPACE_SEAT_LIMIT} people, each with their own login. Cancel anytime from your account. After
-            paying you go straight to{" "}
-            {destination ?? "Hamilton"}.
-          </p>
-          <p className="mt-1 text-xs text-[#6B6255]">
-            Secure checkout by Stripe. Annual plans are refundable within 14 days. If a plan is used for a larger
-            institution, we&apos;ll email you before moving it to that price.{" "}
-            <Link href="/terms" className="underline underline-offset-2 hover:text-[#1A1815]">
-              Terms
-            </Link>
-          </p>
+          {selection.otherOrganization && (
+            <p className="mt-3 text-xs leading-relaxed text-[#6B6255]">{CONSULTANT_PRICE_NOTE}</p>
+          )}
         </div>
       )}
 
@@ -113,7 +103,10 @@ export function PurchaseCard({
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-xs leading-relaxed text-[#6B6255]">{CONSULTANT_PRICE_NOTE}</p>
+        <p className="mt-2 text-xs leading-relaxed text-[#6B6255]">
+          If a plan is used for a larger institution, we&apos;ll email you before moving it to that price.{" "}
+          {CONSULTANT_PRICE_NOTE}
+        </p>
       </details>
     </div>
   );

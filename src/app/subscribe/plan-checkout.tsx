@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { TrackLink } from "@/components/track-link";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -34,6 +36,8 @@ interface PlanCheckoutProps {
   autoStartPlan: ProPlan | null;
   /** Where the buyer came from ("Regulatory Wire", or "direct"), sent with each funnel event. */
   entry: string;
+  /** The Pro page checkout returns to ("Regulatory Wire"), or null for Hamilton. */
+  destination: string | null;
 }
 
 const BUTTON =
@@ -44,7 +48,7 @@ const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
  * The price for the chosen institution, one billing toggle (annual first), one button. The
  * headline figure is what the card is charged (James, 9 Oct 2026): $1,500 a year, not $125.
  */
-export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, initialPlan, autoStartPlan, entry }: PlanCheckoutProps) {
+export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, initialPlan, autoStartPlan, entry, destination }: PlanCheckoutProps) {
   const [plan, setPlan] = useState<ProPlan>(autoStartPlan ?? initialPlan ?? "annual");
   const tier = selection.tier;
   const annual = plan === "annual";
@@ -110,6 +114,19 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
           </TrackLink>
         )}
       </div>
+
+      <p className="mt-3 text-center text-sm text-[#3D3833]">
+        Includes {WORKSPACE_SEAT_LIMIT} team members · Secure checkout by Stripe
+      </p>
+      <p className="mt-3 text-xs leading-relaxed text-[#6B6255]">
+        {annual
+          ? "Annual billing renews automatically. Cancel renewal anytime. First annual payments are refundable within 14 days."
+          : "Monthly billing renews automatically. Cancel renewal anytime."}{" "}
+        After paying you go straight to {destination ?? "Hamilton"}.{" "}
+        <Link href="/terms" className="underline underline-offset-2 hover:text-[#1A1815]">
+          Terms
+        </Link>
+      </p>
     </div>
   );
 }

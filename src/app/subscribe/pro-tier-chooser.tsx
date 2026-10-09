@@ -7,6 +7,8 @@ import { trackEvent } from "@/lib/analytics";
 interface ProTierChooserProps {
   /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */
   chosenLabel: string | null;
+  /** The size band under the name: "Under $500M in assets". */
+  chosenDetail?: string | null;
   /** Shown instead of a price when the chosen institution has no asset size on file. */
   problem?: string | null;
   /** Size bands to pick from when the chosen institution has no asset size on file. */
@@ -21,7 +23,7 @@ interface ProTierChooserProps {
  * Picks who the plan covers. The choice lives in the URL (?inst= or ?org=other) so it
  * survives sign-up and the server can price it; checkout re-checks the tier itself.
  */
-export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null, pickedBand = null, entry }: ProTierChooserProps) {
+export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = null, bandChoices = null, pickedBand = null, entry }: ProTierChooserProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -41,7 +43,10 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
     return (
       <div className="text-sm">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-base font-semibold leading-snug text-[#1A1815]">{chosenLabel}</p>
+          <div>
+            <p className="text-[15px] font-semibold leading-snug text-[#1A1815]">{chosenLabel}</p>
+            {chosenDetail && <p className="mt-0.5 text-sm text-[#6B6255]">{chosenDetail}</p>}
+          </div>
           <button
             type="button"
             onClick={() => go(() => {})}
