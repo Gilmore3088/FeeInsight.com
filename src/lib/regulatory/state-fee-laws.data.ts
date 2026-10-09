@@ -714,6 +714,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "ct_bank_federal_parity_powers",
+    "state_code": "CT",
+    "topic": "fee_authority",
+    "name": "Bank powers parity with federal and out-of-state banks, after notice",
+    "citation": "Conn. Gen. Stat. § 36a-250(a)(41)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_banks",
+    "coverage_note": "Binds Connecticut banks; § 36a-250(b) bars trust banks from using these powers except in a fiduciary capacity.",
+    "applies_to": [],
+    "summary": "A Connecticut bank may engage in any activity a federal or out-of-state bank may be authorized to engage in, after notice to the commissioner.",
+    "detail": "A Connecticut bank may engage in any activity that a federal bank or out-of-state bank may be authorized to engage in under federal or state law. It must first file written notice with the commissioner, and may proceed unless the commissioner disapproves within thirty days. The commissioner may adopt regulations to ensure such activity has adequate consumer protections.",
+    "evidence": "Official text fetched from www.cga.ct.gov: '(41) Engage in any activity that a federal bank or an out-of-state bank may be authorized to engage in under federal or state law, provided the Connecticut bank shall file with the commissioner prior written notice of its intention to engage in such activity'; 'The Connecticut bank may engage in such activity unless the commissioner disapproves such activity not later than thirty days after the notice is filed.'; 'The commissioner may adopt regulations in accordance with chapter 54 to ensure that any such activity is conducted in a safe and sound manner with adequate consumer protections.'",
+    "url": "https://www.cga.ct.gov/current/PUB/chap_665.htm",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "dc_unclaimed_property_dormancy_charge",
     "state_code": "DC",
     "topic": "dormancy",
@@ -1011,6 +1030,53 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "regulator_guidance"
   },
   {
+    "id": "ga_garnishee_contractual_legal_processing_cost",
+    "state_code": "GA",
+    "topic": "garnishment_legal_process",
+    "name": "Statutory garnishee expenses do not override contractual legal-processing cost recovery",
+    "citation": "Ga. SB 443 (2020), amending O.C.G.A. Title 18, Chapter 4 (specific section not given in the source)",
+    "date": "passed in the 2020 session and not marked vetoed in the House end-of-session report; effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "other",
+    "coverage_note": "The summary speaks of any garnishee, which includes a bank or credit union holding the defendant's deposits; enactment is inferred from the bill appearing unvetoed in the end-of-session report.",
+    "applies_to": [
+      "garnishment_levy",
+      "legal_process"
+    ],
+    "summary": "Georgia's 2020 garnishment law keeps statutory garnishee expenses from displacing a garnishee's contractual right to recover its legal processing costs.",
+    "detail": "SB 443 revised Georgia's garnishment procedures in Title 18, Chapter 4. According to the House end-of-session summary, the statutory expenses or fees allowed to a garnishee do not interfere with any contractual arrangement letting the garnishee reimburse itself for the costs of legal processing of a garnishment. For a bank, that means a deposit-agreement legal process fee can coexist with the statutory garnishee expense.",
+    "evidence": "Official text fetched from www.legis.ga.gov (House Budget & Research Office 2020 Session Report): 'Senate Bill 443 amends Chapter 4 of Title 18 of the Code, relating to garnishment proceedings, to revise and provide uniform procedures for garnishment actions'; 'The bill specifies that statutory expenses/fees do not interfere with any contractual ... arrangement for a garnishee to reimburse itself for the costs of legal processing due to a garnishment.'",
+    "url": "https://www.legis.ga.gov/api/document/docs/default-source/house-budget-and-research-office-document-library/2020-end-of-session-report-by-committee-with-vetoes.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ga_dbf_dormant_charge_12_month_limit_proposed",
+    "state_code": "GA",
+    "topic": "dormancy",
+    "name": "Proposed limit of dormant account charges to the first twelve months",
+    "citation": "Ga. Comp. R. & Regs. 80-1-8-.01 (proposed amendment, DBF Notice of Proposed Rulemaking, May 13, 2026)",
+    "date": "proposed May 13, 2026; comments due June 12, 2026; adoption not confirmed",
+    "effective_date": "unknown",
+    "status": "proposed",
+    "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "The rule applies to 'financial institution' deposit accounts and its definitions expressly include credit union members and savings and loan shareholders.",
+    "applies_to": [
+      "dormant_account"
+    ],
+    "summary": "A proposed Georgia DBF rule would allow a dormant account charge only after 12 months of dormancy and for no more than 12 months.",
+    "detail": "The proposed amendment to Rule 80-1-8-.01 clarifies that a dormant account service or maintenance charge may be assessed only after the account has been dormant at least twelve months and may not be assessed beyond the first twelve months in which it is first assessed. Charges may be taken any time before escheat as long as the total does not exceed what could have been assessed in the first twelve months of dormancy. The $5.00 monthly cap where the contract is silent, and written notice before the first charge, remain in the rule text.",
+    "evidence": "Official text fetched from dbf.georgia.gov: 'the amendment clarifies that such charge may only be assessed after the account has been dormant for at least twelve months and that such charge may not be assessed for more than twelve months'; 'No service charge or maintenance charge may be assessed for the dormancy period beyond the first twelve months in which the service charge or maintenance charge is first assessed.'; 'so long as the total service charge or maintenance charge does not exceed the amount which could have been assessed during the first twelve months of dormancy pursuant to the governing contract between the parties or this regulation.'",
+    "url": "https://dbf.georgia.gov/document/document/2026-proposed-rulemaking-5-13-2026/download",
+    "figures": {
+      "dormancy_period_months": 12,
+      "max_charge_period_months": 12
+    },
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
+  },
+  {
     "id": "hi_cu_dormant_account_maintenance_fee",
     "state_code": "HI",
     "topic": "dormancy",
@@ -1194,6 +1260,49 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "url": "https://legislature.idaho.gov/wp-content/uploads/statutesrules/idstat/Title26/T26CH21.pdf",
     "verification": "official_excerpt",
     "source_kind": "statute"
+  },
+  {
+    "id": "id_cu_share_draft_fee_notice_to_director",
+    "state_code": "ID",
+    "topic": "overdraft_nsf",
+    "name": "Credit union share draft program notice must list overdraft and stop-payment fees",
+    "citation": "IDAPA 12.01.04.030 (Rules Pursuant to the Idaho Credit Union Act, Rule 30, Share Draft Programs)",
+    "date": "in force as of the 2018 Idaho Administrative Code archive edition (rule paragraphs carry the date 7-1-93); current status not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_credit_unions",
+    "coverage_note": "The rule applies to share draft programs of Idaho state-chartered credit unions. The source is the 2018 archive edition of the Idaho Administrative Code, so it may since have been revised or repealed.",
+    "applies_to": [
+      "overdraft",
+      "stop_payment"
+    ],
+    "summary": "An Idaho credit union starting a share draft program must tell the Director its fees for overdrafts, stop-payment orders and paid-draft copies.",
+    "detail": "Before starting a share draft program, an Idaho state-chartered credit union must send the Director of the Department of Finance a written notice at least 30 days ahead. The notice must include operational specifications, among them a summary of its overdraft procedures and the fees to be charged for each overdraft, stop-payment order and copy of a paid share draft. Planned changes to the program must be reported to the Director at least 30 days before adoption. The rule requires a filing with the regulator; it does not cap the fees.",
+    "evidence": "Official text fetched from adminrules.idaho.gov (IAC Archive 2018, IDAPA 12.01.04): \"This rule relates to the operation of share draft programs by Idaho state chartered credit unions\"; \"A credit union must submit a written notice to the Director at least thirty (30) days prior to the proposed date of implementation of a share draft program\"; \"A statement of operational specifications including; a copy of the agreement which will be used to establish member share draft accounts; a summary of the procedure concerning overdrafts\"; \"the fees to be charged for each overdraft, stop-payment order, and copy of a paid share draft to a member\"",
+    "url": "https://adminrules.idaho.gov/rules/2018%20Archive/12/120104.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
+  },
+  {
+    "id": "id_collection_agency_overdraft_fee_as_finance_charge",
+    "state_code": "ID",
+    "topic": "overdraft_nsf",
+    "name": "Collection agencies may collect agreed overdraft fees as finance charges",
+    "citation": "Idaho Department of Finance, Frequently Asked Questions, Idaho Collection Agency Act (Medical Recovery Services, LLC vs. Strawn); Idaho Code § 26-2229A(4)(a); Idaho Code § 28-42-201",
+    "date": "guidance issued after the March 19, 2014 Strawn decision; posted in the Department's guidance archive, current status not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "other",
+    "coverage_note": "The guidance governs licensed collection agencies collecting bank and credit union overdraft accounts, not the banks or credit unions themselves. It sits in an archive folder on the Department's site.",
+    "applies_to": [
+      "overdraft"
+    ],
+    "summary": "Idaho's Department of Finance treats an agreed overdraft fee as a finance charge that a collection agency may collect for a bank or credit union.",
+    "detail": "In its Collection Agency Act FAQs, the Department says it views an overdraft fee as a finance charge for a loan or extension of credit when examining collection agency licensees. Collection agencies may therefore collect overdraft fees on behalf of bank and credit union clients under Idaho Code 26-2229A(4)(a), as long as the fees are based on an agreement between the parties within the meaning of Idaho Code § 28-42-201. The Department notes that Idaho courts may or may not agree with its interpretations.",
+    "evidence": "Official text fetched from finance.idaho.gov: \"For the purpose of conducting compliance examinations of licensees under the Idaho Collection Agency Act, the Department views an overdraft fee as a finance charge for a loan/extension of credit. As such, overdraft fees may be collected by collection agencies on behalf of their bank/credit union clients, as authorized by Idaho Code 26-2229A(4)(a) when such finance charges/overdraft fees are based on an agreement between the contracting parties within the meaning of Idaho Code § 28-42-201.\"; \"Idaho courts may or may not agree with the Department’s interpretations\"",
+    "url": "https://www.finance.idaho.gov/wp-content/uploads/legal/guidance/archive/documents/ca_act_faq.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
   },
   {
     "id": "il_basic_checking_seniors",
@@ -1420,6 +1529,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "figures": {
       "max_fee_amount": 15
     },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "ks_bank_commissioner_special_order_parity",
+    "state_code": "KS",
+    "topic": "fee_authority",
+    "name": "Commissioner special orders give state banks parity with other insured institutions",
+    "citation": "K.S.A. 9-1715",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_banks",
+    "coverage_note": "The text says \"any or all banks\" in the Kansas banking code; the power is exercised by special order of the state bank commissioner.",
+    "applies_to": [],
+    "summary": "The Kansas bank commissioner may, by special order, let state banks do anything other federally insured banks or savings institutions may lawfully do.",
+    "detail": "Notwithstanding other Kansas law, the commissioner may authorize any or all banks to engage in any activity that a bank, savings and loan association or savings bank organized under federal law, Kansas law or another state's law with federally insured deposits may lawfully engage in. The commissioner acts by special order when needed to protect a particular institution or to promote competitive equality between state and other insured depository institutions, and each order is published in the Kansas register. The statute is a general parity power and does not mention fees.",
+    "evidence": "Official text fetched from kslegislature.gov: \"Notwithstanding any provision of law to the contrary, the commissioner shall have the power to authorize any or all banks to engage in any activity in which any other bank, savings and loan association or a savings bank, organized under the laws of the United States, this state or any other state with deposits insured by the United States government is lawfully authorized to engage in at the time authority is granted\"; \"The commissioner shall exercise the power granted in subsection (a) by the issuance of a special order\"; \"preserve the welfare of all state banks or trust companies and to promote competitive equality of state and other insured depository institutions\"; \"shall be published in the Kansas register\"",
+    "url": "https://kslegislature.gov/li_2022/b2021_22/statute/009_000_0000_chapter/009_017_0000_article/009_017_0015_section/009_017_0015_k/",
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -2135,6 +2263,33 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "mn_currency_exchange_check_cashing_fee_presumption",
+    "state_code": "MN",
+    "topic": "check_cashing",
+    "name": "Presumed fair check-cashing fees for licensed currency exchanges",
+    "citation": "Minn. R. 2872.0100",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "other",
+    "coverage_note": "The rule applies to fees filed with the commissioner of commerce under Minn. Stat. § 53A.07 (currency exchanges), so it binds licensed currency exchanges, not banks or credit unions.",
+    "applies_to": [
+      "check_cashing"
+    ],
+    "summary": "A Minnesota currency exchange's fee to cash a government check up to $500 is presumed fair at the greater of 2.5 percent or $1.",
+    "detail": "Fees filed with the commissioner of commerce under Minn. Stat. § 53A.07 are presumed fair and reasonable if they stay within set limits. For other government checks and payroll checks the limit is the greater of 3 percent or $1, or 6 percent for a first-time customer. Fees above these limits may be disapproved. The rule covers licensed currency exchanges, not banks.",
+    "evidence": "Official text fetched from revisor.mn.gov: \"2872.0100 CURRENCY EXCHANGE FEES.\"; \"It shall be presumed that fees and amendments of fees filed with the commissioner of commerce under Minnesota Statutes, section 53A.07 , are fair and reasonable if they do not exceed the following amounts:\"; \"for cashing checks issued by a government entity in an amount up to $500, the greater of (1) 2-1/2 percent of the face amount of the instrument, or (2) $1, except that it is permissible to charge a first-time customer up to five percent of the face amount of the instrument\"; \"for cashing all other government checks and for cashing payroll checks, the greater of (1) three percent of the face amount of the instrument, or (2) $1, except that it is permissible to charge a first-time customer up to six percent of the face amount of the instrument\"",
+    "url": "https://www.revisor.mn.gov/rules/2872.0100/",
+    "figures": {
+      "max_fee_pct": 2.5,
+      "min_fee_usd": 1,
+      "first_time_customer_max_pct": 5,
+      "government_check_amount_limit_usd": 500
+    },
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
+  },
+  {
     "id": "mo_bank_deposit_fee_authority_federal_parity",
     "state_code": "MO",
     "topic": "fee_authority",
@@ -2218,6 +2373,48 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "mo_account_garnishment_attachment_date_2028",
+    "state_code": "MO",
+    "topic": "garnishment_legal_process",
+    "name": "Garnishment of deposit accounts: attachment date and look-back for exempt electronic deposits",
+    "citation": "RSMo § 525.235",
+    "date": "subsections 1 to 11 effective January 1, 2028",
+    "effective_date": "2028-01-01",
+    "status": "enacted_not_yet_effective",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "The section defines \"financial institution\" as a federally insured bank, savings bank, savings and loan association, or credit union.",
+    "applies_to": [
+      "garnishment_levy"
+    ],
+    "summary": "From January 1, 2028, a Missouri garnishment of a deposit account attaches only to funds held on the service date or the federal look-back date.",
+    "detail": "All garnishments of account funds at a federally insured bank, savings bank, savings and loan association or credit union must issue under this section and attach only to funds held on the date of service. If an account receives electronic deposits of exempt protected funds, the attachment date is the banking day the institution applies the federally required look-back analysis to find the protected amount. The section does not address fees the institution may charge the account holder.",
+    "evidence": "Official text fetched from revisor.mo.gov: \"For purposes of this section, the term \"financial institution\" means a federally insured bank, savings bank, savings and loan association, or credit union.\"; \"All orders of garnishment issued in this state for the purpose of attaching to account funds on deposit held by a financial institution shall be issued only under this section and shall attach only to such funds held by the financial institution on the date of service on the financial institution\"; \"If an account receives electronic deposits of exempt protected funds, including, but not limited to, funds described under subdivision (10) of subsection 1 of section 513.430 , the attachment date for such account shall be the date and banking day that the financial institution applies for the federally required look-back analysis to determine the protected amount.\"; \"The provisions of subsections 1 to 11 of this section shall be effective January 1, 2028.\"",
+    "url": "https://www.revisor.mo.gov/main/OneSection.aspx?section=525.235&bid=60211",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "mo_no_nsf_charge_after_bank_posting_error",
+    "state_code": "MO",
+    "topic": "overdraft_nsf",
+    "name": "No customer liability for NSF charges caused by a bank posting error",
+    "citation": "RSMo § 400.4-401(e)",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "all_banks",
+    "coverage_note": "The subsection says \"bank\"; the Article 4 definition of bank (which may reach credit unions) is not in the fetched text.",
+    "applies_to": [
+      "nsf"
+    ],
+    "summary": "A Missouri bank customer owes no charges on a check returned for insufficient funds when the bank's own posting or accounting error caused it.",
+    "detail": "When a check is dishonored for insufficient funds because the bank made an error in accounting or posting, the customer is not liable for charges on that check. The bank must also notify in writing the persons affected by its failure to honor the checks.",
+    "evidence": "Official text fetched from revisor.mo.gov: \"(e)  No bank customer shall be liable for charges on a check dishonored because of insufficient funds if the bank was in error in their accounting or posting of the customer's account and the bank shall also notify, in writing, the persons affected by the bank's failure to honor such checks.\"",
+    "url": "https://revisor.mo.gov/main/OneSection.aspx?section=400.4-401",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "ms_state_bank_federal_parity",
     "state_code": "MS",
     "topic": "fee_authority",
@@ -2235,6 +2432,54 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "url": "https://dbcf.ms.gov/wp-content/uploads/2021/01/Banking-Regulations.pdf",
     "verification": "official_excerpt",
     "source_kind": "regulation"
+  },
+  {
+    "id": "ms_check_casher_maximum_fees",
+    "state_code": "MS",
+    "topic": "check_cashing",
+    "name": "Maximum check-cashing fees for licensed check cashers",
+    "citation": "Miss. Admin. Code, DBCF Part 3, Chapter 3, Rule 3.5 (Mississippi Check Cashers Act, Miss. Code Ann. § 75-67-501 et seq.)",
+    "date": "Rule 3.5 effective December 1, 2012",
+    "effective_date": "2012-12-01",
+    "status": "in_force",
+    "institutions": "other",
+    "coverage_note": "The rules apply to licensees under the Mississippi Check Cashers Act, so they bind licensed check cashers, not banks or credit unions.",
+    "applies_to": [
+      "check_cashing"
+    ],
+    "summary": "Mississippi check cashers may charge at most the greater of $5 or 3 percent (government checks), 10 percent (personal checks) or 5 percent (others).",
+    "detail": "Rule 3.5 requires a licensed check casher to post a sign listing the maximum fees allowed for cashing checks. The listed maximums are the greater of 3 percent or $5 for government checks, 10 percent or $5 for personal checks, and 5 percent or $5 for all other checks or money orders. The rules cover licensed check cashers, not banks.",
+    "evidence": "Official text fetched from dbcf.ms.gov: \"Part 3 Chapter 3: Mississippi Check Cashers Act\"; \"a Licensee shall display a sign disclosing the maximum fees allowed to be charged for cashing checks\"; \"1. Government checks: 3% of the face amount of the check or five dollars ($5.00), whichever is greater\"; \"2. Personal checks: 10% of the face amount of the check or five dollars ($5.00), whichever is greater\"; \"3. All other checks or money orders: 5% of the face amount of the check or five dollars ($5.00), whichever is greater\"; \"Source: Miss. Code Ann. §75-67-501; Miss. Code Ann. §75-67-515(1); Miss. Code Ann. §75-67-515(4); Effective date December 1, 2012\"",
+    "url": "https://dbcf.ms.gov/wp-content/uploads/2020/06/Check-Casher-Regulations-Effective-12-1-12-PDF.pdf",
+    "figures": {
+      "government_check_max_pct": 3,
+      "personal_check_max_pct": 10,
+      "other_check_max_pct": 5,
+      "min_fee_usd": 5
+    },
+    "verification": "official_excerpt",
+    "source_kind": "regulation"
+  },
+  {
+    "id": "ms_bank_electronic_terminal_fees_2026",
+    "state_code": "MS",
+    "topic": "atm",
+    "name": "Banks set electronic terminal transaction fees by sound banking judgment",
+    "citation": "Miss. Code Ann. § 81-5-100, as amended by 2026 SB 2383 (DBCF legislative update summary)",
+    "date": "effective from and after July 1, 2026",
+    "effective_date": "2026-07-01",
+    "status": "in_force",
+    "institutions": "state_banks",
+    "coverage_note": "DBCF regulates state-chartered banks and the summary speaks of \"banks\"; the amended statute text itself was not seen.",
+    "applies_to": [
+      "atm_non_network"
+    ],
+    "summary": "From July 1, 2026, Mississippi banks may set electronic terminal transaction fees in accordance with sound banking judgment and safe and sound banking principles.",
+    "detail": "DBCF's 2026 legislative update reports that SB 2383 amended Miss. Code Ann. § 81-5-100 to update the definition of electronic terminals, treat them as non-branches, and allow banks to set electronic terminal transaction fees in accordance with sound banking judgment and safe and sound banking principles. The change is effective from and after July 1, 2026. This is the regulator's summary; the amended statute text was not seen.",
+    "evidence": "Official text fetched from dbcf.ms.gov (Legislative Updates: 2026 Regular Session): \"SB 2383 (Electronic Terminals; Miss. Code Ann. § 81-5-100\"; \"Allows banks to determine electronic terminal transaction fees in accordance with sound banking judgment and safe and sound banking principles.\"; \"Effective from and after July 1, 2026.\"",
+    "url": "https://dbcf.ms.gov/wp-content/uploads/2026/05/Legislative-Update-for-Website.2026-Regular-Session.Revised.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
   },
   {
     "id": "mt_unclaimed_property_dormancy_charge",
@@ -2289,6 +2534,30 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "detail": "On written application to the department, a Montana credit union may engage in any activity a federally chartered credit union could engage in at the time the authority is granted.",
     "evidence": "MCA Title 32 ch. 3 (per search of leg.mt.gov): 'Upon written application to the department of administration, a credit union may engage in any activity in which a credit union could engage if it were operating as a federal chartered credit union at the time the authority is granted.'",
     "url": "https://leg.mt.gov/bills/2019/mca/title_0320/chapter_0030/part_0080/section_0040/0320-0030-0080-0040.html",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
+    "id": "mt_exempt_earnings_traceable_45_days",
+    "state_code": "MT",
+    "topic": "garnishment_legal_process",
+    "name": "Exempt earnings stay exempt for 45 days while traceable",
+    "citation": "Mont. Code Ann. § 25-13-610",
+    "date": "in force, effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "The section is a debtor exemption from execution and names no institution type; it reaches funds traceable \"such as in a bank or savings account\".",
+    "applies_to": [
+      "garnishment_levy"
+    ],
+    "summary": "In Montana, exempt earnings stay exempt from execution for 45 days after the debtor receives them, while they remain traceable.",
+    "detail": "Earnings exempt under MCA 25-13-614 remain exempt for 45 days after receipt while in the debtor's possession in a traceable form. Proceeds of exempt property that was sold, lost or destroyed stay exempt for 6 months if traceable, such as in a bank or savings account. Tracing may use first-in first-out, last-in first-out, or another reasonable method the debtor selects. The section does not address bank fees.",
+    "evidence": "Official text fetched from leg.mt.gov: \"the debtor is entitled for 6 months to an exemption of proceeds that are traceable, such as in a bank or savings account.\"; \"(2) Earnings exempt under 25-13-614 remain exempt for 45 days after receipt by and while in the possession of the judgment debtor in a form into which the exempt earnings are traceable.\"; \"(3) Proceeds are traceable under this section by application of the principles of first-in first-out, last-in first-out, or any other reasonable basis for tracing selected by the judgment debtor.\"",
+    "url": "https://leg.mt.gov/bills/mca/title_0250/chapter_0130/part_0060/section_0100/0250-0130-0060-0100.html",
+    "figures": {
+      "exempt_earnings_days": 45
+    },
     "verification": "official_excerpt",
     "source_kind": "statute"
   },
@@ -2413,6 +2682,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     },
     "verification": "official_excerpt",
     "source_kind": "statute"
+  },
+  {
+    "id": "nc_cob_faq_fee_disclosure_change_notice",
+    "state_code": "NC",
+    "topic": "fee_change_notice",
+    "name": "Commissioner of Banks guidance: fees disclosed at opening, advance notice of changes",
+    "citation": "N.C. Office of the Commissioner of Banks, Banking Frequently Asked Questions",
+    "date": "current guidance, date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "all_banks",
+    "coverage_note": "The FAQ speaks of banks generally and cites no statute; it likely reflects federal disclosure rules rather than a separate state requirement.",
+    "applies_to": [],
+    "summary": "The North Carolina Commissioner of Banks says banks may charge account fees but must disclose them at account opening and give notice before changes.",
+    "detail": "The Commissioner of Banks FAQ says banks are allowed to charge non-interest charges and fees and must disclose certain fees when an account is set up. On overdraft fees it says federal law sets no maximum, the bank decides the amount, and banks must disclose fees at account opening and give advance notice if the fees change. The FAQ cites no state statute for these points.",
+    "evidence": "Official text fetched from nccob.nc.gov: \"Yes. Banks are allowed to charge non-interest charges and fees. Banks must disclose certain fees associated with an account when it is set up.\"; \"Federal law does not stipulate maximum amounts for fees that banks can charge for overdrafts. The decision is made by the bank. Banks must disclose fees when the account is set up and give advance notice if the fees change.\"",
+    "url": "https://nccob.nc.gov/financial-institutions/banks-trusts/banking-frequently-asked-questions",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
   },
   {
     "id": "nd_cu_overdraft_policy_fee",
@@ -3420,6 +3708,28 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "or_dfr_shutdown_overdraft_nsf_waiver_guidance",
+    "state_code": "OR",
+    "topic": "overdraft_nsf",
+    "name": "DFR bulletin encouraging overdraft and NSF fee waivers during the 2025 federal shutdown",
+    "citation": "Oregon DFR Bulletin No. DFR 2025-7",
+    "date": "issued October 20, 2025; effective on issuance",
+    "effective_date": "2025-10-20",
+    "status": "in_force",
+    "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "The bulletin lists banking institutions as defined in ORS 706.008 and credit unions as defined in ORS 723.006 among the entities it applies to. It is tied to the shutdown that began October 1, 2025; whether it has been withdrawn was not checked.",
+    "applies_to": [
+      "overdraft",
+      "nsf"
+    ],
+    "summary": "Oregon's Division of Financial Regulation encourages state banks and credit unions to waive overdraft and NSF fees for residents hit by the 2025 federal shutdown.",
+    "detail": "Bulletin DFR 2025-7, dated October 20, 2025, lists waiving overdraft and nonsufficient funds fees for affected Oregon residents as a step for depository institutions. It is encouragement, not a mandate, and the bulletin says it does not modify any existing law or regulation. It covers Oregon banking institutions and credit unions among other licensees.",
+    "evidence": "Official text fetched from dfr.oregon.gov: 'This bulletin encourages Oregon state-regulated financial institutions and entities providing financial products and services to take active measures to help individuals affected by the federal government shutdown'; 'Waiving overdraft and nonsufficient funds fees for affected Oregon residents.'; 'Banking institutions as defined in ORS 706.008'; 'Credit unions as defined in ORS 723.006'; 'This bulletin is effective on issuance. This bulletin does not modify any existing law or regulation or the enforcement thereof.'",
+    "url": "https://dfr.oregon.gov/laws-rules/Documents/Bulletins/Bulletin2025-7.pdf",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
+  },
+  {
     "id": "pa_unclaimed_inactivity_charge_contract",
     "state_code": "PA",
     "topic": "dormancy",
@@ -3800,6 +4110,30 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "sd_garnishee_disclosure_fee",
+    "state_code": "SD",
+    "topic": "garnishment_legal_process",
+    "name": "Garnishee reimbursement fee for preparing the garnishment disclosure",
+    "citation": "SDCL § 21-18-9",
+    "date": "in force (current text shown in the 2026 HB 1179 markup); effective date not confirmed",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "other",
+    "coverage_note": "Applies to any garnishee served with a garnishee summons, which includes a bank or credit union holding the debtor's deposits. The fee is paid to the garnishee and taxed as the plaintiff's costs, not charged by the bank to its depositor.",
+    "applies_to": [
+      "garnishment_levy"
+    ],
+    "summary": "A South Dakota garnishee such as a bank must be paid $15 for preparing a garnishment disclosure, or the garnishment is void.",
+    "detail": "Under SDCL 21-18-9 the sum is taxed as part of the plaintiff's costs, and the return of service must state that it was paid. 2026 House Bill 1179, shown only as introduced, would raise the amount from fifteen to fifty dollars. The current amount is read from the bill's struck-through text, since the official code page itself was not fetched.",
+    "evidence": "Official text fetched from mylrc.sdlegislature.gov: 'If a garnishee summons, affidavit, and garnishment disclosure is served, the garnishee shall must be paid the sum of fifteen fifty dollars to reimburse the garnishee for the expense of preparing the garnishment disclosure'; 'taxed as a part of the plaintiff's costs. If the garnishee is not paid, the garnishment proceeding is void.'; 'Underscores indicate new language. Overstrikes indicate deleted language.' (The markup's formatting is lost in the text; per the bill's legend and its title, 'An Act to increase the reimbursement fee', 'shall' and 'fifteen' are the struck words and 'must' and 'fifty' are new.)",
+    "url": "https://mylrc.sdlegislature.gov/api/Documents/298729.htm",
+    "figures": {
+      "garnishee_disclosure_fee_usd": 15
+    },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "tn_unclaimed_dormancy_charge_conditions",
     "state_code": "TN",
     "topic": "dormancy",
@@ -3859,6 +4193,26 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "url": "https://www.tn.gov/tdfi/bank-trust/banking.html",
     "verification": "official_excerpt",
     "source_kind": "statute"
+  },
+  {
+    "id": "tn_tdfi_bounce_protection_bulletin",
+    "state_code": "TN",
+    "topic": "overdraft_nsf",
+    "name": "TDFI guidance on bounce protection overdraft programs",
+    "citation": "Tennessee Department of Financial Institutions Bulletin B-04-1 (Bounce Protection)",
+    "date": "issued February 5, 2004; current status not confirmed",
+    "effective_date": "2004-02-05",
+    "status": "in_force",
+    "institutions": "state_banks",
+    "applies_to": [
+      "overdraft"
+    ],
+    "summary": "Tennessee's Department of Financial Institutions warns state banks that a written promise to pay overdrafts may make the program open-end credit under state law.",
+    "detail": "Bulletin B-04-1, addressed to all Tennessee state-chartered banks and savings banks, gives guidance on bounce protection programs. It says that failing to disclose balance definitions clearly, with the apparent motive of increasing overdrafts and fees, may be viewed as a misleading business practice. It encourages disclosure of the program, its obligations and its charges at account opening and reasonable notice of program changes.",
+    "evidence": "Official text fetched from tn.gov: 'TO: ALL TENNESSEE STATE CHARTERED BANKS AND SAVINGS BANKS'; 'DATE: February 5, 2004'; 'if an overdraft program includes a written obligation on the bank's part to pay checks written on an account with insufficient funds, such payments might be considered open end credit, and consequently may be subject to applicable statutes that dictate lawful interest rates, finance charges, and disclosure of information.'; 'Failure to provide this information in an understandable format with the apparent motive of increasing overdrafts and subsequent fees may be viewed as a misleading business practice.'; 'This Department encourages such disclosure at the point of account opening as well as reasonable notice of program changes.'",
+    "url": "https://www.tn.gov/tdfi/bank-trust/banking/bank-bulletins/bulletin-b-04-1.html",
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
   },
   {
     "id": "tx_inactive_account_no_service_charge",
@@ -4632,8 +4986,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "dormancy",
         "claim": "AS 34.45 (Uniform Unclaimed Property Act) may contain a dormancy-charge condition like other UUPA states; checking and savings accounts have a 5-year dormancy period.",
-        "where_seen": "https://unclaimedproperty.alaska.gov/docs/AK%20Property%20Types%20and%20Dormancy%20Periods.pdf",
-        "why_unconfirmed": "Dormancy period seen on official site; no dormancy-charge text found."
+        "where_seen": "https://unclaimedproperty.alaska.gov/docs/AK%20Property%20Types%20and%20Dormancy%20Periods.pdf; official page fetched 2026-10-09: https://unclaimedproperty.alaska.gov/docs/AK%20Property%20Types%20and%20Dormancy%20Periods.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The Alaska Unclaimed Property dormancy table lists Checking Accounts (AC01) and Savings Accounts (AC02) at 5 years and cites AS 34.45.110-780; it says nothing about dormancy charges, so the dormancy-charge part of the claim is not in the text. No rule drafted: an escheat reporting period is not a fee rule."
       },
       {
         "topic": "atm",
@@ -4678,8 +5032,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "fee_authority",
         "claim": "Alabama credit unions have the power to assess each member a recurring or nonrecurring membership fee.",
-        "where_seen": "https://alison.legislature.state.al.us/files/pdf/SearchableInstruments/2019RS/PrintFiles/SB33-Eng.pdf",
-        "why_unconfirmed": "seen in bill text (2019 HB228/SB33 or later); enactment and Code section not confirmed"
+        "where_seen": "https://alison.legislature.state.al.us/files/pdf/SearchableInstruments/2019RS/PrintFiles/SB33-Eng.pdf; official page fetched 2026-10-09: https://alison.legislature.state.al.us/files/pdf/SearchableInstruments/2019RS/PrintFiles/SB33-Eng.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): Engrossed SB33 (2019 RS) sets out Ala. Code § 5-17-4(a)(10): a credit union has the power 'To assess each member a recurring or nonrecurring membership fee.' The text shows only Senate passage (third reading 'passed as amended', Yeas 32 Nays 0), not enactment, and the plain-text copy does not show whether (10) is existing law or new language, so the rule is drafted as proposed. The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       }
     ],
     "notes": "Alabama State Banking Department consumer FAQ (https://banking.alabama.gov/con_affairs/faq/) says there is no maximum NSF fee a bank may charge (set by the account agreement) and that a bank may charge non-customers a fee to cash a check. 2025 SB281 (earned wage access, introduced only) would require EWA providers to reimburse bank overdraft/NSF fees; not a bank rule. Search budget ran out; about 7 searches used. CU pass: annual operating fee owed by credit unions to the Alabama Credit Union Administration is a supervisory fee, not a member fee; not recorded."
@@ -4699,14 +5053,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "fee_authority",
         "claim": "Arkansas law authorizes state banks to engage in any banking activity in which they could engage if they were national banks (wild-card/parity).",
-        "where_seen": "https://www.arkleg.state.ar.us/Home/FTPDocument?path=%2FACTS%2F1997%2FPublic%2F408.pdf (search summary)",
-        "why_unconfirmed": "Codified section number not identified and text not quoted; no fee-specific language seen. No credit union parity text found."
+        "where_seen": "https://www.arkleg.state.ar.us/Home/FTPDocument?path=%2FACTS%2F1997%2FPublic%2F408.pdf (search summary); official page fetched 2026-10-09: https://www.arkleg.state.ar.us/Home/FTPDocument?path=%2FACTS%2F1997%2FPublic%2F408.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): Act 408 of 1997 (Arkansas Interstate Banking and Branching Act) amends definitions, branching and merger sections; no clause letting state banks engage in any activity permitted to national banks was found. The nearest provision, § 23-48-906(b), lets a state bank conduct at an out-of-state branch activities permissible for a host-state bank, which is not national-bank parity."
       },
       {
         "topic": "payee_returned_check",
         "claim": "Arkansas state agency bank-draft forms cite Ark. Code § 5-37-301 for a $25 returned item charge plus $2 service fee; a DFA statement describes a returned check fee of 10% of face or $20, whichever greater, not over $50. These are payee/state fees, not bank fees.",
-        "where_seen": "https://sas.arkansas.gov/wp-content/uploads/Bank-Authorization-Form-8.01.2025.pdf",
-        "why_unconfirmed": "Low priority payee rule; statutory text not reviewed."
+        "where_seen": "https://sas.arkansas.gov/wp-content/uploads/Bank-Authorization-Form-8.01.2025.pdf; official page fetched 2026-10-09: https://sas.arkansas.gov/wp-content/uploads/Bank-Authorization-Form-8.01.2025.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The Employee Benefits Division bank draft form states 'Per Arkansas Code Ann. §5-37-301, a $25.00 Return Item Charge fee plus a $2.00 service fee for bank drafts will be assessed per item returned not paid by the bank.' The DFA 10%/$20/$50 returned check fee is not in this text. No rule drafted: it is one state agency's charge on its own returned drafts, and the statute's own text is not in the source."
       }
     ],
     "notes": "Six searches used. Arkansas AG debit card page describes only the federal opt-in rule for overdraft on one-time debit purchases. Garnishment results described court procedure and federal-benefit exemptions only; nothing on a bank's own fees. NOT SEARCHED: ATM rules, returned deposited item fees specifically. CU pass: one search of Arkansas official domains found no credit-union-specific member fee rule."
@@ -4724,8 +5078,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "The Arizona Attorney General supported federal CFPB limits on large banks' overdraft fees; no Arizona statute capping overdraft fees was found.",
-        "where_seen": "https://www.azag.gov/press-release/attorney-general-mayes-fights-protect-consumers-high-overdraft-fees",
-        "why_unconfirmed": "Advocacy press release, not a state rule."
+        "where_seen": "https://www.azag.gov/press-release/attorney-general-mayes-fights-protect-consumers-high-overdraft-fees; official page fetched 2026-10-09: https://www.azag.gov/press-release/attorney-general-mayes-fights-protect-consumers-high-overdraft-fees",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The AG press release confirms Attorney General Mayes joined 22 other attorneys general urging the House to vote against overturning the CFPB's 2024 overdraft rule for banks over $10 billion. The page does not address whether any Arizona statute caps overdraft fees. No rule drafted: advocacy, not law."
       }
     ],
     "notes": "Wave 1: 2 searches. Wave 2: 4 searches (garnishment, SB 1206, parity, overdraft). No general Arizona cap on bank overdraft or NSF fees was found; the only overdraft-fee provision found is the 2025 Uniform Special Deposits Act. A.R.S. § 6-635 ('other allowable fees') is in the consumer lender chapter, not deposit accounts. Credit union fee authority/parity: only a bylaw-based membership fee power and incidental powers were seen, no federal parity text. NOT SEARCHED: atm. azleg.gov is egress-blocked for fetch. CU pass: also saw A.R.S. § 6-562 (loan-related charges and charges for failure to meet obligations) and § 6-593 (corporate credit union federal parity only); not recorded as deposit-fee rules."
@@ -4821,14 +5175,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "returned_item",
         "claim": "Older OLR reports state neither Connecticut nor federal law caps bank fees for returned checks; fees are a matter of contract.",
-        "where_seen": "https://www.cga.ct.gov/2005/rpt/2005-R-0842.htm",
-        "why_unconfirmed": "Report is dated; not a statute."
+        "where_seen": "https://www.cga.ct.gov/2005/rpt/2005-R-0842.htm; official page fetched 2026-10-09: https://www.cga.ct.gov/2005/rpt/2005-R-0842.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): The 2005 OLR report (2005-R-0842) states 'Federal law does not place a cap on the fees banks can charge for bounced checks or items that are returned unpaid', 'Connecticut does not regulate bank service fees' and 'Service fees are generally a matter of contract between the bank and the deposit holder.' No rule drafted: it is a 2005 legislative staff research report, not law, and later Connecticut fee statutes (e.g. ct_ssa_direct_deposit_overdraft_fee_ban) already in the data file make a 'no regulation' rule misleading."
       },
       {
         "topic": "fee_authority",
         "claim": "§ 36a-250 (bank powers) and § 36a-455a (credit union powers) may include parity provisions.",
-        "where_seen": "https://www.cga.ct.gov/current/PUB/chap_665.htm",
-        "why_unconfirmed": "No fee-authority or parity text seen."
+        "where_seen": "https://www.cga.ct.gov/current/PUB/chap_665.htm; official page fetched 2026-10-09: https://www.cga.ct.gov/current/PUB/chap_665.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): Chapter 665 contains Conn. Gen. Stat. § 36a-250(a)(41), letting a Connecticut bank engage in any activity a federal bank or out-of-state bank may be authorized to engage in, after 30 days' prior written notice to the commissioner without disapproval; a rule is drafted for this. § 36a-455a (credit unions) is not in this chapter's text; it is already covered by rule ct_cu_federal_parity_powers. The part the text does support is rule ct_bank_federal_parity_powers."
       }
     ],
     "notes": "Seven searches used. Institutions: the statutes use 'bank, Connecticut credit union or federal credit union' (36a-303, 36a-304), 'financial institution' (36a-319) and 'banking institution' (36a-316, 52-367b); definitions in Title 36a were not reviewed, so 'other' is used. 52-367b dollar figures ($800, $8) come from a 2020 supplement and should be checked against the current code. NOT SEARCHED: ATM surcharge rules, parity/wild-card text (search returned nothing specific), payee returned-check fees."
@@ -4847,14 +5201,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "dormancy",
         "claim": "Former D.C. Code § 41-106(e) barred holders from imposing dormancy charges on deposits without a written contract, regular imposition and written notice, limited to an amount not unconscionable.",
-        "where_seen": "https://cfo.dc.gov/sites/default/files/dc/sites/ocfo/publication/attachments/ocfo_dc_unclaimed_property_law_title_41.pdf",
-        "why_unconfirmed": "Appears to be the older Uniform Disposition of Unclaimed Property Act text; other sections of that chapter (e.g. § 41-120) are now marked repealed, so whether § 41-106(e) is still in force was not confirmed. The current rule appears to be § 41-156.02."
+        "where_seen": "https://cfo.dc.gov/sites/default/files/dc/sites/ocfo/publication/attachments/ocfo_dc_unclaimed_property_law_title_41.pdf; official page fetched 2026-10-09: https://cfo.dc.gov/sites/default/files/dc/sites/ocfo/publication/attachments/ocfo_dc_unclaimed_property_law_title_41.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): The DC Official Code compilation marked '(CURRENT AS OF 2005)' has § 41-106(e): no holder may impose dormancy or inactivity charges on deposits unless there is a valid, enforceable written contract, the holder regularly imposes and does not regularly reverse the charges, written notice is given (for property over $10, no more than 3 months before), and the deduction is not unconscionable. No rule drafted: the text is a 2005 compilation and does not show whether § 41-106 is still in force; the current provision is covered by dc_unclaimed_property_dormancy_charge (§ 41-156.02)."
       },
       {
         "topic": "garnishment_legal_process",
         "claim": "DC Superior Court garnishment notices state that no funds may be attached from an account consisting solely of direct-deposited exempt benefits (Social Security, SSI, veterans, unemployment, TANF, workers' compensation, etc.).",
-        "where_seen": "https://www.dccourts.gov/sites/default/files/pdf-forms/NoticeOfExemptionBeforeNewRule.pdf",
-        "why_unconfirmed": "Seen in a court form, not in the statute; it protects exempt funds but says nothing about a bank's legal process fee."
+        "where_seen": "https://www.dccourts.gov/sites/default/files/pdf-forms/NoticeOfExemptionBeforeNewRule.pdf; official page fetched 2026-10-09: https://www.dccourts.gov/sites/default/files/pdf-forms/NoticeOfExemptionBeforeNewRule.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): Court form CV-3120 (Rev. Apr. 2018) lists exempt or potentially exempt income (Social Security, SSI, veterans, TANF, unemployment, workers' compensation and others) but does not say no funds may be attached from an account holding only direct-deposited benefits; instead the debtor must file a Motion for Claim of Exemption. No rule drafted: the notice says nothing about bank fees."
       }
     ],
     "notes": "D.C. Code § 26-317 caps fees charged by licensed check cashers (not banks): the greater of 2% or $3 for government checks, 10% or $5 for personal checks or money orders, 4% or $5 for other instruments, plus a one-time $5 membership fee; it is a licensee rule, so it is not recorded as a bank rule. No DC Council overdraft or NSF fee bill was found. The effective date of the current unclaimed property chapter (§ 41-151.01 et seq.) was not confirmed."
@@ -4892,16 +5246,10 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     ],
     "leads_unconfirmed": [
       {
-        "topic": "fee_authority",
-        "claim": "Florida credit unions have the power to charge fees for their services.",
-        "where_seen": "https://www.flsenate.gov/Laws/statutes/1999/657.031",
-        "why_unconfirmed": "Seen only as a search summary of a 1999 version of § 657.031; current text and exact wording not confirmed. No bank parity/wild-card text found."
-      },
-      {
         "topic": "garnishment_legal_process",
         "claim": "Fla. Stat. § 655.0201 makes a financial institution's designated place or registered agent the sole location for service of garnishment, levy and similar process.",
-        "where_seen": "https://m.flsenate.gov/Statutes/655.0201",
-        "why_unconfirmed": "Service-of-process rule, not a fee rule; recorded only as context."
+        "where_seen": "https://m.flsenate.gov/Statutes/655.0201; official page fetched 2026-10-09: https://m.flsenate.gov/Statutes/655.0201",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Fla. Stat. § 655.0201 (2026) lets a financial institution designate a place or registered agent in Florida; once designated, it is the sole location for service of process, including garnishment and levy. Designation is optional, and without it service may be made on any officer, director or business agent. No rule drafted: it governs where process is served, not deposit-account fees."
       }
     ],
     "notes": "Six searches used. No Florida overdraft/NSF cap found in chapter 655; a 2025-2026 bill search found no passed overdraft/NSF bill. Florida chapter 655 'financial institution' definition was not reviewed, hence institutions 'other' for § 655.85. NOT SEARCHED: fee change notice beyond Reg DD, ATM rules, returned deposited item fees. Chapter 832 (worthless checks) payee fees not recorded. CU pass: § 657.031 fee-power wording was seen in older flsenate.gov versions (1999-2010) and a chapter-wide summary; reviewer should confirm the current subsection."
@@ -4913,20 +5261,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "overdraft_nsf",
       "credit_union_specific"
     ],
-    "leads_unconfirmed": [
-      {
-        "topic": "garnishment_legal_process",
-        "claim": "2020 Georgia garnishment legislation: statutory garnishee expenses do not interfere with any contractual arrangement for a garnishee (e.g., a bank) to reimburse itself for the costs of legal processing of a garnishment.",
-        "where_seen": "https://www.legis.ga.gov/api/document/docs/default-source/house-budget-and-research-office-document-library/2020-end-of-session-report-by-committee-with-vetoes.pdf",
-        "why_unconfirmed": "Seen only in a House session report summary; bill number and O.C.G.A. section not identified."
-      },
-      {
-        "topic": "dormancy",
-        "claim": "Georgia DBF 2026 proposed rulemaking (May 13, 2026) appeared in dormant-account search results; it may amend the dormant account rules.",
-        "where_seen": "https://dbf.georgia.gov/document/document/2026-proposed-rulemaking-5-13-2026/download",
-        "why_unconfirmed": "Content not seen."
-      }
-    ],
+    "leads_unconfirmed": [],
     "notes": "Six searches used. No Georgia dollar cap on overdraft/NSF fees found; the DBF 2013 declaratory orders classify overdraft fees as non-interest deposit fees not subject to usury limits. The two dormancy descriptions (no-contract $5 cap in Rule 80-1-8 vs. 'greater of $5 or active-account charge' on the DBF page) should be reconciled by the reviewer against current rule text. NOT SEARCHED: basic/lifeline account, check cashing by banks, fee change notice beyond Reg DD, ATM rules; garnishment search found no direct bank fee limit. CU pass: search returned the existing 2013 DBF credit union overdraft parity order (already recorded); nothing new."
   },
   {
@@ -4941,14 +5276,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "dormancy",
         "claim": "HRS § 523A-6 (Uniform Unclaimed Property Act) addresses dormancy charges that holders may deduct before reporting; holder guidelines reference it.",
-        "where_seen": "https://budget.hawaii.gov/wp-content/uploads/2026/01/Holder-Reporting-Guidelines-Revised-January-2026.pdf",
-        "why_unconfirmed": "Search could not surface the section text or conditions."
+        "where_seen": "https://budget.hawaii.gov/wp-content/uploads/2026/01/Holder-Reporting-Guidelines-Revised-January-2026.pdf; official page fetched 2026-10-09: https://budget.hawaii.gov/wp-content/uploads/2026/01/Holder-Reporting-Guidelines-Revised-January-2026.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The Hawaii holder reporting guidelines list HRS § 523A-6 under the title 'Dormancy charge' in a table of Chapter 523A sections, but give none of its content, so what charges holders may deduct is not in the text."
       },
       {
         "topic": "fee_authority",
         "claim": "HRS § 412:1-109 defines 'comparable financial institution' (a Hawaii bank is comparable to a national bank; a Hawaii credit union to a federal credit union), which suggests a parity mechanism elsewhere in chapter 412; § 412:5-200 grants banks general power to accept deposits and engage in activities usual or incidental to banking.",
-        "where_seen": "https://files.hawaii.gov/dcca/dfi/Laws_html/HRS0412/HRS_0412-0001-0109.htm",
-        "why_unconfirmed": "No parity or fee-setting text actually seen."
+        "where_seen": "https://files.hawaii.gov/dcca/dfi/Laws_html/HRS0412/HRS_0412-0001-0109.htm; official page fetched 2026-10-09: https://files.hawaii.gov/dcca/dfi/Laws_html/HRS0412/HRS_0412-0001-0109.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The fetched page is HRS ch. 412 article 1 and contains the § 412:1-109 definition of \"comparable financial institution\" (Hawaii bank and national bank, Hawaii savings institution and federal savings institution, Hawaii credit union and federal credit union, each \"and vice versa\"). Section 412:5-200 appears only as a table-of-contents entry (\"General powers\"); its text, and any parity mechanism, is not in the file, and a definition alone sets no fee rule, so no rule is drafted."
       },
       {
         "topic": "garnishment_legal_process",
@@ -4974,8 +5309,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "garnishment_legal_process",
         "claim": "Iowa Code ch. 642 garnishment rules reference applicable fees related to issuance of a garnishment and require a supervised financial organization garnished for an account to monitor it monthly; no bank fee cap or exempt-funds fee rule was found.",
-        "where_seen": "https://www.legis.iowa.gov/docs/ico/chapter/642.pdf",
-        "why_unconfirmed": "No fee-specific text found for banks."
+        "where_seen": "https://www.legis.iowa.gov/docs/ico/chapter/642.pdf; official page fetched 2026-10-09: https://www.legis.iowa.gov/docs/ico/chapter/642.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Iowa Code § 642.22(2) requires a supervised financial organization garnished for a defendant's account, after paying the sheriff, to monitor the account at least monthly while the notice is effective; §§ 642.23 and 642.24 refer to \"applicable fees\" subtracted by the clerk or court from garnished funds. The chapter text contains no bank fee cap or exempt-funds fee rule; no rule is drafted because the monitoring duty and the clerk's \"applicable fees\" do not govern what a bank may charge the account holder."
       }
     ],
     "notes": "The 1994 bulletin is interpretive guidance, not a statute; it is still posted on the Division of Banking site. Dollar amounts in the bulletin ($3 daily, $12-$15 one-time) describe market practice in 1994 and are not limits, so they are not recorded as figures. CU pass: Iowa Code ch. 533 share draft fee power already covered by ia_cu_fee_authority; insider overdraft limits in ch. 533 are not consumer fee rules."
@@ -4988,18 +5323,6 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "credit_union_specific"
     ],
     "leads_unconfirmed": [
-      {
-        "topic": "overdraft_nsf",
-        "claim": "Idaho credit union rules required share draft account operational specifications to include a summary of overdraft procedures and the fee charged for each overdraft.",
-        "where_seen": "https://adminrules.idaho.gov/rules/2018%20Archive/12/120104.pdf",
-        "why_unconfirmed": "Seen only in archived (1998/2018) IDAPA rules; current status unknown."
-      },
-      {
-        "topic": "overdraft_nsf",
-        "claim": "Idaho Department of Finance guidance treats an overdraft fee as a finance charge on an extension of credit that collection agencies may collect for bank/credit union clients when based on agreement.",
-        "where_seen": "https://www.finance.idaho.gov/wp-content/uploads/legal/guidance/archive/documents/ca_act_faq.pdf",
-        "why_unconfirmed": "Archived 2014 collection agency FAQ; not a fee limit."
-      },
       {
         "topic": "dormancy",
         "claim": "If a holder imposes an inactivity charge and the abandonment period is longer than five years, the property is instead presumed abandoned five years after the owner's last indication of interest.",
@@ -5056,8 +5379,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "dormancy",
         "claim": "The current dormancy-charge provision is IC 32-34-1.5-28, effective July 1, 2021.",
-        "where_seen": "https://iga.in.gov/publications/senate_journal/js-apr21-2021-fortysixth.pdf",
-        "why_unconfirmed": "Section number and effective date came from a Senate Journal amendment text, not the codified section; could not open the 2026 Title 32 PDF (fetch blocked)."
+        "where_seen": "https://iga.in.gov/publications/senate_journal/js-apr21-2021-fortysixth.pdf; official page fetched 2026-10-09: https://iga.in.gov/publications/senate_journal/js-apr21-2021-fortysixth.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The fetched file is only a JavaScript placeholder (\"You need to enable JavaScript to run this app\"), so it shows neither IC 32-34-1.5-28 nor its effective date. The existing rule in_unclaimed_dormancy_charge_conditions already covers this point with the section number marked unconfirmed, and this file does not settle it."
       }
     ],
     "notes": "Research incomplete: the shared WebSearch budget ran out before searches on fee authority/parity (IC 28-1-11, IC 28-7-1), returned items, fee-change notice and ATM. Topics not listed in topics_no_rule_found were not searched. Garnishment search found only court forms (sheriff service fees paid by the creditor), nothing on bank-charged fees."
@@ -5074,14 +5397,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "atm",
       "credit_union_specific"
     ],
-    "leads_unconfirmed": [
-      {
-        "topic": "fee_authority",
-        "claim": "K.S.A. 9-1715 lets the state bank commissioner, by special order, authorize state banks to engage in any activity that other insured banks (national, state or other-state) may engage in; this is a general parity power, not specific to fees.",
-        "where_seen": "https://kslegislature.gov/li_2022/b2021_22/statute/009_000_0000_chapter/009_017_0000_article/009_017_0015_section/009_017_0015_k/",
-        "why_unconfirmed": "Official text seen, but no source ties it to deposit fees; recorded as a lead only."
-      }
-    ],
+    "leads_unconfirmed": [],
     "notes": "Garnishment fee text was seen on the 2020 statute page; confirm no later amendment. Kansas UCCC (K.S.A. 16a-2-501) insufficient-check charges apply to consumer credit lenders, not deposit accounts, and were not recorded. 2026 SB 352 (digital assets in unclaimed property) does not touch deposit fees. CU pass: K.S.A. 17-2204 powers (checks, money orders, safe deposit) seen but no member fee text."
   },
   {
@@ -5097,20 +5413,20 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "dormancy",
         "claim": "A holder may deduct a dormancy charge from property delivered to the administrator only if a valid contract authorizes it and the holder regularly imposes and does not reverse it, in an amount that is not unconscionable.",
-        "where_seen": "https://apps.legislature.ky.gov/recorddocuments/bill/18RS/hb394/bill.pdf ; https://apps.legislature.ky.gov/law/acts/18RS/documents/0163.pdf",
-        "why_unconfirmed": "Text seen in 2018 HB 394 (abandoned property); whether this provision is in the enacted Acts ch. 163 and its KRS section were not confirmed."
+        "where_seen": "https://apps.legislature.ky.gov/recorddocuments/bill/18RS/hb394/bill.pdf ; https://apps.legislature.ky.gov/law/acts/18RS/documents/0163.pdf; official page fetched 2026-10-09: https://apps.legislature.ky.gov/recorddocuments/bill/18RS/hb394/bill.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): 2018 HB 394 (engrossed copy, \"18 RS HB 394/EN\"), Section 32, creating a new section of KRS ch. 393A, lets a holder deduct a dormancy charge from property delivered to the administrator only if a valid contract with the apparent owner authorizes it and the holder regularly imposes and does not reverse it, limited to an amount that is not unconscionable. The file is an engrossed bill, not the enacted act, so enactment and the codified section number are not shown. The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       },
       {
         "topic": "check_cashing",
         "claim": "A bank must cash free of charge, by end of day, a check drawn on an account at the bank when presented by the payee in Kentucky with sufficient funds; for checks not drawn on the bank, the fee may not exceed $4.",
-        "where_seen": "https://apps.legislature.ky.gov/recorddocuments/bill/19RS/hb452/orig_bill.pdf",
-        "why_unconfirmed": "Appears to be from a 2019 introduced bill (HB 452, 'An Act relating to check cashing'); no evidence it was enacted."
+        "where_seen": "https://apps.legislature.ky.gov/recorddocuments/bill/19RS/hb452/orig_bill.pdf; official page fetched 2026-10-09: https://apps.legislature.ky.gov/recorddocuments/bill/19RS/hb452/orig_bill.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): 2019 BR 1786 (the HB 452 original bill) would require a bank, to the extent federal law allows, to cash free of charge by end of day a check payable at the bank or drawn on an account there when presented in Kentucky by the payee with sufficient funds (subject to ID rules and fraud/legal refusals), and would cap the fee for cashing other checks at $4. The text is an introduced bill, so it is coded as proposed. The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       },
       {
         "topic": "fee_authority",
         "claim": "KRS 286.3-190 sets out powers of Kentucky state banks.",
-        "where_seen": "https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=14551",
-        "why_unconfirmed": "Section title only; text on fees or national-bank parity not seen."
+        "where_seen": "https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=14551; official page fetched 2026-10-09: https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=14551",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The fetched text is KRS 286.3-190, headed \"Powers of banks\", but it covers only accepting drafts or bills of exchange, issuing letters of credit and accepting or discounting acceptances; it is not a general powers section and says nothing about deposit fees, so no rule is drafted."
       }
     ],
     "notes": "Six searches used. The overdraft search returned only lender rules (KRS 286.4-533 consumer loan returned-payment charge of $25, deferred deposit rules), which do not govern bank deposit fees. 2026 SB 219 (Acts ch. 98, law without signature 4/12/26) concerns deferred deposit fees, not bank deposit fees. Garnishment search found KRS 427.010 exemptions and benefit exemptions but no bank fee limit. NOT SEARCHED: ATM, stop payment / deposited item return."
@@ -5127,20 +5443,20 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "check_cashing",
         "claim": "A payor state bank must pay a check drawn on it against an account with sufficient balance whether or not the payee holds an account at the bank; it may require identification; OFI enforces. Search summary attributed this to R.S. 10:4-112.",
-        "where_seen": "https://www.legis.la.gov/legis/ViewDocument.aspx?d=875592 ; https://legis.la.gov/legis/Law.aspx?d=107803",
-        "why_unconfirmed": "Text appears in a 2014 original Senate bill (SLS 14RS-441); enactment and current codification not confirmed, and the excerpt seen does not mention fees."
+        "where_seen": "https://www.legis.la.gov/legis/ViewDocument.aspx?d=875592 ; https://legis.la.gov/legis/Law.aspx?d=107803; official page fetched 2026-10-09: https://www.legis.la.gov/legis/ViewDocument.aspx?d=875592",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The text is 2014 Senate Bill 166 (original), which would enact R.S. 10:4-112 requiring a payor state bank to pay a check drawn on it against a sufficient balance whether or not the payee holds an account, allowing ID verification, with OFI ensuring compliance. It is a proposed bill (proposed effective date August 1, 2014), not enacted law, and its operative text does not itself mention fees; only the title line says it \"Prohibits certain banks from charging fees for check cashing.\" The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       },
       {
         "topic": "fee_authority",
         "claim": "R.S. 6:667.1 gives federal credit unions and federally insured credit unions all rights, powers and privileges provided by Louisiana law (reverse parity).",
-        "where_seen": "https://www.legis.la.gov/legis/Law.aspx?d=106092",
-        "why_unconfirmed": "Search summary only; it is not a fee-setting authority for state credit unions, and no state credit union fee-authority or federal-parity provision was seen."
+        "where_seen": "https://www.legis.la.gov/legis/Law.aspx?d=106092; official page fetched 2026-10-09: https://www.legis.la.gov/legis/Law.aspx?d=106092",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The fetched page is R.S. 6:667 (conversion between federal and state credit unions and division of assets), not R.S. 6:667.1; it contains no grant of Louisiana-law powers to federal or federally insured credit unions."
       },
       {
         "topic": "payee_returned_check",
         "claim": "A payee or holder may charge the drawer of a dishonored check a service charge up to $25 or 5% of the check, whichever is greater, when making written demand.",
-        "where_seen": "https://www.legis.la.gov/legis/LawPrint.aspx?d=106285",
-        "why_unconfirmed": "Payee rule, not a bank fee rule; section number not shown in the result."
+        "where_seen": "https://www.legis.la.gov/legis/LawPrint.aspx?d=106285; official page fetched 2026-10-09: https://www.legis.la.gov/legis/LawPrint.aspx?d=106285",
+        "why_unconfirmed": "Official text read 2026-10-09 (contradicted): The fetched page is R.S. 6:969.17, which lets the parties to a motor vehicle credit transaction contract for a returned check or electronic payment charge of five percent of the amount, capped at fifteen dollars. It does not contain a general payee or holder dishonored-check charge of $25 or 5% with written demand; no rule is drafted because this is a creditor's charge in motor vehicle credit, not a deposit-account fee."
       }
     ],
     "notes": "Six searches used. Returned-check fee caps found in the first search apply to consumer credit, motor vehicle credit and premium finance creditors, not to bank deposit accounts. Check casher fee caps (2% or $5 for government checks; 10% or $5 otherwise, R.S. 6:1001 et seq.) apply to licensed check cashers, not banks. Dormancy search on the Uniform Unclaimed Property Act of 1997 (R.S. 9:151 et seq.) did not surface any dormancy-charge text. Garnishment search found R.S. 13:3881 exemptions (2026 Act 55 / HB 135 added HSA exemption) but no bank fee rule. NOT SEARCHED: basic/lifeline account, fee change notice, ATM, stop payment."
@@ -5182,12 +5498,6 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
     ],
     "leads_unconfirmed": [
       {
-        "topic": "fee_authority",
-        "claim": "Maryland state-chartered credit unions may exercise the powers of federal credit unions on request and approval; a 2021 bill (HB1004) would streamline that parity approval.",
-        "where_seen": "https://mgaleg.maryland.gov/cmte_testimony/2021/fin/4303_03242021_8213-535.pdf",
-        "why_unconfirmed": "Seen only in trade association testimony; statute section and the bill's outcome not confirmed."
-      },
-      {
         "topic": "payee_returned_check",
         "claim": "If a dishonored check is not paid within 30 days after notice of dishonor, the drawer is liable for the check amount, a collection fee up to $35, and up to twice the check amount up to $1,000.",
         "where_seen": "mgaleg.maryland.gov search results (exact section not identified)",
@@ -5196,8 +5506,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "check_cashing",
         "claim": "Licensed check cashers may charge up to 2% or $3, whichever is greater, for government checks; 2020 SB 939 (ch. 444) on check cashing services exempts federal and Maryland chartered financial institutions.",
-        "where_seen": "https://labor.maryland.gov/finance/consumers/frcheckcash.shtml ; https://labor.maryland.gov/finance/industry/sb939.shtml",
-        "why_unconfirmed": "Applies to licensed check cashers, not shown to bind banks or credit unions."
+        "where_seen": "https://labor.maryland.gov/finance/consumers/frcheckcash.shtml ; https://labor.maryland.gov/finance/industry/sb939.shtml; official page fetched 2026-10-09: https://labor.maryland.gov/finance/consumers/frcheckcash.shtml",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The Office of Financial Regulation page confirms licensed check casher fee limits (government checks up to 2% or $3, whichever is greater; personal checks 10% or $5; other instruments 4% or $5; $5 one-time membership fee) and a 1.5% or $1 limit for registered check cashers, but says nothing about 2020 SB 939 or an exemption for chartered financial institutions; it says only that banks and credit unions may also charge a fee to cash a check. No rule is drafted because these limits bind licensed and registered check cashers, not banks or credit unions."
       }
     ],
     "notes": "Seven searches used. The Office of Financial Regulation consumer page (labor.maryland.gov/finance/banks/deposit-accounts.shtml) describes federal opt-in rules and fee disclosure only; no Maryland overdraft/NSF cap was found. GFI § 12-918 appeared in an overdraft search result but its content was not seen. NOT SEARCHED: basic/lifeline account (search combined with parity returned nothing on it, so treat as not checked), ATM, stop payment / deposited item return."
@@ -5210,8 +5520,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "9-B M.R.S. § 241(6) is referenced as the authority under which a bank's NSF charge is 'legally assessed'.",
-        "where_seen": "https://www1.maine.gov/pfr/financialinstitutions/sites/maine.gov.pfr.financialinstitutions/files/pdf/advisory-rulings/1990-04-02-Advisory-Ruling-95.pdf",
-        "why_unconfirmed": "1990 advisory ruling reference only; § 241(6) text not seen."
+        "where_seen": "https://www1.maine.gov/pfr/financialinstitutions/sites/maine.gov.pfr.financialinstitutions/files/pdf/advisory-rulings/1990-04-02-Advisory-Ruling-95.pdf; official page fetched 2026-10-09: https://www1.maine.gov/pfr/financialinstitutions/sites/maine.gov.pfr.financialinstitutions/files/pdf/advisory-rulings/1990-04-02-Advisory-Ruling-95.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Bureau of Consumer Credit Protection Advisory Ruling #95 (April 2, 1990) lets a creditor add to a consumer's credit balance 'any NSF charge legally assessed by the creditor's bank pursuant to 9-B M.R.S.A. §241(6)', and describes that bank fee as 'the statutorily-permitted $2.00 fee'. No rule drafted: the ruling is about consumer credit payments, and its 1990 description of § 241(6) ($2 fee, no fee on same-institution checks) cannot be treated as current law without the current statute text."
       }
     ],
     "notes": "Six searches used. LD 142 (2025) did NOT enact a statutory one-NSF-fee limit; it became a Resolve directing guidance. The 30-day fee-increase notice is stated by the Bureau but its statutory section was not identified; reviewer should locate it (possibly in Title 9-B ch. 42 or a Bureau regulation). NOT SEARCHED: basic/lifeline account (a combined search returned nothing on it), fee authority/parity for state banks and credit unions, check cashing, ATM, stop payment."
@@ -5252,20 +5562,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "garnishment_legal_process",
         "claim": "HF 4100 (2024) and HF 3188 (2025) would bar financial institutions from charging debtors a fee for receiving a garnishment summons.",
-        "where_seen": "https://www.revisor.mn.gov/bills/94/2025/0/HF/3188/versions/0/",
-        "why_unconfirmed": "Introduced bills; no evidence either was enacted. 2025 Session Law ch. 18 (SF 2847, approved 05/08/2025) changed garnishment forms and notices but was not seen to add a fee ban."
-      },
-      {
-        "topic": "check_cashing",
-        "claim": "Presumed fair fee for cashing a government check up to $500 is the greater of 2.5% or $1 (up to 5% for a first-time customer).",
-        "where_seen": "https://www.revisor.mn.gov/rules/2872.0100/",
-        "why_unconfirmed": "This appears to be a currency exchange rule (ch. 53A licensees), not a bank rule; not confirmed to apply to banks or credit unions."
+        "where_seen": "https://www.revisor.mn.gov/bills/94/2025/0/HF/3188/versions/0/; official page fetched 2026-10-09: https://www.revisor.mn.gov/bills/94/2025/0/HF/3188/versions/0/",
+        "why_unconfirmed": "Official text read 2026-10-09 (contradicted): The fetched text is HF 3188 (94th Legislature, introduction). It contains no fee or charge provision: it would add Minn. Stat. § 550.37, subd. 29, exempting up to $1,000 in a debtor's depository accounts from garnishment and requiring the financial institution to leave the lesser of the account total or $1,000; HF 4100 is not in the text. The $1,000 account exemption is already covered by mn_garnishment_account_exemption."
       },
       {
         "topic": "fee_authority",
         "claim": "A parity statute letting state banks do what national banks may do (beyond investments).",
-        "where_seen": "https://www.revisor.mn.gov/statutes/2025/2025-10-19%2010:04:35+00:00/cite/48.61/pdf",
-        "why_unconfirmed": "Only § 48.61 subd. 8 (investments in securities) was seen; no general bank parity found."
+        "where_seen": "https://www.revisor.mn.gov/statutes/2025/2025-10-19%2010:04:35+00:00/cite/48.61/pdf; official page fetched 2026-10-09: https://www.revisor.mn.gov/statutes/2025/2025-10-19%2010:04:35+00:00/cite/48.61/pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (contradicted): Minn. Stat. § 48.61 is limited to investments: subd. 8 ('Parity with national banks') lets a state bank invest in securities authorized for national banks, and subd. 7 lets a bank subsidiary engage in national-bank-authorized activities, expressly 'not including receiving deposits or paying checks'. It is not a general activity or fee parity statute, so no rule was drafted."
       }
     ],
     "notes": "\"Financial intermediary\" in § 48.512 is defined in that section; the definition was not seen, so institutions is 'other' for those two rules. § 47.76 reaches federal institutions on its face; preemption for national banks and federal credit unions is a question for the reviewing lawyer. The § 345.32 wording on one-year service charge deduction should be read in full. Overdraft, ATM and fee-change notice were not searched before the search budget ran out. Direct fetch to revisor.mn.gov returned EGRESS_BLOCKED."
@@ -5280,20 +5584,20 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "Text stating that any depository institution (state or federal bank, credit union, S&L) may charge up to $20 as an overdraft charge on first presentment or up to $15 for an item returned for insufficient funds (another version: no more than $15 for either).",
-        "where_seen": "https://senate.mo.gov/03info/billtext/intro/sb346.htm ; https://www.senate.mo.gov/02info/pdf-bill/tat/SB895.pdf ; https://house.mo.gov/billtracking/bills061/billpdf/intro/HB1227I.PDF ; https://senate.mo.gov/23info/pdf-bill/tat/SB103.pdf",
-        "why_unconfirmed": "Seen only in bill texts (2002, 2003, 2006, 2023); not found in a revisor.mo.gov statute section; no evidence of enactment. Would also sit uneasily with RSMo 362.111."
+        "where_seen": "https://senate.mo.gov/03info/billtext/intro/sb346.htm ; https://www.senate.mo.gov/02info/pdf-bill/tat/SB895.pdf ; https://house.mo.gov/billtracking/bills061/billpdf/intro/HB1227I.PDF ; https://senate.mo.gov/23info/pdf-bill/tat/SB103.pdf; official page fetched 2026-10-09: https://senate.mo.gov/03info/billtext/intro/sb346.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The wording appears only in SB 346 (92nd General Assembly, introduced January 23, 2003) as bracketed text of RSMo §§ 408.653 and 408.654 that the bill would repeal: § 408.653.1 says a depository institution 'may charge no more than fifteen dollars' for an overdraft or returned item, and § 408.654 says up to $20 overdraft on first presentment or up to $15 for a returned item. No rule drafted: the text is an introduced bill, and it does not show whether those sections are still in force."
       },
       {
         "topic": "garnishment_legal_process",
         "claim": "Funds on deposit are not subject to garnishment if all funds are deposited electronically on a recurring basis and reasonably identified as exempt under RSMo 513.430.1(10)(a)-(c) or 31 C.F.R. Part 212; for accounts receiving exempt electronic deposits the attachment date is the day the institution performs the federal look-back.",
-        "where_seen": "https://www.revisor.mo.gov/main/OneSection.aspx?section=525.235&bid=60211 ; https://www.courts.mo.gov/page.jsp?id=199872",
-        "why_unconfirmed": "Could not tell whether this text is RSMo 525.235 or Supreme Court Rule 90; does not address bank fees."
+        "where_seen": "https://www.revisor.mo.gov/main/OneSection.aspx?section=525.235&bid=60211 ; https://www.courts.mo.gov/page.jsp?id=199872; official page fetched 2026-10-09: https://www.revisor.mo.gov/main/OneSection.aspx?section=525.235&bid=60211",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): RSMo § 525.235 confirms that for an account receiving electronic deposits of exempt protected funds (including those in § 513.430.1(10)), the attachment date is the banking day the institution applies the federally required look-back; subsections 1 to 11 take effect January 1, 2028. The claim's statement that funds are 'not subject to garnishment' if all deposits are electronic and recurring, and the reference to 31 C.F.R. Part 212 by name, are not in this text. The part the text does support is rule mo_account_garnishment_attachment_date_2028."
       },
       {
         "topic": "payee_returned_check",
         "claim": "A payee of a dishonored check may collect from the drawer $20 plus the depository institution's actual return charge.",
-        "where_seen": "https://revisor.mo.gov/main/OneSection.aspx?section=400.4-401 (search result set)",
-        "why_unconfirmed": "Payee rule; section number not confirmed."
+        "where_seen": "https://revisor.mo.gov/main/OneSection.aspx?section=400.4-401 (search result set); official page fetched 2026-10-09: https://revisor.mo.gov/main/OneSection.aspx?section=400.4-401",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): RSMo § 400.4-401 (when a bank may charge a customer's account) contains no payee $20 dishonored-check charge. Separate from the claim, subsection (e) says no bank customer is liable for charges on a check dishonored for insufficient funds when the bank erred in accounting or posting; a rule for that point is drafted below as an adjacent finding, not as confirmation of the claim. The part the text does support is rule mo_no_nsf_charge_after_bank_posting_error."
       }
     ],
     "notes": "Six searches used. 'institutions: other' for § 447.200 because the search summary says 'bank or financial organization' without defining scope. RSMo 400.4-401 (UCC) lets a bank charge an overdraft item that is properly payable; not a fee rule. Credit union search found only RSMo 370.107 (examiner pay parity), not a fee-authority or federal-parity power. NOT SEARCHED: basic/lifeline account, check cashing, fee change notice, ATM, stop payment."
@@ -5316,26 +5620,20 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "fee_authority",
         "claim": "The Commissioner of Banking and Consumer Finance may by rule authorize a Mississippi credit union to engage in any activity or exercise any power it could if it were a federal credit union (Miss. Code tit. 81, ch. 13).",
-        "where_seen": "https://dbcf.ms.gov/banks-and-credit-unions/ and billstatus.ls.state.ms.us search results",
-        "why_unconfirmed": "Search summary did not show which document or section the text came from; could be bill text."
+        "where_seen": "https://dbcf.ms.gov/banks-and-credit-unions/ and billstatus.ls.state.ms.us search results; official page fetched 2026-10-09: https://dbcf.ms.gov/banks-and-credit-unions/",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The DBCF page states no credit union parity rule. It quotes the bank parity regulation (a state-chartered bank, savings association or savings bank may exercise the powers of a federally chartered depository institution with the Commissioner's prior approval), which is already covered by ms_state_bank_federal_parity."
       },
       {
         "topic": "dormancy",
         "claim": "Under the Mississippi unclaimed property act (Miss. Code tit. 89, ch. 12), a holder may deduct a dormancy-type charge from presumed-abandoned property only if a valid, enforceable written contract permits it, the holder regularly imposes and does not regularly reverse it, and the amount is not unconscionable.",
-        "where_seen": "https://treasury.ms.gov/wp-content/uploads/2020/06/Holder-Reporting-Instructions.pdf ; billstatus.ls.state.ms.us bill texts (e.g., 2019 HB1513, 2026 SB2714 as passed the Senate)",
-        "why_unconfirmed": "Could not tell whether the text came from current codified law or a bill; section number not seen."
-      },
-      {
-        "topic": "check_cashing",
-        "claim": "Mississippi Check Cashers Act rules (Part 3, Ch. 3) regulate licensed check cashers.",
-        "where_seen": "https://dbcf.ms.gov/wp-content/uploads/2020/06/Check-Casher-Regulations-Effective-12-1-12-PDF.pdf",
-        "why_unconfirmed": "Applies to licensed check cashers, not shown to apply to banks or credit unions."
+        "where_seen": "https://treasury.ms.gov/wp-content/uploads/2020/06/Holder-Reporting-Instructions.pdf ; billstatus.ls.state.ms.us bill texts (e.g., 2019 HB1513, 2026 SB2714 as passed the Senate); official page fetched 2026-10-09: https://treasury.ms.gov/wp-content/uploads/2020/06/Holder-Reporting-Instructions.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The Treasury holder instructions cite Miss. Code §§ 89-12-1 to 89-12-57 and say deposits are reported 'excluding any charges that may have accrued' and intangible property is reported 'deducting any charges that may have accrued'. The three conditions in the claim (written contract, regularly imposed and not reversed, not unconscionable) are not in the text; no rule drafted because the confirmed part does not state a fee limit."
       },
       {
         "topic": "other",
         "claim": "DBCF posts legislative updates for the 2025 and 2026 regular sessions; 2026 HB1597 ('Mississippi Fair Banking Standards Act') passed the House.",
-        "where_seen": "https://dbcf.ms.gov/wp-content/uploads/2026/05/Legislative-Update-for-Website.2026-Regular-Session.Revised.pdf ; https://billstatus.ls.state.ms.us/documents/2026/html/HB/1500-1599/HB1597PS.htm",
-        "why_unconfirmed": "Contents not seen; no sign either addresses consumer deposit fees."
+        "where_seen": "https://dbcf.ms.gov/wp-content/uploads/2026/05/Legislative-Update-for-Website.2026-Regular-Session.Revised.pdf ; https://billstatus.ls.state.ms.us/documents/2026/html/HB/1500-1599/HB1597PS.htm; official page fetched 2026-10-09: https://dbcf.ms.gov/wp-content/uploads/2026/05/Legislative-Update-for-Website.2026-Regular-Session.Revised.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The PDF is DBCF's 2026 Regular Session legislative update; it does not mention HB 1597 or a 'Fair Banking Standards Act', and no 2025 update is in the text. Separately, it reports SB 2383 (Miss. Code Ann. § 81-5-100) lets banks set electronic terminal transaction fees by sound banking judgment, effective July 1, 2026; a rule for that is drafted as an adjacent finding, not as confirmation of the claim. The part the text does support is rule ms_bank_electronic_terminal_fees_2026."
       }
     ],
     "notes": "Extended from a partial earlier pass (three searches) with six more searches this pass. 'institutions: other' on the parity rule because it covers state banks, savings associations and savings banks (not credit unions). Overdraft search found only bills: 2025 SB2082 and HB1044 would let the State Treasurer set fees (including overdraft, NSF and stop payment) on state depository accounts, which concern the State's own accounts, not consumer accounts. Garnishment search found only bill texts on bank garnishee procedure (accounting for deposits between service and answer; exempt directly deposited Social Security/VA funds) and no bank fee rule. NOT SEARCHED: basic/lifeline account, fee change notice, ATM, stop payment / deposited item return. CU pass: DBCF Regulation 2 parity covers banks and savings institutions, not credit unions; no CU member fee rule seen."
@@ -5356,8 +5654,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "garnishment_legal_process",
         "claim": "Earnings exempt under MCA 25-13-614 remain exempt for 45 days after receipt while traceable (MCA 25-13-610 tracing); HSAs/medical savings accounts exempt under 25-13-603.",
-        "where_seen": "https://leg.mt.gov/bills/mca/title_0250/chapter_0130/part_0060/section_0100/0250-0130-0060-0100.html",
-        "why_unconfirmed": "Debtor exemption rules that do not address any bank fee; recorded as context only."
+        "where_seen": "https://leg.mt.gov/bills/mca/title_0250/chapter_0130/part_0060/section_0100/0250-0130-0060-0100.html; official page fetched 2026-10-09: https://leg.mt.gov/bills/mca/title_0250/chapter_0130/part_0060/section_0100/0250-0130-0060-0100.html",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): MCA 25-13-610(2) confirms earnings exempt under 25-13-614 remain exempt for 45 days after receipt while traceable, and (1) gives a 6-month exemption for traceable proceeds such as in a bank or savings account. The HSA/medical savings account exemption under 25-13-603 is not in this text. The part the text does support is rule mt_exempt_earnings_traceable_45_days."
       }
     ],
     "notes": "ARM 44.2.205 ($15/$25 returned check service fees) applies to returned checks paid to a state office, not bank fees; MCA 27-1-717 is a payee civil-liability bad check statute (amounts not reviewed). No state overdraft/NSF cap found. NOT SEARCHED: atm."
@@ -5371,14 +5669,7 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "garnishment_legal_process",
       "credit_union_specific"
     ],
-    "leads_unconfirmed": [
-      {
-        "topic": "fee_change_notice",
-        "claim": "NC Commissioner of Banks FAQ says banks may charge non-interest charges and fees, must disclose fees at account opening and give advance notice if fees change.",
-        "where_seen": "https://nccob.nc.gov/financial-institutions/banks-trusts/banking-frequently-asked-questions",
-        "why_unconfirmed": "Regulator FAQ seen only as a search summary; it does not cite a state statute and may describe federal Reg DD requirements."
-      }
-    ],
+    "leads_unconfirmed": [],
     "notes": "No state overdraft/NSF dollar cap for banks or credit unions surfaced; the savings bank and S&L statutes authorize a returned/NSF check processing fee, and whether they set an amount was not visible in the search result. Garnishment search returned only tax-collection attachment (G.S. 105-368) and benefit-specific exemptions, nothing on bank fees. NOT SEARCHED: check_cashing, atm, credit union parity with federal credit unions (searched once, not found), state bank wild-card parity. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
   },
   {
@@ -5420,8 +5711,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "A Nebraska state consumer page 'Overdraft Fees: What You Need to Know' exists.",
-        "where_seen": "https://makecentsmakesense.nebraska.gov/overdraft-fees-what-you-need-know",
-        "why_unconfirmed": "Content not seen; no state overdraft cap surfaced."
+        "where_seen": "https://makecentsmakesense.nebraska.gov/overdraft-fees-what-you-need-know; official page fetched 2026-10-09: https://makecentsmakesense.nebraska.gov/overdraft-fees-what-you-need-know",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): The Nebraska Department of Banking and Finance page 'Overdraft Fees: What You Need to Know' exists; it is consumer education (fees 'often ranging from $30 to $35', federal opt-out right, complaint line) and states no Nebraska fee rule, so no rule was drafted."
       }
     ],
     "notes": "Neb. Rev. Stat. 45-918.01 caps a delayed deposit (payday) licensee's returned check charge at $15 - a payee/licensee rule, not a bank fee rule. UCC 4-401 lets a bank charge a properly payable item even if it creates an overdraft (general UCC). NOT SEARCHED: check_cashing, fee_change_notice, atm, payee_returned_check."
@@ -5502,8 +5793,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "Small loan licensees (not banks) may charge at most $15 for a check or debit returned for insufficient funds, one fee per item, under NMSA § 58-15-20.",
-        "where_seen": "https://www.srca.nm.gov/parts/title03/03.002.0219.html",
-        "why_unconfirmed": "Applies to small loan licensees as payee, not to deposit fees; recorded only as context."
+        "where_seen": "https://www.srca.nm.gov/parts/title03/03.002.0219.html; official page fetched 2026-10-09: https://www.srca.nm.gov/parts/title03/03.002.0219.html",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The page is 3.2.219 NMAC, a Taxation and Revenue Department gross receipts tax rule on which bank loan-related charges (including overdraft protection fees) are deductible; it says nothing about small loan licensees, NMSA 58-15-20, or a $15 returned-item cap."
       }
     ],
     "notes": "The NM Financial Institutions Division FAQ (https://www.rld.nm.gov/financial-institutions/about-us/faqs/), per the search summary, says there is no maximum on overdraft or NSF fees and banks and credit unions set their own. Dormancy: only the possibly-unenacted 2023 RUUPA text was found (see leads). NOT SEARCHED: check_cashing, fee_change_notice, atm, returned_item beyond the broad search. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
@@ -5634,14 +5925,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "returned_item",
         "claim": "Deferred deposit lenders (payday lenders) may charge a dishonored instrument charge of up to $25 and may not charge to cash their own instrument (Title 59, Deferred Deposit Lending Act).",
-        "where_seen": "https://oksenate.gov/sites/default/files/2019-12/os6.pdf (search summary)",
-        "why_unconfirmed": "Applies to deferred deposit lenders, not bank deposit accounts; section not confirmed."
+        "where_seen": "https://oksenate.gov/sites/default/files/2019-12/os6.pdf (search summary); official page fetched 2026-10-09: https://oksenate.gov/sites/default/files/2019-12/os6.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The file is the Oklahoma Statutes compilation of Title 6 (Banks and Trust Companies), not Title 59; it contains no Deferred Deposit Lending Act text and no dishonored instrument charge."
       },
       {
         "topic": "dormancy",
         "claim": "Enrolled SB 999 (2025-26 session) amends the Unclaimed Property Act; effect on § 652 not checked.",
-        "where_seen": "https://www.oklegislature.gov/cf_pdf/2025-26%20ENR/SB/SB999%20ENR.PDF",
-        "why_unconfirmed": "Did not read the bill text."
+        "where_seen": "https://www.oklegislature.gov/cf_pdf/2025-26%20ENR/SB/SB999%20ENR.PDF; official page fetched 2026-10-09: https://www.oklegislature.gov/cf_pdf/2025-26%20ENR/SB/SB999%20ENR.PDF",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Enrolled SB 999 amends 60 O.S. Sections 651, 657.3, 668, 674, 674.1 and 674.2 of the Uniform Unclaimed Property Act, effective November 1, 2025; it does not amend Section 652 (the dormancy-charge notice section). Its changes concern Treasurer claims handling, so no rule is drafted: nothing bears on bank deposit-account fees."
       }
     ],
     "notes": "Garnishment statutes (12 O.S. §§ 1170 et seq.) require notice of exemptions when the garnishee is a financial institution, but no bank fee limit or garnishee fee for banks was confirmed. Oklahoma credit union parity not researched in depth. CU pass (Oct 7): Several acts (NC 54-109.21, OK, OR, VA 6.2-1371, WV 31C, NM, NV) let credit unions assess bylaw charges for members' failure to meet obligations; treated as loan-related and not added."
@@ -5659,12 +5950,6 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       "credit_union_specific"
     ],
     "leads_unconfirmed": [
-      {
-        "topic": "other",
-        "claim": "DFR Bulletin 2025-7 directs/asks depository institutions to waive overdraft and NSF fees for affected Oregon residents (appears to be emergency/disaster guidance).",
-        "where_seen": "https://dfr.oregon.gov/laws-rules/Documents/Bulletins/Bulletin2025-7.pdf",
-        "why_unconfirmed": "Did not read the bulletin; guidance, likely temporary, not a statute."
-      },
       {
         "topic": "check_cashing",
         "claim": "A state credit union operating in Oregon may not charge a customer a fee for cashing a check drawn on an account at that credit union if presented in Oregon; 'state credit union' includes credit unions chartered under ORS ch. 723 or another state's laws.",
@@ -5745,20 +6030,20 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "A proposed S.C. Code § 34-3-120 would require a state-chartered bank that charges an overdraft or NSF fee to remit those fees to the State Treasurer for the State Highway Fund.",
-        "where_seen": "https://www.scstatehouse.gov/sess121_2015-2016/bills/3746.htm (2015-2016 Bill 3746, 'Banking overdraft fees')",
-        "why_unconfirmed": "Seen only as bill text; no result showed enactment."
+        "where_seen": "https://www.scstatehouse.gov/sess121_2015-2016/bills/3746.htm (2015-2016 Bill 3746, 'Banking overdraft fees'); official page fetched 2026-10-09: https://www.scstatehouse.gov/sess121_2015-2016/bills/3746.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): H. 3746 (2015-2016) would add S.C. Code 34-3-120 requiring state-chartered banks that charge overdraft or insufficient funds fees to remit them to the State Treasurer for the State Highway Fund; the page shows it introduced March 3, 2015 and referred to House Ways and Means, with no later action. The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       },
       {
         "topic": "dormancy",
         "claim": "A bill would bar any bank, savings and loan, credit union or other deposit-taking institution in South Carolina from levying a service charge or fee against an account because of inactivity.",
-        "where_seen": "https://www.scstatehouse.gov/billsearch.php?billnumbers=3532&session=107&summary=B (1987-88 session bill 3532, per search summary)",
-        "why_unconfirmed": "Bill summary only; enactment not shown, and § 27-18-70 (above) suggests a contract-based regime instead."
+        "where_seen": "https://www.scstatehouse.gov/billsearch.php?billnumbers=3532&session=107&summary=B (1987-88 session bill 3532, per search summary); official page fetched 2026-10-09: https://www.scstatehouse.gov/billsearch.php?billnumbers=3532&session=107&summary=B",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): The bill search page shows H 3532 (1987-1988 session), which would have added S.C. Code 34-11-135 barring deposit-taking banks, savings and loans, credit unions and other financial institutions from levying a service charge or fee because of account inactivity; it was tabled in House committee on March 23, 1988. The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       },
       {
         "topic": "dormancy",
         "claim": "Chapter 18 of Title 27 (1988 Uniform Unclaimed Property Act) may have been, or was proposed to be, repealed and replaced by a Chapter 17 'Revised Uniform Unclaimed Property Act of 2019'.",
-        "where_seen": "https://www.scstatehouse.gov/sess123_2019-2020/bills/524.htm and https://www.scstatehouse.gov/sess124_2021-2022/bills/3849.htm",
-        "why_unconfirmed": "Bill pages only; the current-code page for Chapter 18 still appears on scstatehouse.gov/code, so § 27-18-70 is recorded as in force. A reviewer should confirm."
+        "where_seen": "https://www.scstatehouse.gov/sess123_2019-2020/bills/524.htm and https://www.scstatehouse.gov/sess124_2021-2022/bills/3849.htm; official page fetched 2026-10-09: https://www.scstatehouse.gov/sess123_2019-2020/bills/524.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Corrected to 'proposed': S. 524 (2019-2020) would add Chapter 17 of Title 27 (Revised Uniform Unclaimed Property Act of 2019) and repeal Chapter 18, but the page shows it introduced February 14, 2019 and still in Senate Judiciary, so repeal is not shown as enacted. Its proposed Section 27-17-602 would govern dormancy charges. The source is an old bill whose enactment the text does not show, so it is not listed as a rule."
       }
     ],
     "notes": "6 searches used. Garnishment search found only debtor exemptions (S.C. Code 15-41-30, pension/IRA, disability) and nothing about bank fees. No basic-account law found. NOT SEARCHED: check cashing by banks, ATM, fee-change notice. The earlier placeholder lead (from recall) is superseded by the § 27-18-70 rule above."
@@ -5775,14 +6060,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "garnishment_legal_process",
         "claim": "SDCL § 21-18-9 requires that a garnishee (such as a bank) be paid a fee for preparing the garnishment disclosure, taxed as the plaintiff's costs; 2026 HB 1179 would raise it from $15 to $40. A different search summary gave $50.",
-        "where_seen": "https://mylrc.sdlegislature.gov/api/Documents/298729.htm and https://mylrc.sdlegislature.gov/api/Documents/Bill/305200.pdf?Year=2026",
-        "why_unconfirmed": "Current amount conflicts across results ($15, $40, $50) and the 2026 bill's enactment was not confirmed. This fee is paid by the creditor, not the depositor."
+        "where_seen": "https://mylrc.sdlegislature.gov/api/Documents/298729.htm and https://mylrc.sdlegislature.gov/api/Documents/Bill/305200.pdf?Year=2026; official page fetched 2026-10-09: https://mylrc.sdlegislature.gov/api/Documents/298729.htm",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): HB 1179 (2026, as introduced) amends SDCL 21-18-9, under which a garnishee is paid a fee for preparing the garnishment disclosure, taxed as part of the plaintiff's costs; the markup changes 'fifteen' to 'fifty', so the proposed amount is $50, not $40. The bill is shown only as introduced. The part the text does support is rule sd_garnishee_disclosure_fee."
       },
       {
         "topic": "garnishment_legal_process",
         "claim": "Garnishees are told to retain an amount only if it is $25.00 or more.",
-        "where_seen": "https://ujs.sd.gov/files/garnishment-cover-sheet/ (search summary)",
-        "why_unconfirmed": "Court form instruction, not a statute seen; underlying section not identified."
+        "where_seen": "https://ujs.sd.gov/files/garnishment-cover-sheet/ (search summary); official page fetched 2026-10-09: https://ujs.sd.gov/files/garnishment-cover-sheet/",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The file is the Unified Judicial System garnishment cover sheet, a form for the attorney seeking garnishment; it says nothing about a garnishee retaining an amount only if it is $25.00 or more."
       },
       {
         "topic": "other",
@@ -5808,12 +6093,6 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "why_unconfirmed": "Statute text not seen. Unclear whether the charge belongs to the holder/payee (a payee rule) or to a financial institution, and whether Public Chapter 258 is the $20-to-$30 amendment and its effective date."
       },
       {
-        "topic": "overdraft_nsf",
-        "claim": "TDFI Bulletin B-04-1 gives guidance on overdraft programs, noting that a written obligation to pay overdrafts may make the program open-end credit subject to state interest, finance charge and disclosure statutes.",
-        "where_seen": "https://www.tn.gov/tdfi/bank-trust/banking/bank-bulletins/bulletin-b-04-1.html",
-        "why_unconfirmed": "Regulator guidance, not a fee limit; full text not read."
-      },
-      {
         "topic": "other",
         "claim": "The Tennessee Fair Access to Financial Services Act requires a financial institution to offer each financial service it provides to each person in its geographic market on a non-discriminatory basis.",
         "where_seen": "Search summary of capitol.tn.gov results (bill text; enactment and citation not identified)",
@@ -5832,14 +6111,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "garnishment_legal_process",
         "claim": "Texas law lets a garnishee bank recover its costs and fees out of the garnished account first, and from the creditor if the account is empty.",
-        "where_seen": "https://www.bills.com/learn/debt/texas-collection-laws (secondary, citation not given)",
-        "why_unconfirmed": "No statute or rule number given and no official text seen (possibly Tex. R. Civ. P. 677 / Civ. Prac. & Rem. Code ch. 63; unverified)."
+        "where_seen": "https://www.bills.com/learn/debt/texas-collection-laws (secondary, citation not given); official page fetched 2026-10-09: https://www.bills.com/learn/debt/texas-collection-laws",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The page is a Bills.com consumer article, not an official source, and it does not say a garnishee bank may recover its costs from the garnished account or from the creditor."
       },
       {
         "topic": "other",
         "claim": "Tex. Fin. Code § 59.006 is the exclusive method for compelled discovery of a financial institution's customer records and requires the requesting party to pay or bond the institution's costs.",
-        "where_seen": "https://cud.texas.gov/wp-content/uploads/2026/04/FINANCE-CODE-REV-06-25.pdf",
-        "why_unconfirmed": "Cost text was only partially seen; it shifts record-production costs to the requester, not a customer account fee rule."
+        "where_seen": "https://cud.texas.gov/wp-content/uploads/2026/04/FINANCE-CODE-REV-06-25.pdf; official page fetched 2026-10-09: https://cud.texas.gov/wp-content/uploads/2026/04/FINANCE-CODE-REV-06-25.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (not in text): The file is the Credit Union Department's compilation of the Texas Finance Code credit union subtitle (as amended by the 89th Legislature); it does not contain Section 59.006 or any customer-records discovery cost provision."
       }
     ],
     "notes": "About 7 searches. statutes.capitol.texas.gov is egress-blocked. The shared web-search budget ran out before overdraft/NSF, check cashing, fee-change notice, basic account, ATM and returned-item topics were searched, so nothing is listed as 'no rule found'. Reviewer should confirm § 73.003's full text (including any exceptions) and the § 73.001 definition of 'inactive'."
@@ -5906,8 +6185,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "DFI's overdraft legislative report and FAQ say banks decide their own fee schedules and overdraft policies subject to disclosure; DFI issued guidance and best practices for overdraft protection programs (not a rule).",
-        "where_seen": "https://dfi.wa.gov/documents/reports/overdraft-legislative-report.pdf ; https://dfi.wa.gov/sites/default/files/publications/overdraft-protection_0.pdf ; https://dfi.wa.gov/banks/faqs",
-        "why_unconfirmed": "Guidance and a survey of fee levels, not a fee limit; report date not seen."
+        "where_seen": "https://dfi.wa.gov/documents/reports/overdraft-legislative-report.pdf ; https://dfi.wa.gov/sites/default/files/publications/overdraft-protection_0.pdf ; https://dfi.wa.gov/banks/faqs; official page fetched 2026-10-09: https://dfi.wa.gov/documents/reports/overdraft-legislative-report.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The file is DFI's September 19, 2003 report on an examination of overdraft protection programs at state-chartered banks and credit unions, with findings (fees of $18 to $32) and 'best practices', and it says DFI will circulate draft guidance. It does not contain the claimed statement that banks decide their own fee schedules, and no rule is drafted because it reports exam findings and best practices rather than setting a requirement."
       }
     ],
     "notes": "Wave 1: 3 searches. Wave 2: 5 searches (dormancy, overdraft, SB 5651 x2, parity). Overdraft/NSF: no RCW cap found; DFI treats fees as set by the institution with disclosure. SB 5651 (2025) was enacted as ch. 391, Laws of 2025 and raised the consumer-debt automatic protection from $1,000 to $2,000 (the introduced bill's $5,000 figures were not enacted). NOT SEARCHED: basic_account, check_cashing, fee_change_notice, atm, returned_item. The garnishee processing-fee lead (ch. 6.27 RCW) is still unconfirmed. CU pass (Oct 7): DFI credit union compliance document request asks about overdraft fee structures and collections; that is exam information, not a reporting duty. No new rule."
@@ -5980,8 +6259,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "fee_authority",
         "claim": "W.S. 9-21-110: 'The administrator by rule may establish fees, service charges and penalties to be charged to a depository account holder ... including a fee for an overdraft, an insufficient fund check or draft or a stop payment order.'",
-        "where_seen": "https://wyoleg.gov/2016/Introduced/HB0124.pdf",
-        "why_unconfirmed": "Seen in a 2016 introduced bill; context (which program or depository) and enactment not confirmed; not a credit union rule."
+        "where_seen": "https://wyoleg.gov/2016/Introduced/HB0124.pdf; official page fetched 2026-10-09: https://wyoleg.gov/2016/Introduced/HB0124.pdf",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): The quote of W.S. 9-21-110 is accurate, but it is from 2016 House Bill 0124 (as introduced) creating the state-administered Wyoming bullion depository, so the 'administrator' sets fees for bullion depository accounts. No rule is drafted: it does not cover banks or credit unions, and enactment is not shown."
       }
     ],
     "notes": "Wave 2: 6 searches (plus 1 from wave 1). Overdraft/NSF: Title 13 searches found no fee cap. Fee authority/parity: searches of wyoleg.gov and the Division of Banking found no state bank or credit union parity or fee-authority text (Title 13 compressed PDF is egress-blocked, so W.S. 13-2 and 13-10 were not read). The Wyoming post-dated check limit ($30 or 20% per month finance charge) applies to licensed post-dated check cashers under the consumer credit code, not banks. NOT SEARCHED: check_cashing (banks), basic_account, fee_change_notice, atm, returned_item."
