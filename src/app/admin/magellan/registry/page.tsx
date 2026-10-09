@@ -2,9 +2,12 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { requireAuth } from "@/lib/auth";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { registryPartitionsBySource } from "@/lib/agents/registry-scheduler";
+import { STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
+import { STATE_BILL_JURISDICTIONS } from "@/lib/regulatory/open-states";
 import {
   getIdentityLinksNeedingReview,
   getRegistryPartitionStats,
+  getStateBillCoverage,
   type IdentityReviewItem,
   type RegistryPartitionStats,
 } from "@/lib/data-store/registry-profile";
@@ -21,9 +24,10 @@ function formatWhen(iso: string | null): string {
 
 export default async function RegistryPage() {
   await requireAuth("view");
-  const [stats, review] = await Promise.all([
+  const [stats, review, stateBills] = await Promise.all([
     getRegistryPartitionStats().catch((): RegistryPartitionStats[] => []),
     getIdentityLinksNeedingReview(200).catch((): IdentityReviewItem[] => []),
+    getStateBillCoverage().catch(() => null),
   ]);
   const bySource = new Map(stats.map((row) => [row.source, row]));
   const expected = new Map(registryPartitionsBySource(new Date()).map((entry) => [entry.source, entry.partitions.length]));
@@ -36,7 +40,9 @@ export default async function RegistryPage() {
         <h1 className="admin-display-title mt-1">Regulatory registry</h1>
         <p className="admin-lede mt-2">
           FDIC, NCUA, CFPB, SEC, and Federal Reserve data, loaded one partition per run by the cron tick. Each run is in
-          the run ledger; nothing here calls a paid provider.
+          the run ledger; nothing here calls a paid provider. Partitions loaded counts loaded or empty partitions (a
+          quarter, a year, a batch, or one &quot;current&quot; pull) against the partitions the scheduler expects today; state
+          fee bills count states instead.
         </p>
       </header>
 
@@ -66,7 +72,20 @@ export default async function RegistryPage() {
                     {row?.lastError && <p className="mt-1 text-xs text-red-700">{row.lastError}</p>}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {done.toLocaleString("en-US")} / {total.toLocaleString("en-US")}
+                    {definition.source === STATE_BILLS_SOURCE ? (
+                      stateBills ? (
+                        <>
+                          {stateBills.statesRead} / {STATE_BILL_JURISDICTIONS.length} states read
+                          <span className="block text-xs text-[#6B6255]">{stateBills.withBills} with fee bills</span>
+                        </>
+                      ) : (
+                        "Not read"
+                      )
+                    ) : (
+                      <>
+                        {done.toLocaleString("en-US")} / {total.toLocaleString("en-US")}
+                      </>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{row?.retrying ?? 0}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{(row?.rowsLoaded ?? 0).toLocaleString("en-US")}</td>
