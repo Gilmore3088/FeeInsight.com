@@ -13,6 +13,7 @@ const scheduleDueStateLaneRunsMock = vi.fn();
 const executeQueuedAgentRunsMock = vi.fn();
 const schedulePriorityInstitutionRunsMock = vi.fn();
 const assertCronTickBudgetAllowedMock = vi.fn();
+const scheduleGuardCatchUpRunMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: getCurrentUserMock,
@@ -39,6 +40,10 @@ vi.mock("@/lib/agents/state-lane-scheduler", () => ({
 
 vi.mock("@/lib/agents/atlas/priority-institutions", () => ({
   schedulePriorityInstitutionRuns: schedulePriorityInstitutionRunsMock,
+}));
+
+vi.mock("@/lib/agents/hamilton/guard-catch-up", () => ({
+  scheduleGuardCatchUpRun: scheduleGuardCatchUpRunMock,
 }));
 
 vi.mock("@/lib/agents/run-store", () => ({
@@ -90,6 +95,9 @@ describe("/api/admin/agents/tick", () => {
     });
     schedulePriorityInstitutionRunsMock.mockResolvedValue({
       active: 0, selected: 1, scheduled: 1, reused: 0, failed: [], runs: [{ institutionId: 1, runId: 124, tier: "hand_found" }],
+    });
+    scheduleGuardCatchUpRunMock.mockResolvedValue({
+      scheduled: true, runId: 125, categoryGuardVersion: 53, frequencyFillVersion: 6,
     });
     executeQueuedAgentRunsMock.mockResolvedValue({
       selected: 1,
@@ -280,6 +288,28 @@ describe("/api/admin/agents/tick", () => {
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });
 
+  it("queues a re-check of every live fee once per deployed guard and frequency version, before draining", async () => {
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(scheduleGuardCatchUpRunMock).toHaveBeenCalledTimes(1);
+    expect(body.guardCatchUp).toMatchObject({ scheduled: true, runId: 125 });
+    expect(scheduleGuardCatchUpRunMock.mock.invocationCallOrder[0]).toBeLessThan(
+      executeQueuedAgentRunsMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("still drains queued runs when the guard catch-up cannot be scheduled", async () => {
+    scheduleGuardCatchUpRunMock.mockRejectedValue(new Error("db down"));
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.guardCatchUp).toEqual({ error: "db down" });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalled();
+  });
+
   it("still drains growth's marketing runs while only the pipeline is paused, and schedules no data runs", async () => {
     getPipelineControlMock.mockResolvedValue({
       enabled: false,
@@ -296,6 +326,7 @@ describe("/api/admin/agents/tick", () => {
     expect(body.partlyPaused).toBe("pipeline");
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
+    expect(scheduleGuardCatchUpRunMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(
       expect.objectContaining({ paused: { pipeline: true, marketing: false } }),
     );

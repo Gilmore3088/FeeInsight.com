@@ -86,7 +86,7 @@ const GENERIC_ACCOUNT_WORDS = new Set([
   "checking", "savings", "share", "shares", "draft", "drafts", "money", "market", "club", "personal", "business",
   "consumer", "our", "your", "compare", "open", "banking", "deposit", "deposits", "products", "product", "other",
   "features", "feature", "benefits", "details", "schedule", "rates", "rate", "information", "options", "types",
-  "commercial", "individual", "joint", "with", "to", "&", "+", "-", "–",
+  "commercial", "individual", "joint", "with", "to", "&", "+", "-", "–", "type",
   "description", "descriptions", "disclosure", "disclosures", "terms", "summary", "comparison",
 ]);
 const FEE_NAME_TAIL =
@@ -95,10 +95,13 @@ const HEADING_TAIL =
   /\s+(?:features|benefits|details|account details|overview|highlights|(?:interest\s+)?rates|descriptions?|disclosures?|terms|information|summary)\s*$/i;
 const SENTENCE_WORDS = /\b(?:is|are|you|your|we|our|will|may|must|when|if|or|per|this|that)\b/i;
 const HEADING_LOOKBACK_LINES = 12;
+/** "Open an Advantage Checking Account" is a call to action around the name. */
+const OPEN_AN = /^open\s+(?:an?\s+|your\s+)?/i;
+const ARTICLE_START = /^(?:an?|the)\s/i;
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
-  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "");
+  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(OPEN_AN, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS) return null;
   if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_]/.test(name) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
@@ -117,9 +120,37 @@ export function readableProductName(value: string | null | undefined): string | 
   const name = squash(value)
     .replace(/[\s\d,_*†‡]+$/, "")
     .replace(HEADING_TAIL, "")
-    .replace(/[\s\-–:|,.]+$/, "");
-  if (name.length < 3 || /[,_]|\bor\b/i.test(name) || !/[a-z]/i.test(name)) return null;
-  return name.split(" ").some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
+    .replace(/[\s\-–:|,.]+$/, "")
+    .replace(OPEN_AN, "");
+  if (name.length < 3 || /[,_]|\bor\b/i.test(name) || !/^[A-Z0-9]/.test(name) || ARTICLE_START.test(name)) return null;
+  const words = name.split(" ");
+  // A product name is title-cased; a run of lower-case words is a description of it.
+  const lowerCase = words.filter((word) => /^[a-z]/.test(word) && !/^(?:and|of|for|plus|with)$/.test(word));
+  if (words.length > 6 || lowerCase.length >= 2) return null;
+  return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
+}
+
+/**
+ * A balance needed to earn interest or a dividend is a rate tier, not a way to avoid the fee
+ * ("$25,000 minimum balance requirement to earn interest with tiers").
+ */
+export const INTEREST_TIER =
+  /\b(?:earn(?:s|ing)?\s+(?:the\s+)?(?:interest|dividends?|apy)|apy|annual percentage yield|interest\s+(?:rate|tier)s?|dividend\s+rates?|rate\s+tiers?)\b/i;
+
+/** A waiver says how to avoid the fee: a balance, deposit, age, activity or relationship. */
+const WAIVER_CONDITION =
+  /\b(?:balance|deposits?|e-?statements?|paperless|ages?|years?|younger|older|students?|seniors?|minors?|members?|transactions?|purchases?|debit card|enroll(?:ed|ment)?|relationship|min(?:imum)?|average|combined|direct)\b|\$\s?\d/i;
+
+/**
+ * A waiver as a reader should see it: leader dots trimmed, and null when it names no
+ * condition ("Waive Monthly Maintenance Fee", "waived, and all ATM surcharge").
+ */
+export function readableWaiver(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const text = squash(value.replace(/\s*\.{3,}.*$/, "")).replace(/[\s.;,)]+$/, "");
+  // The fee's own amount is not a condition ("waive the $10 monthly fee").
+  const conditions = text.replace(/\$\s?\d[\d,.]*\s+(?:monthly\s+)?(?:fee|charge|service)/gi, "");
+  return text.length >= 8 && WAIVER_CONDITION.test(conditions) && !INTEREST_TIER.test(text) ? text : null;
 }
 
 /** "Freedom Checking Monthly Fee" -> "Freedom Checking";"Service charge (Checking + Interest Account)" -> the parenthetical. */
@@ -200,6 +231,7 @@ function figureOf(match: RegExpMatchArray | null): number | null {
 
 /** The balance that avoids the fee, stated in one line: the fee's own condition or an "avoid" sentence. */
 export function minBalanceFromExcerpt(line: string): number | null {
+  if (INTEREST_TIER.test(line)) return null;
   const clause = line.match(BALANCE_BELOW_CLAUSE)?.[0];
   if (clause) {
     const figure = [...clause.matchAll(AMOUNT_PATTERN)].at(-1)?.[1];
@@ -218,7 +250,8 @@ export function waiverFromExcerpt(line: string): string | null {
   const start = line.search(WAIVER_START);
   if (start < 0) return null;
   const text = line.slice(start).split("|")[0].split(/(?<=[a-z0-9)])\.\s/i)[0].replace(/[\s.;,)]+$/, "").trim();
-  return text.length >= 8 ? text.slice(0, MAX_WAIVER_CHARS) : null;
+  const readable = readableWaiver(text);
+  return readable ? readable.slice(0, MAX_WAIVER_CHARS) : null;
 }
 
 function openingDepositIn(line: string): number | null {
@@ -242,7 +275,10 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
   text: string,
 ): T {
   if (candidate.canonicalHint !== LINEUP_CATEGORY) return candidate;
-  const current: AccountLineup = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
+  const read = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
+  // A model-read waiver that is a rate tier carries the tier's balance with it; neither is the fee's.
+  const current: AccountLineup =
+    read.waiverText && INTEREST_TIER.test(read.waiverText) ? { ...read, minBalanceToAvoid: null, waiverText: null } : read;
   const block = accountBlock(text, candidate.excerpt);
   const own = [candidate.excerpt, ...(block ? [block.feeLine] : [])];
   const aboutTheFee = (block?.nearby ?? []).filter((line) => FEE_WORD.test(line));
@@ -259,6 +295,6 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
     minOpeningDeposit: current.minOpeningDeposit ?? first([...own, ...(block?.nearby ?? [])], openingDepositIn),
     waiverText: current.waiverText ?? first([...own, ...aboutTheFee], waiverFromExcerpt),
   };
-  const changed = (Object.keys(filled) as (keyof AccountLineup)[]).some((key) => filled[key] !== current[key]);
+  const changed = (Object.keys(filled) as (keyof AccountLineup)[]).some((key) => filled[key] !== read[key]);
   return changed ? { ...candidate, lineup: filled } : candidate;
 }

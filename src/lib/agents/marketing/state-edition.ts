@@ -239,7 +239,13 @@ export async function runStateEditions({
 
 export function summarizeStateEditions(result: StateEditionResult): string {
   if (result.skippedAll) return `No state editions: ${result.skippedAll}.`;
-  const parts = [`Drafted ${result.drafts.length} state edition${result.drafts.length === 1 ? "" : "s"} for ${result.states} state${result.states === 1 ? "" : "s"} with readers.`];
+  const readers = `${result.states} state${result.states === 1 ? "" : "s"} with readers`;
+  const wouldDraft = result.skipped.filter((row) => row.reason === "dry run: not drafted").map((row) => row.state);
+  const parts = [
+    wouldDraft.length
+      ? `Would draft ${wouldDraft.length} state edition${wouldDraft.length === 1 ? "" : "s"} (${wouldDraft.join(", ")}) for ${readers}; dry run, nothing drafted.`
+      : `Drafted ${result.drafts.length} state edition${result.drafts.length === 1 ? "" : "s"} for ${readers}.`,
+  ];
   const thin = result.skipped.filter((row) => row.reason.startsWith("fewer"));
   if (thin.length) parts.push(`Not enough data yet for ${thin.map((row) => row.state).join(", ")}; their readers get the national email.`);
   if (result.failures.length) parts.push(`Failed: ${result.failures.map((row) => `${row.state} (${row.reason})`).join("; ")}.`);
