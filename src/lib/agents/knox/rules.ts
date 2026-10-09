@@ -1407,6 +1407,24 @@ export function centeredNamePrices(text: string): string[] {
 }
 
 /**
+ * v63: a safe deposit box size and its rent printed in the next column ("Return Item Fee | 03 x
+ * 10….....$45", doc 20570, UAT Oct 9) is the box table's row, not the fee's price: the $45 went
+ * live as the return item fee (73956). The size cell starts its own line, so it reads as a box
+ * rent and the fee's own line carries no price.
+ */
+const GLUED_BOX_SIZE_CELL = /\s*\|\s*(\d{1,2}\s?[x×]\s?\d{1,2}(?![\d.])[\s.…_-]*\$\s?\d)/gi;
+/** Text before the cell that is the box table's own heading ("Safe Deposit Box Rental | 3 x 5 - $20"). */
+const BOX_HEADING = /\b(safe|safety|deposit|box(es)?|rental|rent|sizes?)\b/i;
+
+export function withBoxSizeCellsSplit(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(GLUED_BOX_SIZE_CELL, (match, cell: string, offset: number) =>
+      BOX_HEADING.test(line.slice(0, offset)) ? match : `\n${cell}`))
+    .join("\n");
+}
+
+/**
  * v62: a fee whose name carries a footnote mark ("Overdraft - Insufficient Funds / Uncollected2
  * $40.00") is a business price when that footnote says so ("2 Created by check, ... Only
  * applicable to business accounts. This fee is not charged to consumer accounts.", ConnectOne

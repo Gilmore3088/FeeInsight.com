@@ -16,6 +16,7 @@ import {
   type ResearchItemKind,
   type ResearchSubjectKind,
 } from "@/lib/regulatory/wire-research";
+import { layoutDocumentText, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
 import { mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -26,7 +27,8 @@ import { mapWithConcurrency, recordRegistryPartition, type RegistryDb } from "./
  * bills, at most REG_WIRE_SUMMARIES_PER_RUN (default 20) a run. Press stories are never
  * picked: an outlet's story is not summarised as if it were official. For each item it reads
  * the item's own page with a plain fetch (no browser, no paid scraper), keeps the readable
- * text, and asks a small model for a strict JSON note using only that text. The answer is
+ * text (a PDF's text layer too, up to WIRE_PDF_PAGES pages; a scan with no text layer stays
+ * unreadable), and asks a small model for a strict JSON note using only that text. The answer is
  * checked in code (validateResearch): any date the text does not state is dropped.
  *
  * A provider step (PROVIDER_STEP_KEYS): the global provider stop and the budget caps apply,
@@ -51,10 +53,15 @@ const CONCURRENCY = 3;
 const MAX_OUTPUT_TOKENS = 500;
 /** Pages larger than this are cut before parsing. */
 const MAX_BODY_CHARS = 2_000_000;
+/** State regulators post most releases and bulletins as PDFs; their first pages carry the news. */
+export const WIRE_PDF_PAGES = 8;
+/** A PDF larger than this is left unread rather than parsed inside the tick. */
+const MAX_PDF_BYTES = 15_000_000;
+const PDF_READ_TIMEOUT_MS = 10_000;
 const FETCH_OPTIONS: RegistryFetchOptions = {
   retries: 0,
   timeoutMs: 15_000,
-  headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" },
+  headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,application/pdf;q=0.8,*/*;q=0.5" },
 };
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
 
@@ -191,13 +198,66 @@ export interface FetchedPage {
 
 export type PageFetcher = (url: string) => Promise<FetchedPage>;
 
-const defaultFetchPage: PageFetcher = async (url) => {
-  const response = await registryFetch(url, FETCH_OPTIONS);
+type PdfTextReader = (bytes: Uint8Array, maxPages: number) => Promise<string | null>;
+
+/**
+ * Text of a PDF's first `maxPages` pages, laid out by Rosetta's reader (columns kept apart,
+ * letters drawn one by one put back into words), or null for a scan, a broken file or a read
+ * that runs past PDF_READ_TIMEOUT_MS.
+ */
+export async function readPdfText(bytes: Uint8Array, maxPages: number): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const { getDocumentProxy } = await import("unpdf");
+    const read = (async () => {
+      const pdf = await getDocumentProxy(new Uint8Array(bytes));
+      try {
+        const pages: PdfTextItem[][] = [];
+        for (let n = 1; n <= Math.min(Number(pdf.numPages ?? 0), maxPages); n += 1) {
+          const content = await (await pdf.getPage(n)).getTextContent();
+          const items: PdfTextItem[] = [];
+          for (const item of content.items) if ("str" in item) items.push(item);
+          pages.push(items);
+        }
+        return layoutDocumentText(pages);
+      } finally {
+        await pdf.destroy?.();
+      }
+    })();
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), PDF_READ_TIMEOUT_MS);
+    });
+    const text = await Promise.race([read, timeout]);
+    return text && text.replace(/\s+/g, "").length > 0 ? text : null;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * The page's text as the step reads it. A PDF (by content type, or an octet-stream that starts
+ * with %PDF) is handed on as the plain text of its first WIRE_PDF_PAGES pages; one with no
+ * text layer, or too large, comes back empty with its PDF content type, so it reads as
+ * unreadable. Images and other binaries are never parsed.
+ */
+export async function readFetchedPage(response: Response, readPdf: PdfTextReader = readPdfText): Promise<FetchedPage> {
+  const status = response.status;
   const contentType = response.headers.get("content-type");
-  if (/pdf|octet-stream|image\//i.test(contentType ?? "")) return { status: response.status, contentType, body: "" };
+  if (/pdf|octet-stream/i.test(contentType ?? "")) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const isPdf = new TextDecoder("latin1").decode(bytes.subarray(0, 5)) === "%PDF-";
+    if (!isPdf || bytes.length > MAX_PDF_BYTES) return { status, contentType, body: "" };
+    const text = await readPdf(bytes, WIRE_PDF_PAGES);
+    return text ? { status, contentType: "text/plain", body: text.slice(0, MAX_BODY_CHARS) } : { status, contentType, body: "" };
+  }
+  if (/image\//i.test(contentType ?? "")) return { status, contentType, body: "" };
   const body = await response.text();
-  return { status: response.status, contentType, body: body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body };
-};
+  return { status, contentType, body: body.length > MAX_BODY_CHARS ? body.slice(0, MAX_BODY_CHARS) : body };
+}
+
+const defaultFetchPage: PageFetcher = async (url) => readFetchedPage(await registryFetch(url, FETCH_OPTIONS));
 
 export type WireResearchOutcome =
   | "would_summarise"
