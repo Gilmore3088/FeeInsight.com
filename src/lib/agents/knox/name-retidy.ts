@@ -637,6 +637,17 @@ export async function retidyLiveFeeNames(
              AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            GROUP BY fp.institution_id
         ) live
+        -- An institution the retidy saw longest ago goes first, so a version bump carries on
+        -- where the last pass stopped instead of starting again from the lowest id.
+        LEFT JOIN LATERAL (
+          SELECT pa.created_at AS last_retidy_at
+            FROM pipeline_attempts pa
+           WHERE pa.institution_id = live.institution_id
+             AND pa.stage = 'publish'
+             AND pa.strategy = ${NAME_RETIDY_STRATEGY.strategy}
+           ORDER BY pa.created_at DESC
+           LIMIT 1
+        ) seen ON true
        WHERE live.messy
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
@@ -645,7 +656,7 @@ export async function retidyLiveFeeNames(
               AND pa.institution_id = live.institution_id
               AND pa.input_fingerprint = 'v' || ${NAME_RETIDY_STRATEGY.version}::text || ':' || live.max_fee_id::text
          )
-       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, live.institution_id
+       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, seen.last_retidy_at NULLS FIRST, live.institution_id
        LIMIT ${limit}
     `);
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
