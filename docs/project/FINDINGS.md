@@ -13,6 +13,17 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Link words retired hand-found fee schedules before anyone read them
+Magellan's companion review retires any stored page whose link text or URL has a word like
+"privacy", "opt in", "loan" or "apply" (`isNonDepositLink`). That rule is for links the finder
+picks up on its own, but it also ran on schedules a person found: Valley National's
+"Schedule of Fees-Privacy Policy-ADA.pdf" and First United's overdraft "opt-in-form.pdf" were
+retired as "loan or other non-deposit document", so neither $10B+ bank got a live overdraft fee.
+Fix: the review never retires a `discover.operator_schedule` row for its link words (Rosetta's
+read and the source check judge it), and puts back the ones it had retired. First United's
+earlier first.bank row (another bank's schedule) is still stored as fetched; the cross-bank
+takedown is what keeps its fees off the site.
+
 ## 2026-10-09: A hand-found schedule fetched in another state's lane was never read
 Companion fetch takes hand-found schedules in any state's lane (2026-10-08 fix), but every read
 step is scoped to its run's state. First United's (OK) overdraft disclosure was fetched in the NC

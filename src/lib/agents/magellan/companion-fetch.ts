@@ -68,6 +68,8 @@ export interface CompanionReviewResult {
   checked: number;
   retired: Array<{ companionId: number; institutionId: number; url: string; accountName: string | null }>;
   renamed: Array<{ companionId: number; from: string | null; to: string }>;
+  /** Hand-found schedules a link-word rule had retired, put back to be fetched. */
+  restored?: Array<{ companionId: number; institutionId: number; url: string }>;
 }
 
 export interface RunCompanionFetchResult {
@@ -126,7 +128,10 @@ interface ReviewRow {
   institution_id: number | string;
   url: string;
   account_name: string | null;
+  found_by_strategy?: string | null;
 }
+
+const NON_DEPOSIT_REASON = `${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`;
 
 /**
  * Re-applies today's finder rules to the companion pages already stored for a state, so
@@ -139,8 +144,25 @@ export async function reviewStoredCompanions(
   db: SqlTag,
   options: { stateCode: string | null; institutionId: number | null; limit?: number },
 ): Promise<CompanionReviewResult> {
+  // A schedule a person found is judged by reading it, not by words in its link: Valley's
+  // "Schedule of Fees-Privacy Policy" PDF and First United's overdraft "opt-in-form" were
+  // retired by the link words "privacy" and "opt in" (2026-10-09). Put them back.
+  const restored = await db<Array<{ id: number | string; institution_id: number | string; url: string }>>`
+    UPDATE institution_additional_sources ias
+       SET status = 'found',
+           reason = 'Consumer fee schedule given by hand; restored after a link-word rule retired it',
+           updated_at = NOW()
+      FROM institution_sources inst
+     WHERE inst.id = ias.institution_id
+       AND ias.status = 'rejected'
+       AND ias.found_by_strategy = 'discover.operator_schedule'
+       AND ias.reason = ${NON_DEPOSIT_REASON}
+       AND (${options.stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode})
+       AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
+    RETURNING ias.id, ias.institution_id, ias.url
+  `;
   const rows = await db<ReviewRow[]>`
-    SELECT ias.id, ias.institution_id, ias.url, ias.account_name
+    SELECT ias.id, ias.institution_id, ias.url, ias.account_name, ias.found_by_strategy
       FROM institution_additional_sources ias
       JOIN institution_sources inst ON inst.id = ias.institution_id
      WHERE ias.status IN ('found', 'fetched')
@@ -149,15 +171,20 @@ export async function reviewStoredCompanions(
      ORDER BY ias.id ASC
      LIMIT ${options.limit ?? COMPANION_REVIEW_LIMIT}
   `;
-  const result: CompanionReviewResult = { checked: rows.length, retired: [], renamed: [] };
+  const result: CompanionReviewResult = {
+    checked: rows.length,
+    retired: [],
+    renamed: [],
+    restored: restored.map((row) => ({ companionId: Number(row.id), institutionId: Number(row.institution_id), url: row.url })),
+  };
   for (const row of rows) {
     const companionId = Number(row.id);
     const label = row.account_name ?? "";
-    if (isNonDepositLink(label, row.url)) {
+    if (row.found_by_strategy !== "discover.operator_schedule" && isNonDepositLink(label, row.url)) {
       await db`
         UPDATE institution_additional_sources
            SET status = 'rejected',
-               reason = ${`${NOT_CONSUMER_FEE_PAGE_REASON}: loan or other non-deposit document`},
+               reason = ${NON_DEPOSIT_REASON},
                updated_at = NOW()
          WHERE id = ${companionId}
       `;
