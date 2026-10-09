@@ -588,22 +588,14 @@ export function retidyFingerprint(maxLiveFeeId: number | string): string {
 }
 
 /**
- * Gives live fees with run-on names their tidy name, a batch of institutions per publish
- * step. The old name is never lost: each rename is a `name_retidied` row in
- * `pipeline_feedback` holding the old and new names (dedupe key per live row), and the raw
- * and verified rows keep the name Knox read.
+ * Institutions whose live names the retidy will tidy next: a messy name and no attempt at this
+ * version for their newest live fee. `limit: null` returns every one (Bayes counts them).
  */
-export async function retidyLiveFeeNames(
+export function retidyDueInstitutions(
   db: SqlTag,
-  options: { runId: number; dryRun: boolean; institutionId?: number; institutionLimit?: number },
-): Promise<RetidyResult> {
-  const limit = options.institutionLimit ?? NAME_RETIDY_INSTITUTION_LIMIT;
-  let fingerprints: Map<number, string>;
-  let liveFees: RetidyFeeRow[];
-  let texts: Array<InstitutionText & { institution_id: number | string }>;
-  try {
-    if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
-    const due = await inSavepoint(db, (scope) => scope<{ institution_id: number | string; max_fee_id: number | string }[]>`
+  { institutionId, limit }: { institutionId?: number; limit: number | null },
+) {
+  return db<{ institution_id: number | string; max_fee_id: number | string }[]>`
       SELECT live.institution_id, live.max_fee_id
         FROM (
           SELECT fp.institution_id, MAX(fp.fee_published_id) AS max_fee_id,
@@ -634,7 +626,7 @@ export async function retidyLiveFeeNames(
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
-             AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
+             AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
            GROUP BY fp.institution_id
         ) live
         -- An institution the retidy saw longest ago goes first, so a version bump carries on
@@ -658,7 +650,39 @@ export async function retidyLiveFeeNames(
          )
        ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, seen.last_retidy_at NULLS FIRST, live.institution_id
        LIMIT ${limit}
-    `);
+  `;
+}
+
+/** Bayes's count for this strategy: institutions due now, and institutions already tidied at this version. */
+export async function countRetidyReplay(db: SqlTag): Promise<{ due: number[]; doneCurrent: number[] }> {
+  const due = await retidyDueInstitutions(db, { limit: null });
+  const done = await db<{ institution_id: number | string }[]>`
+    SELECT DISTINCT institution_id
+      FROM pipeline_attempts
+     WHERE stage = 'publish'
+       AND strategy = ${NAME_RETIDY_STRATEGY.strategy}
+       AND input_fingerprint LIKE ${`v${NAME_RETIDY_STRATEGY.version}:%`}
+  `;
+  return { due: due.map((row) => Number(row.institution_id)), doneCurrent: done.map((row) => Number(row.institution_id)) };
+}
+
+/**
+ * Gives live fees with run-on names their tidy name, a batch of institutions per publish
+ * step. The old name is never lost: each rename is a `name_retidied` row in
+ * `pipeline_feedback` holding the old and new names (dedupe key per live row), and the raw
+ * and verified rows keep the name Knox read.
+ */
+export async function retidyLiveFeeNames(
+  db: SqlTag,
+  options: { runId: number; dryRun: boolean; institutionId?: number; institutionLimit?: number },
+): Promise<RetidyResult> {
+  const limit = options.institutionLimit ?? NAME_RETIDY_INSTITUTION_LIMIT;
+  let fingerprints: Map<number, string>;
+  let liveFees: RetidyFeeRow[];
+  let texts: Array<InstitutionText & { institution_id: number | string }>;
+  try {
+    if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
+    const due = await inSavepoint(db, (scope) => retidyDueInstitutions(scope, { institutionId: options.institutionId, limit }));
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
     fingerprints = new Map(due.map((row) => [Number(row.institution_id), retidyFingerprint(row.max_fee_id)]));
     const ids = [...fingerprints.keys()];
