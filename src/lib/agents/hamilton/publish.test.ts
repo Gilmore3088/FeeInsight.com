@@ -674,6 +674,7 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'verified:' || fv.fee_verified_id::text");
       expect(query).toContain("pa.detail->>'same_line_check' IS NULL");
+      expect(params).toEqual(expect.arrayContaining([[8019]]));
       expect(JSON.stringify(db.mock.calls)).toContain("same_line_check");
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });

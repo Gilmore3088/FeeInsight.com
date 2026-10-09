@@ -31,6 +31,11 @@ type SqlTag = typeof sql;
 
 /** The publisher recorded in the attempt log; bump the version when the rules change. */
 export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
+/**
+ * Verified rows skipped as identical before the same-line check that are decided once more.
+ * Only 8019 for now (UAT, 9 Oct); the rest of the backlog waits for a source spot check.
+ */
+export const SAME_LINE_RESELECT_IDS: number[] = [8019];
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
@@ -300,7 +305,7 @@ async function selectVerifiedFees(
   institutionId?: number,
   stateCode?: string,
 ): Promise<VerifiedFeeRow[]> {
-  const params: Array<number | string> = [limit];
+  const params: Array<number | string | number[]> = [limit];
   const filters: string[] = [];
   if (minInstitutionFees > 1) {
     // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
@@ -344,6 +349,7 @@ async function selectVerifiedFees(
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
     const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
+    const reselectParam = `$${params.push(SAME_LINE_RESELECT_IDS)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -374,23 +380,15 @@ async function selectVerifiedFees(
                      AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
                 )
               )
-              -- A row skipped as identical before the same-line check (\`separateLines\`, 9 Oct)
-              -- to a live line of its own document under another name is decided once more:
-              -- Wildfire's $5 ATM balance inquiry (verified 8019) sat behind its $5 "ATM
-              -- Adjustment" (14754). The new decision carries same_line_check, so it is final.
+              -- Rows skipped as identical before the same-line check (\`separateLines\`, 9 Oct) that
+              -- were separate lines of their document are decided once more, listed ids only
+              -- (\`SAME_LINE_RESELECT_IDS\`): Wildfire's $5 ATM balance inquiry (verified 8019) sat
+              -- behind its $5 "ATM Adjustment" (14754). The backlog waits for a source spot check.
+              -- The new decision carries same_line_check, so it is final.
               AND NOT (
                 pa.outcome = 'unchanged'
                 AND pa.detail->>'same_line_check' IS NULL
-                AND EXISTS (
-                  SELECT 1 FROM published_fee_records prev
-                    JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
-                    JOIN raw_fee_observations prev_fr ON prev_fr.fee_raw_id = prev_fv.fee_raw_id
-                   WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
-                     AND prev.rolled_back_at IS NULL
-                     AND prev_fr.source_document_id = fr.source_document_id
-                     AND btrim(regexp_replace(lower(prev.fee_name), '[^a-z0-9]+', ' ', 'g'))
-                         <> btrim(regexp_replace(lower(fv.fee_name), '[^a-z0-9]+', ' ', 'g'))
-                )
+                AND fv.fee_verified_id = ANY(${reselectParam}::bigint[])
               )
          )`);
   }

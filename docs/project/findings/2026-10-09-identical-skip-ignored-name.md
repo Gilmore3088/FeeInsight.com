@@ -18,11 +18,11 @@ same price, the first one published hid the second.
 - A re-read of the same line, or a heading carried in front of it ("Stop payment" / "Stop Payment of Checks
   and ACHs"), stays identical.
 - Across documents the same fee is often named differently, so price alone still decides there.
-- Rows skipped before this check are selected once more. Each new attempt carries `same_line_check`, so the
-  re-decision is final.
-- Read-only estimate: about 540 still-verified rows have a live same-document row whose name shares no
-  reading with theirs. A sample is mostly separate lines (inquiry vs transfer, purchase vs reload, paid NSF
-  vs paid overdraft), with some reworded duplicates.
+- Only 8019 is re-decided now (`SAME_LINE_RESELECT_IDS`); each new attempt carries `same_line_check`, so the
+  re-decision is final. The backlog waits for a 20-row source spot check: about 540 still-verified rows
+  have a live same-document row whose name shares no reading with theirs (read-only estimate). A
+  first look is mostly separate lines (inquiry vs transfer, purchase vs reload, paid NSF vs paid
+  overdraft), with some reworded duplicates ("Return Check Fee" vs "Returned Item Fee").
 
 **Lesson:** a dedupe key needs the fee's identity, not just its value. Price and category alone collapse
 distinct lines.
