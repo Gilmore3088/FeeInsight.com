@@ -92,17 +92,21 @@ const GENERIC_ACCOUNT_WORDS = new Set([
 const FEE_NAME_TAIL =
   /\s*[-–:]?\s*(?:low balance\s+)?(?:monthly\s+)?(?:maintenance\s+|service\s+|account\s+)*(?:fee|charge|service charge|maintenance)s?(?:\s+of)?\s*$/i;
 const HEADING_TAIL =
-  /\s+(?:features|benefits|details|account details|overview|highlights|(?:interest\s+)?rates|descriptions?|disclosures?|terms|information|summary)\s*$/i;
+  /\s+(?:features|benefits|details|account details|overview|highlights|(?:interest\s+)?rates|descriptions?|disclosures?|terms|information|summary|maintenance)\s*$/i;
+/** A fee's own heading, not an account ("Early (Share) Savings Account Closing"). */
+/** A heading that is an account type on its own line ("Money Market"). */
+const ACCOUNT_TYPE_HEADING = /^(?:money market(?: account| savings)?|share draft(?: account)?|statement savings|regular savings|share savings|passbook savings)$/i;
+const FEE_HEADING_END = /\b(?:closing|closed|closure|dormant|inactive|inactivity|overdraft|transfer|withdrawals?)\s*$/i;
 const SENTENCE_WORDS = /\b(?:is|are|you|your|we|our|will|may|must|when|if|or|per|this|that)\b/i;
 const HEADING_LOOKBACK_LINES = 12;
-/** "Open an Advantage Checking Account" is a call to action around the name. */
-const OPEN_AN = /^open\s+(?:an?\s+|your\s+)?/i;
+/** Words around the name: "Open an Advantage Checking Account", "Details: Popular Prestige Checking". */
+const LEAD_IN = /^(?:open\s+(?:an?\s+|your\s+)?|(?:features|details|benefits|highlights)\s*(?:of\s+|:\s*))/i;
 const ARTICLE_START = /^(?:an?|the)\s/i;
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
-  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(OPEN_AN, "");
-  if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS) return null;
+  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
+  if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
   if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_]/.test(name) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
   if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name)) return null;
@@ -121,8 +125,9 @@ export function readableProductName(value: string | null | undefined): string | 
     .replace(/[\s\d,_*†‡]+$/, "")
     .replace(HEADING_TAIL, "")
     .replace(/[\s\-–:|,.]+$/, "")
-    .replace(OPEN_AN, "");
+    .replace(LEAD_IN, "");
   if (name.length < 3 || /[,_]|\bor\b/i.test(name) || !/^[A-Z0-9]/.test(name) || ARTICLE_START.test(name)) return null;
+  if (FEE_HEADING_END.test(name)) return null;
   const words = name.split(" ");
   // A product name is title-cased; a run of lower-case words is a description of it.
   const lowerCase = words.filter((word) => /^[a-z]/.test(word) && !/^(?:and|of|for|plus|with)$/.test(word));
@@ -139,7 +144,10 @@ export const INTEREST_TIER =
 
 /** A waiver says how to avoid the fee: a balance, deposit, age, activity or relationship. */
 const WAIVER_CONDITION =
-  /\b(?:balance|deposits?|e-?statements?|paperless|ages?|years?|younger|older|students?|seniors?|minors?|members?|transactions?|purchases?|debit card|enroll(?:ed|ment)?|relationship|min(?:imum)?|average|combined|direct)\b|\$\s?\d/i;
+  /\b(?:balance|deposits?|e-?statements?|paperless|ages?|years?|younger|older|students?|seniors?|minors?|members?|transactions?|purchases?|debit card|enroll(?:ed|ment)?|relationship|direct)\b|\$\s?\d/i;
+/** The fee's own amount: "$25.00 monthly maintenance fee", "service charge of $10.00". */
+const FEE_AMOUNT =
+  /\$\s?\d[\d,.]*\s+(?:monthly\s+)?(?:maintenance\s+|service\s+)?(?:fee|charge|service)|(?:fee|charge)s?\s+of\s+\$\s?\d[\d,.]*/gi;
 
 /**
  * A waiver as a reader should see it: leader dots trimmed, and null when it names no
@@ -149,8 +157,29 @@ export function readableWaiver(value: string | null | undefined): string | null 
   if (!value) return null;
   const text = squash(value.replace(/\s*\.{3,}.*$/, "")).replace(/[\s.;,)]+$/, "");
   // The fee's own amount is not a condition ("waive the $10 monthly fee").
-  const conditions = text.replace(/\$\s?\d[\d,.]*\s+(?:monthly\s+)?(?:fee|charge|service)/gi, "");
+  const conditions = text.replace(FEE_AMOUNT, "");
+  if (FEE_TRIGGER_ONLY.test(text) && !/\b(?:waive|avoid|no (?:monthly )?(?:fee|charge)|free)/i.test(text)) return null;
   return text.length >= 8 && WAIVER_CONDITION.test(conditions) && !INTEREST_TIER.test(text) ? text : null;
+}
+
+/** "If min. balance not maintained" says when the fee applies, not how to avoid it. */
+const FEE_TRIGGER_ONLY = /^\W*(?:if|when)\b.*\b(?:not maintained|falls? below|drops? below|less than|under)\b/i;
+
+/**
+ * A waiver as shown on screen: control characters out, and footnote marks the text kept glued
+ * to a word or amount ("balances6", "direct deposit of $2507" for $250 plus footnote 7).
+ * Display only; stored text stays as the source has it.
+ */
+export function waiverForDisplay(value: string | null | undefined): string | null {
+  const readable = readableWaiver(value?.replace(/[\u0000-\u001f\u007f]+/g, " "));
+  if (!readable) return null;
+  return squash(
+    readable
+      .replace(/([a-z])\d{1,2}\b/gi, "$1")
+      .replace(/\$(\d{3,4})(\d)(?![\d,.])/g, (whole, amount: string, mark: string) =>
+        mark !== "0" && Number(amount) % 50 === 0 ? `$${amount}` : whole,
+      ),
+  );
 }
 
 /** "Freedom Checking Monthly Fee" -> "Freedom Checking";"Service charge (Checking + Interest Account)" -> the parenthetical. */
@@ -170,6 +199,8 @@ interface AccountBlock {
   feeLine: string;
   /** Lines of the same account, nearest the fee first, the fee's own line excluded. */
   nearby: string[];
+  /** Every line a few above and below the fee, whatever account they belong to (v55 corrections). */
+  around: string[];
 }
 
 const BLOCK_LINES_ABOVE = 4;
@@ -186,6 +217,14 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
     const line = lines[index];
     if (line.includes("$") || line.includes("|")) continue;
+    // v55: "Money Market" alone heads its own fee; another fee's heading ("Early (Share)
+    // Savings Account Closing") means the lines above belong to other fees.
+    if (ACCOUNT_TYPE_HEADING.test(line)) {
+      heading = line;
+      headingAt = index;
+      break;
+    }
+    if (FEE_HEADING_END.test(line)) break;
     const named = distinctAccountName(line.replace(HEADING_TAIL, ""));
     if (named) {
       heading = named;
@@ -196,12 +235,14 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   const nearby: string[] = [];
   // Below the fee: stop at the next account's heading.
   for (let index = at + 1; index <= Math.min(lines.length - 1, at + BLOCK_LINES_BELOW); index += 1) {
-    if (!lines[index].includes("$") && distinctAccountName(lines[index].replace(HEADING_TAIL, ""))) break;
+    const line = lines[index];
+    if (!line.includes("$") && (ACCOUNT_TYPE_HEADING.test(line) || distinctAccountName(line.replace(HEADING_TAIL, "")))) break;
     nearby.push(lines[index]);
   }
   // Above the fee: never past its own heading.
   for (let index = at - 1; index >= Math.max(0, at - BLOCK_LINES_ABOVE, headingAt + 1); index -= 1) nearby.push(lines[index]);
-  return { heading, feeLine: lines[at], nearby };
+  const around = lines.slice(Math.max(0, at - BLOCK_LINES_ABOVE), at).concat(lines.slice(at + 1, at + 1 + BLOCK_LINES_BELOW));
+  return { heading, feeLine: lines[at], nearby, around };
 }
 
 /** The nearest short account heading in the lines just above the fee's own line. */
@@ -223,6 +264,21 @@ const OPENING_DEPOSIT = [
 ];
 const WAIVER_START = /\b(?:waived?|avoid(?:ed)?|unless|none with|no (?:monthly )?(?:fee|charge) (?:with|if|when))\b/i;
 const FEE_WORD = /\b(?:fee|charge)s?\b/i;
+/** "...23 years of age.; Freedom Checking: ..." starts the next account's clause in a footnote. */
+const NEXT_ACCOUNT_CLAUSE = /;\s+(?=[A-Z][\w+&'’ -]{2,60}:\s)/;
+
+/**
+ * The clause of one line that holds the fee. A footnote can list every account on one line
+ * ("Student Checking: ... $5.00 monthly fee ...; Freedom Plus Checking: $25,000 ... to avoid"),
+ * and only the fee's own clause speaks for it.
+ */
+function accountClause(line: string, excerpt: string): string {
+  const clauses = line.split(NEXT_ACCOUNT_CLAUSE);
+  if (clauses.length === 1) return line;
+  const probe = squash(excerpt).slice(0, 30);
+  return clauses.find((clause) => squash(clause).includes(probe)) ?? clauses[0];
+}
+const OWN_FEE_STATED = /\$\s?\d[\d,.]*\s+(?:per\s+month\s+|monthly\s+)?(?:maintenance\s+|service\s+)?(?:fee|charge)\b/i;
 
 function figureOf(match: RegExpMatchArray | null): number | null {
   const value = match ? Number(match[1].replace(/,/g, "")) : NaN;
@@ -262,6 +318,16 @@ function openingDepositIn(line: string): number | null {
   return null;
 }
 
+/** The lines a fee's lineup is read from: its own clause, and its account's lines that talk about the fee. */
+function lineupSources(excerpt: string, text: string) {
+  const block = accountBlock(text, excerpt);
+  const own = [accountClause(excerpt, excerpt), ...(block ? [accountClause(block.feeLine, excerpt)] : [])];
+  // A nearby line that states its own monthly fee ("$10.00 monthly maintenance fee (Maintain a
+  // daily balance of $500...)") is another account's row, so its balance and waiver are not ours.
+  const aboutTheFee = (block?.nearby ?? []).filter((line) => FEE_WORD.test(line) && !OWN_FEE_STATED.test(line));
+  return { block, own, aboutTheFee };
+}
+
 /**
  * v49: a monthly fee with no account name takes it from its own name or the heading above it.
  * v51: the balance that avoids the fee, the waiver and the opening deposit are read the same
@@ -279,9 +345,7 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
   // A model-read waiver that is a rate tier carries the tier's balance with it; neither is the fee's.
   const current: AccountLineup =
     read.waiverText && INTEREST_TIER.test(read.waiverText) ? { ...read, minBalanceToAvoid: null, waiverText: null } : read;
-  const block = accountBlock(text, candidate.excerpt);
-  const own = [candidate.excerpt, ...(block ? [block.feeLine] : [])];
-  const aboutTheFee = (block?.nearby ?? []).filter((line) => FEE_WORD.test(line));
+  const { block, own, aboutTheFee } = lineupSources(candidate.excerpt, text);
   const first = <V>(lines: string[], read: (line: string) => V | null): V | null => {
     for (const line of lines) {
       const value = read(line);
@@ -297,4 +361,65 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
   };
   const changed = (Object.keys(filled) as (keyof AccountLineup)[]).some((key) => filled[key] !== read[key]);
   return changed ? { ...candidate, lineup: filled } : candidate;
+}
+
+export interface LineupCorrection {
+  field: keyof AccountLineup;
+  old: string | number;
+  new: string | number | null;
+}
+
+function mentionsFigure(line: string, value: number): boolean {
+  return amountsIn(line).some((found) => found.value === value) || figureText(value).some((form) => line.includes(form));
+}
+
+/**
+ * v55: a stored lineup value that came from a neighbour, and what the v55 rules read instead
+ * (null when they read nothing). Pure and deterministic: no model call.
+ *
+ * A balance, waiver or opening deposit is corrected only when the v55 read differs, the stored
+ * value is stated on a line around the fee that v55 no longer reads for it (another account's
+ * fee line, or another account's clause of a one-line footnote), and the fee's own clause does
+ * not state it. A name is corrected only when v55 would never store it (a fee heading such as
+ * "Early (Share) Savings Account Closing", or no account name at all) and v55 reads a name.
+ * Anything else stays as stored: a value v55 cannot explain may be a model read it cannot redo.
+ */
+export function lineupCorrections(
+  candidate: { feeName: string; excerpt: string },
+  stored: AccountLineup,
+  text: string,
+): LineupCorrection[] {
+  const { block, own, aboutTheFee } = lineupSources(candidate.excerpt, text);
+  if (!block) return [];
+  const fresh = withLineupFromText({ canonicalHint: LINEUP_CATEGORY, feeName: candidate.feeName, excerpt: candidate.excerpt, lineup: null }, text).lineup;
+  const v55: AccountLineup = (fresh && groundLineup(fresh, text)) ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
+  // Lines around the fee that v55 does not read for it: other accounts' lines and footnote clauses.
+  const ownLines = [candidate.excerpt, block.feeLine];
+  const otherClauses = ownLines.flatMap((line) => line.split(NEXT_ACCOUNT_CLAUSE)).filter((clause) => !own.includes(clause));
+  const neighbours = (used: string[]) => [...otherClauses, ...block.around.filter((line) => !used.includes(line))];
+  const corrections: LineupCorrection[] = [];
+
+  const figureLeaked = (value: number, used: string[]) =>
+    !own.some((line) => mentionsFigure(line, value)) && neighbours(used).some((line) => mentionsFigure(line, value));
+  const balance = stored.minBalanceToAvoid == null ? null : Number(stored.minBalanceToAvoid);
+  if (balance !== null && v55.minBalanceToAvoid !== balance && figureLeaked(balance, aboutTheFee)) {
+    corrections.push({ field: "minBalanceToAvoid", old: balance, new: v55.minBalanceToAvoid });
+  }
+  const opening = stored.minOpeningDeposit == null ? null : Number(stored.minOpeningDeposit);
+  if (opening !== null && v55.minOpeningDeposit !== opening && figureLeaked(opening, block.nearby)) {
+    corrections.push({ field: "minOpeningDeposit", old: opening, new: v55.minOpeningDeposit });
+  }
+  if (stored.waiverText && v55.waiverText !== stored.waiverText) {
+    const waiver = comparable(stored.waiverText);
+    const leaked =
+      !own.some((line) => comparable(line).includes(waiver)) && neighbours(aboutTheFee).some((line) => comparable(line).includes(waiver));
+    if (leaked) corrections.push({ field: "waiverText", old: stored.waiverText, new: v55.waiverText });
+  }
+  if (stored.productName && v55.productName && v55.productName !== stored.productName) {
+    const name = squash(stored.productName);
+    if (FEE_HEADING_END.test(name) || readableProductName(name) === null) {
+      corrections.push({ field: "productName", old: stored.productName, new: v55.productName });
+    }
+  }
+  return corrections;
 }

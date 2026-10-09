@@ -139,6 +139,31 @@ describe("Hamilton agentic publish", () => {
     expect(publishNameHold("paper statement fee is waived if enrolled in eStatements", "paper_statement", 5)).toBeNull();
   });
 
+  it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {
+    const twin = { ...verifiedFee, twin_recheck: true };
+    const schedule = (text: string) => [{ source_document_id: 77, normalized_text: text }];
+
+    // The twin's own document no longer prints a $35 overdraft fee: the reason its twin came down applies to it.
+    const failing = createDbMock([twin], [], undefined, schedule("Fee Schedule\nOverdraft fee (per item) $30.00\nStop payment fee $30.00"));
+    const failed = await runHamiltonPublish({ runId: 119, db: asPublishDb(failing) });
+    expect(failed.publishedFees).toBe(0);
+    expect(failed.results[0]).toMatchObject({ status: "skipped", reason: expect.stringContaining("Rules re-check") });
+    expect(writes(failing).join("\n")).not.toContain("INSERT INTO published_fee_records");
+    expect(JSON.stringify(failing.mock.calls)).toContain("rules_recheck_unreproduced");
+
+    // No text for the document fails too.
+    const textless = createDbMock([twin], [], undefined, []);
+    expect((await runHamiltonPublish({ runId: 120, db: asPublishDb(textless) })).publishedFees).toBe(0);
+
+    // A twin today's rules read from its own document publishes.
+    const passing = createDbMock([twin], [], undefined, schedule("Fee Schedule\nOverdraft fee (per item) $35.00\nStop payment fee $30.00"));
+    expect((await runHamiltonPublish({ runId: 121, db: asPublishDb(passing) })).publishedFees).toBe(1);
+
+    // A row that is not a twin never needs the re-check.
+    const plain = createDbMock([verifiedFee], [], undefined, []);
+    expect((await runHamiltonPublish({ runId: 122, db: asPublishDb(plain) })).publishedFees).toBe(1);
+  });
+
   it("never publishes a row read from an article page", async () => {
     const db = createDbMock([{ ...verifiedFee, source_url: "https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid" }]);
 
@@ -627,6 +652,17 @@ describe("Hamilton agentic publish", () => {
       // A guard rejection recorded before the guard re-queue step passed the row does not count.
       expect(query).toContain("pa.detail->>'reason' LIKE 'Category guard%'");
       expect(query).toContain("flag LIKE 'category_guard_requeued:%'");
+    });
+
+    it("selects again a row skipped as identical to a live fee the rules re-check took down", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 505, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("pa.outcome = 'unchanged'");
+      expect(query).toContain("NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint");
+      expect(query).toContain("prev.rolled_back_reason = 'rules_recheck_unreproduced'");
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
