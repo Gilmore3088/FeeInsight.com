@@ -16,8 +16,10 @@ export async function ReportOfferSection() {
   return (
     <section aria-label="Fee reports" className="border-b border-warm-200 bg-white">
       <div className="mx-auto max-w-page px-6 py-14">
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
-          <div>
+        {/* grid-cols-1 + min-w-0: below lg the single column is the viewport, so the excerpt
+            table scrolls inside its own box instead of widening the form past 320px. */}
+        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
+          <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
               Fee reports
             </p>
@@ -37,8 +39,8 @@ export async function ReportOfferSection() {
             <ul className="mt-3 space-y-2.5">
               {REPORT_CONTENTS.map((item) => (
                 <li key={item} className="flex items-start gap-2 text-[14px] text-warm-700">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-terra" />
-                  {item}
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-terra" aria-hidden="true" />
+                  <span className="min-w-0">{item}</span>
                 </li>
               ))}
             </ul>
@@ -46,7 +48,7 @@ export async function ReportOfferSection() {
             {sample && <SampleExcerpt report={sample} />}
           </div>
           {/* `#report` lands on the form itself, so a phone reader isn't left below the offer list. */}
-          <div id="report" className="scroll-mt-20">
+          <div id="report" className="min-w-0 scroll-mt-20">
             <RequestReportForm contactEmail={CONTACT_EMAIL} />
           </div>
         </div>
@@ -81,8 +83,12 @@ function SampleExcerpt({ report }: { report: MarketReport }) {
           {report.data.subject.institution_name} vs. {report.analysis.readiness.competitorsWithData} local competitors
         </span>
       </figcaption>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[13px]">
+      <p className="border-b border-warm-200 px-4 py-1.5 text-[12px] text-warm-700 min-[480px]:hidden">
+        Scroll the table sideways to see every column.
+      </p>
+      {/* On a phone the table scrolls inside this box (keyboard-focusable and named), never the page. */}
+      <div className="overflow-x-auto" role="region" aria-label="Sample report excerpt" tabIndex={0}>
+        <table className="w-full min-w-[26rem] text-[13px]">
           <thead>
             <tr className="border-b border-warm-200 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">
               <th className="px-4 py-2 font-bold">Fee</th>

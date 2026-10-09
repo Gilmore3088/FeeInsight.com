@@ -32,7 +32,11 @@ export function HamiltonBenchmarkPreview({ className = "" }: { className?: strin
         </span>
         <span className="text-[11px] text-warm-600">From the sample report · banks $300M–$1B</span>
       </figcaption>
-      <div className="overflow-x-auto">
+      {/* A genuine table: below 520px it scrolls inside this box (keyboard-focusable), never the page. */}
+      <p className="border-b border-warm-200 px-4 py-1.5 text-[12px] text-warm-700 sm:hidden">
+        Scroll the table sideways to see every column.
+      </p>
+      <div className="overflow-x-auto" role="region" aria-label="Hamilton Benchmark mode example table" tabIndex={0}>
         <table className="w-full min-w-[520px] text-[13px]">
           <thead>
             <tr className="border-b border-warm-200 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">

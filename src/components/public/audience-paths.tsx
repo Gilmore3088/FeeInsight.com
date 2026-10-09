@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { REPORT_OFFER } from "@/lib/constants";
 
 interface AudiencePath {
   eyebrow: string;
@@ -27,8 +28,9 @@ export const AUDIENCE_PATHS: readonly AudiencePath[] = [
   {
     eyebrow: "I work at a bank or credit union",
     title: "Benchmark my institution",
-    body: "A free competitive fee report; Hamilton for teams",
-    href: "/for-institutions#report",
+    // A paid report, so the link opens the form on it with the price shown.
+    body: `Institution competitor report, ${REPORT_OFFER.priceLabel.toLowerCase()}; national and district reports free`,
+    href: "/for-institutions?report=institution#report",
   },
 ];
 

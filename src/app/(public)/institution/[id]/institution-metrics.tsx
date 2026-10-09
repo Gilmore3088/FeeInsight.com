@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { REPORT_OFFER } from "@/lib/constants";
 import { ArrowRight } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import { formatCompactDollars } from "@/lib/format";
@@ -97,8 +98,8 @@ export function InstitutionOfferBand({
             href={reportOfferHref}
             className="inline-flex items-center gap-2 rounded-md bg-[#C44B2E] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
           >
-            Request the report
-            <ArrowRight className="h-4 w-4" />
+            {REPORT_OFFER.institutionCtaLabel}
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
           <p className="text-xs text-[#6B6255]">Paid report from $300 · quote within 1 business day</p>
           <Link

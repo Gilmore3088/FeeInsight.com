@@ -42,7 +42,7 @@ const KNOWN_READER_NOTE =
 const GENERIC_ERROR = "We couldn't send that request. Please try again or email us directly.";
 
 const INPUT_CLASS =
-  "w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm text-[#1A1815] " +
+  "w-full min-w-0 rounded-md border border-[#D5CBBF] bg-white px-3 py-2.5 text-base text-[#1A1815] sm:py-2 sm:text-sm " +
   "placeholder:text-[#6B6255] focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent " +
   "read-only:bg-[#F4EFE7] read-only:text-[#5A5347]";
 const LABEL_CLASS = "block text-sm font-medium text-[#1A1815] mb-1";
@@ -247,7 +247,7 @@ function RequestReportFormInner({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 space-y-4"
+      className="min-w-0 space-y-4 rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-4 sm:p-6"
       aria-label="Request a fee report"
     >
       <HoneypotField />
@@ -260,14 +260,14 @@ function RequestReportFormInner({
         </div>
       )}
 
-      <fieldset>
+      <fieldset className="min-w-0">
         <legend className={LABEL_CLASS}>Which report?</legend>
         <div className="space-y-2">
           {REPORT_TYPES.map((option) => (
             <label
               key={option.value}
               className={
-                "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm " +
+                "flex min-w-0 cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm " +
                 (option.paid ? "border-dashed bg-[#F4EFE7] " : "bg-white ") +
                 (reportType === option.value ? "border-[#C44B2E] ring-1 ring-[#C44B2E]" : "border-[#D5CBBF]")
               }
@@ -281,19 +281,21 @@ function RequestReportFormInner({
                 className="mt-1 accent-[#C44B2E]"
               />
               <span className="min-w-0 flex-1">
-                <span className={"flex items-center gap-2 font-medium " + (option.paid ? "text-[#5A5347]" : "text-[#1A1815]")}>
-                  {option.paid && <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
-                  {option.title}
+                <span className={"flex flex-wrap items-center gap-x-2 gap-y-1 font-medium " + (option.paid ? "text-[#5A5347]" : "text-[#1A1815]")}>
+                  <span className="min-w-0 break-words">
+                    {option.paid && <Lock className="mr-1.5 inline-block h-3.5 w-3.5 align-[-2px]" aria-hidden="true" />}
+                    {option.title}
+                  </span>
                   <span
                     className={
-                      "ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+                      "ml-auto shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold " +
                       (option.paid ? "bg-[#EADFCB] text-[#7A5A1E]" : "bg-[#E3EFE8] text-[#2F6B4F]")
                     }
                   >
                     {option.paid ? REPORT_OFFER.priceLabel : "Free, instant"}
                   </span>
                 </span>
-                <span className="mt-0.5 block text-[13px] text-[#6B6255]">{option.detail}</span>
+                <span className="mt-0.5 block break-words text-[13px] text-[#6B6255]">{option.detail}</span>
               </span>
             </label>
           ))}
@@ -370,7 +372,7 @@ function RequestReportFormInner({
       {institution && (
         <>
         <div>
-          <div className="mb-1 flex items-baseline justify-between gap-3">
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3">
             <label htmlFor="report-institution" className={`${LABEL_CLASS} mb-0`}>
               Institution
             </label>
@@ -480,7 +482,7 @@ function RequestReportFormInner({
       <button
         type="submit"
         disabled={status === "submitting"}
-        className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        className="w-full rounded-md bg-[#C44B2E] px-4 py-3 text-sm font-semibold text-white hover:bg-[#A93D25] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
       >
         {status === "submitting"
           ? "Sending…"
@@ -490,7 +492,7 @@ function RequestReportFormInner({
       </button>
       <p className="text-xs leading-relaxed text-[#6B6255]">
         {institution
-          ? "A paid report. We reply within one business day with scope and price, and you pay by card once you agree to the quote."
+          ? `A paid report, ${REPORT_OFFER.priceLabel.toLowerCase()}. We reply within one business day with scope and price, and you pay by card once you agree to the quote.`
           : "Free, no card. The report opens right away and the link comes by email."}{" "}
         By sending you agree to the{" "}
         <Link href="/terms" className="underline">Terms</Link> and{" "}

@@ -45,7 +45,7 @@ describe("buildPublicInstitutionProfileLinks", () => {
       isAuthenticated: false,
     });
     expect(links.reportOfferHref).toBe(
-      "/for-institutions?institution=1391&name=First+Bank+%26+Trust&src=profile#report",
+      "/for-institutions?report=institution&institution=1391&name=First+Bank+%26+Trust&src=profile#report",
     );
     expect(links.correctSourceHref).toBe("/submit-fees?institution=1391");
     expect(links.briefHref).toBe(

@@ -14,7 +14,7 @@ import { notFound } from "next/navigation";
 import { getSql } from "@/lib/data-store/connection";
 import type { ReportType } from "@/lib/report-engine/types";
 import { EmailGate } from "./email-gate";
-import { RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 
 export const revalidate = 3600;
 
@@ -186,9 +186,10 @@ export default async function ReportPage({
         <section style={{ marginBottom: "48px" }}>
           <p style={{ fontSize: "15px", color: "#5A5347", lineHeight: 1.75 }}>
             This {typeLabel.toLowerCase()} is delivered as a PDF. Download it below, or{" "}
-            <Link href="/for-institutions#report" style={{ color: "#A93D25", textDecoration: "underline" }}>
+            <Link href="/for-institutions?report=institution#report" style={{ color: "#A93D25", textDecoration: "underline" }}>
               request a competitive fee report for your own institution
-            </Link>
+            </Link>{" "}
+            ({REPORT_OFFER.priceLabel.toLowerCase()})
             .
           </p>
         </section>

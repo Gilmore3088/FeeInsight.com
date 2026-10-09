@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import { linkPreview } from "@/lib/link-preview";
 import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { ConsumerNav } from "@/components/consumer-nav";
@@ -18,6 +18,11 @@ import { CompareTableSection } from "./compare-table";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REPORT_ANCHOR = "#report";
+// Paid CTAs carry report=institution so the form opens on that option with its price shown;
+// free CTAs say report=national so a reader who had picked the paid option gets the free one.
+const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
+const FREE_REPORT_HREF = "/for-institutions?report=national#report";
+const INSTITUTION_REPORT_PRICE = REPORT_OFFER.priceLabel.toLowerCase();
 const PRO_ANCHOR = "#pro";
 
 const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
@@ -84,7 +89,7 @@ export default async function ForInstitutionsPage() {
                     href={REPORT_ANCHOR}
                     className={PRIMARY_BUTTON}
                   >
-                    Get a free fee report
+                    {REPORT_OFFER.ctaLabel}
                     <ArrowRight className="h-4 w-4" />
                   </TrackLink>
                 )}
@@ -97,7 +102,10 @@ export default async function ForInstitutionsPage() {
                   {sampleLive ? "What’s in the report" : `See ${SITE_NAME} Pro`}
                 </a>
               </div>
-              <p className="mt-4 text-[13px] text-[#D5CBBF]">National and Fed district reports, free and instant.</p>
+              <p className="mt-4 text-[13px] text-[#D5CBBF]">
+                National and Fed district reports, free and instant. Your institution against named
+                competitors, {INSTITUTION_REPORT_PRICE}.
+              </p>
             </div>
           </div>
           <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-terra/[0.06] to-transparent" />
@@ -193,11 +201,11 @@ function AdvisorySection() {
             </TrackLink>
             <TrackLink
               event="request_report_click"
-              eventProps={{ placement: "for_institutions_advisory" }}
-              href={REPORT_ANCHOR}
+              eventProps={{ placement: "for_institutions_advisory", report: "institution" }}
+              href={INSTITUTION_REPORT_HREF}
               className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
             >
-              Get your free report
+              {REPORT_OFFER.institutionCtaLabel}
             </TrackLink>
           </div>
         </div>
@@ -206,6 +214,11 @@ function AdvisorySection() {
   );
 }
 
+/**
+ * The closing CTA invites a request for the reader's own report, so its main button opens the
+ * form on the paid institution report (report=institution) with the price named; the free
+ * national and district reports are the second button, named as such.
+ */
 function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
   return (
     <section className="bg-warm-900">
@@ -216,42 +229,41 @@ function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
         >
           Ready to see where your fees stand?
         </h2>
-        <p className="mt-3 text-[15px] text-[#D5CBBF]">
-          {sampleLive
-            ? "Start with the sample, or request your own report today."
-            : "Start with a free national or Fed district report, or ask us to quote your institution's own."}
+        <p className="mx-auto mt-3 text-[15px] text-[#D5CBBF]">
+          Request your institution&apos;s own report against named competitors, {INSTITUTION_REPORT_PRICE}, or
+          start with a free national or Fed district report.
         </p>
         <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
-          {sampleLive ? (
-            <>
-              <TrackLink
-                event="see_sample_report"
-                eventProps={{ placement: "for_institutions_footer" }}
-                href={SAMPLE_REPORT_HREF}
-                className={PRIMARY_BUTTON}
-              >
-                See the sample report
-                <ArrowRight className="h-4 w-4" />
-              </TrackLink>
-              <a
-                href={REPORT_ANCHOR}
-                className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
-              >
-                Get your free report
-              </a>
-            </>
-          ) : (
-            <TrackLink
-              event="request_report_click"
-              eventProps={{ placement: "for_institutions_footer" }}
-              href={REPORT_ANCHOR}
-              className={PRIMARY_BUTTON}
-            >
-              Get your free report
-              <ArrowRight className="h-4 w-4" />
-            </TrackLink>
-          )}
+          <TrackLink
+            event="request_report_click"
+            eventProps={{ placement: "for_institutions_footer", report: "institution" }}
+            href={INSTITUTION_REPORT_HREF}
+            className={PRIMARY_BUTTON}
+          >
+            {REPORT_OFFER.institutionCtaLabel}
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </TrackLink>
+          <TrackLink
+            event="request_report_click"
+            eventProps={{ placement: "for_institutions_footer", report: "national" }}
+            href={FREE_REPORT_HREF}
+            className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
+          >
+            {REPORT_OFFER.ctaLabel}
+          </TrackLink>
         </div>
+        {sampleLive && (
+          <p className="mt-5 text-[14px] text-[#D5CBBF]">
+            <TrackLink
+              event="see_sample_report"
+              eventProps={{ placement: "for_institutions_footer" }}
+              href={SAMPLE_REPORT_HREF}
+              className="font-semibold text-warm-150 underline underline-offset-4 hover:text-white"
+            >
+              See the sample institution report
+            </TrackLink>
+          </p>
+        )}
       </div>
     </section>
   );

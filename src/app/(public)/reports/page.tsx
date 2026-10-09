@@ -232,8 +232,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     <div className="pb-24">
       {/* Hero: the report, with its real position map */}
       <section className="border-b border-[#E8DFD1] bg-[linear-gradient(180deg,#FBF7F1_0%,#FDFBF8_100%)]">
-        <div className="mx-auto grid max-w-page gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-center">
-          <div>
+        <div className="mx-auto grid max-w-page grid-cols-1 gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-center">
+          <div className="min-w-0">
             <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
               {REPORT_OFFER.name}
             </p>
@@ -263,7 +263,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 </Link>
               )}
             </div>
-            <dl className="mt-8 grid max-w-[520px] grid-cols-3 gap-4 border-t border-[#E8DFD1] pt-5">
+            <dl className="mt-8 grid max-w-[520px] grid-cols-1 gap-3 border-t border-[#E8DFD1] pt-5 min-[400px]:grid-cols-3 min-[400px]:gap-4">
               <div>
                 <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Price</dt>
                 <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">
@@ -282,7 +282,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           </div>
 
           {positionMap && positionMap.rows.length > 0 && (
-            <div>
+            <div className="min-w-0">
               <PositionPreview map={positionMap} />
               <p className="mt-3 text-[12px] leading-relaxed text-[#6B6255]">
                 Real figures from a report prepared for a ~$400M community bank; only the bank&apos;s name
@@ -333,8 +333,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* Request form: the lead lands in the leads table (/admin/leads) */}
       <section id="request" className="mx-auto max-w-page scroll-mt-20 px-6 pt-16">
-        <div className="grid gap-8 rounded-xl border border-[#E8DFD1] bg-[#FBF7F1] p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
-          <div>
+        {/* Below lg one shrinkable column, with a lighter inset on phones so the form keeps
+            its width at 320px. */}
+        <div className="grid grid-cols-1 gap-8 rounded-xl border border-[#E8DFD1] bg-[#FBF7F1] p-4 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
+          <div className="min-w-0">
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
               Request your report
             </p>
@@ -342,8 +344,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               Tell us where to send it.
             </h2>
             <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-[#5A5347]">
-              Leave your institution and work email. {REPORT_OFFER.nextStep}, and we confirm your peer
-              set before any work starts.
+              The national and Fed district reports are free and open right away with just an email.
+              For your institution against named competitors ({REPORT_OFFER.priceLabel.toLowerCase()}), leave
+              your institution and work email. {REPORT_OFFER.nextStep}, and we confirm your peer set before
+              any work starts.
             </p>
             <p className="mt-4 text-[13px] text-[#6B6255]">
               Prefer to write?{" "}
@@ -352,7 +356,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               </Link>
             </p>
           </div>
-          <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" />
+          <div className="min-w-0">
+            <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" />
+          </div>
         </div>
       </section>
 
@@ -435,13 +441,13 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* Closing call to action */}
       <section className="mx-auto max-w-page px-6 pt-20">
-        <div className="flex flex-col items-start gap-5 rounded-xl bg-[#1A1815] px-7 py-8 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+        <div className="flex flex-col items-start gap-5 rounded-xl bg-[#1A1815] px-5 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <div className="min-w-0">
             <p className="text-[24px] leading-snug text-white" style={SERIF}>
               See your own fees against your market.
             </p>
             <p className="mt-1 text-[13px] text-[#C9BFB1]">
-              The {REPORT_OFFER.name}: your fees next to named competitors in your market, with a source for every figure.
+              The {REPORT_OFFER.name}, {REPORT_OFFER.priceLabel.toLowerCase()}: your fees next to named competitors in your market, with a source for every figure.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

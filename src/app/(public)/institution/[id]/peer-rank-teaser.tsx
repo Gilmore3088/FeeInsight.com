@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { REPORT_OFFER } from "@/lib/constants";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -65,7 +66,8 @@ export function PeerRankTeaser({ rank, reportOfferHref }: { rank: InstitutionPee
       <div className="border-t border-[#E0D7C9] px-4 py-3 text-[13px] sm:px-5">
         <Link href={reportOfferHref} className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
           See every headline fee against its local competitors
-        </Link>
+        </Link>{" "}
+        <span className="text-[#5A5347]">in the institution report, {REPORT_OFFER.priceLabel.toLowerCase()}.</span>
       </div>
     </section>
   );

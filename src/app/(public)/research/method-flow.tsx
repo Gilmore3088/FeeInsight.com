@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SITE_NAME } from "@/lib/constants";
+import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
 import { SectionHeading } from "./research-hero";
 
@@ -71,8 +71,8 @@ export function MethodFlow({ coverageLabel }: { coverageLabel: string }) {
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-[#F5EFE6]/80">{HAMILTON_CANONICAL}</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/for-institutions#report" className="rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#A93D25]">
-              Get a competitive fee report
+            <Link href="/for-institutions?report=institution#report" className="rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#A93D25]">
+              {REPORT_OFFER.institutionCtaLabel} · {REPORT_OFFER.priceLabel.toLowerCase()}
             </Link>
             <Link href="/subscribe" className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10">
               See pricing

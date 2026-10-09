@@ -36,7 +36,8 @@ export const REPORT_OFFER = {
   priceLabel: "From $300",
   /** The lowest quote (James, 2026-10-08: "from $300"); each report is still quoted. */
   fromPriceUsd: 300,
-  ctaLabel: "Get a free fee report",
+  /** Label for links that open the request form on a free report; it names which ones are free. */
+  ctaLabel: "Get a free national or district report",
   /** Label for links that open the request form on the paid institution report. */
   institutionCtaLabel: "Request your institution report",
   nextStep: "We reply within one business day with scope and price",

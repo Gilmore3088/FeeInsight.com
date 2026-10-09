@@ -1,4 +1,4 @@
-import { SITE_NAME } from "@/lib/constants";
+import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 
 interface CompareRow {
@@ -52,7 +52,7 @@ function buildRows(summary: Pick<PublicStatsSummary, "institutionsLabel" | "refr
       refresh: `Rolling — every schedule rechecked at least quarterly${refreshed}`,
       sourceTraceable: "Every figure linked to its disclosure",
       peerGroupControl: "Yes — charter, asset tier, district",
-      cost: "Free national and district reports",
+      cost: `Free national and district reports; institution report ${REPORT_OFFER.priceLabel.toLowerCase()}`,
       highlight: true,
     },
   ];

@@ -11,6 +11,7 @@ const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
 
 // The request form sits in the bank section further down this page.
 const REPORT_REQUEST_HREF = "#for-banks";
+const INSTITUTION_REPORT_HREF = "/?report=institution#for-banks";
 
 interface LandingHeroProps {
   institutionsLabel: string;
@@ -169,6 +170,15 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
                 className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
               >
                 {REPORT_OFFER.ctaLabel}
+              </TrackLink>
+              {/* The paid report keeps report=institution so the form below opens on it, price shown. */}
+              <TrackLink
+                event="request_report_click"
+                eventProps={{ placement: "home_hero", report: "institution" }}
+                href={INSTITUTION_REPORT_HREF}
+                className="text-sm font-semibold text-[#A93D25] underline-offset-4 hover:text-[#8E2A17] hover:underline"
+              >
+                {REPORT_OFFER.institutionCtaLabel}, {REPORT_OFFER.priceLabel.toLowerCase()}
               </TrackLink>
               {sampleLive && (
                 <Link
