@@ -657,10 +657,27 @@ const ROLE_PRIORITY: Record<ContactRole, number> = {
 };
 const CONFIDENCE_PRIORITY: Record<ContactConfidence, number> = { high: 0, medium: 1, low: 2 };
 
+/** "Market President - Metro Market", "Regional President", "President - Western Region", "Community President". */
+const LOCAL_PRESIDENT =
+  /\b(?:market|regional|region|area|community|city|division|district)\s+president\b|\bpresident\b.*\b(?:market|region|area|division|district)\b/i;
+
+/**
+ * A market or regional president: the executive role comes from "president", but the job runs a
+ * lending office in one market and is a weak buyer for a fee report (Dieterich Bank's primary was
+ * "Market President - Metro Market", Oct 9). Ranked below every other decision-maker, so a
+ * marketing, product, deposit or retail title wins whenever one exists; still a fallback when
+ * none does. A title that also names marketing or retail keeps that role and isn't demoted.
+ */
+export function isLocalPresident(contact: Pick<ProspectContactRow, "title" | "role">): boolean {
+  if (contact.role !== "executive" || !contact.title) return false;
+  return LOCAL_PRESIDENT.test(contact.title.replace(VICE_PRESIDENT, " "));
+}
+
 /** One institution's contacts, best first; the first is the primary and the second the backup. */
 export function rankContacts<T extends Pick<ProspectContactRow, "kind" | "name" | "title" | "role" | "email">>(contacts: T[]): T[] {
   return [...contacts].sort(
     (a, b) =>
+      Number(isLocalPresident(a)) - Number(isLocalPresident(b)) ||
       CONFIDENCE_PRIORITY[contactConfidence(a)] - CONFIDENCE_PRIORITY[contactConfidence(b)] ||
       ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role] ||
       a.email.localeCompare(b.email),
