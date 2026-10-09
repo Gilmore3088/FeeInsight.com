@@ -1,7 +1,7 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
-import { getFeeCategoryDetail } from "./fees";
+import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
 import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
@@ -40,6 +40,11 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
   "fee-category-detail",
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
+);
+export const getCheapestAndMostExpensiveCached = cachedPublicRead(
+  "cheapest-and-most-expensive",
+  getCheapestAndMostExpensive,
+  (extremes) => extremes.cheapest.length === 0 && extremes.mostExpensive.length === 0,
 );
 export const getNationalRateStatsCached = cachedPublicRead(
   "national-rate-stats",

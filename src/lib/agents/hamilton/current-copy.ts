@@ -199,6 +199,10 @@ export interface CurrentCopyResult {
   takenDown: CurrentCopyCandidate[];
   confirmLive: boolean;
   samples: CurrentCopyCandidate[];
+  /** Fees the current copy states at their price by its text (not by a restated verified row), for UAT. */
+  statedFeeIds: number[];
+  /** Each judged copy: older and current document, and whether the current copy was recognized. */
+  copies: Array<{ older: number; current: number; recognized: boolean }>;
 }
 
 const EMPTY: CurrentCopyResult = {
@@ -212,6 +216,8 @@ const EMPTY: CurrentCopyResult = {
   takenDown: [],
   confirmLive: CURRENT_COPY_CONFIRM_LIVE,
   samples: [],
+  statedFeeIds: [],
+  copies: [],
 };
 
 /**
@@ -338,6 +344,8 @@ export async function secondLookFeesNotOnCurrentCopy(
     takenDown: look.confirmed,
     confirmLive,
     samples: failing.slice(0, 20),
+    statedFeeIds: passing.slice(0, 200),
+    copies: documents.map((doc) => ({ older: doc.olderDocumentId, current: doc.currentDocumentId, recognized: doc.recognized })),
   };
   if (options.dryRun) return result;
 
@@ -411,6 +419,8 @@ export async function secondLookFeesNotOnCurrentCopy(
             waiting: result.waiting,
             cleared: result.cleared,
             taken_down: result.takenDown.length,
+            stated_fee_ids: result.statedFeeIds,
+            copies: result.copies,
             samples: result.samples.map((fee) => ({
               fee_published_id: fee.feePublishedId,
               institution_id: fee.institutionId,

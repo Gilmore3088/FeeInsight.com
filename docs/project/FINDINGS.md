@@ -1,7 +1,8 @@
 # Findings
 
 Problems we hit that were structural or infrastructural: what happened, why, the fix, and the
-lesson for next time. Newest first. Add an entry the moment you find one.
+lesson for next time. Newest first. Closed to new entries after 2026-10-09: each new finding is
+its own file in `findings/` (see `findings/README.md`), so parallel PRs stop colliding here.
 
 Template:
 
@@ -13,6 +14,53 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Two reads took 10 to 13 seconds each time they ran
+**What happened:** pg_stat_statements at 00:58 UTC Oct 9 (since Oct 5): Hamilton's business-schedule check averaged 12.5 s over 312 runs (max 22 s), and the national revenue trend averaged 10 s over 322 runs (max 38 s).
+**Cause:** the business-schedule check looked up each business fee's consumer twin with a subquery over a CTE, which rescans the whole CTE (65,000 live fees) per business fee. The revenue trend windowed all 768,000 call report filings since 2010 to return the newest 8 to 20 quarters.
+**Fix:** this PR. The consumer twin is grouped once and joined (0.7 s on prod, same 1,127 rows and 21 matches). The trend reads only the years its quarters fall in, plus four spare quarters (1.8 s on prod, same 20 quarters).
+**Lesson:** a correlated subquery against a CTE is a nested loop over the CTE; group once and join. Bound history reads to the window the caller returns.
+
+## 2026-10-09: The eval's zero criticals came from archiving by id, not from rules
+- **What happened.** The 211-row complete-record eval re-scored at 00:51 UTC showed 0 critical
+  errors (from 11), but 8 of the 11 came down by `fee_published_id` (PR 714). Only three of the
+  eleven error shapes had a catalog-wide rule (ATM rebate, "no fee for" sentence, $0 waiver
+  sentence), so the same mistakes could stand anywhere else in the catalog.
+- **Why.** The verdict list was built to resolve the labelled rows fast; the shapes behind them
+  (a wire fee read from the wrong column, a non-customer price pooled with customer prices, a
+  merchant's fee, two fees on one line) need the schedule line, which the eval check did not read.
+- **Fix.** Eval-verdict v3 (`hamilton/eval-verdicts.ts`) reads Knox's excerpt for each live fee.
+  Takedowns after the 12-hour second look: a fee the merchant or payee pays (0 live on Oct 9 after
+  the archive) and a name pairing two directions or scopes over a line with two prices (3 live).
+  Flags only, one `pipeline_feedback` row per fee at weight 0.5, never a takedown: a non-customer
+  price (1,244 live, 28 categories; Flag or Hide on the site is James's open call, default Flag)
+  and a wire fee on a line naming both scopes with two prices (173 live, 144 banks). A heading
+  joined to another fee's name is the category guard's `name_contradicts` already (0 of 201 such
+  names needed more). Still without a rule: a line filed by the heading it sits under (State
+  Police CU's "Corporate Check" under Stop Payments) and a surcharge named by the bank's own ATMs
+  (Trax); both need the page layout, so they are Knox's to read.
+- **Watch.** Step detail `eval_verdict.flags` and `pipeline_feedback` kinds `non_customer_price`
+  and `wire_shared_line` after the next publish step; `wrong_amount:two_fees_one_line` takedowns
+  after 12 hours.
+
+## 2026-10-09: Guard-rejected rows that were never published had no way back
+- **What happened.** Darwin's returned-check re-file (PR 677) moved 116 verified rows from nsf to
+  deposited_item_return. Publish rejected four of them (40440, 48556, 56589, 63877) because their
+  raw names carry a neighbouring cell, heading or dot leaders ("per order | Returned Items",
+  "Return Item . . . ."); they sat at review_status rejected with `category_guard:name_unsupported`.
+  PR 753 made publish accept such a row under its tidied name, but nothing re-read the rejected rows:
+  the guard's restore path (`restorePassingTakedowns`) brings back only fees that were live once,
+  under the category they were live in. On prod 180 rows at 111 institutions were in this state.
+- **Why.** `rejectVerifiedFeeForCategory` is a one-way door at publish time; a guard or tidy fix
+  changes what publish accepts, but the rows it already turned away are never selected again.
+- **Fix.** `src/lib/agents/hamilton/guard-requeue.ts`, run in every publish step: rejected rows with
+  a `category_guard:%` flag and no published copy under their current category are re-checked once
+  per guard version with publish's own name (`publishedFeeName`); a pass sets the row back to
+  verified with `category_guard_requeued:g<version>`, a fail adds `category_guard_recheck_failed:g<version>`.
+  Each row is a `publish.guard_requeue` attempt. The row then goes through every normal publish rule,
+  including "Identical fee already published": 10 of PR 677's 20 gaps were banks that already had
+  the same deposited_item_return fee live, so a re-file is not always a new live row.
+- **Watch.** Step detail `guard_requeue` on the next publish steps; the four ids live as
+  deposited_item_return under their tidied names.
 ## 2026-10-09: Link words retired hand-found fee schedules before anyone read them
 Magellan's companion review retires any stored page whose link text or URL has a word like
 "privacy", "opt in", "loan" or "apply" (`isNonDepositLink`). That rule is for links the finder
@@ -57,6 +105,12 @@ budget messages name cap, limit, used and reset.
 **Lesson:** never return a literal 0 for a value that was not read; return null and say so. A
 fail-closed fallback must carry an "unreadable" flag so a display never presents it as a switch
 setting.
+
+## 2026-10-09: The fee-page classifier learned our own crawler's name
+**What happened:** The first trained classifier (01:09 UTC Oct 9) had weights for `w:feeinsi`, `w:magella` and `w:vercel` (UAT found them). In the training set, 32 labelled pages (11 fee pages, 21 not) began with our own user agent, "FeeInsightBot/1.0 (Magellan; +https://feeinsight.com/contact)", followed by about 40 request-header names (x-vercel-id, cloudfront-viewer-city and so on). `w:james` is real bank text ("Raymond James", "St. James"), not a leak.
+**Cause:** one credit union site platform echoes the request it receives into the page, and Rosetta stores page text as served.
+**Fix:** the classifier drops that echo before it reads features (`withoutRequestEcho`), and its version goes to 2, so the next discover step retrains (this PR). Rosetta's stored text is unchanged.
+**Lesson:** before trusting learned weights, list the ones that name us, our hosting or our tools; any text we sent can come back in a page.
 
 ## 2026-10-09: Magellan's fee-page classifier never trained
 **What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
@@ -3446,6 +3500,10 @@ compared, so each reader re-guessed the pair by amount. Migration `2027011000003
 `pairFeeChangeRecords` (`hamilton/change-pairing.ts`) fills older records in the publish step with the
 same page rule plus `listsBothPrices`. Every reader now requires `like_for_like IS TRUE`. A new reader
 of `fee_change_records` must do the same.
+**Follow-up (9 Oct, 01:20 UTC):** a misread price waiting on its 12-hour second look stayed in
+`published_fee_catalog` beside its corrected re-read, so Jeanne D'Arc FCU showed money orders at $2 and
+$5. Migration `20270110000032` makes both catalog views leave out a `takedown_pending` row once a
+newer live row for the same institution and fee has no pending flag (154 of 65,145 live rows on 9 Oct).
 
 ## 2026-10-08: Paid search answers dropped because the bank's site refused our check
 
@@ -3802,6 +3860,20 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** Alerts are computed live for the admin home page and the daily brief, not stored,
   so there is no row to count. The next break shows on the admin home page as soon as a third
   run fails with the same error.
+
+## 2026-10-09: A priority bank's run that failed on a fixed break waited a day
+- **What happened.** Checking every failed run since Oct 8 against recovery: the eight state
+  lanes that failed on the 12:06 publish break all reran and published, but Tennessee's
+  largest bank (institution 27, run 2877, a priority "read now" run) failed on the same break
+  and had not run again 13 hours later.
+- **Why.** Recovery's rerun (`wakeLanesAfterRecovery`) covers state lanes only, and a
+  priority run holds its institution for 24 hours whether it completed or failed.
+- **Fix.** A priority run that failed with a reason shared by 3 or more runs in 24 hours,
+  none of them under the current deploy, no longer holds its institution, so it reruns on
+  the next tick after a fixing deploy (`PRIORITY_FIXED_BREAK_RUNS`). A rerun that fails
+  again records the new deploy and holds as before.
+- **Watch.** After deploy, a new `atlas.priority_institution` run for institution 27 starts when
+  the two priority slots reach it, and its publish step completes.
 
 ## 2026-10-08: Bank and credit union numbers share one namespace
 - **What happened.** 314 credit unions in `institution_sources` have the same `cert_number` as

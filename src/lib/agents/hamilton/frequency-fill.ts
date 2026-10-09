@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { settledFrequency } from "@/lib/fee-frequency";
+import { PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
@@ -24,10 +24,18 @@ type SqlTag = typeof sql;
  */
 export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v3: "ea.", "/page", "/transfer", "/card", "per order" and similar per-item wording.
-export const FREQUENCY_FILL_VERSION = 3;
+// v4: "per loan", "per levy", "per stop payment", "/sheet", "/quarter", "per business day" and
+// "one-time"; a period the line never states is cleared from a per-event fee; an allowance ("1 free
+// per month") is not the fee's period (Darwin's 211-row eval, Oct 9).
+// v5: "More than 2 per year" is an allowance, not the fee's period.
+// v6: footnote marks ("per month6", "each2"), a cap ("up to a maximum of $5.00") and a second
+// price's label ("$1.00/page Business: $3.00/page") no longer hide the fee's own words.
+// v7: "each after 3 in a month" and "exceeding two per month" are allowances too.
+export const FREQUENCY_FILL_VERSION = 7;
 export const FREQUENCY_FILL_LIMIT = 2_000;
 /** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
-const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?(mo|month|yr|year|item|check|transaction|ea|each|copy|page|request|transfer|wire|card|occurrence)\y)`;
+const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?[a-z])`;
+const PERIOD_KEYS_SQL = `ARRAY[${[...PERIOD_FEE_KEYS].map((key) => `'${key}'`).join(", ")}]::text[]`;
 /** Postgres pre-filter for a stated frequency: a line holding more than one cell or price. */
 const SHARED_LINE = String.raw`excerpt=.*(\|.*\$|\$.*\$)`;
 
@@ -89,7 +97,10 @@ export async function fillBlankFrequencies(
           -- A blank is read only on a line with frequency wording; a stated frequency only on a
           -- line it may have been borrowed across.
           AND ((fp.frequency IS NULL AND fr.conditions ~* '${CANDIDATE_WORDING}')
-               OR (fp.frequency IS NOT NULL AND fr.conditions ~ '${SHARED_LINE}'))
+               OR (fp.frequency IS NOT NULL AND fr.conditions ~ '${SHARED_LINE}')
+               -- v4: a stated period on a per-event fee, which the line may never state.
+               OR fp.frequency = 'daily'
+               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL})))
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],

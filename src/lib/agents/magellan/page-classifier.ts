@@ -3,6 +3,7 @@ import { scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { LINK_YIELD_CHECK } from "@/lib/agents/magellan/outcomes";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { CRAWLER_PRODUCT_TOKEN } from "@/lib/agents/crawler-identity";
 
 type SqlTag = typeof sql;
 
@@ -22,7 +23,8 @@ type SqlTag = typeof sql;
  * page is accepted. Letting it decide waits for James's review.
  */
 
-export const PAGE_CLASSIFIER_VERSION = 1;
+/** 2: pages that echo our request headers back are read without that echo (Oct 9). */
+export const PAGE_CLASSIFIER_VERSION = 2;
 export const PAGE_CLASSIFIER_TABLE = "magellan_page_classifier";
 export const RETRAIN_AFTER_MS = 6 * 60 * 60 * 1000;
 /** Training needs at least this many examples of each label. */
@@ -76,9 +78,38 @@ function bucket(value: number, edges: number[]): string {
   return index === -1 ? `${edges[edges.length - 1]}+` : String(index === 0 ? 0 : edges[index - 1]);
 }
 
+/** Lines the request-header echo is made of: header names and our own user agent. */
+const ECHO_LINE = new RegExp(
+  String.raw`^(?:x-[a-z0-9-]+|cloudfront-[a-z0-9-]+|accept(?:-[a-z]+)?|user-agent|via|host|sec-fetch-[a-z]+)$|${CRAWLER_PRODUCT_TOKEN}`,
+  "i",
+);
+/** The echo sits at the top of the page: look this many lines down for its end. */
+const ECHO_LOOKAHEAD_LINES = 150;
+
+/**
+ * Some bank site platforms print the request they were sent at the top of the page: our
+ * user agent ("FeeInsightBot/1.0 (Magellan; +https://feeinsight.com/contact)"), header names
+ * (x-vercel-id, cloudfront-viewer-city) and their values. That text is about us, not the
+ * bank, and taught the model words like "feeinsight" and "magellan" (32 labelled pages, Oct 9).
+ * When our token is on the page, everything up to the echo's last line is dropped, and any
+ * other line naming our token too.
+ */
+export function withoutRequestEcho(text: string): string {
+  if (!text.includes(CRAWLER_PRODUCT_TOKEN)) return text;
+  const lines = text.split("\n");
+  let end = -1;
+  for (let index = 0; index < Math.min(lines.length, ECHO_LOOKAHEAD_LINES); index += 1) {
+    if (ECHO_LINE.test(lines[index].trim())) end = index;
+  }
+  return lines
+    .slice(end + 1)
+    .filter((line) => !line.includes(CRAWLER_PRODUCT_TOKEN))
+    .join("\n");
+}
+
 /** The features a page shows: word stems, address words and the rule check's counts. */
 export function pageFeatures(text: string, url: string | null | undefined): Set<string> {
-  const head = text.slice(0, TEXT_CHARS);
+  const head = withoutRequestEcho(text).slice(0, TEXT_CHARS);
   const features = new Set<string>();
   for (const word of head.toLowerCase().match(/[a-z]{3,}/g) ?? []) {
     if (STOP_WORDS.has(word)) continue;

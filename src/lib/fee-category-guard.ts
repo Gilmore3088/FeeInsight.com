@@ -20,7 +20,7 @@
 
 import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, SUBORDINATION } from "@/lib/fee-fold";
 
-export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
+export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
 /** What a caller knows about the fee besides its name; enables the rate check. */
 export interface CategoryGuardContext {
@@ -66,6 +66,12 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
 );
 
 // v47: "Foreign Wire Research" is account research, not a wire (Darwin eval, Oct 8).
+/**
+ * v53: a business or commercial account's wire price ("Business Wire Transfer Incoming (domestic)
+ * | $20.00", 3Hill FCU 28215, shown as the consumer price in the sample report). A name that also
+ * says consumer or personal covers both and stays; "business day" is a cut-off, not a payer.
+ */
+const BUSINESS_ONLY = String.raw`^(?!.*\b(consumer|personal|retail|individual)\b).*\b(business|commercial|corporate)\b(?!\s+days?\b)`;
 const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
@@ -166,17 +172,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   wire_domestic_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(incoming|receiv|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   wire_intl_outgoing: {
     include: /wire/i,
-    exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection)`, "i"),
+    exclude: new RegExp(`(incoming|receiv|${WIRE_CORRECTIONS}|check|deposit|collection|${BUSINESS_ONLY})`, "i"),
   },
   // v44: guarded so Hamilton reads it for a paired price ("$20 / $30") in the wrong slot.
-  wire_intl_incoming: { include: /\S/, exclude: /(?!)/ },
+  wire_intl_incoming: { include: /\S/, exclude: new RegExp(BUSINESS_ONLY, "i") },
   wire_domestic_incoming: {
     include: /wire/i,
-    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS})`, "i"),
+    exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   stop_payment: {
     include: /stop/i,
@@ -330,7 +336,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // here on purpose (fee-taxonomy.ts).
   early_closure: {
     include: /\S/,
-    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat)/i,
+    // v51: a certificate penalty paid in dividends ("A penalty of seven days dividends will be
+    // imposed", Y-12 FCU 59002) has no dollar price; the figure beside it is a forfeited reward.
+    exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/i,
   },
   night_deposit: {
     include: /(night|depository|after[- ]hours|drop box)/i,
@@ -338,7 +346,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
 };
 
-export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_RULES);
+/** Categories with only a price ceiling (`PRICE_CEILINGS`), checked by the live sweep too. */
+const CEILING_ONLY_CATEGORIES = ["counter_check", "document_reproduction", "late_payment", "notary_fee", "safe_deposit_box"];
+export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys(CATEGORY_GUARD_RULES), ...CEILING_ONLY_CATEGORIES])];
 
 /** Bump when the rules change, so Darwin re-evaluates rows an older version rejected. */
 // v36: PRs 665 and 668 both shipped v35; v36 re-checks rows rejected between their deploys.
@@ -356,7 +366,12 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v48: subordination leaves legal process for other lending; a money order copy is a check copy.
 // v49: treasury service monthly charges filed as monthly maintenance (Darwin eval 94121).
 // v50: "Photocopy of Money Order" is a check copy too (v49 is Accuracy's).
-export const CATEGORY_GUARD_VERSION = 50;
+// v51: a certificate penalty paid in dividends, or a forfeited reward, filed as early closure.
+// v52: price ceilings for copies, counter checks, late payment, notary and lost keys.
+// v53: a business or commercial account's wire price leaves the consumer wire categories.
+// v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
+// a safe deposit box late fee above $250.
+export const CATEGORY_GUARD_VERSION = 54;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -545,8 +560,12 @@ export function checkFeeCategory(
   context?: CategoryGuardContext,
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
-  if (!canonicalFeeKey || !rule) return { ok: true };
+  if (!canonicalFeeKey) return { ok: true };
   const name = plainQuotes(feeName ?? "").trim();
+  if (!rule) {
+    const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
+    return ceilingReason ? { ok: false, code: "amount_implausible", reason: ceilingReason } : { ok: true };
+  }
   const rate = statesRate(canonicalFeeKey, name, context);
   if (rate) {
     return {
@@ -587,7 +606,53 @@ export function checkFeeCategory(
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
   if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
+  const ownAtmReason = freeAtOwnAtm(canonicalFeeKey, name, context);
+  if (ownAtmReason) return { ok: false, code: "name_unsupported", reason: ownAtmReason };
+  const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
+  if (ceilingReason) return { ok: false, code: "amount_implausible", reason: ceilingReason };
   return { ok: true };
+}
+
+/**
+ * v52: prices no bank charges for these fees. A scan that dropped the decimal point prints
+ * "$200" for $2.00 (Central Bank's document 4422: temporary checks $200, photocopy $200, notary
+ * $500, lost key $1000, safe deposit late fee $1000, beside "$5.00" and "$100.00" on the same
+ * page). The fee is flagged for the second look, never re-priced.
+ */
+const PRICE_CEILINGS: ReadonlyArray<{ key: string; max: number; when?: RegExp }> = [
+  { key: "counter_check", max: 100 },
+  { key: "document_reproduction", max: 100 },
+  { key: "late_payment", max: 250 },
+  { key: "notary_fee", max: 300 },
+  // A lost key with rekeying runs up to about $250; drilling the box open ($250-$500) is not capped.
+  { key: "safe_deposit_box", max: 300, when: /^(?!.*drill).*\b(lost|replace\w*|duplicate)\s+keys?\b/i },
+  // v54: a late payment on the box (Central Bank's "$1000", fee 23863, read from "$10.00").
+  { key: "safe_deposit_box", max: 250, when: /^(?!.*drill).*\blate\b/i },
+];
+
+function aboveCeiling(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  const amount = Number(context?.amount);
+  if (!Number.isFinite(amount)) return null;
+  const ceiling = PRICE_CEILINGS.find((entry) => entry.key === canonicalFeeKey && (!entry.when || entry.when.test(name)));
+  if (!ceiling || amount <= ceiling.max) return null;
+  return `$${amount.toFixed(2)} is above any ${canonicalFeeKey} price ($${ceiling.max} ceiling); a scan may have dropped its decimal point`;
+}
+
+/** Words that place an ATM fee at another bank's or network's machine. */
+const OTHER_NETWORK_CUE =
+  /\b(non|foreign|others?|another|network|surcharg\w*|outside|out[- ]of|not\s+(own|operate)|do(es)?\s+not|don['’]t|any|nationwide|national|shared|co-?op|allpoint|moneypass|cirrus|plus|star|pulse|presto|international|third[- ]party|refund\w*|rebate\w*)\b/i;
+
+/**
+ * v54: a free ATM line that names no other bank or network is the bank's own machine ("MidFirst
+ * ATM $0", "Transactions at Orrstown Bank ATMs | No charge", Regions' "Balance Inquiry $0.00"
+ * under "Regions ATM:") or a card's own fee ("ATM Enrollment | No Charge"), not what a customer
+ * pays at another network's ATM. 41 live rows on Oct 9; a priced line is left alone.
+ */
+function freeAtOwnAtm(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "atm_non_network" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  if (!Number.isFinite(amount) || amount !== 0 || OTHER_NETWORK_CUE.test(name)) return null;
+  return `"${name}" is free and names no other bank's or network's ATM, so it is not the atm_non_network fee`;
 }
 
 const PAIRED_PRICES = /\$\s?(\d[\d,]*(?:\.\d{2})?)\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/;

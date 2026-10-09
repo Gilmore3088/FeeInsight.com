@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { borrowedFrequency, frequencyFamily, frequencyFromLine, wordsAfterPrice } from "./fee-frequency";
+import { borrowedFrequency, frequencyFamily, frequencyFromLine, settledFrequency, wordsAfterPrice } from "./fee-frequency";
 
 describe("frequencyFromLine (live excerpts, Oct 8)", () => {
   it("reads the words right after the fee's own price", () => {
@@ -70,5 +70,67 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(frequencyFromLine("Check Printing | $25.00 per order", 25)).toBe("per_item");
     expect(frequencyFromLine("Easy Checking | $5.00 eastern branches", 5)).toBeNull();
     expect(frequencyFromLine("Account Research | $25.00 per hour", 25)).toBeNull();
+  });
+
+  it("reads per loan, per stamp, per file and other per-event nouns (v4)", () => {
+    expect(frequencyFromLine("Skip-A-Pay $ 25 per loan", 25)).toBe("per_item");
+    expect(frequencyFromLine("Non-Customer Notary Fee - Idaho $5.00 Per Stamp", 5)).toBe("per_item");
+    expect(frequencyFromLine("ACH Origination Fee - $15 per file", 15)).toBe("per_item");
+    expect(frequencyFromLine("GUASFCU charges a $10.00 fee per stop payment request.", 10)).toBe("per_item");
+    expect(frequencyFromLine("Returned Item | $30.00 per occurance", 30)).toBe("per_item");
+    expect(frequencyFromLine("Rewards Checking is charged a $7 service fee per calendar month.", 7)).toBe("monthly");
+    expect(frequencyFromLine("Inactive Account | $5.00/quarter", 5)).toBe("quarterly");
+    expect(frequencyFromLine("Paper Statement | $3.00 per statement period", 3)).toBe("monthly");
+    expect(frequencyFromLine("Paper Statement | $2.00 per statement", 2)).toBeNull();
+    expect(frequencyFromLine("Account Research | $30 per hour", 30)).toBeNull();
+  });
+
+  it("settles Darwin's 211-row eval misses (v4, Oct 9)", () => {
+    // A period the line never states, on a fee charged per event, is dropped.
+    expect(settledFrequency("Money Orders .......... $3.00", 3, "monthly", "money_order")).toBeNull();
+    expect(settledFrequency("Monthly Service Fee | $3.00", 3, "monthly", "monthly_maintenance")).toBe("monthly");
+    // An allowance is not the fee's period.
+    expect(settledFrequency("Cashier Checks (1 free per month) | $2.00", 2, "monthly", "cashiers_check")).toBeNull();
+    expect(settledFrequency("- $1.00 charge for ATM withdrawals at machines we do not own (nonproprietary) after five (5) per month.", 1, "monthly", "atm_non_network")).toBeNull();
+    // "/MO" after a word is a money order.
+    expect(settledFrequency("Teller’s checks/money order (per check/MO) | $10.00", 10, "monthly", "money_order")).toBe("per_item");
+    expect(frequencyFromLine("Bill Pay | $5.00/mo", 5)).toBe("monthly");
+    // "every month ... average daily" is a monthly fee on a daily balance.
+    expect(settledFrequency("A Minimum Balance Fee of $35 will be imposed every month if the average daily", 35, "daily", "minimum_balance")).toBe("monthly");
+    // Per business day, one-time, a price without its leading zero, a price printed twice.
+    expect(settledFrequency("Continuous Overdraft Fee per business day (after 7 consecutive business days overdrawn) | $5.00", 5, null, "continuous_od")).toBe("daily");
+    expect(frequencyFromLine("Lifetime Membership Fee.......... $5 one-time | Bill Pay/ Zelle", 5)).toBe("one_time");
+    expect(frequencyFromLine("ATM Balance Inquiry Fee | $.25 per inquiry", 0.25)).toBe("per_item");
+    expect(frequencyFromLine("• Money Order Research Fee - $10.00/money order", 10)).toBe("per_item");
+    expect(frequencyFromLine("Starter Checks | $2.00/sheet of 3", 2)).toBe("per_item");
+    expect(frequencyFromLine("Garnishment Fee | $100.00 per garnishment", 100)).toBe("per_item");
+    expect(settledFrequency("Returned Item: | $6.00 per presentment | Replace Lost Card: | $6.00", 6, "per_item", "card_replacement")).toBe("per_item");
+    expect(frequencyFromLine("Returned Item: | $6.00 per presentment | Replace Lost Card: | $6.00", 6)).toBeNull();
+  });
+
+  it("reads a count beyond the allowance as an allowance (v5)", () => {
+    expect(settledFrequency("Debit Card Replacement (More than 2 per year) | $5", 5, "annual", "card_replacement")).toBeNull();
+    expect(settledFrequency("Excess Withdrawals (over 6 per month) | $10.00 each", 10, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("Annual Fee | $25.00 per year", 25, "annual", "card_annual")).toBe("annual");
+  });
+
+  it("reads footnote marks, a cap and a second price's label (v6, Darwin's held copy fees)", () => {
+    expect(frequencyFromLine("Statement Copy Fee | $3.00 per month6", 3)).toBe("monthly");
+    expect(frequencyFromLine("Paper Statements | $3/month2", 3)).toBe("monthly");
+    expect(frequencyFromLine("Additional per Item Fee $0.50 each2 Paper Statement Fee $2.00/Month", 0.5)).toBe("per_item");
+    expect(frequencyFromLine("Statement Copy | Personal: $1.00/page Business: $3.00/page", 1)).toBe("per_item");
+    expect(frequencyFromLine("Statement Copy Fee: $2.00 per page up to a maximum of $5.00 per statement month.", 2)).toBe("per_item");
+    expect(settledFrequency("Statement copy fee – $4.00 per copy", 4, null, "document_reproduction")).toBe("per_item");
+    expect(settledFrequency("Fax Service | $2.00 per page", 2, null, "account_research")).toBe("per_item");
+    // A label still ends the words before the next price, and a minimum is still another basis.
+    expect(frequencyFromLine("Monthly maintenance fee: $8.00 Per check: $0.20", 8)).toBe("monthly");
+    expect(frequencyFromLine("Research | $25.00 ($25.00 minimum)", 25)).toBeNull();
+  });
+
+  it("reads 'after 3 in a month' and 'exceeding two per month' as allowances (v7, Darwin's held rows)", () => {
+    expect(settledFrequency("| IRA Savings Excessive Withdrawal | $15 Each after 3 in a month |", 15, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("A $1.00 excess withdrawal fee will be charged for each in-person debit transaction exceeding two per month.", 1, "monthly", "excess_withdrawal")).toBeNull();
+    expect(settledFrequency("Fax | $2.00/Page", 2, null, "account_research")).toBe("per_item");
+    expect(settledFrequency("Monthly Service Fee | $5.00 a month", 5, "monthly", "monthly_maintenance")).toBe("monthly");
   });
 });

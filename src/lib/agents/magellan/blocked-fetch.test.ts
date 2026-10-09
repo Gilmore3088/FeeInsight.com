@@ -156,6 +156,10 @@ describe("selectBlockedCompanions", () => {
     expect(texts[0]).toContain("'blocked_bot'");
     // A dormant bank's hand-found schedule is fetched too (Stock Yards); a closed charter's is not.
     expect(texts[0]).toContain("OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')");
+    // A hand-found page goes to the paid fetch after one timeout; others after two.
+    expect(texts[0]).toContain("WHEN plain.outcome = 'timeout' AND ias.found_by_strategy = ? THEN TRUE");
+    // Hand-found pages jump the queue ahead of larger banks' pages.
+    expect(texts[0]).toContain("ORDER BY (ias.found_by_strategy = ?) DESC NULLS LAST,");
     expect(await selectBlockedCompanions(db, 0)).toEqual([]);
   });
 });

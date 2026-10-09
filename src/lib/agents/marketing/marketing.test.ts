@@ -22,9 +22,9 @@ import { allowedNumbers, pickSpotlightState, unbackedNumbers, type FactBundle } 
 import { copyProblems, copyText, renderEmail, withMailingAddress, writerPrompt, type EmailCopy } from "./email";
 import { campaignName, parseCampaignName, planMonth, scoreCampaign, type CampaignResult, FORMAT_COOLDOWN_MONTHS } from "./formats";
 import { createAbDraft, toAgentCampaign } from "./mailerlite-campaigns";
-import { nationalAudience, stateEditionCopy } from "./state-edition";
+import { nationalAudience, stateEditionCopy, summarizeStateEditions } from "./state-edition";
 import { whatsNewFor, WHATS_NEW } from "./whats-new";
-import { lessonsFrom, runMarketingSend, summarizeWrite } from "./monthly";
+import { lessonsFrom, runMarketingSend, summarizeScore, summarizeWrite } from "./monthly";
 
 const bundle: FactBundle = {
   month: "2026-11",
@@ -323,5 +323,21 @@ describe("state editions", () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: "123", name: "Newsletter", active_count: 7 }], meta: { last_page: 1 } })));
     expect(await nationalAudience({} as never, "2026-11", { fetcher, dryRun: true })).toEqual({ groupIds: [], thinStates: [] });
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dry-run summaries", () => {
+  it("says the score would store the snapshot, not that it did", () => {
+    expect(summarizeScore({ scored: 0, learnable: 0, results: [], snapshotStored: false, skipped: null })).toBe(
+      "No sent campaigns to score yet; would store this month's market snapshot (dry run: nothing saved).",
+    );
+    expect(summarizeScore({ scored: 0, learnable: 0, results: [], snapshotStored: true, skipped: null })).toBe(
+      "No sent campaigns to score yet; stored this month's market snapshot.",
+    );
+  });
+
+  it("says which state editions a dry run would draft", () => {
+    const result = { month: "2026-10", states: 1, drafts: [], skipped: [{ state: "AL", reason: "dry run: not drafted" }], failures: [], skippedAll: null };
+    expect(summarizeStateEditions(result)).toBe("Would draft 1 state edition (AL) for 1 state with readers; dry run, nothing drafted.");
   });
 });

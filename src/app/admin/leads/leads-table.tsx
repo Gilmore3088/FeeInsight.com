@@ -12,9 +12,11 @@ import {
 import { formatUsd, institutionIdFromUseCase, isReportRequestSource } from "@/lib/leads/report-payment";
 import { setLeadStatusAction, type LeadStatusState } from "./status-actions";
 import { sendReportQuoteAction, setReportQuoteAction, type ReportQuoteState } from "./quote-actions";
+import { setLeadQualifiedAction, type LeadQualifiedState } from "./qualified-actions";
 
 const INITIAL_STATUS_STATE: LeadStatusState = { status: "idle", message: "" };
 const INITIAL_QUOTE_STATE: ReportQuoteState = { status: "idle", message: "" };
+const INITIAL_QUALIFIED_STATE: LeadQualifiedState = { status: "idle", message: "" };
 
 const ROLE_LABELS: Record<string, string> = {
   bank_cu: "Bank / CU",
@@ -103,6 +105,38 @@ function LeadStatusForm({ lead }: { lead: LeadRow }) {
         className="rounded bg-gray-900 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-gray-900"
       >
         {isPending ? "Saving" : "Save"}
+      </button>
+      {state.message && (
+        <span className={`text-xs ${state.status === "error" ? "text-red-600" : "text-emerald-600"}`}>{state.message}</span>
+      )}
+    </form>
+  );
+}
+
+/**
+ * The qualified mark: who marked the lead and when. Marking it drafts a quote email into the
+ * /admin/growth queue for review; nothing sends. The sales metrics count qualified leads.
+ */
+function LeadQualifiedForm({ lead }: { lead: LeadRow }) {
+  const [state, formAction, isPending] = useActionState(setLeadQualifiedAction, INITIAL_QUALIFIED_STATE);
+  if (!lead.qualified_columns) return null;
+  const qualified = Boolean(lead.qualified_at);
+  return (
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="id" value={lead.id} />
+      <input type="hidden" name="qualified" value={qualified ? "0" : "1"} />
+      {qualified && (
+        <span className="text-xs text-emerald-700 dark:text-emerald-400">
+          Qualified {formatStamp(lead.qualified_at as string)}
+          {lead.qualified_by ? ` by ${lead.qualified_by}` : ""}
+        </span>
+      )}
+      <button
+        type="submit"
+        disabled={isPending}
+        className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 disabled:opacity-50 dark:border-white/[0.15] dark:text-gray-200"
+      >
+        {isPending ? "Saving" : qualified ? "Clear qualified" : "Mark qualified"}
       </button>
       {state.message && (
         <span className={`text-xs ${state.status === "error" ? "text-red-600" : "text-emerald-600"}`}>{state.message}</span>
@@ -296,6 +330,7 @@ export function LeadsTable({ leads }: { leads: LeadRow[] }) {
                       <div className="px-4 pb-4 pt-1 border-t border-gray-100 dark:border-white/[0.04] bg-gray-50/40 dark:bg-white/[0.01]">
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                           <LeadStatusForm lead={lead} />
+                          <LeadQualifiedForm lead={lead} />
                           {due && (
                             <p className={`text-xs ${overdue ? "font-semibold text-red-600" : "text-gray-500"}`}>
                               {overdue ? "Overdue: " : "Answer by "}
