@@ -46,21 +46,14 @@ export interface VerifiedRecheckResult {
 
 const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], flagged: 0, waiting: 0, takenDown: [] };
 
-export async function recheckVerifiedFees(
-  db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; now?: Date },
-): Promise<VerifiedRecheckResult> {
-  const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
-  const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], takenDown: [] };
-  let rows: RecheckRow[];
-  try {
-    rows = await inSavepoint(db, (scope) => scope<RecheckRow[]>`
+function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise<RecheckRow[]> {
+  return inSavepoint(db, (scope) => scope<RecheckRow[]>`
       SELECT v.fee_verified_id, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
              r.fee_name, r.amount, r.frequency, r.outlier_flags, r.conditions, r.source_document_id,
              r.amount_kind, r.rate_percent,
              (SELECT p.fee_published_id FROM published_fee_records p
-               WHERE p.fee_verified_id = v.fee_verified_id AND p.rolled_back_at IS NULL
+               WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
                ORDER BY p.fee_published_id DESC LIMIT 1) AS fee_published_id
         FROM verified_fee_observations v
         JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
@@ -72,6 +65,12 @@ export async function recheckVerifiedFees(
               AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
               AND pa.detail->>'decision' = 'verified'
          )
+         AND (${!reselectCohort} OR EXISTS (
+           SELECT 1 FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'raw:' || v.fee_raw_id::text
+              AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
+              AND pa.detail->>'reason_code' = 'not_in_source'
+         ))
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'verified:' || v.fee_verified_id::text
@@ -81,6 +80,20 @@ export async function recheckVerifiedFees(
        ORDER BY v.fee_verified_id DESC
        LIMIT ${limit}::int
     `);
+}
+
+export async function recheckVerifiedFees(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; limit?: number; now?: Date },
+): Promise<VerifiedRecheckResult> {
+  const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
+  const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], takenDown: [] };
+  let rows: RecheckRow[];
+  try {
+    // The rows the not_in_source re-select verified (#883, the cohort UAT checked) are read first;
+    // once they are done each step reads the newest verified rows.
+    rows = await selectRows(db, limit, true);
+    if (rows.length === 0) rows = await selectRows(db, limit, false);
   } catch (error) {
     console.warn("[darwin] verified recheck read failed", error instanceof Error ? error.message : error);
     return result;
