@@ -3,6 +3,7 @@ import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from 
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
+import { KNOX_PAID_FLAG } from "@/lib/agents/knox/paid-extract";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
@@ -429,6 +430,11 @@ export async function recheckUntracedRows(
  * audit text takes the current text's hash, so the next re-read of that text keeps it. The rest
  * are marked with the rules version and read again when the rules change. Nothing is deleted.
  *
+ * Only rows Knox's paid reader produced are read again, so a row comes back only when two
+ * independent readers agree on its name, amount and category. The first dry read (9 Oct, 17 rows
+ * the free rules alone would have sent back) was 11 of 17 right against source: rule-read rows
+ * brought back a $1,000 ATM limit, an ATM fee rebate and a courtesy-pay fee filed as an ATM fee.
+ *
  * `SUPERSEDED_RECHECK_LIVE` off is a dry read: each row is read once per rules version and
  * marked with what the pass would do (`knox_superseded_would_promote:vN`), and nothing goes to
  * Darwin.
@@ -436,6 +442,7 @@ export async function recheckUntracedRows(
 export const SUPERSEDED_RECHECK_LIVE = false;
 export const SUPERSEDED_RECHECK_LIMIT = 100;
 export const SUPERSEDED_RECHECK_PROMOTED_FLAG = "knox_promoted_from_superseded";
+export const SUPERSEDED_RECHECK_SOURCE_FLAG = KNOX_PAID_FLAG;
 
 export function supersededRecheckFlag(version: number = KNOX_RULES_STRATEGY.version): string {
   return `knox_superseded_recheck:${KNOX_RULES_STRATEGY.strategy}:v${version}`;
@@ -501,6 +508,7 @@ export async function recheckSupersededRows(
       ) adt ON TRUE
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'superseded_by_reread'
+       AND fr.outlier_flags ? ${SUPERSEDED_RECHECK_SOURCE_FLAG}
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT fr.outlier_flags ? ${flag}
        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)

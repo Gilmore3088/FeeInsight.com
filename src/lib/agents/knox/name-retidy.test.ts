@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -507,5 +507,55 @@ describe("v13: a font's ligature letters read back as their pairs", () => {
     ]);
     expect(isMessyName("Account research/reconciliaƟon")).toBe(true);
     expect(unligatedName("Outgoing Wire")).toBeNull();
+  });
+});
+
+describe("v14: a monthly fee's bare name shared at different prices takes its account's name", () => {
+  // Security Federal (722, doc 23994) as stored.
+  const page = [
+    {
+      source_document_id: 70,
+      normalized_text: [
+        "Personal Checking Accounts That Give You More!",
+        "Premium Checking",
+        "",
+        "Qualify2 to earn 4.00% APY4 on the portion of the daily balance under $10,000.",
+        "Account Information",
+        "Earn Interest",
+        "$2,500 Minimum Deposit to Open",
+        "",
+        "$15 waivable monthly fee",
+        "Maintain a $2,500 daily minimum balance, and we'll waive the monthly fee.",
+        "Open Now",
+        "High Yield Checking",
+        "Qualify2 to earn 4.00% APY4 on the portion of the daily balance under $10,000.",
+        "Account Information",
+        "Earn Interest",
+        "$1,000 Minimum Deposit to Open",
+        "$12 waivable monthly fee",
+        "Maintain a $1,000 daily minimum balance and we'll waive the monthly fee.",
+        "Freedom Checking",
+        "$5 monthly fee",
+      ].join("\n"),
+    },
+  ];
+  const premium = fee({ fee_published_id: 105086, canonical_fee_key: "monthly_maintenance", fee_name: "waivable monthly fee", amount: 15 });
+  const highYield = fee({ fee_published_id: 105087, canonical_fee_key: "monthly_maintenance", fee_name: "waivable monthly fee", amount: 12 });
+  const freedom = fee({ fee_published_id: 105088, canonical_fee_key: "monthly_maintenance", fee_name: "Freedom Checking Monthly fee", amount: 5 });
+
+  it("names each shared fee after the account heading above its own price", () => {
+    const live = [premium, highYield, freedom];
+    expect([...sharedNameFeeIds(live)]).toEqual([105086, 105087]);
+    expect(planRetidy([premium, highYield], page, live).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [105086, "Premium Checking waivable monthly fee"],
+      [105087, "High Yield Checking waivable monthly fee"],
+    ]);
+  });
+
+  it("renames none of them when one can't find a heading of its own", () => {
+    const twin = { ...page[0], normalized_text: page[0].normalized_text.replace("High Yield Checking", "Qualify for more") };
+    expect(planRetidy([premium, highYield], [twin], [premium, highYield]).renames).toEqual([]);
+    expect(accountHeading("monthly fee", 5, ["Compare Checking Accounts\n$5 monthly fee"])).toBeNull();
+    expect(accountHeading("monthly fee", 5, ["Freedom Checking\n$50 monthly fee"])).toBeNull();
   });
 });
