@@ -152,10 +152,11 @@ const VICE_PRESIDENT = /\b(?:senior\s+|executive\s+|assistant\s+|first\s+)?vice[
 const BUYER_TITLE = /\b(?:ceo|cfo|cmo|coo)\b|chief (?:executive|financial|marketing|retail|operating|deposit|experience)|\bmarketing\b|\bretail\b(?! lending)|\bdeposits?\b/i;
 /**
  * Titles that sell or service rather than buy a fee study: lenders, mortgage and loan staff,
- * business development, relationship and cash management, wealth and trust, branch staff.
+ * business development, relationship and cash management, wealth and trust, equipment finance,
+ * credit risk, branch staff.
  */
 const NOT_BUYER_TITLE =
-  /loan|lend|mortgage|underwrit|business banker|business banking|business development|business services|business product|relationship manager|cash management|treasury management|commercial|wealth|trust officer|investment|nmls|branch|teller|collections|\bit\b|information technology/i;
+  /loan|lend|mortgage|underwrit|business banker|business banking|business development|business services|business product|relationship manager|cash management|treasury management|commercial|wealth|\btrust\b|investment|vendor finance|equipment finance|credit risk|nmls|branch|teller|collections|\bit\b|information technology/i;
 
 /**
  * Member services and member experience are retail only at a decision maker's rank (PR 652's
@@ -164,8 +165,12 @@ const NOT_BUYER_TITLE =
 const MEMBER_ROLE = /member (?:experience|services?)/i;
 const DECISION_MAKER_RANK = /\b(?:vp|svp|evp|vice[\s-]+president|director|chief|head)\b/i;
 
+/** Business-side desks and junior ranks that don't own retail fee pricing, whatever else the title says. */
+const NEVER_BUYER_TITLE = /cash management|treasury management|commercial|\b(?:specialist|analyst|supervisor|clerk|representative|associate)\b/i;
+
 export function roleFor(text: string): ContactRole {
   const title = text.replace(VICE_PRESIDENT, " ");
+  if (NEVER_BUYER_TITLE.test(title) && !/\bchief\b/i.test(title)) return "other";
   if (!BUYER_TITLE.test(title) && NOT_BUYER_TITLE.test(title)) return "other";
   const seniorMember = MEMBER_ROLE.test(title) && DECISION_MAKER_RANK.test(text);
   return ROLE_PATTERNS.find(({ role, pattern }) => pattern.test(title) || (role === "retail" && seniorMember))?.role ?? "other";
@@ -175,7 +180,7 @@ export function roleFor(text: string): ContactRole {
  * Lines that read as a title but aren't one ("President's Message March 2026", "Branches Served: ...",
  * a line quoting an address, "CEO For questions or concerns not resolved by staff").
  */
-const NOT_A_TITLE = /@|\byour\b|\be-?mail:|message|\bquestions?\b|\bconcerns?\b|\bnot resolved\b|\bmailing\b|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
+const NOT_A_TITLE = /^\s*contact\b|@|\byour\b|\be-?mail:|message|\bquestions?\b|\bconcerns?\b|\bnot resolved\b|\bmailing\b|branches served|p\.?\s?o\.?\s+box|\bby mail\b|\battn\b|\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}|\b(?:19|20)\d{2}\b|^\s*(?:operations|commercial services)\s*$/i;
 /** Words a page prints where a name would be ("Accessibility Statement", "Commercial Lender", "SEND EMAIL", "Mailing Address"). */
 const NOT_A_NAME =
   /\b(?:statement|e-?mail|send|contact|us|department|inquir\w*|form|request|lender|lending|banker|officer|underwriter|support|services?|press|human|resources|collections|advisor|counsel|administrator|coordinator|manager|message|branch|team|bank|union|pointe|residential|commercial|general|meeting|annual|mailing|address|questions?|concerns?|hours|location|phone|fax|office)\b/i;
@@ -218,9 +223,21 @@ export function nameFitsEmail(name: string | null, email: string): boolean {
 /**
  * A saved contact read with today's rules: its name and title checked again and its role
  * re-read from the title, so rows saved before a rule changed are judged the same way. A
- * name that can't own the contact's personal address drops, with its title.
+ * name that can't own the contact's personal address drops, with its title. A "Contact <name>,
+ * <title>" sentence printed where a title would be is split into the two.
  */
-export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind; email?: string }>(contact: T): T {
+/** "Contact Nicole Andrushko, VP of Marketing, at": a sentence that names the person and their title. */
+const CONTACT_SENTENCE = /^\s*[Cc]ontact\s+([A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+){1,2}),\s*(.+?)(?:,?\s+at)?\s*[.:,]?\s*$/;
+
+/** The name and title out of a "Contact <name>, <title>, at" line, or null for any other line. */
+export function splitContactSentence(line: string | null): { name: string; title: string } | null {
+  const match = line ? CONTACT_SENTENCE.exec(line) : null;
+  return match ? { name: match[1], title: match[2] } : null;
+}
+
+export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind; email?: string }>(input: T): T {
+  const sentence = input.name ? null : splitContactSentence(input.title);
+  const contact = sentence ? { ...input, name: sentence.name, title: sentence.title } : input;
   const name = cleanContactName(contact.name);
   const owned = contact.email === undefined || nameFitsEmail(name, contact.email);
   const title = owned ? cleanContactTitle(contact.title) : null;

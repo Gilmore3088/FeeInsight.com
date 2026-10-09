@@ -253,6 +253,23 @@ describe("shared mailboxes and phone lines", () => {
     expect(normalizeContact({ name: "Claire Speedling", title: "Deposits-Operations Manager", role: "retail", kind: "person", email: "dawns@foresight.bank" })).toMatchObject({ name: null, title: null, role: "other" });
     expect(normalizeContact({ name: "Katie Blake", title: "Senior Retail Banking Officer", role: "retail", kind: "person", email: "katie.blake@ledyard.bank" }).name).toBe("Katie Blake");
   });
+
+  it("drops equipment finance, trust, credit risk, business desks, junior ranks and a Contact sentence (split into name and title)", () => {
+    for (const title of ["Vice President, Senior Regional Vendor Finance Manager", "Trust Operations", "Senior Vice President, Chief Credit Risk Officer"]) {
+      expect(normalizeContact({ name: null, title, role: "finance", kind: "person" }).role).toBe("other");
+    }
+    expect(normalizeContact({ name: null, title: "Contact Nicole Andrushko, VP of Marketing, at", role: "marketing", kind: "person", email: "nandrushko@westerracu.com" })).toMatchObject({
+      name: "Nicole Andrushko",
+      title: "VP of Marketing",
+      role: "marketing",
+    });
+    expect(normalizeContact({ name: null, title: "Contact us for questions", role: "marketing", kind: "person" }).title).toBeNull();
+    for (const title of ["Cash Management – Business Deposit Services Officer", "SVP, Director of Commercial Deposits", "Senior Operations Analyst", "Lead Finance Specialist", "Retail Banking Supervisor"]) {
+      expect(normalizeContact({ name: null, title, role: "retail", kind: "person" }).role).toBe("other");
+    }
+    expect(normalizeContact({ name: null, title: "SVP | Chief Financial Officer", role: "finance", kind: "person" }).role).toBe("finance");
+    expect(normalizeContact({ name: null, title: "SVP | Compliance & Risk", role: "compliance", kind: "person" }).role).toBe("compliance");
+  });
 });
 
 describe("contactsCsv", () => {

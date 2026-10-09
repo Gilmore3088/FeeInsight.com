@@ -91,6 +91,10 @@
     {
       "path": "/api/admin/crew/conversion",
       "schedule": "47 13 * * 1"
+    },
+    {
+      "path": "/api/admin/crew/growth-loop",
+      "schedule": "57 0 * * *"
     }
   ]
 }
