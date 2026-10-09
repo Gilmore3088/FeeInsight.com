@@ -5,7 +5,10 @@ export type MagellanStatus = AgentStatus & {
   dead: number;
   needs_human: number;
   retry_after: number;
-  today_cost_usd: number;
+  /** Magellan spend for the current UTC day from the shared spend ledger; null when unreadable. */
+  today_cost_usd: number | null;
+  /** When the spend ledger was read. */
+  spend_read_at: string | null;
 };
 
 export type RescueEvent =

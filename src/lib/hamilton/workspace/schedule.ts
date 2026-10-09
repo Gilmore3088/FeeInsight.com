@@ -7,8 +7,12 @@
 import { formatFeeAmount } from "@/lib/format";
 import type { AskResponse, Fact, FeePositionRow, SchedulePosition, SourceRef } from "./types";
 
+// Also the ways Pro readers really asked for it: "Which of our fees sit furthest from our peers?",
+// "How do our fees compare?", "Summarize Space Coast's fee evidence and data caveats."
+// Read only when the question names no fee, so "peers" alone ("what about national peers by
+// size") asks how the schedule compares, not about one fee.
 const WHOLE_SCHEDULE =
-  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b/i;
+  /\b(?:every|all(?: of)?(?: our| my| the)?|each|whole|entire|overall)\b[^.?!]{0,30}\bfees?\b|\bfee schedule\b|\b(?:all|every) (?:our|my) (?:prices|pricing)\b|\b(?:which|what) (?:of )?(?:our|my) fees\b|\b(?:our|my) fees\b[^.?!]{0,40}\b(?:peers?|compare|market|furthest|stand)\b|\bsummari[sz]e\b[^.?!]{0,60}\bfees?\b|\bpeers?\b/i;
 
 const FEES_SOURCE: SourceRef = {
   label: "Fees on each institution's own published schedule (verified, live)",

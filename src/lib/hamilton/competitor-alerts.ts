@@ -163,12 +163,23 @@ export function planCompetitorAlerts(input: {
 
 async function loadWorkspaceBanks(onlyInstitutionId: number | null): Promise<WorkspaceBank[]> {
   const rows = await sql<{ institution_id: number | string; user_ids: Array<number | string> }[]>`
-    SELECT m.institution_id, array_agg(DISTINCT m.user_id) AS user_ids
-      FROM institution_workspace_memberships m
-     WHERE m.membership_status = 'active'
-       AND (${onlyInstitutionId}::bigint IS NULL OR m.institution_id = ${onlyInstitutionId}::bigint)
-     GROUP BY m.institution_id
-     ORDER BY m.institution_id
+    SELECT b.institution_id, array_agg(DISTINCT b.user_id) AS user_ids
+      FROM (
+        SELECT m.institution_id::bigint AS institution_id, m.user_id::bigint AS user_id
+          FROM institution_workspace_memberships m
+         WHERE m.membership_status = 'active'
+        UNION
+        -- A Pro reader's saved bank counts too, so the bank they work on gets these before
+        -- anyone holds a seat on it (no institution has a paid seat yet).
+        SELECT c.selected_institution_id::bigint, c.user_id::bigint
+          FROM hamilton_workspace_contexts c
+          JOIN users u ON u.id = c.user_id
+         WHERE c.selected_institution_id IS NOT NULL AND u.is_active = TRUE
+           AND (u.role IN ('admin', 'analyst', 'premium') OR u.subscription_status IN ('active', 'past_due'))
+      ) b
+     WHERE (${onlyInstitutionId}::bigint IS NULL OR b.institution_id = ${onlyInstitutionId}::bigint)
+     GROUP BY b.institution_id
+     ORDER BY b.institution_id
   `;
   return rows.map((row) => ({
     institutionId: Number(row.institution_id),
@@ -214,30 +225,25 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-         WHERE fp.institution_id = c.institution_id
-           AND fp.canonical_fee_key = COALESCE(c.canonical_fee_key, c.fee_category)
-           AND fp.amount = c.new_amount
+         -- The pair publish recorded (hamilton/change-pairing.ts), not one guessed by amount.
+         WHERE fp.fee_published_id = c.new_fee_published_id
            AND fp.rolled_back_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
-         ORDER BY fp.published_at DESC
-         LIMIT 1
       ) n ON TRUE
       LEFT JOIN LATERAL (
         SELECT fp.fee_name, fp.source_url, fr.source_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-         WHERE fp.institution_id = c.institution_id
-           AND fp.canonical_fee_key = COALESCE(c.canonical_fee_key, c.fee_category)
-           AND fp.amount = COALESCE(c.old_amount::float8, c.previous_amount)
-           AND fp.rolled_back_reason LIKE 'superseded%'
-         ORDER BY fp.rolled_back_at DESC NULLS LAST
-         LIMIT 1
+         WHERE fp.fee_published_id = c.previous_fee_published_id
       ) o ON TRUE
      WHERE c.institution_id = ANY(${competitorIds}::bigint[])
        AND COALESCE(c.canonical_fee_key, c.fee_category) = ANY(${categories}::text[])
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
        AND c.detected_at <= ${agedBefore}::timestamptz
+       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       AND c.like_for_like IS TRUE
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f
@@ -296,6 +302,53 @@ async function raiseAlert(alert: CompetitorAlert, memberUserIds: number[]): Prom
 // Run
 // ---------------------------------------------------------------------------
 
+/**
+ * Takes back alerts whose change no longer stands: the change is no longer like for like, or
+ * its new price was rolled back or is waiting on a takedown (the second look after a misread,
+ * as with Jeanne D'Arc's old "through July 31" column on 8 Oct). The signal row stays, marked
+ * `withdrawn_at` and `withdrawn_reason` in its source_json, so the Monitor feeds skip it; its
+ * active member alerts are dismissed. Nothing is deleted.
+ */
+async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null): Promise<number> {
+  const stale = await sql<{ id: string; reason: string }[]>`
+    SELECT s.id::text AS id,
+           CASE
+             WHEN c.id IS NULL THEN 'change record missing'
+             WHEN c.like_for_like IS NOT TRUE THEN 'change is not like for like'
+             WHEN n.fee_published_id IS NULL OR n.rolled_back_at IS NOT NULL THEN 'new price rolled back'
+             ELSE 'new price has a pending takedown'
+           END AS reason
+      FROM hamilton_signals s
+      LEFT JOIN fee_change_records c ON c.id = (s.source_json ->> 'fee_change_record_id')::bigint
+      LEFT JOIN published_fee_records n ON n.fee_published_id = c.new_fee_published_id
+     WHERE s.signal_type = ${COMPETITOR_CHANGE_SIGNAL}
+       AND NOT (s.source_json ? 'withdrawn_at')
+       AND (${institutionId}::text IS NULL OR s.institution_id = ${institutionId}::text)
+       AND (
+         c.id IS NULL
+         OR c.like_for_like IS NOT TRUE
+         OR n.fee_published_id IS NULL
+         OR n.rolled_back_at IS NOT NULL
+         OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
+       )
+  `;
+  if (dryRun || stale.length === 0) return stale.length;
+  const updates = JSON.stringify(stale.map((row) => ({ id: row.id, reason: row.reason })));
+  await sql`
+    UPDATE hamilton_signals s
+       SET source_json = s.source_json || jsonb_build_object('withdrawn_at', NOW(), 'withdrawn_reason', u.reason)
+      FROM jsonb_to_recordset(${updates}::jsonb) AS u(id uuid, reason text)
+     WHERE s.id = u.id
+  `;
+  await sql`
+    UPDATE hamilton_priority_alerts
+       SET status = 'dismissed'
+     WHERE status = 'active'
+       AND signal_id = ANY(${stale.map((row) => row.id)}::uuid[])
+  `;
+  return stale.length;
+}
+
 export interface CompetitorAlertsResult {
   dryRun: boolean;
   /** Institutions with an active workspace (or the one asked for). */
@@ -309,6 +362,8 @@ export interface CompetitorAlertsResult {
   alerts: number;
   /** Member alerts written (alerts x members). */
   memberAlerts: number;
+  /** Earlier alerts taken back because their change no longer stands. */
+  withdrawn: number;
   previews: Array<{ bank: string; title: string; body: string }>;
 }
 
@@ -327,6 +382,7 @@ export async function runCompetitorAlerts({
     alreadyShown: 0,
     alerts: 0,
     memberAlerts: 0,
+    withdrawn: 0,
     previews: [],
   };
   let banks = await loadWorkspaceBanks(institutionId);
@@ -379,16 +435,20 @@ export async function runCompetitorAlerts({
       }
     }
   }
+  result.withdrawn = await withdrawStaleAlerts(dryRun, institutionId);
   return result;
 }
 
 export function summarizeCompetitorAlerts(result: CompetitorAlertsResult): string {
   const lead = result.dryRun ? "Dry run: " : "";
-  if (result.banks === 0) return `${lead}No institution has an active workspace, so there are no competitor alerts to raise.`;
+  const withdrawn = result.withdrawn > 0
+    ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} earlier alert(s) whose change no longer stands.`
+    : "";
+  if (result.banks === 0) return `${lead}No institution has an active workspace, so there are no competitor alerts to raise.${withdrawn}`;
   const raised = result.dryRun ? "Would raise" : "Raised";
   return (
     `${lead}Checked ${result.competitorsChecked} local competitor(s) for ${result.banksWithMarket} of ${result.banks} institution(s); ` +
     `${result.agedChanges} recorded change(s) were past their 12-hour second look, ${result.notConfirmed} did not hold up against the schedules, ` +
-    `${result.alreadyShown} were already shown. ${raised} ${result.alerts} alert(s).`
+    `${result.alreadyShown} were already shown. ${raised} ${result.alerts} alert(s).${withdrawn}`
   );
 }

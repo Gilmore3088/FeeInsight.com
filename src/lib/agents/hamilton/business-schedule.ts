@@ -31,6 +31,18 @@ export const BUSINESS_SCHEDULE_REASON = "business_schedule";
 export const BUSINESS_SCHEDULE_FLAG = "business_schedule";
 export const BUSINESS_SCHEDULE_ROLLBACK_LIMIT = 200;
 
+/**
+ * True for a fee whose own name says it is a business price ("Business ATM/Debit Transactions,
+ * off premises", "Commercial NSF Fee per item"), read from a disclosure that lists consumer and
+ * business fees together (Prosperity 61, live 101925, 9 Oct). "Corporate" is left out: a
+ * corporate check is the official check a consumer buys. A name with "|" or ":" is left out
+ * too: there "Business" is often a heading or column carried in ("BUSINESS CHECKING ACCOUNT
+ * FEES | Skip-a-Pay", Apex's "Business Analysis Checking: replacement, and drilling"), 3 of a
+ * 10-fee spot check on 9 Oct. 101 such live fees then, 51 beside a consumer fee.
+ */
+const BUSINESS_NAME_SQL = (column: string) =>
+  `(${column} ~* '^\\s*(business|commercial)\\M[^|:]*$' AND ${column} !~* '^\\s*business\\s+days?\\M')`;
+
 /** True for a document address whose path names a business-only schedule (SQL, host removed). */
 const BUSINESS_DOC_SQL = (column: string) =>
   `(regexp_replace(${column}, '^https?://[^/]+', '') ~* '${BUSINESS_PATH_SQL}'
@@ -45,6 +57,7 @@ interface BusinessFeeRow {
   canonical_fee_key: string;
   amount: number | string | null;
   consumer_fee_id: number | string | null;
+  business_document: boolean;
 }
 
 export interface BusinessScheduleTakedown {
@@ -56,6 +69,8 @@ export interface BusinessScheduleTakedown {
   canonicalFeeKey: string;
   amount: number | null;
   consumerFeeId: number;
+  /** False when only the fee's own name says business: the document is a mixed schedule, not a wrong link. */
+  businessDocument: boolean;
   reason: string;
 }
 
@@ -99,20 +114,27 @@ export async function retireBusinessScheduleFees(
       `WITH live AS (
          SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
                 sd.document_url, fp.canonical_fee_key, fp.amount,
-                ${BUSINESS_DOC_SQL("sd.document_url")} AS business
+                ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
+                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")} AS business
            FROM published_fee_records fp
            JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
            JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
            JOIN source_documents sd ON sd.id = fr.source_document_id
           WHERE fp.rolled_back_at IS NULL
             ${options.institutionId ? "AND fp.institution_id = $1" : ""}
+       ),
+       -- The first live consumer fee per bank and category, grouped once. A subquery per
+       -- business fee rescanned the whole CTE each time: 12.5 s average on Oct 8.
+       consumer AS (
+         SELECT institution_id, canonical_fee_key, min(fee_published_id) AS consumer_fee_id
+           FROM live
+          WHERE NOT business
+          GROUP BY institution_id, canonical_fee_key
        )
        SELECT b.fee_published_id, b.fee_verified_id, b.institution_id, b.source_document_id, b.document_url,
-              b.canonical_fee_key, b.amount,
-              (SELECT min(c.fee_published_id) FROM live c
-                WHERE c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
-                  AND NOT c.business) AS consumer_fee_id
+              b.canonical_fee_key, b.amount, c.consumer_fee_id, b.business_document
          FROM live b
+         LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
         WHERE b.business
         ORDER BY b.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
@@ -139,6 +161,7 @@ export async function retireBusinessScheduleFees(
       canonicalFeeKey: row.canonical_fee_key,
       amount: num(row.amount),
       consumerFeeId,
+      businessDocument: row.business_document !== false,
       reason: `${BUSINESS_SCHEDULE_REASON}: consumer fee #${consumerFeeId}`,
     });
   }
@@ -191,9 +214,11 @@ export async function retireBusinessScheduleFees(
   invalidatePublicReadCache();
 
   // One lesson per business document, for Magellan: the link it holds is not the consumer schedule.
+  // A business-named fee from a mixed schedule says nothing about the link; its second look
+  // (takedown_confirmed) is the lesson, and Knox holds its re-read for review (takedown-lessons.ts).
   const documents = new Map<number, BusinessScheduleTakedown>();
   for (const fee of result.rolledBack) {
-    if (fee.sourceDocumentId != null && !documents.has(fee.sourceDocumentId)) documents.set(fee.sourceDocumentId, fee);
+    if (fee.businessDocument && fee.sourceDocumentId != null && !documents.has(fee.sourceDocumentId)) documents.set(fee.sourceDocumentId, fee);
   }
   const lessons: FeedbackRow[] = [...documents.values()].map((fee) => ({
     aboutStage: "discover",

@@ -32,6 +32,13 @@ export function cleanFeeName(raw: string): string | null {
     .replace(/[=*+†‡¹²³⁴⁵⁶⁷⁸⁹]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  // v42: a long name that ends in a note keeps its title, not the note's last clause
+  // ("Overdraft Fee - each debit or check presentment paid (Consumer Accts: 5 max total OD
+  // or Returned Item fees daily)", BankIowa).
+  const noteless = name.replace(/\s*\([^()]*\)?$/, "").trim();
+  if (name.split(" ").length > MAX_NAME_WORDS && noteless !== name && noteless.split(" ").length <= MAX_NAME_WORDS && usableName(noteless)) {
+    name = noteless;
+  }
   if (name.split(" ").length > MAX_NAME_WORDS) {
     const tail = name.split(/[.;:!?]\s+/).pop() ?? name;
     name = tail.trim();
@@ -88,7 +95,17 @@ export function qualifiesName(line: string): boolean {
 
 /** A cell that only qualifies a price or belongs to the row beside it: "Per Item", "/Item", "each", "N/C", "APY of .00%". */
 const UNIT_CELL =
-  /^(?:\/\s*[a-z.]+|per\s+[\w/ -]{1,30}|each|ea\.?|monthly|annual(?:ly)?|fee|amount|charge|n\/c|free|none|no charge|[^a-z]*|apy\b.*)$/i;
+  /^(?:\/\s*[a-z.]+|per\s+[\w/ -]{1,30}|each|ea\.?|monthly|annual(?:ly)?|fee|amount|charge|n\/c|n\/a|free|none|no charge|[^a-z]*|apy\b.*)$/i;
+/** v57: a details cell after the name ("ATM Transaction | Fee applies to the use of an ATM or terminal not owned ..."). */
+const DETAILS_CELL = /^(?:(?:fees?|charges?)\s+(?:applies|apply|is|are|will|may)\b|(?:if|when|unless|based on)\b)/i;
+const MAX_DETAILS_FREE_WORDS = 10;
+/** v57: a word that joins a sentence to the one before it ("Otherwise, a monthly service fee of $6.95"). */
+// v60: "In addition to the Card Replacement Fee" is not a joined sentence ("To the Card Replacement Fee").
+const LEADING_DISCOURSE = /^(?:otherwise|additionally|also|however|in addition(?!\s+to\b)|furthermore|further)\s*,?\s+/i;
+/** v60: a section heading that is no fee's name ("SERVICE FEES"), so a details cell is not dropped down to it. */
+const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
+/** v60: a schedule's "Name" column label read onto the name ("Name Stop Payment | Fee $25.00", Maple FCU). */
+const NAME_LABEL = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
 /** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
 // The previous row's bare price also leads a name in one-line schedules ("100.00 Overdraft (items paid)").
 const LEADING_FRAGMENT = /^(?:(?:\/\s*[A-Za-z.]+|per\s+[a-z/]+(?:\s+[a-z]+)?|each|ea\.)\s+(?=[A-Z“"(•●▪■◦➢►▸])|[a-z]\.\s+(?=[A-Z])|\d{1,2}[.)]\s+(?=[A-Z])|\$?\d[\d,]*\.\d{2}\s+(?=[A-Z]))/;
@@ -123,6 +140,12 @@ export function tidyFeeName(raw: string): string {
   const notAName = (cell: string) => UNIT_CELL.test(cell) || /^[a-z]/.test(cell) || PROSE.test(cell) || /\.$/.test(cell);
   while (cells.length > 1 && notAName(cells[0])) cells = cells.slice(1);
   while (cells.length > 1 && UNIT_CELL.test(cells[cells.length - 1])) cells = cells.slice(0, -1);
+  // v57: a details column after the name is the row's description, not the name.
+  const details = (cell: string) => DETAILS_CELL.test(cell) || PROSE.test(cell) || cell.split(" ").length > MAX_DETAILS_FREE_WORDS;
+  while (cells.length > 1 && details(cells[cells.length - 1]) && !details(cells[0])) {
+    if (cells.length === 2 && SECTION_HEADING.test(cells[0])) break;
+    cells = cells.slice(0, -1);
+  }
   // A "None"/"Free" cell between names is the previous row's price: the name starts after it
   // ("Monthly service fee | None | Bill payment- same day ACH").
   const lastValue = cells.findLastIndex((cell, index) => index < cells.length - 1 && ZERO_WORD.test(cell));
@@ -138,6 +161,12 @@ export function tidyFeeName(raw: string): string {
     .replace(/[\s:;,\-–|/]+$/, "")
     .trim();
   name = trimEnd(name);
+  // v46: "Normal bank fees and charges, including returned item charge/overdraft item charge of"
+  // (Origin Bank): after a general "fees and charges", the fee is what the sentence lists after
+  // "including". "NSF for each presentment, including if the same item is presented" keeps its name.
+  const listed = name.match(/\b(?:fees|charges)(?:\s+and\s+(?:fees|charges))?,\s+including\s+(.+)$/i)?.[1];
+  // A name at the 120-character cap may end mid-word, so it keeps its words.
+  if (listed && raw.trim().length < 120 && listed.split(" ").length <= MAX_TITLE_WORDS) name = `${listed.charAt(0).toUpperCase()}${listed.slice(1)}`;
   // The words that led into the price ("Replacement Card Fee of", "ATM Fee for",
   // "Debit Card Replacement A fee of") and an article in front ("A minimum balance fee").
   // A sentence keeps its ending: "required to avoid a minimum balance fee of" is how the
@@ -145,7 +174,11 @@ export function tidyFeeName(raw: string): string {
   if (name.split(" ").length <= MAX_TITLE_WORDS) {
     for (let pass = 0; pass < 2; pass += 1) name = trimEnd(name.replace(DANGLING_END, ""));
   }
-  name = name.replace(/^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());
+  name = name.replace(NAME_LABEL, "");
+  const joined = LEADING_DISCOURSE.test(name);
+  name = name.replace(LEADING_DISCOURSE, "");
+  name = name.replace(joined ? /^(?:A|An|The)\s+(?=[a-z])([a-z])/i : /^(?:A|An|The)\s+(?=[a-z])([a-z])/, (_, first: string) => first.toUpperCase());
+  if (joined) name = name.replace(/^[a-z]/, (first) => first.toUpperCase());
   // "(Money Order)" alone is the name in parentheses.
   const wrapped = name.match(/^\(([^()]+)\)$/);
   if (wrapped) name = wrapped[1].trim();
@@ -174,6 +207,18 @@ export function repairNameShape(raw: string): string {
     const cut = open[0];
     name = cut === 0 ? name.slice(1).trim() : name.slice(0, cut).replace(/[\s,;:\-–—]+$/u, "").trim();
   }
+  // The other cut: a ")" whose "(" was on the line above ("Bill Payment Service)").
+  let depth = 0;
+  let unmatched = "";
+  for (const char of name) {
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      if (depth === 0) continue;
+      depth -= 1;
+    }
+    unmatched += char;
+  }
+  if (unmatched !== name) name = unmatched.replace(/[\s,;:\-–—]+$/u, "").trim();
   const doubled = name.match(/\b([A-Za-z][A-Za-z'’]{2,})\s+(\1)\b/i);
   if (doubled && doubled.index !== undefined) {
     const [whole, first, second] = doubled;

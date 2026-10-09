@@ -35,6 +35,11 @@ function ask(question: string): AskResponse {
 describe("Hamilton quality bar: 30 consultant questions", () => {
   const score = summarize(QUALITY_QUESTIONS.map((item) => scoreResponse(item, ask(item.question))));
 
+  it("fails an answer that judges the bank's position instead of saying lower or higher", () => {
+    const judged = { kind: "research", shortAnswer: "None of the 3 charge less than your $25; price works in your favor.", pageChange: { screen: "none" } } as AskResponse;
+    expect(scoreResponse(QUALITY_QUESTIONS[3], judged).failures).toContain('judges the position: "works in your favor"');
+  });
+
   it("has exactly 30 distinct questions", () => {
     expect(new Set(QUALITY_QUESTIONS.map((q) => q.question)).size).toBe(30);
   });

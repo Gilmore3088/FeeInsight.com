@@ -51,7 +51,15 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 12: "(greater than or equal to $0)" is a balance condition, not a $0 fee (Citizens, Oct 7).
 // Version 13: an overdraft or NSF price charged "per day after 10 business days" is a sustained
 // overdraft charge, not the per-item fee (Oct 8).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 13 } as const;
+// Version 14: an add-on rate ("$1 each additional page") is not the row's price when it prints
+// another (PR 678), a whole price ending in a glued footnote mark fails (PR 679), and a balance
+// or check-size limit ("$1,000.01 + | $10.00", "&lt;$250", "balance of $250") is a threshold
+// (Darwin's audit, Oct 8). Without the bump, institutions already checked at 13 never re-read.
+// Version 15: an overdraft or NSF price charged "on the 5th consecutive business day" or "per
+// week" is a sustained overdraft charge too (Origin's $10 rows, Oct 8).
+// Version 16: a price from a fee-change notice's earlier column ("Money Orders | $2.00 | $5.00"
+// under "Fee through | Fee as of") is what the fee was, not the fee now (Jeanne D'Arc, Oct 8).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 16 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

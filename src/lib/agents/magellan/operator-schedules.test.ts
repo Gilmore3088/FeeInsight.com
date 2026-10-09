@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   addHandFoundLink,
   addOperatorSchedules,
+  HELD_DOCUMENT_DAYS,
+  NO_CONSUMER_SCHEDULE,
   OPERATOR_SCHEDULE_STRATEGY,
   OPERATOR_SCHEDULES,
   type OperatorSchedule,
@@ -53,16 +55,51 @@ describe("schedules James found by hand", () => {
     expect(inserts(missing)).toHaveLength(0);
   });
 
+  it("counts a stored copy as held only when it was stored in the last month", async () => {
+    const db = createDb([{ institution_id: 1, url: null, institution_name: chase.institutionName }]);
+    await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [chase] });
+    const held = db.mock.calls.find((call) => text(call[0]).includes("UNION ALL"));
+    expect(text(held?.[0])).toContain("doc.crawled_at > NOW() - make_interval(days =>");
+    expect(held).toContain(HELD_DOCUMENT_DAYS);
+  });
+
   it("leaves a bank whose stored name does not match the listed one", async () => {
     const other = createDb([{ institution_id: 1, url: null, institution_name: "Maple Test Bank" }]);
     expect((await addOperatorSchedules({ db: asDb(other), runId: 5, schedules: [chase] })).added).toEqual([]);
     expect(inserts(other)).toHaveLength(0);
   });
 
+  it("refuses a schedule on another institution's own website (a same-name bank)", async () => {
+    const firstUnited: OperatorSchedule = {
+      institutionId: 118,
+      institutionName: "First United Bank and Trust Company",
+      url: "https://mybank.com/wp-content/uploads/OAC_Account_Disclosures.pdf",
+      givenBy: "test",
+    };
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("UNION ALL")) return Promise.resolve([{ institution_id: 118, url: null, institution_name: firstUnited.institutionName }]);
+      if (sqlText.includes("FROM institution_sources other")) {
+        return Promise.resolve([{ id: 595, institution_name: "First United Bank & Trust", state_code: "MD" }]);
+      }
+      return Promise.resolve([{ id: 7 }]);
+    });
+    expect((await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [firstUnited] })).added).toEqual([]);
+    expect(inserts(db)).toHaveLength(0);
+  });
+
   it("records nothing when the companion row already existed", async () => {
     const db = createDb([{ institution_id: 1, url: null, institution_name: chase.institutionName }], []);
     expect((await addOperatorSchedules({ db: asDb(db), runId: 5, schedules: [chase] })).added).toEqual([]);
     expect(attempts(db)).toHaveLength(0);
+  });
+
+  it("never hunts a schedule for a bank listed as having no consumer schedule", () => {
+    const hunted = new Set(OPERATOR_SCHEDULES.map((schedule) => schedule.institutionId));
+    for (const bank of NO_CONSUMER_SCHEDULE) {
+      expect(hunted.has(bank.institutionId)).toBe(false);
+      expect(bank.reason.length).toBeGreaterThan(20);
+    }
   });
 
   it("lists each bank once, Chase and Citi first, with https links", () => {
@@ -93,6 +130,18 @@ describe("links pasted on the hit list", () => {
     expect(insert).toContain(OPERATOR_SCHEDULE_STRATEGY.strategy);
     expect(insert).toContain(null);
     expect(attempts(db)).toHaveLength(1);
+  });
+
+  it("refuses a link on another institution's own website", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("SELECT institution_name")) return Promise.resolve([{ institution_name: "First United Bank and Trust Company" }]);
+      if (sqlText.includes("FROM institution_sources other")) return Promise.resolve([{ id: 595, institution_name: "First United Bank & Trust", state_code: "MD" }]);
+      return Promise.resolve([{ id: 9 }]);
+    });
+    const result = await addHandFoundLink({ db: pasteAsDb(db), institutionId: 118, url: "https://mybank.com/a.pdf", givenBy: "j" });
+    expect(result).toEqual({ ok: false, error: "That link is on the website of First United Bank & Trust (MD), another institution" });
+    expect(inserts(db)).toHaveLength(0);
   });
 
   it("refuses a non-link, an unknown institution and a link already on file", async () => {

@@ -8,7 +8,7 @@ import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
-import { groundLineup, LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
+import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
@@ -47,6 +47,27 @@ export const KNOX_REEXTRACT_MAX_FEES = 5;
  * large bank's missing overdraft fee would otherwise wait for a new copy of its page.
  */
 export const KNOX_REREAD_ASSET_FLOOR = 10_000_000;
+
+// Among $10B+ banks' texts due a re-read, a bank with no live overdraft fee goes first,
+// then the text Knox's rules read longest ago. Ordered by newest text alone, each rules
+// version bump restarted the same banks: on 2026-10-08 v34-v43 reached 97 of the 192
+// banks, and GreenState (no live overdraft fee, last read at v33) never came up. Only
+// large banks' rows pay for the two lookups.
+const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR} THEN NOT EXISTS (
+           SELECT 1 FROM published_fee_records live_overdraft
+            WHERE live_overdraft.institution_id = adt.institution_id
+              AND live_overdraft.canonical_fee_key = 'overdraft'
+              AND live_overdraft.rolled_back_at IS NULL
+         ) END DESC NULLS LAST,
+         CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR} THEN (
+           SELECT MAX(last_read.created_at)
+             FROM pipeline_attempts last_read
+            WHERE last_read.stage = 'extract'
+              AND last_read.institution_id = adt.institution_id
+              AND last_read.input_fingerprint = adt.text_hash
+              AND last_read.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+         ) END ASC NULLS FIRST, `;
+
 /**
  * A current copy last read by a rules version below this is read again once (2026-10-07:
  * 5,474 current copies at 4,265 banks were last read before v26, when Knox missed plural
@@ -54,6 +75,12 @@ export const KNOX_REREAD_ASSET_FLOOR = 10_000_000;
  * Raise it only when a rules change is worth reading every page again.
  */
 export const KNOX_STALE_READ_BELOW_VERSION = 26;
+/**
+ * A current copy with a monthly fee row missing its account name, or both the balance that
+ * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
+ * fill them (2026-10-09: 8,928 rows on 3,223 current copies had no account name). Free: rules only.
+ */
+export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
@@ -301,6 +328,53 @@ async function selectTextArtifacts(
                   AND recent.strategy_version >= ${staleParam}
              )
            )`;
+      // A current copy whose monthly fee rows lack lineup facts is read again once.
+      const namedParam = `$${params.push(KNOX_LINEUP_READ_BELOW_VERSION)}`;
+      thinTextReextract += `
+           OR (
+             EXISTS (
+               SELECT 1 FROM raw_fee_observations unnamed
+                WHERE unnamed.source = 'knox'
+                  AND unnamed.source_document_id = adt.source_document_id
+                  AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL))
+                  AND unnamed.conditions LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${namedParam}
+             )
+           )`;
+    }
+    // A priority bank or market leader with no live overdraft fee has its current page read
+    // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
+    // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
+    // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
+    if (currentCopy && priorityIds.length > 0) {
+      const leaderParam = `$${params.push(`{${priorityIds.join(",")}}`)}`;
+      thinTextReextract += `
+           OR (
+             adt.institution_id = ANY(${leaderParam}::bigint[])
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM published_fee_records live_overdraft
+                WHERE live_overdraft.institution_id = adt.institution_id
+                  AND live_overdraft.canonical_fee_key = 'overdraft'
+                  AND live_overdraft.rolled_back_at IS NULL
+             )
+           )`;
     }
     // Same text + same extractor version = same answer: never extract it twice.
     const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
@@ -373,7 +447,7 @@ async function selectTextArtifacts(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ` : ""}adt.updated_at DESC, adt.id DESC
+       ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC
        LIMIT $1
     `,
     params,
@@ -851,9 +925,14 @@ export async function runKnoxExtract(
   const currentCopy = !dryRun && (await currentCopySchemaReady(db));
   // The named priority banks (in list order), then market leaders, are read first while the
   // stale backlog lasts.
-  const priorityIds = learning && currentCopy && !options.institutionId
-    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])]
-    : [];
+  // A run for one institution (Atlas's read-now runs) reads its current page again once per
+  // rules version while it has no live overdraft fee, so a rules fix reaches a requested bank
+  // without waiting for its state lane (2026-10-08: Marketing's outreach batch).
+  const priorityIds = !(learning && currentCopy)
+    ? []
+    : options.institutionId
+      ? [options.institutionId]
+      : [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []))])];
   const rows = await selectTextArtifacts(db, limit, learning, currentCopy, options.institutionId, options.stateCode, priorityIds);
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
@@ -903,11 +982,12 @@ export async function runKnoxExtract(
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
         const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
         if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
+        const named = withLineupFromText(candidate, row.normalized_text);
         if (
           await insertCandidate(db, {
             runId: options.runId,
             row,
-            candidate: candidate.lineup ? { ...candidate, lineup: groundLineup(candidate.lineup, row.normalized_text) } : candidate,
+            candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
             takenDownBy,

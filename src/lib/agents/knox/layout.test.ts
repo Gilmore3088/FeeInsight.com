@@ -73,6 +73,9 @@ describe("repairNameShape (Extraco, Oct 8)", () => {
       "Free official checks",
     );
     expect(repairNameShape("(Lost key replacement")).toBe("Lost key replacement");
+    expect(repairNameShape("Bill Payment Service)")).toBe("Bill Payment Service");
+    expect(repairNameShape("ATM's and Presto Network ATMs)")).toBe("ATM's and Presto Network ATMs");
+    expect(repairNameShape("Stop Payment (per item)")).toBe("Stop Payment (per item)");
     expect(repairNameShape("Early Account Closure (by customer)")).toBe("Early Account Closure (by customer)");
   });
 

@@ -96,6 +96,11 @@ describe("signed workspace invite links", () => {
       { invitationId: 91, userId: 8, email: "analyst@bank.com" },
       mocks.tx,
     );
+    // The teammate's saved bank becomes the team's bank only when they had none.
+    const contextCall = mocks.tx.mock.calls.find((call) => String((call[0] as string[]).join("?")).includes("hamilton_workspace_contexts"));
+    expect(contextCall).toBeDefined();
+    expect((contextCall![0] as string[]).join("?")).toContain("WHERE hamilton_workspace_contexts.selected_institution_id IS NULL");
+    expect(contextCall!.slice(1)).toEqual([8, 2945]);
   });
 
   it("rejects a wrong token", async () => {

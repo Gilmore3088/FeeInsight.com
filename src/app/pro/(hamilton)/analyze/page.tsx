@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
-import { loadAnalysisRecord } from "./actions";
+import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
   resolveArtifactContextInstitutionId,
@@ -31,7 +31,11 @@ export default async function AnalyzePage({
 
   const params = await searchParams;
   const analysisId = params.analysis;
-  const initialAnalysisRecord = analysisId ? await loadAnalysisRecord(analysisId) : null;
+  const [initialAnalysisRecord, recent] = await Promise.all([
+    analysisId ? loadAnalysisRecord(analysisId) : null,
+    // Only the start screen lists them; an answer page doesn't need the read.
+    !analysisId && !params.q ? listSavedAnalyses(6) : [],
+  ]);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,
     artifactInstitutionId: initialAnalysisRecord?.institutionId,
@@ -53,6 +57,8 @@ export default async function AnalyzePage({
       institutionId={institutionId}
       initialAnalysis={initialAnalysisRecord?.responseJson ?? null}
       initialAnalysisId={initialAnalysisRecord?.id ?? null}
+      initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
+      recent={recent}
       selectedInstitution={selectedInstitution}
       initialIntent={params.intent ?? null}
       initialQuestion={params.q ? params.q.slice(0, 500) : null}

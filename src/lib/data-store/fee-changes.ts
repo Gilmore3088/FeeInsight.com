@@ -6,6 +6,7 @@
  */
 
 import { getSql } from "./connection";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface FeeChangeEvent {
   id: number;
@@ -46,7 +47,9 @@ export async function getFeeChangeEvents(
 ): Promise<FeeChangeEvent[]> {
   const sql = getSql();
 
-  const conditions: string[] = [];
+  // Only changes that compare one schedule with an older copy of itself (hamilton/change-pairing.ts)
+  // and whose new price is still live: a price taken down as misread takes its change with it.
+  const conditions: string[] = ["fce.like_for_like IS TRUE", "EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = fce.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))"];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
@@ -129,7 +132,7 @@ export async function getFeeChangeEvents(
     return rows.map((row) => ({
       id: Number(row.id),
       institution_id: Number(row.institution_id),
-      institution_name: row.institution_name,
+      institution_name: institutionDisplayName(row.institution_name),
       fee_category: row.fee_category,
       old_amount: row.old_amount !== null ? Number(row.old_amount) : null,
       new_amount: row.new_amount !== null ? Number(row.new_amount) : null,

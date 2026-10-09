@@ -25,6 +25,16 @@ const CALL_REPORT_LABELS: Record<string, string> = {
   ffiec: "FFIEC call report figures",
 };
 
+/**
+ * The registry feed that loads each call-report source's figures
+ * (institution_financial_records.source -> registry_ingest_partitions.source). Matched figures
+ * show on their feed's row, so one feed never appears twice with two statuses.
+ */
+export const CALL_REPORT_FEED: Record<string, string> = {
+  fdic: "fdic-financials",
+  ncua: "ncua-financials",
+};
+
 const REPORT_LABELS: Record<string, string> = {
   "report_jobs:national_index": "National Quarterly report files",
   "report_jobs:monthly_pulse": "Monthly Pulse report files",
@@ -49,6 +59,14 @@ function ago(from: string | null, readAt: string): string {
   return days === 1 ? "1 day ago" : `${days} days ago`;
 }
 
+function snapshotAge(readAt: string, now: string): string {
+  const minutes = Math.max(0, Math.round((Date.parse(now) - Date.parse(readAt)) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return minutes === 1 ? "1 minute old" : `${minutes} minutes old`;
+  const hours = Math.round(minutes / 60);
+  return hours === 1 ? "1 hour old" : `${hours} hours old`;
+}
+
 function when(value: string | null): string {
   return value ? formatAdminDateTime(value) : "Never";
 }
@@ -62,10 +80,17 @@ const warn = "font-semibold text-red-700 dark:text-red-400";
  * registry ledger, the call-report table, report tables and scheduled runs.
  * Read-only: it shows dates and counts and changes nothing.
  */
-export function DataFeedsPanel({ freshness }: { freshness: FeedFreshness }) {
+export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; now?: string }) {
   const { readAt, feeds, callReports, reports } = freshness;
+  const figuresFor = (feedSource: string) => callReports.find((report) => CALL_REPORT_FEED[report.source] === feedSource);
+  const unmatched = callReports.filter((report) => !feeds.some((feed) => feed.source === CALL_REPORT_FEED[report.source]));
   return (
     <section aria-label="Data feeds and reports" className="space-y-5">
+      <p className="text-sm text-gray-700 dark:text-gray-200">
+        Snapshot read <span className="font-semibold">{when(readAt)}</span>
+        {now ? <span className="font-semibold"> ({snapshotAge(readAt, now)})</span> : null}
+        <span className="admin-meta">; it refreshes every five minutes.</span>
+      </p>
       <div className="flex items-baseline justify-between">
         <p className="admin-section-title">Data coming in</p>
         <Link href="/admin/magellan/registry" className="text-xs font-semibold text-[var(--brand-primary)]">
@@ -83,27 +108,38 @@ export function DataFeedsPanel({ freshness }: { freshness: FeedFreshness }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
-            {feeds.map((feed) => (
-              <tr key={feed.source}>
-                <td className={cell}>{FEED_LABELS[feed.source] ?? feed.source}</td>
-                <td className={`${cell} tabular-nums`}>{feed.latestPeriod ?? "None loaded"}</td>
-                <td className={`${cell} tabular-nums`}>
-                  {when(feed.lastSuccessAt)} <span className="admin-meta">({ago(feed.lastSuccessAt, readAt)})</span>
-                </td>
-                <td className={cell}>
-                  {feed.failed > 0 ? (
-                    <span className={warn} title={feed.lastError ?? undefined}>
-                      {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
-                    </span>
-                  ) : feed.scheduled > 0 ? (
-                    `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`
-                  ) : (
-                    "None"
-                  )}
-                </td>
-              </tr>
-            ))}
-            {callReports.map((source) => (
+            {feeds.map((feed) => {
+              const figures = figuresFor(feed.source);
+              return (
+                <tr key={feed.source}>
+                  <td className={cell}>{FEED_LABELS[feed.source] ?? feed.source}</td>
+                  <td className={`${cell} tabular-nums`}>
+                    {feed.latestPeriod ?? "None loaded"}
+                    {figures?.latestPeriod ? (
+                      <span className={`block text-xs ${figures.behind ? warn : "admin-meta"}`}>
+                        Figures through {figures.latestPeriod}
+                        {figures.behind ? " (behind other sources)" : ""}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className={`${cell} tabular-nums`}>
+                    {when(feed.lastSuccessAt)} <span className="admin-meta">({ago(feed.lastSuccessAt, readAt)})</span>
+                  </td>
+                  <td className={cell}>
+                    {feed.failed > 0 ? (
+                      <span className={warn} title={feed.lastError ?? undefined}>
+                        {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
+                      </span>
+                    ) : feed.scheduled > 0 ? (
+                      `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`
+                    ) : (
+                      "None"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {unmatched.map((source) => (
               <tr key={`call-${source.source}`}>
                 <td className={cell}>{CALL_REPORT_LABELS[source.source] ?? `${source.source} call report figures`}</td>
                 <td className={`${cell} tabular-nums ${source.behind ? warn : ""}`}>
@@ -113,7 +149,7 @@ export function DataFeedsPanel({ freshness }: { freshness: FeedFreshness }) {
                 <td className={`${cell} tabular-nums`}>
                   {when(source.lastFetchedAt)} <span className="admin-meta">({ago(source.lastFetchedAt, readAt)})</span>
                 </td>
-                <td className={cell}>Not in the registry ledger</td>
+                <td className={cell}>No registry feed loads this source, so it has no ledger status</td>
               </tr>
             ))}
           </tbody>
@@ -150,7 +186,6 @@ export function DataFeedsPanel({ freshness }: { freshness: FeedFreshness }) {
           </tbody>
         </table>
       </div>
-      <p className="admin-meta">Read {when(readAt)}.</p>
     </section>
   );
 }

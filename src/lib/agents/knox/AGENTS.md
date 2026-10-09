@@ -39,6 +39,13 @@ Knox owns conservative raw fee extraction.
 - Banks of $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`) have each current page re-read
   once per rules version, ahead of other texts. The rules re-check only reaches documents
   with live fees, so a large bank's missing fee otherwise waited for a new copy of its page.
+  Among them, a bank with no live overdraft fee goes first, then the page Knox read longest
+  ago: ordered by newest text alone, each version bump (ten on Oct 8) restarted the same banks
+  and the tail, GreenState among them, was never reached.
+- A priority bank (`KNOX_PRIORITY_REREAD_IDS`) or state market leader with no live overdraft
+  fee has its current page re-read once per rules version too, so a rules fix for a missed
+  overdraft reaches it. `asset_size` is in thousands, so the $10B floor misses most state
+  leaders.
 - Exact fees go to Darwin with `needs_darwin_verification`. Waived fees keep their price
   and a `waivable` flag. A free fee ("Free", "No charge" or $0 next to a recognized fee
   name) is stored at $0 with `knox_review:zero` and `needs_darwin_verification`, so Darwin
@@ -454,6 +461,47 @@ v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
 - A change the bank says it already made ("We've lowered Overdraft Paid Item fees from $38 to $30") is today's price at the later figure. A change still to come ("will", "effective", "beginning") stays a held range (Pinnacle).
 - The held re-check also re-reads range lines that say a price was changed, and promotes one only at its stored amount (the lower end), so a raised price stays held.
 
+v35 (rules 35, from the state top-10 banks with no live overdraft fee, Oct 8):
+- A fee name that opens a note and wraps onto the next line or two, with its price alone below ("Overdraft Fee (per item, ... in person withdrawal," / "ATM withdrawal, ... per day.)" / "$36.00"), is that fee at that price, named by its first line (`wrappedNamePrices`, MVB). The shared source check reads the run-on note as a qualifier between the name and the price.
+
+v36 (rules 36, same lane, Oct 8):
+- A price printed between a two-line name's lines ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money Markets)") is that fee at that price, when the line below only finishes the name's note (`centeredNamePrices`, Starion).
+- Footnote marks read onto a price alone on its line ("$334, 5" for "$33⁴,⁵") are dropped when they count up from the price's last digit and each is printed as a numbered footnote (`stripPriceFootnoteMarks` in `source-check.ts`, which Knox and the shared source check both apply). A single mark ("$331") stays: nothing tells it from a price.
+
+v37 (rules 37, same lane, Oct 8):
+- A sentence fee may say "a one-time fee of", "a per-item fee of" or "a flat fee of", and a cap after its clause (", not to exceed $180 per day") is cut from the name, not read as a second price in it ("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day", Guaranty).
+
+v38 (rules 38, same lane, Oct 8):
+- A threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse) no longer hides the fee's name from the classifier, and stays in the name with its figure ("Courtesy Pay (over $5)"), which is how the shared source check tells it from a tier.
+- "Privilege Pay" is an overdraft name, so one price for "NSF, Privilege Pay, & Uncollected Funds Fee" (Arkansas FCU) files as the overdraft fee, like "NSF/Overdraft".
+
+v39 (rules 39, from the $10B+ banks with no live overdraft fee, Oct 8):
+- "OD" and "O/D" followed by the fee's own word ("OD Privilege", "OD Fee-Item Paid", "Paid Item O/D Fee") name the overdraft fee. Before, such a line was read as no fee at all, not even held (GreenState's "OD Privilege* ... | $29.00/Item"). 29 banks' texts have such a line, 10 of them with no live overdraft fee.
+- "Continued OD Charge", "Consecutive Day OD Fee" and "Daily OD Fee" are the continuous overdraft charge, as the spelled-out names already were.
+- "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).
+- The held re-check takes $10B+ banks' held lines first, as Knox's re-reads do; a full pass over about 19,000 held lines takes about 12 hours at 300 a step.
+
+v40 (rules 40, from the state top-10 banks with no live overdraft fee, Oct 8):
+- "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
+- A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
+
+v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 50 branch):
+- A paid NSF item is the overdraft fee: "Paid nonsufficient funds (NSF)" (Saco & Biddeford), "NSF Share Draft (Honored)" (Bluestone FCU), "Paid Consumer & Business NSF Items" (NIH FCU). A returned or unpaid one stays NSF.
+- A long name that ends in a note keeps its title: "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)" was named "5 max total OD or Returned Item fees daily" and filed as NSF (BankIowa).
+- In a table row, a last text cell that only lists what an overdraft covers ("Checks (Share Drafts), Online Payments, & ACH", "For Debit Card Transactions including ATM, POS") does not name the price; the overdraft cell before it does (Los Angeles FCU).
+- A price row named only by its threshold ("Per Item greater than $10.01 | $30 per item") belongs to the priceless fee line just above it (NIH FCU).
+- A run for one institution (Atlas's read-now runs) reads its current page again once per rules version while it has no live overdraft fee, as state leaders' runs do since v40.
+
+v43 (rules 43, Oct 8):
+- One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
+
+v45 (rules 45, Collection Items, Oct 8):
+- An item sent for collection, or a foreign or Canadian check or item handled for deposit ("Collection Item", "Items Sent for Collection", "Foreign Check Processing"), files as `collection_item`, not check cashing (James, Oct 8: "Own type"). Cashing a foreign check is still check cashing and a returned one is still a returned item. The pattern is `COLLECTION_ITEM` in `src/lib/fee-fold.ts`, shared with the category guard and Hamilton's fold step.
+
+v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
+- A paragraph wrapped across lines is read as its sentences: a line joins the one above when neither is a table row, the one above is at least 40 characters and ends mid-sentence, and the line starts in lower case. Read line by line, "we will charge you an overdrawn account fee of $10.00 on the 5th consecutive" was named by the line above it and filed as a $10 overdraft fee, and "overdrawn $5 / or less" lost the words that make $5 a threshold (Origin Bank, whose fragment-named overdraft rows were live).
+- After a general "fees and charges", a price is named by what follows "including": "Normal bank fees and charges, including returned item charge/overdraft item charge of $35.00" is "Returned item charge/overdraft item charge". "NSF for each presentment, including if the same item is presented" keeps its name.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own
@@ -467,3 +515,8 @@ v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
 - The Reg E notice sentence "We will charge you a fee of up to $35.00 each time we pay an
   overdraft" is read as the overdraft fee. The shared source check still reads "up to $35.00"
   as a threshold, so it is held as untraced until that check changes (accuracy thread).
+- v50: in a two-column schedule flattened row by row, a "Personal ........ $10 per item paid"
+  cell under an "Overdrafts / Non-Sufficient Funds (NSF)" heading cell is the personal overdraft
+  fee: "Overdraft - personal, per item paid" (a returned item is "NSF - personal, ..."). Footnote
+  numbers after the heading ("(NSF)10, 12") are dropped. A business row, or one priced "paid or
+  returned", is not read (Amerant Bank, a $10B bank with no live overdraft fee).

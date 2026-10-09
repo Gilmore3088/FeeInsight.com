@@ -2,6 +2,9 @@ import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 
+const listSubscriptions = vi.fn();
+vi.mock("@/lib/stripe", () => ({ getStripe: () => ({ subscriptions: { list: listSubscriptions } }) }));
+
 import { applyStripeEvent, mapStripeStatus, recordStripeEvent } from "./stripe-webhook";
 
 const tx = vi.fn();
@@ -30,6 +33,28 @@ describe("applyStripeEvent", () => {
   beforeEach(() => {
     tx.mockReset();
     tx.mockResolvedValue([]);
+    listSubscriptions.mockReset();
+    listSubscriptions.mockResolvedValue({ data: [] });
+  });
+
+  it("keeps Pro when the customer still pays on another subscription", async () => {
+    listSubscriptions.mockResolvedValue({ data: [{ id: "sub_old", status: "canceled" }, { id: "sub_new", status: "active" }] });
+    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_old", customer: "cus_1" }));
+    await applyStripeEvent(tx as never, event("customer.subscription.updated", { id: "sub_old", customer: "cus_1", status: "canceled" }));
+    expect(listSubscriptions).toHaveBeenCalledWith({ customer: "cus_1", status: "all", limit: 20 });
+    expect(issued()).toEqual([]);
+  });
+
+  it("ends Pro when the only other subscription is the one that just ended", async () => {
+    listSubscriptions.mockResolvedValue({ data: [{ id: "sub_1", status: "active" }] });
+    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_1", customer: "cus_1" }));
+    expect(issued()[0]).toContain("role = 'viewer'");
+  });
+
+  it("fails the event, so Stripe redelivers, when Stripe can't be asked", async () => {
+    listSubscriptions.mockRejectedValue(new Error("stripe down"));
+    await expect(applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_1", customer: "cus_1" }))).rejects.toThrow();
+    expect(issued()).toEqual([]);
   });
 
   it("returns a cancelled subscriber to a free viewer", async () => {
@@ -64,6 +89,17 @@ describe("applyStripeEvent", () => {
     );
     const [sql] = issued();
     expect(sql).toContain("WHERE id = ?");
+    expect(tx.mock.calls[0]).toContain(7);
+  });
+
+  it("activates a $0 checkout paid with a 100%-off code", async () => {
+    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: null }]);
+    await applyStripeEvent(
+      tx as never,
+      event("checkout.session.completed", { mode: "subscription", payment_status: "no_payment_required", customer: "cus_9", metadata: { user_id: "7" } }),
+    );
+    const [sql] = issued();
+    expect(sql).toContain("role = 'premium'");
     expect(tx.mock.calls[0]).toContain(7);
   });
 

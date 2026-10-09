@@ -20,12 +20,12 @@ import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisRespo
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { writeStorylineMemo } from "./memo";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
-import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
+import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, withSegmentDefault } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
 import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
-import { asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
+import { asksIncomeLevel, asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
 import { withDepth, type IncomeWhy } from "./workspace/story-extras";
 import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
 import { peerPhrase } from "./answer-brief";
@@ -212,6 +212,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   // answers in full for the fee furthest from its median when the question named none.
   const why = await incomeWhyFor(institutionId, question, peers);
   if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  intent = withSegmentDefault(intent);
   const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
@@ -283,7 +284,12 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     summary: `Answered with ${response.kind.replace(/_/g, " ")}.`,
     userId: user.id,
     institutionId,
+    // The question and Hamilton's short answer are kept (in our own database) so the answer eval
+    // can replay real Pro questions, above all the ones Hamilton asked back on instead of answering.
     detail: {
+      question,
+      short_answer: response.shortAnswer,
+      engine_version: WORKSPACE_ENGINE_VERSION,
       response_kind: response.kind,
       fee_category: intent.feeCategory,
       segment: intent.segment?.label ?? null,
@@ -299,7 +305,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 }
 
 /** The whole-schedule overview for a question about every fee, or null for any other question. */
-async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<ScheduleOverview | null> {
+export async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<ScheduleOverview | null> {
   if (!asksWholeSchedule(question)) return null;
   const briefing = await getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
     console.error("[hamilton-ask] briefing failed", error);
@@ -309,9 +315,9 @@ async function scheduleFor(institutionId: number, question: string, peers: Engin
 }
 
 /** The price split of the bank's fee income gap, for a question asking why income is where it is. */
-/** The price split of the bank's fee income gap, for a question asking why income is where it is. */
-async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
-  if (!asksIncomeWhy(question)) return null;
+export async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
+  // A why question, or one asking where income stands that names no single fee.
+  if (!asksIncomeWhy(question) && !(asksIncomeLevel(question) && !parseAsk(question).feeCategory)) return null;
   const [intensity, briefing, trend] = await Promise.all([
     getServiceChargeIntensity(institutionId).catch((error) => {
       console.error("[hamilton-ask] income intensity failed", error);
@@ -361,6 +367,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
   const why = await incomeWhyFor(institutionId, question, peers);
   if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  intent = withSegmentDefault(intent);
   if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
   const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
   if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };

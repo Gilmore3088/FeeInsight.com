@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 const THEME_KEY = "bfi-theme";
 const LEGACY_KEY = "fi-theme";
@@ -21,18 +21,39 @@ function readStoredTheme(): "light" | "dark" | null {
   return null;
 }
 
-function resolveInitialTheme(): boolean {
-  if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) {
-    return true;
-  }
-  if (typeof window === "undefined") return false;
+function resolveTheme(): boolean {
+  if (document.documentElement.classList.contains("dark")) return true;
   const stored = readStoredTheme();
   if (stored) return stored === "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+}
+
+// Every toggle on the page (the header one and the phone footer one) reads the same theme.
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+  media?.addEventListener?.("change", listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    listeners.delete(listener);
+    media?.removeEventListener?.("change", listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+/**
+ * The server can't see the browser's stored theme or color scheme, so it renders the light
+ * toggle and hydration does too (getServerSnapshot); the stored theme shows right after.
+ * Reading it in the first client render made the server and client HTML differ (React #418).
+ */
+function serverTheme(): boolean {
+  return false;
 }
 
 export function DarkModeToggle() {
-  const [dark, setDark] = useState<boolean>(resolveInitialTheme);
+  const dark = useSyncExternalStore(subscribe, resolveTheme, serverTheme);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -40,12 +61,13 @@ export function DarkModeToggle() {
 
   function toggle() {
     const next = !dark;
-    setDark(next);
     try {
       localStorage.setItem(THEME_KEY, next ? "dark" : "light");
     } catch {
       // Preference won't persist but toggle still works for this session
     }
+    document.documentElement.classList.toggle("dark", next);
+    listeners.forEach((listener) => listener());
   }
 
   return (

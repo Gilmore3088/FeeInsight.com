@@ -1,6 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
-import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS } from "./fee-fold";
+import { passesDarwinChecks } from "./agents/knox/layout";
+import { foldContext, foldRetiredCategory, ownAtmSection, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
@@ -56,7 +57,19 @@ describe("top-50 fold", () => {
     expect(to("nsf_daily_cap", "Insufficient Funds Charge - maximum charge per day")).toBe("od_daily_cap");
     expect(to("nsf_daily_cap", "NSF/OD Fees Daily Cap")).toBe("od_daily_cap");
     expect(to("nsf_daily_cap", "Wire Transfer (over daily limit)")).toBeNull();
-    expect(to("atm_international", "International ATM Withdrawal Fee")).toBeUndefined();
+  });
+
+  test("international ATM fees are International ATM & Card; a domestic ATM line is the network ATM fee", () => {
+    expect(to("atm_international", "International ATM Withdrawal Fee")).toBe("card_foreign_txn");
+    expect(to("atm_international", "Non–Wells Fargo ATMs outside the U.S.")).toBe("card_foreign_txn");
+    expect(to("atm_international", "Non-IBC ATM locations (outside the U.S.): Withdrawal")).toBe("card_foreign_txn");
+    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBe("atm_non_network");
+    expect(to("atm_international", "ATMs inside United States & internationally")).toBe("atm_non_network");
+    expect(passesDarwinChecks("atm_non_network", "ATM Inquiry (any non-international ATM)", 0)).toBe(true);
+    expect(passesDarwinChecks("atm_non_network", "ATMs inside United States & internationally", 3)).toBe(true);
+    expect(to("atm_international", "Allpoint ATM Transactions – Domestic/International")).toBeNull();
+    expect(to("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)")).toBeNull();
+    expect(to("card_foreign_txn", "Foreign Transaction Fee")).toBeUndefined();
   });
 
   test("card disputes are account research", () => {
@@ -109,10 +122,165 @@ describe("top-50 fold", () => {
     expect(to("od_line_of_credit", "Overdraft Protection (interest rate based on credit score)")).toBeNull();
   });
 
+  test("collection items and foreign checks leave check cashing; cashing and returns stay (James, Oct 8)", () => {
+    const split = (name: string) => splitLiveCategory("check_cashing", name)?.to ?? null;
+    for (const name of [
+      "Collection Item",
+      "Items Sent for Collection",
+      "Foreign Check Collection Fee",
+      "Collection Items: Incoming",
+      "Foreign Check Processing",
+      "Canadian Item Deposit",
+      "Foreign Item Processing Fee",
+    ]) {
+      expect(split(name)).toBe("collection_item");
+    }
+    for (const name of [
+      "Check Cashing",
+      "Non-Member Check Cashing",
+      "Foreign Check Cashing",
+      "Returned Canadian Check",
+      "Foreign Item Return Fee",
+      "Negative Balance Collection Fee (after 30 days)",
+      "Overdrawn Account Sent for Collection",
+      "Return of Check Due to Hold or Uncollected Funds",
+    ]) {
+      expect(split(name)).toBeNull();
+    }
+    expect(splitLiveCategory("nsf", "Collection Item")).toBeNull();
+    expect(TAXONOMY.has("collection_item")).toBe(true);
+  });
+
+  test("a subordination is other lending and a money order copy is a check copy; the rest stay (Oct 8)", () => {
+    const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
+    for (const name of ["Mortgage Subordination", "Subordination Agreement", "Lien Subordination Fee", "HELOC / 2nd Trust Deed Subordination"]) {
+      expect(split("legal_process", name)).toBe("other_lending_fee");
+    }
+    expect(split("legal_process", "SUBORDINATION REQUEST: Outgoing Foreign")).toBeNull();
+    expect(split("legal_process", "Garnishment / Levy")).toBeNull();
+    expect(split("money_order", "Copy of Cleared Cashier's Check/ Money Order (per item)")).toBe("check_image");
+    expect(split("money_order", "Photocopy of Money Order")).toBe("check_image");
+    expect(split("money_order", "Cashier's Check / Money Order")).toBeNull();
+  });
+
+  test("night deposit keys, box rent late charges, IRA transfers out, lien releases, prepaid card buys and returned statements move to their own types (Oct 9)", () => {
+    const moves: [string, string, number, string | null][] = [
+      ["safe_deposit_box", "Night Drop Key Replacement", 15, "night_deposit"],
+      ["safe_deposit_box", "Replacement Night Depository Bag or Lost Key", 35, "night_deposit"],
+      ["safe_deposit_box", "Lost Key - Safe Deposit Box", 25, null],
+      ["late_payment", "Box Rental Late Fee", 25, "safe_deposit_box"],
+      ["late_payment", "Late charge for safety deposit box rental after 10 days", 10, "safe_deposit_box"],
+      ["late_payment", "Late Payment Fee - Consumer Loans", 25, null],
+      ["late_payment", "Box Late Payment Fee (30 Days)", 10, "safe_deposit_box"],
+      ["late_payment", "SDB Late payment", 15, "safe_deposit_box"],
+      ["late_payment", "Safe Box Late Payment (per month)", 10, "safe_deposit_box"],
+      ["late_payment", "Safety Deposit Late Fee", 10, "safe_deposit_box"],
+      ["late_payment", "Rental Late Fee (Past Due 30 Days)", 20, "safe_deposit_box"],
+      ["late_payment", "Late Payment of Annual Rent", 5, "safe_deposit_box"],
+      ["late_payment", "VISA Late Charge (if payment not satisfied by end of current month)", 30, null],
+      ["account_research", "IRA Transfer (outgoing)", 50, "ira_termination"],
+      ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
+      ["account_research", "IRA Excessive Withdrawal", 10, "ira_administration"],
+      ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, "ira_administration"],
+      ["account_research", "Excessive Withdrawal Fee", 5, null],
+      ["account_research", "All Checking and Savings Accounts EXCEPT Grow Account, Student Edge, IRA Savings: Account Reconciliation", 25, null],
+      ["account_research", "IRA Transfer Incoming", 0, null],
+      ["account_research", "Account Research (per hour)", 25, null],
+      ["legal_process", "Lien Release for Lost Title", 15, "other_lending_fee"],
+      ["legal_process", "Legal Process (Liens, levies, restraining orders, etc,) Per Action", 100, null],
+      ["legal_process", "Duplicate Lien Satisfied", 10, "other_lending_fee"],
+      ["legal_process", "Temporary Lien Fee", 10, null],
+      ["atm_non_network", "Reloadable ATM/Debit Card – Reload Fee", 2, "gift_card_purchase"],
+      ["atm_non_network", "ATM/Debit Card/ Prepaid Card - Fee for Purchase", 5, "gift_card_purchase"],
+      ["atm_non_network", "VISA Reloadable Card - ATM Withdrawal Fees", 1.5, null],
+      ["atm_non_network", "Visa travel card ($3,000 max.) Initial purchase Reload ATM withdrawal ATM balance inquiry", 5, null],
+      ["atm_non_network", "Non-Network ATM Withdrawal", 3, null],
+      ["paper_statement", "Returned Mailed Statement", 5, "account_research"],
+      ["paper_statement", "Returned statement fee for returned mail", 5, "account_research"],
+      ["paper_statement", "Return Statement Charge", 5, "account_research"],
+      ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, "account_research"],
+      ["paper_statement", "Paper Statement Fee", 3, null],
+      ["account_research", "Fax (Outgoing)", 5, "document_reproduction"],
+      ["account_research", "Copy of previous statement", 5, "document_reproduction"],
+      ["account_research", "Fax, Photo, Imaged and Microfilm Copies", 6, "document_reproduction"],
+      ["account_research", "Account Research (Per hour + $0.50 per copy)", 20, null],
+      ["account_research", "Account Research Copies (per page)", 2, "document_reproduction"],
+      ["account_research", "Research Request - Per Page Copied", 1, "document_reproduction"],
+      ["account_research", "Account Research (Min $40.00 Fee, Copies $0.20 Pg, + Postage)", 40, null],
+      ["account_research", "Research Fee (3hour minimum and 25 cents per copy fee)", 11, null],
+      ["account_research", "Document copies - greater than 1 year - Per item, may also be subject to research fee", 5, "document_reproduction"],
+      ["account_research", "Microfilm Copy (plus Account Research)", 5, "document_reproduction"],
+      ["account_research", "Member personal fax request (in state)", 1, "document_reproduction"],
+      ["account_research", "Research and Account Reconciliation and Copies of Paid Chck", 25, null],
+      ["account_research", "Account Research per hour ($12.50 minimum, Copies & Postage Extra)", 25, null],
+      ["account_research", "Fax Loan Pay-off", 40, null],
+      ["check_printing", "Checkbook Reconciliation (per hour)", 25, "account_research"],
+      ["check_printing", "Balance Check Book", 20, "account_research"],
+      ["check_printing", "Share Draft (checkbook) Balancing", 20, "account_research"],
+      ["check_printing", "Check Printing", 25, null],
+      ["check_printing", "Checkbook Order (includes balance register)", 25, null],
+      ["check_printing", "Check printing varies depending on check style Clerical/Research work", 30, null],
+      ["account_research", "Domestic incoming (fax)", 26, null],
+      ["account_research", "initiated by phone, fax or in branch", 25, null],
+      ["account_research", "Fax Loan Payoff", 15, null],
+      ["account_research", "Car Fax Fee", 25, null],
+      ["account_research", "Account Closing by Mail/Fax", 8, null],
+      ["late_payment", "Statement Copies", 2, "document_reproduction"],
+      ["ira_administration", "IRA Savings Excessive Withdrawal", 15, null],
+      ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
+      ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
+      ["other_lending_fee", "Loan Payoff Statement", 20, null],
+      ["card_foreign_txn", "Cross-Border Banking Bundle annual fee", 0, "monthly_maintenance"],
+      ["card_foreign_txn", "Cross-Border Banking Bundle monthly fee", 9.95, "monthly_maintenance"],
+      ["card_foreign_txn", "Cross-Border Fee", 1, null],
+      ["card_foreign_txn", "Cross-border transaction fee", 1, null],
+      ["card_foreign_txn", "Cross-Border Banking 3% of purchase", 3, null],
+      ["atm_non_network", "ATM Adjustment", 5, "account_research"],
+      ["atm_non_network", "ATM adjustment fee", 5, "account_research"],
+      ["atm_non_network", "Special Handling (i.e. ATM adjustment, etc.)", 5, "account_research"],
+      ["atm_non_network", "ATM Limit Adjustment", 5, null],
+      ["atm_non_network", "ATM Transaction Adjustment", 5, "account_research"],
+      ["atm_non_network", "ATM Deposit Correction Adjustment", 5, null],
+      ["atm_non_network", "ATM Balance Inquiry (at non-Wildfire ATM)", 2, null],
+    ];
+    for (const [key, name, amount, want] of moves) {
+      const got = splitLiveCategory(key, name)?.to ?? null;
+      expect([key, name, got]).toEqual([key, name, want]);
+      if (want) expect([name, passesDarwinChecks(want, name, amount)]).toEqual([name, true]);
+    }
+  });
+
   test("foldContext returns the text before the fee's line", () => {
     const text = "ATM Fees Non-Bank ATM ........ Withdrawal $2.00\nBalance Inquiry .......... $1.00";
     expect(foldContext(text, "Balance Inquiry")).toBe("ATM Fees Non-Bank ATM Withdrawal $2.00 ");
     expect(foldContext(text, "Wire")).toBeNull();
     expect(foldContext(null, "Balance Inquiry")).toBeNull();
+  });
+});
+
+describe("own-ATM balance inquiry (Regions, Oct 9)", () => {
+  const text = [
+    "All fees are per item unless otherwise indicated.",
+    "Regions ATM:",
+    "Withdrawal . . . . . . . . . . . . . . . . . .$0.00",
+    "Balance Inquiry . . . . . . . . . . . . . . .$0.00",
+    "Transfer . . . . . . . . . . . . . . . . . . .$0.00",
+    "Mini Statements (available at select ATMs) . . . .$2.00",
+    "Non-Regions ATM:",
+    "Withdrawal . . . . . . . . . . . . . . . . . .$3.00",
+    "(Applies to all withdrawal requests, approved or declined)",
+    "Balance Inquiry . . . . . . . . . . . . . . .$3.00",
+  ].join("\n");
+
+  it("files an inquiry under another bank's ATM heading as a non-network ATM fee", () => {
+    expect(foldRetiredCategory("balance_inquiry", "Balance Inquiry", foldContext(text, "Balance Inquiry", 3))?.to).toBe("atm_non_network");
+  });
+
+  it("gives an inquiry at the bank's own ATM no home", () => {
+    expect(foldRetiredCategory("balance_inquiry", "Balance Inquiry", foldContext(text, "Balance Inquiry", 0))?.to).toBeNull();
+    expect(ownAtmSection("Our ATM: Withdrawal $0.00")).toBe(true);
+    expect(ownAtmSection("Foreign ATM: Withdrawal $2.00")).toBe(false);
+    expect(ownAtmSection("ATM Fees Withdrawal $2.00")).toBe(false);
+    expect(ownAtmSection("Non-Regions ATM: Withdrawal $3.00")).toBe(false);
   });
 });

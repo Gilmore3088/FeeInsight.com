@@ -2,6 +2,9 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -82,9 +85,9 @@ interface FeePattern {
 /**
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
- * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
- * excess-activity fees -> account research; collection items and foreign checks -> check
- * cashing; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
+ * Each maps to the category the taxonomy already gives the fee (returned mail and
+ * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
+ * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
  * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
@@ -92,6 +95,9 @@ interface FeePattern {
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
  */
 export const FOLDED_PATTERNS: FeePattern[] = [
+  // A fax service is document reproduction since Oct 9 (one home for fax and copies, as the
+  // fold has it); fax as the way a wire, payoff or closing is sent stays below.
+  { key: "document_reproduction", pattern: FAX_SERVICE },
   {
     key: "account_research",
     pattern:
@@ -103,9 +109,11 @@ export const FOLDED_PATTERNS: FeePattern[] = [
       /\bexcess(?:ive)? (?:withdrawals?|transactions?|activity|debits?|transfers?)\b|\bwithdrawal limit fee\b|\b(?:withdrawals?|transactions?) in excess of\b/i,
   },
   {
-    key: "check_cashing",
-    // A collection fee on a charged-off or past-due account, or a collection phone call,
-    // is debt collection, not a check sent for collection (v30, from prod's first v26 pass).
+    // Collection items got their own type on Oct 8 (James, "Own type"); v26 filed them under
+    // check cashing. A collection fee on a charged-off or past-due account, or a collection
+    // phone call, is debt collection, not a check sent for collection (v30, from prod's first
+    // v26 pass).
+    key: "collection_item",
     pattern:
       /^(?![\s\S]*\b(?:charged[- ]?off|past[- ]due|delinquen\w*|calls?)\b)[\s\S]*?\b(?:collection items?|items? (?:sent )?for collection|(?:outgoing |incoming )?(?:foreign|canadian|international) (?:check|item|draft)s?\b.{0,25}\bcollection|collection (?:fee|charge)s?|(?:foreign|canadian) (?:check|item)s?\b.{0,20}\b(?:fee|charge|processing|deposit))/i,
   },
@@ -164,7 +172,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   {
     key: "continuous_od",
     // v33: "Consecutive Overdraft Daily Fee" (Wilson Bank & Trust).
-    pattern: /\b(continuous|sustained|extended|consecutive|daily).{0,30}\boverdrafts?\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
+    // v39: the "OD" abbreviation too ("Continued OD Charge", "Consecutive Day OD Fee").
+    pattern: /\b(continuous|continued|sustained|extended|consecutive|daily).{0,30}\b(?:overdrafts?|OD|O\/D)\b|\bdays? in overdraft\b|\boverdrafts?\b.{0,20}\b(continuous|sustained|extended)\b/i,
   },
   {
     key: "od_protection_transfer",
@@ -178,9 +187,13 @@ export const FEE_PATTERNS: FeePattern[] = [
   // v19: "Overdrafts Paid", "Overdrafts (OD)": the plural names the fee when it opens the
   // name or the fee follows it. Elsewhere ("transfer to cover overdrafts", "overdrafts up
   // to a total of $500") it describes another fee or a limit.
+  // v39: "OD Privilege", "OD Item Fee": the abbreviation followed by the fee's own word
+  // (GreenState's schedule; the line read as no fee at all).
+  // v40: "Paid Item Fee" (Northeast Bank) is the fee for an item paid into overdraft. A
+  // combined "NSF paid item fee/NSF returned item fee" stays with NSF.
   {
     key: "overdraft",
-    pattern: /\b(overdraft|courtesy pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))/i,
+    pattern: /\b(overdraft|courtesy pay|privilege pay|bounce(d)? (check )?protection)\b|\boverdrawing\b|^\W*overdrafts\b|\boverdrafts\s+(?:paid|fees?\b|charges?\b|\((?:OD|per item)\))|\b(?:OD|O\/D)\s+(?:privilege|items?|fees?|paid|charges?)\b|\bpaid items?\s+(?:fees?|charges?)\b(?!\s*\/)/i,
   },
   {
     key: "nsf",
@@ -198,6 +211,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "atm_international",
     pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
+  // v59: a cross-border banking bundle or package is an account; its fee is the account's (`CROSS_BORDER_BUNDLE`).
+  { key: "monthly_maintenance", pattern: CROSS_BORDER_BUNDLE },
   // v21: plural "Foreign Transactions" (a bare "(international transactions)" is often a
   // neighbouring column's note), and the other names banks give the card's
   // currency fee ("International Point of Sale Fee", "Cross-Border", "International Service
@@ -206,6 +221,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "card_foreign_txn",
     pattern: /\b(foreign transactions?|international (?:transaction\b|purchases?|point of sale|pos|currency fee|service (?:assessment|fee))|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   },
+  // v61: adjusting an ATM deposit or dispute is account research (`ATM_ADJUSTMENT`).
+  { key: "account_research", pattern: ATM_ADJUSTMENT },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
@@ -232,6 +249,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
   { key: "account_research", pattern: /\bcheck ?book balanc\w*|\bbalanc\w* (?:your |a )?check ?book\b/i },
+  // v56: balancing or reconciling a checkbook is account research, not a check order (`CHECKBOOK_RECONCILIATION`).
+  { key: "account_research", pattern: new RegExp(String.raw`^(?=[\s\S]*\bcheck ?books?\b)[\s\S]*` + CHECKBOOK_RECONCILIATION.source, "i") },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
@@ -280,6 +299,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
   { key: "dormant_account", pattern: /\b(dorman(?:t|cy)|inactiv(?:e|ity)|escheat\w*|abandoned)\b/i },
+  // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+  { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",
@@ -398,10 +419,43 @@ function longLineParts(line: string): string[] {
   return parts;
 }
 
+/**
+ * v46: a paragraph wrapped across lines is read as its sentences. Read line by line, "we will
+ * charge you an overdrawn account fee of $10.00 on the 5th consecutive" named the $10 by the
+ * line above it ("overdrafts created by check, in-person withdrawal ...", Origin Bank) and
+ * "overdrawn $5 / or less" lost the words that make $5 a threshold. A line joins the one above
+ * when neither is a table row, the one above is long and ends mid-sentence, and it starts in
+ * lower case; the joined line is then cut into sentences like any long line.
+ */
+const MIN_WRAPPED_LINE_CHARS = 40;
+const ENDS_SENTENCE = /[.:;!?)]\s*$/;
+const STARTS_LOWER = /^[a-z]/;
+
+export function joinWrappedProse(lines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const previous = joined.at(-1);
+    if (
+      previous != null &&
+      !previous.includes(CELL_SEPARATOR) &&
+      !line.includes(CELL_SEPARATOR) &&
+      previous.length >= MIN_WRAPPED_LINE_CHARS &&
+      !ENDS_SENTENCE.test(previous) &&
+      STARTS_LOWER.test(line)
+    ) {
+      joined[joined.length - 1] = `${previous} ${line}`;
+    } else {
+      joined.push(line);
+    }
+  }
+  return joined;
+}
+
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
-  for (const rawLine of text.split(/\n+/)) {
+  const lines = joinWrappedProse(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()));
+  for (const rawLine of lines) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
     const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];
@@ -461,16 +515,25 @@ export function classifyPatternKey(value: string): string | null {
   if (
     key === "overdraft" &&
     /^\W*(?:NSF|non[-\s]?sufficient|insufficient funds)\b/i.test(text) &&
-    !/\b(?:overdraft|courtesy|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
+    !/\b(?:overdraft|courtesy|privilege|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
   ) {
     return "nsf";
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
+  // v43: one price for the paid and the returned item ("NSF Paid Item Fee/Returned Item Fee
+  // (items over $10)", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft".
+  if (key === "nsf" && PAID_AND_RETURNED_ITEM.test(text)) return "overdraft";
   // v19: an insufficient-funds item the bank pays is an overdraft ("Insufficient Funds
   // Fee – Item Paid"); one it returns stays NSF.
   // v34: "Insufficient Funds Charge (Paid)" beside "(Returned)" (WaFd).
-  if (key === "nsf" && /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?)\b|\(\s*paid\s*\)/i.test(text) && !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)) {
+  // v42: "Paid nonsufficient funds (NSF)" (Saco & Biddeford) and "NSF Share Draft (Honored)"
+  // (Bluestone FCU) are items the bank pays, as are "Paid Consumer & Business NSF Items" (NIH FCU).
+  if (
+    key === "nsf" &&
+    /\b(?:items?|checks?)\s*[-–:]?\s*paid\b|\bpaid\s+(?:items?|checks?|non[-\s]?sufficient|insufficient|NSF)\b|\bpaid\s+(?:[\w&]+\s+){1,3}NSF\s+items?\b|\(\s*(?:paid|honou?red)\s*\)/i.test(text) &&
+    !/\b(?:return(?:ed)?|unpaid)\b/i.test(text)
+  ) {
     return "overdraft";
   }
   // A PIN reissue is not a card replacement, unless one price covers both ("Debit Card
@@ -493,6 +556,13 @@ export function classifyPatternKey(value: string): string | null {
  */
 export function nearestFeeText(prefix: string): string {
   const cells = prefix.split(CELL_SEPARATOR).filter((cell) => /[a-z]{3,}/i.test(cell));
+  // v38: a cell holding only a threshold's comparison word, cut off from its figure
+  // ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse), names no fee.
+  while (cells.length > 1 && THRESHOLD_WORD_CELL.test(cells.at(-1) ?? "")) cells.pop();
+  // v42: an overdraft row's last text cell that only lists the items it covers ("Courtesy Pay
+  // for paid items | Checks (Share Drafts), Online Payments, & ACH", "Overdrawn/Courtesy Pay |
+  // For Debit Card Transactions including ATM, POS", Los Angeles FCU) does not name the fee.
+  while (cells.length > 1 && COVERAGE_CELL.test(cells.at(-1) ?? "") && classifyFeeText(cells.at(-2) ?? "") === "overdraft") cells.pop();
   for (let start = cells.length - 1; start >= 0; start -= 1) {
     const text = cells.slice(start).join(CELL_SEPARATOR);
     // A cell that names a fee of its own owns the price, even when no rule knows it.
@@ -500,6 +570,11 @@ export function nearestFeeText(prefix: string): string {
   }
   return cells.join(CELL_SEPARATOR);
 }
+
+const PAID_AND_RETURNED_ITEM = /\bpaid items?(?: fees?)?\s*\/\s*(?:nsf\s+)?return(?:ed)? items?\b|\breturn(?:ed)? items?(?: fees?)?\s*\/\s*(?:nsf\s+)?paid items?\b/i;
+const COVERAGE_CELL = /^\s*(?:for|includes?|including)\b|,[^,]*,/i;
+const THRESHOLD_WORD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than|up\s+to)\s*$/i;
+const THRESHOLD_CELL = /^\s*(?:over|under|above|below|(?:less|more)\s+than)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s*$/i;
 
 export function classifyNearest(prefix: string): string | null {
   return classifyFeeText(nearestFeeText(prefix));
@@ -553,8 +628,20 @@ export function confidenceFor(segment: string): number {
   return Math.min(confidence, 0.94);
 }
 
+/** v60: a parenthetical that states a threshold of the fee ("($10,000.01 and Over)", "(below $500)", "($25 minimum)"). */
+const THRESHOLD_PARENTHETICAL =
+  /\b(?:below|under|over|above|than|up to|exceed(?:s|ing)?|least|min(?:imum)?|max(?:imum)?|limit|greater|less|or more|and up)\b|[<>]/i;
+
 export function nameFrom(value: string): string {
-  return stripFootnoteMarks(normalizeSegment(value.replace(AMOUNT_PATTERN, " "))).slice(0, 120).trim();
+  // v60: a figure in a threshold parenthetical stays in the name; every other figure is the price.
+  const kept: string[] = [];
+  const masked = value.replace(/\([^()]*\$\s*\d[^()]*\)/g, (group) => {
+    if (!THRESHOLD_PARENTHETICAL.test(group.replace(AMOUNT_PATTERN, " "))) return group;
+    kept.push(group);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const stripped = masked.replace(AMOUNT_PATTERN, " ").replace(/\u0000(\d+)\u0000/g, (_, index: string) => kept[Number(index)]);
+  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, 120).trim();
 }
 
 /**
@@ -678,7 +765,7 @@ function accountRowLineup(label: string, after: string): AccountLineup {
 }
 
 /** "average balances below $1,000", "balance falls below $7,500": the condition of a low-balance fee. */
-const BALANCE_BELOW_CLAUSE =
+export const BALANCE_BELOW_CLAUSE =
   /\b(?:(?:average|avg\.?|minimum|min\.?|daily|monthly|ledger|collected|account|share)\s+){0,3}balances?\s+(?:(?:falls?|drops?|goes|is)\s+)?(?:below|under|less than)\s+\$\s?[\d,]+(?:\.\d{2})?/i;
 
 /**
@@ -729,9 +816,34 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
  */
 const AVOID_FEE_OF = /\bto avoid (?:an?|the)\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
 
+/**
+ * v57: "Go green with eStatements to avoid $3 paper statement fee": the price comes first and
+ * the words after it name the fee the reader avoids.
+ */
+const AVOID_PRICE_FEE = /\bto avoid (?:an?\s+|the\s+)?\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))s?\b/i;
+
+function avoidPriceFirst(segment: string): ExtractedFeeCandidate | null {
+  const match = segment.match(AVOID_PRICE_FEE);
+  if (!match) return null;
+  const words = normalizeSegment(match[2]);
+  const hint = classifyFeeText(words);
+  const amount = Number(match[1]);
+  const feeName = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  if (!hint || !(amount > 0) || !passesDarwinChecks(hint, feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
+  };
+}
+
 export function avoidFeeFromProse(segment: string): ExtractedFeeCandidate | null {
   const match = segment.match(AVOID_FEE_OF);
-  if (!match) return null;
+  if (!match) return avoidPriceFirst(segment);
   const words = normalizeSegment(match[1]);
   const hint = classifyFeeText(words);
   if (hint !== "minimum_balance" && hint !== "monthly_maintenance") return null;
@@ -780,7 +892,11 @@ export function qualifiedByClause(segment: string, firstAmount: AmountMatch, nam
 // v33: "We will charge you a fee of up to $35.00 each time we pay an overdraft" (the Reg E
 // overdraft notice) states the fee.
 // v34: "You still pay a fee of $35 per item for overdrawing your account" (Park National).
-const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+// v37: "We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed
+// $180 per day" (Guaranty): a "one-time" or "per-item" fee, and a cap after the clause.
+const CHARGE_A_FEE_OF = /\b(?:we|you|customers?|members?)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose|pay)\b[^.;|]{0,12}?\b(?:an?|the)\s+(?:(?:one[-\s]time|per[-\s]item|flat)\s+)?(?:fee|charge)\s+of(?:\s+up\s+to)?\s*$/i;
+/** v40: "We may charge you a Paid Item Fee of", "you will be charged a Return Item Fee of". */
+const CHARGE_A_NAMED_FEE_OF = /\b(?:[Ww]e|[Yy]ou)\b[^.;|]{0,30}?\b(?:charge|charged|assess|assessed|impose)\b[^.;|]{0,12}?\b(?:an?|the)\s+((?:[A-Z][\w'’/-]*\s+){1,4}(?:Fee|Charge))\s+of(?:\s+up\s+to)?\s*$/;
 /** "You can only be assessed one overdraft fee per day". */
 const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s+(?:assessed|charged)\s+)?one\b[^.;|]{0,30}?\bper\s+(?:business\s+)?day\b/i;
 
@@ -793,7 +909,7 @@ const ONE_PER_DAY = /\b(?:only|no more than|maximum of|limit of|up to)\s+(?:be\s
 export function sentenceFee(segment: string, firstAmount: AmountMatch): ExtractedFeeCandidate | null {
   if (!CHARGE_A_FEE_OF.test(segment.slice(0, firstAmount.start))) return null;
   const clause = (segment.slice(firstAmount.end).match(/^\s*((?:[^.;|]|\.(?=\d))+)/)?.[1] ?? "")
-    .replace(/,\s+(?:but|and|so)\b[\s\S]*$/i, "")
+    .replace(/,\s+(?:but|and|so|not to exceed|up to a (?:maximum|total) of)\b[\s\S]*$/i, "")
     .replace(/^[\s*†‡]+/, "")
     .trim();
   const words = clause.split(/\s+/).filter(Boolean);
@@ -899,6 +1015,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
       (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null) ??
       (rowName && usableName(rowName) ? classifyFeeText(rowName) : null)
     : classifyFeeText(cells ? cells[0] : segment);
+  // v57: a markdown table row is named by its first cell when its details cell names nothing
+  // ("| Stop Payment Order | Initial order or a renewal | $30.00 | per item |", Arvest).
+  const titleCell = cells?.[0]?.replace(/^\|\s*/, "").trim() ?? "";
+  if (!hint && firstAmount && /^\s*\|/.test(segment) && (cells?.filter(Boolean).length ?? 0) >= 3 && !amountsIn(titleCell).length) {
+    hint = classifyFeeText(titleCell);
+  }
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
@@ -934,6 +1056,22 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     return result;
   }
   if (!firstAmount) return result;
+
+  // v40: "We may charge you a Paid Item Fee of $30.00 if we pay an item ..." is named by
+  // the fee's own title, not by the sentence around it.
+  const namedFee = hint ? prefix.match(CHARGE_A_NAMED_FEE_OF)?.[1]?.trim() : undefined;
+  if (hint && namedFee && classifyFeeText(namedFee) === hint && passesDarwinChecks(hint, namedFee, firstAmount.value)) {
+    result.candidates.push({
+      feeName: namedFee,
+      amount: firstAmount.value,
+      frequency: detectFrequency(segment),
+      canonicalHint: hint,
+      confidence: confidenceFor(segment),
+      excerpt: segment,
+      waivable: WAIVER_LANGUAGE.test(segment),
+    });
+    return result;
+  }
 
   // v22: "Customers are charged a fee of $30 each time an overdraft transaction is paid" is
   // named by what the sentence charges for, even when words earlier on the line name a fee.
@@ -997,6 +1135,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  // v38: a threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32")
+  // stays in the name with its figure: "Courtesy Pay (over $5)".
+  const thresholdCell = cells?.find((cell, index) => index > 0 && THRESHOLD_CELL.test(cell));
+  if (cells && thresholdCell && hint && usableName(nameFrom(cells[0])) && segment.indexOf(thresholdCell) < feeAmounts[0].start) {
+    feeName = `${nameFrom(cells[0])} (${thresholdCell.trim().replace(/\s+/g, " ").toLowerCase()})`;
+  }
   // v32: two fees' names in one row before one price ("Returned Check | Verification of
   // Deposit | $20", a two-column page): the price is the nearest name's, and so is the name.
   if (cells && hint && feeAmounts[0] === firstAmount) {
@@ -1193,10 +1337,68 @@ export function columnContinuations(text: string): string[] {
   return joined;
 }
 
-export function extractCandidatesFromText(text: string): ExtractionRulesResult {
+/**
+ * v35: a fee name that wraps onto a second or third line, with its price alone on the line
+ * after ("Overdraft Fee (per item, both returned or paid created by check, in person
+ * withdrawal," / "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)" /
+ * "$36.00", MVB). The name's first line must name a fee and open a note that the line above
+ * the price closes; no line before the price may hold an amount. The fee is named by its
+ * first line without the open note. Only these lines are returned: a price beside its name
+ * is read by the line rules.
+ */
+export function wrappedNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    // The earliest line that names a fee and opens a note the last line before the price
+    // closes, with no amount from it to the price.
+    for (let start = Math.max(0, index - 3); start < index - 1; start += 1) {
+      const name = lines.slice(start, index);
+      if (name.some((line) => amountsIn(line).length > 0 || !/[a-z]{3,}/i.test(line))) continue;
+      if (!/^[A-Z]/.test(lines[start]) || classifyPatternKey(lines[start]) === null) continue;
+      if (!/\([^()]*$/.test(lines[start]) || !/\)\s*\.?\s*$/.test(name.at(-1) ?? "")) continue;
+      // The name is its first line; a note that runs on past it ("(per item, both ...") is
+      // dropped, as a price beside a one-line name would read.
+      const title = lines[start].replace(/\s*\([^)]*$/, "").trim();
+      joined.push(`${title || name.join(" ")} ${lines[index]}`);
+      break;
+    }
+  }
+  return joined;
+}
+
+/**
+ * v36: a two-line name cell with its price printed level with the gap between the lines
+ * ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money
+ * Markets)", Starion). The line above the price must name a fee and the line below must only
+ * finish its note: open a parenthesis the name line left closed, or close the one it opened.
+ */
+export function centeredNamePrices(text: string): string[] {
+  const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const joined: string[] = [];
+  for (let index = 1; index < lines.length - 1; index += 1) {
+    if (!PRICE_ONLY_CELL.test(lines[index])) continue;
+    const name = lines[index - 1];
+    const tail = lines[index + 1];
+    if (amountsIn(name).length > 0 || amountsIn(tail).length > 0 || name.includes(CELL_SEPARATOR)) continue;
+    if (!/^[A-Z]/.test(name) || classifyPatternKey(name) === null) continue;
+    const opens = /\([^()]*$/.test(name);
+    const finishes = opens ? /^[^()]*\)\s*\.?$/.test(tail) : /^\([^()]*\)\s*\.?$/.test(tail);
+    if (!finishes) continue;
+    const title = name.replace(/\s*\([^)]*$/, "").replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, "").trim();
+    joined.push(`${title} ${lines[index]}`);
+  }
+  return joined;
+}
+
+export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+  // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
+  const text = stripPriceFootnoteMarks(newestColumnText(raw));
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
-  const continued = columnContinuations(text).flatMap((line) => extractFromSegment(line).candidates);
+  const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
+  const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;

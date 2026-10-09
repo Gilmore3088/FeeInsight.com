@@ -281,6 +281,7 @@ async function fetchRecentSignals(
             CASE WHEN signal_type = 'hamilton_competitor_fee_change' THEN source_json END AS competitor_json
           FROM hamilton_signals
           WHERE institution_id = ANY(${scopedInstitutionIds}::text[])
+            AND NOT (source_json ? 'withdrawn_at')
           ORDER BY created_at DESC
           LIMIT ${limit}
         `
@@ -297,6 +298,7 @@ async function fetchRecentSignals(
             COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued,
             CASE WHEN signal_type = 'hamilton_competitor_fee_change' THEN source_json END AS competitor_json
           FROM hamilton_signals
+          WHERE NOT (source_json ? 'withdrawn_at')
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
