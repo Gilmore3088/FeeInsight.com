@@ -17,6 +17,8 @@ import { getCurrentUser } from '@/lib/auth';
 import { getSql, withTransaction } from '@/lib/data-store/connection';
 import { generatePresignedUrl } from '@/lib/report-engine/presign';
 import type { ReportJob } from '@/lib/report-engine/types';
+import { isProviderLimitError } from '@/lib/ai-provider';
+import { HAMILTON_PAUSED_MESSAGE } from '@/lib/hamilton/provider-paused';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +74,8 @@ async function handleGET(
     report_type: job.report_type,
     created_at: job.created_at,
     completed_at: job.completed_at,
-    error: job.error ?? null,
+    // A provider usage/billing refusal reads as the paused line; the job row keeps the detail.
+    error: job.error && isProviderLimitError(job.error) ? HAMILTON_PAUSED_MESSAGE : job.error ?? null,
     presigned_url: presignedUrl,
   });
 }

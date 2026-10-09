@@ -351,7 +351,7 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
  * their page, all checked against their source line.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 11 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 12 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -479,6 +479,20 @@ export function headName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key">
   return head;
 }
 
+/** Control characters a name can carry from a PDF font; U+0003 is that font's space. */
+const CONTROL_CHARACTER = /[\x01-\x08\x0b\x0c\x0e-\x1f]/;
+/**
+ * v12: the name with each U+0003 read as the space it stands for, or null. A name with any other
+ * control character is left alone: in the same font U+0013-U+001C are digits, and a figure is
+ * never guessed from a font's encoding.
+ */
+export function spacedControlName(name: string): string | null {
+  if (!name.includes("\u0003")) return null;
+  // The same font draws its hyphen as a combining low line ("Non\u0332Sufficient").
+  const spaced = name.replace(/\u0003/g, " ").replace(/(?<=\w)\u0332(?=\w)/g, "-").replace(/\s+/g, " ").trim();
+  return spaced && !CONTROL_CHARACTER.test(spaced) ? spaced : null;
+}
+
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
   const head = headName(fee);
   if (!head) return null;
@@ -501,7 +515,10 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
-  for (const fee of fees) {
+  for (const stored of fees) {
+    // v12: a PDF font that writes its space as U+0003 ("Copy\u0003of\u0003Check").
+    const spaced = spacedControlName(stored.fee_name);
+    const fee = spaced ? { ...stored, fee_name: spaced } : stored;
     const headingless = ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) ? fee.fee_name : fee.fee_name.replace(LEADING_ACCOUNT_HEADINGS, "");
     // Knox v60's tidy drops a "Name" column label ("Name Stop Payment").
     const tidied =
@@ -525,7 +542,8 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
         tidied ??
         // v11: the short name a sentence name opens with, unless another live fee at the
         // institution opens with it too (the words cut are what tell the two apart).
-        uniqueHeadName(fee, liveFees);
+        uniqueHeadName(fee, liveFees) ??
+        spaced;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
     // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
@@ -547,7 +565,7 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
       skipped.same_name_live += 1;
       continue;
     }
-    const before = traceLiveFee(fee, texts);
+    const before = traceLiveFee(stored, texts);
     const after = traceLiveFee({ ...fee, fee_name: newName }, texts);
     // A v8 name replaces words the bank wrote, so it must trace itself.
     if ((before.kind !== "untraceable" || adviceFree) && after.kind === "untraceable") {
@@ -561,7 +579,7 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
       sourceDocumentId: fee.source_document_id == null ? null : Number(fee.source_document_id),
       canonicalFeeKey: fee.canonical_fee_key,
       amount: fee.amount == null ? null : Number(fee.amount),
-      oldName: fee.fee_name,
+      oldName: stored.fee_name,
       newName,
     });
   }
@@ -631,6 +649,7 @@ export async function retidyLiveFeeNames(
                    OR fp.fee_name ~* 'avoid'
                    OR fp.fee_name LIKE '%: %'
                    OR fp.fee_name ~ '[[:space:]][a-z]{1,2}$'
+                   OR strpos(fp.fee_name, chr(3)) > 0
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -812,7 +831,9 @@ export function isMessyName(name: string): boolean {
     AVOID.test(name) ||
     // v10: heading cells glued on with ":", or a last word cut at its first letters.
     name.includes(": ") ||
-    CUT_WORD.test(name)
+    CUT_WORD.test(name) ||
+    // v12: a font's U+0003 space.
+    name.includes("\u0003")
   );
 }
 

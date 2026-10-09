@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, headName, isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, headName, isMessyName, spacedControlName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -410,5 +410,30 @@ describe("v11: a sentence name gives way to the short name it opens with", () =>
     });
     expect(planRetidy([basic], page, [basic]).renames.map((rename) => rename.newName)).toEqual(["Monthly Maintenance Fee"]);
     expect(planRetidy([basic], page, [basic, premier]).renames).toEqual([]);
+  });
+});
+
+describe("v12: a PDF font's U+0003 space becomes a space", () => {
+  const S = "\u0003";
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("renames the name with spaces and still traces it", () => {
+    const row = fee({ canonical_fee_key: "check_image", fee_name: `Copy${S}of${S}Check`, amount: 2 });
+    const page = text(`Copy${S}of${S}Check | $2.00`);
+    const plan = planRetidy([row], page);
+    expect(plan.renames.map((rename) => [rename.oldName, rename.newName])).toEqual([[`Copy${S}of${S}Check`, "Copy of Check"]]);
+    expect(isMessyName(`Dormant${S}Account`)).toBe(true);
+  });
+
+  it("tidies the spaced name like any other", () => {
+    const row = fee({ canonical_fee_key: "card_replacement", fee_name: `Card Replacement Fee:${S}`, amount: 10 });
+    expect(planRetidy([row], text(`Card Replacement Fee:${S} $10.00`)).renames[0]?.newName).toBe("Card Replacement Fee");
+    expect(spacedControlName(`Non\u0332Sufficient${S}Funds${S}(NSF)${S}Return`)).toBe("Non-Sufficient Funds (NSF) Return");
+  });
+
+  it("never guesses a figure from the font's other control characters", () => {
+    expect(spacedControlName("Minimum Balance (under $\u0014\u001300)")).toBeNull();
+    expect(spacedControlName(`Returned Check $\u0015\u0018.00${S}per item`)).toBeNull();
+    expect(spacedControlName("Copy of Check")).toBeNull();
   });
 });
