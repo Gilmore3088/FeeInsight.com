@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  test-dependencies:
+  migration-scaffolds:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,13 +19,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - name: Install locked test dependencies without production credentials
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Package offline test dependencies
-        run: tar -czf /tmp/feeinsight-repair-dependencies.tar.gz node_modules
+      - name: Create migration files without connecting to a database
+        run: |
+          npx --yes supabase@2.120.0 --version
+          npx --yes supabase@2.120.0 --help
+          npx --yes supabase@2.120.0 migration --help
+          npx --yes supabase@2.120.0 migration new --help
+          npx --yes supabase@2.120.0 migration new fee_audience_integrity
+          npx --yes supabase@2.120.0 migration new pinnacle_audience_correction
+          mkdir /tmp/feeinsight-migration-scaffolds
+          cp supabase/migrations/*_fee_audience_integrity.sql /tmp/feeinsight-migration-scaffolds/
+          cp supabase/migrations/*_pinnacle_audience_correction.sql /tmp/feeinsight-migration-scaffolds/
       - uses: actions/upload-artifact@v4
         with:
-          name: feeinsight-repair-dependencies
-          path: /tmp/feeinsight-repair-dependencies.tar.gz
+          name: feeinsight-migration-scaffolds
+          path: /tmp/feeinsight-migration-scaffolds/
           retention-days: 1
