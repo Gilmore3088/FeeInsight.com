@@ -461,9 +461,10 @@ describe("Hamilton agentic publish", () => {
     expect(change?.slice(1)).toEqual(expect.arrayContaining([42, "overdraft", 30, 35, "increase"]));
   });
 
-  it("records a real schedule change replayed from prod (MFCU non-member cashier's check, $5 to $10)", async () => {
-    // Prod, 9 Oct: verified 81480 from the 5 Oct copy of mfcu.net/Fees (document 16105), live
-    // 54570 from the 17 Feb copy (document 2253). Each copy lists the fee at one price only.
+  it("records a price change when each copy of the page lists the fee at one price", async () => {
+    // Shape taken from prod rows (MFCU 7383, 9 Oct). The real live 54570 at $5 was a misread:
+    // both copies state $10 for the non-member cashier's check and $5 for on-us check cashing
+    // on the next line, so MFCU did not raise this price. Kept as the price-change case.
     const newer = {
       ...verifiedFee,
       fee_verified_id: 81480,
