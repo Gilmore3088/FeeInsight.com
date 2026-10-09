@@ -177,7 +177,7 @@ export default async function StateReportPage({ params }: PageProps) {
       />
       <ResearchSectionNav sections={STATE_SECTIONS} label={`${stateName} report sections`} />
 
-      <div className="mx-auto max-w-7xl space-y-20 px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
         <KeyFindings findings={findings} asOf={asOf} />
 
         <StateBenchmarkBoard rows={everyday} stateCode={stateCode} stateName={stateName} asOf={asOf} />

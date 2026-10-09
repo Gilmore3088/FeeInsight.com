@@ -2,6 +2,7 @@ import {
   extractCandidatesFromText,
   MAX_FEES_PER_DOCUMENT,
   withBoxSizeCellsSplit,
+  withSidewaysBoxTable,
   withoutBusinessOnlyFees,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
@@ -59,7 +60,9 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v62: a dot-leader line's name wrapped over lines above it is read whole (`joinWrappedLeaderNames`),
 // "Domestic Outgoing (client only) .... $25.00 per wire" is a wire, and one line read by two
 // specialists is one fee (Northern Trust).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 63 } as const;
+// v63: a box size glued after another fee's name starts its own line (doc 20570).
+// v64: a box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 64 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -149,7 +152,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // check reads them; the self-check still runs against the stored text.
   // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
   // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
-  const text = withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText)));
+  // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
+  const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },

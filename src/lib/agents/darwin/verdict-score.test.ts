@@ -70,6 +70,30 @@ describe("Darwin verdict score", () => {
     expect(chunks[1]).toMatchObject({ fromAttemptId: 3, toAttemptId: 5, right: 2 });
   });
 
+  it("closes a retired review version's open chunk as partial instead of waiting forever", () => {
+    // Release review v11 to v17 on 2026-10-08: 13 to 18 keyed verdicts per version, none reached 20.
+    const keys = new Map([[1, [{ tid: 9, set: "tuning", fees: rabun }]]]);
+    const verdict = (attemptId: number, category: string): StoredVerdict => ({
+      attemptId,
+      strategy: "verify.release_review",
+      version: 13,
+      institutionId: 1,
+      sourceDocumentId: null,
+      feeRawId: attemptId,
+      feeName: "Wire Transfer Fee – Outgoing",
+      amount: 20,
+      knoxKey: "wire_domestic_outgoing",
+      claim: { feeName: "Wire Transfer Fee – Outgoing", amount: 20, isFee: true, category },
+    });
+    const verdicts = [verdict(1, "wire_domestic_outgoing"), verdict(2, "wire_domestic_outgoing"), verdict(3, "wire_intl_outgoing")];
+    expect(scoreChunks(verdicts, keys, 20)).toHaveLength(0);
+    const closed = scoreChunks(verdicts, keys, 20, true);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatchObject({ partial: true, fromAttemptId: 1, toAttemptId: 3, right: 2, wrong: 1 });
+    // Nothing decided, nothing to close.
+    expect(scoreChunks([{ ...verdict(4, "x"), institutionId: 2 }], keys, 20, true)).toHaveLength(0);
+  });
+
   it("keeps holdout misses out of the lessons a review reads before its next call", async () => {
     const verdict = (attemptId: number, institutionId: number): StoredVerdict => ({
       attemptId,

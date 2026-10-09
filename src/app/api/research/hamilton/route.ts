@@ -19,8 +19,10 @@ import {
 import {
   getAnthropicLanguageModel,
   hasAnthropicApiKey,
+  isProviderLimitError,
   MISSING_ANTHROPIC_API_KEY_MESSAGE,
 } from "@/lib/ai-provider";
+import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, type HamiltonRole } from "@/lib/research/agents";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
@@ -388,7 +390,11 @@ async function handlePOST(request: Request) {
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({
         execute: async ({ writer }) => {
-          writer.merge(result.toUIMessageStream());
+          // A provider refusal happens inside the stream, past the catch below: send the
+          // reader the paused line for a usage/billing limit, never the provider's text.
+          writer.merge(result.toUIMessageStream({
+            onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
+          }));
           const id = await savedId;
           if (id) writer.write({ type: "message-metadata", messageMetadata: { [SAVED_ANALYSIS_ID_KEY]: id } });
         },
@@ -404,6 +410,10 @@ async function handlePOST(request: Request) {
         latencyMs: Date.now() - providerStartedAt,
         error: message,
       });
+    }
+
+    if (isProviderLimitError(err)) {
+      return Response.json({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" }, { status: 503 });
     }
 
     if (

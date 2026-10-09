@@ -285,7 +285,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       />
 
       <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
-        <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
+        <div className="mx-auto max-w-page px-4 py-5 sm:px-6 sm:py-7">
           <ProfileHeader
             name={inst.institution_name}
             status={status}

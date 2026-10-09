@@ -264,6 +264,24 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(evalVerdictFeesSql(false)).toContain("(minimum|maximum|min|max)");
   });
 
+  it("reads a balance-to-avoid label as not a fee at any amount (v7, Oct 9)", () => {
+    expect(ruleFor("monthly_maintenance", "Minimum balance required to avoid service charge -", 50)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "Minimum balance to avoid monthly service fee", 5)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "Average Balance Required to Avoid Monthly Fee", 10)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "minimum balance requirement to avoid the monthly maintenance fee. FAT CAT Share accounts can be opened with a", 5)).toBe("balance_threshold");
+    // A $0 waiver keeps its earlier rule.
+    expect(ruleFor("monthly_maintenance", "Minimum Balance to Avoid Monthly Fee", 0)).toBe("waiver_sentence");
+    // A name that goes on to state the fee is the fee's own row.
+    expect(ruleFor("monthly_maintenance", "Minimum balance to avoid imposition of fees - A service charge fee of", 15)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum balance to avoid imposition of fees - A club fee of", 8)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "average collected daily balance required to avoid monthly service charge of", 10)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of", 2.5)).toBeNull();
+    expect(ruleFor("nsf", "Minimum daily balance required to avoid maintenance | Bill Pay Return Item . . . .", 30)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "monthly fee can be avoided by keeping minimum daily balance", 8)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum Balance Fee", 10)).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("(minimum|average|min");
+  });
+
   it("changes nothing in a dry run", async () => {
     const db = createDb(null);
     const result = await retireEvalVerdictFees(db, { ...options, dryRun: true });

@@ -964,3 +964,59 @@ describe("v57: a cross-border banking bundle's annual fee is monthly maintenance
     expect(checkFeeCategory("monthly_maintenance", "Safe deposit box annual fee").ok).toBe(false);
   });
 });
+
+describe("monthly maintenance add-ons (v59)", () => {
+  it.each([
+    "ID TheftSmart Fee (monthly fee, per person enrolled - customer can choose to pay a",
+    "ID Theft Monthly Fee (Optional Program)",
+    "ID Theft Monthly Service Charge",
+    "Accidental Death Insurance (Monthly fee",
+    "Minimum balance to open the account – No minimum balance to open insurance plan you choose there is a monthly fee of eit",
+    "Perks Package Monthly Fee (waived with Ultra Checking)",
+  ])("takes an optional add-on out of monthly_maintenance: %s", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+  });
+
+  it.each([
+    "per month service charge for accounts with up to of 24-hour Accidental Death & Dismemberment Insurance - also includes u",
+    "Secure Checking w/EZ Shield Fraud Protection Monthly service charge",
+    "Perks Checking Account Monthly Fee",
+    "Rewards Checking Monthly Maintenance Fee",
+    "Kasasa Protect with Kasasa Checking Monthly service charge",
+    "Benefits Plus Checking Monthly service charge",
+  ])("keeps an account's own fee: %s", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name)).toEqual({ ok: true });
+  });
+});
+
+describe("night deposit items filed as a safe deposit box (v60)", () => {
+  it.each([
+    ["Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle", null],
+    ["Plastic Deposit Bag Fee, per 100, 11”x15” (Business)", null],
+    ["Zipper with Lock (9\" X 16”)", null],
+    ["Replacement Key for Bag", "night_deposit"],
+    ["Bag Replacement/Lost Key", "night_deposit"],
+    ["Depository Replacement Key", "night_deposit"],
+  ])("takes %s out of safe_deposit_box (re-file: %s)", (name, to) => {
+    expect(checkFeeCategory("safe_deposit_box", name).ok).toBe(false);
+    expect(refileCategory("safe_deposit_box", name)).toBe(to ?? "safe_deposit_box");
+  });
+
+  it.each(["Safe Deposit Box 3x5 Annual Rent", "Safe Deposit Box Lost Key Replacement", "Safe Deposit Box Drilling", "Key Replacement"])(
+    "keeps a box fee: %s",
+    (name) => {
+      expect(checkFeeCategory("safe_deposit_box", name)).toEqual({ ok: true });
+    },
+  );
+});
+
+describe("sweep service charges filed as monthly maintenance (v60)", () => {
+  it.each([
+    "Sweep maintenance charge (per month)",
+    "Balance Maintenance Fee (Sweep Fee)",
+    "Zero Balance Account (ZBA) or Sweep Transfer Monthly fee",
+    "Maintenance – Sweep Checking Monthly service charge",
+  ])("takes %s out of monthly_maintenance", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+  });
+});

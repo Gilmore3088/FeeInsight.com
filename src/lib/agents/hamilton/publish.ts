@@ -83,6 +83,8 @@ export interface VerifiedFeeRow extends RateFields {
   institution_name?: string | null;
   /** True when this row was skipped as identical to a live fee the rules re-check took down. */
   twin_recheck?: boolean | null;
+  /** Skipped as identical before the same-line check (9 Oct) and decided once more. */
+  same_line_reselect?: boolean | null;
   /** True when Knox's free-fee reader read this row (product-page.ts). */
   free_read?: boolean | null;
 }
@@ -378,10 +380,11 @@ async function selectVerifiedFees(
               -- A row skipped as identical before the same-line check (9 Oct) to a live line of its
               -- own document under another name is decided once more: Wildfire's $5 ATM balance
               -- inquiry (verified 8019) sat behind its $5 "ATM Adjustment" (14754). The new decision
-              -- carries same_line_check, so it is final.
+              -- carries same_line_check, so it is final. A box-size row decided by check 1 is decided
+              -- once more by check 2, which reads "3 x 5" and "2 x 10" as two lines (CBB, 9 Oct).
               AND NOT (
                 pa.outcome = 'unchanged'
-                AND pa.detail->>'same_line_check' IS NULL
+                AND ${SAME_LINE_RESELECT_SQL}
                 AND EXISTS (
                   SELECT 1 FROM published_fee_records prev
                     JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
@@ -393,6 +396,7 @@ async function selectVerifiedFees(
                          <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
                 )
               )
+              AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -432,6 +436,14 @@ async function selectVerifiedFees(
                   AND twin_pa.outcome = 'unchanged'
                   AND twin.rolled_back_reason = '${RULES_RECHECK_REASON}'
              ) AS twin_recheck,
+             EXISTS (
+               SELECT 1
+                 FROM pipeline_attempts sl_pa
+                WHERE sl_pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
+                  AND sl_pa.outcome = 'unchanged'
+                  AND (${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
+                       OR ${THRESHOLD_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
+             ) AS same_line_reselect,
              COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
@@ -591,7 +603,9 @@ export async function insertPublishedFee(
 async function selectLivePublishedFees(
   db: SqlTag,
   row: VerifiedFeeRow,
+  options: { anyVariant?: boolean } = {},
 ): Promise<PriorPublishedFeeRow[]> {
+  const anyVariant = options.anyVariant === true;
   try {
     return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fp.fee_published_id,
@@ -611,8 +625,8 @@ async function selectLivePublishedFees(
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fp.institution_id = ${Number(row.institution_id)}
          AND fp.canonical_fee_key = ${row.canonical_fee_key}
-         AND COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, '')
-         AND COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, '')
+         AND (${anyVariant} OR COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, ''))
+         AND (${anyVariant} OR COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, ''))
          AND fp.rolled_back_at IS NULL
        ORDER BY fp.published_at DESC, fp.fee_published_id DESC
     `);
@@ -801,9 +815,71 @@ function stem(word: string): string {
   return word;
 }
 
+/**
+ * The same-line check's version on each publish attempt (\`detail.same_line_check\`). An identical
+ * skip decided before a version is decided again by it: every row before check 1, and box-size
+ * rows ("3 x 5") before check 2, whose names check 1 read as the same line.
+ */
+const SAME_LINE_CHECK_VERSION = 2;
+const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
+                OR (pa.detail->>'same_line_check' = '1' AND fv.fee_name ~ '\\d\\s*[xX\u00d7]\\s*\\d'))`;
+
+/** A balance a fee applies below ("Money Market Savings Account (below $2,500)"). */
+const BALANCE_THRESHOLD = /\b(?:below|under|less than)\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/i;
+const BALANCE_THRESHOLD_SQL = `'(below|under|less than)\\s*\\$\\s?[0-9]'`;
+/**
+ * An identical skip decided by check 1 or before against a live line that names a balance is
+ * decided again by check 2, which reads the balance (SCCU's Interest Checking $15 low balance fee
+ * sat behind its Money Market "below $2,500" $15 line, 9 Oct).
+ */
+const THRESHOLD_RESELECT_SQL = `(COALESCE(pa.detail->>'same_line_check', '0') <> '2' AND EXISTS (
+                  SELECT 1 FROM published_fee_records th_prev
+                   WHERE th_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND th_prev.rolled_back_at IS NULL
+                     AND th_prev.fee_name ~* ${BALANCE_THRESHOLD_SQL}
+                ))`;
+
+export function balanceThreshold(name: string | null | undefined): number | null {
+  const match = (name ?? "").match(BALANCE_THRESHOLD);
+  return match ? Number(match[1].replace(/,/g, "")) : null;
+}
+
+/** Does the page print this balance anywhere ("$2,500", "2500.00")? */
+function pagePrintsAmount(text: string, amount: number): boolean {
+  const plain = text.replace(/(\d),(\d{3})/g, "$1$2");
+  const whole = Number.isInteger(amount) ? `${amount}(?:\\.00)?` : amount.toFixed(2).replace(".", "\\.");
+  return new RegExp(`(?<![\\d.])${whole}(?![\\d])`).test(plain);
+}
+
+/**
+ * Pure: a live line at the same price that names a balance is another fee when this row names a
+ * different balance ("below $7,500" beside "below $1,000"), or, from another document, when this
+ * row's page never prints that balance.
+ */
+export function otherBalanceLine(row: VerifiedFeeRow, prior: PriorPublishedFeeRow, rowText: string | null): boolean {
+  const priorBalance = balanceThreshold(prior.fee_name);
+  if (priorBalance == null) return false;
+  const rowBalance = balanceThreshold(row.fee_name);
+  if (rowBalance != null) return rowBalance !== priorBalance;
+  if (sameDocument(prior.source_document_id, row.source_document_id) || !rowText) return false;
+  return !pagePrintsAmount(rowText, priorBalance);
+}
+
+/** A box or size ("3 x 5", "2.5x10"): one word, so "3 x 5" and "2 x 10" are two lines (CBB, 9 Oct). */
+const BOX_SIZE = /(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)/gi;
+
+/** The box sizes a name gives, smaller side first ("3 x 5" and "5x3" are one box). */
+function boxSizes(name: string | null | undefined): Set<string> {
+  return new Set(
+    [...(name ?? "").matchAll(BOX_SIZE)].map((match) => [Number(match[1]), Number(match[2])].sort((a, b) => a - b).join("x")),
+  );
+}
+
 function significantWords(name: string | null | undefined): Set<string> {
   return new Set(
-    (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+    (name ?? "").toLowerCase()
+      .replace(BOX_SIZE, (_, a: string, b: string) => ` ${a.replace(".", "p")}x${b.replace(".", "p")} `)
+      .replace(/[^a-z0-9]+/g, " ").trim()
       .split(" ")
       .filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word))
       .map(stem),
@@ -814,9 +890,12 @@ function significantWords(name: string | null | undefined): Set<string> {
 const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
 const MAX_LINE_WORDS = 10;
 function unclearName(name: string | null | undefined): boolean {
-  const text = (name ?? "").trim();
-  // A name starting lower-case is the rest of a line ("per mailed statement"), not its start.
-  if (!/^[A-Z]/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  const text = (name ?? "").replace(/[\u200b\ufeff]/g, "").trim();
+  // A name starting lower-case is the rest of a line ("per mailed statement"), not its start;
+  // a box size ("3 x 5") is a line's start. A name ending on "a" or "of" is a cut-off sentence
+  // ("GUASFCU charges a", the $1 check copy line read again).
+  if (!/^(?:[A-Z]|\d+(?:\.\d+)?\s*[xX\u00d7]\s*\d)/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  if (/\b(?:a|an|of|the)$/i.test(text)) return true;
   return text.toLowerCase().split(/[^a-z]+/).filter((word) => SENTENCE_WORD.test(word)).length >= 2;
 }
 
@@ -828,6 +907,14 @@ function linePair(a: string | null | undefined, b: string | null | undefined): [
   const outside = (name: string | null | undefined) => significantWords((name ?? "").replace(/\([^)]*\)/g, " "));
   const [aOut, bOut] = [outside(a), outside(b)];
   return aOut.size > 0 && bOut.size > 0 ? [aOut, bOut] : [significantWords(a), significantWords(b)];
+}
+
+/** One name's words all appear in the other's ("Outgoing Wire Fee" in "Wire Transfers - Outgoing: Outgoing Wire Fee"). */
+export function namesShareReading(a: string | null | undefined, b: string | null | undefined): boolean {
+  const [aWords, bWords] = linePair(a, b);
+  // A name of filler alone ("Service Charge") reads as any line.
+  const within = (x: Set<string>, y: Set<string>) => [...x].every((word) => y.has(word));
+  return within(aWords, bWords) || within(bWords, aWords);
 }
 
 /**
@@ -858,6 +945,10 @@ function pageWords(text: string): string {
  * words, with no "of" between ("A nonsufficient funds (NSF) charge of $25.00" is a sentence about
  * the table line, not a second line). A name not on the current copy, or inside the other line
  * ("Inactive Checking" in "Inactive Checking3"), is a read of the same line.
+ * Every place a name is printed counts ("5 x 10" also sits inside "2.5 x 10"), a footnote mark
+ * glued to a name's last word is the name ("Premium overdraft fee2"), and the words before the
+ * price may be another column's price ("5 x 10 | $150.00 per year | $110.00 per year"). A box of
+ * another size that the page does not print needs only the row's own line.
  */
 export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
   const value = amount == null ? NaN : Number(amount);
@@ -865,17 +956,35 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
   const cents = Math.round(value * 100);
   const whole = Math.floor(cents / 100);
   const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
-  const follows = new RegExp(`^ (?:(?!of )[a-z]+ ){0,6}${price} `);
+  const follows = new RegExp(`^ (?:(?!of )[a-z0-9]+ ){0,6}${price} `);
   const page = pageWords(text);
-  const place = (name: string) => {
+  const printed = (name: string) => {
     const words = pageWords(name).trim();
-    const at = words ? page.indexOf(` ${words} `) : -1;
-    return at < 0 ? null : { start: at, end: at + words.length + 1 };
+    if (!words) return [];
+    const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
+    const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
+    return [...page.matchAll(pattern)].map((match) => {
+      const start = (match.index ?? 0) - 1;
+      return { start, end: start + match[0].length + 1 };
+    });
   };
-  const a = place(rowName);
-  const b = place(priorName);
-  if (!a || !b || !(a.end <= b.start || b.end <= a.start)) return false;
-  return follows.test(page.slice(a.end)) && follows.test(page.slice(b.end));
+  const places = (name: string) => printed(name).filter((place) => follows.test(page.slice(place.end)));
+  const a = places(rowName);
+  // A box of another size that this copy does not print at all is another line (CBB's 3 x 5 at
+  // $45 beside a misread "SAFE DEPOSIT BOX: 2.5 x 10" at $45, 9 Oct). One printed without this
+  // price is a price-first table ("$25.00 Safe Deposit Box 3x5"), where the price after a name
+  // is the next line's, so it stays the same line.
+  const rowSizes = boxSizes(rowName);
+  const priorSizes = boxSizes(priorName);
+  if (rowSizes.size > 0 && priorSizes.size > 0 && ![...rowSizes].some((size) => priorSizes.has(size)) && printed(priorName).length === 0) {
+    return a.length > 0;
+  }
+  const b = places(priorName);
+  return a.some((one) => b.some((two) => one.end <= two.start || two.end <= one.start));
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** The current read of a document (\`agent_source_texts\`), for the same-line check. */
@@ -904,11 +1013,38 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
 async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
   if (isPercentFee(row)) return new Set();
   const value = feeValue(row);
-  const candidates = live.filter((prior) => feeValue(prior) === value && separateLines(row, prior));
-  if (candidates.length === 0) return new Set();
+  const sameValue = live.filter((prior) => feeValue(prior) === value);
+  const candidates = sameValue.filter((prior) => separateLines(row, prior));
+  const balanced = sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null);
+  if (candidates.length === 0 && balanced.length === 0) return new Set();
   const text = await selectDocumentText(db, row.source_document_id);
-  if (!text) return new Set();
-  return new Set(candidates.filter((prior) => linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)));
+  const apart = new Set(balanced.filter((prior) => otherBalanceLine(row, prior, text)));
+  if (!text) return apart;
+  for (const prior of candidates) {
+    if (linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)) apart.add(prior);
+  }
+  return apart;
+}
+
+/**
+ * The older live line a live fee repeats, if any: a same-valued line of its category (any
+ * frequency or variant) published before it that the same-line check does not set apart.
+ * Used to find the duplicates the same-line re-decide published on 9 Oct (same-line-duplicates.ts).
+ */
+export async function sameLineDuplicateOf(db: SqlTag, row: VerifiedFeeRow, feePublishedId: number): Promise<number | null> {
+  const value = feeValue(row);
+  const older = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter(
+    (prior) => Number(prior.fee_published_id) < feePublishedId && feeValue(prior) === value,
+  );
+  if (older.length === 0) return null;
+  const apart = await linesApartFrom(db, row, older);
+  // A line of another document repeats this one only when one name reads as the other: the
+  // re-decide's duplicates were renamed reads of one line, and "Return Mail/ Bad Address" is not
+  // another document's "Excessive Transaction Fee" (both $10, 9 Oct).
+  const repeated = older.find(
+    (prior) => !apart.has(prior) && (sameDocument(prior.source_document_id, row.source_document_id) || namesShareReading(row.fee_name, prior.fee_name)),
+  );
+  return repeated ? Number(repeated.fee_published_id) : null;
 }
 
 /** A fee's comparable value: its rate for a percentage fee, else its amount. */
@@ -1507,6 +1643,17 @@ export async function runHamiltonPublish(
       const live = await selectLivePublishedFees(db, row);
       const apart = await linesApartFrom(db, row, live);
       decision = decidePriorFee(row, live, (prior) => apart.has(prior));
+      // A row decided once more after the same-line check may since have had its frequency or
+      // variant re-read ("per_item" to none), so the live line it was identical to no longer
+      // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
+      // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
+      // check reads every live line of the category.
+      if (row.same_line_reselect && decision.kind !== "identical") {
+        const wide = await selectLivePublishedFees(db, row, { anyVariant: true });
+        const wideApart = await linesApartFrom(db, row, wide);
+        const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
+        if (wideDecision.kind === "identical") decision = wideDecision;
+      }
     }
     if (
       decision?.kind === "supersede" &&
@@ -1598,7 +1745,7 @@ export async function runHamiltonPublish(
           previous_fee_published_id: result.previousFeePublishedId,
           superseded_fee_published_id: result.supersededFeePublishedId,
           change_recorded: result.changeRecorded,
-          same_line_check: 1,
+          same_line_check: SAME_LINE_CHECK_VERSION,
         },
       });
     }
