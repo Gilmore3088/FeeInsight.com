@@ -280,6 +280,14 @@ function narrateFinished(
       const counts = fees.map((fee) => `${String(fee.fee)} ${Number(fee.checked ?? 0)}`).join(", ");
       return `Ran the free price check for ${String(detail.state)}${counts ? ` (source-checked institutions: ${counts})` : ""}.`;
     }
+    case "growth-press": {
+      if (detail.schemaReady === false) return "Drafted no press pitches; the queue is not there yet.";
+      const pitches = Array.isArray(detail.pitches) ? (detail.pitches as Array<{ draftId?: unknown }>) : [];
+      const drafted = pitches.filter((pitch) => pitch.draftId !== null && pitch.draftId !== undefined).length;
+      if (drafted) return `Drafted ${count(drafted, "press pitch", "press pitches")} for James to review and send himself.`;
+      if (pitches.length) return `Picked ${count(pitches.length, "press pitch", "press pitches")} and wrote nothing (${String(detail.reason ?? "dry run")}).`;
+      return `Drafted no press pitches (${String(detail.reason ?? "no outlet or finding passed the checks")}).`;
+    }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
       if (detail.draftId !== null && detail.draftId !== undefined) return `Filed ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} into the queue for James to review.`;
@@ -504,6 +512,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-intel": "growth",
   "growth-conversion": "growth",
   "growth-tools": "growth",
+  "growth-press": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",

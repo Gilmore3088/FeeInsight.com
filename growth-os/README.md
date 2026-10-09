@@ -1,6 +1,6 @@
 # Fee Insight GrowthOS
 
-The marketing team: one manager and seven specialists that find banks and credit unions who need
+The marketing team: one manager and eight specialists that find banks and credit unions who need
 fee benchmarking, earn their trust with sourced research, and turn interest into report requests
 and Pro customers. Proposed by James on 2026-10-08; built in weekly stages.
 
@@ -20,6 +20,7 @@ paid reports, Pro and institution plans, and agent cost per qualified lead
 | NIELSEN | Nielsen, the audience measurement company | Growth analytics | Week 3, not active |
 | EDISON | Thomas Edison: builds working things | Product-led growth tools | Week 3, not active |
 | CARNEGIE | Dale Carnegie, How to Win Friends and Influence People | B2B outreach drafts | Week 4, not active |
+| BERNAYS | Edward Bernays, who wrote the first book on public relations | Press, events and partners: weekly press pitch drafts | Built, not scheduled |
 
 Each name says the job. The manager is not ATLAS, as in the proposal: Atlas is already the pipeline's run orchestrator
 (`AGENTS.md`). The pipeline team (Atlas, Magellan, Rosetta, Knox, Darwin, Hamilton) produces the

@@ -99,6 +99,12 @@ budget messages name cap, limit, used and reset.
 fail-closed fallback must carry an "unreadable" flag so a display never presents it as a switch
 setting.
 
+## 2026-10-09: The fee-page classifier learned our own crawler's name
+**What happened:** The first trained classifier (01:09 UTC Oct 9) had weights for `w:feeinsi`, `w:magella` and `w:vercel` (UAT found them). In the training set, 32 labelled pages (11 fee pages, 21 not) began with our own user agent, "FeeInsightBot/1.0 (Magellan; +https://feeinsight.com/contact)", followed by about 40 request-header names (x-vercel-id, cloudfront-viewer-city and so on). `w:james` is real bank text ("Raymond James", "St. James"), not a leak.
+**Cause:** one credit union site platform echoes the request it receives into the page, and Rosetta stores page text as served.
+**Fix:** the classifier drops that echo before it reads features (`withoutRequestEcho`), and its version goes to 2, so the next discover step retrains (this PR). Rosetta's stored text is unchanged.
+**Lesson:** before trusting learned weights, list the ones that name us, our hosting or our tools; any text we sent can come back in a page.
+
 ## 2026-10-09: Magellan's fee-page classifier never trained
 **What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
 **Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
@@ -3487,6 +3493,10 @@ compared, so each reader re-guessed the pair by amount. Migration `2027011000003
 `pairFeeChangeRecords` (`hamilton/change-pairing.ts`) fills older records in the publish step with the
 same page rule plus `listsBothPrices`. Every reader now requires `like_for_like IS TRUE`. A new reader
 of `fee_change_records` must do the same.
+**Follow-up (9 Oct, 01:20 UTC):** a misread price waiting on its 12-hour second look stayed in
+`published_fee_catalog` beside its corrected re-read, so Jeanne D'Arc FCU showed money orders at $2 and
+$5. Migration `20270110000032` makes both catalog views leave out a `takedown_pending` row once a
+newer live row for the same institution and fee has no pending flag (154 of 65,145 live rows on 9 Oct).
 
 ## 2026-10-08: Paid search answers dropped because the bank's site refused our check
 
