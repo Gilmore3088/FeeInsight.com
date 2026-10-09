@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -835,6 +835,15 @@ describe("decidePriorFee", () => {
     expect(namesShareReading("Wire Transfers - Outgoing: Outgoing Wire Fee", "Outgoing Wire Fee")).toBe(true);
     expect(namesShareReading("Return Mail/ Bad Address", "Excessive Transaction Fee")).toBe(false);
     expect(namesShareReading("Service Charge", "Service Charge Assessed Each Month Balance Falls Below Minimum")).toBe(true);
+    // A live line that names a balance is another fee when this row names another balance, or,
+    // from another document, when this row's page never prints that balance (SCCU, 9 Oct).
+    const moneyMarket = live({ source_document_id: 13776, fee_name: "Money Market Savings Account (below $2,500)" });
+    const lowBalance = { ...row, source_document_id: 23995, fee_name: "Monthly Low Balance Fee" };
+    expect(otherBalanceLine(lowBalance, moneyMarket, "Minimum Daily Balance | $1,500 Monthly Low Balance Fee | $15/mo")).toBe(true);
+    expect(otherBalanceLine(lowBalance, moneyMarket, "Money Market below $2,500 Monthly Low Balance Fee | $15/mo")).toBe(false);
+    expect(otherBalanceLine(lowBalance, moneyMarket, null)).toBe(false);
+    expect(otherBalanceLine({ ...row, fee_name: "Minimum Balance Fee (if Balance is Below $7,500)" }, live({ fee_name: "Minimum Balance Fee (if Balance is Below $1,000)" }), null)).toBe(true);
+    expect(otherBalanceLine({ ...row, fee_name: "Minimum Balance Fee (average below $1000)" }, live({ fee_name: "Minimum Balance Fee (average below $1,000)" }), null)).toBe(false);
     // A box size never takes a following digit as its footnote ("3 x 5" is not "3 x 50").
     expect(linesApartOnPage("3 x 50 $20.00 4 x 5 $20.00", "3 x 5", "4 x 5", "20")).toBe(false);
   });

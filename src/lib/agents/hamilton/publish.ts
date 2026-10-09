@@ -396,6 +396,7 @@ async function selectVerifiedFees(
                          <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
                 )
               )
+              AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
@@ -440,7 +441,8 @@ async function selectVerifiedFees(
                  FROM pipeline_attempts sl_pa
                 WHERE sl_pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
                   AND sl_pa.outcome = 'unchanged'
-                  AND ${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
+                  AND (${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
+                       OR ${THRESHOLD_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
              ) AS same_line_reselect,
              COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
@@ -822,6 +824,47 @@ const SAME_LINE_CHECK_VERSION = 2;
 const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
                 OR (pa.detail->>'same_line_check' = '1' AND fv.fee_name ~ '\\d\\s*[xX\u00d7]\\s*\\d'))`;
 
+/** A balance a fee applies below ("Money Market Savings Account (below $2,500)"). */
+const BALANCE_THRESHOLD = /\b(?:below|under|less than)\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/i;
+const BALANCE_THRESHOLD_SQL = `'(below|under|less than)\\s*\\$\\s?[0-9]'`;
+/**
+ * An identical skip decided by check 1 or before against a live line that names a balance is
+ * decided again by check 2, which reads the balance (SCCU's Interest Checking $15 low balance fee
+ * sat behind its Money Market "below $2,500" $15 line, 9 Oct).
+ */
+const THRESHOLD_RESELECT_SQL = `(COALESCE(pa.detail->>'same_line_check', '0') <> '2' AND EXISTS (
+                  SELECT 1 FROM published_fee_records th_prev
+                   WHERE th_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND th_prev.rolled_back_at IS NULL
+                     AND th_prev.fee_name ~* ${BALANCE_THRESHOLD_SQL}
+                ))`;
+
+export function balanceThreshold(name: string | null | undefined): number | null {
+  const match = (name ?? "").match(BALANCE_THRESHOLD);
+  return match ? Number(match[1].replace(/,/g, "")) : null;
+}
+
+/** Does the page print this balance anywhere ("$2,500", "2500.00")? */
+function pagePrintsAmount(text: string, amount: number): boolean {
+  const plain = text.replace(/(\d),(\d{3})/g, "$1$2");
+  const whole = Number.isInteger(amount) ? `${amount}(?:\\.00)?` : amount.toFixed(2).replace(".", "\\.");
+  return new RegExp(`(?<![\\d.])${whole}(?![\\d])`).test(plain);
+}
+
+/**
+ * Pure: a live line at the same price that names a balance is another fee when this row names a
+ * different balance ("below $7,500" beside "below $1,000"), or, from another document, when this
+ * row's page never prints that balance.
+ */
+export function otherBalanceLine(row: VerifiedFeeRow, prior: PriorPublishedFeeRow, rowText: string | null): boolean {
+  const priorBalance = balanceThreshold(prior.fee_name);
+  if (priorBalance == null) return false;
+  const rowBalance = balanceThreshold(row.fee_name);
+  if (rowBalance != null) return rowBalance !== priorBalance;
+  if (sameDocument(prior.source_document_id, row.source_document_id) || !rowText) return false;
+  return !pagePrintsAmount(rowText, priorBalance);
+}
+
 /** A box or size ("3 x 5", "2.5x10"): one word, so "3 x 5" and "2 x 10" are two lines (CBB, 9 Oct). */
 const BOX_SIZE = /(\d+(?:\.\d+)?)\s*[x\u00d7]\s*(\d+(?:\.\d+)?)/gi;
 
@@ -970,11 +1013,17 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
 async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
   if (isPercentFee(row)) return new Set();
   const value = feeValue(row);
-  const candidates = live.filter((prior) => feeValue(prior) === value && separateLines(row, prior));
-  if (candidates.length === 0) return new Set();
+  const sameValue = live.filter((prior) => feeValue(prior) === value);
+  const candidates = sameValue.filter((prior) => separateLines(row, prior));
+  const balanced = sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null);
+  if (candidates.length === 0 && balanced.length === 0) return new Set();
   const text = await selectDocumentText(db, row.source_document_id);
-  if (!text) return new Set();
-  return new Set(candidates.filter((prior) => linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)));
+  const apart = new Set(balanced.filter((prior) => otherBalanceLine(row, prior, text)));
+  if (!text) return apart;
+  for (const prior of candidates) {
+    if (linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)) apart.add(prior);
+  }
+  return apart;
 }
 
 /**

@@ -54,3 +54,25 @@ Because of that, the same-line duplicate cleanup (PR 902) flagged 103621 as a du
   look instead (`GARBLED_OLDER_TWINS`, from UAT).
 - **Kept flagged:** without the cut-off-sentence rule, 104637 would have cleared against
   "GUASFCU charges a". That is a sentence restating the check copy fee, so it stays flagged.
+
+## Balance-named lines (SCCU, same PR)
+SCCU's Interest Checking low balance fee ($15/mo, verified 119831, from the Interest Checking
+page, doc 23995) sat behind the live "Money Market Savings Account (below $2,500)" $15 line from
+the fee schedule (79501). SCCU's schedule lists both "Money Market Savings Account (below $2,500)"
+and "Interest Checking (below $1,500)" at $15/mo, so they are separate fees.
+
+**Fix:** a live line at the same price that names a balance ("below $2,500") is another fee in
+two cases:
+- this row names a different balance;
+- it comes from another document, and this row's page never prints that balance.
+
+Check 2 decides again the identical skips made against such a line.
+
+**Dry read:** about 45 unchanged rows sit behind a live line that names a balance. Two flip, and
+both are separate fees on their source:
+- 119831, SCCU Interest Checking;
+- 56431, "Minimum Balance Fee (if Balance is Below $7,500)" for Business Checking Plus, beside a
+  "Below $1,000" line.
+
+**Duplicates:** raw 468046, the second read of the same SCCU line, is not verified yet. Once
+119831 is live, the same-name same-document check skips it as identical.
