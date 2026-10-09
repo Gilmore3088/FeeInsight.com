@@ -484,6 +484,16 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
+    ["Cross-Border Banking Bundle annual fee", "monthly_maintenance"],
+    ["Cross-Border Banking Package monthly fee", "monthly_maintenance"],
+    ["Cross-Border Fee", "card_foreign_txn"],
+    ["Cross-border transaction fee", "card_foreign_txn"],
+    ["Cross-Border Banking card purchases (3% of purchase)", "card_foreign_txn"],
+  ])("v59 reads %s as %s (cross-border banking bundle)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
     ["Returned Mail Fee", "account_research"],
     ["Bad Address Fee", "account_research"],
     ["Fax Outgoing", "document_reproduction"],
@@ -979,7 +989,7 @@ describe("v57: long table rows and sentence-fragment names (Arvest, Old National
   });
 });
 
-describe("v58: names keep their threshold and lose a column label", () => {
+describe("v60: names keep their threshold and lose a column label", () => {
   const names = (text: string) => runFreeSpecialists(text).candidates.map((fee) => fee.feeName);
 
   it("keeps a threshold figure in the name's parenthetical (101115, 40261)", () => {

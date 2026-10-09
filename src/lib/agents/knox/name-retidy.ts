@@ -298,7 +298,7 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   for (const fee of fees) {
     const headingless = ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) ? fee.fee_name : fee.fee_name.replace(LEADING_ACCOUNT_HEADINGS, "");
-    // Knox v58's tidy drops a "Name" column label ("Name Stop Payment").
+    // Knox v60's tidy drops a "Name" column label ("Name Stop Payment").
     const tidied =
       headingless === fee.fee_name ? retidiedFeeName(fee.fee_name, fee.canonical_fee_key) : retidiedFeeName(headingless, fee.canonical_fee_key) ?? headingless;
     // v7: a name whose dollar figure was cut out gets it back from the fee's own document.

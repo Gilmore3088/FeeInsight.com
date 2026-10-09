@@ -7,10 +7,10 @@ belongs to it. "Cashier's Checks ($10,000.01 and Over)" was stored as "Cashier's
 and "(balance below $1,000)" was cut to "(balance below". On 2026-10-09, about 340 live names had
 a gap where a figure was cut out, and 9 more ended on a cut threshold. Maple FCU's 19 live names
 began with the schedule's "Name" column label. A Knox rules version bump does not re-read current
-copies (`KNOX_STALE_READ_BELOW_VERSION` is 26), so Knox v57 and v58 change new reads only.
+copies (`KNOX_STALE_READ_BELOW_VERSION` is 26), so Knox v57 and v60 change new reads only.
 
 **Fix:**
-- Knox v58 keeps a figure that sits in a threshold parenthetical, drops a "Name" label, and no
+- Knox v60 keeps a figure that sits in a threshold parenthetical, drops a "Name" label, and no
   longer turns "In addition to the Card Replacement Fee" into "To the Card Replacement Fee".
 - Name-retidy v7 applies the same tidy to stored live names. It also puts a cut figure back from
   the fee's own stored text. Each rename is logged as `name_retidied`, renames happen only while

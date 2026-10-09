@@ -194,7 +194,7 @@ describe("planRetidy", () => {
   });
 });
 
-describe("v7: stored names Knox v57/v58 would read differently", () => {
+describe("v7: stored names Knox v57/v60 would read differently", () => {
   const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
 
   it("puts a cut threshold figure back from the fee's own text (101115, 102568)", () => {

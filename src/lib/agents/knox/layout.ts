@@ -100,11 +100,11 @@ const UNIT_CELL =
 const DETAILS_CELL = /^(?:(?:fees?|charges?)\s+(?:applies|apply|is|are|will|may)\b|(?:if|when|unless|based on)\b)/i;
 const MAX_DETAILS_FREE_WORDS = 10;
 /** v57: a word that joins a sentence to the one before it ("Otherwise, a monthly service fee of $6.95"). */
-// v58: "In addition to the Card Replacement Fee" is not a joined sentence ("To the Card Replacement Fee").
+// v60: "In addition to the Card Replacement Fee" is not a joined sentence ("To the Card Replacement Fee").
 const LEADING_DISCOURSE = /^(?:otherwise|additionally|also|however|in addition(?!\s+to\b)|furthermore|further)\s*,?\s+/i;
-/** v58: a section heading that is no fee's name ("SERVICE FEES"), so a details cell is not dropped down to it. */
+/** v60: a section heading that is no fee's name ("SERVICE FEES"), so a details cell is not dropped down to it. */
 const SECTION_HEADING = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
-/** v58: a schedule's "Name" column label read onto the name ("Name Stop Payment | Fee $25.00", Maple FCU). */
+/** v60: a schedule's "Name" column label read onto the name ("Name Stop Payment | Fee $25.00", Maple FCU). */
 const NAME_LABEL = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
 /** A unit or list marker glued to the front of a name: "/Item Cashier's Check", "per year Duplicate Key", "b. NSF". */
 // The previous row's bare price also leads a name in one-line schedules ("100.00 Overdraft (items paid)").
