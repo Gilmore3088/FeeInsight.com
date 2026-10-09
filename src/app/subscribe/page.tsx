@@ -446,9 +446,10 @@ export default async function SubscribePage({
           </div>
         )}
 
-        <section id="pro" aria-labelledby="pro-title" className="grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14">
+        <section id="pro" aria-labelledby="pro-title" className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-x-14 lg:gap-y-10">
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
-          <div className="lg:col-start-1 lg:row-start-1">
+          {/* The headline spans both columns; the example and the card start on one line below it. */}
+          <div className="lg:col-span-2 lg:row-start-1">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#1D4ED8]">{entry.context}</p>
             <h1
               id="pro-title"
@@ -473,10 +474,11 @@ export default async function SubscribePage({
                 Find your institution &amp; see pricing
               </PricingJump>
             </div>
-            {showcase && <div className="mt-8">{showcase}</div>}
           </div>
 
-          <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1 lg:self-start">
+          {showcase && <div className="lg:col-start-1 lg:row-start-2">{showcase}</div>}
+
+          <div className="lg:sticky lg:top-24 lg:col-start-2 lg:row-start-2 lg:self-start">
             <PurchaseCard
               isLoggedIn={isLoggedIn}
               chooser={
