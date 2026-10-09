@@ -4,7 +4,7 @@ The page read Resend's `GET /emails` live, and the production `RESEND_API_KEY` i
 list could not be read. Postgres had no table recording sends, so the app could not say what it had sent,
 whether Resend accepted it, or whether it was delivered.
 **Cause:** sending was logged nowhere on our side; the only history lived in Resend behind a read-access key.
-**Fix:** this PR. Migration `20270110000034_email_send_log.sql` adds `email_send_log` (new table, no data change).
+**Fix:** this PR. Migration `20270110000036_email_send_log.sql` adds `email_send_log` (new table, no data change).
 `sendResendEmail` (`src/lib/email/resend.ts`) records each attempt (sent / failed / not_configured, Resend id,
 error) best effort: a failed log write is logged and never changes the send. `/api/webhooks/resend` verifies
 the Svix signature (`RESEND_WEBHOOK_SECRET`) and stamps Resend's latest `email.*` event on the row. The

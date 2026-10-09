@@ -1,5 +1,5 @@
 /**
- * Our own log of outgoing email (migration 20270110000034, table `email_send_log`).
+ * Our own log of outgoing email (migration 20270110000036, table `email_send_log`).
  * `sendResendEmail` records one row per attempt; the Resend webhook
  * (/api/webhooks/resend) stamps the latest delivery event on the row by Resend's id.
  * The Publishing room reads it, so the sent-email list needs no Resend read key.
