@@ -18,14 +18,28 @@ import { median } from "@/lib/hamilton/fee-scenario";
 
 type SqlTag = typeof sql;
 
-/** The fees a snapshot compares, overdraft first because the first email leads with it. */
+/**
+ * The fees a snapshot compares: the everyday consumer fees most local schedules print, so a
+ * prospect's snapshot (and the first email, which quotes several of them) has depth (James,
+ * 22:23 UTC Oct 8: "prioritize institutions where our dataset supports multiple meaningful
+ * findings"). Wire fees are left out: Darwin's 200-fee check found column errors in wire tables.
+ */
 export const SNAPSHOT_FEE_KEYS = [
   "overdraft",
   "nsf",
+  "stop_payment",
+  "cashiers_check",
+  "account_research",
+  "card_replacement",
+  "deposited_item_return",
+  "dormant_account",
+  "money_order",
   "monthly_maintenance",
   "atm_non_network",
-  "stop_payment",
-  "wire_domestic_outgoing",
+  "paper_statement",
+  "od_protection_transfer",
+  "document_reproduction",
+  "early_closure",
 ] as const;
 
 /** A local median needs as many verified institutions as any other median on the site. */
@@ -42,6 +56,8 @@ export interface SnapshotInstitution {
 }
 
 export interface SnapshotFeeRow {
+  /** The live published row (`published_fee_catalog.fee_published_id`), when loaded. */
+  fee_published_id?: number | string | null;
   institution_id: number | string;
   fee_category: string;
   fee_name: string;
@@ -68,6 +84,8 @@ export interface SnapshotValue {
   readAt: string | null;
   /** Conditions, account type and waiver wording from the rows behind the value. */
   notes: string[];
+  /** The published rows behind the value, so a draft quoting it can be withdrawn if one is taken down. */
+  publishedIds: number[];
 }
 
 export interface SnapshotFee {
@@ -112,6 +130,9 @@ export function rowExcerpt(row: Pick<SnapshotFeeRow, "conditions">): string | nu
 const BUSINESS_TIER = /\b(?:business|commercial)\b(?!\s+days?\b)/i;
 const isBusinessRow = (row: SnapshotFeeRow) =>
   BUSINESS_TIER.test(row.fee_name) || BUSINESS_TIER.test(row.account_product_type ?? "") || BUSINESS_TIER.test(rowExcerpt(row) ?? "");
+/** A price for people who don't bank there ("Cashier's check, non-customer $15"): not the institution's customer fee. */
+const NON_CUSTOMER = /\bnon-?\s?(?:customers?|members?|depositors?|account\s?holders?)\b/i;
+const isNonCustomerRow = (row: SnapshotFeeRow) => NON_CUSTOMER.test(row.fee_name) || NON_CUSTOMER.test(rowExcerpt(row) ?? "");
 
 const checkRow = (row: SnapshotFeeRow) =>
   checkFeeAgainstSource(row.normalized_text, row.fee_name, Number(row.amount), ".", row.canonical_fee_key);
@@ -121,13 +142,14 @@ const checkRow = (row: SnapshotFeeRow) =>
  * otherwise the median of its amounts), verified only when every row at that value traces to
  * its source text. When the value is a midpoint of two amounts, every row is checked. A business
  * account's tier is left out when the institution also prints a consumer one (the snapshot compares
- * consumer fees). The line quoted is the row's own excerpt, not the first schedule line that happens
+ * consumer fees), and a price for non-customers is never used. The line quoted is the row's own excerpt, not the first schedule line that happens
  * to carry the same price (Accuracy, run 3148: "Insufficient Funds Fee $25" sat next to the $25
  * overdraft row).
  */
 export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | null {
-  const consumer = allRows.filter((row) => !isBusinessRow(row));
-  const rows = consumer.length > 0 ? consumer : allRows;
+  const customer = allRows.filter((row) => !isNonCustomerRow(row));
+  const consumer = customer.filter((row) => !isBusinessRow(row));
+  const rows = consumer.length > 0 ? consumer : customer;
   if (rows.length === 0) return null;
   const id = Number(rows[0].institution_id);
   const value = valuePerInstitution(
@@ -150,6 +172,7 @@ export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | nul
     documentUrl: lead.document_url,
     readAt: iso(lead.read_at),
     notes: notesFor(checked),
+    publishedIds: checked.map((row) => Number(row.fee_published_id)).filter((id) => Number.isInteger(id) && id > 0),
   };
 }
 
@@ -198,7 +221,19 @@ function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
   };
 }
 
-/** The institution and the open institutions in its CBSA that have live fees. */
+/**
+ * The institution and the open institutions in its CBSA that have live fees, less the banks
+ * that gather deposits nationally rather than through local branches. In the newest FDIC
+ * Summary of Deposits, the bank holds $3B or more in deposits through at most 4 offices, one of
+ * which holds at least 90% of it (Ally, SoFi, Sallie Mae and Optum in Salt Lake City; Schwab in
+ * Dallas; Live Oak in Wilmington). The $3B floor keeps one-office community banks such as Walpole
+ * Co-operative and Geddes S&L in their own market; smaller branchless banks (Square, Thrivent)
+ * stay in, since nothing on file tells them apart. A charter address puts these banks in a metro,
+ * but they are not its local competitors, so a snapshot or state comparison leaves them out of the peers
+ * (coordinator, 23:57 UTC Oct 8, after Accuracy confirmed the four Salt Lake City $0 overdraft
+ * rows). Credit unions file no Summary of Deposits and are never excluded here. The same
+ * filter is written into `loadStateComparison`.
+ */
 export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ subject: SnapshotInstitution; peers: SnapshotInstitution[] } | null> {
   const [subjectRow] = await db`
     SELECT id, institution_name, city, state_code, cbsa_code, cbsa_name, charter_type
@@ -212,6 +247,11 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
       FROM institution_sources s
      WHERE s.cbsa_code = ${subject.cbsaCode} AND s.id <> ${institutionId} AND s.closed_date IS NULL
        AND EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = s.id)
+       AND s.id NOT IN (
+             SELECT b.institution_id FROM institution_branch_deposits b
+              WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+              GROUP BY b.institution_id
+             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
      ORDER BY s.institution_name
   `;
   return { subject, peers: peerRows.map(toInstitution) };
@@ -221,7 +261,7 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
 export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], categories: readonly string[]): Promise<SnapshotFeeRow[]> {
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
-    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
+    `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
             ef.conditions, ef.account_product_type, ef.waiver_text,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
@@ -277,6 +317,11 @@ export async function loadStateComparison(db: SqlTag, subject: SnapshotInstituti
       FROM institution_sources s
      WHERE s.state_code = ${subject.stateCode} AND s.id <> ${subject.id} AND s.closed_date IS NULL
        AND EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = s.id AND ef.fee_category = ${category})
+       AND s.id NOT IN (
+             SELECT b.institution_id FROM institution_branch_deposits b
+              WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+              GROUP BY b.institution_id
+             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
   `;
   const names = new Map<number, string>(peerRows.map((row) => [Number(row.id), String(row.institution_name)]));
   const rows = await loadSnapshotRows(db, [subject.id, ...names.keys()], [category]);

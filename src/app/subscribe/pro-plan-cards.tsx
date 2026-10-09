@@ -126,7 +126,10 @@ export function ProPlanCards({
               />
             </div>
           ) : (
-            <p className="text-sm text-[#6B6255]">Pick who the plan is for to see your price and start.</p>
+            <p className="text-sm text-[#6B6255]">
+              Pick who the plan is for to see your price and start. Plans renew monthly or yearly
+              until you cancel, and you can cancel at the end of any billing period.
+            </p>
           )}
         </div>
       </div>

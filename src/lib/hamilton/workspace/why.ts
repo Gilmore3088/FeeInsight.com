@@ -15,6 +15,17 @@ import type { AskResponse, Fact, FeePositionRow, SourceRef } from "./types";
 const WHY = /\b(?:why|what explains|what(?:'s| is) behind|what(?:'s| is) driving|driv(?:e|es|ing)|explain)\b/i;
 const INCOME = /\b(?:fee income|income|revenue|service charges?)\b/i;
 
+const LEVEL = /\b(?:compare[sd]?|comparison|level|against|versus|vs\.?|peers?|median|stack|stand)\b/i;
+
+/**
+ * A question about where the bank's fee income stands against peers ("How does our service-charge
+ * income compare with credit unions over $1 billion?"). Only for a question that names no fee: the
+ * caller checks, since "our overdraft fee income against peers" is about that fee.
+ */
+export function asksIncomeLevel(question: string): boolean {
+  return INCOME.test(question.replace(/service-charge/gi, "service charge")) && LEVEL.test(question);
+}
+
 /** A question asking why the bank's fee income is where it is. */
 export function asksIncomeWhy(question: string): boolean {
   return WHY.test(question) && INCOME.test(question);

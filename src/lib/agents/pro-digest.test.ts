@@ -242,13 +242,33 @@ describe("runProDigest", () => {
     expect(message.text).toContain("Gulf Bank, overdraft: $28.00 to $25.00 ($3.00 lower)");
   });
 
+  const unchangedWeek = { stateCode: "TX", own: { institutionId: 1, positions: { overdraft: { amount: 30, lower: 1, of: 3 } } }, watched: {} };
+
   it("leaves out market moves the same-page check did not confirm", async () => {
-    install();
+    install({ snapshot: unchangedWeek });
     mocks.withConfirmedMovements.mockImplementation(async (rows: Array<{ source_json: unknown }>) =>
       markConfirmedMovements(rows, new Set()),
     );
     const result = await runProDigest({ now, dryRun: true });
     expect(result).toMatchObject({ withNews: 0, quiet: 1 });
+  });
+
+  it("opens a reader's first digest with where their institution stands", async () => {
+    install();
+    mocks.withConfirmedMovements.mockImplementation(async (rows: Array<{ source_json: unknown }>) =>
+      markConfirmedMovements(rows, new Set()),
+    );
+    const result = await runProDigest({ now });
+    expect(result).toMatchObject({ withNews: 1, held: true, sent: 0 });
+    expect(result.previews[0].subject).toBe("This week: where Home Bank stands on 1 fee(s) in Texas");
+    expect(result.previews[0].text).toContain("Where Home Bank stands among Texas institutions");
+    expect(result.previews[0].text).toContain("$30.00: 1 of 3 institutions charge less.");
+  });
+
+  it("drops the standing section once there is a week to compare against", async () => {
+    install({ snapshot: unchangedWeek });
+    const result = await runProDigest({ now });
+    expect(result.previews[0].text).not.toContain("stands among");
   });
 
   it("skips a reader with nothing new", async () => {

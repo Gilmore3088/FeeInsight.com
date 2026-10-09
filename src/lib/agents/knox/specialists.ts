@@ -11,7 +11,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
-import { frequencyFromLine } from "@/lib/fee-frequency";
+import { borrowedFrequency, frequencyFamily, frequencyFromLine } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -36,7 +36,8 @@ import { frequencyFromLine } from "@/lib/fee-frequency";
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 44 } as const;
+// v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 48 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -143,7 +144,15 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       if (candidates.length >= MAX_FEES_PER_DOCUMENT) break;
       // v44: a fee with no frequency takes the one its own line states right after its price
       // ("$6.00 each", "| $28.00 | Per request"); Darwin's eval found 48% of live fees blank.
-      const candidate = { ...read, feeName: tidyFeeName(read.feeName), frequency: read.frequency ?? frequencyFromLine(read.excerpt, read.amount) };
+      // v47: the fee's own row wins over a frequency read anywhere on the line, and one read
+      // from another fee's row is dropped ("... per year .. $10.00 | Reverse Stop Payment
+      // .. $20.00" gave the $20 fee "annual"); 25 of 131 stated frequencies in the seven-state
+      // keys were wrong this way.
+      const ownFrequency = frequencyFromLine(read.excerpt, read.amount);
+      const frequency = ownFrequency && frequencyFamily(ownFrequency) !== frequencyFamily(read.frequency)
+        ? ownFrequency
+        : read.frequency && !borrowedFrequency(read.excerpt, read.amount, read.frequency) ? read.frequency : ownFrequency;
+      const candidate = { ...read, feeName: tidyFeeName(read.feeName), frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU

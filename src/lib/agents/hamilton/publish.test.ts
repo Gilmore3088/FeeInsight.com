@@ -324,6 +324,33 @@ describe("Hamilton agentic publish", () => {
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
   });
 
+  it("fills a state lane's short publish batch with the oldest eligible rows from any state", async () => {
+    const other = { ...verifiedFee, fee_verified_id: 802, fee_raw_id: 702, institution_id: 43 };
+    const db = createDbMock([]);
+    db.unsafe = vi.fn((query: string, params: unknown[]) => {
+      if (query.includes("institution_fee_depth")) return Promise.resolve(deepInstitutionRows([verifiedFee, other]));
+      if (!query.includes("FROM verified_fee_observations")) return Promise.resolve([]);
+      // The lane's own state has one row; the fill (no state param) finds another.
+      return Promise.resolve(params.includes("CA") ? [verifiedFee] : [verifiedFee, other]);
+    });
+
+    const result = await runHamiltonPublish({ runId: 118, stateCode: "CA", limit: 10, db: asPublishDb(db) });
+
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    expect(selects).toHaveLength(2);
+    expect(selects[0][1]).toContain("CA");
+    expect(selects[1][1]).not.toContain("CA");
+    expect(selects[1][1][0]).toBe(9); // limit minus the lane's own row
+    expect(result.results.map((entry) => entry.feeVerifiedId).sort()).toEqual([801, 802]);
+  });
+
+  it("keeps a single bank's read scoped to that bank", async () => {
+    const db = createDbMock([]);
+    await runHamiltonPublish({ runId: 119, stateCode: "CA", institutionId: 42, db: asPublishDb(db) });
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    expect(selects).toHaveLength(1);
+  });
+
   it("closes the prior live row and records the change when an amount moves", async () => {
     const db = createDbMock([verifiedFee], [priorPublishedFee]);
 
