@@ -137,6 +137,7 @@ export const MARKETING_STEP_KEYS: readonly string[] = [
   "growth-learning",
   "growth-intake",
   "growth-score",
+  "growth-tools",
   "marketing-score",
   "marketing-send",
   "marketing-states",
