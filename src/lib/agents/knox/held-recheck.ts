@@ -3,6 +3,7 @@ import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from 
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
+import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
@@ -475,6 +476,8 @@ export async function recheckSupersededRows(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const empty = { checked: 0, promoted: 0, liveTwin: 0, notRead: 0, promotedIds: [], live, dryRun };
+  // Only a document's current copy can bring a line back (before the copy migration, none).
+  if (!(await currentCopySchemaReady(db))) return empty;
   const rows = await db<Array<HeldRow & { document_text_id: number | string; text_hash: string; has_live_twin: boolean }>>`
     SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags, adt.id AS document_text_id, adt.text_hash,

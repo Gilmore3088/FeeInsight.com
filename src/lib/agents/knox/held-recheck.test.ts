@@ -306,6 +306,7 @@ describe("lines a re-read retired, read again with today's rules (Northern Trust
     const db = vi.fn(async (strings: unknown, ...values: unknown[]) => {
       const text = templateText(strings);
       calls.push({ text, values });
+      if (text.includes("information_schema.columns")) return [{ ready: true }];
       if (text.includes("superseded_by_reread") && text.includes("SELECT fr.fee_raw_id")) return rows;
       if (text.includes("SELECT id, normalized_text")) return [{ id: 20257, normalized_text: ntText }];
       if (text.includes("RETURNING fr.fee_raw_id")) return [{ fee_raw_id: 457013 }];
@@ -348,6 +349,13 @@ describe("lines a re-read retired, read again with today's rules (Northern Trust
     const flagged = JSON.stringify(calls.filter((call) => call.text.includes("WHERE fee_raw_id = ANY")).map((call) => call.values));
     expect(flagged).toContain(supersededDryReadFlag());
     expect(flagged).toContain(supersededWouldPromoteFlag());
+  });
+
+  it("reads nothing before the current-copy migration", async () => {
+    const db = vi.fn(async (strings: unknown) => (templateText(strings).includes("information_schema.columns") ? [{ ready: false }] : []));
+
+    expect(await recheckSupersededRows(db as never, { live: true })).toMatchObject({ checked: 0, promoted: 0 });
+    expect(db).toHaveBeenCalledTimes(1);
   });
 
   it("gives the row the current text's hash so the next re-read keeps it", () => {
