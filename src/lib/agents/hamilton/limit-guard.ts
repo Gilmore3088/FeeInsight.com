@@ -27,7 +27,13 @@ type SqlTag = typeof sql;
  * category (`od_daily_cap`, `nsf_daily_cap`) is a limit by design, so only a name that
  * caps no fee ("No Bounce Courtesy Pay Limit") counts there.
  */
-export type LimitGuardCode = "name_states_limit" | "source_states_limit" | "above_category_ceiling" | "worked_example";
+export type LimitGuardCode =
+  | "name_states_limit"
+  | "source_states_limit"
+  | "above_category_ceiling"
+  | "worked_example"
+  | "transaction_amount"
+  | "condition_sentence";
 
 export const LIMIT_GUARD_REASON = "limit_as_fee";
 export const LIMIT_GUARD_MIN_AMOUNT = 100;
@@ -61,6 +67,22 @@ const SOURCE_BEFORE =
   /\b(?:limits?(?: is| are)?|limited to|limits start at|max(?:imum)?\.?(?: card load)?|daily (?:limit|maximum))\s*(?:of|at)?\s*[|:]?\s*\(?\s*$/i;
 const SOURCE_AFTER = /^\s*\)?\s*(?:limit\b|max(?:imum)?\b|daily\b|per (?:business )?day\b|\/\s*load\b|& up\b)/i;
 const MONEY = /\$\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)/g;
+/**
+ * In the source line the figure is what a check, item or purchase is for, not a price
+ * ("the Paid Item Fee for the check/item in the amount of $17 would be waived"). A fee's own
+ * amount ("a fee in the amount of $25") names the fee, so it never matches. "Counter checks,
+ * 3 checks for $5.00" is a price, so "for" is not read.
+ */
+const TRANSACTION_AMOUNT_BEFORE =
+  /\b(?:checks?|items?|check\/items?|purchases?|transactions?|deposits?|withdrawals?|payments?|debits?|transfers?)\s+(?:in\s+)?(?:the|an)\s+amount\s+of\s*$/i;
+/**
+ * A name that is the middle of a condition ("sufficient to cover both the full overdraft"), not a
+ * fee's name. "Insufficient funds to cover an item" names the NSF fee, so it never matches.
+ */
+const CONDITION_SENTENCE_NAME = /^\W*(?:not\s+)?sufficient\s+(?:funds\s+)?to\s+cover\b/i;
+/** The Postgres forms the live sweep pre-selects on (rows below LIMIT_GUARD_MIN_AMOUNT). */
+export const TRANSACTION_AMOUNT_PG = String.raw`(checks?|items?|purchases?|transactions?|deposits?|withdrawals?|payments?|debits?|transfers?)\s+(in\s+)?(the|an)\s+amount\s+of\s*\$`;
+export const CONDITION_SENTENCE_PG = String.raw`^\W*(not\s+)?sufficient\s+(funds\s+)?to\s+cover\M`;
 
 export interface LimitGuardInput {
   canonical_fee_key: string;
@@ -110,6 +132,17 @@ function sourceStatesLimit(excerpt: string, amount: number): boolean {
   return false;
 }
 
+/** The excerpt states this figure as a transaction's amount ("the check/item in the amount of $17"). */
+function sourceStatesTransactionAmount(excerpt: string, amount: number): boolean {
+  for (const match of excerpt.matchAll(MONEY)) {
+    const value = Number(`${match[1].replace(/,/g, "")}.${match[2] ?? "00"}`);
+    if (Math.abs(value - amount) >= 0.005) continue;
+    const start = match.index ?? 0;
+    if (TRANSACTION_AMOUNT_BEFORE.test(excerpt.slice(Math.max(0, start - 60), start))) return true;
+  }
+  return false;
+}
+
 /** Pure: does this fee's figure read as a transaction limit rather than a price? */
 export function limitGuardVerdict(row: LimitGuardInput): LimitGuardVerdict | null {
   const amount = dollars(row.amount);
@@ -117,6 +150,14 @@ export function limitGuardVerdict(row: LimitGuardInput): LimitGuardVerdict | nul
   // amount of $100") is not a price at any amount.
   if (amount != null && amount > 0 && namesAWorkedExample(row.fee_name ?? "")) {
     return { code: "worked_example", detail: `the figure is from a worked example ("${plainName(row.fee_name ?? "").slice(0, 80)}")` };
+  }
+  // Source line, any amount: the figure is a check's or purchase's amount, not what the bank charges.
+  const sourceLine = knoxExcerpt(row.conditions);
+  if (amount != null && amount > 0 && sourceLine && sourceStatesTransactionAmount(sourceLine, amount)) {
+    return { code: "transaction_amount", detail: `the source gives $${amount} as a transaction's amount, not a price` };
+  }
+  if (amount != null && amount > 0 && CONDITION_SENTENCE_NAME.test(row.fee_name ?? "")) {
+    return { code: "condition_sentence", detail: `the name is part of a condition, not a fee ("${plainName(row.fee_name ?? "").slice(0, 80)}")` };
   }
   if (amount == null || amount < LIMIT_GUARD_MIN_AMOUNT) return null;
   const name = plainName(row.fee_name ?? "");
@@ -185,7 +226,8 @@ export async function rollBackLimitsPublishedAsFees(
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
-         AND (fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT} OR fp.fee_name ~* ${WORKED_EXAMPLE_PG})
+         AND (fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT} OR fp.fee_name ~* ${WORKED_EXAMPLE_PG}
+              OR fp.fee_name ~* ${CONDITION_SENTENCE_PG} OR fr.conditions ~* ${TRANSACTION_AMOUNT_PG})
          ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
        ORDER BY fp.fee_published_id
     `);

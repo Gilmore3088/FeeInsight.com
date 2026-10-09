@@ -625,9 +625,11 @@ describe("v15: a rename never drops a condition, and v14's trims get theirs back
     expect(restoredName("Dormant Account Fee - Checking Accounts. A Checking account is dormant if for one", "Dormant Account Fee")).toBe(
       "Dormant Account Fee - Checking Accounts",
     );
-    expect(restoredName("ID TheftSmart Fee (monthly fee, per person enrolled - customer can choose to pay a", "ID TheftSmart Fee")).toBe(
-      "ID TheftSmart Fee (monthly fee, per person enrolled)",
-    );
+    // A removed fee, an optional add-on the guard takes down, or a condition cut before its end stays off.
+    expect(restoredName("Mobile Deposit - per check deposited fee has been removed (Data Charges May Apply)", "Mobile Deposit")).toBeNull();
+    expect(restoredName("Accidental Death Insurance (Monthly fee", "Accidental Death Insurance")).toBeNull();
+    expect(restoredName("ID TheftSmart Fee (monthly fee, per person enrolled - customer can choose to pay a", "ID TheftSmart Fee")).toBeNull();
+    expect(restoredName("Counter Checks : 1st 6 are free then", "Counter Checks")).toBeNull();
     expect(restoredName("Overdraft Item Fee (Imposed on overdrafts created by checks, in-person withdrawals, or other electronic means)", "Overdraft Item Fee")).toBeNull();
     expect(restoredName("Mobile Deposit: ability to deposit checks 24/7 via your smart phone", "Mobile Deposit")).toBeNull();
     // An account heading on an account-bound fee names the account it applies to.

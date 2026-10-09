@@ -56,7 +56,7 @@ export function OtherOptions() {
       <ul className="mt-5 divide-y divide-[#E8E1D6] border-y border-[#E8E1D6]">
         {rows.map((row) => (
           <li key={row.name} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3.5">
-            <p className="text-[15px] text-[#3D3833]">
+            <p className="min-w-0 break-words text-[15px] text-[#3D3833]">
               <span className="font-semibold text-[#1A1815]">{row.name}</span> · {row.note}
             </p>
             {row.link}

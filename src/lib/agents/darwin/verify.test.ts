@@ -395,6 +395,14 @@ describe("Darwin agentic verification", () => {
       expect(conditionalZero(0, "E-Statement | $0.00", "E-Statement")).toBe(false);
       expect(conditionalZero(6.95, "Bill Pay $6.95 per Month", "Bill Pay")).toBe(false);
       expect(conditionalZero(0, null, "Bill Pay $6.95 per Month")).toBe(true);
+      // A neighbour's price in the same table row is not this fee's (dry read of the live rows, 2026-10-09).
+      expect(conditionalZero(0, "Monthly Maintenance | Free | Assisted Phone Transactions* | $3", "Monthly Maintenance")).toBe(false);
+      expect(conditionalZero(0, "Replacement ATM Card/PIN ........ $3.50 | Member ........ N/C", "Notary Service: Member")).toBe(false);
+      expect(conditionalZero(0, "Gift Card Fee…………. $3.00 per Card | Notary/ Medallion Signature Fee ………FREE", "Notary/ Medallion Signature Fee")).toBe(false);
+      expect(conditionalZero(0, "Share Draft Copy | FREE online | Cash Advance Fee 2.00% or $10", "Share Draft Copy")).toBe(false);
+      // The fee's own price cell still counts, as does a balance band in its own cell.
+      expect(conditionalZero(0, "Paper Statement | FREE with e-statements | $2.00 per month", "Paper Statement")).toBe(false);
+      expect(conditionalZero(0, "Monthly fee for balance of $500 & over | FREE", "Monthly fee for balance of & over")).toBe(true);
     });
 
     it("orders retired type, conditional zero, then name rule", () => {

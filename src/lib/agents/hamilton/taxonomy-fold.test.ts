@@ -24,6 +24,7 @@ const PAGE_LINES: Record<number, string> = {
   37068: "primary account. 8Up to 5 copies, then $25/hr research fee. 9As of July 25, 2025, new safe deposit box agreements will not be accepted.",
   44516: "(if balance falls below minimum daily balance) • Excessive transaction fee is $25/transaction",
   91458: "*unlimited 1st National ATM access / $5.00 monthly maintenance fee",
+  95142: "• Stop Payment Fee - $30.00\n• Account Research Fee (minimum 1 hour) - $25.00/hour | • Money Order Research Fee - $10.00/money order\nSHARE & SHARE DRAFT FEES",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
