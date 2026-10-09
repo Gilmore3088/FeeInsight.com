@@ -133,6 +133,16 @@ export function isDecisionMaker(contact: Pick<OutreachContact, "kind" | "role" |
   return contact.kind === "person" && contact.role !== "other" && !isSharedMailbox(contact.email);
 }
 
+/**
+ * The pilot campaigns James chose (`OUTREACH_CAMPAIGNS`, letters such as "A,B"). Until he chooses,
+ * a real run drafts nothing (it still withdraws bad drafts); a dry run counts every campaign.
+ */
+export function outreachCampaignsFromEnv(value: string | undefined): OutreachCampaign[] {
+  const letters = new Set((value ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean));
+  return (Object.keys(CAMPAIGN_LETTER) as OutreachCampaign[]).filter((campaign) => letters.has(CAMPAIGN_LETTER[campaign]));
+}
+export const OUTREACH_HELD_REASON = "held: James hasn't chosen the pilot campaigns yet (OUTREACH_CAMPAIGNS is unset)";
+
 export type OutreachSkip = "no_contact" | "no_market";
 
 function contactLine(contact: OutreachContact & { confidence: ContactConfidence }): string {
@@ -375,7 +385,7 @@ export interface OutreachRunResult {
   considered: number;
   drafted: number;
   draftIds: number[];
-  skipped: Partial<Record<OutreachSkip | "drafted_recently", number>>;
+  skipped: Partial<Record<OutreachSkip | "drafted_recently" | "campaign_not_chosen", number>>;
   /** Drafts per campaign (A research efficiency, B personalized research, C market insight). */
   campaigns: Partial<Record<OutreachCampaign, number>>;
   /** Prospects with enough for C whose snapshot page didn't show the figures (drafted as B instead). */
@@ -413,9 +423,9 @@ async function notLiveCount(db: SqlTag, publishedIds: number[]): Promise<number>
  * `isDecisionMaker`, that were written under an older `OUTREACH_QUOTE_RULE`, or that quote a
  * published row (the prospect's or a named competitor's) no longer live or marked
  * `takedown_pending`. Only unreviewed drafts: anything James approved, marked sent or skipped
- * himself stays as he left it. Returns how many.
+ * himself stays as he left it. Returns how many; a dry run only counts them.
  */
-export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
+export async function withdrawNonBuyerDrafts(db: SqlTag, dryRun = false): Promise<number> {
   const rows = await db`
     SELECT id, facts FROM content_drafts
      WHERE workflow = ${OUTREACH_WORKFLOW} AND kind = 'outreach_email' AND status = 'draft'
@@ -429,13 +439,13 @@ export async function withdrawNonBuyerDrafts(db: SqlTag): Promise<number> {
     } | null;
     const to = facts?.to;
     if (!to?.email) continue;
-    const contact = normalizeContact({ name: to.name ?? null, title: to.title ?? null, role: to.role ?? "other", kind: "person" as ContactKind });
+    const contact = normalizeContact({ name: to.name ?? null, title: to.title ?? null, role: to.role ?? "other", kind: "person" as ContactKind, email: to.email ?? "" });
     let reason: string | null = null;
     if (!isDecisionMaker({ ...contact, email: to.email })) reason = OUTREACH_WITHDRAWN_REASON;
     else if (Number(facts?.quote_rule ?? 1) < OUTREACH_QUOTE_RULE) reason = OUTREACH_STALE_QUOTE_REASON;
     else if ((await notLiveCount(db, (facts?.published_ids ?? []).map(Number))) > 0) reason = OUTREACH_NOT_LIVE_REASON;
     if (!reason) continue;
-    await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, reason);
+    if (!dryRun) await setContentDraftStatus(Number(row.id), "skipped", OUTREACH_WITHDRAWN_BY, db, reason);
     withdrawn++;
   }
   return withdrawn;
@@ -471,6 +481,8 @@ export async function runOutreachDrafts(input: {
   now?: Date;
   /** The live-destination check; tests pass their own. */
   checkDestination?: typeof checkOutreachDestination;
+  /** Campaigns James approved; a real run drafts only these, and nothing when none is approved. */
+  campaigns?: OutreachCampaign[];
 }): Promise<OutreachRunResult> {
   const checkDestination = input.checkDestination ?? checkOutreachDestination;
   const db = input.db ?? sql;
@@ -482,10 +494,12 @@ export async function runOutreachDrafts(input: {
     return { ...result, reason: "content_drafts or prospect_contacts is missing" };
   }
   result.schemaReady = true;
-  if (!dryRun) result.withdrawn = await withdrawNonBuyerDrafts(db);
+  result.withdrawn = await withdrawNonBuyerDrafts(db, dryRun);
+  const approved = new Set(input.campaigns ?? []);
+  if (!dryRun && approved.size === 0) return { ...result, reason: OUTREACH_HELD_REASON };
   const recent = await recentOutreachSubjects(db);
   const candidates = await loadOutreachCandidates(db, OUTREACH_MAX_CANDIDATES);
-  const skip = (key: OutreachSkip | "drafted_recently") => {
+  const skip = (key: OutreachSkip | "drafted_recently" | "campaign_not_chosen") => {
     result.skipped[key] = (result.skipped[key] ?? 0) + 1;
   };
 
@@ -506,7 +520,8 @@ export async function runOutreachDrafts(input: {
     }
     const pendingTakedown = await pendingTakedownIds(db, snapshot);
     const options = { assetsK: candidate.assetsK, pendingTakedown };
-    let attempt = buildOutreachDraft(snapshot, candidate.contacts, { ...options, allowInsight: true });
+    const allowInsight = dryRun || approved.has("market_insight");
+    let attempt = buildOutreachDraft(snapshot, candidate.contacts, { ...options, allowInsight });
     if ("draft" in attempt && attempt.draft.campaign === "market_insight") {
       const { draft } = attempt;
       const fact = draft.findings[0];
@@ -521,6 +536,10 @@ export async function runOutreachDrafts(input: {
     }
     if ("skip" in attempt) {
       skip(attempt.skip);
+      continue;
+    }
+    if (!dryRun && !approved.has(attempt.draft.campaign)) {
+      skip("campaign_not_chosen");
       continue;
     }
     built.push({ candidate, snapshot, draft: attempt.draft });
@@ -584,16 +603,21 @@ export async function runOutreachDrafts(input: {
   return result;
 }
 
-const SKIP_LABELS: Record<OutreachSkip | "drafted_recently", string> = {
+const SKIP_LABELS: Record<OutreachSkip | "drafted_recently" | "campaign_not_chosen", string> = {
   drafted_recently: "drafted in the last 60 days",
   no_contact: "no decision-maker contact",
   no_market: "no local market",
+  campaign_not_chosen: "in a campaign James hasn't chosen",
 };
 
 export function summarizeOutreach(result: OutreachRunResult): string {
   if (!result.schemaReady) return `No drafts: ${result.reason}.`;
+  if (result.reason === OUTREACH_HELD_REASON) {
+    const withdrew = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts that no longer qualify.` : "";
+    return `No first emails drafted: ${result.reason}.${withdrew}`;
+  }
   const skipped = Object.entries(result.skipped)
-    .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently"]}`)
+    .map(([key, count]) => `${count} ${SKIP_LABELS[key as OutreachSkip | "drafted_recently" | "campaign_not_chosen"]}`)
     .join(", ");
   const byCampaign = (Object.keys(CAMPAIGN_LETTER) as OutreachCampaign[])
     .filter((campaign) => result.campaigns?.[campaign])
@@ -601,13 +625,20 @@ export function summarizeOutreach(result: OutreachRunResult): string {
     .join(", ");
   const head = `${result.dryRun ? "Would draft" : "Drafted"} ${result.drafted} first emails for James to audit and send himself (${result.considered} prospects read)${byCampaign ? `; by campaign: ${byCampaign}` : ""}.`;
   const notLive = result.insightPageNotLive ? ` ${result.insightPageNotLive} could have had campaign C but the snapshot page didn't show their figures, so they got B.` : "";
-  const withdrawn = result.withdrawn ? ` Withdrew ${result.withdrawn} unreviewed drafts (not a decision-maker, the older single-fee format, or a quoted fee no longer live).` : "";
+  const withdrawn = result.withdrawn ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} unreviewed drafts (not a decision-maker, the older single-fee format, or a quoted fee no longer live).` : "";
   return (skipped ? `${head} Passed over: ${skipped}.` : head) + notLive + withdrawn;
 }
 
-/** The plan's one follow-up (GTM timeline, day 7): a week after "sent" with nothing heard back. */
-export const FOLLOW_UP_AFTER_DAYS = 7;
+/**
+ * The pilot's two follow-ups (James's outreach audit, 22:34 UTC Oct 8: "Day 5-7: one brief follow-up
+ * offering a useful example... Day 12-15: final, polite follow-up... Then stop"), counted from the
+ * day the first email was marked sent, only while nothing else has been recorded for the
+ * institution. The final one waits until the first follow-up was itself marked sent.
+ */
+export const FOLLOW_UP_AFTER_DAYS = 6;
 export const FOLLOW_UP_WORKFLOW = "outreach-followup";
+export const FINAL_FOLLOW_UP_AFTER_DAYS = 13;
+export const FINAL_FOLLOW_UP_WORKFLOW = "outreach-followup-final";
 
 export interface FollowUpSource {
   draftId: number;
@@ -621,7 +652,7 @@ export interface FollowUpSource {
 }
 
 /** The follow-up email: short, no figures, no link, an offer of an example and an easy way to redirect it. */
-export function buildFollowUpDraft(source: FollowUpSource): { subject: string; title: string; caption: string } {
+export function buildFollowUpDraft(source: FollowUpSource, stage: 1 | 2 = 1): { subject: string; title: string; caption: string } {
   const subject = `Re: ${source.subject ?? `How your overdraft fee compares in ${source.market}`}`;
   const greetingName = firstName(source.to?.name ?? null);
   const email = [
@@ -629,9 +660,17 @@ export function buildFollowUpDraft(source: FollowUpSource): { subject: string; t
     "",
     greetingName ? `Hi ${greetingName},` : "Hello,",
     "",
-    `Following up once on my note last week. If it would help, I can send a short, source-linked example comparing ${source.institutionName} with a few ${source.market} institutions.`,
-    "",
-    "If competitive fee research sits with someone else on your team, I'd be glad to send it to them instead.",
+    ...(stage === 1
+      ? [
+          `Following up once on my note last week. If it would help, I can send a short, source-linked example comparing ${source.institutionName} with a few ${source.market} institutions.`,
+          "",
+          "If competitive fee research sits with someone else on your team, I'd be glad to send it to them instead.",
+        ]
+      : [
+          "One last note, and then I'll stop.",
+          "",
+          `Is competitive fee research part of your role at ${source.institutionName}? If it sits with someone else, I'd be grateful for their name. If it isn't something your team does, that's useful to know too.`,
+        ]),
     "",
     ...SIGN_OFF,
     "",
@@ -642,9 +681,11 @@ export function buildFollowUpDraft(source: FollowUpSource): { subject: string; t
   const audit = [
     "--- For your audit. Not part of the email; delete before sending. ---",
     source.to ? `To: ${[source.to.name, source.to.title].filter(Boolean).join(", ") || "No name printed"} <${source.to.email}>` : "To: as the first email",
-    `Reply to the first email (queue item ${source.draftId}) so it threads. This is the only follow-up; after it, stop.`,
+    stage === 1
+      ? `Reply to the first email (queue item ${source.draftId}) so it threads. One final follow-up comes a week after this one if nothing is heard.`
+      : `Reply in the same thread (first email: queue item ${source.draftId}). This is the last email to this institution; after it, stop.`,
   ];
-  return { subject, title: `${source.institutionName}: follow-up`, caption: [...email, "", ...audit].join("\n") };
+  return { subject, title: `${source.institutionName}: ${stage === 1 ? "follow-up" : "final follow-up"}`, caption: [...email, "", ...audit].join("\n") };
 }
 
 export interface FollowUpRunResult {
@@ -654,15 +695,29 @@ export interface FollowUpRunResult {
 }
 
 /**
- * Follow-ups for first emails marked sent at least FOLLOW_UP_AFTER_DAYS ago where James has
- * recorded nothing since (no reply, call, request or decline). One per institution, ever.
+ * Follow-ups for first emails marked sent where James has recorded nothing since (no reply, call,
+ * request or decline): the first at FOLLOW_UP_AFTER_DAYS, the final at FINAL_FOLLOW_UP_AFTER_DAYS
+ * once the first was marked sent. Each at most once per institution, ever.
  */
 export async function runOutreachFollowUps(input: { db?: SqlTag; runId: number | null; dryRun?: boolean; now?: Date }): Promise<FollowUpRunResult> {
   const db = input.db ?? sql;
-  const now = input.now ?? new Date();
   const result: FollowUpRunResult = { due: 0, drafted: 0, draftIds: [] };
   if (!(await contentSchemaReady(db)) || !(await journeySchemaReady(db))) return result;
-  const cutoff = new Date(now.getTime() - FOLLOW_UP_AFTER_DAYS * 86_400_000).toISOString();
+  for (const stage of [1, 2] as const) await draftFollowUps(db, input, stage, result);
+  return result;
+}
+
+async function draftFollowUps(
+  db: SqlTag,
+  input: { runId: number | null; dryRun?: boolean; now?: Date },
+  stage: 1 | 2,
+  result: FollowUpRunResult,
+): Promise<void> {
+  const now = input.now ?? new Date();
+  const workflow = stage === 1 ? FOLLOW_UP_WORKFLOW : FINAL_FOLLOW_UP_WORKFLOW;
+  const days = stage === 1 ? FOLLOW_UP_AFTER_DAYS : FINAL_FOLLOW_UP_AFTER_DAYS;
+  const cutoff = new Date(now.getTime() - days * 86_400_000).toISOString();
+  const firstSent = stage === 1;
   const rows = await db`
     SELECT d.id, d.facts
       FROM content_drafts d
@@ -674,8 +729,13 @@ export async function runOutreachFollowUps(input: { db?: SqlTag; runId: number |
        )
        AND NOT EXISTS (
          SELECT 1 FROM content_drafts f
-          WHERE f.workflow = ${FOLLOW_UP_WORKFLOW} AND f.subject_key = 'institution:' || sent.institution_id::text
+          WHERE f.workflow = ${workflow} AND f.subject_key = 'institution:' || sent.institution_id::text
        )
+       AND (${firstSent}::boolean OR EXISTS (
+         SELECT 1 FROM content_drafts f
+           JOIN outreach_outcomes fs ON fs.draft_id = f.id AND fs.outcome = 'sent'
+          WHERE f.workflow = ${FOLLOW_UP_WORKFLOW} AND f.subject_key = 'institution:' || sent.institution_id::text
+       ))
      ORDER BY sent.created_at
   `;
   const seen = new Set<number>();
@@ -696,17 +756,17 @@ export async function runOutreachFollowUps(input: { db?: SqlTag; runId: number |
       to: to && typeof to.email === "string" ? { email: to.email, name: typeof to.name === "string" ? to.name : null, title: typeof to.title === "string" ? to.title : null } : null,
     };
     if (input.dryRun) continue;
-    const draft = buildFollowUpDraft(source);
+    const draft = buildFollowUpDraft(source, stage);
     const draftId = await insertContentDraft(
       {
         agent: "carnegie",
         kind: "outreach_email",
-        workflow: FOLLOW_UP_WORKFLOW,
+        workflow,
         channel: "email",
         subjectKey: `institution:${institutionId}`,
         title: draft.title,
         caption: draft.caption,
-        facts: { institution_id: institutionId, institution_name: source.institutionName, market: source.market, to: source.to, link: source.link, follows_draft: source.draftId },
+        facts: { institution_id: institutionId, institution_name: source.institutionName, market: source.market, to: source.to, subject: source.subject ?? null, follows_draft: source.draftId, stage },
         asOf: now,
         agentRunId: input.runId,
       },
@@ -715,5 +775,4 @@ export async function runOutreachFollowUps(input: { db?: SqlTag; runId: number |
     result.drafted++;
     result.draftIds.push(draftId);
   }
-  return result;
 }

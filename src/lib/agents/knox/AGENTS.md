@@ -495,6 +495,13 @@ v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 5
 v43 (rules 43, Oct 8):
 - One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
 
+v45 (rules 45, Collection Items, Oct 8):
+- An item sent for collection, or a foreign or Canadian check or item handled for deposit ("Collection Item", "Items Sent for Collection", "Foreign Check Processing"), files as `collection_item`, not check cashing (James, Oct 8: "Own type"). Cashing a foreign check is still check cashing and a returned one is still a returned item. The pattern is `COLLECTION_ITEM` in `src/lib/fee-fold.ts`, shared with the category guard and Hamilton's fold step.
+
+v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
+- A paragraph wrapped across lines is read as its sentences: a line joins the one above when neither is a table row, the one above is at least 40 characters and ends mid-sentence, and the line starts in lower case. Read line by line, "we will charge you an overdrawn account fee of $10.00 on the 5th consecutive" was named by the line above it and filed as a $10 overdraft fee, and "overdrawn $5 / or less" lost the words that make $5 a threshold (Origin Bank, whose fragment-named overdraft rows were live).
+- After a general "fees and charges", a price is named by what follows "including": "Normal bank fees and charges, including returned item charge/overdraft item charge of $35.00" is "Returned item charge/overdraft item charge". "NSF for each presentment, including if the same item is presented" keeps its name.
+
 ## Fees named by page context (`context-names.ts`, v33)
 
 - Under an overdraft or NSF section heading, a per-item price with no fee name of its own
@@ -508,3 +515,8 @@ v43 (rules 43, Oct 8):
 - The Reg E notice sentence "We will charge you a fee of up to $35.00 each time we pay an
   overdraft" is read as the overdraft fee. The shared source check still reads "up to $35.00"
   as a threshold, so it is held as untraced until that check changes (accuracy thread).
+- v50: in a two-column schedule flattened row by row, a "Personal ........ $10 per item paid"
+  cell under an "Overdrafts / Non-Sufficient Funds (NSF)" heading cell is the personal overdraft
+  fee: "Overdraft - personal, per item paid" (a returned item is "NSF - personal, ..."). Footnote
+  numbers after the heading ("(NSF)10, 12") are dropped. A business row, or one priced "paid or
+  returned", is not read (Amerant Bank, a $10B bank with no live overdraft fee).

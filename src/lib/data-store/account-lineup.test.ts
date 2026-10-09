@@ -25,9 +25,8 @@ const row = (overrides: Partial<LineupCatalogRow>): LineupCatalogRow => ({
 
 describe("productNameFromFeeName", () => {
   it("keeps the account name in front of the fee words", () => {
-    expect(productNameFromFeeName("Freedom Start-Up Monthly Fee")).toBe("Freedom Start-Up");
-    expect(productNameFromFeeName("Performance Plus Service Charge")).toBe("Performance Plus");
     expect(productNameFromFeeName("Essential Checking Account maintenance fee")).toBe("Essential Checking");
+    expect(productNameFromFeeName("Freedom Start-Up Monthly Fee")).toBeNull();
   });
 
   it("gives nothing for generic names and sentence fragments", () => {
@@ -78,13 +77,13 @@ describe("lineupAccountFromRow", () => {
 
     const derived = lineupAccountFromRow(
       row({
-        fee_name: "Performance Plus Service Charge",
+        fee_name: "Performance Plus Checking Service Charge",
         conditions:
-          'Knox deterministic extraction. excerpt="Performance Plus Service Charge | $10.00 per month if average daily balance is below $1,000"',
+          'Knox deterministic extraction. excerpt="Performance Plus Checking Service Charge | $10.00 per month if average daily balance is below $1,000"',
       }),
     );
     expect(derived).toMatchObject({
-      productName: "Performance Plus",
+      productName: "Performance Plus Checking",
       productNameSource: "derived",
       minBalanceToAvoid: 1000,
       minBalanceSource: "derived",

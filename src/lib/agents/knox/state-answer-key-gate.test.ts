@@ -23,7 +23,10 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 88, wrong: 7 },
   MI: { right: 114, wrong: 0 },
-  MN: { right: 97, wrong: 7 },
+  // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
+  // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
+  // as a collection item, so one right read became one wrong one.
+  MN: { right: 96, wrong: 8 },
   NY: { right: 40, wrong: 6 },
   all: { right: 724, wrong: 46 },
 };

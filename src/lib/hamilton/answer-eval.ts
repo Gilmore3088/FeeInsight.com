@@ -3,7 +3,9 @@
  * spread of real banks and credit unions, through the same engine path as the Ask bar,
  * scored by the quality bar (and the four-roles eval) plus two checks only live data can
  * make: a regulation answer names the institution's own regulator, and a state question
- * names its own state. Deterministic and read-only: nothing is saved and no model is called.
+ * names its own state. It also replays the questions Pro readers really asked (kept in the Ask
+ * ledger and saved analyses) through today's engine, so a question Hamilton could not answer
+ * stays on the list until it can. Deterministic and read-only: nothing is saved and no model is called.
  * Server only.
  */
 
@@ -150,6 +152,98 @@ export async function pickEvalInstitutions(db: SqlTag, perGroup: number, seed: s
   }));
 }
 
+/** A question a Pro reader asked, for the institution they asked it about. */
+export interface ProQuestion {
+  institutionId: number;
+  question: string;
+  askedAt: string;
+}
+
+const PRO_QUESTION_DAYS = 90;
+const PRO_QUESTION_LIMIT = 24;
+/** Journey audits and other test asks say so at the start; they are not readers' questions. */
+const TEST_QUESTION = /^\s*test\b/i;
+
+/**
+ * The newest distinct questions Pro readers asked in the last 90 days: every Ask (the ledger keeps
+ * the question since engine 1.16) and every saved analysis. One per institution and wording.
+ */
+export async function pickProQuestions(db: SqlTag, limit = PRO_QUESTION_LIMIT): Promise<ProQuestion[]> {
+  const rows = await db`
+    WITH asked AS (
+      SELECT r.params_json->>'institution_id' AS institution_id, r.params_json->>'question' AS question, r.started_at AS asked_at
+        FROM agent_runs r
+       WHERE r.run_kind = 'pro_request' AND r.current_stage = 'pro.ask'
+         AND r.params_json ? 'question' AND r.started_at > NOW() - make_interval(days => ${PRO_QUESTION_DAYS})
+      UNION ALL
+      SELECT a.institution_id, a.prompt, a.created_at
+        FROM hamilton_saved_analyses a
+       WHERE a.status = 'active' AND a.created_at > NOW() - make_interval(days => ${PRO_QUESTION_DAYS})
+    ), latest AS (
+      SELECT DISTINCT ON (institution_id, lower(btrim(question))) institution_id::bigint AS institution_id, btrim(question) AS question, asked_at
+        FROM asked
+       WHERE institution_id ~ '^[0-9]+$' AND btrim(COALESCE(question, '')) <> ''
+       ORDER BY institution_id, lower(btrim(question)), asked_at DESC
+    )
+    SELECT institution_id, question, asked_at FROM latest ORDER BY asked_at DESC LIMIT ${limit * 2}
+  `;
+  return [...(rows as unknown as Array<Record<string, unknown>>)]
+    .map((r) => ({ institutionId: Number(r.institution_id), question: String(r.question), askedAt: new Date(String(r.asked_at)).toISOString() }))
+    .filter((q) => !TEST_QUESTION.test(q.question))
+    .slice(0, limit);
+}
+
+export interface ProQuestionResult {
+  institutionId: number;
+  question: string;
+  askedAt: string;
+  kind: string;
+  shortAnswer: string;
+  failures: string[];
+}
+
+/** One institution's real questions through today's engine, scored by the same quality bar. */
+export async function evaluateProQuestions(institutionId: number, questions: ProQuestion[]): Promise<ProQuestionResult[]> {
+  const research = new Map<string, Promise<FeeResearch | null>>();
+  const out: ProQuestionResult[] = [];
+  for (const q of questions) {
+    try {
+      const response = await answer(institutionId, q.question, research);
+      const failures = scoreResponse({ id: "pro", question: q.question, intent: "a Pro reader's question" }, response).failures;
+      out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: response.kind, shortAnswer: response.shortAnswer, failures });
+    } catch (error) {
+      out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: "error", shortAnswer: "", failures: [`error: ${error instanceof Error ? error.message : String(error)}`] });
+    }
+  }
+  return out;
+}
+
+export interface ProReplaySummary {
+  questions: number;
+  passed: number;
+  /** Questions Hamilton still answers with a question of its own. */
+  askedBack: number;
+  topFailures: Array<{ failure: string; count: number }>;
+  /** Every real question that falls short, so each becomes a fix. */
+  failing: ProQuestionResult[];
+}
+
+export function summarizeProReplay(results: ProQuestionResult[]): ProReplaySummary {
+  return {
+    questions: results.length,
+    passed: results.filter((r) => r.failures.length === 0).length,
+    askedBack: results.filter((r) => r.kind === "clarifying_question").length,
+    topFailures: groupFailures(results),
+    failing: results.filter((r) => r.failures.length > 0),
+  };
+}
+
+function groupFailures(results: Array<{ failures: string[] }>): Array<{ failure: string; count: number }> {
+  const shapes = new Map<string, number>();
+  for (const r of results) for (const f of r.failures) shapes.set(failureShape(f), (shapes.get(failureShape(f)) ?? 0) + 1);
+  return [...shapes.entries()].map(([failure, count]) => ({ failure, count })).sort((a, b) => b.count - a.count).slice(0, 15);
+}
+
 export interface AnswerEvalSummary {
   institutions: number;
   answers: number;
@@ -160,6 +254,8 @@ export interface AnswerEvalSummary {
   byQuestion: Array<{ questionId: string; question: string; passed: number; total: number }>;
   failing: EvalResult[];
   timedOut: boolean;
+  /** Pro readers' own questions replayed; absent when none were asked. */
+  pro?: ProReplaySummary;
 }
 
 /** Strips amounts, counts and quoted text so the same failure groups across institutions. */
@@ -171,8 +267,6 @@ export function failureShape(failure: string): string {
 }
 
 export function summarizeEval(results: EvalResult[], institutions: number, timedOut: boolean): AnswerEvalSummary {
-  const shapes = new Map<string, number>();
-  for (const r of results) for (const f of r.failures) shapes.set(failureShape(f), (shapes.get(failureShape(f)) ?? 0) + 1);
   const byId = new Map<string, { question: string; passed: number; total: number }>();
   for (const r of results) {
     const q = byId.get(r.questionId) ?? { question: r.question, passed: 0, total: 0 };
@@ -184,14 +278,17 @@ export function summarizeEval(results: EvalResult[], institutions: number, timed
     institutions,
     answers: results.length,
     passed: results.filter((r) => r.failures.length === 0).length,
-    topFailures: [...shapes.entries()].map(([failure, count]) => ({ failure, count })).sort((a, b) => b.count - a.count).slice(0, 15),
+    topFailures: groupFailures(results),
     byQuestion: [...byId.entries()].map(([questionId, q]) => ({ questionId, ...q })).sort((a, b) => a.passed / a.total - b.passed / b.total),
     failing: results.filter((r) => r.failures.length > 0).slice(0, 60),
     timedOut,
   };
 }
 
-/** The eval run: institutions one after another until the time budget is spent. */
+/**
+ * The eval run: Pro readers' own questions first (they are what a buyer asked), then the sampled
+ * institutions, a few at a time, until the time budget is spent.
+ */
 export async function runAnswerEval({
   db = sql,
   perGroup = 2,
@@ -199,6 +296,16 @@ export async function runAnswerEval({
   now = new Date(),
 }: { db?: SqlTag; perGroup?: number; budgetMs?: number; now?: Date } = {}): Promise<AnswerEvalSummary> {
   const started = Date.now();
+  const proQuestions = await pickProQuestions(db).catch(() => []);
+  const byInstitution = new Map<number, ProQuestion[]>();
+  for (const q of proQuestions) byInstitution.set(q.institutionId, [...(byInstitution.get(q.institutionId) ?? []), q]);
+  const proResults: ProQuestionResult[] = [];
+  const asked = [...byInstitution.entries()];
+  for (let i = 0; i < asked.length; i += CONCURRENCY) {
+    const batch = asked.slice(i, i + CONCURRENCY);
+    for (const rows of await Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs)))) proResults.push(...rows);
+  }
+
   const institutions = await pickEvalInstitutions(db, perGroup, now.toISOString().slice(0, 10));
   const results: EvalResult[] = [];
   let done = 0;
@@ -213,5 +320,6 @@ export async function runAnswerEval({
     for (const rows of await Promise.all(batch.map(evaluateInstitution))) results.push(...rows);
     done += batch.length;
   }
-  return summarizeEval(results, done, timedOut);
+  const summary = summarizeEval(results, done, timedOut);
+  return proResults.length > 0 ? { ...summary, pro: summarizeProReplay(proResults) } : summary;
 }
