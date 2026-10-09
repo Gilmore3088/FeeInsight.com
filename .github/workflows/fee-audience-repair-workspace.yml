@@ -9,17 +9,23 @@ permissions:
   contents: read
 
 jobs:
-  source-snapshot:
+  test-dependencies:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Archive only tracked source (no credentials or production data)
-        run: git archive --format=tar.gz HEAD > /tmp/feeinsight-repair-source.tar.gz
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked test dependencies without production credentials
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Package offline test dependencies
+        run: tar -czf /tmp/feeinsight-repair-dependencies.tar.gz node_modules
       - uses: actions/upload-artifact@v4
         with:
-          name: feeinsight-repair-source
-          path: /tmp/feeinsight-repair-source.tar.gz
+          name: feeinsight-repair-dependencies
+          path: /tmp/feeinsight-repair-dependencies.tar.gz
           retention-days: 1
