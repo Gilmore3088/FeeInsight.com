@@ -23,7 +23,6 @@ import { guideCategories, resolveTokensToText } from "@/lib/guides";
 import {
   loadGuide,
   loadRelatedGuides,
-  loadConsumerGuideSlugs,
 } from "@/lib/guides/source";
 import {
   getCheapestAndMostExpensiveCached,
@@ -47,8 +46,14 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Nothing is prerendered at build time: each guide renders on its first request and is then
+ * served from cache. Every deploy, preview builds included, used to prerender all ten guides
+ * against the production database with a cold data cache: about 70 sidebar reads in 15
+ * minutes on Oct 9, ten per build.
+ */
 export async function generateStaticParams() {
-  return (await loadConsumerGuideSlugs()).map((slug) => ({ slug }));
+  return [];
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

@@ -214,6 +214,12 @@ describe("top-50 fold", () => {
       ["account_research", "Research and Account Reconciliation and Copies of Paid Chck", 25, null],
       ["account_research", "Account Research per hour ($12.50 minimum, Copies & Postage Extra)", 25, null],
       ["account_research", "Fax Loan Pay-off", 40, null],
+      ["check_printing", "Checkbook Reconciliation (per hour)", 25, "account_research"],
+      ["check_printing", "Balance Check Book", 20, "account_research"],
+      ["check_printing", "Share Draft (checkbook) Balancing", 20, "account_research"],
+      ["check_printing", "Check Printing", 25, null],
+      ["check_printing", "Checkbook Order (includes balance register)", 25, null],
+      ["check_printing", "Check printing varies depending on check style Clerical/Research work", 30, null],
       ["account_research", "Domestic incoming (fax)", 26, null],
       ["account_research", "initiated by phone, fax or in branch", 25, null],
       ["account_research", "Fax Loan Payoff", 15, null],
@@ -224,6 +230,11 @@ describe("top-50 fold", () => {
       ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
       ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
       ["other_lending_fee", "Loan Payoff Statement", 20, null],
+      ["card_foreign_txn", "Cross-Border Banking Bundle annual fee", 0, "monthly_maintenance"],
+      ["card_foreign_txn", "Cross-Border Banking Bundle monthly fee", 9.95, "monthly_maintenance"],
+      ["card_foreign_txn", "Cross-Border Fee", 1, null],
+      ["card_foreign_txn", "Cross-border transaction fee", 1, null],
+      ["card_foreign_txn", "Cross-Border Banking 3% of purchase", 3, null],
     ];
     for (const [key, name, amount, want] of moves) {
       const got = splitLiveCategory(key, name)?.to ?? null;

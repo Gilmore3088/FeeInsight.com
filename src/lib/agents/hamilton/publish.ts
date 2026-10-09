@@ -22,6 +22,7 @@ import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, typ
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
+import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
@@ -30,6 +31,13 @@ type SqlTag = typeof sql;
 
 /** The publisher recorded in the attempt log; bump the version when the rules change. */
 export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
+/**
+ * The verified rows the same-line check (`separateLines`) applies to, each decided once more if
+ * it was skipped as identical before. Only 8019 (UAT, 9 Oct): source spot checks of 20 rows the
+ * check would separate found 13, then 10 and 14 (after tightening) real separate lines, below the
+ * 18 of 20 it must reach before it applies to every row.
+ */
+export const SAME_LINE_RESELECT_IDS: number[] = [8019];
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
@@ -81,6 +89,8 @@ export interface VerifiedFeeRow extends RateFields {
   institution_name?: string | null;
   /** True when this row was skipped as identical to a live fee the rules re-check took down. */
   twin_recheck?: boolean | null;
+  /** True when Knox's free-fee reader read this row (product-page.ts). */
+  free_read?: boolean | null;
 }
 
 interface PriorPublishedFeeRow extends RateFields {
@@ -206,7 +216,7 @@ function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
-export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): string | null {
+export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
   if (!flags.includes("agentic_darwin_verified")) return "Not verified by the agentic Darwin path";
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
@@ -219,6 +229,10 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number): s
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   // A blog post or story quotes national averages, not this bank's price (article-page.ts).
   if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
+  // A $0 benefit bullet on a product page, once James turns the check on (product-page.ts).
+  if (row.free_read && normalizedAmount(row.amount) === 0 && isProductPage(row.document_url) && productPageOn) {
+    return "Read from a product page's benefits, not a fee schedule";
+  }
   const amount = normalizedAmount(row.amount);
   if (isPercentFee(row)) {
     // A rate publishes only in a category that publishes rates, inside its range.
@@ -293,7 +307,7 @@ async function selectVerifiedFees(
   institutionId?: number,
   stateCode?: string,
 ): Promise<VerifiedFeeRow[]> {
-  const params: Array<number | string> = [limit];
+  const params: Array<number | string | number[]> = [limit];
   const filters: string[] = [];
   if (minInstitutionFees > 1) {
     // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
@@ -337,6 +351,7 @@ async function selectVerifiedFees(
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
     const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
+    const reselectParam = `$${params.push(SAME_LINE_RESELECT_IDS)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -366,6 +381,16 @@ async function selectVerifiedFees(
                    WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
                      AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
                 )
+              )
+              -- Rows skipped as identical before the same-line check (\`separateLines\`, 9 Oct) that
+              -- were separate lines of their document are decided once more, listed ids only
+              -- (\`SAME_LINE_RESELECT_IDS\`): Wildfire's $5 ATM balance inquiry (verified 8019) sat
+              -- behind its $5 "ATM Adjustment" (14754). The backlog waits for a source spot check.
+              -- The new decision carries same_line_check, so it is final.
+              AND NOT (
+                pa.outcome = 'unchanged'
+                AND pa.detail->>'same_line_check' IS NULL
+                AND fv.fee_verified_id = ANY(${reselectParam}::bigint[])
               )
          )`);
   }
@@ -406,6 +431,7 @@ async function selectVerifiedFees(
                   AND twin_pa.outcome = 'unchanged'
                   AND twin.rolled_back_reason = '${RULES_RECHECK_REASON}'
              ) AS twin_recheck,
+             COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
@@ -712,7 +738,8 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   if (live.length === 0) return { kind: "new" };
   // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
   const value = feeValue(row);
-  const identical = live.find((prior) => feeValue(prior) === value);
+  const sameLineCheck = SAME_LINE_RESELECT_IDS.includes(Number(row.fee_verified_id));
+  const identical = live.find((prior) => feeValue(prior) === value && !(sameLineCheck && separateLines(row, prior)));
   if (identical) return { kind: "identical", prior: identical };
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
@@ -735,6 +762,65 @@ export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]
   });
   // A rate never replaces a dollar amount, or the reverse; each stays its own line.
   return prior && isPercentFee(prior) === isPercentFee(row) ? { kind: "supersede", prior } : { kind: "additional_line" };
+}
+
+/** Words that say nothing about which fee a line is ("Fee", "per item", "monthly service charge"). */
+const FILLER_WORDS = new Set([
+  "a", "an", "and", "at", "be", "charge", "charges", "each", "fee", "fees", "for", "in", "is", "item", "items",
+  "month", "monthly", "of", "on", "or", "per", "s", "service", "the", "to", "up", "will", "with", "your", "amp",
+]);
+
+/** One form per word, so "Check Copies" and "Check Copy", "Legal Process" and "Legal Processing" match. */
+function stem(word: string): string {
+  if (word.length > 4 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (word.length > 5 && word.endsWith("ing")) return word.slice(0, -3);
+  if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
+}
+
+function significantWords(name: string | null | undefined): Set<string> {
+  return new Set(
+    (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+      .split(" ")
+      .filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word))
+      .map(stem),
+  );
+}
+
+/** A name read from page text or a page header: it says nothing about which line it is. */
+const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
+const MAX_LINE_WORDS = 10;
+function unclearName(name: string | null | undefined): boolean {
+  const text = (name ?? "").trim();
+  if (!/^[A-Za-z]/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  return text.toLowerCase().split(/[^a-z]+/).filter((word) => SENTENCE_WORD.test(word)).length >= 2;
+}
+
+/**
+ * Two lines' words, each without a parenthetical aside ("(Only applies to members who ...)")
+ * when the rest of both names still says something.
+ */
+function linePair(a: string | null | undefined, b: string | null | undefined): [Set<string>, Set<string>] {
+  const outside = (name: string | null | undefined) => significantWords((name ?? "").replace(/\([^)]*\)/g, " "));
+  const [aOut, bOut] = [outside(a), outside(b)];
+  return aOut.size > 0 && bOut.size > 0 ? [aOut, bOut] : [significantWords(a), significantWords(b)];
+}
+
+/**
+ * Two lines of one document at the same price whose names share no reading of each other
+ * ("ATM Balance Inquiry (at non-Wildfire ATM)" and "ATM Adjustment", both $5 at Wildfire,
+ * 9 Oct): neither name's words all appear in the other's. Two reads of one line differ by
+ * filler or a carried-in heading ("Stop payment" / "Stop Payment of Checks and ACHs") and
+ * stay identical. Across documents the same fee is often named differently, so only one
+ * document's lines are told apart this way.
+ */
+export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  if (!sameDocument(prior.source_document_id, row.source_document_id)) return false;
+  if (unclearName(row.fee_name) || unclearName(prior.fee_name)) return false;
+  const [rowWords, priorWords] = linePair(row.fee_name, prior.fee_name);
+  if (rowWords.size > MAX_LINE_WORDS || priorWords.size > MAX_LINE_WORDS) return false;
+  const within = (a: Set<string>, b: Set<string>) => [...a].every((word) => b.has(word));
+  return !within(rowWords, priorWords) && !within(priorWords, rowWords);
 }
 
 /** A fee's comparable value: its rate for a percentage fee, else its amount. */
@@ -1171,6 +1257,16 @@ const OLDER_DOCUMENT_REASON = "Older document than the live price";
 const TWIN_RECHECK_REASON = "Rules re-check: today's rules do not read this fee from its own document";
 
 /**
+ * A name that starts mid-sentence or runs across a sentence break ("withdrawals or other means.
+ * The NSF fee"). Pure. Used for twins of rules re-check takedowns only; live names are Data
+ * inventory's name-noise rules.
+ */
+export function sentenceFragmentName(name: string): boolean {
+  const trimmed = name.trim();
+  return /^[a-z]/.test(trimmed) || /[a-z]{2}\.\s+[A-Z]/.test(trimmed);
+}
+
+/**
  * Twins of rules re-check takedowns (`twin_recheck`) that today's rules do not read from any
  * completed text of their own document, by verified id. A twin with no document or no text
  * fails too: the check that took its twin down cannot pass it.
@@ -1304,7 +1400,12 @@ export async function runHamiltonPublish(
     }
     // A twin of a rules re-check takedown publishes only if today's rules read it from its own
     // document, the same test that took its twin down.
-    const twinFails = category.ok && !nameHold && twinUnreproduced.has(Number(row.fee_verified_id));
+    // Its name must read as a fee line too: a twin was often read by an older reader, and
+    // "withdrawals or other means. The NSF fee" (101941) went live on Oct 9.
+    const twinFails = category.ok && !nameHold && (
+      twinUnreproduced.has(Number(row.fee_verified_id)) ||
+      (Boolean(row.twin_recheck) && sentenceFragmentName(publishedFeeName(row.fee_name, row.canonical_fee_key)))
+    );
     if (twinFails && !dryRun) {
       await rejectVerifiedFee(db, Number(row.fee_verified_id), RULES_RECHECK_REASON);
     }
@@ -1404,6 +1505,7 @@ export async function runHamiltonPublish(
           previous_fee_published_id: result.previousFeePublishedId,
           superseded_fee_published_id: result.supersededFeePublishedId,
           change_recorded: result.changeRecorded,
+          same_line_check: 1,
         },
       });
     }

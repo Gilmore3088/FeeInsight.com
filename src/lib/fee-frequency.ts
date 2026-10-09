@@ -26,7 +26,15 @@ const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
 // v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
-const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond|exceeding)\b[^|$]{0,40}?\b(per|in a|a|each) (month|statement cycle|cycle|year)\b/gi;
+// v9: "each above 6/month" (101933, Oct 9).
+const ALLOWANCE = /\b(free|after|first|more than|over|above|in excess of|beyond|exceeding)\b[^|$]{0,40}?(\b(per|in a|a|each) |\/\s?)(month|statement cycle|cycle|year)\b/gi;
+
+/**
+ * v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") makes the
+ * "Each" after the price a per-hour charge, not a flat one. Only rate words count: a name that
+ * mentions a minimum balance still takes its period.
+ */
+const NAME_BASIS = /\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\/\s?(hr|hour)(?![a-z])/i;
 
 function withoutAllowance(text: string): string {
   return text.replace(ALLOWANCE, " ");
@@ -91,6 +99,7 @@ export function frequencyFromLine(sourceLine: string | null | undefined, amount:
   if (readings.size > 1) return null;
   const words = read[0];
   if (OTHER_BASIS.test(words)) return null;
+  if (namedBasis(sourceLine, amount)) return null;
   const after = statedFrequency(words);
   if (after !== "none") return after;
   // Nothing after the price: the fee's own name may carry it ("Lost Key (each) | $15.00",
@@ -100,6 +109,13 @@ export function frequencyFromLine(sourceLine: string | null | undefined, amount:
   if (before == null || OTHER_BASIS.test(before)) return null;
   const named = statedFrequency(before);
   return named === "none" ? null : named;
+}
+
+/** True when the fee's own name, before its price, states a rate basis such as per hour. */
+export function namedBasis(sourceLine: string | null | undefined, amount: number | null): boolean {
+  if (!sourceLine) return false;
+  const name = nameWords(sourceLine, amount);
+  return name != null && NAME_BASIS.test(name);
 }
 
 /** "each month" is a period, not an item: "a $15.00 service charge will be imposed each month". */
@@ -185,7 +201,8 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   // the returned-deposit fee "daily".
   if (!wording.test(sourceLine)) return MISREAD_PERIOD[stated!]?.test(sourceLine) ?? false;
   const cells = sourceLine.split("|");
-  const priced = cells.map((cell) => feePrices(cell).length > 0);
+  // v9: a cell priced "N/C" or "Free" is another fee's row too ("Monthly service fee ... N/C | ATM ... $1.00").
+  const priced = cells.map((cell) => feePrices(cell).length > 0 || NO_CHARGE.test(cell));
   const own = cells
     .map((cell, index) => (feePrices(cell).some((price) => Math.abs(price - amount) < 0.005) ? index : -1))
     .filter((index) => index >= 0);
@@ -203,6 +220,7 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   return cells.some((cell, index) => !ownCells.has(index) && priced[index] && wording.test(cell));
 }
 const PRICE_START = /\$\s?\.?\d/;
+const NO_CHARGE = /(^|[\s.…])(n\/c|no charge|free)\s*\*?\s*$/i;
 
 /**
  * Categories charged per period or per day. A per-item reading of one of these is a
@@ -222,6 +240,8 @@ export function settledFrequency(
   stated: string | null | undefined,
   canonicalKey: string | null | undefined,
 ): string | null {
+  // v8: a fee charged per hour has no flat frequency, whatever was stated.
+  if (namedBasis(sourceLine, amount)) return null;
   const own = frequencyFromLine(sourceLine, amount);
   const periodCategory = canonicalKey != null && PERIOD_FEE_KEYS.has(canonicalKey);
   const ownUsable = own && !(frequencyFamily(own) === "per_item" && periodCategory) ? own : null;

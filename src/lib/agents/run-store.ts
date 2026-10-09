@@ -14,6 +14,8 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
+import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
+import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
@@ -988,6 +990,20 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
+      const productPage = await retireProductPageFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
+      // One product priced differently on two current pages: the older page's price comes down.
+      const crossPage = await retireCrossPageConflicts(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A live fee whose own name contradicts its category (an ATM fee filed as a card's
       // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
       // a guard change takes effect without anyone starting the repair run by hand.
@@ -1178,6 +1194,8 @@ async function executeAgenticStep(
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
+              productPage.rolledBack.length > 0 ||
+              crossPage.rolledBack.length > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
@@ -1234,6 +1252,14 @@ async function executeAgenticStep(
         articlePage.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${articlePage.rolledBack.length.toLocaleString()} fee(s) read from an article page, not a fee schedule.`
           : "";
+      const productNote =
+        productPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${productPage.rolledBack.length.toLocaleString()} $0 fee(s) read from a product page's benefits, not a fee schedule.`
+          : "";
+      const crossPageConflictNote =
+        crossPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${crossPage.rolledBack.length.toLocaleString()} older price(s) for a product another current page prices differently.`
+          : "";
       const categoryGuardNote =
         categoryGuardRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
@@ -1279,7 +1305,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1375,6 +1401,20 @@ async function executeAgenticStep(
             flagged: articlePage.flagged,
             waiting: articlePage.waiting,
             rolled_back: articlePage.rolledBack.length,
+          },
+          cross_page_conflict: {
+            fees_checked: crossPage.pairsChecked,
+            conflicts: crossPage.conflicts,
+            flagged: crossPage.flagged,
+            waiting: crossPage.waiting,
+            rolled_back: crossPage.rolledBack.length,
+          },
+          product_page: {
+            enabled: productPage.enabled,
+            product_fees: productPage.productFees,
+            flagged: productPage.flagged,
+            waiting: productPage.waiting,
+            rolled_back: productPage.rolledBack.length,
           },
           limit_rollbacks: limitRollbacks.length,
           limit_rollback_samples: limitRollbacks.slice(0, 10).map((rollback) => ({

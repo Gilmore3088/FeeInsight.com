@@ -347,3 +347,46 @@ describe("lineupCorrections (v55)", () => {
     expect(lineupCorrections({ feeName: "monthly maintenance fee", excerpt: basic }, stored({ minBalanceToAvoid: 2500 }), allSouth)).toEqual([]);
   });
 });
+
+describe("account names read from page text (whole-record sample, 9 Oct)", () => {
+  // First International Bank & Trust, document 23278 (live 101346).
+  const fibt = [
+    "Advantage Account",
+    "Earn a premium interest rate, plus additional advantages",
+    "Maintain $5,000 minimum daily balance to receive a refunded monthly service charge AND get up to $25 in refunded ATM fees automatically per statement cycle.",
+    "Learn more about Advantage Checking",
+    "Minimum Opening Deposit: $5,000",
+    "Monthly Service Charge: $12.95",
+  ].join("\n\n");
+  // RNB, document 23073 (live 100423).
+  const rnb = [
+    "Savings",
+    "Personal Savings",
+    "For all customers with savings needs…",
+    "Minimum to Open: $100",
+    "Interest Bearing: Yes",
+    "Maximum Deposits: Unlimited",
+    "Maximum Withdrawals: $1 per withdrawal over 6 withdrawals",
+    "Monthly Service Charge: $2 fee if balance falls below $100 minimum (waived for students and minors)",
+  ].join("\n\n");
+
+  it("reads the account from a 'Learn more about' link, not the link's words", () => {
+    expect(accountHeadingAbove(fibt, "Monthly Service Charge: $12.95")).toBe("Advantage Checking");
+  });
+
+  it("never takes a lower-case tagline for the account", () => {
+    // "Personal Savings" is two generic words, so no name is read: a blank, never the tagline.
+    expect(accountHeadingAbove(rnb, "Monthly Service Charge: $2 fee if balance falls below $100 minimum (waived for students and minors)")).toBeNull();
+  });
+
+  it("corrects the link name and clears the tagline", () => {
+    const stored = (productName: string) => ({ productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null });
+    expect(
+      lineupCorrections({ feeName: "Monthly Service Charge", excerpt: "Monthly Service Charge: $12.95" }, stored("Learn more about Advantage Checking"), fibt),
+    ).toEqual([{ field: "productName", old: "Learn more about Advantage Checking", new: "Advantage Checking" }]);
+    const excerpt = "Monthly Service Charge: $2 fee if balance falls below $100 minimum (waived for students and minors)";
+    expect(lineupCorrections({ feeName: "Monthly Service Charge", excerpt }, stored("For all customers with savings needs…"), rnb)).toEqual([
+      { field: "productName", old: "For all customers with savings needs…", new: null },
+    ]);
+  });
+});
