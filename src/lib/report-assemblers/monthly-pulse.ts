@@ -16,7 +16,7 @@ import { createHash } from "crypto";
 import { getSql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { urlIdentity } from "@/lib/agents/magellan/finders";
+import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import type { DataManifest } from "@/lib/report-engine/types";
 
 export const PULSE_WINDOW_DAYS = 30;
@@ -104,7 +104,7 @@ export function sameEdition(a: string | null | undefined, b: string | null | und
 
 /**
  * Pure: did the bank change this fee? Yes only when the old and new prices sit on the
- * same fee line (same page, same name), the earlier schedule states the old price, and the newest
+ * same fee line (same schedule, same name), the earlier schedule states the old price, and the newest
  * schedule states the new price and no longer states the old one for that fee.
  * Two readings of the same edition (both texts state exactly the same dollar amounts) are
  * not a change: a PDF read twice can pair a fee with a neighbouring column's price. Nor is
@@ -116,9 +116,15 @@ export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;
   if (oldAmount === newAmount || !row.fee_name || !row.new_document_text) return null;
   if (!row.old_fee_name || !sameFeeName(row.old_fee_name, row.fee_name)) return null;
-  // Same page: a price on a different schedule (business against consumer, another
-  // product's page) is a second fee line, not a change.
-  if (row.old_source_url && row.source_url && urlIdentity(row.old_source_url) !== urlIdentity(row.source_url)) return null;
+  // Same schedule: a price on a different schedule (business against consumer, another
+  // product's page) is a second fee line, not a change. A newer dated edition of the same
+  // audience's schedule on a moved page is the same schedule (schedule-edition.ts).
+  if (
+    row.old_source_url &&
+    row.source_url &&
+    !sameSchedule({ oldUrl: row.old_source_url, newUrl: row.source_url, oldText: row.old_document_text, newText: row.new_document_text })
+  )
+    return null;
   const newStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, newAmount, ".");
   if (!newStated.ok) return null;
   if (!checkFeeAgainstSource(row.old_document_text, row.fee_name, oldAmount, ".").ok) return null;

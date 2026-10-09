@@ -1,5 +1,7 @@
 import { emptyHeadlineLabel, isFeeHeadline, readableHeadline, splitPublisher } from "@/lib/regulatory/state-news";
 import { likePattern, type WireKind } from "@/lib/regulatory/wire";
+import { hasFeeType, type FeeType } from "@/lib/regulatory/wire-fee-types";
+import { trackerItemId } from "@/lib/regulatory/wire-research";
 import { sql } from "./connection";
 
 /**
@@ -12,6 +14,8 @@ import { sql } from "./connection";
  */
 
 export interface StateRegulatorPost {
+  /** reg_articles.guid, the key of the item's research note; absent on older readers. */
+  guid?: string;
   state_code: string;
   title: string;
   link: string;
@@ -21,6 +25,8 @@ export interface StateRegulatorPost {
 }
 
 export interface StatePressStory {
+  /** reg_articles.guid; absent on older readers. */
+  guid?: string;
   state_code: string;
   headline: string;
   /** The outlet, from Google News' "Headline - Publisher" title. */
@@ -30,6 +36,8 @@ export interface StatePressStory {
 }
 
 export interface StateFeeBill {
+  /** reg_tracker_items "source:external_id", the key of the bill's research note; absent on older readers. */
+  tracker_id?: string;
   state_code: string;
   identifier: string | null;
   title: string;
@@ -64,6 +72,7 @@ export interface StateNewsOptions {
 }
 
 interface ArticleRow {
+  guid?: string;
   source: string;
   title: string;
   link: string;
@@ -71,6 +80,8 @@ interface ArticleRow {
 }
 
 export interface BillRow {
+  source?: string;
+  external_id?: string;
   jurisdiction: string;
   identifier: string | null;
   title: string;
@@ -120,6 +131,7 @@ export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
     .map((r) => {
       const label = emptyHeadlineLabel(r.title);
       return {
+        guid: r.guid,
         state_code: stateOf(r.source),
         title: label ?? readableHeadline(r.title),
         link: r.link,
@@ -142,6 +154,7 @@ export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
       return true;
     })
     .map((p) => ({
+      ...(p.guid ? { guid: p.guid } : {}),
       state_code: p.state_code,
       title: p.title,
       link: p.link,
@@ -153,12 +166,20 @@ export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
 export function toPressStories(rows: ArticleRow[]): StatePressStory[] {
   return rows.map((r) => {
     const { headline, publisher } = splitPublisher(r.title);
-    return { state_code: stateOf(r.source), headline: readableHeadline(headline), publisher, link: r.link, published_at: isoDay(r.published_at) };
+    return {
+      ...(r.guid ? { guid: r.guid } : {}),
+      state_code: stateOf(r.source),
+      headline: readableHeadline(headline),
+      publisher,
+      link: r.link,
+      published_at: isoDay(r.published_at),
+    };
   });
 }
 
 export function toFeeBills(rows: BillRow[]): StateFeeBill[] {
   return rows.map((r) => ({
+    ...(r.source && r.external_id ? { tracker_id: trackerItemId(r.source, r.external_id) } : {}),
     state_code: String(r.jurisdiction).toUpperCase(),
     identifier: r.identifier ?? null,
     title: readableHeadline(r.title),
@@ -275,6 +296,8 @@ export interface StateWireOptions {
   since?: string | null;
   /** Case-insensitive title search; a bill's number matches too. */
   q?: string | null;
+  /** Fee-type tag from the headline (wire-fee-types); absent means every item. */
+  fee?: FeeType | null;
   limit?: number;
   offset?: number;
 }
@@ -326,6 +349,16 @@ export function mergeStateWire(
   return { items: all.slice(offset, offset + limit), total, offset, counts };
 }
 
+/** Keeps the items whose headline carries this fee type; every item when none is chosen. */
+export function filterStateWireByFee(parts: StateWireParts, fee: FeeType | null): StateWireParts {
+  if (!fee) return parts;
+  return {
+    bills: parts.bills.filter((b) => hasFeeType(b.title, fee)),
+    regulators: parts.regulators.filter((p) => hasFeeType(p.title, fee)),
+    press: parts.press.filter((s) => hasFeeType(s.headline, fee)),
+  };
+}
+
 export interface WireBillRow extends BillRow {
   published_on: string | Date | null;
 }
@@ -335,7 +368,7 @@ async function readWireArticles(prefix: "state" | "news", options: StateWireOpti
   const since = options.since ?? null;
   const q = likePattern(options.q);
   return (await sql`
-    SELECT source, title, link, published_at
+    SELECT guid, source, title, link, published_at
       FROM reg_articles
      WHERE source LIKE ${pattern}
        AND (${since}::text IS NULL OR published_at >= ${since})
@@ -350,7 +383,7 @@ async function readWireBills(options: StateWireOptions, cap: number): Promise<Wi
   const since = options.since ?? null;
   const q = likePattern(options.q);
   return (await sql`
-    SELECT jurisdiction, identifier, title, stage, stage_on, url, published_on
+    SELECT source, external_id, jurisdiction, identifier, title, stage, stage_on, url, published_on
       FROM reg_tracker_items
      WHERE source = 'open_states'
        AND cardinality(topics) > 0
@@ -395,8 +428,12 @@ export async function getStateWire(options: StateWireOptions = {}): Promise<Stat
     part("press", () => readWireArticles("news", options, cap)),
     part("bills", () => readWireBills(options, cap)),
   ]);
-  const page = mergeStateWire(
+  const parts = filterStateWireByFee(
     { regulators: toRegulatorPosts(posts), press: toPressStories(press), bills: toWireBills(bills) },
+    options.fee ?? null,
+  );
+  const page = mergeStateWire(
+    parts,
     { kind: options.kind, limit: options.limit, offset: options.offset },
   );
   const order: WireKind[] = ["bills", "regulators", "press"];
