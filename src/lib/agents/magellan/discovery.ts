@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
+import { loadMarketGapIds } from "@/lib/data-store/competitor-coverage";
 import {
   normalizeStateCode,
   readStrategyFromDocumentType,
@@ -1622,7 +1623,16 @@ export async function runMagellanDiscovery(
   const dryRun = Boolean(options.dryRun);
   const politeDelayMs = options.politeDelayMs ?? DEFAULT_POLITE_DELAY_MS;
   const learning = !dryRun && (await learningSchemaReady(db));
-  const leaderIds = options.leaderIds ?? (await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => []));
+  // Market leaders, plus the banks whose fees would add the most competitor coverage across
+  // every bank's local market (competitor-coverage.ts), go first.
+  const leaderIds =
+    options.leaderIds ??
+    [
+      ...new Set([
+        ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => [])),
+        ...(await loadMarketGapIds(db).catch(() => [])),
+      ]),
+    ];
   const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
   // Links that are not the schedule each keep a few reserved slots, searched right after
   // the cut-off banks resuming their search: business-only links, then product pages, then
