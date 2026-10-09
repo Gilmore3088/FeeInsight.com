@@ -232,6 +232,19 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(HAND_CHECKED_VERDICTS.some((entry) => EVAL_CRITICAL_VERDICTS.some((evalRow) => evalRow.feePublishedId === entry.feePublishedId))).toBe(false);
   });
 
+  it("labels Data inventory's five wrong \"to avoid\" rows, each only while it reads as labelled (Oct 9)", () => {
+    const ids = [36498, 52158, 56804, 79217, 90839];
+    for (const id of ids) {
+      const entry = HAND_CHECKED_VERDICTS.find((row) => row.feePublishedId === id);
+      expect(entry, String(id)).toBeDefined();
+      const row = { feePublishedId: id, feeName: entry!.feeName, amount: entry!.amount, canonicalFeeKey: entry!.canonicalFeeKey };
+      expect(verdictFor(row, HAND_CHECKED_VERDICTS)?.verdict).toBe(entry!.verdict);
+      // A re-filed or re-priced row is no longer the labelled record.
+      expect(verdictFor({ ...row, canonicalFeeKey: "paper_statement" === row.canonicalFeeKey ? "monthly_maintenance" : "paper_statement" }, HAND_CHECKED_VERDICTS)).toBeNull();
+      expect(verdictFor({ ...row, amount: row.amount + 1 }, HAND_CHECKED_VERDICTS)).toBeNull();
+    }
+  });
+
   it("archives a hand-checked row once its second look confirms it, with the pattern in Knox's lesson", async () => {
     const handRow = { fee_published_id: 100161, fee_verified_id: 113967, institution_id: 76, source_document_id: 23020, canonical_fee_key: "cashiers_check", fee_name: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: "0.00" };
     const query = (strings: TemplateStringsArray) => {
