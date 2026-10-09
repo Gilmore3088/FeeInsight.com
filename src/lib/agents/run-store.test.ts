@@ -60,6 +60,7 @@ vi.mock("@/lib/automation-control", () => ({
 }));
 
 vi.mock("@/lib/agents/content/market-spread", () => ({
+  MARKET_SPREAD_WORKFLOW: "w1-market-spread",
   runMarketSpread: vi.fn().mockResolvedValue({ draftId: 9, picked: { metro: "Kansas City" } }),
   summarizeMarketSpread: vi.fn().mockReturnValue("Drafted a market-spread post for Kansas City."),
 }));
@@ -96,6 +97,10 @@ vi.mock("@/lib/agents/darwin/verify", () => ({
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+}));
+
+vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
+  pairFeeChangeRecords: vi.fn(async () => ({ unpaired: 0, likeForLike: 0, crossPage: 0, listsBoth: 0, noPair: 0, written: 0, dryRun: false })),
 }));
 
 vi.mock("@/lib/agents/knox/extract", () => ({

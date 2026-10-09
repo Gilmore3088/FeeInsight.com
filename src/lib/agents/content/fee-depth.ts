@@ -194,7 +194,7 @@ export interface FeeDepthResult {
   reason: string | null;
 }
 
-export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean }): Promise<FeeDepthResult> {
+export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; now?: Date; dryRun: boolean; avoidSubjects?: Iterable<string> }): Promise<FeeDepthResult> {
   const db = input.db ?? sql;
   const now = input.now ?? new Date();
   const base: FeeDepthResult = { schemaReady: false, dryRun: input.dryRun, metrosConsidered: 0, eligible: 0, useCase: null, endsRejected: [], draftId: null, picked: null, reason: null };
@@ -202,7 +202,9 @@ export async function runFeeDepth(input: { db?: SqlTag; runId: number | null; no
 
   const depthRows = await loadDepthRows(db);
   const metros = summarizeDepth(depthRows);
+  // Featured lately, or skipped by James with a reason (a lesson): neither is drafted again.
   const recent = await recentSubjects(FEE_DEPTH_WORKFLOW, REPEAT_WINDOW_DAYS, db);
+  for (const subject of input.avoidSubjects ?? []) recent.add(subject);
   const [{ drafted, lately }] = await db`
     SELECT count(*)::int AS drafted,
            count(*) FILTER (WHERE created_at >= now() - make_interval(days => ${CADENCE_DAYS}::int))::int AS lately

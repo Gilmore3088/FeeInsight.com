@@ -1,6 +1,6 @@
 /**
  * The top-50 fold (James, Oct 8 2026: "do the top 50 and try to fit everything there";
- * "Use extensive and comprehensive text matching"). Fifteen categories left the taxonomy
+ * "Use extensive and comprehensive text matching"). Sixteen categories left the taxonomy
  * (`FEE_FAMILIES`) and each of their fees is re-filed under one of the 50 by its own
  * wording, and for a bare name ("Balance Inquiry $1.00") by the section of the schedule it
  * sits in. A fee no rule can place has no home in the 50: Hamilton's fold step archives it
@@ -129,14 +129,70 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   refinance_fee: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
   duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
+  // Using an ATM abroad and using a card abroad are one type, International ATM & Card (James,
+  // Oct 8: Foreign Transaction gave up its spot). The survivor keeps the card_foreign_txn key,
+  // which holds the rates and the spotlight guide; a line that excludes international ATMs, or
+  // names them only beside domestic ones, is not this fee.
+  atm_international: {
+    family: "ATM & Card",
+    rules: [{ to: null, name: /\bnon[- ]?international\b|outside (?:the )?u\.?s\.?a?\.? excluded|\binside (?:the )?united states\b/i }],
+    otherwise: "card_foreign_txn",
+  },
   // A distribution closes out (part of) the IRA.
   ira_distribution: { family: "Retirement & IRA", rules: [], otherwise: "ira_termination" },
 };
 
 export const RETIRED_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(RETIRED_CATEGORIES));
 
+/**
+ * A check or item sent to another bank for collection, or a foreign or Canadian check or item
+ * handled for deposit ("Foreign Check Processing", "Canadian Item Deposit"), which banks send
+ * for collection. Cashing a foreign check is check cashing and a returned one is a returned
+ * item. A collection fee on a charged-off, past-due or negative-balance account, or a
+ * collection call, is debt collection, not this.
+ */
+export const COLLECTION_ITEM =
+  /^(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))(?:[\s\S]*\bcollections?\b|(?![\s\S]*\b(?:cash\w*|returns?|returned)\b)[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\.?)\s+(?:checks?|items?|drafts?)\b)/i;
+
+/** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
+export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
+
+/** A copy of an item, not the item. */
+export const ITEM_COPY = /\bcop(?:y|ies)\b/i;
+
+interface SplitCategory {
+  to: string;
+  name: RegExp;
+  /** A cheap SQL pre-filter (case-insensitive regex) for the rows the rule might move. */
+  sqlPattern: string;
+}
+
+/**
+ * Live categories part of which moved to a new type. James, Oct 8 2026: collection items get
+ * their own type ("Own type"); Knox v26 had filed them under check cashing, where their $20
+ * median sat beside check cashing's $5. A fee the rule does not match stays where it is.
+ */
+export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
+  check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+  // A mortgage or lien subordination is a lending service (median $150), not legal process like
+  // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
+  legal_process: { to: "other_lending_fee", name: SUBORDINATION, sqlPattern: "subordinat" },
+  // A copy of a money order or cashier's check is a check copy, not the money order itself.
+  money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
+};
+
+export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
+
+/** Where a live-category fee moves under `SPLIT_CATEGORIES`, or null when it stays. Pure. */
+export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
+  if (!key) return null;
+  const split = SPLIT_CATEGORIES[key];
+  if (!split || !split.name.test(plain(feeName ?? ""))) return null;
+  return { to: split.to, rule: `${key}#split` };
+}
+
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 1;
+export const FOLD_RULES_VERSION = 4;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
