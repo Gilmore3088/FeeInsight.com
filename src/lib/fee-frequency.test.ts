@@ -71,4 +71,17 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(frequencyFromLine("Easy Checking | $5.00 eastern branches", 5)).toBeNull();
     expect(frequencyFromLine("Account Research | $25.00 per hour", 25)).toBeNull();
   });
+
+  it("reads per loan, per stamp, per file and other per-event nouns (v4)", () => {
+    expect(frequencyFromLine("Skip-A-Pay $ 25 per loan", 25)).toBe("per_item");
+    expect(frequencyFromLine("Non-Customer Notary Fee - Idaho $5.00 Per Stamp", 5)).toBe("per_item");
+    expect(frequencyFromLine("ACH Origination Fee - $15 per file", 15)).toBe("per_item");
+    expect(frequencyFromLine("GUASFCU charges a $10.00 fee per stop payment request.", 10)).toBe("per_item");
+    expect(frequencyFromLine("Returned Item | $30.00 per occurance", 30)).toBe("per_item");
+    expect(frequencyFromLine("Rewards Checking is charged a $7 service fee per calendar month.", 7)).toBe("monthly");
+    expect(frequencyFromLine("Inactive Account | $5.00/quarter", 5)).toBe("quarterly");
+    expect(frequencyFromLine("Paper Statement | $3.00 per statement period", 3)).toBe("monthly");
+    expect(frequencyFromLine("Paper Statement | $2.00 per statement", 2)).toBeNull();
+    expect(frequencyFromLine("Account Research | $30 per hour", 30)).toBeNull();
+  });
 });
