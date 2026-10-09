@@ -6,6 +6,7 @@ import {
   minBalanceFromExcerpt,
   productNameFromFeeName,
   readableProductName,
+  readableWaiver,
   withLineupFromText,
 } from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
@@ -86,6 +87,22 @@ describe("Knox account names for monthly fees (v49)", () => {
     expect(readableProductName("Sweep Transactions Money Market, or Savings")).toBeNull();
     expect(readableProductName("Market Rate")).toBeNull();
     expect(readableProductName(null)).toBeNull();
+    expect(readableProductName("Open an Advantage Checking Account")).toBe("Advantage Checking Account");
+    expect(readableProductName("Account Type")).toBeNull();
+    expect(readableProductName("Balance Account")).toBeNull();
+    expect(readableProductName("An interest-bearing account with premium")).toBeNull();
+    expect(readableProductName("Round-up savings option on card purchases")).toBeNull();
+  });
+
+  it("shows a waiver only when it names a condition", () => {
+    expect(readableWaiver("waived with $10,000+ monthly combined deposit balances")).toBe("waived with $10,000+ monthly combined deposit balances");
+    expect(readableWaiver("waived w/$500 min")).toBe("waived w/$500 min");
+    expect(readableWaiver("waived for members 17 or younger")).toBe("waived for members 17 or younger");
+    expect(readableWaiver("Avoid Monthly Service Fee ......................................")).toBeNull();
+    expect(readableWaiver("Waive Monthly Maintenance Fee")).toBeNull();
+    expect(readableWaiver("waived, and all ATM surcharge")).toBeNull();
+    expect(readableWaiver("waive the $10 monthly fee")).toBeNull();
+    expect(readableWaiver(null)).toBeNull();
   });
 
   it("does not take a heading's tail or a list of account types as the name", () => {

@@ -1,6 +1,6 @@
 import { getSql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
-import { minBalanceFromExcerpt, productNameFromFeeName, readableProductName, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
+import { minBalanceFromExcerpt, productNameFromFeeName, readableProductName, readableWaiver, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
 
 export { minBalanceFromExcerpt, productNameFromFeeName, waiverFromExcerpt };
 
@@ -79,7 +79,7 @@ export function lineupAccountFromRow(row: LineupCatalogRow): LineupAccount | nul
   const derivedName = storedName ? null : productNameFromFeeName(row.fee_name);
   const storedBalance = toNumber(row.min_balance_to_avoid);
   const derivedBalance = storedBalance === null && excerpt ? minBalanceFromExcerpt(excerpt) : null;
-  const storedWaiver = row.waiver_text?.trim() || null;
+  const storedWaiver = readableWaiver(row.waiver_text);
   const derivedWaiver = storedWaiver || !excerpt ? null : waiverFromExcerpt(excerpt);
 
   return {
