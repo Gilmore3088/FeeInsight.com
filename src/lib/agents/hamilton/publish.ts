@@ -16,7 +16,7 @@ import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-gua
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
-import { isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { dropsCondition, isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -755,7 +755,10 @@ export function publishedFeeName(name: string, canonicalKey: string): string {
   // live to be tidied later.
   if (!checkFeeCategory(canonicalKey, current).ok || isCutoffName(current)) {
     const retidied = retidiedFeeName(current, canonicalKey);
-    if (retidied && checkFeeCategory(canonicalKey, retidied).ok) return retidied;
+    // Never a repair that cuts the line's own condition: "Minimum Balance Fee (if Balance is Below
+    // $7,500)" went live as "Minimum Balance Fee" (107240, 9 Oct) beside the $1,000 and $2,500
+    // lines it is not. Retidy v15's `dropsCondition` is the same bar.
+    if (retidied && checkFeeCategory(canonicalKey, retidied).ok && !dropsCondition(current, retidied, canonicalKey)) return retidied;
   }
   // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
   const repaired = repairNameShape(stripFootnoteMarks(current));

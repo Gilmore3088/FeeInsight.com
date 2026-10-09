@@ -108,3 +108,11 @@ Against source:
   the page had live lines at $2,500 and $1,000. The October copy still prints the $7,500 line, so
   that skip was wrong. Publish now treats a balance-named row as current when the newer copy prints
   its balance and price (`newerCopyPrintsLine`), and check 3 re-decides the 2 rows skipped that way.
+
+## 56431 published without its balance
+
+After PR 930, 56431 published as 107240 under the name "Minimum Balance Fee". The verified name is
+"Minimum Balance Fee (if Balance is Below $7,500)". `publishedFeeName` took Knox's cut-off repair,
+which trims the "(if ...)" condition. Publish now refuses any repair that `dropsCondition` flags,
+which is the same bar retidy v15 uses. The live name of 107240 needs a logged rename back to the
+verified name.
