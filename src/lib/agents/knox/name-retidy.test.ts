@@ -237,6 +237,16 @@ describe("v7: stored names Knox v57/v58 would read differently", () => {
     expect(planRetidy([named, sentence], page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[1, "Monthly service fee"]]);
   });
 
+  it("drops a dot leader left on a stored name (Wildfire 14754)", () => {
+    expect(isMessyName("ATM Adjustment ......................................................")).toBe(true);
+    expect(isMessyName("Stop Payment…………..……….")).toBe(true);
+    expect(isMessyName("ATM Adjustment")).toBe(false);
+    const atm = fee({ canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment ......................................................", amount: 5 });
+    const leader = fee({ fee_published_id: 2, canonical_fee_key: "stop_payment", fee_name: "Stop Payment…………..……….", amount: 30 });
+    const page = text("ATM Adjustment ...................................................... $5.00\nStop Payment…………..………. $30.00");
+    expect(planRetidy([atm, leader], page).renames.map((rename) => rename.newName)).toEqual(["ATM Adjustment", "Stop Payment"]);
+  });
+
   it("drops an account heading read onto another fee's name, but never a business one", () => {
     const skip = fee({ canonical_fee_key: "skip_a_pay", fee_name: "PERSONAL CHECKING ACCOUNT FEES | Skip-a-Pay", amount: 35 });
     const box = fee({

@@ -173,6 +173,8 @@ const ACCOUNT_NAMED_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
  * no "|" or ":" as a business fee. A rename never drops that word from such a name, or a business
  * price would sit beside the consumer one. A heading glued on with "|" or ":" is still stripped.
  */
+/** v7: a dot leader, ellipsis run or fill-in line, the twin of Knox's tidy `LEADERS`. */
+const DOT_LEADER = /(?:\.\s?){3,}|…|_{3,}/;
 const BUSINESS_NAMED = /^(?:business|commercial)\b/i;
 const SECTION_HEADING_ONLY = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
 
@@ -404,6 +406,7 @@ export async function retidyLiveFeeNames(
                    OR fp.fee_name ~ '\\([[:space:]]|[[:space:]]\\)'
                    OR fp.fee_name ~ '^Name[[:space:]]+[A-Z]'
                    OR fp.fee_name ~* '^[A-Z][^:|]{0,60}(checking|savings|money market|fees)[[:space:]]*[:|][[:space:]]*[A-Z]'
+                   OR fp.fee_name ~ '(\\.[[:space:]]?){3,}|…|_{3,}'
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -567,7 +570,9 @@ export function isMessyName(name: string): boolean {
     STRIPPED_AMOUNT.test(name) ||
     TRAILING_CUT.test(name) ||
     LEADING_ACCOUNT_HEADINGS.test(name) ||
-    HEADER_WORD_PREFIX.test(name)
+    HEADER_WORD_PREFIX.test(name) ||
+    // v7: a dot leader or fill-in line left on the end ("ATM Adjustment ......", Wildfire 14754).
+    DOT_LEADER.test(name)
   );
 }
 
