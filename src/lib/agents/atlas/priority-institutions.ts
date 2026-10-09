@@ -66,6 +66,18 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     institutionName,
     reason: "Knox v57 reads this bank's current page; its state lane is queued",
   })),
+  // $10B+ banks Knox v62 reads differently: Northern Trust's wrapped $25 overdraft line, and the
+  // 15 wrong live rows at Citizens Business Bank and ConnectOne (former-price column, business-only
+  // footnote) that the rules re-check takes down once their run reads v62 (2026-10-09).
+  ...([
+    [25, "The Northern Trust Company"],
+    [124, "Citizens Business Bank, National Association"],
+    [135, "ConnectOne Bank"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Knox v62 reads this bank's current page; its state lane is queued",
+  })),
   // Marketing's outreach batch (2026-10-08 18:20), first: each has 5+ local competitors with a
   // sourced overdraft fee, and its own current page prints an overdraft line Knox v42 reads.
   ...([
