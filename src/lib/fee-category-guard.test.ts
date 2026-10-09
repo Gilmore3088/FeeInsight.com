@@ -847,6 +847,43 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v53: a business account's wire price is not the consumer wire price", () => {
+    for (const [key, name] of [
+      ["wire_domestic_incoming", "Business Wire Transfer Incoming (domestic)"],
+      ["wire_domestic_outgoing", "Outgoing Wire Transfer (Business)"],
+      ["wire_intl_outgoing", "Commercial International Wire Fee"],
+      ["wire_intl_incoming", "Business Wire Transfer Incoming (international)"],
+      ["wire_intl_outgoing", "Wire Funds, International (For Business Accounts Only)"],
+    ]) {
+      expect(checkFeeCategory(key, name).ok, name).toBe(false);
+    }
+    for (const [key, name] of [
+      ["wire_domestic_outgoing", "Consumer & Business Domestic Wire Transfer: Outgoing"],
+      ["wire_domestic_incoming", "Incoming Wire Transfer"],
+      ["wire_domestic_outgoing", "Outgoing wire requested after 2 business days"],
+      ["wire_intl_incoming", "Incoming International Wire"],
+    ]) {
+      expect(checkFeeCategory(key, name).ok, name).toBe(true);
+    }
+  });
+
+  it("v52: a price no bank charges is flagged, not re-priced", () => {
+    const verdict = checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
+    expect(verdict.ok).toBe(false);
+    expect(!verdict.ok && verdict.code).toBe("amount_implausible");
+    expect(checkFeeCategory("counter_check", "Temporary Checks (12 checks)", { amount: 200 }).ok).toBe(false);
+    expect(checkFeeCategory("document_reproduction", "Photocopy(per copy)", { amount: 200 }).ok).toBe(false);
+    expect(checkFeeCategory("notary_fee", "Notary Public (non customer)", { amount: 500 }).ok).toBe(false);
+    expect(checkFeeCategory("safe_deposit_box", "Safety DepositBox Lost Key (per key)", { amount: 1000 }).ok).toBe(false);
+    // Large boxes rent for over $1,000 a year; ordinary prices pass; no amount, no check.
+    expect(checkFeeCategory("safe_deposit_box", "60 x 30 x 42", { amount: 1225 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Drill Box if both keys are lost/stolen", { amount: 350 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Safe Deposit Box Lost Key", { amount: 25 }).ok).toBe(true);
+    expect(checkFeeCategory("late_payment", "Safety Deposit Box Late Fee", { amount: 5 }).ok).toBe(true);
+    expect(checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee").ok).toBe(true);
+    expect(GUARDED_CATEGORIES).toEqual(expect.arrayContaining(["late_payment", "notary_fee", "safe_deposit_box"]));
+  });
+
   it("v51: a certificate penalty paid in dividends is not an early closure fee", () => {
     expect(checkFeeCategory("early_closure", "11. Early Withdrawal Penalty for Jump Start Share certificate - A penalty of seven days dividends will be imposed if the").ok).toBe(false);
     expect(checkFeeCategory("early_closure", "Forfeiture of Rewards at maturity").ok).toBe(false);
@@ -880,5 +917,34 @@ describe("checkFeeCategory", () => {
     }
     expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance charge per account.").ok).toBe(true);
     expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
+  });
+});
+
+describe("v54: a free line at the bank's own ATM", () => {
+  it("fails a free ATM line that names no other bank or network", () => {
+    for (const name of ["MidFirst ATM", "Transactions at Orrstown Bank ATMs", "Balance Inquiry", "ATM Withdrawals Terrabank owned", "ATM Transfer"]) {
+      const verdict = checkFeeCategory("atm_non_network", name, { amount: "0.00" });
+      expect(verdict.ok, name).toBe(false);
+      expect(verdict.ok ? null : verdict.code).toBe("name_unsupported");
+    }
+  });
+
+  it("keeps a priced line, a free line at another network, and a line with no amount", () => {
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry", { amount: 3 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Non-Regions ATM: Withdrawal", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Foreign ATM Withdrawal", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Free nationwide ATM access", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "ATM Withdrawals (Presto)", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry", { amount: null }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry").ok).toBe(true);
+  });
+});
+
+describe("v54: a safe deposit box late fee ceiling", () => {
+  it("fails Central Bank's $1000 box late fee and keeps a real one", () => {
+    const verdict = checkFeeCategory("safe_deposit_box", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
+    expect(verdict.ok ? null : verdict.code).toBe("amount_implausible");
+    expect(checkFeeCategory("safe_deposit_box", "Safety Deposit Box Late Payment Fee", { amount: 10 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Box Drilling (late rent)", { amount: 400 }).ok).toBe(true);
   });
 });

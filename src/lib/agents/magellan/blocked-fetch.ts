@@ -168,6 +168,10 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
          OR (ias.status IN ('found', 'fetched') AND (
            SELECT CASE
                     WHEN plain.outcome IN ('http_403', 'blocked_bot') THEN TRUE
+                    -- One timeout is enough for a page a person found: Northern Trust's deposit
+                    -- fee PDF times out on this network every time (2026-10-07 and 2026-10-09),
+                    -- and a plain retry waits a day.
+                    WHEN plain.outcome = 'timeout' AND ias.found_by_strategy = ${OPERATOR_SCHEDULE_STRATEGY.strategy} THEN TRUE
                     WHEN plain.outcome = 'timeout' THEN COALESCE(ias.fetch_failures, 0) >= ${BLOCKED_TIMEOUT_MIN_FAILURES}
                     ELSE FALSE
                   END
@@ -190,7 +194,11 @@ export async function selectBlockedCompanions(db: SqlTag, limit: number): Promis
             AND COALESCE(pa.detail->>'note', '') NOT LIKE 'no web fetch%'
             AND pa.created_at > NOW() - make_interval(days => ${BLOCKED_FETCH_RETRY_DAYS}::int)
        )
-     ORDER BY inst.asset_size DESC NULLS LAST, ias.id ASC
+     -- A page a person found and checked goes first: by asset size alone, Bridgewater's and
+     -- Dacotah's hand-found pages (9 Oct 2026) sat behind 6-9 larger banks' pages with two
+     -- slots per paid step, so they waited most of a day.
+     ORDER BY (ias.found_by_strategy = ${OPERATOR_SCHEDULE_STRATEGY.strategy}) DESC NULLS LAST,
+              inst.asset_size DESC NULLS LAST, ias.id ASC
      LIMIT ${limit * 4}
   `;
   // A schedule given by hand was checked by a person, so a sister brand's site counts: Zions'

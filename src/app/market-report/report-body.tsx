@@ -66,6 +66,8 @@ export interface MarketReportBodyProps {
   revenue?: RevenueContext | null;
   /** Branch counts and deposits in the market counties; footprint lines are left out when null. */
   branches?: MarketBranchFootprint | null;
+  /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
+  titleAs?: "h1" | "h2";
 }
 
 /** Whole dollars -> "$2.4 billion" / "$310 million". */
@@ -145,7 +147,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, titleAs: Title = "h1" }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -161,9 +163,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
       <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{eyebrow}</p>
-          <h1 className="mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[1.85rem]" style={SERIF}>
+          <Title className="mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[1.85rem]" style={SERIF}>
             {name} against its local market
-          </h1>
+          </Title>
           <p className="mt-2 text-[14px] text-[#5A5347]">
             {marketLabel} · verified fees for {analysis.readiness.competitorsWithData} of{" "}
             {analysis.readiness.competitorsInMarket} local competitors · prepared{" "}
@@ -347,7 +349,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               institution headquartered there. Each figure is a published, verified fee from the institution&apos;s own
               schedule; one representative amount per institution and fee line, with fee caps excluded. A figure is used only
               when a line of that institution&apos;s own stored schedule states that amount as the fee; amounts that are
-              balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out
+              balance thresholds, depend on a balance band, or can&apos;t be found in the schedule are left out, and so
+              are fees under review for a correction, business prices, savings fees on the checking line, and records
+              whose fee name was not read cleanly
               {droppedCount > 0 ? ` (${droppedCount} published figures in this market were left out this way)` : ""}.
               When a schedule lists several versions of a fee, the comparison uses the standard consumer version (not an
               online, business or other special variant); if several still remain, it uses the lowest monthly maintenance

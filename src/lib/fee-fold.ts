@@ -17,6 +17,8 @@ interface FoldRule {
   name?: RegExp;
   /** Tested against the schedule text just before the fee's line, when it is known. */
   context?: RegExp;
+  /** Like `context`, for a test a pattern cannot state. */
+  contextTest?: (before: string) => boolean;
 }
 
 interface RetiredCategory {
@@ -31,6 +33,21 @@ interface RetiredCategory {
 /** An ATM or a shared ATM network, named on the line or in the section heading above it. */
 const ATM_CUE =
   /\b(?:atms?(?!\s*deposit)|automated teller|machines?|terminals?|cajero|allpoint|shazam|co-?op network|moneypass|cirrus|network atm|atm network|(?:debit|check|atm) cards?)\b|\bnon[- ][\w'’ -]{1,30}\b(?:atms?|machines?)\b|\bforeign atm|\bother (?:banks?|institutions?)['’]? (?:atms?|machines?)/i;
+/** A word before "ATM:" that makes it another bank's or network's machine. */
+const OTHER_ATM_WORD = /^(?:non\b|non-|foreign|other|out-of|outside|shared|network|surcharge|international|domestic|all\b|any\b)/i;
+
+/**
+ * True when the nearest ATM heading above a fee is the bank's own machine: "Regions ATM:" over
+ * "Balance Inquiry $0.00" (Regions, institution 27, Oct 9), "Our ATM:", "Proprietary ATM:". A
+ * fee there is not what a customer pays at another network's ATM. "Non-Regions ATM:", "Foreign
+ * ATM:" and a heading with no word before it ("ATM Fees") are not.
+ */
+export function ownAtmSection(before: string): boolean {
+  const headings = [...before.matchAll(/(\S+)\s+(?:atms?|machines?)\s*:/gi)];
+  const word = headings.at(-1)?.[1]?.replace(/^[^\w]+/, "");
+  if (!word || OTHER_ATM_WORD.test(word)) return false;
+  return /^(?:our|proprietary|in-network)$/i.test(word) || /^[A-Z][\w&'.]*$/.test(word);
+}
 /** A person, a phone line or a channel other than an ATM. */
 const ASSISTED_CUE =
   /\b(?:tele?phone|phone|calls?|call center|representative|staff|employee|teller|member service|service center|assisted|audio|night owl|online|internet|web|mail|printout|in[- ]person|by person|shared branch|non[- ]?automated|manual)\b/i;
@@ -44,6 +61,8 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
       { to: null, name: /^(?![\s\S]*(?:\binquir|\binq\b|\bbalance check|\bsolicitud de balance))/i },
       { to: "atm_non_network", name: ATM_CUE },
       { to: null, name: ASSISTED_CUE },
+      // A bare "Balance Inquiry" under the bank's own ATM heading has no home.
+      { to: null, contextTest: ownAtmSection },
       // A bare "Balance Inquiry" under an ATM heading ("Foreign ATM Transactional Fees").
       { to: "atm_non_network", context: ATM_CUE },
     ],
@@ -166,9 +185,70 @@ export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|ou
 /** A copy of an item, not the item. */
 export const ITEM_COPY = /\b(?:photo ?)?cop(?:y|ies)\b/i;
 
+/** A subordination or a lien release or satisfaction ("Duplicate Lien Satisfied") filed as legal process. */
+const LENDING_LEGAL = new RegExp(
+  String.raw`${SUBORDINATION.source}|\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:the )?lien`,
+  "i",
+);
+
+/** A night depository's key, bag or service. */
+const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
+
+/**
+ * A late charge on safe deposit box rent. Banks write it many ways ("Box Late Payment Fee",
+ * "SDB Late payment", "Safe Box Late Fee", "Rental Late Fee"); a loan's late charge never
+ * names a box or rent.
+ */
+const BOX_RENT = /\bbox(?:es)?\b|\bsdb\b|\bsafe(?:ty)? (?:deposit|box)|\brent(?:al)?\b/i;
+
+/** An IRA moved out to another institution ("IRA Transfer (outgoing)", "IRA Transfer Closeout"). */
+const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btransfer/i;
+
+/** Buying or reloading a prepaid card ("Reloadable ATM/Debit Card – Reload Fee"), not using one at an ATM. */
+const PREPAID_BUY_OR_RELOAD =
+  /^(?=[\s\S]*\b(?:pre-?paid|reloadable)\b)(?![\s\S]*\b(?:withdrawals?|inquiry|inquiries)\b)[\s\S]*\b(?:purchase|reload)\b/i;
+
+/**
+ * A charge for savings or money market activity past the free count ("Excess withdrawal fee
+ * (MMDA)", "Savings account excess debit fee"), a Reg D-style fee. Within the top 50 it is
+ * account servicing, which account research holds, as it already does for ~290 such fees.
+ */
+const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
+
+/** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"), a charge on the IRA itself. */
+const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
+
+/** Lines where "fax" is how something else is requested or sent, not a fax service. */
+const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)`;
+
+/**
+ * Sending or receiving a fax ("Fax (Outgoing)"), which document reproduction holds. Fax as the
+ * way a wire, transfer or closing is requested, a verification or loan payoff sent by fax, a
+ * Carfax report, and research priced with copies stay where they are. Knox reads fax lines
+ * with this too (`FOLDED_PATTERNS`), so its reads and the fold agree.
+ */
+export const FAX_SERVICE = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*\bfax(?:es|ed|ing)?\b`, "i");
+
+/** A fax or a document copy ("Copy of previous statement"), outside the same exceptions. */
+const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)`, "i");
+
+/**
+ * A copy charge priced by the page ("Account Research Copies (per page)", "Research Request - Per
+ * Page Copied"), which document reproduction holds even when the copies come from research.
+ * Research priced by the hour or with a minimum, copies extra, stays research. Knox reads these
+ * lines with this too, ahead of its research pattern.
+ */
+export const PER_PAGE_COPY =
+  /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?=[\s\S]*\bcop(?:y|ies|ied|ying)\b)[\s\S]*(?:\bper (?:page|pg)\b|\/ ?(?:page|pg)\b)/i;
+
+/** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
+const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
+
 interface SplitCategory {
   to: string;
   name: RegExp;
+  /** Further rules for the same source key, tried in order when `name` does not match. */
+  also?: ReadonlyArray<{ to: string; name: RegExp }>;
   /** A cheap SQL pre-filter (case-insensitive regex) for the rows the rule might move. */
   sqlPattern: string;
 }
@@ -182,9 +262,40 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
   // A mortgage or lien subordination is a lending service (median $150), not legal process like
   // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
-  legal_process: { to: "other_lending_fee", name: SUBORDINATION, sqlPattern: "subordinat" },
+  // A lien release is other lending too (James, Oct 8: Lien Release gave up its spot).
+  legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "subordinat|lien" },
   // A copy of a money order or cashier's check is a check copy, not the money order itself.
   money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
+  // A night deposit or night drop key is the night depository's, not a safe deposit box's.
+  safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
+  // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
+  // A statement or item copy is document reproduction, not a late payment.
+  late_payment: {
+    to: "safe_deposit_box",
+    name: BOX_RENT,
+    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+    sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
+  },
+  // Moving an IRA to another institution closes it here; it is not account research. An IRA's
+  // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
+  // A fax or a document copy is document reproduction, not research, and so is a copy charged
+  // by the page during research.
+  account_research: {
+    to: "ira_termination",
+    name: IRA_TRANSFER_OUT,
+    also: [
+      { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
+      { to: "document_reproduction", name: FAX_OR_COPY },
+      { to: "document_reproduction", name: PER_PAGE_COPY },
+    ],
+    sqlPattern: "\\mira\\M|fax|cop(y|ies)|reproduc",
+  },
+  // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
+  atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
+  // A statement mailed back undelivered is returned mail, which account research holds.
+  paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
+  // Excess savings or money market activity is account servicing, not a lending fee.
+  other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -193,12 +304,14 @@ export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLI
 export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
   if (!key) return null;
   const split = SPLIT_CATEGORIES[key];
-  if (!split || !split.name.test(plain(feeName ?? ""))) return null;
-  return { to: split.to, rule: `${key}#split` };
+  if (!split) return null;
+  const name = plain(feeName ?? "");
+  const hit = [{ to: split.to, name: split.name }, ...(split.also ?? [])].find((rule) => rule.name.test(name));
+  return hit ? { to: hit.to, rule: `${key}#split` } : null;
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 6;
+export const FOLD_RULES_VERSION = 10;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
@@ -226,13 +339,30 @@ export const FOLD_CONTEXT_CHARS = 200;
  * The schedule text just before a fee's line (its section heading, in a table the row's
  * neighbours), or null when the name is not found in the text. Pure.
  */
-export function foldContext(text: string | null | undefined, feeName: string | null | undefined): string | null {
+export function foldContext(
+  text: string | null | undefined,
+  feeName: string | null | undefined,
+  amount?: number | null,
+): string | null {
   if (!text || !feeName) return null;
   const body = plain(text);
   const name = plain(feeName);
   if (name.length < 4) return null;
-  const at = body.toLowerCase().indexOf(name.toLowerCase());
+  const lower = body.toLowerCase();
+  const needle = name.toLowerCase();
+  let at = lower.indexOf(needle);
   if (at < 0) return null;
+  // A name the schedule prints twice ("Regions ATM: ... Balance Inquiry $0.00", "Non-Regions
+  // ATM: ... Balance Inquiry $3.00") takes the section of the copy priced at the fee's amount.
+  if (amount != null && Number.isFinite(amount)) {
+    for (let next = at; next >= 0; next = lower.indexOf(needle, next + 1)) {
+      const price = body.slice(next + needle.length, next + needle.length + 60).match(/\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/);
+      if (price && Math.abs(Number(price[1].replace(/,/g, "")) - amount) < 0.005) {
+        at = next;
+        break;
+      }
+    }
+  }
   return body.slice(Math.max(0, at - FOLD_CONTEXT_CHARS), at);
 }
 
@@ -260,6 +390,7 @@ export function foldRetiredCategory(
   for (const [index, rule] of retired.rules.entries()) {
     if (rule.name && !rule.name.test(name)) continue;
     if (rule.context && !(before && rule.context.test(before))) continue;
+    if (rule.contextTest && !(before && rule.contextTest(before))) continue;
     return { to: rule.to, rule: `${key}#${index}` };
   }
   return { to: retired.otherwise, rule: `${key}#otherwise` };

@@ -8,6 +8,7 @@ import {
 } from "@/lib/agents/run-store";
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
+import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -162,7 +163,15 @@ async function handleGET(request: NextRequest) {
   let priorityInstitutions: Awaited<ReturnType<typeof schedulePriorityInstitutionRuns>> | { error: string } | null = null;
   // A state whose missed banks must not wait on its lane gets a direct re-search run.
   let priorityStateResearch: Awaited<ReturnType<typeof schedulePriorityStateResearchRuns>> | { error: string } | null = null;
+  // A deployed guard or frequency fix re-checks every live fee now, not at the next publish step.
+  let guardCatchUp: Awaited<ReturnType<typeof scheduleGuardCatchUpRun>> | { error: string } | null = null;
   if (pipeline.enabled) {
+    try {
+      guardCatchUp = await scheduleGuardCatchUpRun();
+    } catch (error) {
+      console.error("Guard catch-up scheduling failed:", error);
+      guardCatchUp = { error: error instanceof Error ? error.message : String(error) };
+    }
     try {
       priorityInstitutions = await schedulePriorityInstitutionRuns();
     } catch (error) {
@@ -201,6 +210,7 @@ async function handleGET(request: NextRequest) {
     scheduledStateLanes,
     priorityInstitutions,
     priorityStateResearch,
+    guardCatchUp,
     ...result,
   });
 }

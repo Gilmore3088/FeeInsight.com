@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { robotsAllows, robotsDisallows } from "@/lib/agents/magellan/site-signals";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * NIELSEN's contact finder: the same walk Magellan makes for fee schedules, aimed at the
@@ -585,7 +586,7 @@ export async function listProspectContacts(db: SqlTag = sql): Promise<ProspectCo
   return rows.map((row) => {
     const contact = normalizeContact({
       institution_id: Number(row.institution_id),
-      institution_name: String(row.institution_name),
+      institution_name: institutionDisplayName(String(row.institution_name)),
       charter_type: row.charter_type === null ? null : String(row.charter_type),
       state_code: row.state_code === null ? null : String(row.state_code),
       city: row.city === null ? null : String(row.city),
@@ -835,9 +836,12 @@ export function summarizeContactPicks(result: ContactPicksResult): string {
 /**
  * The contacts as a CSV. An institution whose rows are all ranked uses the stored confidence and
  * pick; one with any unranked row (before the backfill) is ranked here the same way.
+ * `coverage` (getBuyerCoverage) adds the share of each bank's local competitor deposits held by
+ * competitors with live fees, so a list can prefer buyers whose market report would be complete;
+ * blank for credit unions and banks with no branch data.
  */
-export function contactsCsv(rows: ProspectContactRow[]): string {
-  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
+export function contactsCsv(rows: ProspectContactRow[], coverage: ReadonlyMap<number, { share: number; shareOverdraft: number }> = new Map()): string {
+  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at", "market_coverage_pct", "market_coverage_overdraft_pct"] as const;
   const byInstitution = new Map<number, ProspectContactRow[]>();
   for (const row of rows) {
     const list = byInstitution.get(row.institution_id);
@@ -854,7 +858,13 @@ export function contactsCsv(rows: ProspectContactRow[]): string {
     ranked
       .sort((a, b) => (a.pick ? order[a.pick] : 2) - (b.pick ? order[b.pick] : 2) || position.get(a)! - position.get(b)!)
       .forEach((row) => {
-        const cells = { ...row, pick: row.pick ?? "" };
+        const market = coverage.get(row.institution_id);
+        const cells = {
+          ...row,
+          pick: row.pick ?? "",
+          market_coverage_pct: market ? Math.round(market.share * 100) : null,
+          market_coverage_overdraft_pct: market ? Math.round(market.shareOverdraft * 100) : null,
+        };
         lines.push(header.map((key) => csvCell(cells[key])).join(","));
       });
   }

@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { FINANCIAL_SOURCES } from "./financial-sources";
 import { OPERATOR_SCHEDULE_STRATEGY } from "@/lib/agents/magellan/operator-schedules";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 type SqlTag = typeof sql;
 
@@ -190,7 +191,7 @@ export async function getHitList(options: HitListOptions = {}): Promise<HitList>
       const lastTried = row.last_tried_at == null ? null : new Date(row.last_tried_at).toISOString();
       return {
         institutionId: Number(row.id),
-        name: String(row.institution_name),
+        name: institutionDisplayName(String(row.institution_name)),
         stateCode: row.state_code ? String(row.state_code).trim().toUpperCase() : null,
         charterType: row.charter_type,
         deposits: row.deposits == null ? null : Number(row.deposits),

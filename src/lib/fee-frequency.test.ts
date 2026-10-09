@@ -107,4 +107,30 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(settledFrequency("Returned Item: | $6.00 per presentment | Replace Lost Card: | $6.00", 6, "per_item", "card_replacement")).toBe("per_item");
     expect(frequencyFromLine("Returned Item: | $6.00 per presentment | Replace Lost Card: | $6.00", 6)).toBeNull();
   });
+
+  it("reads a count beyond the allowance as an allowance (v5)", () => {
+    expect(settledFrequency("Debit Card Replacement (More than 2 per year) | $5", 5, "annual", "card_replacement")).toBeNull();
+    expect(settledFrequency("Excess Withdrawals (over 6 per month) | $10.00 each", 10, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("Annual Fee | $25.00 per year", 25, "annual", "card_annual")).toBe("annual");
+  });
+
+  it("reads footnote marks, a cap and a second price's label (v6, Darwin's held copy fees)", () => {
+    expect(frequencyFromLine("Statement Copy Fee | $3.00 per month6", 3)).toBe("monthly");
+    expect(frequencyFromLine("Paper Statements | $3/month2", 3)).toBe("monthly");
+    expect(frequencyFromLine("Additional per Item Fee $0.50 each2 Paper Statement Fee $2.00/Month", 0.5)).toBe("per_item");
+    expect(frequencyFromLine("Statement Copy | Personal: $1.00/page Business: $3.00/page", 1)).toBe("per_item");
+    expect(frequencyFromLine("Statement Copy Fee: $2.00 per page up to a maximum of $5.00 per statement month.", 2)).toBe("per_item");
+    expect(settledFrequency("Statement copy fee – $4.00 per copy", 4, null, "document_reproduction")).toBe("per_item");
+    expect(settledFrequency("Fax Service | $2.00 per page", 2, null, "account_research")).toBe("per_item");
+    // A label still ends the words before the next price, and a minimum is still another basis.
+    expect(frequencyFromLine("Monthly maintenance fee: $8.00 Per check: $0.20", 8)).toBe("monthly");
+    expect(frequencyFromLine("Research | $25.00 ($25.00 minimum)", 25)).toBeNull();
+  });
+
+  it("reads 'after 3 in a month' and 'exceeding two per month' as allowances (v7, Darwin's held rows)", () => {
+    expect(settledFrequency("| IRA Savings Excessive Withdrawal | $15 Each after 3 in a month |", 15, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("A $1.00 excess withdrawal fee will be charged for each in-person debit transaction exceeding two per month.", 1, "monthly", "excess_withdrawal")).toBeNull();
+    expect(settledFrequency("Fax | $2.00/Page", 2, null, "account_research")).toBe("per_item");
+    expect(settledFrequency("Monthly Service Fee | $5.00 a month", 5, "monthly", "monthly_maintenance")).toBe("monthly");
+  });
 });

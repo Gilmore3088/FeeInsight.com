@@ -246,6 +246,8 @@ function groupFailures(results: Array<{ failures: string[] }>): Array<{ failure:
 
 export interface AnswerEvalSummary {
   institutions: number;
+  /** Institutions drawn for the run; fewer were asked when the time budget ran out. */
+  planned: number;
   answers: number;
   passed: number;
   /** Failure text (institution-specific values stripped) with how many answers hit it, most first. */
@@ -266,7 +268,7 @@ export function failureShape(failure: string): string {
     .replace(/\$?\d[\d,.]*%?/g, "#");
 }
 
-export function summarizeEval(results: EvalResult[], institutions: number, timedOut: boolean): AnswerEvalSummary {
+export function summarizeEval(results: EvalResult[], institutions: number, timedOut: boolean, planned = institutions): AnswerEvalSummary {
   const byId = new Map<string, { question: string; passed: number; total: number }>();
   for (const r of results) {
     const q = byId.get(r.questionId) ?? { question: r.question, passed: 0, total: 0 };
@@ -276,6 +278,7 @@ export function summarizeEval(results: EvalResult[], institutions: number, timed
   }
   return {
     institutions,
+    planned,
     answers: results.length,
     passed: results.filter((r) => r.failures.length === 0).length,
     topFailures: groupFailures(results),
@@ -291,7 +294,7 @@ export function summarizeEval(results: EvalResult[], institutions: number, timed
  */
 export async function runAnswerEval({
   db = sql,
-  perGroup = 2,
+  perGroup = 1,
   budgetMs = 220_000,
   now = new Date(),
 }: { db?: SqlTag; perGroup?: number; budgetMs?: number; now?: Date } = {}): Promise<AnswerEvalSummary> {
@@ -320,6 +323,6 @@ export async function runAnswerEval({
     for (const rows of await Promise.all(batch.map(evaluateInstitution))) results.push(...rows);
     done += batch.length;
   }
-  const summary = summarizeEval(results, done, timedOut);
+  const summary = summarizeEval(results, done, timedOut, institutions.length);
   return proResults.length > 0 ? { ...summary, pro: summarizeProReplay(proResults) } : summary;
 }

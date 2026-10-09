@@ -60,8 +60,10 @@ Magellan owns institution source discovery and source fetching.
 ## Discovery (the find team)
 
 The `discover` step (`discovery.ts`) searches banks with a website but no fee link.
-The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) go
-first among banks due, after corrections.
+The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) and the
+top 100 market gaps (banks with no live fees whose fees would add the most competitor coverage
+across every bank's branch counties, `loadMarketGapIds` in `src/lib/data-store/competitor-coverage.ts`)
+go first among banks due, after corrections.
 For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
 homepage once, then calls the specialists in `finders.ts` in order and stops at the first
 link that passes the fee-page check. Each specialist

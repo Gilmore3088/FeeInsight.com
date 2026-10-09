@@ -12,6 +12,7 @@ import { NOT_CONSUMER_FEE_PAGE_REASON, companionStreamsReady } from "@/lib/agent
 
 import { accountNameFor, isGenericAccountName, isNonDepositLink } from "./second-document";
 import { markCurrentCopy } from "./current-copy";
+import { OTHER_BANK_HOST_CODE } from "./other-bank-host";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -161,6 +162,30 @@ export async function reviewStoredCompanions(
        AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
     RETURNING ias.id, ias.institution_id, ias.url
   `;
+  // A page on another institution's own website is that bank's schedule, even when a person
+  // gave it: First United of Durant, Oklahoma (118) was given First United Bank & Trust of
+  // Oakland, Maryland's mybank.com disclosures (595) and First Bank of St. Louis's first.bank
+  // schedule, and every re-read published Maryland's fees under Oklahoma (2026-10-09).
+  // Discovery already refuses such links (`other-bank-host.ts`); this retires stored ones.
+  const otherBank = await db<Array<{ id: number | string; institution_id: number | string; url: string; account_name: string | null; other_name: string }>>`
+    UPDATE institution_additional_sources ias
+       SET status = 'rejected',
+           reason = ${OTHER_BANK_HOST_CODE} || ': on the website of ' || other.institution_name || COALESCE(' (' || other.state_code || ')', ''),
+           updated_at = NOW()
+      FROM institution_sources inst, institution_sources other
+     WHERE inst.id = ias.institution_id
+       AND ias.status IN ('found', 'fetched')
+       AND other.id <> inst.id
+       AND other.website_url IS NOT NULL
+       AND regexp_replace(lower(substring(other.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+         = regexp_replace(lower(substring(ias.url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+       AND regexp_replace(lower(substring(COALESCE(inst.website_url, '') from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+         IS DISTINCT FROM regexp_replace(lower(substring(ias.url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')
+       -- Every state, not just this lane's: the query is cheap, and waiting for Oklahoma's lane
+       -- left First United's three pages live for hours after the rule shipped (2026-10-09).
+       AND (${options.institutionId}::bigint IS NULL OR ias.institution_id = ${options.institutionId}::bigint)
+    RETURNING ias.id, ias.institution_id, ias.url, ias.account_name, other.institution_name AS other_name
+  `;
   const rows = await db<ReviewRow[]>`
     SELECT ias.id, ias.institution_id, ias.url, ias.account_name, ias.found_by_strategy
       FROM institution_additional_sources ias
@@ -173,7 +198,9 @@ export async function reviewStoredCompanions(
   `;
   const result: CompanionReviewResult = {
     checked: rows.length,
-    retired: [],
+    retired: otherBank.map((row) => ({
+      companionId: Number(row.id), institutionId: Number(row.institution_id), url: row.url, accountName: row.account_name,
+    })),
     renamed: [],
     restored: restored.map((row) => ({ companionId: Number(row.id), institutionId: Number(row.institution_id), url: row.url })),
   };
