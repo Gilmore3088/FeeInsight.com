@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, HAND_CHECKED_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -211,6 +211,57 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(flagFor("wire_domestic_incoming", "Incoming Wire", "Incoming Wire | $17.00")).toBeNull();
     // A heading joined to another fee is the category guard's name_contradicts, not a flag here.
     expect(flagFor("early_closure", "Accounts closed within 90 days: International Wire")).toBeNull();
+  });
+
+  it("flags a hand-checked row for its second look, never takes it down on the first run (City National 76)", async () => {
+    const handRows = [
+      { fee_published_id: 100158, fee_verified_id: 113964, institution_id: 76, source_document_id: 23020, canonical_fee_key: "overdraft", fee_name: "Item Fees and the Paid Item Fee for the check/item in the amount of", amount: "17.00" },
+      // Renamed since the check: left alone.
+      { fee_published_id: 100162, fee_verified_id: 113969, institution_id: 76, source_document_id: 23020, canonical_fee_key: "wire_domestic_incoming", fee_name: "Incoming Wire Transfer", amount: "0.00" },
+    ];
+    const db = createDb(null);
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(handRows));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result).toMatchObject({ handMatched: 1, evalChanged: 1, flagged: 1 });
+    expect(result.rolledBack).toEqual([]);
+    expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("takedown_pending");
+    expect(calls).toContain("not_a_fee:two_column_glue");
+    expect(new Set(HAND_CHECKED_VERDICTS.map((entry) => entry.feePublishedId)).size).toBe(HAND_CHECKED_VERDICTS.length);
+    expect(HAND_CHECKED_VERDICTS.some((entry) => EVAL_CRITICAL_VERDICTS.some((evalRow) => evalRow.feePublishedId === entry.feePublishedId))).toBe(false);
+  });
+
+  it("archives a hand-checked row once its second look confirms it, with the pattern in Knox's lesson", async () => {
+    const handRow = { fee_published_id: 100161, fee_verified_id: 113967, institution_id: 76, source_document_id: 23020, canonical_fee_key: "cashiers_check", fee_name: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: "0.00" };
+    const query = (strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("NOT EXISTS")) return Promise.resolve([]);
+      if (text.includes("FROM pipeline_feedback")) {
+        return Promise.resolve([{ fee_published_id: 100161, kind: "takedown_pending", evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "wrong_amount:two_column_glue" } }]);
+      }
+      if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 100161 }]);
+      return Promise.resolve([]);
+    };
+    const db = vi.fn(query) as unknown as ReturnType<typeof createDb>;
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve([handRow]));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result.rolledBack.map((fee) => [fee.feePublishedId, fee.reason, fee.source])).toEqual([[100161, "wrong_amount:two_column_glue", "hand"]]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain('\\"pattern\\":\\"two_column_glue\\"');
+    expect(calls).toContain("hand check against the bank's schedule");
+    expect(writes(db).some((text) => text.includes("DELETE"))).toBe(false);
+  });
+
+  it("reads a rate fee's floor or cap published as the fee as a wrong amount (UAT 103410)", () => {
+    expect(ruleFor("cash_advance", "Signature Authorization Cash Advance Fee: 4% of transaction amount. Minimum", 4)).toBe("rate_bound");
+    expect(ruleFor("cashiers_check", "Cashiers Check 1% of Check Amt Max", 5)).toBe("rate_bound");
+    expect(ruleFor("check_cashing", "Check Cashing 2% or minimum", 5)).toBe("rate_bound");
+    // A percent with the floor stated after it, or no percent at all, is not this shape.
+    expect(ruleFor("check_cashing", "Check Cashing 2%, minimum $5", 5)).toBeNull();
+    expect(ruleFor("account_research", "Research Fee minimum", 10)).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("(minimum|maximum|min|max)");
   });
 
   it("changes nothing in a dry run", async () => {

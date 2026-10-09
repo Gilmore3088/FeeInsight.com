@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -299,5 +299,57 @@ describe("v8: advice on how to avoid a fee comes off its name", () => {
       [1, "Quarterly Maintenance Service Charge"],
     ]);
     expect(isMessyName("Stop Payment (Check/ACH) Submit request through Online Banking to avoid this charge")).toBe(true);
+  });
+});
+
+describe("v9: a threshold publish cut off comes back from Knox's own read", () => {
+  it("restores 102976 from its raw name when the page words differ from the name", () => {
+    const row = {
+      ...fee({ canonical_fee_key: "minimum_balance", fee_name: "Service charge (daily balance falls below", amount: 5 }),
+      raw_fee_name: "Service charge (daily balance falls below $500)",
+    };
+    const page = [{ source_document_id: 70, normalized_text: "Monthly Service Fee | $5 per month if daily balance falls below $500 at any time during the month" }];
+    expect(planRetidy([row], page).renames.map((rename) => rename.newName)).toEqual(["Service charge (daily balance falls below $500)"]);
+    expect(planRetidy([{ ...row, raw_fee_name: null }], page).renames).toEqual([]);
+  });
+});
+
+describe("v10: a fee's own table cell replaces glued heading cells or a cut word", () => {
+  const page = [
+    "Minimum and average daily balance requirements are based on ledger | Paper Statement Fee ......................................................................... $3.00",
+    "Products | Monthly Maintenance Fee ................................................................ $15.00",
+    "We require by contractual agreement a restriction on the number of | Excess Transaction Fee, per each transaction over the limit ........... $10.00",
+    "Term of the Certificate of Penalty for funds withdrawn | ATM/Visa Check Card Replacement Fee......................................... $10.00",
+    "Deposit | prior to the maturity date: | ATM/Visa Check Card Expedited 2 Day Delivery Fee ..................... $67.00",
+    "7 days | 7 days simple interest earned | ATM/Visa Check Card Expedited 3 Day Delivery Fee …………..… $37.00",
+    "Platinum Checking | Monthly Maintenance Fee ..... $25.00",
+    "Business Checking | Wire Transfer Fee ..... $30.00",
+  ].join("\n");
+
+  it("renames City National Bank of Florida's six glued names (100136-100145)", () => {
+    const rows: Array<[number, string, string, number]> = [
+      [100136, "Minimum and average daily balance requirements are based on ledger: Paper Statement Fee", "paper_statement", 3],
+      [100137, "Products: Monthly Maintenance Fee", "monthly_maintenance", 15],
+      [100138, "Excess Transaction Fee, per each transaction over t", "account_research", 10],
+      [100143, "Term of the Certificate of Penalty for funds withdrawn: ATM/Visa Check Card Replacement Fee", "card_replacement", 10],
+      [100144, "Deposit: prior to the maturity date: ATM/Visa Check Card Expedited 2 Day Delivery Fee", "rush_card", 67],
+      [100145, "7 days: 7 days simple interest earned: ATM/Visa Check Card Expedited 3 Day Delivery Fee", "rush_card", 37],
+    ];
+    const fees = rows.map(([id, name, key, amount]) => fee({ fee_published_id: id, institution_id: 76, canonical_fee_key: key, fee_name: name, amount }));
+    for (const row of fees) expect(isMessyName(row.fee_name)).toBe(true);
+    expect(planRetidy(fees, [{ source_document_id: 70, normalized_text: page }]).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [100136, "Paper Statement Fee"],
+      [100137, "Monthly Maintenance Fee"],
+      [100138, "Excess Transaction Fee, per each transaction over the limit"],
+      [100143, "ATM/Visa Check Card Replacement Fee"],
+      [100144, "ATM/Visa Check Card Expedited 2 Day Delivery Fee"],
+      [100145, "ATM/Visa Check Card Expedited 3 Day Delivery Fee"],
+    ]);
+  });
+
+  it("keeps an account's name, a business heading, and a name whose cell is at another price", () => {
+    expect(cellName({ fee_name: "Platinum Checking: Monthly Maintenance Fee", canonical_fee_key: "monthly_maintenance", amount: 25 }, [page])).toBeNull();
+    expect(cellName({ fee_name: "Business Checking: Wire Transfer Fee", canonical_fee_key: "wire_domestic_outgoing", amount: 30 }, [page])).toBeNull();
+    expect(cellName({ fee_name: "Products: Monthly Maintenance Fee", canonical_fee_key: "monthly_maintenance", amount: 5 }, [page])).toBeNull();
   });
 });

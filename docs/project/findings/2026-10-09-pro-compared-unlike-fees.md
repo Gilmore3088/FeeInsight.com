@@ -1,0 +1,8 @@
+# 2026-10-09: Pro compared a bank's fee with a peer median charged a different way
+**What happened:** Pro's report and peer preview (`src/lib/hamilton/report-evidence.ts`) looked up the peer median by category alone. The peer median follows the statistics contract: it leaves out business-only schedules (fee-stats rule 6) and pools each category's charge basis. The selected bank's value was the median of all its rows, including business-schedule rows and rows charged on another basis. For example, Security Federal Bank (722) has three monthly maintenance rows ($38.95, $39.95 and $50), all from `BusinessFeeSchedule2026.pdf`. Pro placed its $39.95 above the $6 national consumer median (read-only query of `published_fee_catalog` and `fee_index_cache`, Oct 9).
+
+**Cause:** The institution side of the comparison never applied the rules the peer side already follows.
+
+**Fix:** `compareSelectedInstitutionFees` takes the bank's value only from consumer rows charged on the peers' basis. The basis is the most common stated `frequencyFamily` among peer rows (`getCategoryChargeBases`, national, cached one hour); a row with no stated frequency counts as that basis. A category stated only on a business schedule or only on another basis gets no above or below position, and so does a category whose peers mix bases (under 80% on one basis; among categories with 300 or more rows on Oct 9, these were account research, bill pay, late payment and ACH origination). Instead it is listed in `fee_comparisons_not_like_for_like`, and Hamilton says the comparison is not like for like.
+
+**Lesson:** Any comparison of one institution with a peer statistic must filter the institution's rows the same way the statistic filters its own.

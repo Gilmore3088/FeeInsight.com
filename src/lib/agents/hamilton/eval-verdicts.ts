@@ -139,6 +139,47 @@ export const EVAL_CRITICAL_VERDICTS: readonly EvalVerdict[] = [
   },
 ];
 
+/**
+ * Rows a person checked against the bank's own schedule and found wrong. Unlike the Oct 8 eval
+ * rows these take the usual 12-hour second look before they come down, and like them only while
+ * the live record still reads as labelled. `pattern` names the extraction shape, for Knox's
+ * lesson. Add later checks below, never edit a past one.
+ *
+ * City National Bank of Florida (76), Oct 9: the 2026 personal disclosure (doc 23020) is a
+ * two-column page, and the text joins a left-column line to a right-column line ("Rate
+ * Information ... (APY) are available at any of ... banking | Cashier's Checks ... $0.00").
+ * Knox read fees from footnote prose and from one account's column. Six more rows there have a
+ * glued name but the right amount and category (100136, 100137, 100138, 100143, 100144, 100145);
+ * they stay live for the name pass. 100160 ($0 "to Avoid Monthly Maintenance Fee") is already
+ * flagged by `waiver_sentence`.
+ */
+export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })[] = [
+  {
+    feePublishedId: 100157, institution: "City National Bank of Florida",
+    feeName: "sufficient to cover both the full overdraft", amount: 10, canonicalFeeKey: "overdraft",
+    verdict: "wrong_category", pattern: "two_column_glue",
+    why: "Prose about overdraft protection (\"the full overdraft amount and the $10.00 Overdraft Protection Transfer Fee\"): the $10 is the transfer fee, already live as 100151, not an overdraft fee",
+  },
+  {
+    feePublishedId: 100158, institution: "City National Bank of Florida",
+    feeName: "Item Fees and the Paid Item Fee for the check/item in the amount of", amount: 17, canonicalFeeKey: "overdraft",
+    verdict: "not_a_fee", pattern: "two_column_glue",
+    why: "Footnote 9's worked example: $17 is a check amount whose Paid Item Fee would be waived; the overdraft fee is $18.50 (100148)",
+  },
+  {
+    feePublishedId: 100161, institution: "City National Bank of Florida",
+    feeName: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: 0, canonicalFeeKey: "cashiers_check",
+    verdict: "wrong_amount", pattern: "two_column_glue",
+    why: "$0 is one account's perk (CNB @ School Checking, offered to staff and students of commercial customers); the schedule's cashier's check fee is $30.00",
+  },
+  {
+    feePublishedId: 100162, institution: "City National Bank of Florida",
+    feeName: "11 - Wire Transfers Fee: Incoming will be", amount: 0, canonicalFeeKey: "wire_domestic_incoming",
+    verdict: "wrong_amount", pattern: "two_column_glue",
+    why: "Footnote 11: incoming is $0 only from a CNB account to a CNB personal account; the schedule's incoming wire fee is $15.00",
+  },
+];
+
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */
 const REBATE_WORDING = /\b(rebate|reimburse|refund)/i;
 const NON_REFUNDABLE = /non[- ]?refundable/i;
@@ -215,7 +256,14 @@ export function distinctPrices(text: string | null | undefined): number {
   return new Set(Array.from(text.matchAll(PRICE), (match) => Number(match[1].replace(/,/g, "")))).size;
 }
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name";
+/**
+ * A rate fee's floor or cap published as the fee ("Signature Authorization Cash Advance Fee: 4% of
+ * transaction amount. Minimum" at $4, UAT 07:50 Oct 9): the name states the percent and ends on
+ * the word that makes the dollar figure a minimum or maximum. The rate is its own row.
+ */
+const RATE_BOUND_NAME = /\d\s*%.*\b(minimum|maximum|min|max)\.?:?\s*$/i;
+
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
@@ -223,6 +271,7 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   merchant_payer: "wrong_payer",
   two_fees_one_line: "wrong_amount",
   price_in_name: "wrong_amount",
+  rate_bound: "wrong_amount",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -231,6 +280,7 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   merchant_payer: "A fee the merchant or payee pays, published as the account holder's fee",
   two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
   price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
+  rate_bound: "The name states a percent and ends on minimum or maximum: the amount is the rate fee's floor or cap, not the fee",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
@@ -241,6 +291,7 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
   if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
+  if (amount != null && amount > 0 && RATE_BOUND_NAME.test(name)) return "rate_bound";
   if (amount != null) {
     const stated = priceInName(name);
     if (stated != null && Math.abs(stated - amount) > 0.005) return "price_in_name";
@@ -263,9 +314,15 @@ export function flagFor(canonicalFeeKey: string, feeName: string | null | undefi
   return null;
 }
 
+/** Every labelled row, eval or hand check: these are read whatever their name. */
+const LABELLED_IDS = new Set([...EVAL_CRITICAL_VERDICTS, ...HAND_CHECKED_VERDICTS].map((entry) => entry.feePublishedId));
+
 /** The eval verdict a live record still matches, or null when none or the record has changed. Pure. */
-export function verdictFor(row: { feePublishedId: number; feeName: string; amount: number | null; canonicalFeeKey: string }): EvalVerdict | null {
-  const verdict = EVAL_CRITICAL_VERDICTS.find((entry) => entry.feePublishedId === row.feePublishedId);
+export function verdictFor(
+  row: { feePublishedId: number; feeName: string; amount: number | null; canonicalFeeKey: string },
+  verdicts: readonly EvalVerdict[] = EVAL_CRITICAL_VERDICTS,
+): EvalVerdict | null {
+  const verdict = verdicts.find((entry) => entry.feePublishedId === row.feePublishedId);
   if (!verdict) return null;
   const sameName = verdict.feeName.trim() === row.feeName.trim();
   const sameAmount = row.amount != null && Math.abs(row.amount - verdict.amount) < 0.005;
@@ -295,8 +352,10 @@ export interface EvalTakedown {
   kind: Verdict;
   reason: string;
   why: string;
-  /** An eval row (down now) or a name rule (second look). */
-  source: "eval" | "rule";
+  /** An eval row (down now), a name rule or a hand check (second look). */
+  source: "eval" | "rule" | "hand";
+  /** The extraction shape a hand check names, for Knox's lesson. */
+  pattern?: string;
 }
 
 export interface EvalVerdictResult {
@@ -304,6 +363,8 @@ export interface EvalVerdictResult {
   evalMatched: number;
   /** Eval rows still live whose record has changed since labelling (left alone). */
   evalChanged: number;
+  /** Hand-checked rows still live and unchanged (second look). */
+  handMatched: number;
   /** Live fees a name rule fails. */
   ruleFailing: number;
   flagged: number;
@@ -347,6 +408,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
             OR fp.fee_name ~ '\\$\\s?[0-9]'
+            OR (fp.fee_name ~ '[0-9]\\s*%' AND fp.fee_name ~* '\\y(minimum|maximum|min|max)\\.?:?\\s*$')
             OR fp.fee_name ~* '\\yin\\s*/\\s*out\\y|\\yout\\s*/\\s*in\\y|incoming\\s*/\\s*outgoing|outgoing\\s*/\\s*incoming|domestic\\s*/\\s*international|international\\s*/\\s*domestic'
             OR fp.fee_name ~* 'non[- ]?(customer|member|account ?holder)s?\\y|\\ynot\\s+a\\s+(customer|member)\\y|\\yfor\\s+non-?(members|customers)\\y|non-?clients?\\y'
             OR (fp.canonical_fee_key LIKE 'wire\\_%' AND fr.conditions ~ '\\$.*\\$'))
@@ -364,12 +426,12 @@ export async function retireEvalVerdictFees(
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
   const result: EvalVerdictResult = {
-    evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
+    evalMatched: 0, evalChanged: 0, handMatched: 0, ruleFailing: 0, flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
     flags: { non_customer_price: 0, wire_shared_line: 0 }, flagSamples: [], dryRun: options.dryRun,
   };
   let rows: LiveRow[];
   try {
-    const ids = EVAL_CRITICAL_VERDICTS.map((entry) => entry.feePublishedId);
+    const ids = Array.from(LABELLED_IDS);
     rows = await inSavepoint(db, (scope) =>
       scope.unsafe<LiveRow[]>(
         evalVerdictFeesSql(Boolean(options.institutionId)),
@@ -383,6 +445,7 @@ export async function retireEvalVerdictFees(
 
   const evalRows: EvalTakedown[] = [];
   const ruleRows: EvalTakedown[] = [];
+  const handRows: EvalTakedown[] = [];
   const flagRows: FeedbackRow[] = [];
   for (const row of rows) {
     const base = {
@@ -399,7 +462,14 @@ export async function retireEvalVerdictFees(
       evalRows.push({ ...base, kind: verdict.verdict, reason: `${EVAL_REASON_PREFIX}:${verdict.verdict}`, why: verdict.why, source: "eval" });
       continue;
     }
-    if (EVAL_CRITICAL_VERDICTS.some((entry) => entry.feePublishedId === base.feePublishedId)) {
+    const handVerdict = verdictFor(base, HAND_CHECKED_VERDICTS);
+    if (handVerdict) {
+      const pattern = HAND_CHECKED_VERDICTS.find((entry) => entry.feePublishedId === base.feePublishedId)?.pattern;
+      const prefix = handVerdict.verdict === "not_a_fee" ? RULE_REASON_PREFIX : handVerdict.verdict;
+      handRows.push({ ...base, kind: handVerdict.verdict, reason: `${prefix}:${pattern ?? "hand_check"}`, why: handVerdict.why, source: "hand", pattern });
+      continue;
+    }
+    if (LABELLED_IDS.has(base.feePublishedId)) {
       result.evalChanged += 1;
       continue;
     }
@@ -436,6 +506,7 @@ export async function retireEvalVerdictFees(
     });
   }
   result.evalMatched = evalRows.length;
+  result.handMatched = handRows.length;
   result.ruleFailing = ruleRows.length;
   if (flagRows.length > 0 && !options.dryRun) {
     // A flag is a judgement on the record, not a takedown: the fee stays live and the row is
@@ -453,9 +524,10 @@ export async function retireEvalVerdictFees(
   // The first looks the v5 clear rewrote in place (378 rows, 04:21 Oct 9) get their audit row
   // back, once; later runs find none missing.
   result.reconstructed = await reconstructFirstLooks(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, clearedWhy: RULE_REVISED_WHY, dryRun: options.dryRun });
-  const failingIds = new Set([...evalRows, ...ruleRows].map((fee) => fee.feePublishedId));
+  const lookRows = [...ruleRows, ...handRows];
+  const failingIds = new Set([...evalRows, ...lookRows].map((fee) => fee.feePublishedId));
   const passing = rows.map((row) => Number(row.fee_published_id)).filter((id) => !failingIds.has(id));
-  const look = await secondLook(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, failing: [...evalRows, ...ruleRows], passing, dryRun: options.dryRun });
+  const look = await secondLook(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, failing: [...evalRows, ...lookRows], passing, dryRun: options.dryRun });
   result.flagged = look.flagged;
   result.waiting = look.waiting;
   result.cleared = look.cleared;
@@ -484,9 +556,9 @@ export async function retireEvalVerdictFees(
       console.error("eval verdict rule lesson failed:", error);
     }
   }
-  if (evalRows.length === 0 && ruleRows.length === 0) return result;
-  const confirmedRules = new Set(look.confirmed.filter((fee) => fee.source === "rule").map((fee) => fee.feePublishedId));
-  const confirmed = [...evalRows, ...ruleRows.filter((fee) => confirmedRules.has(fee.feePublishedId))].slice(0, limit);
+  if (evalRows.length === 0 && lookRows.length === 0) return result;
+  const confirmedLooks = new Set(look.confirmed.filter((fee) => fee.source !== "eval").map((fee) => fee.feePublishedId));
+  const confirmed = [...evalRows, ...lookRows.filter((fee) => confirmedLooks.has(fee.feePublishedId))].slice(0, limit);
   if (options.dryRun) {
     result.rolledBack = confirmed;
     return result;
@@ -550,7 +622,10 @@ export async function retireEvalVerdictFees(
       reason: fee.reason,
       why: fee.why,
       fee_name: fee.feeName,
-      source: fee.source === "eval" ? "complete-record eval, Oct 8 2026 (confirm list rows 1-11)" : `name rule ${fee.reason}`,
+      source: fee.source === "eval"
+        ? "complete-record eval, Oct 8 2026 (confirm list rows 1-11)"
+        : fee.source === "hand" ? "hand check against the bank's schedule" : `name rule ${fee.reason}`,
+      ...(fee.pattern ? { pattern: fee.pattern } : {}),
       version: EVAL_VERDICT_VERSION,
     },
   }));
@@ -567,6 +642,7 @@ export async function retireEvalVerdictFees(
             rolled_back: result.rolledBack.length,
             eval_rows: result.rolledBack.filter((fee) => fee.source === "eval").length,
             rule_rows: result.rolledBack.filter((fee) => fee.source === "rule").length,
+            hand_rows: result.rolledBack.filter((fee) => fee.source === "hand").length,
             samples: result.rolledBack.slice(0, 20).map((fee) => ({
               fee_published_id: fee.feePublishedId,
               institution_id: fee.institutionId,
