@@ -232,15 +232,15 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(HAND_CHECKED_VERDICTS.some((entry) => EVAL_CRITICAL_VERDICTS.some((evalRow) => evalRow.feePublishedId === entry.feePublishedId))).toBe(false);
   });
 
-  it("labels Data inventory's five wrong \"to avoid\" rows, each only while it reads as labelled (Oct 9)", () => {
-    const ids = [36498, 52158, 56804, 79217, 90839];
+  it("labels Data inventory's two \"to avoid\" rows no live type fits, each only while it reads as labelled (Oct 9)", () => {
+    const ids = [36498, 90839];
     for (const id of ids) {
       const entry = HAND_CHECKED_VERDICTS.find((row) => row.feePublishedId === id);
       expect(entry, String(id)).toBeDefined();
       const row = { feePublishedId: id, feeName: entry!.feeName, amount: entry!.amount, canonicalFeeKey: entry!.canonicalFeeKey };
       expect(verdictFor(row, HAND_CHECKED_VERDICTS)?.verdict).toBe(entry!.verdict);
       // A re-filed or re-priced row is no longer the labelled record.
-      expect(verdictFor({ ...row, canonicalFeeKey: "paper_statement" === row.canonicalFeeKey ? "monthly_maintenance" : "paper_statement" }, HAND_CHECKED_VERDICTS)).toBeNull();
+      expect(verdictFor({ ...row, canonicalFeeKey: "wire_intl_outgoing" }, HAND_CHECKED_VERDICTS)).toBeNull();
       expect(verdictFor({ ...row, amount: row.amount + 1 }, HAND_CHECKED_VERDICTS)).toBeNull();
     }
   });

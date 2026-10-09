@@ -193,31 +193,16 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     why: "$15 is Keys Premier Checking's low balance fee (below $1,000), filed as a check copy; the check copy fee on that line is $3.00",
   },
   // Data inventory's live "to avoid" names (audits/to-avoid-names-for-accuracy.md), Oct 9: each
-  // read against its stored text. The other priced rows there carry the right price and type
-  // under a sentence for a name, or already hold a pending flag.
+  // read against its stored text. Two with the right price under the wrong type are re-filed
+  // instead (taxonomy-fold HAND_REFILES: 56804, 79217); the other priced rows there carry the
+  // right price and type under a sentence for a name, or already hold a pending flag. 36498's
+  // line is an outgoing international wire, but no name that traces on its two-column page says
+  // "wire", so Darwin's wire check would refuse a re-file.
   {
     feePublishedId: 36498, institution: "Mission Federal Credit Union",
     feeName: "in online or mobile banking to avoid a monthly maintenance fee. | International U.S. Currency", amount: 45, canonicalFeeKey: "monthly_maintenance",
     verdict: "wrong_category", pattern: "two_column_glue",
-    why: "Doc 6201: $45 is the next column's \"International U.S. Currency\" line, not a monthly maintenance fee",
-  },
-  {
-    feePublishedId: 52158, institution: "Nuvision Federal Credit Union",
-    feeName: "required monthly to avoid closure | International ATM Withdrawal Fee", amount: 3, canonicalFeeKey: "card_foreign_txn",
-    verdict: "wrong_category", pattern: "two_column_glue",
-    why: "Doc 2011: \"International ATM Withdrawal Fee $3.00\" is an international ATM fee, not the card's foreign transaction fee (live as 58002)",
-  },
-  {
-    feePublishedId: 56804, institution: "Community First National Bank",
-    feeName: "To avoid a Monthly Service Fee of", amount: 5, canonicalFeeKey: "monthly_maintenance",
-    verdict: "wrong_category", pattern: "fee_in_sentence",
-    why: "Doc 17169: \"a Monthly Service Fee of $5 per paper statement\" is charged per paper statement, a paper statement fee",
-  },
-  {
-    feePublishedId: 79217, institution: "First National Bank of Pennsylvania",
-    feeName: "Avoid the monthly service charge if you meet ONE (1) of the following during the statement cycle: Make at least ONE (1)", amount: 6, canonicalFeeKey: "check_cashing",
-    verdict: "wrong_category", pattern: "two_column_glue",
-    why: "Doc 19813: $6 is the next column's \"Canadian/Foreign Check Handling Charge $6.00 per item\", a collection item, not check cashing",
+    why: "Doc 6201: $45 is the next column's outgoing \"International U.S. Currency\" wire line, not a monthly maintenance fee",
   },
   {
     feePublishedId: 90839, institution: "1st Security Bank of Washington",
