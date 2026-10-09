@@ -859,12 +859,14 @@ async function executeAgenticStep(
       const decisions = await getKnoxDecisionQueueSnapshot(tx);
       return {
         status: "completed",
-        summary: `Knox decision queue checked: ${decisions.pending.toLocaleString()} pending human verdicts; ${decisions.confirmed.toLocaleString()} confirmed and ${decisions.overridden.toLocaleString()} overridden.`,
+        // The decisions queue was retired (James, Oct 9): its verdicts are on record, not reviewed.
+        summary: `Knox decision queue is retired: ${decisions.pending.toLocaleString()} verdicts were never confirmed and stay on record; ${decisions.confirmed.toLocaleString()} confirmed and ${decisions.overridden.toLocaleString()} overridden.`,
         detail: {
           pending_knox_decisions: decisions.pending,
           confirmed_knox_decisions: decisions.confirmed,
           overridden_knox_decisions: decisions.overridden,
           total_knox_decisions: decisions.total,
+          queue_retired: true,
           dry_run: run.runKind === "dry_run",
         },
       };
@@ -1623,6 +1625,7 @@ async function executeAgenticStep(
           flagged_fees: guard.flaggedFees,
           awaiting_second_look: guard.awaitingSecondLook,
           restored_fees: guard.restoredFees,
+          refiled_fees: guard.refiledFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,

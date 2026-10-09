@@ -7,6 +7,7 @@ import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 
 type SqlTag = typeof sql;
 
@@ -175,6 +176,82 @@ const ACCOUNT_NAMED_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
  */
 /** v7: a dot leader, ellipsis run or fill-in line, the twin of Knox's tidy `LEADERS`. */
 const DOT_LEADER = /(?:\.\s?){3,}|…|_{3,}/;
+/** v8: waiver advice read onto a fee's name ("Stop Payment (Check/ACH) Submit request ... to avoid this charge"). */
+const AVOID = /\bavoid/i;
+const AVOID_CELL = /\bavoid/i;
+const AVOID_PARENTHETICAL = /\s*\([^()]*\bavoid[^()]*\)(?:\[\d+\]\(#[^)]*\))?/gi;
+const ADVICE_START =
+  /(?:\.\s+|\s+-\s+|\s+)(?=(?:Save|Submit|Use|Perform|Enroll|PLEASE|Please|Setting|Access|Choose|In order to|To avoid|Avoid)\b)/g;
+
+/**
+ * v8: the fee's name with the advice on how to avoid it cut off: a "|" cell, a parenthetical, or
+ * the sentence from its imperative on ("Card Rush Order Save your card ... to avoid ..." becomes
+ * "Card Rush Order"). Null when nothing names a fee once the advice is gone. Pure.
+ */
+export function withoutWaiverAdvice(name: string): string | null {
+  if (!AVOID.test(name)) return null;
+  let current = name;
+  if (current.includes("|")) {
+    const cells = current.split("|").map((cell) => cell.trim()).filter(Boolean);
+    const kept = cells.filter((cell) => !AVOID_CELL.test(cell));
+    if (kept.length === 1 && kept.length < cells.length) current = kept[0];
+  }
+  current = current.replace(AVOID_PARENTHETICAL, "");
+  if (AVOID.test(current)) {
+    for (const match of current.matchAll(ADVICE_START)) {
+      const rest = current.slice((match.index ?? 0) + match[0].length);
+      if (AVOID.test(rest)) {
+        current = current.slice(0, match.index);
+        break;
+      }
+    }
+  }
+  current = current.replace(/[\s.,;:–-]+$/, "").trim();
+  if (!current || current === name.trim() || AVOID.test(current) || !FEE_NOUN.test(current) || !usableName(current)) return null;
+  if (current.split(/\s+/).length > MAX_WORDS || sentenceShaped(current) || VERB_END.test(current) || /\s(?:to|of|a|the)$/i.test(current)) return null;
+  return current;
+}
+
+// One rules read per document text in a step: a page often holds several advice names.
+const readCache = new Map<string, ReturnType<typeof runFreeSpecialists>["candidates"]>();
+function specialistCandidates(text: string) {
+  let candidates = readCache.get(text);
+  if (!candidates) {
+    if (readCache.size >= 50) readCache.clear();
+    candidates = runFreeSpecialists(text).candidates;
+    readCache.set(text, candidates);
+  }
+  return candidates;
+}
+
+/**
+ * v8: the name Knox's rules read today for the same fee: one candidate in the fee's own text
+ * with the same category and amount whose name gives no advice. Null when none or several. Pure.
+ */
+export function reReadName(fee: Pick<LiveFeeRow, "canonical_fee_key" | "amount">, ownTexts: string[]): string | null {
+  if (fee.amount == null) return null;
+  const amount = Number(fee.amount);
+  const names = new Set<string>();
+  for (const text of ownTexts) {
+    for (const candidate of specialistCandidates(text)) {
+      if (candidate.canonicalHint !== fee.canonical_fee_key || Math.abs(candidate.amount - amount) >= 0.005) continue;
+      if (AVOID.test(candidate.feeName) || !usableName(candidate.feeName)) continue;
+      names.add(candidate.feeName.trim());
+    }
+  }
+  return names.size === 1 ? [...names][0] : null;
+}
+
+/** v8: the advice cut off, else the re-read name; the first that keeps the fee in its category. */
+function adviceFreeName(fee: LiveFeeRow, ownTexts: string[]): string | null {
+  const keepsCategory = (name: string | null) =>
+    name != null && (!checkFeeCategory(fee.canonical_fee_key, fee.fee_name).ok || checkFeeCategory(fee.canonical_fee_key, name).ok);
+  const cut = withoutWaiverAdvice(fee.fee_name);
+  if (keepsCategory(cut)) return cut;
+  const reRead = reReadName(fee, ownTexts);
+  return keepsCategory(reRead) ? reRead : null;
+}
+
 const BUSINESS_NAMED = /^(?:business|commercial)\b/i;
 const SECTION_HEADING_ONLY = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
 
@@ -259,9 +336,22 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * v7: Knox v57's tidy (a details or "N/A" cell after the name, a leading "Otherwise,"), and a
  * dollar figure cut out of the name put back from the fee's own text (`restoreStrippedAmount`).
  * 352 live names carried one of these or a "to avoid" fragment on 2026-10-09.
+ * v8: waiver advice on the name ("... to avoid this charge") is cut off (`withoutWaiverAdvice`),
+ * or a fragment takes the name Knox v60 reads for the same fee and amount (`reReadName`). 25 of
+ * the 55 live "to avoid" names on 2026-10-09; the rest are $0 labels already pending takedown
+ * or sentence fragments on the punch list.
+ * v9: a threshold Hamilton's publish cut off a name Knox read whole ("Service charge (daily
+ * balance falls below" from "... below $500)", `nameBeforeLeaders` before 2026-10-09) comes back
+ * from Knox's own read of the name, which `restoreStrippedAmount` searches with the fee's text.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 7 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 9 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
+/**
+ * Institutions the scan visits first after a version change, then the rest in id order. v9:
+ * the ones with a threshold publish cut off (102976, 102987/8, 101305, 101842/3, 102654/6,
+ * 102568, 102644) and Maple FCU's "Name ..." rows, which v8 had not reached.
+ */
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [282, 640, 3604, 3923, 4715, 8465, 5499];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
@@ -290,7 +380,10 @@ export interface RetidyPlan {
  * still accept it, and no other live fee of the bank may already carry the new name at the
  * same price and category (the duplicate collapse would close one of them).
  */
-export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
+/** A live fee with the name Knox read for it, before publish shaped it. */
+export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null };
+
+export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
   const skipped: Record<RetidySkip, number> = { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 };
   const renames: RetidyRename[] = [];
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
@@ -305,7 +398,15 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
     const ownTexts = texts
       .filter((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id))
       .map((text) => text.normalized_text);
-    const newName = restoreStrippedAmount(tidied ?? fee.fee_name, ownTexts) ?? (tidied ? restoreStrippedAmount(fee.fee_name, ownTexts) : null) ?? tidied;
+    // v8: waiver advice on the name is cut off, or the name Knox reads today replaces a fragment.
+    // A name with advice in it is renamed only to an advice-free name, never tidied around it.
+    // v9: Knox's own read of the name holds a threshold publish cut off.
+    const restoreTexts = fee.raw_fee_name ? [...ownTexts, fee.raw_fee_name] : ownTexts;
+    const advice = AVOID.test(fee.fee_name);
+    const adviceFree = advice ? adviceFreeName(fee, ownTexts) : null;
+    const newName = advice
+      ? adviceFree
+      : restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ?? (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ?? tidied;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
     // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
@@ -329,7 +430,8 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
     }
     const before = traceLiveFee(fee, texts);
     const after = traceLiveFee({ ...fee, fee_name: newName }, texts);
-    if (before.kind !== "untraceable" && after.kind === "untraceable") {
+    // A v8 name replaces words the bank wrote, so it must trace itself.
+    if ((before.kind !== "untraceable" || adviceFree) && after.kind === "untraceable") {
       skipped.would_not_trace += 1;
       continue;
     }
@@ -378,7 +480,7 @@ export async function retidyLiveFeeNames(
 ): Promise<RetidyResult> {
   const limit = options.institutionLimit ?? NAME_RETIDY_INSTITUTION_LIMIT;
   let fingerprints: Map<number, string>;
-  let liveFees: LiveFeeRow[];
+  let liveFees: RetidyFeeRow[];
   let texts: Array<InstitutionText & { institution_id: number | string }>;
   try {
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
@@ -407,6 +509,7 @@ export async function retidyLiveFeeNames(
                    OR fp.fee_name ~ '^Name[[:space:]]+[A-Z]'
                    OR fp.fee_name ~* '^[A-Z][^:|]{0,60}(checking|savings|money market|fees)[[:space:]]*[:|][[:space:]]*[A-Z]'
                    OR fp.fee_name ~ '(\\.[[:space:]]?){3,}|…|_{3,}'
+                   OR fp.fee_name ~* 'avoid'
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
@@ -421,15 +524,15 @@ export async function retidyLiveFeeNames(
               AND pa.institution_id = live.institution_id
               AND pa.input_fingerprint = 'v' || ${NAME_RETIDY_STRATEGY.version}::text || ':' || live.max_fee_id::text
          )
-       ORDER BY live.institution_id
+       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, live.institution_id
        LIMIT ${limit}
     `);
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
     fingerprints = new Map(due.map((row) => [Number(row.institution_id), retidyFingerprint(row.max_fee_id)]));
     const ids = [...fingerprints.keys()];
-    liveFees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
+    liveFees = await inSavepoint(db, (scope) => scope<RetidyFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, fr.fee_name AS raw_fee_name
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -572,7 +675,9 @@ export function isMessyName(name: string): boolean {
     LEADING_ACCOUNT_HEADINGS.test(name) ||
     HEADER_WORD_PREFIX.test(name) ||
     // v7: a dot leader or fill-in line left on the end ("ATM Adjustment ......", Wildfire 14754).
-    DOT_LEADER.test(name)
+    DOT_LEADER.test(name) ||
+    // v8: advice on how to avoid the fee.
+    AVOID.test(name)
   );
 }
 
