@@ -3,8 +3,8 @@ import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { countKnoxRereadsDue } from "@/lib/agents/knox/extract";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
-import { CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
-import { NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
+import { countRetidyReplay, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 
 type SqlTag = typeof sql;
 
@@ -15,7 +15,7 @@ type SqlTag = typeof sql;
  * reading as finished.
  *
  * Counts use the owning agent's own selection where one exists (Knox's due-text query, the
- * registry scheduler's stale-parser test), so "queued" means work the agent will really pick up.
+ * registry scheduler's stale-parser test, the retidy's due institutions), so "queued" means work the agent will really pick up.
  */
 
 export interface ReplayCount {
@@ -136,6 +136,34 @@ export function guardRunCount(run: { id: number; status: string } | null): Repla
   return { affected: 1, done: 0, queued: 1, exclusions: {}, note: `Run ${run.id} is ${run.status}.` };
 }
 
+/** Current copy: older/current pairs with a fee the current copy does not restate. */
+async function countCurrentCopy(db: SqlTag): Promise<ReplayCount> {
+  return currentCopyCount(await countCurrentCopyPairs(db));
+}
+
+/** Pure: the current-copy pair counts as a replay count. */
+export function currentCopyCount(c: { pairs: number; done: number; queued: number; noText: number }): ReplayCount {
+  return {
+    affected: c.pairs,
+    done: c.done,
+    queued: c.queued,
+    exclusions: c.noText > 0 ? { no_completed_text: c.noText } : {},
+    note: "A checked pair can keep live fees: the check flags them for a second look rather than taking them down.",
+  };
+}
+
+/** Name retidy: institutions with a messy live name, due now or tidied at this version. */
+async function countNameRetidy(db: SqlTag): Promise<ReplayCount> {
+  return retidyCount(await countRetidyReplay(db));
+}
+
+/** Pure: due and done institution ids as a replay count; an institution due again after a new fee counts as queued. */
+export function retidyCount({ due, doneCurrent }: { due: number[]; doneCurrent: number[] }): ReplayCount {
+  const queued = new Set(due);
+  const done = doneCurrent.filter((id) => !queued.has(id)).length;
+  return { affected: queued.size + done, done, queued: queued.size, exclusions: {} };
+}
+
 export async function loadManifests(): Promise<ReplayManifest[]> {
   const { REGISTRY_PARSER_VERSIONS } = await import("@/lib/agents/registry-scheduler");
   const manifests: ReplayManifest[] = [
@@ -178,8 +206,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       version: CURRENT_COPY_STRATEGY.version,
       unit: "older/current document pair",
       affects: "Live fees on a superseded copy that the current copy no longer states.",
-      count: null,
-      notCounted: "Its selection (fees not restated on the current copy) is not shared yet.",
+      count: countCurrentCopy,
     },
     {
       key: "knox.name_retidy",
@@ -189,8 +216,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       version: NAME_RETIDY_STRATEGY.version,
       unit: "institution",
       affects: "Live fee names Knox tidies in place.",
-      count: null,
-      notCounted: "Its messy-name test is not shared yet.",
+      count: countNameRetidy,
     },
     {
       key: "darwin.envelopes",
