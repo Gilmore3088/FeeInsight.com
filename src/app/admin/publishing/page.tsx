@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
+import PaymentDeliveries from "./payment-deliveries";
 import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { getReportFreshness, type ReportFreshness } from "@/lib/data-store/feed-freshness";
@@ -118,6 +119,7 @@ export default async function PublishingRoomPage() {
         </>
       )}
 
+      <PaymentDeliveries />
       <EmailLog log={emails} />
 
     </div>
