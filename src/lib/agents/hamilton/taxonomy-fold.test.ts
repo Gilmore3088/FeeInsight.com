@@ -8,6 +8,9 @@ import { HAND_REFILES, planHandRefiles } from "./taxonomy-fold";
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  96164: "Non-Westamerica ATM Withdrawals:\nWestamerica will not impose a Network ATM fee for\nwithdrawals made at any non-Westamerica ATM if the\nbalance requirement to avoid the monthly service charge is\nmet. Otherwise, a fee of $2.50 per posted withdrawal may\nbe imposed at the end of your statement cycle.",
+  61848: "The minimum balance to open a Share Account is $5. You must maintain a minimum daily balance of $5 in your account to avoid a minimum balance fee of $2 once during the statement cycle.",
+  98747: "Minimum balance to avoid imposition of fees - If your balance falls below $1,000.00 on any day in the monthly statement cycle we will impose a service charge fee of $15.00 once during the statement cycle.",
   40729: "Wire Transfer Domestic Outgoing ........ $22.00\nWire Transfer Domestic Incoming ........ $15.00\nInternational Outgoing/Incoming ........ $38.00\nFRANKFORT | 20181 S. LaGrange",
   46537: "Apple Pay/Samsung Pay/Google PayFREE | Wire Transfer\nDomestic (Incoming) | $15.00\nDEBIT CARDS | Domestic (Outgoing) | $25.00",
   46538: "Apple Pay/Samsung Pay/Google PayFREE | Wire Transfer\nDomestic (Incoming) | $15.00\nDEBIT CARDS | Domestic (Outgoing) | $25.00",
@@ -73,6 +76,17 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("never moves a fee to a category whose guard rejects the new name", () => {
     const refiles = [{ feePublishedId: 1, from: "bill_pay", amount: 15, to: "overdraft", name: "Non-Return Fee", why: "test" }];
     expect(planHandRefiles([liveRow(1, "bill_pay", "15.00")], refiles)).toEqual([]);
+  });
+
+  it("fixes a fee another check already moved under its target type while it keeps the bad name (96164)", () => {
+    const oldName = "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of";
+    const moves = planHandRefiles([liveRow(96164, "atm_non_network", "2.50", oldName)]);
+    expect(moves.map((move) => [move.currentKey, move.refile.to, move.refile.name])).toEqual([
+      ["atm_non_network", "atm_non_network", "Non-Westamerica ATM withdrawal (balance requirement not met)"],
+    ]);
+    // Under its target with any other name (a later rename), it is left alone.
+    expect(planHandRefiles([liveRow(96164, "atm_non_network", "2.50", "Non-network ATM withdrawal")])).toEqual([]);
+    expect(planHandRefiles([liveRow(96164, "atm_non_network", "2.50", "Non-Westamerica ATM withdrawal (balance requirement not met)")])).toEqual([]);
   });
 
   it("renames a fee in place once, leaving it alone when the live name already reads as listed", () => {
