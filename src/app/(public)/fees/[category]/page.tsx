@@ -10,7 +10,7 @@ import {
   DISPLAY_NAMES,
 } from "@/lib/fee-taxonomy";
 import { loadGuidesForCategory } from "@/lib/guides/source";
-import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
+import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
@@ -23,6 +23,7 @@ import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/da
 import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { BreakdownRow, BREAKDOWN_HEADERS, DistrictSection, WarmTable, range } from "./breakdown-tables";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -33,6 +34,7 @@ const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
 /** Thousands-separated dollars ("$5,000", "$2.50"); "-" when unavailable. */
 const money = (value: number | null | undefined) => formatFeeAmount(value) ?? "-";
+
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { category } = await params;
@@ -62,39 +64,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       family ? `${family.toLowerCase()} fees` : "bank fees",
     ],
   };
-}
-
-function WarmTable({
-  headers,
-  children,
-  minWidth = "min-w-[560px]",
-}: {
-  headers: string[];
-  children: React.ReactNode;
-  minWidth?: string;
-}) {
-  return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm">
-      <div className="table-scroll">
-        <table className={`w-full text-left text-sm ${minWidth}`}>
-          <thead>
-            <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-              {headers.map((h, i) => (
-                <th
-                  key={h}
-                  scope="col"
-                  className={`px-4 py-2.5 ${EYEBROW} ${i > 0 ? "text-right" : ""}`}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#E8DFD1]/40">{children}</tbody>
-        </table>
-      </div>
-    </div>
-  );
 }
 
 export default async function FeeCategoryPage({ params }: PageProps) {
@@ -138,6 +107,8 @@ export default async function FeeCategoryPage({ params }: PageProps) {
     min: national?.min_amount ?? null,
     max: national?.max_amount ?? null,
   };
+
+  const hasDistricts = detail.by_fed_district.length > 0;
 
   const familyMembers = family
     ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category)
@@ -198,12 +169,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { label: "Median", value: money(stats.median) },
-          { label: "25th Percentile", value: money(stats.p25) },
-          { label: "75th Percentile", value: money(stats.p75) },
-          {
-            label: "Range",
-            value: `${money(stats.min)} \u2013 ${money(stats.max)}`,
-          },
+          { label: "25th percentile", value: money(stats.p25) },
+          { label: "75th percentile", value: money(stats.p75) },
+          { label: "Lowest \u2013 highest", value: range(stats.min, stats.max) },
         ].map((s) => (
           <div
             key={s.label}
@@ -255,103 +223,70 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         </section>
       )}
 
-      {/* Distribution */}
-      <section className="mt-10">
-        <h2
-          className="text-[16px] font-medium text-[#1A1815]"
-          style={SERIF}
-        >
-          Fee Distribution
-        </h2>
-        <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm p-5">
-          <DistributionChart
-            values={institutionValues}
-            median={stats.median}
-          />
-        </div>
-      </section>
-
-      {/* Guide to this fee — free for everyone */}
-      {consumerGuides.length > 0 && (
-        <section className="mt-8 rounded-xl border border-[#E8DFD1] bg-white/70 px-5 py-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#C44B2E]/70">
-            New to this fee?
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <p className="text-[14px] text-[#5A5347]">
-              Read the plain-language guide to {name.toLowerCase()} — what it is, who
-              charges the most, and how to avoid it. Free to read.
-            </p>
-            {consumerGuides.slice(0, 2).map((guide) => (
-              <Link
-                key={guide.slug}
-                href={`/guides/${guide.slug}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
-              >
-                {guide.title}
-              </Link>
-            ))}
+      {/* Distribution, the guide and the reader's own bank sit in the left column on wide
+          screens with the district table beside them; narrow screens keep this order. */}
+      <div
+        className={`mt-10 grid grid-cols-1 gap-x-8 gap-y-6 ${
+          hasDistricts ? "xl:grid-cols-2 xl:grid-rows-[auto_auto_1fr]" : ""
+        }`}
+      >
+        {/* Distribution */}
+        <section>
+          <h2 className="text-[16px] font-medium text-[#1A1815]" style={SERIF}>
+            Fee Distribution
+          </h2>
+          <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm p-5">
+            <DistributionChart values={institutionValues} median={stats.median} />
           </div>
         </section>
-      )}
 
-      {/* The reader's own bank — the question every fee page is really being asked */}
-      <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#C44B2E]/15 bg-gradient-to-r from-[#FFFDF9] to-[#FAF7F2] px-5 py-4">
-        <p className="text-[14px] text-[#5A5347]">
-          See what <span className="font-medium text-[#1A1815]">your</span> bank charges for{" "}
-          {name.replace(/\s*\([^)]*\)/g, "").toLowerCase()}, next to the national median.
-        </p>
-        <Link
-          href={`/institutions?fee=${category}`}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
-        >
-          Find your institution
-        </Link>
-      </section>
+        {/* Fed district */}
+        {hasDistricts && (
+          <DistrictSection
+            name={name}
+            rows={detail.by_fed_district}
+            className="xl:col-start-2 xl:row-span-3 xl:row-start-1"
+          />
+        )}
 
-      {/* Fed district */}
-      {detail.by_fed_district.length > 0 && (
-        <section className="mt-10">
-          <h2
-            className="text-[16px] font-medium text-[#1A1815]"
-            style={SERIF}
-          >
-            By Federal Reserve District
-          </h2>
-          <WarmTable headers={["District", "Median", "Range", "Count"]}>
-            {detail.by_fed_district.map((row) => {
-              const distNum = parseInt(
-                row.dimension_value.replace("District ", "")
-              );
-              const distName =
-                DISTRICT_NAMES[distNum] ?? row.dimension_value;
-              return (
-                <tr
-                  key={row.dimension_value}
-                  className="hover:bg-[#FAF7F2]/60 transition-colors"
+        {/* Guide to this fee — free for everyone */}
+        {consumerGuides.length > 0 && (
+          <section className="rounded-xl border border-[#E8DFD1] bg-white/70 px-5 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A93D25]">
+              New to this fee?
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <p className="text-[14px] text-[#5A5347]">
+                Read the plain-language guide to {name.toLowerCase()} — what it is, who
+                charges the most, and how to avoid it. Free to read.
+              </p>
+              {consumerGuides.slice(0, 2).map((guide) => (
+                <Link
+                  key={guide.slug}
+                  href={`/guides/${guide.slug}`}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
                 >
-                  <td className="px-4 py-2.5 font-medium text-[#1A1815]">
-                    {distName}{" "}
-                    <span className="text-[#6B6255]">
-                      ({row.dimension_value})
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
-                    {money(row.median_amount)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                    {money(row.min_amount)} &ndash;{" "}
-                    {money(row.max_amount)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                    {row.count.toLocaleString()}
-                  </td>
-                </tr>
-              );
-            })}
-          </WarmTable>
+                  {guide.title}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* The reader's own bank — the question every fee page is really being asked */}
+        <section className="flex flex-wrap items-center justify-between gap-3 self-start rounded-xl border border-[#C44B2E]/15 bg-gradient-to-r from-[#FFFDF9] to-[#FAF7F2] px-5 py-4">
+          <p className="text-[14px] text-[#5A5347]">
+            See what <span className="font-medium text-[#1A1815]">your</span> bank charges for{" "}
+            {name.replace(/\s*\([^)]*\)/g, "").toLowerCase()}, next to the national median.
+          </p>
+          <Link
+            href={`/institutions?fee=${category}`}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
+          >
+            Find your institution
+          </Link>
         </section>
-      )}
+      </div>
 
       {/* Related fees */}
       {familyMembers.length > 0 && (
@@ -403,26 +338,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           >
             Bank vs. Credit Union
           </h2>
-          <WarmTable headers={["Type", "Median", "Range", "Count"]}>
+          <WarmTable label={`${name} fee, banks and credit unions`} headers={["Type", ...BREAKDOWN_HEADERS]}>
             {detail.by_charter_type.map((row) => (
-              <tr
-                key={row.dimension_value}
-                className="hover:bg-[#FAF7F2]/60 transition-colors"
-              >
-                <td className="px-4 py-2.5 font-medium text-[#1A1815]">
-                  {row.dimension_value}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
-                  {money(row.median_amount)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                  {money(row.min_amount)} &ndash;{" "}
-                  {money(row.max_amount)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                  {row.count.toLocaleString()}
-                </td>
-              </tr>
+              <BreakdownRow key={row.dimension_value} name={row.dimension_value} row={row} />
             ))}
           </WarmTable>
         </section>
@@ -437,26 +355,13 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           >
             By Asset Tier
           </h2>
-          <WarmTable headers={["Tier", "Median", "Range", "Count"]}>
+          <WarmTable label={`${name} fee by asset tier`} headers={["Tier", ...BREAKDOWN_HEADERS]}>
             {detail.by_asset_tier.map((row) => (
-              <tr
+              <BreakdownRow
                 key={row.dimension_value}
-                className="hover:bg-[#FAF7F2]/60 transition-colors"
-              >
-                <td className="px-4 py-2.5 font-medium text-[#1A1815]">
-                  {FDIC_TIER_LABELS[row.dimension_value] ?? row.dimension_value}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
-                  {money(row.median_amount)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                  {money(row.min_amount)} &ndash;{" "}
-                  {money(row.max_amount)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                  {row.count.toLocaleString()}
-                </td>
-              </tr>
+                name={FDIC_TIER_LABELS[row.dimension_value] ?? row.dimension_value}
+                row={row}
+              />
             ))}
           </WarmTable>
         </section>
@@ -471,31 +376,17 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           >
             By State
             <span className="ml-2 text-[12px] font-normal text-[#6B6255]">
-              Top {detail.by_state.length} by observation count
+              The {detail.by_state.length} states with the most institutions
             </span>
           </h2>
-          <WarmTable headers={["State", "Median", "Avg", "Count"]}>
+          <WarmTable label={`${name} fee by state`} headers={["State", ...BREAKDOWN_HEADERS]}>
             {detail.by_state.map((row) => (
-              <tr
+              <BreakdownRow
                 key={row.dimension_value}
-                className="hover:bg-[#FAF7F2]/60 transition-colors"
-              >
-                <td className="px-4 py-2.5 font-medium text-[#1A1815]">
-                  {STATE_NAMES[row.dimension_value] ?? row.dimension_value}
-                  <span className="ml-1.5 text-[#6B6255]">
-                    ({row.dimension_value})
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
-                  {money(row.median_amount)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                  {money(row.avg_amount)}
-                </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
-                  {row.count.toLocaleString()}
-                </td>
-              </tr>
+                name={STATE_NAMES[row.dimension_value] ?? row.dimension_value}
+                sub={row.dimension_value}
+                row={row}
+              />
             ))}
           </WarmTable>
         </section>

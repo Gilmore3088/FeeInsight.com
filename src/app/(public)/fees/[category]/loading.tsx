@@ -8,7 +8,7 @@ export default function CategoryLoading() {
           <div className="h-5 w-16 rounded-full bg-slate-200" />
         </div>
         <div className="h-8 w-64 rounded bg-slate-200" />
-        <div className="h-4 w-80 rounded bg-slate-200" />
+        <div className="h-4 w-80 max-w-full rounded bg-slate-200" />
 
         {/* Stat cards */}
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">

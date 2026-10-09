@@ -10,6 +10,7 @@ import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
+import { RangeLegend } from "@/components/public/fee-summary-list";
 
 // No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
@@ -120,22 +121,23 @@ export default async function FeeCatalogPage() {
             <p className="mt-2 text-[28px] font-light tracking-tight text-[#1A1815] tabular-nums" style={SERIF}>
               {money(fee.median_amount)}
             </p>
-            <p className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
-              Typical {money(fee.p25_amount)} &ndash; {money(fee.p75_amount)}
-              <span className="mx-1.5 text-[#D4C9BA]">&middot;</span>
-              {fee.institution_count.toLocaleString()} inst.
+            <p className="mt-1 text-[12px] leading-snug tabular-nums text-[#5A5347]">
+              Middle half {money(fee.p25_amount)}&ndash;{money(fee.p75_amount)}
             </p>
-            <p className="mt-0.5 text-[11px] tabular-nums text-[#6B6255]">
-              {fee.total_observations.toLocaleString()} published fee entries
+            <p className="mt-0.5 text-[12px] leading-snug tabular-nums text-[#5A5347]">
+              {fee.institution_count.toLocaleString("en-US")} institutions
+            </p>
+            <p className="mt-0.5 text-[12px] leading-snug tabular-nums text-[#6B6255]">
+              {fee.total_observations.toLocaleString("en-US")} published fee entries
             </p>
           </Link>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-[#6B6255]">
-        Each institution counts once, and the median and typical range (25th to 75th
-        percentile) are taken across institutions.{" "}
+      <p className="mt-2 text-[12px] text-[#5A5347]">
+        Each institution counts once. The median is the middle institution&apos;s fee; the middle
+        half is the range from the 25th to the 75th percentile.{" "}
         {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
-        Full min–max by category is in the tables below.
+        Lowest and highest fees by category are in the tables below.
       </p>
       {!showAll && gatedCount > 0 && (
         <p className="mt-3 rounded-lg border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-2.5 text-[13px] text-[#5A5347]">
@@ -165,6 +167,10 @@ export default async function FeeCatalogPage() {
       {/* ── MAIN + SIDEBAR ── */}
       <div className="mt-10 grid grid-cols-1 gap-8 xl:grid-cols-[1fr_280px]">
         <div className="space-y-10">
+          {/* Wide screens: one key for every table's strip. Narrow lists carry their own. */}
+          <div className="hidden md:block">
+            <RangeLegend />
+          </div>
           {familyOrder.map((familyName) => {
             const cats = byFamily.get(familyName);
             if (!cats || cats.length === 0) return null;
