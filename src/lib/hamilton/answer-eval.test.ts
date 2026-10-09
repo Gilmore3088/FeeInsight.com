@@ -44,6 +44,9 @@ describe("answer eval", () => {
     expect(s.topFailures).toEqual([{ failure: "does not name its state (…)", count: 2 }]);
     expect(s.byQuestion[0]).toMatchObject({ questionId: "q17", passed: 0, total: 2 });
     expect(failureShape('reads as advice: "you should lower"')).toBe('reads as advice: "…"');
+    // A run cut by the time budget says how many institutions it drew and how many it asked.
+    expect(summarizeEval(results, 2, true, 11)).toMatchObject({ institutions: 2, planned: 11, timedOut: true });
+    expect(s.planned).toBe(2);
   });
 
   it("replays readers' own questions, newest first, leaving out test asks", async () => {
