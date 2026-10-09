@@ -1214,6 +1214,7 @@ async function executeAgenticStep(
               offTaxonomyRollbacks.length > 0 ||
               taxonomyFold.movedLive > 0 ||
               taxonomyFold.handRefiled > 0 ||
+              taxonomyFold.handFlagsCleared > 0 ||
               taxonomyFold.noHomeRolledBack > 0 ||
               outlierRestores.length > 0 ||
               offTaxonomyRestores.length > 0 ||
@@ -1250,9 +1251,12 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would fold" : "Folded"} ${taxonomyFold.moved.toLocaleString()} fee(s) from retired categories into the top 50${taxonomyFold.noHomeRolledBack > 0 ? `; ${published.dryRun ? "would take" : "took"} down ${taxonomyFold.noHomeRolledBack.toLocaleString()} with no home there after a second look` : ""}${taxonomyFold.noHomeHeld > 0 ? `; kept ${taxonomyFold.noHomeHeld.toLocaleString()} with no home live until James decides` : ""}.`
           : "";
       const handRefileNote =
-        taxonomyFold.handRefiled > 0
+        (taxonomyFold.handRefiled > 0
           ? ` ${published.dryRun ? "Would re-file" : "Re-filed"} ${taxonomyFold.handRefiled.toLocaleString()} misread fee(s) under the page's own name.`
-          : "";
+          : "") +
+        (taxonomyFold.handFlagsCleared > 0
+          ? ` ${published.dryRun ? "Would clear" : "Cleared"} the pending takedown on ${taxonomyFold.handFlagsCleared.toLocaleString()} hand-fixed fee(s) that now trace.`
+          : "");
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${offTaxonomyRollbacks.length.toLocaleString()} live fee(s) whose category is not in the fee taxonomy.`
