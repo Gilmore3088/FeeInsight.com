@@ -2,7 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -221,6 +221,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "card_foreign_txn",
     pattern: /\b(foreign transactions?|international (?:transaction\b|purchases?|point of sale|pos|currency fee|service (?:assessment|fee))|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   },
+  // v61: adjusting an ATM deposit or dispute is account research (`ATM_ADJUSTMENT`).
+  { key: "account_research", pattern: ATM_ADJUSTMENT },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",

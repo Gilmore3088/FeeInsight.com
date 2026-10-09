@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -268,5 +268,36 @@ describe("v7: stored names Knox v57/v60 would read differently", () => {
     // A monthly fee's account heading is its name.
     const monthly = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "Gold Checking: Monthly Fee", amount: 10 });
     expect(planRetidy([monthly], text("Gold Checking: Monthly Fee $10.00")).renames).toEqual([]);
+  });
+});
+
+describe("v8: advice on how to avoid a fee comes off its name", () => {
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+  it("cuts the advice after the fee's name (Chief Wilmington 41372/41373, 44018, 88589, 82125)", () => {
+    expect(withoutWaiverAdvice("Stop Payment (Check/ACH) Submit request through Online Banking to avoid this charge")).toBe("Stop Payment (Check/ACH)");
+    expect(withoutWaiverAdvice("Card Rush Order Save your card to your mobile wallet for use to avoid the replacement card charge.")).toBe("Card Rush Order");
+    expect(withoutWaiverAdvice("Bad Address/Return Mail Fee PLEASE NOTIFY US OF ANY ADDRESS CHANGES TO AVOID THIS FEE")).toBe("Bad Address/Return Mail Fee");
+    expect(withoutWaiverAdvice("Dormant Fee of 12 months (excludes minors) In order to avoid this fee, you must complete a transaction")).toBe("Dormant Fee of 12 months (excludes minors)");
+    expect(withoutWaiverAdvice("monthly service charge (with many options to avoid fees)[3](#disclaimer)")).toBe("monthly service charge");
+    expect(withoutWaiverAdvice("required monthly to avoid closure | International ATM Withdrawal Fee")).toBe("International ATM Withdrawal Fee");
+  });
+
+  it("leaves a name that is the requirement itself, or a sentence once cut", () => {
+    expect(withoutWaiverAdvice("Minimum Balance Required to avoid service charge")).toBeNull();
+    expect(withoutWaiverAdvice("Preauthorized Automatic Transfer to avoid Overdraft Charges")).toBeNull();
+    expect(
+      withoutWaiverAdvice("MONTHLY FEE: The Primary Account Owner Must Meet One of the Following Monthly Statement Cycle Requirements to Avoid a"),
+    ).toBeNull();
+    expect(withoutWaiverAdvice("Stop Payment Fee")).toBeNull();
+  });
+
+  it("names a fragment by the fee Knox reads today at the same amount, and never tidies around advice", () => {
+    const fragment = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "To avoid a Quarterly Maintenance Service Charge of", amount: 5 });
+    const label = fee({ fee_published_id: 2, canonical_fee_key: "monthly_maintenance", fee_name: "Minimum balance required to avoid service charge -", amount: 50 });
+    const page = text("Minimum opening deposit – $50.00\n\nQuarterly Maintenance Service Charge – $5.00\n\nMinimum balance required to avoid service charge - $50.00");
+    expect(planRetidy([fragment, label], page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [1, "Quarterly Maintenance Service Charge"],
+    ]);
+    expect(isMessyName("Stop Payment (Check/ACH) Submit request through Online Banking to avoid this charge")).toBe(true);
   });
 });
