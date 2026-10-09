@@ -23,7 +23,7 @@ type SqlTag = typeof sql;
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
 const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
+  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -351,7 +351,7 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
  * their page, all checked against their source line.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 10 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 11 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -437,6 +437,61 @@ export function cellName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" 
   return null;
 }
 
+/**
+ * v11: a sentence name that opens with the fee's own short name and then describes it ("Out-going
+ * Wire (foreign): A wire transfer that you send ...", "Inactive Account Fee (Monthly until account
+ * is brought back active, closed or escheated)"). The opening words are the name when they name
+ * the fee's category on their own and what follows reads as a description, not part of the name.
+ */
+const HEAD_AND_DESCRIPTION = /^([^:(|]{3,60}?)\s*(?::\s+|\(|\s[-–—]\s)(.+)$/u;
+const HEAD_MAX_WORDS = 7;
+const HEAD_NOT_NAME = /^(?:\d|(?:all|any|each|every|the|this|these|those|if|when|for|per|a|an|fee|one)\b)|\bfees[a-z]|[\u200b-\u200d\ufeff]/i;
+const DATED = /\b(?:19|20)\d{2}\b|\beffective\b/i;
+export function headName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key">): string | null {
+  const match = fee.fee_name.replace(/\s+/g, " ").trim().match(HEAD_AND_DESCRIPTION);
+  if (!match) return null;
+  const head = match[1].replace(/[\s:;,\-–—]+$/u, "").trim();
+  const rest = match[2];
+  if (head.split(" ").length > HEAD_MAX_WORDS || !/\S\s+\S/.test(head)) return null;
+  if (!FEE_NOUN.test(head) || NOT_A_NAME.test(head) || sentenceShaped(head) || VERB_END.test(head) || PRONOUN.test(head)) return null;
+  if (classifyFeeText(head) !== fee.canonical_fee_key) return null;
+  // A head that starts a sentence ("All items returned for ..."), carries a date ("... EFFECTIVE
+  // JULY 1, 2016"), or loses a business qualifier written after it is not the fee's name.
+  if (HEAD_NOT_NAME.test(head) || DATED.test(head) || /\b(?:business|commercial)\b/i.test(rest)) return null;
+  // A parenthesis followed by more of the name ("Overdraft Item (OD) Charge") is not a cut point.
+  if (/^[^)]*\)\s*(?:fees?|charges?)\b/i.test(rest)) return null;
+  // A short parenthesis with a figure is part of the name: a box size "(3x4)" or a footnote "(1)".
+  if (/^[^)\s]*\d[^)]{0,12}\)/.test(rest)) return null;
+  // A box size after the head ("Annual Fee: 3" x 5" box") is part of the name.
+  if (/\d\s*["”]?\s*x\s*\d/i.test(rest)) return null;
+  // A short parenthesis inside a longer name ("Inactive account fee for Demand Deposit (Checking)
+  // Accounts, NOW Accounts") means the head is cut mid-name.
+  if (/^[^)]{1,15}\)\s+[A-Z][a-z]*\b/.test(rest)) return null;
+  // A network named on its own ("Texans ATM") does not name the fee.
+  if (/^\S+\s+atms?$/i.test(head)) return null;
+  // What follows describes the fee: a sentence, a condition, or a long qualifier, and it
+  // describes this fee, not another one glued on ("Wire Transfer- Foreign (1) Accounts with no
+  // ... activity ... will be charged").
+  if (rest.split(" ").length < 5) return null;
+  if (!(PRONOUN.test(rest) || CONDITION_CLAUSE.test(rest) || sentenceShaped(rest) || rest.split(" ").length >= 8)) return null;
+  const restKey = classifyFeeText(rest);
+  if (restKey && restKey !== fee.canonical_fee_key) return null;
+  return head;
+}
+
+function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
+  const head = headName(fee);
+  if (!head) return null;
+  const opening = head.toLowerCase();
+  const shared = liveFees.some(
+    (other) =>
+      Number(other.institution_id) === Number(fee.institution_id) &&
+      Number(other.fee_published_id) !== Number(fee.fee_published_id) &&
+      other.fee_name.replace(/\s+/g, " ").trim().toLowerCase().startsWith(opening),
+  );
+  return shared ? null : head;
+}
+
 /** A live fee with the name Knox read for it, before publish shaped it. */
 export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null };
 
@@ -467,7 +522,10 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
         (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ??
         // v10: the fee's own table cell at its price.
         cellName(fee, ownTexts) ??
-        tidied;
+        tidied ??
+        // v11: the short name a sentence name opens with, unless another live fee at the
+        // institution opens with it too (the words cut are what tell the two apart).
+        uniqueHeadName(fee, liveFees);
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
     // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
