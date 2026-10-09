@@ -1,4 +1,5 @@
 import { likePattern } from "@/lib/regulatory/wire";
+import { feeTypeSql, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { sql, withTransaction } from "./connection";
 
 // ---------------------------------------------------------------------------
@@ -125,6 +126,8 @@ export interface ArticleFilter {
   since?: string; // ISO date string
   /** Case-insensitive match anywhere in the title. */
   q?: string;
+  /** Fee-type tag from the headline (wire-fee-types). */
+  fee?: FeeType;
 }
 
 interface GetArticlesOptions extends ArticleFilter {
@@ -148,6 +151,11 @@ export function buildArticleFilter(opts: ArticleFilter = {}): { where: string; p
   if (opts.since) add((n) => `published_at >= $${n}`, opts.since);
   const pattern = likePattern(opts.q);
   if (pattern) add((n) => `title ILIKE $${n}`, pattern);
+  if (opts.fee) {
+    const fee = feeTypeSql(opts.fee);
+    add((n) => `title ~* $${n}`, fee.include);
+    if (fee.exclude) add((n) => `title !~* $${n}`, fee.exclude);
+  }
   return { where: `WHERE ${conditions.join(" AND ")}`, params };
 }
 
@@ -183,9 +191,9 @@ export async function getArticleCount(opts: ArticleFilter = {}): Promise<number>
   return Number(row.cnt);
 }
 
-async function countBy(column: "topic" | "source", since?: string, q?: string): Promise<Record<string, number>> {
+async function countBy(column: "topic" | "source", since?: string, q?: string, fee?: FeeType): Promise<Record<string, number>> {
   if (!(await hasArticlesTable())) return {};
-  const { where, params } = buildArticleFilter({ since, q });
+  const { where, params } = buildArticleFilter({ since, q, fee });
   const rows = await sql.unsafe(
     `SELECT ${column} AS key, COUNT(*) as cnt FROM reg_articles ${where} GROUP BY ${column} ORDER BY cnt DESC`,
     params,
@@ -196,13 +204,13 @@ async function countBy(column: "topic" | "source", since?: string, q?: string): 
 }
 
 /** Federal releases per topic in the window (and matching the search, when given). */
-export async function getTopicCounts(since?: string, q?: string): Promise<Record<string, number>> {
-  return countBy("topic", since, q);
+export async function getTopicCounts(since?: string, q?: string, fee?: FeeType): Promise<Record<string, number>> {
+  return countBy("topic", since, q, fee);
 }
 
 /** Federal releases per agency in the window (and matching the search, when given). */
-export async function getSourceCounts(since?: string, q?: string): Promise<Record<string, number>> {
-  return countBy("source", since, q);
+export async function getSourceCounts(since?: string, q?: string, fee?: FeeType): Promise<Record<string, number>> {
+  return countBy("source", since, q, fee);
 }
 
 // ---------------------------------------------------------------------------

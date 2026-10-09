@@ -44,6 +44,11 @@ describe("wire params", () => {
     // Switching to Federal keeps the range and search, not the state.
     expect(wireHref(params, { view: "federal", page: 1 })).toBe("/pro/news?q=overdraft&range=month");
     expect(wireHref(parseWireParams({}, isState))).toBe("/pro/news");
+    // The fee-type chip is shared by both views and survives a view switch.
+    const fee = parseWireParams({ fee: "overdraft", q: "cap" }, isState);
+    expect(fee.fee).toBe("overdraft");
+    expect(wireHref(fee, { view: "states", page: 1 })).toBe("/pro/news?view=states&fee=overdraft&q=cap");
+    expect(parseWireParams({ fee: "lattes" }, isState).fee).toBeUndefined();
   });
 });
 

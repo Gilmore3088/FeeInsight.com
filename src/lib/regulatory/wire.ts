@@ -4,6 +4,8 @@
  * reader's window and search. Pure: no database, no React, safe to unit test.
  */
 
+import { parseFeeType, type FeeType } from "./wire-fee-types";
+
 export const WIRE_PAGE_SIZE = 25;
 export const WIRE_QUERY_MAX = 120;
 
@@ -42,6 +44,8 @@ export interface WireParams {
   /** States view: two-letter state code and kind. */
   state?: string;
   kind?: WireKind;
+  /** Both views: fee-type tag from the headline (wire-fee-types). */
+  fee?: FeeType;
 }
 
 type RawParams = Record<string, string | string[] | undefined>;
@@ -80,6 +84,7 @@ export function parseWireParams(raw: RawParams, isState: (code: string) => boole
     topic: one(raw.topic) || undefined,
     state: stateCode && isState(stateCode) ? stateCode : undefined,
     kind: parseKind(one(raw.kind)),
+    fee: parseFeeType(one(raw.fee)),
   };
 }
 
@@ -196,6 +201,7 @@ export function wireHref(current: WireParams, change: Partial<WireParams> = {}):
     if (p.source) search.set("source", p.source);
     if (p.topic) search.set("topic", p.topic);
   }
+  if (p.fee) search.set("fee", p.fee);
   if (p.q) search.set("q", p.q);
   if (p.range !== DEFAULT_WIRE_RANGE) search.set("range", p.range);
   if (p.page > 1) search.set("page", String(p.page));

@@ -2,8 +2,11 @@ import Link from "next/link";
 import type { RegArticle } from "@/lib/data-store/news";
 import type { RuleTracker } from "@/lib/regulatory/rule-tracker";
 import { formatWireDate, wireHref, type PageWindow, type WireParams } from "@/lib/regulatory/wire";
+import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import { researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
+import { ResearchPanel } from "./research-panel";
 import { RuleTrackerSection } from "./rule-tracker";
-import { LABEL, SANS, WirePager, WireSummary } from "./wire-controls";
+import { FeeChips, LABEL, SANS, WirePager, WireSummary } from "./wire-controls";
 
 /**
  * The Regulatory Wire's Federal view, laid out as a research desk rather than a feed: the
@@ -27,6 +30,14 @@ interface NewsFeedProps {
   now: Date;
   /** Operators (admins and analysts) can pull the feeds by hand. */
   canRefreshFeeds?: boolean;
+  /** Research notes keyed by researchKey("article", guid). */
+  notes?: Map<string, ResearchNote>;
+  /** Related releases and rules, keyed by guid. */
+  related?: Map<string, RelatedItem[]>;
+  /** Preview only: notes were written by hand and are labelled EXAMPLE. */
+  exampleNotes?: boolean;
+  /** Preview only: guids whose panel renders open. */
+  openPanels?: string[];
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -127,8 +138,12 @@ export function NewsFeed({
   sourceLabels,
   now,
   canRefreshFeeds = false,
+  notes,
+  related,
+  exampleNotes = false,
+  openPanels = [],
 }: NewsFeedProps) {
-  const filtered = Boolean(params.source || params.topic || params.q);
+  const filtered = Boolean(params.source || params.topic || params.q || params.fee);
   const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
@@ -151,6 +166,7 @@ export function NewsFeed({
           </h2>
           <div className="mt-1">
             <WireSummary params={params} win={win} noun="federal releases" phrase={phrase} />
+            <FeeChips params={params} />
           </div>
           <div className="mt-3">
             {articles.length === 0 ? (
@@ -172,7 +188,9 @@ export function NewsFeed({
                       {group.iso ? <time dateTime={group.iso}>{group.day}</time> : group.day}
                     </h3>
                     <ol className="mt-1.5 divide-y divide-warm-200/60 overflow-hidden rounded-xl border border-warm-200 bg-white/70">
-                      {group.rows.map((article) => (
+                      {group.rows.map((article) => {
+                        const fees = feeTypesOf(article.title);
+                        return (
                         <li key={article.guid}>
                           <a
                             href={article.link}
@@ -203,14 +221,26 @@ export function NewsFeed({
                                     <span>{sourceLabels[article.source]}</span>
                                   </>
                                 ) : null}
-                                {FEE_TOPICS.has(article.topic) ? (
+                                {fees.length > 0 ? (
+                                  <span className="font-medium text-[#A93D25]">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
+                                ) : FEE_TOPICS.has(article.topic) ? (
                                   <span className="rounded-full border border-[#A93D25]/40 px-1.5 font-medium text-[#A93D25]">Fee-related</span>
                                 ) : null}
                               </span>
                             </span>
                           </a>
+                          <div className="px-4">
+                            <ResearchPanel
+                              note={notes?.get(researchKey("article", article.guid)) ?? null}
+                              related={related?.get(article.guid) ?? []}
+                              example={exampleNotes}
+                              open={openPanels.includes(article.guid)}
+                              now={now}
+                            />
+                          </div>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ol>
                   </div>
                 ))}
@@ -285,8 +315,10 @@ export function NewsFeed({
             The rulemaking tracker reads proposed and final rules from the Federal Register, with
             their comment deadlines and effective dates. Agency releases are the official press
             releases of the Federal Reserve, FDIC, OCC and CFPB, from their RSS feeds; their
-            topics come from keywords in the headline. Dates are each release&apos;s
-            publication day (UTC).{" "}
+            topics and fee types come from keywords in the headline. Dates are each release&apos;s
+            publication day (UTC). A Research panel holds an AI summary of the release&apos;s own
+            text where one has been written, labelled as such; related items are linked by
+            docket, rule or institution name.{" "}
             {canRefreshFeeds ? "Click Refresh to pull the latest updates." : "New releases are read once a day."}
           </p>
         </div>
