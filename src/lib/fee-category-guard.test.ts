@@ -847,6 +847,23 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v52: a price no bank charges is flagged, not re-priced", () => {
+    const verdict = checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
+    expect(verdict.ok).toBe(false);
+    expect(!verdict.ok && verdict.code).toBe("amount_implausible");
+    expect(checkFeeCategory("counter_check", "Temporary Checks (12 checks)", { amount: 200 }).ok).toBe(false);
+    expect(checkFeeCategory("document_reproduction", "Photocopy(per copy)", { amount: 200 }).ok).toBe(false);
+    expect(checkFeeCategory("notary_fee", "Notary Public (non customer)", { amount: 500 }).ok).toBe(false);
+    expect(checkFeeCategory("safe_deposit_box", "Safety DepositBox Lost Key (per key)", { amount: 1000 }).ok).toBe(false);
+    // Large boxes rent for over $1,000 a year; ordinary prices pass; no amount, no check.
+    expect(checkFeeCategory("safe_deposit_box", "60 x 30 x 42", { amount: 1225 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Drill Box if both keys are lost/stolen", { amount: 350 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Safe Deposit Box Lost Key", { amount: 25 }).ok).toBe(true);
+    expect(checkFeeCategory("late_payment", "Safety Deposit Box Late Fee", { amount: 5 }).ok).toBe(true);
+    expect(checkFeeCategory("late_payment", "Safety Deposit Box Late Payment Fee").ok).toBe(true);
+    expect(GUARDED_CATEGORIES).toEqual(expect.arrayContaining(["late_payment", "notary_fee", "safe_deposit_box"]));
+  });
+
   it("v51: a certificate penalty paid in dividends is not an early closure fee", () => {
     expect(checkFeeCategory("early_closure", "11. Early Withdrawal Penalty for Jump Start Share certificate - A penalty of seven days dividends will be imposed if the").ok).toBe(false);
     expect(checkFeeCategory("early_closure", "Forfeiture of Rewards at maturity").ok).toBe(false);

@@ -2,6 +2,7 @@ import { sql } from "./connection";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { nameIsFragment } from "@/lib/agents/darwin/release-review";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
@@ -14,10 +15,48 @@ import { institutionDisplayName } from "@/lib/institution-display-name";
  * Competitors: every institution with a branch in those counties, plus institutions
  * headquartered in a city that has an SOD branch there (so local credit unions count).
  * Fees: a published row counts only when the institution's own stored source text states it
- * (src/lib/custom-report/source-check.ts); rows that fail are dropped and counted.
+ * (src/lib/custom-report/source-check.ts); rows that fail are dropped and counted. So are rows
+ * that fail the whole record before any text is read (reportRowProblem): a fee waiting on its
+ * takedown second look, a business price, or a name that is a sentence fragment rather than a
+ * fee's name. The public sample names a real bank and its competitors, so every figure on it
+ * has to be right as a whole record, not just its amount.
  */
 
 export const MAX_MARKET_COUNTIES = 3;
+
+/** Why a published row was left out of a report: the source check, or a whole-record problem. */
+export type ReportDropReason =
+  | SourceCheckFailure
+  | "takedown_pending"
+  | "business_price"
+  | "name_fragment"
+  | "not_checking";
+
+/**
+ * The monthly maintenance line compares entry checking. Its rule keeps savings out by fee name,
+ * but a savings or money market fee is often named just "Monthly fee", so the schedule line
+ * that states the fee decides as well.
+ */
+const NOT_CHECKING_LINE = /\b(savings?|money market|certificates?|share accounts?|cds?|ira)\b/i;
+
+export function maintenanceLineIsNotChecking(line: string, sourceLine: string): boolean {
+  return line === "monthly_maintenance" && NOT_CHECKING_LINE.test(sourceLine);
+}
+
+/** "Business" as a customer type, not "business day". */
+const BUSINESS_PRICE = /\b(business|commercial)\b(?!\s+days?\b)/i;
+
+/**
+ * A whole-record problem that keeps a published row out of a report whatever its source text
+ * says: a pending takedown (pipeline_feedback takedown_pending), a business price in a consumer
+ * comparison, or a fee_name that is a cut sentence (Darwin's nameIsFragment).
+ */
+export function reportRowProblem(row: { fee_name: string; takedown_pending?: boolean | null }): ReportDropReason | null {
+  if (row.takedown_pending) return "takedown_pending";
+  if (BUSINESS_PRICE.test(row.fee_name)) return "business_price";
+  if (nameIsFragment(row.fee_name)) return "name_fragment";
+  return null;
+}
 const SOD_THOUSANDS = 1_000;
 
 export interface MarketInstitution {
@@ -55,7 +94,7 @@ export interface CustomReportMarketData {
   /** Representative line per institution and fee line, subject included. */
   lines: MarketFeeLine[];
   /** Published rows left out because their source text does not state them, by reason. */
-  dropped: Partial<Record<SourceCheckFailure, number>>;
+  dropped: Partial<Record<ReportDropReason, number>>;
 }
 
 interface StoredText {
@@ -249,6 +288,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       source_url: string | null;
       updated_at: string | null;
       source_document_id: string | null;
+      takedown_pending: boolean | null;
     }[]
   >`
     WITH rules AS (
@@ -275,7 +315,9 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     ),
     guarded AS (
       SELECT c.institution_id, r.k AS line, c.amount, c.fee_name, c.source_document_id,
-             COALESCE(c.document_url, c.source_url) AS source_url, c.updated_at
+             COALESCE(c.document_url, c.source_url) AS source_url, c.updated_at,
+             EXISTS (SELECT 1 FROM pipeline_feedback pf
+                      WHERE pf.fee_published_id = c.id AND pf.kind = 'takedown_pending') AS takedown_pending
       FROM published_fee_catalog c
       JOIN rules r ON c.canonical_fee_key = ANY (r.source_keys)
       WHERE c.institution_id IN (SELECT institution_id FROM members)
@@ -300,7 +342,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     )
     SELECT m.institution_id, s.institution_name, s.city, s.state_code, s.charter_type,
            m.deposits AS market_deposits, p.line, p.amount, p.fee_name, p.source_url, p.updated_at::text AS updated_at,
-           p.source_document_id::text AS source_document_id
+           p.source_document_id::text AS source_document_id, p.takedown_pending
     FROM members m
     JOIN institution_sources s ON s.id = m.institution_id
     LEFT JOIN ranked p ON p.institution_id = m.institution_id
@@ -335,7 +377,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   }
   const includeByLine = new Map(FEE_LINE_RULES.map((rule) => [rule.key, rule.include]));
   const filled = new Map<string, MarketFeeLine>();
-  const dropped: Partial<Record<SourceCheckFailure, number>> = {};
+  const dropped: Partial<Record<ReportDropReason, number>> = {};
 
   const competitors = new Map<number, MarketInstitution>();
   const lines: MarketFeeLine[] = [];
@@ -355,6 +397,11 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     const amount = num(row.amount);
     const slot = `${id}:${row.line}`;
     if (row.line && amount !== null && row.fee_name) {
+      const problem = reportRowProblem({ fee_name: row.fee_name, takedown_pending: row.takedown_pending });
+      if (problem) {
+        dropped[problem] = (dropped[problem] ?? 0) + 1;
+        continue;
+      }
       const linked = row.source_document_id ? texts.get(row.source_document_id) : undefined;
       const candidates = linked ? [linked] : row.source_document_id ? [] : (textsByInstitution.get(id) ?? []);
       const include = includeByLine.get(row.line) ?? "";
@@ -369,6 +416,10 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       }
       if (!check.ok) {
         dropped[check.reason] = (dropped[check.reason] ?? 0) + 1;
+        continue;
+      }
+      if (maintenanceLineIsNotChecking(row.line, check.sourceLine)) {
+        dropped.not_checking = (dropped.not_checking ?? 0) + 1;
         continue;
       }
       const representative = filled.get(slot);

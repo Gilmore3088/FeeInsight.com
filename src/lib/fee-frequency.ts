@@ -22,7 +22,8 @@ const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly
  * An allowance is not the fee's period: "Cashier Checks (1 free per month) | $2.00" and "$1.00
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
-const ALLOWANCE = /\b(free|after|first)\b[^|$]{0,40}?\bper (month|statement cycle|cycle|year)\b/gi;
+// v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
+const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond)\b[^|$]{0,40}?\bper (month|statement cycle|cycle|year)\b/gi;
 
 function withoutAllowance(text: string): string {
   return text.replace(ALLOWANCE, " ");
