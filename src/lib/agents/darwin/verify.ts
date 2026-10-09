@@ -132,32 +132,79 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
 
 const NONZERO_DOLLAR = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
 const PRICE_CELL = /\$|\bfree\b|\bn\/c\b|\bno charge\b/i;
+// Words of a fee name that every fee shares; a cell has to carry one of the name's other words
+// before it is this fee's ("Garnish & Levy Fee" is not the "Notary Fee" cell).
+const GENERIC_NAME_WORDS = new Set(["fee", "fees", "charge", "charges", "service", "services", "per", "each", "item", "account", "acct", "occurrence"]);
+const NON_CUSTOMER = "non-?\\s?(?:members?|customers?|clients?|account\\s?holders?)";
+// "$5 - Non-Members", "Non-members $5", "$10 for non-customers": the other party's price, never this
+// customer's condition (UAT, 2026-10-09: Notary Fee "$0 - Members $5 - Non-Members" is a free fee).
+const NON_CUSTOMER_PRICE = new RegExp(`\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?[^$|]{0,25}?${NON_CUSTOMER}|${NON_CUSTOMER}[^$|]{0,25}?\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?`, "gi");
+// "$1 minimum opening requirement", "Minimum deposit to open: $25", "$50 minimum to open": the deposit
+// that opens the account, not a price the fee falls back to.
+const OPENING_DEPOSIT = /\$\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:minimum\s+)?(?:opening|to\s+open|deposit\s+to\s+open)(?!\s*:)|(?:minimum\s+(?:deposit\s+)?to\s+open|minimum\s+opening\s+(?:deposit|balance|requirement)|opening\s+(?:deposit|requirement))[^$|]{0,20}?\$\s*\d[\d,]*(?:\.\d{1,2})?/gi;
+// A "Label:" inside a cell that lists several ("Monthly Service Charge: FREE Minimum Balance: $1.00"):
+// a run of capitalised words (lower-case fillers allowed) ending in a colon.
+const CELL_LABEL = /(?<=^|\s)(?:[A-Z][\w/&()*'-]*(?:\s(?:to|of|for|and|or|per|in|on|a|an|the))*\s){0,5}[A-Z][\w/&()*'-]*:\s/g;
 
-/**
- * The part of a schedule line that belongs to this fee: on a table line (cells split by " | ")
- * the cell that carries the most words of the fee name, plus the next cell when it reads as a
- * price ("$6.95 per Month", "FREE"); a prose line is used whole. Keeps a neighbour's price in
- * the same table row ("Monthly Maintenance | Free | Assisted Phone Transactions* | $3") from
- * being read as this fee's. Pure.
- */
-export function ownSegment(line: string, feeName: string | null | undefined): string {
-  const cells = line.split(/\s\|\s/);
-  if (cells.length < 2) return line;
-  const tokens = (feeName ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? [];
+function nameTokens(feeName: string | null | undefined): string[] {
+  return (feeName ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? [];
+}
+
+/** Index of the part that carries the most words of the fee name, -1 when none does. */
+function bestPart(parts: string[], tokens: string[]): number {
+  const specific = tokens.filter((token) => !GENERIC_NAME_WORDS.has(token));
   let best = -1;
   let bestScore = 0;
-  cells.forEach((cell, index) => {
-    const lower = cell.toLowerCase();
+  parts.forEach((part, index) => {
+    const lower = part.toLowerCase();
+    // A name with its own words needs one of them in the part; a generic word alone is not a match.
+    if (specific.length > 0 && !specific.some((token) => lower.includes(token))) return;
     const score = tokens.filter((token) => lower.includes(token)).length;
     if (score > bestScore) {
       bestScore = score;
       best = index;
     }
   });
-  if (best < 0) return line;
+  return best;
+}
+
+function isPriceCell(cell: string | undefined): boolean {
+  return cell != null && PRICE_CELL.test(cell) && (cell.match(/[a-z]+/gi)?.length ?? 0) <= 4;
+}
+
+/**
+ * The part of a schedule line that belongs to this fee: on a table line (cells split by " | ")
+ * the cell that carries the most words of the fee name, plus the next cell when it reads as a
+ * price ("$6.95 per Month", "FREE") and is the only price cell that follows; a prose line is used
+ * whole. Keeps a neighbour's price in the same table row ("Monthly Maintenance | Free | Assisted
+ * Phone Transactions* | $3") from being read as this fee's. A row of a comparison table ("Monthly
+ * fee | $0 | $5* | $0") prices one fee per product column, so only the name cell is this fee's;
+ * inside a cell that lists several "Label: value" pairs, only the fee's own label and value count.
+ * Pure.
+ */
+export function ownSegment(line: string, feeName: string | null | undefined): string {
+  // Cells: table columns (" | "), items of a comma list ("FREE Debit Card, FREE Bill Pay, ... up to
+  // $10"), and dot-leader entries ("Garnish & Levy Fee ……… $25.00 per Item Research ……… $20.00").
+  const cells = line.split(/\s\|\s|,\s+|[.…]{3,}\s*/).filter((cell) => cell.trim().length > 0);
+  const tokens = nameTokens(feeName);
+  if (cells.length < 2) return bestPart(cells, tokens) < 0 ? "" : ownClause(line, tokens);
+  const best = bestPart(cells, tokens);
+  // No cell carries a word of the name: the line's prices cannot be this fee's.
+  if (best < 0) return "";
   const next = cells[best + 1];
-  const nextIsPrice = next != null && PRICE_CELL.test(next) && (next.match(/[a-z]+/gi)?.length ?? 0) <= 4;
-  return nextIsPrice ? `${cells[best]} | ${next}` : cells[best];
+  const comparisonRow = isPriceCell(next) && isPriceCell(cells[best + 2]);
+  const own = ownClause(cells[best], tokens);
+  return isPriceCell(next) && !comparisonRow ? `${own} | ${next}` : own;
+}
+
+/** The "Label: value" clause of a cell that names this fee, when the cell holds several. */
+function ownClause(cell: string, tokens: string[]): string {
+  const starts = [...cell.matchAll(CELL_LABEL)].map((match) => match.index).filter((index) => index > 0);
+  if (starts.length === 0) return cell;
+  const clauses = [0, ...starts].map((start, index, all) => cell.slice(start, all[index + 1]).trim()).filter((clause) => clause.length > 0);
+  if (clauses.length < 2) return cell;
+  const best = bestPart(clauses, tokens);
+  return best < 0 ? cell : clauses[best];
 }
 
 /**
@@ -166,13 +213,17 @@ export function ownSegment(line: string, feeName: string | null | undefined): st
  * with E-Statements and Debit Card | $6.95 per Month", "Monthly fee for balance of $500 & over |
  * FREE" (the $5 row is the line below). The customer who misses the condition pays the charge, so
  * $0 is not the fee; the row is held, never verified as free (UAT, 2026-10-09: 3 of the 4 wrong
- * rows in a 20-row check of the not_in_source re-select were $0 readings of priced fees). A
- * neighbour's price in the same table row does not count (dry read, 2026-10-09: "Monthly
- * Maintenance | Free | Assisted Phone Transactions* | $3" is a free fee). Pure.
+ * rows in a 20-row check of the not_in_source re-select were $0 readings of priced fees). Not
+ * conditions (UAT 7/10 takedown check, 2026-10-09): a neighbour's price in the same table row,
+ * comma list or dot-leader run ("Monthly Maintenance | Free | Assisted Phone Transactions* | $3");
+ * the other columns of a comparison table ("Monthly fee | $0 | $5* | $0"); a non-member or
+ * non-customer price ("$0 - Members $5 - Non-Members"); another label in the same cell ("Monthly
+ * Service Charge: FREE Minimum Balance: $1.00 | Monthly Balance Fee: $7.50"); and the deposit that
+ * opens the account ("No monthly service fee and just $1 minimum opening requirement"). Pure.
  */
 export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
   if (amount !== 0) return false;
-  const text = `${line ? ownSegment(line, feeName) : ""} ${feeName ?? ""}`;
+  const text = `${line ? ownSegment(line, feeName) : ""} ${feeName ?? ""}`.replace(NON_CUSTOMER_PRICE, " ").replace(OPENING_DEPOSIT, " ");
   return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
 }
 

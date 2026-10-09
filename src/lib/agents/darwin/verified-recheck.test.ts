@@ -15,6 +15,7 @@ const TEXT = [
 ].join("\n");
 
 const verifiedRow = {
+  review_status: "verified",
   institution_id: 42,
   source_url: "https://testbank.example/fees",
   document_r2_key: null,
@@ -84,6 +85,23 @@ describe("Darwin verified re-check", () => {
     expect(JSON.stringify(feedback.map((call) => call.slice(1)))).toContain(DARWIN_RECHECK_CHECK);
     const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
     expect(JSON.stringify(attempts[0].slice(1))).toContain("second_look");
+  });
+
+  it("restores a row an earlier version rejected when it passes now, and leaves a still-failing one rejected", async () => {
+    const db = dbWith([
+      { ...verifiedRow, review_status: "rejected", fee_verified_id: 119878, fee_raw_id: 468414, source_document_id: 56, canonical_fee_key: "bill_pay", verified_amount: "0.00", fee_name: "Bill Pay", amount: "0.00", outlier_flags: ["knox_review:zero", "darwin_recheck:conditional_zero"], conditions: "excerpt=\"FREE Debit Card, FREE Bill Pay, FREE eStatements, Buy back of unused checks up to $10 within 30 days\"", fee_published_id: null },
+      { ...verifiedRow, review_status: "rejected", fee_verified_id: 119842, fee_raw_id: 230322, canonical_fee_key: "monthly_maintenance", verified_amount: "0.00", fee_name: "Monthly Fee", amount: "0.00", outlier_flags: ["darwin_recheck:conditional_zero"], conditions: "excerpt=\"Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month\"", fee_published_id: null },
+    ]);
+
+    const result = await recheckVerifiedFees(db as never, { runId: 503 });
+
+    expect(result).toMatchObject({ checked: 2, passed: 0, restored: [119878], rejected: [], takenDown: [] });
+    const restores = db.mock.calls.filter((call) => templateText(call[0]).includes("SET review_status = 'verified'"));
+    expect(restores).toHaveLength(1);
+    expect(restores[0].slice(1)).toContain(119878);
+    const attempts = db.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
+    expect(JSON.stringify(attempts[0].slice(1))).toContain("restored");
+    expect(JSON.stringify(attempts[1].slice(1))).toContain("still_rejected");
   });
 
   it("does nothing when every verified row has been re-checked under this version", async () => {
