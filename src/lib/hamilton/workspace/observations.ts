@@ -62,12 +62,6 @@ function quantile(sorted: number[], q: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
-}
-
 /** Every reviewed fee against its peer band, in the order given: no ranking and no price direction. */
 export function feePositionRows(positions: FeePositionInput[]): FeePositionRow[] {
   return positions.map((p) => {
@@ -96,17 +90,20 @@ export function marketPositionObservations(positions: FeePositionInput[]): Obser
     const sorted = [...p.peers].sort((a, b) => a - b);
     const higher = p.peers.filter((v) => v > p.current + 0.005).length;
     const lower = p.peers.filter((v) => v < p.current - 0.005).length;
+    const n = p.peers.length;
     const headline =
       pos <= POSITION_EXTREME_PCT
-        ? `Your ${name} is below ${higher} of ${p.peers.length} peers.`
-        : `Your ${name} is above ${lower} of ${p.peers.length} peers.`;
+        ? higher === n
+          ? `Your ${name} of ${fmtMoney(p.current)} is the lowest of ${n} peers.`
+          : `Your ${name} of ${fmtMoney(p.current)} is below ${higher} of ${n} peers.`
+        : lower === n
+          ? `Your ${name} of ${fmtMoney(p.current)} is the highest of ${n} peers.`
+          : `Your ${name} of ${fmtMoney(p.current)} is above ${lower} of ${n} peers.`;
     const facts: Fact[] = [
-      { text: `Your published ${name}: ${fmtMoney(p.current)}.`, source: CATALOG },
       {
-        text: `${p.peerLabel}: median ${fmtMoney(quantile(sorted, 0.5))}, middle half ${fmtMoney(quantile(sorted, 0.25))} to ${fmtMoney(quantile(sorted, 0.75))}, from ${p.peers.length} institutions.`,
+        text: `${p.peerLabel}: median ${fmtMoney(quantile(sorted, 0.5))}, middle half ${fmtMoney(quantile(sorted, 0.25))} to ${fmtMoney(quantile(sorted, 0.75))}, from ${n} institutions.`,
         source: CATALOG,
       },
-      { text: `That places you at the ${ordinal(pos)} percentile.`, source: CATALOG },
     ];
     out.push({
       id: `market_position:${p.feeCategory}`,

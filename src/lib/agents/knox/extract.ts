@@ -372,6 +372,10 @@ function textArtifactQuery(
     // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
     // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
     // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
+    // A run for one institution (a person asked for it by name) reads its current page once
+    // per rules version whether or not it has a live overdraft fee: SCCU (8109) and inst 8414
+    // kept v33 reads that the v63-v64 box-table fixes never reached, because both have one
+    // (2026-10-09).
     if (currentCopy && priorityIds.length > 0) {
       const leaderParam = `$${params.push(`{${priorityIds.join(",")}}`)}`;
       thinTextReextract += `
@@ -381,13 +385,13 @@ function textArtifactQuery(
                SELECT 1 FROM source_documents copy
                 WHERE copy.id = adt.source_document_id
                   AND copy.superseded_by_id IS NOT NULL
-             )
+             )${institutionId ? "" : `
              AND NOT EXISTS (
                SELECT 1 FROM published_fee_records live_overdraft
                 WHERE live_overdraft.institution_id = adt.institution_id
                   AND live_overdraft.canonical_fee_key = 'overdraft'
                   AND live_overdraft.rolled_back_at IS NULL
-             )
+             )`}
            )`;
     }
     // Same text + same extractor version = same answer: never extract it twice.
@@ -612,8 +616,8 @@ export async function insertCandidate(
   // monthly maintenance fee carries them.
   const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
   // The dedupe index is (document, fee name, amount), so a line an older version held
-  // as unclassified would block this fee forever. A held row with no category takes the
-  // category instead; any other existing row stays as it is.
+  // as unclassified or untraced would block this fee forever. Such a held row takes the
+  // traced read instead; any other existing row stays as it is.
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -662,11 +666,12 @@ export async function insertCandidate(
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
-      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
+      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:untraced')
                       || EXCLUDED.outlier_flags
                       || '["knox_promoted_from_held"]'::jsonb
      WHERE fr.source = 'knox'
-       AND fr.outlier_flags ? 'knox_review:unclassified'
+       -- A line held because the self-check could not trace it, now read and traced, is that fee.
+       AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:untraced')
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
     RETURNING fee_raw_id
   `;
@@ -973,8 +978,8 @@ export async function runKnoxExtract(
   // The named priority banks (in list order), then market leaders, are read first while the
   // stale backlog lasts.
   // A run for one institution (Atlas's read-now runs) reads its current page again once per
-  // rules version while it has no live overdraft fee, so a rules fix reaches a requested bank
-  // without waiting for its state lane (2026-10-08: Marketing's outreach batch).
+  // rules version, so a rules fix reaches a requested bank without waiting for its state lane
+  // (2026-10-08: Marketing's outreach batch).
   const priorityIds = !(learning && currentCopy)
     ? []
     : options.institutionId

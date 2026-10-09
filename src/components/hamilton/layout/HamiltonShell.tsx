@@ -97,7 +97,7 @@ export function HamiltonShell({
           </div>
         ) : null}
 
-        <main className="mx-auto min-w-0 max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
+        <main className="mx-auto min-w-0 max-w-page px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
 
         {/* Ask Hamilton, docked on every screen */}
         <HamiltonAskDock selectedInstitutionId={selectedInstitutionId} />

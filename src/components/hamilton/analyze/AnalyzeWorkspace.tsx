@@ -14,6 +14,7 @@ import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
+import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
@@ -67,6 +68,8 @@ export function askErrorMessage(error: Error | undefined): string {
     return "Hamilton's AI isn't switched on in this preview copy of the site, so it can't answer here. Questions work on feeinsight.com.";
   }
   if (/Hamilton AI requests for today/.test(text)) return text;
+  // The provider's usage or billing limit (sent by the route as the paused line).
+  if (isHamiltonPausedText(text) || /usage limit|credit balance is too low/i.test(text)) return HAMILTON_PAUSED_MESSAGE;
   if (/Emergency stop|budget|circuit/i.test(text)) {
     return "Hamilton's AI is paused right now while spending is checked, so it can't answer. Everything else on Fee Insight still works.";
   }
@@ -569,7 +572,7 @@ export function AnalyzeWorkspace({
   );
 
   return (
-    <MemoPage width="reading">
+    <MemoPage>
       {chatError && !isLoading ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
           <span>{askErrorMessage(chatError)}</span>
@@ -633,43 +636,48 @@ export function AnalyzeWorkspace({
             title={instName ? `Ask anything about ${instName}'s fees` : "Ask anything about your fees and your market"}
             dek="Answers from published fee schedules and regulator filings, with every figure checked."
           />
-          {askBox}
-          <MemoSection title="Questions bankers start with">
-            <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-              {suggestions.map((s) => (
-                <li key={s}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInput(s);
-                      textareaRef.current?.focus();
-                    }}
-                    className="w-full px-4 py-3 text-left text-warm-900 hover:bg-warm-100"
-                    style={SERIF}
-                  >
-                    {s}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </MemoSection>
-          {recent.length > 0 ? (
-            <MemoSection title="Your recent questions" note="Saved answers reopen as they were written, with their figures.">
-              <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-                {recent.map((r) => (
-                  <li key={r.id}>
-                    <a
-                      href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(r.id)}`, instId)}
-                      className="flex min-h-11 items-baseline justify-between gap-4 px-4 py-3 text-warm-900 no-underline hover:bg-warm-100"
-                    >
-                      <span className="min-w-0" style={SERIF}>{r.title}</span>
-                      <span className="shrink-0 text-xs text-warm-600">{shortDate(r.updated_at)}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </MemoSection>
-          ) : null}
+          {/* Wide screens: ask and starters on the left, recent answers on the right. */}
+          <div className={`grid gap-8 ${recent.length > 0 ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""}`}>
+            <div className="flex min-w-0 flex-col gap-8">
+              {askBox}
+              <MemoSection title="Questions bankers start with">
+                <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+                  {suggestions.map((s) => (
+                    <li key={s}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInput(s);
+                          textareaRef.current?.focus();
+                        }}
+                        className="w-full px-4 py-3 text-left text-warm-900 hover:bg-warm-100"
+                        style={SERIF}
+                      >
+                        {s}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </MemoSection>
+            </div>
+            {recent.length > 0 ? (
+              <MemoSection title="Your recent questions">
+                <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+                  {recent.map((r) => (
+                    <li key={r.id}>
+                      <a
+                        href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(r.id)}`, instId)}
+                        className="flex min-h-11 items-baseline justify-between gap-4 px-4 py-3 text-warm-900 no-underline hover:bg-warm-100"
+                      >
+                        <span className="min-w-0" style={SERIF}>{r.title}</span>
+                        <span className="shrink-0 text-xs text-warm-600">{shortDate(r.updated_at)}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </MemoSection>
+            ) : null}
+          </div>
         </>
       )}
 
