@@ -7,10 +7,10 @@ vi.mock("@/lib/stripe", () => ({ getStripe: () => ({ webhookEndpoints: { list: m
 
 import { GET } from "./route";
 
-const endpoint = (enabled_events: string[]) => ({
+const endpoint = (enabled_events: string[], status = "enabled", url = "https://feeinsight.com/api/webhooks/stripe") => ({
   id: "we_1",
-  url: "https://feeinsight.com/api/webhooks/stripe",
-  status: "enabled",
+  url,
+  status,
   livemode: true,
   enabled_events,
 });
@@ -40,5 +40,23 @@ describe("GET /api/admin/stripe/webhook-check", () => {
     const body = await (await GET()).json();
     expect(body.ok).toBe(true);
     expect(body.endpoints[0].missing).toEqual([]);
+  });
+
+  it("ignores a disabled endpoint's gaps but still lists them", async () => {
+    mocks.endpoints.mockResolvedValue({
+      data: [
+        endpoint(["*"]),
+        endpoint(["checkout.session.completed"], "disabled", "https://bank-fee-index.fly.dev/api/webhooks/stripe"),
+      ],
+    });
+    const body = await (await GET()).json();
+    expect(body.ok).toBe(true);
+    expect(body.endpoints[1].missing).toContain("invoice.paid");
+  });
+
+  it("is not ok when every matching endpoint is disabled", async () => {
+    mocks.endpoints.mockResolvedValue({ data: [endpoint(["*"], "disabled")] });
+    const body = await (await GET()).json();
+    expect(body.ok).toBe(false);
   });
 });

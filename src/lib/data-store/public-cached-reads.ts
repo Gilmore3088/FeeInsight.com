@@ -22,7 +22,12 @@ import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
-import { getInstitutionPeerRankForRule, type InstitutionPeerRank } from "./peer-fee-rank";
+import {
+  getPeerGroupValues,
+  peerFiltersForRule,
+  peerRankFromGroupValues,
+  type InstitutionPeerRank,
+} from "./peer-fee-rank";
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
@@ -111,10 +116,17 @@ export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-m
  * would read the database on every miss.
  */
 const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows", getHeadlineCoverageRows);
-const getInstitutionPeerRankForRuleCached = cachedPublicRead("institution-peer-rank-for-rule", getInstitutionPeerRankForRule);
+/**
+ * Peer values are cached per peer group (charter and state, or charter and Fed district),
+ * not per institution: a per-institution entry re-read the catalog for every page a crawler
+ * opened, and an institution without a rank (a null, which is never cached) re-read it on
+ * every visit. About 300 reads an hour at ~460 ms on Oct 9.
+ */
+const getPeerGroupValuesCached = cachedPublicRead("peer-group-values", getPeerGroupValues);
 export async function getInstitutionPeerRankCached(institutionId: number): Promise<InstitutionPeerRank | null> {
   const rule = reportRuleCheckFromRows(institutionId, await getHeadlineCoverageRowsCached());
-  if (!rule?.passes) return null;
-  return getInstitutionPeerRankForRuleCached(institutionId, rule);
+  const filters = peerFiltersForRule(rule);
+  if (!rule || !filters) return null;
+  return peerRankFromGroupValues(institutionId, rule, filters, await getPeerGroupValuesCached(filters));
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);

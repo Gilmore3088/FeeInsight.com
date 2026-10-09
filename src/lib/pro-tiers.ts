@@ -88,6 +88,24 @@ export function annualMonthsFree(tier: ProTier): number {
   return Math.round(12 - def.annualUsd / def.monthlyUsd);
 }
 
+const DOLLARS_AND_CENTS = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+/** The annual plan as a monthly figure: "$125", or "$416.67" when it isn't whole dollars. */
+export function annualPerMonthLabel(tier: ProTier): string {
+  return DOLLARS_AND_CENTS.format(Math.round((proTier(tier).annualUsd / 12) * 100) / 100);
+}
+
+/** What the annual plan saves against twelve monthly payments: "$300". */
+export function annualSavingsLabel(tier: ProTier): string {
+  const def = proTier(tier);
+  return WHOLE_DOLLARS.format(def.monthlyUsd * 12 - def.annualUsd);
+}
+
 /** "$1,500 to $5,000 a year" */
 export const PRO_ANNUAL_RANGE_LABEL = `${WHOLE_DOLLARS.format(PRO_TIERS[0].annualUsd)} to ${WHOLE_DOLLARS.format(
   PRO_TIERS[PRO_TIERS.length - 1].annualUsd,

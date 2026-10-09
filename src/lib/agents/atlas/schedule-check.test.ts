@@ -60,8 +60,11 @@ describe("scheduleState", () => {
   it("is not_due when the schedule never fell in the window", () => {
     expect(scheduleState({ routeId: "r", lastDueAt: null, lastCall: null })).toBe("not_due");
   });
+  it("is unknown when the route has no call on record, since a new cron looks the same", () => {
+    expect(scheduleState({ routeId: "r", lastDueAt: due, lastCall: null })).toBe("unknown");
+  });
+
   it("is missed when no call landed since the last due time", () => {
-    expect(scheduleState({ routeId: "r", lastDueAt: due, lastCall: null })).toBe("missed");
     expect(scheduleState({ routeId: "r", lastDueAt: due, lastCall: { at: at("2026-10-08T12:43:05Z"), outcome: "success" } })).toBe("missed");
   });
   it("is ran or failed from the call's outcome", () => {
@@ -96,7 +99,7 @@ describe("summarizeScheduleCheck", () => {
       counts: { ran: 1, missed: 1, failed: 1, unknown: 1, not_due: 0 },
     };
     expect(summarizeScheduleCheck(result)).toBe(
-      "Checked 4 schedules against the route ledger: 1 ran on time, 1 missed, 1 failed (/b, /c); 1 unknown (no audit trail).",
+      "Checked 4 schedules against the route ledger: 1 ran on time, 1 missed, 1 failed (/b, /c); 1 unknown (no call on record).",
     );
   });
   it("says none missed when all ran", () => {

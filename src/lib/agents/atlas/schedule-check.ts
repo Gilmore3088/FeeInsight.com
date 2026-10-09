@@ -97,6 +97,18 @@ export function lastScheduledAt(schedule: string, before: Date, lookbackMinutes 
   return null;
 }
 
+/** Pure: the next scheduled minute strictly after `after`, or null within the lookahead. */
+export function nextScheduledAt(schedule: string, after: Date, lookaheadMinutes = LOOKBACK_MINUTES): Date | null {
+  const matches = cronMatcher(schedule);
+  const cursor = new Date(after);
+  cursor.setUTCSeconds(0, 0);
+  for (let step = 0; step <= lookaheadMinutes; step += 1) {
+    cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
+    if (matches(cursor)) return new Date(cursor);
+  }
+  return null;
+}
+
 export function cronEntries(config: { crons?: CronEntry[] } = vercelConfig as { crons?: CronEntry[] }): CronEntry[] {
   return (config.crons ?? []).map((cron) => ({ path: cron.path, schedule: cron.schedule }));
 }
@@ -119,7 +131,10 @@ export function scheduleState(input: {
 }): ScheduleState {
   if (!input.routeId) return "unknown";
   if (!input.lastDueAt) return "not_due";
-  if (!input.lastCall || input.lastCall.at.getTime() < input.lastDueAt.getTime() - 60_000) return "missed";
+  // No call on record at all: a cron added after its last due time looks exactly like this
+  // until its first run, so the ledger alone cannot call it missed.
+  if (!input.lastCall) return "unknown";
+  if (input.lastCall.at.getTime() < input.lastDueAt.getTime() - 60_000) return "missed";
   return input.lastCall.outcome === "success" ? "ran" : "failed";
 }
 
@@ -145,6 +160,7 @@ export async function runScheduleCheck({ db = sql, now = new Date() }: { db?: Sq
     const state = scheduleState({ routeId, lastDueAt, lastCall });
     const notes: string[] = [];
     if (!routeId) notes.push("No route policy, so its calls are not in the audit ledger.");
+    else if (lastDueAt && !lastCall) notes.push("No call on record in the last 100 days; a new cron shows here until its first run.");
     if ((shared.get(pathnameOf(entry.path)) ?? 0) > 1) notes.push("Shares its route with another cron; any call to the route counts.");
     return {
       path: entry.path,
@@ -169,6 +185,6 @@ export function summarizeScheduleCheck(result: ScheduleCheckResult): string {
   const bad = problems.length === 0
     ? "none missed or failed"
     : `${counts.missed} missed, ${counts.failed} failed (${problems.map((row) => row.path).join(", ")})`;
-  const unknown = counts.unknown > 0 ? `; ${counts.unknown} unknown (no audit trail)` : "";
+  const unknown = counts.unknown > 0 ? `; ${counts.unknown} unknown (no call on record)` : "";
   return `${head}, ${bad}${unknown}.`;
 }
