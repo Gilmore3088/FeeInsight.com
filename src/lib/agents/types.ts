@@ -130,6 +130,7 @@ export const MARKETING_STEP_KEYS: readonly string[] = [
   "content-fee-depth",
   "content-market-spread",
   "content-od-by-state",
+  "growth-contact-picks",
   "growth-contacts",
   "growth-conversion",
   "growth-intel",
