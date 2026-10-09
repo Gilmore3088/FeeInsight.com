@@ -237,6 +237,53 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_amount", pattern: "fee_in_sentence",
     why: "Doc 24024: \"Maximum Overdraft Continuation Fee is $30.00 during each consecutive OD period\": $30 caps the continuation fees, it is not the fee",
   },
+  // "Free [perk]" $0 rows (UAT, Oct 9): 142 of the 148 live already hold the product page check's
+  // flag. These three sit on marketing pages that check does not class as product pages. A
+  // fee schedule's own "Free incoming wires" line (64904, 100941) is the bank's price and stays.
+  ...([
+    [87808, "Iq Federal Credit Union", "Free online banking, bill pay", "doc 21644, a high-yield bundle page"],
+    [88092, "Ridgeline Federal Credit Union", "Free bill pay", "doc 20882, a rates page (\"VISA Debit and free bill pay\")"],
+    [88453, "FNB Picayune Bank", "Free online banking, mobile banking and bill payment", "doc 13040, a services brochure"],
+  ] as const).map(([feePublishedId, institution, feeName, where]) => ({
+    feePublishedId, institution, feeName, amount: 0, canonicalFeeKey: "bill_pay",
+    verdict: "not_a_fee" as const, pattern: "perk_claim",
+    why: `${where}: an account perk in a feature list, not a fee line`,
+  })),
+  // Broken-figure names (PR 961 dry read) and the "$14\ufffd95" scan, Oct 9, each read against its
+  // stored text. The rest of that list is re-filed or renamed (taxonomy-fold HAND_REFILES). There is
+  // no typed path that changes a live amount, so 50019's and 50020's dropped cents come down for a fresh
+  // read. Across every stored text, four docs print a broken glyph between dollars and cents; only
+  // these two live rows lost cents to it.
+  {
+    feePublishedId: 19932, institution: "Langley Federal Credit Union",
+    feeName: "Returned Deposited Check $\u0015\u0018.00/item Stop Payment Order - Check, ACH (per item)", amount: 30, canonicalFeeKey: "deposited_item_return",
+    verdict: "wrong_category", pattern: "column_glue",
+    why: "Doc 13444: $30 is the stop payment line (\"Stop Payment Order – each item | $30.00\"), already live as 19928 under stop_payment; the returned deposited check price is unreadable",
+  },
+  {
+    feePublishedId: 77915, institution: "Intrepid Federal Credit Union",
+    feeName: "Statement Copies $\u0106.\u01000 each Counter Draft (check)", amount: 1, canonicalFeeKey: "document_reproduction",
+    verdict: "wrong_category", pattern: "column_glue",
+    why: "Doc 13054: $1 is the counter draft line (\"Counter Draft (check) (limit 8per month) ... $1.00 each\"), re-filed under counter_check as 53034; this is the same line again",
+  },
+  {
+    feePublishedId: 50019, institution: "United Teletech Financial Federal Credit Union",
+    feeName: "Bill Pay Overnight Check " + "\ufffd".repeat(38), amount: 14, canonicalFeeKey: "bill_pay",
+    verdict: "wrong_amount", pattern: "glyph_cents",
+    why: "Doc 8005: the schedule prints \"$14\ufffd95\" (the decimal point is a broken glyph); Knox kept $14, the fee is $14.95",
+  },
+  {
+    feePublishedId: 50020, institution: "United Teletech Financial Federal Credit Union",
+    feeName: "Same Day Bill Pay " + "\ufffd".repeat(48), amount: 9, canonicalFeeKey: "bill_pay",
+    verdict: "wrong_amount", pattern: "glyph_cents",
+    why: "Doc 8005: the schedule prints \"$9\ufffd95\"; Knox kept $9, the fee is $9.95",
+  },
+  {
+    feePublishedId: 86462, institution: "Virginia National Bank",
+    feeName: "\uf0b7 Monthly Maintenance", amount: 20, canonicalFeeKey: "monthly_maintenance",
+    verdict: "wrong_category", pattern: "section_heading_lost",
+    why: "Doc 21565: \"Positive Pay Monthly Maintenance ... $20.00 per month\" under Treasury Management, a business fraud-protection service none of the 50 types covers (the guard keeps Positive Pay out of monthly_maintenance since v49), not an account's monthly fee",
+  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */
