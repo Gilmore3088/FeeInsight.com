@@ -96,23 +96,32 @@ const PAGE_PRICE = /\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\b\d{1,3}(?:,\d{3})*\.
  * price ("Stop Payment\n(each item ...)\n$30 each"), or one price of several on a row
  * ("Domestic wire | Outgoing = $20 Incoming = $10" anchors "Incoming" to $10). Each piece of
  * the name between separators (":", "|", parentheses, " - ") of 5 or more characters can
- * anchor ("each" cannot). Pure.
+ * anchor ("each" cannot).
+ *
+ * Two misses from the 9 Oct hand check (Tampa Bay FCU, "Fresh Start Checking | $9.95/month"):
+ * a name Hamilton composed from the account heading ("Fresh Start Checking Monthly Maintenance
+ * Fee", `account-names.ts`) also anchors without its generic fee words, and a condition in
+ * parentheses ("Rewards Checking (Waived with $1,500 ...) | $5.95/month") is read past. Pure.
  */
 export function priceFollowsName(feeName: string, amount: number, currentText: string): boolean {
   const current = squashText(currentText);
-  const anchors = feeName
-    .split(/[:|()\u2013\u2014]| - /)
-    .map((part) => squashText(part).trim())
-    .filter((part) => part.length >= 5);
-  for (const anchor of anchors) {
+  const parts = feeName.split(/[:|()\u2013\u2014]| - /).map((part) => squashText(part).trim());
+  const anchors = [...parts, ...parts.map((part) => part.replace(GENERIC_FEE_WORDS, "").trim())].filter((part) => part.length >= 5);
+  const isPrice = (window: string) => {
+    const first = window.match(PAGE_PRICE)?.[0];
+    return first != null && Math.abs(Number(first.replace(/[$,\s]/g, "")) - amount) < 0.005;
+  };
+  for (const anchor of new Set(anchors)) {
     for (let at = current.indexOf(anchor); at >= 0; at = current.indexOf(anchor, at + 1)) {
       const after = current.slice(at + anchor.length, at + anchor.length + 120);
-      const first = after.match(PAGE_PRICE)?.[0];
-      if (first && Math.abs(Number(first.replace(/[$,\s]/g, "")) - amount) < 0.005) return true;
+      if (isPrice(after) || isPrice(after.replace(/\([^()]*\)/g, " "))) return true;
     }
   }
   return false;
 }
+
+/** The fee words `account-names.ts` appends to an account heading. */
+const GENERIC_FEE_WORDS = /\s*\b(?:monthly\s+)?(?:maintenance|service)\s+(?:fee|charge)$|\s*\bmonthly\s+fee$/;
 
 /**
  * The newer-copy verdict, with two guards from the first hand check (7 Oct, 19:00 UTC: 14 of
