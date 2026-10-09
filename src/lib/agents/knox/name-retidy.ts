@@ -351,15 +351,16 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
  * their page, all checked against their source line.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 12 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 14 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
  * the ones with a threshold publish cut off (102976, 102987/8, 101305, 101842/3, 102654/6,
  * 102568, 102644) and Maple FCU's "Name ..." rows, which v8 had not reached.
  * v10: City National Bank of Florida (76), whose glued cell names Accuracy flagged.
+ * v14: Security Federal (722), and the v13 font names v13's pass had not reached (8535, 5545).
  */
-export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499];
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499, 722, 8535, 5545];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
@@ -390,6 +391,8 @@ export interface RetidyPlan {
  */
 const CELL_PRICE = /(?:\s*(?:[.…_]\s*){2,}|\s+)\$\s?([\d,]+(?:\.\d{1,2})?)\s*$/u;
 /** A column header read onto a monthly or balance fee's name; an account name stays. */
+/** A cell that opens with its price ("$100.00", "$7.50/mo"). */
+const LEAD_PRICE = /^\$\s?([\d,]+(?:\.\d{1,2})?)(?![\d,.])/u;
 const GENERIC_COLUMN = /^(?:products?|services?|items?|descriptions?|fees?|charges?|names?|types?)$/i;
 const CUT_WORD = /\s[a-z]{1,2}$/;
 
@@ -398,7 +401,12 @@ const CUT_WORD = /\s[a-z]{1,2}$/;
  * stored name is that cell with the row's earlier cells glued on by ":" or that cell cut short
  * mid-word. Null when no cell at the price explains the stored name.
  */
-export function cellName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" | "amount">, ownTexts: string[]): string | null {
+export function cellName(
+  fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" | "amount">,
+  ownTexts: string[],
+  // v13: a font-repaired name may sit in the cell before its price ("X | Legal Process | $100.00").
+  options: { priceInNextCell?: boolean } = {},
+): string | null {
   const name = fee.fee_name.replace(/\s+/g, " ").trim();
   const glued = name.includes(": ");
   const cut = CUT_WORD.test(name);
@@ -408,11 +416,15 @@ export function cellName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" 
       if (!line.includes("|")) continue;
       const cells = line.split("|").map((cell) => cell.replace(/\s+/g, " ").trim()).filter(Boolean);
       for (let index = 0; index < cells.length; index += 1) {
-        const price = cells[index].match(CELL_PRICE);
+        const ownPrice = cells[index].match(CELL_PRICE);
+        const leadPrice = options.priceInNextCell && index > 0 ? cells[index].match(LEAD_PRICE) : null;
+        const price = ownPrice ?? leadPrice;
         if (!price || Number(price[1].replace(/,/g, "")) !== Number(fee.amount)) continue;
-        const cell = cells[index].slice(0, price.index).replace(/[\s:;,\-‐–—]+$/u, "").replace(/^[^\p{L}\p{N}(]+/u, "").trim();
+        const inCell = ownPrice ? cells[index].slice(0, ownPrice.index).replace(/[\s:;,\-‐–—]+$/u, "").replace(/^[^\p{L}\p{N}(]+/u, "").trim() : "";
+        const nameIndex = inCell.length === 0 && options.priceInNextCell && index > 0 ? index - 1 : index;
+        const cell = nameIndex === index ? inCell : cells[nameIndex];
         if (cell.length < 3) continue;
-        const headings = cells.slice(0, index).map((heading) => heading.replace(/:$/, "").trim());
+        const headings = cells.slice(0, nameIndex).map((heading) => heading.replace(/:$/, "").trim());
         const joined = [...headings, cell].join(": ").toLowerCase();
         if (glued && headings.length > 0 && joined === name.toLowerCase()) {
           // A business heading or an account's name is part of what the fee is.
@@ -493,6 +505,150 @@ export function spacedControlName(name: string): string | null {
   return spaced && !CONTROL_CHARACTER.test(spaced) ? spaced : null;
 }
 
+/**
+ * v13: the same font writes every glyph 29 code points below its letter: U+0003 is the space,
+ * U+0013-U+001C the digits ("$\u0014\u001300" is "$100"), and "HDFK" is "each". A document's
+ * map is trusted only when at least two of its shifted words read, once shifted back, as words the
+ * same document also prints in clear ("EDODQFH" is "balance", "&KHFN" is "Check").
+ */
+const FONT_SHIFT = 29;
+const SHIFTED_CONTROL = /[\x01-\x08\x0b\x0c\x0e-\x1f]/g;
+const SHIFTED_WORD = /^[\x24-\x5d]{3,}$/;
+const FONT_MAP_MIN_WORDS = 2;
+
+function unshifted(text: string): string {
+  return text.replace(/[\x01-\x08\x0b\x0c\x0e-\x1f\x24-\x5d]/g, (glyph) => String.fromCharCode(glyph.charCodeAt(0) + FONT_SHIFT));
+}
+
+export function fontMapVerified(text: string): boolean {
+  if (!/[\x01-\x08\x0b\x0c\x0e-\x1f]/.test(text)) return false;
+  const clear = new Set((text.match(/[A-Za-z]*[a-z][A-Za-z]*/g) ?? []).filter((word) => word.length >= 3).map((word) => word.toLowerCase()));
+  const read = new Set<string>();
+  for (const token of text.split(/[\s|\x01-\x08\x0b\x0c\x0e-\x1f]+/)) {
+    if (!SHIFTED_WORD.test(token)) continue;
+    const word = unshifted(token);
+    if (/^[A-Za-z]+$/.test(word) && clear.has(word.toLowerCase())) read.add(word.toLowerCase());
+  }
+  return read.size >= FONT_MAP_MIN_WORDS;
+}
+
+/** v13: a name's font codes read back as the spaces and digits they stand for. Letters stay as stored. */
+export function fontDecodedName(name: string): string | null {
+  if (!/[\x01-\x08\x0b\x0c\x0e-\x1f]/.test(name)) return null;
+  const decoded = name
+    .replace(SHIFTED_CONTROL, (glyph) => String.fromCharCode(glyph.charCodeAt(0) + FONT_SHIFT))
+    .replace(/(?<=\w)\u0332(?=\w)/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  return decoded || null;
+}
+
+/** The fee's own document with its font codes read back, when its map is trusted. */
+function fontDecodedText(text: string): string {
+  return text.replace(SHIFTED_CONTROL, (glyph) => String.fromCharCode(glyph.charCodeAt(0) + FONT_SHIFT)).replace(/[ \t]{2,}/g, " ");
+}
+
+/**
+ * v13: a PDF font's ligatures extracted as single letters: "ti" as U+019F ("Outgoing Wire –
+ * DomesƟc"), "ft" as U+014C ("DraŌ"), "tt" as U+01A9 and "tf" as U+019E. No fee word is spelled
+ * with these letters, so each always reads back as its pair.
+ */
+const LIGATURE_PAIRS: Record<string, string> = { "\u019f": "ti", "\u014c": "ft", "\u01a9": "tt", "\u019e": "tf" };
+const LIGATURE = /[\u019f\u014c\u01a9\u019e]/g;
+function readLigatures(text: string): string {
+  return text.replace(LIGATURE, (letter) => LIGATURE_PAIRS[letter]);
+}
+export function unligatedName(name: string): string | null {
+  return /[\u019f\u014c\u01a9\u019e]/.test(name) ? readLigatures(name) : null;
+}
+
+/**
+ * v14: a monthly fee's account name, when two live fees at an institution share a bare name at
+ * different prices ("waivable monthly fee" at $15 and at $12). Each takes the account heading
+ * printed above its own price ("Premium Checking", "High Yield Checking"), as Knox names such a fee
+ * when it reads the heading ("Freedom Checking Monthly fee"). All of the shared names are renamed
+ * or none: every one must find its own price once on its page and a heading of its own above it.
+ */
+const ACCOUNT_HEADING =
+  /^(?:[\w®™’'&+./-]+\s+){0,5}(?:checking|savings|money market|share draft|club|certificate|account)(?:\s+accounts?)?$/i;
+/** A priced row of another monthly fee: the walk up has left this fee's block. */
+const MONTHLY_FEE_WORDS = /\b(?:service charge|maintenance|monthly fee|monthly service|minimum balance|balance falls? below)\b/i;
+// A page's navigation or marketing line ("Compare Checking Accounts", "Learn More about Loyalty
+// Checking", "Comparison table of interest-bearing checking accounts") is not an account's heading.
+const NOT_ACCOUNT_HEADING =
+  /^(?:our|your|all|personal|business|what|which|find|choose|view|see)\b|\b(?:compare|comparison|table|learn|more|about|benefits?|features|details|apply|open|why|how)\b|\d|\$/i;
+const ACCOUNT_WORD = /\b(?:checking|savings|money market|share draft|club|certificate|account|accounts)\b/i;
+const ACCOUNT_HEADING_LINES = 12;
+const MONEY_ON_LINE = /\$\s?\d/;
+
+function sharedNameKey(name: string): string {
+  return name.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function priceOnLine(line: string, amount: number): boolean {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const figure = whole.replace(/\B(?=(\d{3})+$)/g, ",?");
+  const price = cents === "00" ? `${figure}(?:\\.00)?` : `${figure}\\.${cents}`;
+  return new RegExp(`\\$\\s?${price}(?![\\d.,]*\\d)`).test(line);
+}
+
+/** The account heading printed above this fee's own price, or null when it isn't one clear heading. */
+export function accountHeading(name: string, amount: number, ownTexts: string[]): string | null {
+  const key = sharedNameKey(name);
+  const hits: Array<{ lines: string[]; at: number }> = [];
+  for (const text of ownTexts) {
+    const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+    lines.forEach((line, at) => {
+      if (line.toLowerCase().includes(key) && (priceOnLine(line, amount) || (lines[at + 1] != null && priceOnLine(lines[at + 1], amount)))) hits.push({ lines, at });
+    });
+  }
+  if (hits.length !== 1) return null;
+  const { lines, at } = hits[0];
+  for (let line = at - 1; line >= Math.max(0, at - ACCOUNT_HEADING_LINES); line -= 1) {
+    // Another fee of the same name above it belongs to the block before.
+    if (lines[line].toLowerCase().includes(key)) return null;
+    if (MONEY_ON_LINE.test(lines[line]) && MONTHLY_FEE_WORDS.test(lines[line])) return null;
+    if (/^[A-Z]/.test(lines[line]) && /\S\s+\S/.test(lines[line]) && ACCOUNT_HEADING.test(lines[line]) && !NOT_ACCOUNT_HEADING.test(lines[line])) {
+      return lines[line];
+    }
+  }
+  return null;
+}
+
+function accountHeadedName(fee: LiveFeeRow, texts: InstitutionText[], liveFees: LiveFeeRow[]): string | null {
+  if (!ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) || ACCOUNT_WORD.test(fee.fee_name) || fee.amount == null) return null;
+  const key = sharedNameKey(fee.fee_name);
+  const shared = liveFees.filter(
+    (other) => Number(other.institution_id) === Number(fee.institution_id) && sharedNameKey(other.fee_name) === key && other.amount != null,
+  );
+  if (new Set(shared.map((other) => Number(other.amount).toFixed(2))).size < 2) return null;
+  const headings = shared.map((other) =>
+    accountHeading(
+      other.fee_name,
+      Number(other.amount),
+      texts.filter((text) => other.source_document_id != null && Number(text.source_document_id) === Number(other.source_document_id)).map((text) => text.normalized_text),
+    ),
+  );
+  if (headings.some((heading) => heading == null) || new Set(headings.map((heading) => heading!.toLowerCase())).size !== shared.length) return null;
+  const own = headings[shared.findIndex((other) => Number(other.fee_published_id) === Number(fee.fee_published_id))];
+  return own ? `${own} ${fee.fee_name.replace(/\s+/g, " ").trim()}` : null;
+}
+
+/** v14: live fees whose bare monthly-fee name another live fee at the institution shares at a different price. */
+export function sharedNameFeeIds(fees: LiveFeeRow[]): Set<number> {
+  const amounts = new Map<string, Set<string>>();
+  for (const fee of fees) {
+    if (!ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) || fee.amount == null) continue;
+    const key = `${Number(fee.institution_id)}|${sharedNameKey(fee.fee_name)}`;
+    amounts.set(key, (amounts.get(key) ?? new Set()).add(Number(fee.amount).toFixed(2)));
+  }
+  return new Set(
+    fees
+      .filter((fee) => ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) && (amounts.get(`${Number(fee.institution_id)}|${sharedNameKey(fee.fee_name)}`)?.size ?? 0) > 1)
+      .map((fee) => Number(fee.fee_published_id)),
+  );
+}
+
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
   const head = headName(fee);
   if (!head) return null;
@@ -517,14 +673,30 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   for (const stored of fees) {
     // v12: a PDF font that writes its space as U+0003 ("Copy\u0003of\u0003Check").
-    const spaced = spacedControlName(stored.fee_name);
+    // v13: its digits too, when the fee's own document proves the font's map.
+    const storedTexts = texts.filter(
+      (text) => stored.source_document_id != null && Number(text.source_document_id) === Number(stored.source_document_id),
+    );
+    const fontMapped = storedTexts.some((text) => fontMapVerified(text.normalized_text));
+    // v13: and a font's ligature letters read as their pairs ("DomesƟc").
+    const unligated = unligatedName(stored.fee_name);
+    const storedName = unligated ?? stored.fee_name;
+    const controlRead = spacedControlName(storedName) ?? (fontMapped ? fontDecodedName(storedName) : null);
+    const spaced = controlRead ?? unligated;
     const fee = spaced ? { ...stored, fee_name: spaced } : stored;
+    const readTexts = spaced
+      ? texts.map((text) =>
+          fontMapped && storedTexts.includes(text)
+            ? { ...text, normalized_text: readLigatures(fontDecodedText(text.normalized_text)) }
+            : { ...text, normalized_text: readLigatures(text.normalized_text).replace(/\u0003/g, " ").replace(/[ \t]{2,}/g, " ") },
+        )
+      : texts;
     const headingless = ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) ? fee.fee_name : fee.fee_name.replace(LEADING_ACCOUNT_HEADINGS, "");
     // Knox v60's tidy drops a "Name" column label ("Name Stop Payment").
     const tidied =
       headingless === fee.fee_name ? retidiedFeeName(fee.fee_name, fee.canonical_fee_key) : retidiedFeeName(headingless, fee.canonical_fee_key) ?? headingless;
     // v7: a name whose dollar figure was cut out gets it back from the fee's own document.
-    const ownTexts = texts
+    const ownTexts = readTexts
       .filter((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id))
       .map((text) => text.normalized_text);
     // v8: waiver advice on the name is cut off, or the name Knox reads today replaces a fragment.
@@ -538,11 +710,13 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
       : restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ??
         (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ??
         // v10: the fee's own table cell at its price.
-        cellName(fee, ownTexts) ??
+        cellName(fee, ownTexts, { priceInNextCell: controlRead != null }) ??
         tidied ??
         // v11: the short name a sentence name opens with, unless another live fee at the
         // institution opens with it too (the words cut are what tell the two apart).
         uniqueHeadName(fee, liveFees) ??
+        // v14: a bare monthly-fee name shared at different prices takes its account's name.
+        accountHeadedName(fee, readTexts, liveFees) ??
         spaced;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
@@ -566,7 +740,7 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
       continue;
     }
     const before = traceLiveFee(stored, texts);
-    const after = traceLiveFee({ ...fee, fee_name: newName }, texts);
+    const after = traceLiveFee({ ...fee, fee_name: newName }, readTexts);
     // A v8 name replaces words the bank wrote, so it must trace itself.
     if ((before.kind !== "untraceable" || adviceFree) && after.kind === "untraceable") {
       skipped.would_not_trace += 1;
@@ -649,8 +823,14 @@ export async function retidyLiveFeeNames(
                    OR fp.fee_name ~* 'avoid'
                    OR fp.fee_name LIKE '%: %'
                    OR fp.fee_name ~ '[[:space:]][a-z]{1,2}$'
-                   OR strpos(fp.fee_name, chr(3)) > 0
-                 ) AS messy
+                   OR fp.fee_name ~ '[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f]'
+                   OR fp.fee_name ~ '[\u019f\u014c\u01a9\u019e]'
+                 )
+                 -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
+                 OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))
+                      FILTER (WHERE fp.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance') AND fp.amount IS NOT NULL)
+                    < count(DISTINCT (lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')), fp.amount))
+                      FILTER (WHERE fp.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance') AND fp.amount IS NOT NULL) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
              AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
@@ -708,7 +888,8 @@ export async function retidyLiveFeeNames(
   const perInstitution = new Map<number, { messy: number; renamed: number }>();
   for (const institutionId of fingerprints.keys()) {
     const fees = liveFees.filter((fee) => Number(fee.institution_id) === institutionId);
-    const messy = fees.filter((fee) => isMessyName(fee.fee_name));
+    const shared = sharedNameFeeIds(fees);
+    const messy = fees.filter((fee) => isMessyName(fee.fee_name) || shared.has(Number(fee.fee_published_id)));
     const plan = planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees);
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);
@@ -832,8 +1013,10 @@ export function isMessyName(name: string): boolean {
     // v10: heading cells glued on with ":", or a last word cut at its first letters.
     name.includes(": ") ||
     CUT_WORD.test(name) ||
-    // v12: a font's U+0003 space.
-    name.includes("\u0003")
+    // v12/v13: a font's U+0003 space or another of its codes.
+    CONTROL_CHARACTER.test(name) ||
+    // v13: a font's ligature letters.
+    /[\u019f\u014c\u01a9\u019e]/.test(name)
   );
 }
 

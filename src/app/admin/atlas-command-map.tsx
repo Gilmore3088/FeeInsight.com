@@ -38,6 +38,17 @@ function atlasDestination(center: AtlasCommandCenter): {
     };
   }
 
+  if (center.automation.unreadable) {
+    // A failed lookup holds provider work (fail closed) but is not a stop anyone chose.
+    return {
+      metric: "Automation status unknown",
+      detail: "The safety control could not be read, so provider work is held until it can be.",
+      href: "#atlas-safety",
+      action: "Review safety control",
+      tone: "attention",
+    };
+  }
+
   if (!center.automation.enabled) {
     return {
       metric: "Automation stopped",

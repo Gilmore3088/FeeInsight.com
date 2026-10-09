@@ -150,15 +150,16 @@ export async function runRegistryStateBills(
         identifier, session, stage, stage_on
       )
       SELECT 'open_states', r.id, 'state_bill', r.title, r.state_code,
-             COALESCE(r.first_action_date, r.latest_action_date, CURRENT_DATE::text)::date, r.url,
+             COALESCE(r.introduced_date, r.first_action_date, r.latest_action_date, CURRENT_DATE::text)::date, r.url,
              ARRAY(SELECT jsonb_array_elements_text(r.topics)),
              r.identifier, r.session, r.stage, r.stage_date::date
         FROM jsonb_to_recordset(${payload}::jsonb) AS r(
           id text, state_code text, session text, identifier text, title text, url text,
-          first_action_date text, latest_action_date text, stage text, stage_date text, topics jsonb
+          first_action_date text, introduced_date text, latest_action_date text, stage text, stage_date text, topics jsonb
         )
       ON CONFLICT (source, external_id) DO UPDATE SET
         title = EXCLUDED.title,
+        published_on = EXCLUDED.published_on,
         url = EXCLUDED.url,
         topics = EXCLUDED.topics,
         stage = EXCLUDED.stage,
