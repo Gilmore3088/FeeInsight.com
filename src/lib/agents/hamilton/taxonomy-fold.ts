@@ -351,6 +351,14 @@ export const HAND_REFILES: readonly HandRefile[] = [
     name: "Service charge (balance falls below $1,000.00)",
     oldName: "Minimum balance to avoid imposition of fees - A service charge fee of",
     why: "inst 2094, doc 22814: \"If your balance falls below $1,000.00 on any day ... we will impose a service charge fee of $15.00\"" },
+  // UAT, Oct 9: returned-check fees filed as nsf beside the schedule's own NSF line, which the
+  // guard's schedule_contradicts check takes down. A returned check is a deposited item return.
+  { feePublishedId: 107960, from: "nsf", amount: 25, to: "deposited_item_return", name: "Return Check Fee",
+    why: "inst 7815, doc 18733: \"Return Check Fee | $25.00\" (NSF Deposit Fee $30 is its own line)" },
+  { feePublishedId: 108035, from: "nsf", amount: 25, to: "deposited_item_return", name: "Returned Item",
+    why: "inst 5883, doc 19408: \"Returned Item | $25.00 Per Item\" below \"NSF | $25.00 Per Item\"" },
+  { feePublishedId: 108132, from: "nsf", amount: 30, to: "deposited_item_return", name: "Returned Check",
+    why: "inst 5902, doc 21925: \"Returned Check | $30.00 | each\"" },
 ];
 
 interface HandRow {
