@@ -338,6 +338,13 @@ function narrateFinished(
       if (detail.held === true) return `Counted ${count(withNews, "Pro reader")} for the Monday digest; sending is switched off.`;
       return `Sent ${count(n(detail, "sent"), "Monday digest")}.`;
     }
+    case "pro-seat-check": {
+      if (detail.passed === true) return "Checked team seats and peer groups end to end with test accounts; both work.";
+      const problems = Array.isArray(detail.problems) ? detail.problems.length : 0;
+      return detail.dryRun === true
+        ? "Dry run: read the test workspace without changing it."
+        : `Seat and peer-group check found ${count(problems, "problem")}.`;
+    }
     case "daily-brief":
       return detail.delivery_status === "sent"
         ? "Sent the daily brief."
@@ -478,6 +485,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "lead-watch": "atlas",
   "indexnow-ping": "atlas",
   "pro-digest": "atlas",
+  "pro-seat-check": "atlas",
   "competitor-alerts": "hamilton",
   "briefing-refresh": "hamilton",
   "content-fee-depth": "growth",

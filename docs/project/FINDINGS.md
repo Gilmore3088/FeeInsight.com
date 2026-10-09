@@ -3753,3 +3753,18 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** `pipeline_feedback` rows for `hamilton.frequency_fill`, by kind, after the next
   publish step.
 
+
+## 2026-10-08: A fee-change notice published its old column
+- **What happened.** Jeanne D'Arc CU (8130) showed Money Orders $2, Rush Card $20, Account
+  Research $35/hr, Tax Levy $50 and Mortgage Subordination $75. Its notice (document 21764) prints
+  "Fee through July 31, 2026 | Fee as of August 1, 2026", so those were the old prices. The five
+  changes recorded from them (1060-1064) read as cuts.
+- **Why.** Knox took the first price on a row, and the source check accepted any price on the
+  fee's own row.
+- **Fix.** `newestColumnText` (`src/lib/fee-change-columns.ts`) keeps only the newest price on a
+  row under a "through / as of", "current / new" or "old / new" header. Knox v48 and source check
+  v16 read the text through it, so the old prices fail the check and go through flag, second look
+  and archive. On prod this table shape held live fees at one institution only (13 fees, one
+  document).
+- **Watch.** 88942, 88945, 88950, 88951 and 88952 are `takedown_pending` after the next source
+  check pass on 8130, and change records 1060-1064 drop out of change lists.

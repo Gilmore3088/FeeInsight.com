@@ -116,6 +116,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "fee-alert-dispatch",
   "lead-watch",
   "pro-digest",
+  "pro-seat-check",
   "score-answer-key",
   "scoreboard-snapshot",
 ];
