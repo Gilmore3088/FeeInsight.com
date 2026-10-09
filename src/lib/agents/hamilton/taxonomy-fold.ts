@@ -257,6 +257,7 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
  * Live fees Knox filed under the wrong one of the 50 because it read a neighbouring cell as the
  * name (Data inventory's retidy v15 left them for review, Oct 9). Each is re-filed in place under
  * the page's own name for that line, with the old name and category logged; none is taken down.
+ * An entry whose `to` equals its `from` only renames the fee.
  * Every name and price below traces to the stored schedule (`checkFeeAgainstSource`, 10/10).
  */
 export interface HandRefile {
@@ -316,6 +317,21 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 6371, doc 3645: \"Debit/ATM Card Reissuance | $4.00 each\"" },
   { feePublishedId: 16698, from: "atm_non_network", amount: 10, to: "card_replacement", name: "ATM/Check Card Re-issuance",
     why: "inst 338, doc 14541: \"ATM/Check Card Re-issuance | $10 /each\" (a card replacement, not an ATM use fee)" },
+  // Broken-figure names (PR 961 dry read, Oct 9): Knox kept a neighbouring cell or a mis-encoded
+  // figure in the name. Each re-read against its stored text; the price is right.
+  { feePublishedId: 53034, from: "check_image", amount: 1, to: "counter_check", name: "Counter Draft (check) (limit 8per month)",
+    why: "inst 8511, doc 13054: \"Counter Draft (check) (limit 8per month) ... $1.00 each\"; \"Statement Copies\" was the line above" },
+  { feePublishedId: 56385, from: "monthly_maintenance", amount: 2, to: "night_deposit", name: "Night Depository Service Monthly Fee (earnings credit available)",
+    why: "inst 1445, doc 17118: under \"NIGHT DEPOSITORY SERVICE\", \"Monthly Fee (earnings credit available) | $2.00\"" },
+  // Renames in place: the price and category are right, the name carries a broken figure.
+  { feePublishedId: 21141, from: "account_research", amount: 5, to: "account_research", name: "Returned Statement Fee",
+    why: "inst 8138, doc 12676: \"Returned Statement Fee $5.00 per statement\"; the mailed statement fee before it was glued on" },
+  { feePublishedId: 77918, from: "account_research", amount: 5, to: "account_research", name: "Return Mail Fee (no forwarding)",
+    why: "inst 8511, doc 13054: \"Return Mail Fee (no forwarding) ... $5.00\"" },
+  { feePublishedId: 97560, from: "nsf", amount: 30, to: "nsf", name: "Non-Sufficient Funds",
+    why: "inst 6272, doc 8005: \"Non-Sufficient Funds ... $30/item\"; the ATM line before it was glued on" },
+  { feePublishedId: 98064, from: "dormant_account", amount: 5, to: "dormant_account", name: "Inactive Account",
+    why: "inst 8511, doc 13054: \"Inactive Account (after [months unreadable] of inactivity) ... $5.00/month\"" },
 ];
 
 interface HandRow {
@@ -346,6 +362,8 @@ export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] 
     const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
     const amount = amountOf(row.amount);
     if (!refile || row.canonical_fee_key !== refile.from || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
+    // A rename in place (from == to) is done once the live name reads as listed.
+    if (refile.from === refile.to && (row.fee_name ?? "").trim() === refile.name) continue;
     if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
     moves.push({
       refile,
