@@ -3,7 +3,9 @@ name: apply-tested-fee-audience-repair
 on:
   push:
     branches: [fix/pinnacle-fee-audience-integrity]
-    paths: [.github/repair-workspace/changes.mbox.xz.b64]
+    paths:
+      - .github/repair-workspace/changes.mbox.xz.b64
+      - .github/workflows/fee-audience-apply-patch.yml
 
 permissions:
   contents: write
@@ -37,8 +39,11 @@ jobs:
           PY
           git config user.name 'FeeInsight Repair'
           git config user.email '35467558+Gilmore3088@users.noreply.github.com'
-          git am --3way /tmp/fee-audience-repair.mbox
-          git rm .github/repair-workspace/changes.mbox.xz.b64 .github/workflows/fee-audience-apply-patch.yml .github/workflows/fee-audience-repair-workspace.yml
-          git commit -m 'chore: remove temporary branch repair workspace'
+          # Workflow changes were applied separately using the authorized GitHub connector.
+          # This job's token only needs source-write permission, not workflow permission.
+          git am --3way --exclude=.github/workflows/test.yml /tmp/fee-audience-repair.mbox
+          git rm .github/repair-workspace/changes.mbox.xz.b64
+          git commit -m 'chore: remove temporary repair payload'
+          test -z "$(git diff --name-only "$GITHUB_SHA" HEAD -- .github/workflows/)"
           git push origin HEAD:refs/heads/fix/pinnacle-fee-audience-integrity
           git log -6 --oneline
