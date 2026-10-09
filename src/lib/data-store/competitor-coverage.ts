@@ -191,7 +191,8 @@ export interface MarketGap {
 /**
  * Banks with no live fees, ranked by how much competitor coverage their fees would add across
  * every bank's local market (counties from the FDIC Summary of Deposits). Credit unions have no
- * deposits by branch, so they can't be ranked this way and are left out.
+ * deposits by branch, so they can't be ranked this way and are left out; so are banks Magellan
+ * has set aside (inactive, or a profile marked offline or manual_review).
  */
 export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<MarketGap[]> {
   const rows = await db<Array<{ institution_id: number | string; markets: number | string; gain: number | string }>>`
@@ -230,6 +231,16 @@ export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<Mark
     )
     SELECT p.gap_id AS institution_id, count(*) AS markets, sum(p.dep / bu.comp) AS gain
       FROM pair p JOIN buyer bu ON bu.institution_id = p.buyer_id
+     -- Skip banks Magellan has set aside: inactive, or marked offline or for manual review
+     -- (no consumer fee schedule to find, e.g. trust and wholesale banks).
+     WHERE NOT EXISTS (
+       SELECT 1 FROM institution_sources inst
+         LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+        WHERE inst.id = p.gap_id
+          AND (COALESCE(inst.status, 'active') <> 'active'
+               OR profile.source_kind = 'offline'
+               OR profile.read_strategy = 'manual_review')
+     )
      GROUP BY p.gap_id
      ORDER BY gain DESC, p.gap_id ASC
      LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 1000)}::int
