@@ -142,4 +142,39 @@ describe("limit guard: worked examples", () => {
     );
     expect(limitGuardVerdict({ canonical_fee_key: "bill_pay", fee_name: "Bill Pay Monthly Fee", amount: 5 })).toBeNull();
   });
+
+  // Live fees 100158 and 100157 (institution 76, document 23020): every other check passed them.
+  it("reads a check's amount in the source line as the transaction, not the fee", () => {
+    const verdict = limitGuardVerdict(
+      row(
+        "overdraft",
+        "Item Fees and the Paid Item Fee for the check/item in the amount of",
+        17,
+        "Item Fees and the Paid Item Fee for the check/item in the amount of $17 would be waived, as the amount is below the $20 threshold.",
+      ),
+    );
+    expect(verdict?.code).toBe("transaction_amount");
+    expect(limitGuardReason(verdict!)).toMatch(/^limit_as_fee:transaction_amount: /);
+  });
+
+  it("reads a name cut from a condition as no fee", () => {
+    const excerpt = "charges apply if a CNB correspondent bank is used, however if the sender | sufficient to cover both the full overdraft amount and the $10.00 Overdraft";
+    expect(limitGuardVerdict(row("overdraft", "sufficient to cover both the full overdraft", 10, excerpt))?.code).toBe("condition_sentence");
+  });
+
+  it("keeps the real fee beside them and prices written with an amount", () => {
+    expect(
+      limitGuardVerdict(
+        row(
+          "od_protection_transfer",
+          "Overdraft Protection Transfer Fee (per transfer) 12",
+          10,
+          "Overdraft Protection Transfer Fee (per transfer) 12 .......................... $10.00 | followed by debit items (e.g., outgoing wires, checks, etc.). You agree that",
+        ),
+      ),
+    ).toBeNull();
+    expect(limitGuardVerdict(row("counter_check", "Counter Checks 3 checks", 5, "Counter Checks 3 checks for $5.00*"))).toBeNull();
+    expect(limitGuardVerdict(row("stop_payment", "Stop Payment Fee", 25, "A fee in the amount of $25 is charged for each stop payment."))).toBeNull();
+    expect(limitGuardVerdict(row("nsf", "Insufficient funds to cover an item", 30, "Insufficient funds to cover an item | $30.00"))).toBeNull();
+  });
 });

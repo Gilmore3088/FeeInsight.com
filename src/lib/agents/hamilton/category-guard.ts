@@ -28,6 +28,7 @@ interface LivePublishedRow {
   fee_published_id: number | string;
   lineage_ref: number | string;
   institution_id: number | string;
+  source_document_id: number | string | null;
   canonical_fee_key: string;
   fee_name: string;
   amount: number | string | null;
@@ -67,6 +68,8 @@ export interface RunHamiltonCategoryGuardResult {
   restoredFees: number;
   /** Of those, the ones put back under the top-50 type a fold split gives them (`SPLIT_CATEGORIES`). */
   refiledFees: number;
+  /** Live fees whose name belongs to another top-50 type a checked rule names, re-filed there in place instead of taken down. */
+  liveRefiledFees: number;
   limit: number;
   dryRun: boolean;
   rollbackBatchId: string;
@@ -111,7 +114,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   // The raw row's conditions carry a rate the name leaves out ("2.00% of transaction").
   if (institutionId) {
     return db<LivePublishedRow[]>`
-      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
+      SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
              fp.amount, fr.conditions, ${documentNsfAmount(db)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -123,7 +126,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
     `;
   }
   return db<LivePublishedRow[]>`
-    SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
+    SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
            fp.amount, fr.conditions, ${documentNsfAmount(db)}
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -197,10 +200,19 @@ export async function runHamiltonCategoryGuard(
   const passing: number[] = [];
   const byCode: RunHamiltonCategoryGuardResult["byCode"] = {};
   const byCategory: RunHamiltonCategoryGuardResult["byCategory"] = {};
+  const liveRefiles: Restore[] = [];
   for (const row of rows) {
     const verdict = checkFeeCategory(row.canonical_fee_key, row.fee_name, row);
     if (verdict.ok) {
       passing.push(Number(row.fee_published_id));
+      continue;
+    }
+    // A fee whose name belongs to another live top-50 type that a checked rule names is filed
+    // wrong, not a non-fee: it moves there in place (Oct 9: the guard took down 95142 "Money
+    // Order Research Fee" minutes before its hand re-file to account_research could run).
+    const to = restoreTarget(row);
+    if (to && to !== row.canonical_fee_key) {
+      liveRefiles.push({ row, to });
       continue;
     }
     byCode[verdict.code] = (byCode[verdict.code] ?? 0) + 1;
@@ -213,6 +225,31 @@ export async function runHamiltonCategoryGuard(
       canonicalFeeKey: row.canonical_fee_key,
       feeName: row.fee_name,
       amount: normalizedAmount(row.amount),
+      code: verdict.code,
+      reason: verdict.reason,
+    });
+  }
+
+  const refiled = await refileLiveFees(db, liveRefiles, { dryRun, runId: options.runId });
+  for (const restore of liveRefiles) {
+    const id = Number(restore.row.fee_published_id);
+    if (refiled.has(id)) {
+      passing.push(id);
+      continue;
+    }
+    // Not moved (the same fee is already live there): it fails like any other.
+    const verdict = checkFeeCategory(restore.row.canonical_fee_key, restore.row.fee_name, restore.row);
+    if (verdict.ok) continue;
+    byCode[verdict.code] = (byCode[verdict.code] ?? 0) + 1;
+    const category = (byCategory[restore.row.canonical_fee_key] ??= {});
+    category[verdict.code] = (category[verdict.code] ?? 0) + 1;
+    failures.push({
+      feePublishedId: id,
+      feeVerifiedId: Number(restore.row.lineage_ref),
+      institutionId: Number(restore.row.institution_id),
+      canonicalFeeKey: restore.row.canonical_fee_key,
+      feeName: restore.row.fee_name,
+      amount: normalizedAmount(restore.row.amount),
       code: verdict.code,
       reason: verdict.reason,
     });
@@ -250,6 +287,7 @@ export async function runHamiltonCategoryGuard(
     awaitingSecondLook: look.waiting,
     restoredFees: restore.restored,
     refiledFees: restore.refiled,
+    liveRefiledFees: refiled.size,
     limit,
     dryRun,
     rollbackBatchId,
@@ -326,6 +364,16 @@ const HAND_REFILES: ReadonlyArray<{ feePublishedId: number; from: string; to: st
     feePublishedId: 96164, from: "monthly_maintenance", to: "atm_non_network", amount: 2.5,
     why: "Westamerica (250), doc 17065: \"Non-Westamerica ATM Withdrawals: ... Otherwise, a fee of $2.50 per posted withdrawal may be imposed\" (Top 50, Oct 9)",
   },
+  // Taken down by the guard at 12:26 on Oct 9 for a word that names another top-50 type; each
+  // traced to its page line at its price, with no same-priced fee of that type live at the bank.
+  { feePublishedId: 95142, from: "money_order", to: "account_research", amount: 10, why: "inst 8581, doc 16111: \"Money Order Research Fee - $10.00/money order\"" },
+  { feePublishedId: 67519, from: "wire_intl_outgoing", to: "account_research", amount: 55, why: "inst 6258, doc 19842: \"International Wire Research or Tracking | $55.00 Per Item\"" },
+  { feePublishedId: 95114, from: "wire_intl_outgoing", to: "account_research", amount: 15, why: "inst 7340, doc 20767: \"Foreign Wire Research ... $15.00\"" },
+  { feePublishedId: 51270, from: "bill_pay", to: "stop_payment", amount: 15, why: "inst 4384, doc 14050: \"Member Draft Stop Pymt (Including Bill Pay) $15.00 - per item\"" },
+  { feePublishedId: 53995, from: "bill_pay", to: "stop_payment", amount: 29.5, why: "inst 6917, doc 16694: \"Electronic Bill Pay Stop Pay | $29.50\"" },
+  { feePublishedId: 72328, from: "bill_pay", to: "stop_payment", amount: 30, why: "inst 7814, doc 16817: \"Bill Pay Stop Pay ... $30\"" },
+  { feePublishedId: 94280, from: "bill_pay", to: "stop_payment", amount: 25, why: "inst 7975, doc 15673: \"Bill Pay Stop/Cancel Payment | $25.00\"" },
+  { feePublishedId: 65499, from: "nsf", to: "ach_return", amount: 25, why: "inst 5987, doc 19336: \"Payee-returned ACH Payment Due to Member Error | $25.00\"" },
 ];
 
 function handRefile(row: Pick<TakenDownRow, "canonical_fee_key" | "amount"> & { fee_published_id?: number | string }): string | null {
@@ -337,6 +385,72 @@ function handRefile(row: Pick<TakenDownRow, "canonical_fee_key" | "amount"> & { 
 function restoreRefile(canonicalFeeKey: string, feeName: string): string | null {
   const to = refileCategory(canonicalFeeKey, feeName);
   return to && RESTORE_REFILES.get(`${canonicalFeeKey}>${to}`)?.test(feeName) ? to : null;
+}
+
+/**
+ * Moves live fees the guard fails to the top-50 type `restoreTarget` gives them, published and
+ * verified rows alike, unless the same fee is already live there. Each move is logged as a fold.
+ * Returns the ids moved (a dry run counts every candidate).
+ */
+async function refileLiveFees(
+  db: SqlTag,
+  refiles: Restore[],
+  options: { dryRun: boolean; runId: number },
+): Promise<Set<number>> {
+  // One fee per institution, type and price.
+  const seen = new Set<string>();
+  const unique = refiles.filter((restore) => {
+    const key = `${restore.row.institution_id}|${restore.to}|${normalizedAmount(restore.row.amount)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (unique.length === 0) return new Set();
+  if (options.dryRun) return new Set(unique.map((restore) => Number(restore.row.fee_published_id)));
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const moved = await scope<{ fee_published_id: number | string; lineage_ref: number | string; canonical_fee_key: string }[]>`
+        UPDATE published_fee_records fp
+           SET canonical_fee_key = v.to_key
+          FROM unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
+                      ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
+                      ${unique.map((restore) => restore.to)}::text[]) AS v(fee_published_id, from_key, to_key)
+         WHERE fp.fee_published_id = v.fee_published_id
+           AND fp.canonical_fee_key = v.from_key
+           AND fp.rolled_back_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM published_fee_records live
+              WHERE live.rolled_back_at IS NULL
+                AND live.institution_id = fp.institution_id
+                AND live.canonical_fee_key = v.to_key
+                AND live.amount IS NOT DISTINCT FROM fp.amount
+           )
+        RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
+      `;
+      if (moved.length === 0) return new Set<number>();
+      await scope`
+        UPDATE verified_fee_observations fv
+           SET canonical_fee_key = v.to_key
+          FROM unnest(${moved.map((row) => Number(row.lineage_ref))}::bigint[],
+                      ${moved.map((row) => row.canonical_fee_key)}::text[]) AS v(fee_verified_id, to_key)
+         WHERE fv.fee_verified_id = v.fee_verified_id
+      `;
+      const ids = new Set(moved.map((row) => Number(row.fee_published_id)));
+      const logged = unique.filter((restore) => ids.has(Number(restore.row.fee_published_id)));
+      await recordFeedback(scope, logged.map((restore) => {
+        const feedback = refileFeedback(restore, options.runId);
+        return {
+          ...feedback,
+          evidence: { from: restore.row.canonical_fee_key, to: restore.to, fee_name: restore.row.fee_name, refiled_live_by: CATEGORY_GUARD_CHECK },
+          dedupeKey: `${CATEGORY_GUARD_CHECK}:refile:pub:${Number(restore.row.fee_published_id)}`,
+        };
+      }));
+      return ids;
+    });
+  } catch (error) {
+    console.error("category guard live re-file failed:", error);
+    return new Set();
+  }
 }
 
 /**

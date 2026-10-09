@@ -192,6 +192,51 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_category", pattern: "column_glue",
     why: "$15 is Keys Premier Checking's low balance fee (below $1,000), filed as a check copy; the check copy fee on that line is $3.00",
   },
+  // Data inventory's live "to avoid" names (audits/to-avoid-names-for-accuracy.md), Oct 9: each
+  // read against its stored text. Two with the right price under the wrong type are re-filed
+  // instead (taxonomy-fold HAND_REFILES: 56804, 79217); the other priced rows there carry the
+  // right price and type under a sentence for a name, or already hold a pending flag. 36498's
+  // line is an outgoing international wire, but no name that traces on its two-column page says
+  // "wire", so Darwin's wire check would refuse a re-file.
+  {
+    feePublishedId: 36498, institution: "Mission Federal Credit Union",
+    feeName: "in online or mobile banking to avoid a monthly maintenance fee. | International U.S. Currency", amount: 45, canonicalFeeKey: "monthly_maintenance",
+    verdict: "wrong_category", pattern: "two_column_glue",
+    why: "Doc 6201: $45 is the next column's outgoing \"International U.S. Currency\" wire line, not a monthly maintenance fee",
+  },
+  {
+    feePublishedId: 90839, institution: "1st Security Bank of Washington",
+    feeName: "To avoid the monthly service charge, the customer must have a related 1st Gold Student Checking Account and a one-time m", amount: 25, canonicalFeeKey: "monthly_maintenance",
+    verdict: "not_a_fee", pattern: "fee_in_sentence",
+    why: "Doc 21939: $25 is the monthly transfer from the student checking account that waives the service charge, not a charge",
+  },
+  // Live names that start mid-sentence (Agentic OS's adversarial sample, Oct 9), read against
+  // their stored text. Those with the right price under the wrong type are re-filed instead
+  // (taxonomy-fold HAND_REFILES: 28554, 37068, 44516, 91458).
+  {
+    feePublishedId: 15199, institution: "Arbor Bank",
+    feeName: "credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which", amount: 100, canonicalFeeKey: "appraisal_fee",
+    verdict: "not_a_fee", pattern: "fee_in_sentence",
+    why: "Doc 14467: \"$100 credit toward closing costs\" is a credit the bank gives, not a fee it charges",
+  },
+  {
+    feePublishedId: 17477, institution: "Industrial Federal Credit Union",
+    feeName: "if closed within two years. Minimum balance is", amount: 500, canonicalFeeKey: "early_closure",
+    verdict: "wrong_amount", pattern: "fee_in_sentence",
+    why: "Doc 15565: \"IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00\": $500 is the minimum balance, the closing fee is $50",
+  },
+  {
+    feePublishedId: 76242, institution: "Oklahoma Educators Federal Credit Union",
+    feeName: "or 2.00% of the amount of each cash advance, whichever is greater, however, the fee will never exceed", amount: 2, canonicalFeeKey: "cash_advance",
+    verdict: "wrong_amount", pattern: "rate_bound",
+    why: "Doc 20697: \"$2.00 or 2.00% of the amount of each cash advance, whichever is greater ... never exceed $10.00\": $2 is the rate fee's floor",
+  },
+  {
+    feePublishedId: 104697, institution: "Peoples Bank of Alabama",
+    feeName: "consecutively overdrawn (OD). Maximum Overdraft Continuation Fee", amount: 30, canonicalFeeKey: "continuous_od",
+    verdict: "wrong_amount", pattern: "fee_in_sentence",
+    why: "Doc 24024: \"Maximum Overdraft Continuation Fee is $30.00 during each consecutive OD period\": $30 caps the continuation fees, it is not the fee",
+  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */

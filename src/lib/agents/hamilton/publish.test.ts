@@ -1004,3 +1004,9 @@ describe("glued cells at publish (run 3467, 9 Oct)", () => {
     expect(newerCopyPrintsLine({ fee_name: "Stop Payment", amount: "15.00" }, "Stop Payment $15")).toBe(false);
   });
 });
+
+describe("publishedFeeName keeps a line's own condition (107240, 9 Oct)", () => {
+  it("does not take a repair that drops the balance", () => {
+    expect(publishedFeeName("Minimum Balance Fee (if Balance is Below $7,500)", "minimum_balance")).toBe("Minimum Balance Fee (if Balance is Below $7,500)");
+  });
+});

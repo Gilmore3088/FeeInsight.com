@@ -44,7 +44,7 @@ export function maintenanceLineIsNotChecking(line: string, sourceLine: string): 
 }
 
 /** "Business" as a customer type, not "business day". */
-const BUSINESS_PRICE = /\b(business|commercial)\b(?!\s+days?\b)/i;
+export const BUSINESS_PRICE = /\b(business|commercial)\b(?!\s+days?\b)/i;
 
 /**
  * A whole-record problem that keeps a published row out of a report whatever its source text

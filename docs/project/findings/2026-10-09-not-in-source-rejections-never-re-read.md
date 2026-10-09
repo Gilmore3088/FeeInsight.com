@@ -58,9 +58,36 @@ Fix: `postSourceCheck` in `verify.ts` runs after the source check on the matched
 retired category (`retired_category`, rejected), a $0 whose own line or excerpt carries a price
 (`conditional_zero`, needs_review) and any of Hamilton's name rules (`name_rule`, rejected). A
 `verify.recheck` pass (`verified-recheck.ts`) reads every row v3 verified once under the same
-checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones go through the
-shared 12-hour second look before rollback. The recheck never judges an amount; the shared
+checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones are archived in
+the same step (rolled back with the reason, never deleted; James at 11:55 UTC: "stop waiting 12
+hours. go") once UAT has passed 10 of them at 9/10; until then they are flagged. A dry read of the
+27 live rows the re-select had verified by 12:00 UTC found 6 the first rule would take down, 3 of
+them wrong: a neighbour's price in the same table row ("Monthly Maintenance | Free | Assisted
+Phone Transactions* | $3") read as this fee's. The rule now reads the fee's own cell; 3 of 27 come
+down (two conditional $0s and a two-fees line). The recheck never judges an amount; the shared
 source check (Accuracy's `checkFeeAgainstSource`) stays the one amount check.
+
+## After the recheck ran (11:25 to 12:19 UTC)
+
+Version 1 of the recheck read 4,062 verified rows on prod: 15 unpublished rows rejected, 7 live
+rows flagged `takedown_pending`, nothing rolled back (the switch is off). UAT checked the 10 rows
+the rule would take down and found 7 right, below the 9-of-10 bar. The three misses were all the
+same fault, a $ figure near the fee read as the price it falls back to: "Notary Fee | $0 - Members
+$5 - Non-Members" (106172; $5 is the non-member price), "Monthly fee | $0 | $5* | $0" (fee verified
+121229; the $5 is the next product's column) and "Monthly Service Charge: FREE Minimum Balance:
+$1.00 | Monthly Balance Fee: $7.50" (122005; the $7.50 is another fee). Three more of version 1's
+rejections were the same fault on comma lists and dot-leader runs (120921, 119878, 119879), and
+one read an opening deposit as a price ("$1 minimum opening requirement", 119753).
+
+Fix (version 2): `ownSegment` scores cells on the name's own words (a generic "fee" or "charge"
+alone is no match), takes only the name cell when two price cells follow it (a comparison table),
+and inside a cell of several "Label: value" pairs keeps the fee's own label; `conditionalZero`
+drops non-member prices and opening deposits before it looks for a price. Version 2 re-reads every
+row version 1 rejected or flagged: a row that passes now is restored (unpublished) or has its
+pending flag cleared (live), through the typed recheck step. The dry read over the 27 live cohort
+rows plus the 16 version 1 rows: 3 live rows still come down (106510 two fees on one line, 105790
+and 105610 conditional $0s, all three UAT-right), 4 live flags clear (105793, 106232, 106233,
+106172), and 119878, 119879, 120921, 121229, 122004, 122005 and 119753 are restored.
 
 ## Lesson
 
