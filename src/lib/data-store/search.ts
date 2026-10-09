@@ -12,6 +12,7 @@ import {
   type InstitutionQualityStatus,
   type InstitutionSourceNeededReason,
 } from "@/lib/institution-quality";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface InstitutionSearchResult {
   id: number;
@@ -180,7 +181,7 @@ function mapInstitutionSearchRow(row: InstitutionSearchRow): InstitutionSearchRe
 
   return {
     id: Number(row.id),
-    institution_name: row.institution_name,
+    institution_name: institutionDisplayName(row.institution_name),
     city: row.city,
     state_code: row.state_code,
     charter_type: row.charter_type,

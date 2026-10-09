@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * Local competitors for a Hamilton report: the institutions with branches in the
@@ -136,7 +137,7 @@ export async function getLocalMarketCompetitors(params: {
       if (byInstitution.size >= limit) continue;
       entry = {
         institution_id: id,
-        institution_name: String(row.institution_name),
+        institution_name: institutionDisplayName(String(row.institution_name)),
         charter_type: row.charter_type ? String(row.charter_type) : null,
         market_deposits: own ? (num(row.deposits) ?? 0) * SOD_THOUSANDS : null,
         fees: {},
@@ -209,7 +210,7 @@ export async function getLocalFeeMoves(params: {
     if (previous === null || next === null || Math.abs(previous - next) < 0.005) return [];
     return [{
       institution_id: Number(row.institution_id),
-      institution_name: String(row.institution_name),
+      institution_name: institutionDisplayName(String(row.institution_name)),
       fee_category: String(row.fee_category),
       previous_amount: previous,
       new_amount: next,

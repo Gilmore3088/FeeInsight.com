@@ -48,6 +48,8 @@ describe("reading the question", () => {
   it("tells an opinion ask, a competitor ask and a trend ask apart", () => {
     expect(parseAsk("What would you do with our overdraft fee?").wantsOpinion).toBe(true);
     expect(parseAsk("How does our overdraft fee compare?").wantsOpinion).toBe(false);
+    expect(parseAsk("What should I know about our garnishment/levy fee against Florida?").wantsOpinion).toBe(false);
+    expect(parseAsk("What should we charge for overdraft?").wantsOpinion).toBe(true);
     expect(parseAsk("Overdraft at local competitors").focus).toBe("competitors");
     expect(parseAsk("Overdraft income over time").focus).toBe("trend");
     expect(parseAsk("just compare it", "nsf").feeCategory).toBe("nsf");

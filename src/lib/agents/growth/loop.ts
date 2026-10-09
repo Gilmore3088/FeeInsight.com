@@ -9,9 +9,11 @@ import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 export const GROWTH_LOOP_STEPS: ReadonlyArray<{ key: string; title: string }> = [
   { key: "growth-intel", title: "SHERLOCK: read regulator items and competitor pages for the market brief" },
   { key: "growth-contacts", title: "NIELSEN: find published decision-makers for 5 prospects" },
+  { key: "growth-contact-picks", title: "NIELSEN: rank saved contacts and mark each prospect's primary and backup" },
   { key: "growth-outreach", title: "CARNEGIE: draft 5 first emails and the day-7 follow-ups" },
   { key: "content-market-spread", title: "MURROW: pick a market-spread post" },
   { key: "content-fee-depth", title: "MURROW: pick a fee-depth post" },
+  { key: "growth-press", title: "BERNAYS: pick this week's 2 press pitches and their findings" },
   { key: "content-od-by-state", title: "ERNEST: build the fees-by-state article" },
   { key: "growth-tools", title: "EDISON: run the free price check for today's state" },
   { key: "growth-conversion", title: "NORMAN: check every buying page and outreach link, and the funnel" },
