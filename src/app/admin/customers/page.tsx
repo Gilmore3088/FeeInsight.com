@@ -4,10 +4,18 @@ import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { getLeads, type LeadRow } from "@/lib/admin-queries";
 import { formatAdminDateTime } from "@/lib/admin-time";
-import { LEAD_STATUS_LABELS, isLeadOverdue, isLeadStatus, isRequestLead, type LeadStatus } from "@/lib/leads/lead-status";
+import {
+  LEAD_STATUS_LABELS,
+  isLeadOverdue,
+  isLeadStatus,
+  isRequestLead,
+  isTestLead,
+  type LeadStatus,
+} from "@/lib/leads/lead-status";
 import { countInstitutionsPassingReportRule, getMarketReadiness } from "@/lib/data-store/market-readiness";
 import { getProAccounts, type ProAccount } from "@/lib/data-store/pro-accounts";
-import { getPlanWatchList, type PlanWatchRow } from "@/lib/pro-plan-watch-store";
+import { getPlanWatchList, type PlanWatchList } from "@/lib/pro-plan-watch-store";
+import { logReadFailure, type ReadFailure } from "@/lib/admin-read-failure";
 import { RoomHeader, Unreadable } from "../room-hub";
 
 /** Board columns, left to right, in the order a request moves. */
@@ -57,14 +65,14 @@ export default async function CustomersRoomPage() {
       console.error("Customers room Pro accounts failed", error);
       return null;
     }),
-    getPlanWatchList().catch((error) => {
-      console.error("Customers room plan watch list failed", error);
-      return null;
-    }),
+    getPlanWatchList().catch((error): ReadFailure => logReadFailure("Customers room plan watch list", error)),
   ]);
   const now = new Date();
-  const requests = leads.filter((lead) => isRequestLead(lead.source));
-  const subscriptions = leads.length - requests.length;
+  // Named test requests stay in Leads but out of the counts and the board.
+  const allRequests = leads.filter((lead) => isRequestLead(lead.source));
+  const requests = allRequests.filter((lead) => !isTestLead(lead));
+  const testRequests = allRequests.length - requests.length;
+  const subscriptions = leads.length - allRequests.length;
   // Institution reports paid by card through /pay/report (the Stripe webhook sets paid_at).
   const orders = requests.filter((lead) => lead.paid_at !== null);
   const readyMarkets = markets ? markets.filter((market) => market.ready).length : null;
@@ -78,7 +86,11 @@ export default async function CustomersRoomPage() {
       </RoomHeader>
 
       <section aria-label="Customer numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Requests" value={String(requests.length)} note="reports, contact and enterprise" />
+        <Stat
+          label="Requests"
+          value={String(requests.length)}
+          note={`reports, contact and enterprise${testRequests > 0 ? `; ${testRequests} test ${testRequests === 1 ? "request" : "requests"} not counted` : ""}`}
+        />
         <Stat label="Paid report orders" value={String(orders.length)} note="institution reports paid by card" />
         <Stat label="Subscribers" value={String(subscriptions)} note="newsletter and sign-ups" />
         <Stat
@@ -94,6 +106,15 @@ export default async function CustomersRoomPage() {
 
       <section aria-label="Requests by stage">
         <p className="admin-section-title">Requests by stage</p>
+        {testRequests > 0 ? (
+          <p className="mt-1 text-xs text-gray-500">
+            {testRequests} test {testRequests === 1 ? "request is" : "requests are"} left off the board;{" "}
+            <Link href="/admin/leads" prefetch={false} className="font-semibold text-[var(--brand-primary)]">
+              see them in Leads
+            </Link>
+            .
+          </p>
+        ) : null}
         {leads.length === 0 ? (
           <p className="mt-2 text-sm text-gray-500">No leads were read. If you expected some, the leads table may be unreachable.</p>
         ) : null}
@@ -121,7 +142,11 @@ export default async function CustomersRoomPage() {
         </div>
       </section>
 
-      {planWatch === null ? <Unreadable what="Plan watch list" /> : <PlanWatch rows={planWatch} />}
+      {"ref" in planWatch ? (
+        <Unreadable what="Plan watch list (Stripe plan check)" failure={planWatch} retryHref="/admin/customers" />
+      ) : (
+        <PlanWatch list={planWatch} />
+      )}
 
       {proAccounts ? <ProAccounts accounts={proAccounts} /> : <Unreadable what="Pro accounts" />}
 
@@ -143,8 +168,8 @@ function Stat({ label, value, note }: { label: string; value: string | null; not
 }
 
 /** Paid plans that may be on the wrong price. Shown only when there is one to look at. */
-function PlanWatch({ rows }: { rows: PlanWatchRow[] }) {
-  if (rows.length === 0) return null;
+function PlanWatch({ list: { rows, unread } }: { list: PlanWatchList }) {
+  if (rows.length === 0 && unread.length === 0) return null;
   return (
     <section aria-label="Plans to check">
       <p className="admin-section-title">Plans to check</p>
@@ -152,6 +177,13 @@ function PlanWatch({ rows }: { rows: PlanWatchRow[] }) {
         Pro is priced by the bank picked at checkout. These plans have signs they cover a larger one. Nothing changes
         unless you move the plan in Stripe.
       </p>
+      {unread.length > 0 ? (
+        <p role="status" className="mt-2 text-xs text-amber-800 dark:text-amber-300">
+          Stripe could not read {unread.length === 1 ? "one paid plan" : `${unread.length} paid plans`}, so{" "}
+          {unread.length === 1 ? "it was" : "they were"} not checked:{" "}
+          {unread.map((plan) => `${plan.name || `user ${plan.userId}`} (${plan.code})`).join(", ")}.
+        </p>
+      ) : null}
       <ul className="mt-2 space-y-2">
         {rows.map((row) => (
           <li key={row.userId} className="admin-card px-4 py-3 text-sm">

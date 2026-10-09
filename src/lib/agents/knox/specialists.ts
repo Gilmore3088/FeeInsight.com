@@ -39,7 +39,8 @@ import { borrowedFrequency, frequencyFamily, frequencyFromLine } from "@/lib/fee
 // v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
 // v49: a monthly fee with no account name takes it from its own name or the heading above it.
 // v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 50 } as const;
+// v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 51 } as const;
 
 export interface SpecialistRun {
   strategy: string;

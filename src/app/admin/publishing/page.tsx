@@ -131,9 +131,20 @@ function EmailLog({ log }: { log: SentEmailLog }) {
     <section aria-label="Emails sent">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="admin-section-title">Emails sent</p>
-        <p className="text-xs text-gray-500">Latest 25, read live from Resend</p>
+        <p className="text-xs text-gray-500">Latest 25, read live from Resend; status is Resend&apos;s latest event (sent = accepted)</p>
       </div>
-      {log.status !== "ok" ? (
+      {log.status === "send_only" ? (
+        <div role="status" className="admin-card mt-2 px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+          <p className="font-medium text-gray-900 dark:text-gray-100">
+            Sending key works; Resend&apos;s sent-email list needs a read-access key.
+          </p>
+          <ul className="mt-1.5 space-y-0.5 text-xs text-gray-600 dark:text-gray-300">
+            <li>Configured: yes, RESEND_API_KEY is set.</li>
+            <li>Sending: {log.reason} A lead alert Resend refused shows as &quot;Email failed&quot; in Leads.</li>
+            <li>Delivered: not visible here. The app keeps no email log of its own; Resend&apos;s dashboard shows delivery.</li>
+          </ul>
+        </div>
+      ) : log.status !== "ok" ? (
         <p role="status" className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
           The email log could not be read. {log.reason}
         </p>

@@ -77,7 +77,7 @@ function narrateFinished(
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
-      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? ", stopped at the budget cap" : ""}.`;
+      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
     case "discover":
     case "rescue": {
@@ -244,6 +244,12 @@ function narrateFinished(
       const checked = n(detail, "checked");
       if (!checked) return "No prospect was due a contact check.";
       return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
+    }
+    case "growth-contact-picks": {
+      if (detail.schemaReady === false) return "Ranked no contacts; the ranking columns are not there yet.";
+      const contacts = n(detail, "contacts");
+      if (!contacts) return "No saved contact to rank.";
+      return `Ranked ${count(contacts, "saved contact")} and marked ${count(n(detail, "primary"), "primary buyer contact")} and ${count(n(detail, "backup"), "backup")}.`;
     }
     case "growth-outreach": {
       if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
@@ -492,6 +498,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
   "growth-contacts": "growth",
+  "growth-contact-picks": "growth",
   "growth-outreach": "growth",
   "growth-learning": "growth",
   "growth-intel": "growth",
