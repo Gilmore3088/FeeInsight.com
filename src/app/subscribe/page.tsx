@@ -389,7 +389,7 @@ export default async function SubscribePage({
     benchmark.length > 0 && scenario ? (
       <ShowcaseStage
         panels={[
-          <BenchmarkPreview key="benchmark" institution={benchmarkInstitution} rows={benchmark} />,
+          <BenchmarkPreview key="benchmark" institution={benchmarkInstitution} rows={benchmark} totalInstitutions={summary.institutions} />,
           <AnalyzeDemo key="analyze" scenario={scenario} />,
           <MonitorPreview
             key="monitor"
