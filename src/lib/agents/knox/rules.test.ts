@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
+import { withoutBusinessOnlyFees } from "./rules";
 import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -1076,5 +1077,55 @@ describe("v62: Northern Trust's wrapped names and per-wire lines", () => {
       "Fees are listed below.",
       "Overdraft (paid items) ..... $25.00",
     ]);
+  });
+});
+
+describe("v62: business-only footnotes and former-fee columns", () => {
+  const read = (text: string) => runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+  it("leaves out a fee whose footnote says it is a business fee (ConnectOne 135)", () => {
+    const text = [
+      "Dormant Account1 $5.00",
+      "Overdraft - Insufficient Funds / Uncollected2 $40.00",
+      "Stop Payment | $25.00",
+      "1 The dormant fee does not apply to the Totally Free Checking Account",
+      "2 Created by check, in-person withdrawal, ATM withdrawal, or other electronic means. Only applicable to business accounts. This",
+      "fee is not charged to consumer accounts.",
+    ].join("\n");
+    const fees = read(text);
+    expect(fees).toContainEqual(["Dormant Account", 5, "dormant_account"]);
+    expect(fees.some((fee) => fee[2] === "overdraft")).toBe(false);
+  });
+
+  it("reads a mark against the first note with its number below the fee", () => {
+    const text = [
+      "Overdraft Fee4 | $35.00",
+      "4 A maximum of 3 Overdraft Fees will be assessed per day on consumer accounts.",
+      "Business Customers",
+      "Extended Overdraft Fee4 | $40.00",
+      "4 Only applicable to business accounts.",
+    ].join("\n");
+    expect(withoutBusinessOnlyFees(text)).toContain("Overdraft Fee4 | $35.00");
+    expect(withoutBusinessOnlyFees(text)).not.toContain("Extended Overdraft Fee4");
+  });
+
+  it("reads a conversion guide at its new column (Citizens Business Bank 124)", () => {
+    const text = [
+      "PERSONAL GENERAL FEES",
+      "SERVICES | FORMER FEES | NEW FEES",
+      "Chexsystems Collection Fee | $75.00 | N/A",
+      "Legal Process Handling | $100.00 per process | $250.00 per process",
+      "NSF/UCF Item Paid Charge | No charge | Item Returned Charge fees per day. NSF/UCF",
+      "Photocopies | $4.00 per copy | $5.00 per item",
+    ].join("\n");
+    const fees = read(text);
+    expect(fees).toContainEqual(["Legal Process Handling", 250, "legal_process"]);
+    expect(fees).toContainEqual(["Photocopies", 5, "document_reproduction"]);
+    expect(fees.map((fee) => fee[1])).not.toContain(75);
+    expect(fees.map((fee) => fee[1])).not.toContain(0);
+  });
+
+  it("names a wire by its price's noun only when the name says which way it goes", () => {
+    expect(read("Domestic | $20.00 per wire")).toEqual([]);
   });
 });

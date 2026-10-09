@@ -1,11 +1,13 @@
 import {
   extractCandidatesFromText,
   MAX_FEES_PER_DOCUMENT,
+  withoutBusinessOnlyFees,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
+import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
@@ -144,11 +146,13 @@ function withContextFees(text: string, read: ExtractionRulesResult): ExtractionR
 export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
-  const text = joinLabeledFeeCardText(sourceText);
+  // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
+  const text = withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText));
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
-    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(text) },
+    // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
+    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,

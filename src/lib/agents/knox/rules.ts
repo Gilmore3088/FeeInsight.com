@@ -1024,7 +1024,10 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   }
   // v62: "Domestic Outgoing (client only) ........ $25.00 per wire" (Northern Trust) names its
   // fee only together with the noun after the price; the name keeps that noun.
+  // The name must say which way the wire goes: "Domestic | $20.00 per wire" under an
+  // "Incoming" heading names no direction of its own.
   const perWire = !hint && firstAmount != null && !priceFirst && usableName(name) &&
+    /\b(?:incoming|outgoing|inbound|outbound|send|sent|receive|received)\b/i.test(name) &&
     /^\s*per\s+wire(?:\s+transfer)?\b/i.test(segment.slice(firstAmount.end)) && !/\bwires?\b/i.test(name);
   if (perWire) hint = classifyFeeText(`${name} wire`);
 
@@ -1403,9 +1406,47 @@ export function centeredNamePrices(text: string): string[] {
   return joined;
 }
 
+/**
+ * v62: a fee whose name carries a footnote mark ("Overdraft - Insufficient Funds / Uncollected2
+ * $40.00") is a business price when that footnote says so ("2 Created by check, ... Only
+ * applicable to business accounts. This fee is not charged to consumer accounts.", ConnectOne
+ * 135). Its line is left out, so the consumer page never shows it.
+ */
+const BUSINESS_ONLY_NOTE =
+  /\b(?:only (?:applicable|applies) to business(?: accounts?)?|not (?:charged|assessed) (?:to|on) (?:consumer|personal) accounts?)\b/i;
+const FOOTNOTE_LINE = /^\s*(\d{1,2})\s+[A-Z]/;
+const GLUED_MARK = /[a-z)](\d{1,2})(?=\s*(?:\||\$|\.{3,}|$))/gi;
+
+export function withoutBusinessOnlyFees(text: string): string {
+  if (!BUSINESS_ONLY_NOTE.test(text)) return text;
+  const lines = text.split("\n");
+  // A note may wrap onto the next line, unless that line is the next note.
+  const businessNote = (index: number) => {
+    const next = lines[index + 1] ?? "";
+    return BUSINESS_ONLY_NOTE.test(FOOTNOTE_LINE.test(next) ? lines[index] : `${lines[index]} ${next}`);
+  };
+  // A mark points at the first note with its number below the fee: a schedule whose pages each
+  // carry their own notes numbers them again from 1 (Ameris).
+  const noteBelow = (index: number, mark: string) => {
+    for (let below = index + 1; below < lines.length; below += 1) {
+      if (lines[below].match(FOOTNOTE_LINE)?.[1] === mark) return below;
+    }
+    return -1;
+  };
+  return lines
+    .filter((line, index) => {
+      if (FOOTNOTE_LINE.test(line)) return true;
+      return ![...line.matchAll(GLUED_MARK)].some((mark) => {
+        const note = noteBelow(index, mark[1]);
+        return note >= 0 && businessNote(note);
+      });
+    })
+    .join("\n");
+}
+
 export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
-  const text = stripPriceFootnoteMarks(newestColumnText(raw));
+  const text = withoutBusinessOnlyFees(stripPriceFootnoteMarks(newestColumnText(raw)));
   const seen = new Set<string>();
   const result: ExtractionRulesResult = { candidates: [], held: [] };
   const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
