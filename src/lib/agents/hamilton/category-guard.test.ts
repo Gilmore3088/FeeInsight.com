@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runHamiltonCategoryGuard } from "./category-guard";
+import { restoreTarget, runHamiltonCategoryGuard } from "./category-guard";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -27,7 +27,7 @@ function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = []) 
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(flags);
     if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve(takenDown);
     if (text.includes("UPDATE published_fee_records") && text.includes("rolled_back_at = NULL")) {
-      return Promise.resolve((values[0] as number[]).map((id) => ({ lineage_ref: id + 10 })));
+      return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 10, canonical_fee_key: (values[1] as string[])[i] })));
     }
     if (text.includes("FROM published_fee_records")) return Promise.resolve(liveRows);
     if (text.includes("UPDATE published_fee_records")) {
@@ -98,6 +98,29 @@ describe("Hamilton category guard repair", () => {
     expect(result.restoredFees).toBe(1);
     const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
     expect(restore?.[1]).toEqual([21]);
+  });
+
+  it("brings back an ATM adjustment the guard took down under the type its fold split gives it, logged as a fold", async () => {
+    const db = createDbMock([], [
+      { fee_published_id: 45585, lineage_ref: 36992, institution_id: 6182, source_document_id: 9, canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment", amount: "2.00", conditions: null },
+    ]);
+
+    const result = await runHamiltonCategoryGuard({ runId: 14, db: db as unknown as GuardDb });
+
+    expect(result).toMatchObject({ restoredFees: 1, refiledFees: 1 });
+    const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
+    expect([restore?.[1], restore?.[2]]).toEqual([[45585], ["account_research"]]);
+    const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(statements).toContain("INSERT INTO pipeline_feedback");
+    expect(statements).not.toContain("DELETE");
+  });
+
+  it("keeps a takedown down when neither its own type nor a split type accepts it", () => {
+    const row = { conditions: null, document_nsf_amount: null };
+    expect(restoreTarget({ ...row, canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment Fee", amount: "5.00" })).toBe("account_research");
+    expect(restoreTarget({ ...row, canonical_fee_key: "atm_non_network", fee_name: "ATM Limit Adjustment", amount: "5.00" })).toBeNull();
+    expect(restoreTarget({ ...row, canonical_fee_key: "overdraft", fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" })).toBeNull();
+    expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
   });
 
   it("caps the rollbacks at the run limit", async () => {
