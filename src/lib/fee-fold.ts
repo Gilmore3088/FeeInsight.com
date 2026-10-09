@@ -232,6 +232,15 @@ export const FAX_SERVICE = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*\bfax(
 /** A fax or a document copy ("Copy of previous statement"), outside the same exceptions. */
 const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)`, "i");
 
+/**
+ * A copy charge priced by the page ("Account Research Copies (per page)", "Research Request - Per
+ * Page Copied"), which document reproduction holds even when the copies come from research.
+ * Research priced by the hour or with a minimum, copies extra, stays research. Knox reads these
+ * lines with this too, ahead of its research pattern.
+ */
+export const PER_PAGE_COPY =
+  /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?=[\s\S]*\bcop(?:y|ies|ied|ying)\b)[\s\S]*(?:\bper (?:page|pg)\b|\/ ?(?:page|pg)\b)/i;
+
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
@@ -269,13 +278,15 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   },
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
   // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
-  // A fax or a document copy is document reproduction, not research.
+  // A fax or a document copy is document reproduction, not research, and so is a copy charged
+  // by the page during research.
   account_research: {
     to: "ira_termination",
     name: IRA_TRANSFER_OUT,
     also: [
       { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
       { to: "document_reproduction", name: FAX_OR_COPY },
+      { to: "document_reproduction", name: PER_PAGE_COPY },
     ],
     sqlPattern: "\\mira\\M|fax|cop(y|ies)|reproduc",
   },
@@ -300,7 +311,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 9;
+export const FOLD_RULES_VERSION = 10;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
