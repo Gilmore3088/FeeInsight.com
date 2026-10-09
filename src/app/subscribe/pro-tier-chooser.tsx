@@ -95,7 +95,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
         inputId="pro_tier_institution"
         name="pro_tier_institution_id"
         label="Find your institution"
-        help="Search your bank or credit union to see its price."
+        help="Its size sets the price."
         labelClassName="text-sm font-semibold text-[#1A1815]"
         labelStyle={{}}
         inputClassName="w-full rounded-lg border border-[#CFC5B7] bg-white px-3.5 py-3 text-base text-[#1A1815] outline-none focus:border-[#C44B2E] focus:ring-2 focus:ring-[#C44B2E]/20"

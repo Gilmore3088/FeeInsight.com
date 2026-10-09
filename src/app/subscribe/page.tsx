@@ -15,13 +15,14 @@ import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { EverythingInPro, ProPillars, WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
+import { ProPillars, WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
 import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
 import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
 import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
 import { buildFeeDataStrips, categoriesForFeeTypes, categoryLabel } from "@/lib/regulatory/wire-fee-links";
 import { feeTypesOf, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { STATE_NAMES } from "@/lib/us-states";
+import { formatAmount } from "@/lib/format";
 import { getCategoryChargeBases, getNationalIndexCached } from "@/lib/data-store/fee-index";
 import { getInstitutionFees } from "@/lib/data-store/institution";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
@@ -30,8 +31,7 @@ import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
-import { AdvisoryLine, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { OtherOptions, PricingFaq } from "./pricing-sections";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { isProPlan, type ProPlan } from "./pricing";
@@ -81,13 +81,12 @@ function billHeading(state: string, title: string): string {
 
 interface WirePreviewData {
   lead: WirePreviewLead | null;
-  items: WirePreviewItem[];
 }
 
 /**
- * The Wire preview's items, all read from the Wire's own tables. The lead is the newest state
- * fee bill with figures in the fee data (the Wire's "In the fee data" strip), else the newest
- * federal release; two more federal headlines follow, fee and rulemaking topics first. A read
+ * The Wire preview's one item, read from the Wire's own tables: the newest state fee bill
+ * with figures in the fee data (the Wire's "In the fee data" strip), else the newest federal
+ * release, fee and rulemaking topics first. A read
  * that fails leaves its part out, and the page falls back to the benchmark preview.
  */
 async function wirePreviewData(): Promise<WirePreviewData> {
@@ -126,14 +125,19 @@ async function wirePreviewData(): Promise<WirePreviewData> {
           date: bill.stage_on,
           url: bill.url,
           place: strip.place,
-          figures: strip.figures.map((figure) => ({ label: figure.label, text: figure.text })),
+          figures: strip.figures.map((figure) => ({
+            label: figure.label,
+            text:
+              figure.status === "median" && figure.median !== null
+                ? `${formatAmount(figure.median)} median · ${figure.institutions.toLocaleString("en-US")} institutions`
+                : figure.text,
+          })),
         },
-        items: releases.slice(0, 2),
       };
     }
   }
-  if (releases.length === 0) return { lead: null, items: [] };
-  return { lead: { ...releases[0], officialTitle: null, place: null, figures: [] }, items: releases.slice(1, 3) };
+  if (releases.length === 0) return { lead: null };
+  return { lead: { ...releases[0], officialTitle: null, place: null, figures: [] } };
 }
 
 /** The fees the benchmark preview shows first, in banker words. */
@@ -228,11 +232,7 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const [summary, sampleLive, wire] = await Promise.all([
-    getPublicStatsSummary(),
-    sampleReportAvailable(),
-    wirePreviewData(),
-  ]);
+  const [summary, wire] = await Promise.all([getPublicStatsSummary(), wirePreviewData()]);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
   const checkoutRequested = params.checkout === "1";
@@ -318,7 +318,7 @@ export default async function SubscribePage({
     requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
-  const wirePreview = wire.lead ? <WirePreview lead={wire.lead} items={wire.items} /> : null;
+  const wirePreview = wire.lead ? <WirePreview lead={wire.lead} /> : null;
   // Sent with every funnel event so conversion can be read by entry point (James, 9 Oct 2026).
   const entryPoint = entry.page ?? "direct";
   const benchmarkInstitution = selection?.institutionId && pricingInstitution ? chosenLabel : null;
@@ -370,8 +370,7 @@ export default async function SubscribePage({
               Understand your fees. Know your market.
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
-              {SITE_NAME} Pro helps banks and credit unions benchmark published fees, explore scenarios, monitor
-              changes, and produce source-backed research.
+              Benchmark, analyze and monitor bank and credit union fees.
             </p>
             <div className="mt-6 lg:hidden">
               <p className="text-sm text-[#3D3833]">
@@ -434,22 +433,16 @@ export default async function SubscribePage({
             className="mt-20 grid gap-8 border-t border-[#E8E1D6] pt-14 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
           >
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Included in Pro</p>
               <h2 id="wire-heading" className="mt-2 text-2xl text-[#1A1815]" style={SERIF}>
-                Regulatory Wire, beside the fee data
+                Regulatory Wire, with the fee data
               </h2>
               <p className="mt-3 text-[15px] leading-relaxed text-[#3D3833]">
-                Federal releases and state bills that touch bank fees, in one feed. When an item names a fee, the
-                Wire shows what institutions publish for it, so a rule or bill comes with its market context.
+                Fee rules and bills, each beside what institutions charge. Included in Pro.
               </p>
             </div>
             {wirePreview}
           </section>
         )}
-
-        <div className="mt-20 border-t border-[#E8E1D6] pt-14">
-          <EverythingInPro />
-        </div>
 
         {gated ? (
           <p className="mt-14 text-[15px] leading-relaxed text-[#3D3833]">
@@ -459,18 +452,13 @@ export default async function SubscribePage({
             </Link>
           </p>
         ) : (
-          <section aria-labelledby="other-options-heading" className="mt-20 space-y-6">
-            <h2 id="other-options-heading" className="text-2xl text-[#1A1815]" style={SERIF}>
-              Not ready for a subscription?
-            </h2>
-            <ReportCard sampleLive={sampleLive} />
-            <FreeTierCard summary={summary} />
-          </section>
+          <div className="mt-20">
+            <OtherOptions />
+          </div>
         )}
 
         <div className="mt-20">
           <PricingFaq summary={summary} />
-          {!gated && <AdvisoryLine />}
         </div>
       </div>
       </main>

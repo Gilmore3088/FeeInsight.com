@@ -89,8 +89,8 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
       </p>
       <p className="mt-1 text-sm leading-relaxed text-[#3D3833]">
         {annual
-          ? `Equivalent to ${annualPerMonthLabel(tier)} a month. Save ${annualSavingsLabel(tier)} compared with monthly billing.`
-          : `Billed monthly. Annual billing is ${tierAmountLabel(tier, "annual")} a year and saves ${annualSavingsLabel(tier)}.`}
+          ? `${annualPerMonthLabel(tier)} a month · Save ${annualSavingsLabel(tier)}`
+          : `Or ${tierAmountLabel(tier, "annual")} a year, save ${annualSavingsLabel(tier)}`}
       </p>
 
       <div className="mt-5">
@@ -116,13 +116,13 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
       </div>
 
       <p className="mt-3 text-center text-sm text-[#3D3833]">
-        Includes {WORKSPACE_SEAT_LIMIT} team members · Secure checkout by Stripe
+        {WORKSPACE_SEAT_LIMIT} team members · Secure Stripe checkout
       </p>
       <p className="mt-3 text-xs leading-relaxed text-[#6B6255]">
         {annual
-          ? "Annual billing renews automatically. Cancel renewal anytime. First annual payments are refundable within 14 days."
-          : "Monthly billing renews automatically. Cancel renewal anytime."}{" "}
-        After paying you go straight to {destination ?? "Hamilton"}.{" "}
+          ? "Renews yearly. Cancel renewal anytime. First year refundable within 14 days."
+          : "Renews monthly. Cancel renewal anytime."}{" "}
+        {destination ? `Then straight back to ${destination}. ` : ""}
         <Link href="/terms" className="underline underline-offset-2 hover:text-[#1A1815]">
           Terms
         </Link>

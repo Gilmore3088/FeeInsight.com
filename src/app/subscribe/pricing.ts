@@ -1,4 +1,4 @@
-import { REPORT_INCLUDES, REPORT_OFFER } from "@/lib/constants";
+import { REPORT_OFFER } from "@/lib/constants";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 
 export { isProPlan, type ProPlan } from "@/lib/pro-tiers";
@@ -18,6 +18,3 @@ export const PLAN_DISPLAY_NAME: Record<ProPlan, string> = { monthly: "Monthly", 
 export const PLAN_TEAM_LABEL = `for up to ${WORKSPACE_SEAT_LIMIT} people`;
 /** "From $300" while the report is quoted per institution. */
 export const REPORT_PRICE_LABEL = REPORT_PRICE_USD === 0 ? REPORT_OFFER.priceLabel : WHOLE_DOLLARS.format(REPORT_PRICE_USD);
-
-/** The institution report's contents, worded the same as every other page that lists them. */
-export const REPORT_BULLETS: readonly string[] = REPORT_INCLUDES;

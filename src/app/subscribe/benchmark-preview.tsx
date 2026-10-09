@@ -62,18 +62,14 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
           <span aria-hidden className="h-2 w-2 rounded-full bg-[#C44B2E]" />
           Hamilton · Competitive fee position
         </span>
-        <span className="hidden text-xs text-[#6B6255] sm:inline">{mine ? "Against the national median" : "National index"}</span>
+        <span className="hidden text-xs text-[#6B6255] sm:inline">{mine ? "vs national median" : "Live data"}</span>
       </figcaption>
 
       <div className="px-4 pb-2 pt-4 sm:px-5">
         <p className="text-lg leading-snug text-[#1A1815]" style={SERIF}>
-          {mine ? institution : "Where published fees sit across the market"}
+          {mine ? institution : "National fee benchmark"}
         </p>
-        <p className="mt-0.5 text-sm text-[#6B6255]">
-          {mine
-            ? "Its own published fees, each compared on the same charge basis."
-            : "Pick your institution in the card to place its own fees here."}
-        </p>
+        {!mine && <p className="mt-0.5 text-sm text-[#6B6255]">Pick your institution to see its own fees here.</p>}
       </div>
 
       <ul className="divide-y divide-[#EDE6DB]">
@@ -86,7 +82,6 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
           >
             <div>
               <p className="text-[15px] font-semibold text-[#1A1815]">{row.label}</p>
-              <p className="text-xs text-[#6B6255] tabular-nums">{row.institutions.toLocaleString("en-US")} institutions</p>
             </div>
             <div className="col-span-2 row-start-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
               <RangeBar row={row} />
@@ -102,11 +97,6 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
               ) : (
                 <>
                   <p className="text-[15px] font-semibold text-[#1A1815]">{formatAmount(row.median)} median</p>
-                  {row.p25 !== null && row.p75 !== null && (
-                    <p className="text-xs text-[#6B6255]">
-                      Middle half {formatAmount(row.p25)} to {formatAmount(row.p75)}
-                    </p>
-                  )}
                 </>
               )}
             </div>
@@ -128,10 +118,7 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
             </span>
           )}
         </p>
-        <p className="mt-1.5">
-          From published fee schedules in the Bank Fee Index. In Pro you set the peer group: state, asset size, charter,
-          Fed district, or your own list.
-        </p>
+        <p className="mt-1.5">From {Math.min(...rows.map((r) => r.institutions)).toLocaleString("en-US")}+ institutions&apos; published schedules. In Pro, pick your own peers.</p>
       </div>
     </figure>
   );
