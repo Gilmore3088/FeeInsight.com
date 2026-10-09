@@ -1,0 +1,98 @@
+name: backlog resolution evidence
+# Historical, one-off PR evidence capture. Do not rerun on each PR edit;
+# ongoing inventory evidence is collected by backlog-inventory.yml.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+concurrency:
+  group: backlog-evidence-${{ github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read current PR identities and narrowly scoped source evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p resolution-evidence
+          gh api --paginate --slurp 'repos/Gilmore3088/FeeInsight.com/pulls?state=all&per_page=100' > resolution-evidence/all-prs.json
+          cp -r .github/scripts resolution-evidence/setup-scripts
+          python - <<'PY'
+          import json,pathlib,subprocess
+          root=pathlib.Path('resolution-evidence')
+          prs=[p for page in json.loads((root/'all-prs.json').read_text()) for p in page]
+          main=subprocess.check_output(['git','rev-parse','origin/main'],text=True).strip()
+          (root/'main-sha.txt').write_text(main)
+          def git(*args):return subprocess.check_output(['git',*args],text=True)
+          for n in [810,811,939,963,986,987]:
+            p=next(p for p in prs if p['number']==n);folder=root/'prs'/str(n);folder.mkdir(parents=True,exist_ok=True)
+            (folder/'metadata.json').write_text(json.dumps(p,indent=2))
+            (folder/'diff.patch').write_text(git('diff',f'{p["base"]["sha"]}...{p["head"]["sha"]}'))
+            files=git('diff','--name-only',f'{p["base"]["sha"]}...{p["head"]["sha"]}').splitlines()
+            (folder/'files.json').write_text(json.dumps(files,indent=2))
+            for f in files:
+              if not f.endswith(('.ts','.tsx','.md','.yml','.json','.css')):continue
+              for ref,label in [(p['head']['sha'],'head'),(main,'main')]:
+                dest=folder/label/f;dest.parent.mkdir(parents=True,exist_ok=True)
+                data=subprocess.run(['git','show',f'{ref}:{f}'],capture_output=True)
+                if data.returncode==0:dest.write_bytes(data.stdout)
+          p=next(p for p in prs if p['number']==810)
+          (root/'pdf-head.txt').write_text(p['head']['sha'])
+          subprocess.run(['git','worktree','add','--detach','/tmp/backlog-pdf-review',p['head']['sha']],check=True)
+          PY
+      - name: Capture failed application test evidence without terminal escape output
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --allow-escape-sequences repos/Gilmore3088/FeeInsight.com/actions/jobs/114036333032/logs > /tmp/app-test.log
+          python - <<'PY'
+          import re,pathlib
+          text=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',pathlib.Path('/tmp/app-test.log').read_text(errors='replace'))
+          lines=text.splitlines();hits=set()
+          for i,line in enumerate(lines):
+            if re.search(r'FAIL |Failed Tests|AssertionError|Error:|Test Files|Tests\s+.*failed',line):hits.update(range(max(0,i-8),min(len(lines),i+30)))
+          pathlib.Path('resolution-evidence/ci-failure-excerpt.txt').write_text('\n'.join(lines[i] for i in sorted(hits)))
+          PY
+      - name: Render existing PR 810 all-kinds synthetic fixture at its observed head
+        run: |
+          cd /tmp/backlog-pdf-review
+          npm ci --ignore-scripts > "$GITHUB_WORKSPACE/resolution-evidence/pdf-install.log" 2>&1
+          python - <<'PY'
+          import pathlib
+          p=pathlib.Path('src/components/hamilton/reports/StoryExhibitPdf.test.tsx')
+          text=p.read_text()
+          anchor='expect(buffer.subarray(0, 4).toString()).toBe("%PDF");'
+          assert text.count(anchor)==1,'Fixture instrumentation target changed; refusing guessed edit'
+          text='import { writeFileSync } from "node:fs";\n'+text
+          text=text.replace(anchor,'writeFileSync(process.env.BACKLOG_PDF_OUTPUT!, buffer);\n    writeFileSync(process.env.BACKLOG_PDF_OUTPUT! + ".input.json", JSON.stringify(story, null, 2));\n    '+anchor)
+          p.write_text(text)
+          PY
+          BACKLOG_PDF_OUTPUT="$GITHUB_WORKSPACE/resolution-evidence/810-synthetic-all-kinds.pdf" npx vitest run src/components/hamilton/reports/StoryExhibitPdf.test.tsx --reporter=json --outputFile="$GITHUB_WORKSPACE/resolution-evidence/810-test-results.json" > "$GITHUB_WORKSPACE/resolution-evidence/810-test.log" 2>&1
+      - name: Hash evidence files
+        if: always()
+        run: |
+          python - <<'PY'
+          import pathlib,hashlib,json
+          root=pathlib.Path('resolution-evidence')
+          (root/'SHA256SUMS.json').write_text(json.dumps({str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backlog-resolution-evidence
+          path: resolution-evidence/
+          if-no-files-found: error
+          retention-days: 90
