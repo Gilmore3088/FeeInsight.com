@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, SUBORDINATION } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts";
 
@@ -208,9 +208,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v39: wire fees read under a "Subordination Request" heading ("SUBORDINATION REQUEST: Incoming"
   // $10, "...: Outgoing Domestic" $25) are not the lien subordination fee.
+  // v47: a mortgage or lien subordination is another lending fee, not legal process.
   legal_process: {
     include: /./,
-    exclude: /subordination request:\s*(incoming|outgoing)/i,
+    exclude: new RegExp(String.raw`subordination request:\s*(incoming|outgoing)|${SUBORDINATION.source}`, "i"),
   },
   paper_statement: {
     include: /statement/i,
@@ -350,7 +351,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // v47: Darwin's Oct 8 eval rows: bill pay stops and membership fees, money order research,
 // copies and replacements, wire research, business-only and payee-returned NSF rows, and a
 // per-item "Overdraft Protection" fee priced like courtesy pay.
-export const CATEGORY_GUARD_VERSION = 47;
+// v48: subordination leaves legal process for other lending; a money order copy is a check copy.
+export const CATEGORY_GUARD_VERSION = 48;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -404,6 +406,8 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
+  { from: "legal_process", to: "other_lending_fee", when: SUBORDINATION },
+  { from: "money_order", to: "check_image", when: ITEM_COPY },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },

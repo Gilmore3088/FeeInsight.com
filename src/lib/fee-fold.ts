@@ -154,6 +154,12 @@ export const RETIRED_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(RE
 export const COLLECTION_ITEM =
   /^(?![\s\S]*(?:charged[- ]?off|past[- ]due|delinquen|\bcalls?\b|negative balance|overdrawn|\bdebts?\b|agenc))(?:[\s\S]*\bcollections?\b|(?![\s\S]*\b(?:cash\w*|returns?|returned)\b)[\s\S]*\b(?:foreign|canadian|international|non[- ]?u\.?s\.?)\s+(?:checks?|items?|drafts?)\b)/i;
 
+/** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
+export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
+
+/** A copy of an item, not the item. */
+export const ITEM_COPY = /\bcop(?:y|ies)\b/i;
+
 interface SplitCategory {
   to: string;
   name: RegExp;
@@ -168,6 +174,11 @@ interface SplitCategory {
  */
 export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+  // A mortgage or lien subordination is a lending service (median $150), not legal process like
+  // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
+  legal_process: { to: "other_lending_fee", name: SUBORDINATION, sqlPattern: "subordinat" },
+  // A copy of a money order or cashier's check is a check copy, not the money order itself.
+  money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -181,7 +192,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 3;
+export const FOLD_RULES_VERSION = 4;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
