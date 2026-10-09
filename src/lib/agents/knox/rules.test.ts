@@ -468,7 +468,8 @@ describe("Knox extract.rules", () => {
   it.each([
     ["Returned Mail Fee", "account_research"],
     ["Bad Address Fee", "account_research"],
-    ["Fax Outgoing", "account_research"],
+    ["Fax Outgoing", "document_reproduction"],
+    ["Loan Payoff Fax/Mail Fee", "account_research"],
     ["Excessive Withdrawal Fee", "account_research"],
     ["Withdrawal Limit Fee", "account_research"],
     ["Foreign Item Collection", "collection_item"],
