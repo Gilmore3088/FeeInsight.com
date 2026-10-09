@@ -134,3 +134,18 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(settledFrequency("Monthly Service Fee | $5.00 a month", 5, "monthly", "monthly_maintenance")).toBe("monthly");
   });
 });
+
+describe("a rate basis in the fee's own name (v8, whole-record sample 2)", () => {
+  it("clears a flat frequency on a fee charged per hour", () => {
+    const line = "Account Balancing (per hour) / $35.00 Each";
+    expect(frequencyFromLine(line, 35)).toBeNull();
+    expect(settledFrequency(line, 35, "per_item", "account_research")).toBeNull();
+    expect(settledFrequency("Research ($10 min) /hr | $20.00 each", 20, "per_item", "account_research")).toBeNull();
+  });
+
+  it("keeps a period when the name only mentions a minimum balance", () => {
+    expect(frequencyFromLine("Minimum Balance Fee | $5.00 per month", 5)).toBe("monthly");
+    expect(settledFrequency("Classic Money Market Account (balance below $1,000) | $3.00/monthly", 3, "monthly", "minimum_balance")).toBe("monthly");
+    expect(frequencyFromLine("Copy of Share Draft (Check) Faxed | $6.00 each", 6)).toBe("per_item");
+  });
+});
