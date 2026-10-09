@@ -1,7 +1,7 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_BATCH_KEY_VERSION, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { DARWIN_BATCH_KEY_VERSION, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -152,6 +152,34 @@ describe("Darwin agentic verification", () => {
     });
     const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
+  it("holds a row whose name carries a category lesson the guard has not learned yet", async () => {
+    // Raw 246460 (2026-10-09): "Bond return items" $35 filed nsf passed the v57 guard; a returned
+    // bond is a returned deposited item. Darwin holds it rather than re-filing it or verifying it.
+    const db = createDbMock([
+      {
+        ...rawFee,
+        fee_name: "Bond return items",
+        outlier_flags: ["canonical_hint:nsf"],
+        conditions: "canonical_hint=nsf",
+      },
+    ]);
+
+    const result = await runDarwinVerify({ runId: 109, db: asVerifyDb(db) });
+
+    expect(result.verifiedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      decision: "needs_review",
+      reasonCode: "category_lesson_pending",
+      canonicalFeeKey: "nsf",
+    });
+    const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+    expect(pendingCategoryLesson("nsf", "Bond/Coupon Returned Item Fee")).toMatchObject({ shouldBe: "deposited_item_return" });
+    expect(pendingCategoryLesson("nsf", "NSF returned item fee")).toBeNull();
+    expect(pendingCategoryLesson("deposited_item_return", "Bond return items")).toBeNull();
   });
 
   it("rejects a fee its own stored schedule does not state", async () => {
@@ -417,7 +445,7 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
+      expect(query).toMatch(/reason_code' IN \('category_mismatch', 'category_lesson_pending'\)[\s\S]*category_guard_version/);
       expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
     });
 

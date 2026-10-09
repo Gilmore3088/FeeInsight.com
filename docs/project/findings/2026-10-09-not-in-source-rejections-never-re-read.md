@@ -30,8 +30,15 @@ $0 rows the dry read could not window.
 Every decision now records `source_check_version` (`DARWIN_SOURCE_CHECK_VERSION`, 1). A
 `not_in_source` rejection stamped lower, or not stamped, is selected once more; a row the check
 still fails is stamped and rests. The constant is bumped when a source-check fix should reach
-rejected rows. Selection order is by the raw row's creation time, so the backlog takes about
-twelve verify steps of 100 before new rows lead again.
+rejected rows. The wrong passer is kept out of this pass by a typed hold: a row whose filed
+category matches a lesson in `DARWIN_CATEGORY_HOLDS` (here `nsf` with a bond-return name) is
+decided `category_lesson_pending` (needs_review, no verified row, so Hamilton has nothing to
+publish) and is read once more when `CATEGORY_GUARD_VERSION` rises, the `category_mismatch`
+path. Darwin never re-files a row itself; the lesson (a returned bond or coupon is a returned
+deposited item, not a customer NSF) went to Accuracy for the guard. Two verified rows with the
+same lesson, "Bond/Coupon Returned Item Fee" $45 under `nsf` (raw 118545 and 277863, one bank),
+are Accuracy's to re-file. Selection order is by the raw row's creation time, so the backlog
+takes about twelve verify steps of 100 before new rows lead again.
 
 ## Lesson
 

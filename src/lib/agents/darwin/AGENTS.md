@@ -25,9 +25,13 @@ Darwin owns verification and classification.
 | `peer_outlier` | pass 2: not far outside the state's peer range (below); a district or national comparison never holds | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
+| `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
 
 - Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
-  as `category_mismatch` under an older guard are selected once more. No other decided row is.
+  as `category_mismatch` or held as `category_lesson_pending` under an older guard are selected
+  once more. The hold list (2026-10-09) carries "Bond return items" $35 filed `nsf` (raw 246460), a
+  returned deposited item the v57 guard let through; the lesson went to Accuracy, and the entry
+  leaves the list in the change that teaches the guard.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
