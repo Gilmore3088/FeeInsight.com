@@ -3,6 +3,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } fr
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { BRANCHLESS_MAX_OFFICES, BRANCHLESS_MIN_DEPOSITS, BRANCHLESS_ONE_OFFICE_SHARE } from "@/lib/data-store/branchless-banks";
 
 /**
  * The free market snapshot a prospect's first email links to (GTM plan, James 15:25 and 15:33
@@ -233,7 +234,7 @@ function toInstitution(row: Record<string, unknown>): SnapshotInstitution {
  * but they are not its local competitors, so a snapshot or state comparison leaves them out of the peers
  * (coordinator, 23:57 UTC Oct 8, after Accuracy confirmed the four Salt Lake City $0 overdraft
  * rows). Credit unions file no Summary of Deposits and are never excluded here. The same
- * filter is written into `loadStateComparison`.
+ * filter is written into `loadStateComparison`; its thresholds live in `branchless-banks.ts`.
  */
 export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ subject: SnapshotInstitution; peers: SnapshotInstitution[] } | null> {
   const [subjectRow] = await db`
@@ -252,7 +253,7 @@ export async function loadMarket(db: SqlTag, institutionId: number): Promise<{ s
              SELECT b.institution_id FROM institution_branch_deposits b
               WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
               GROUP BY b.institution_id
-             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
+             HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS} AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits))
      ORDER BY s.institution_name
   `;
   return { subject, peers: peerRows.map(toInstitution) };
@@ -322,7 +323,7 @@ export async function loadStateComparison(db: SqlTag, subject: SnapshotInstituti
              SELECT b.institution_id FROM institution_branch_deposits b
               WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
               GROUP BY b.institution_id
-             HAVING COUNT(*) <= 4 AND SUM(b.deposits) >= 3000000 AND MAX(b.deposits) >= 0.9 * SUM(b.deposits))
+             HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS} AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits))
   `;
   const names = new Map<number, string>(peerRows.map((row) => [Number(row.id), String(row.institution_name)]));
   const rows = await loadSnapshotRows(db, [subject.id, ...names.keys()], [category]);
