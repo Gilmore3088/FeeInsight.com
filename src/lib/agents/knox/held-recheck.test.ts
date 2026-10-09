@@ -321,6 +321,8 @@ describe("lines a re-read retired, read again with today's rules (Northern Trust
     const result = await recheckSupersededRows(db as never, { institutionId: 25, live: true });
 
     expect(result).toMatchObject({ checked: 2, promoted: 1, liveTwin: 0, notRead: 1, promotedIds: [457013], live: true });
+    const select = calls.find((call) => call.text.includes("SELECT fr.fee_raw_id"))!;
+    expect(select.values).toContain("knox_paid_extraction");
     const promote = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr"))!;
     expect(promote.values).toContain(457013);
     expect(JSON.stringify(promote.values)).toContain("needs_darwin_verification");

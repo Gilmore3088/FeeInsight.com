@@ -31,3 +31,15 @@ once per Knox version and marked with what the pass would do
 (`knox_superseded_would_promote:vN`). The dry read is spot-checked against source before the
 switch goes on. A row sent back still goes through Darwin's checks before Hamilton can publish
 it.
+
+## First dry read: paid rows only
+The first dry read on prod (10:16 to 10:48 UTC, Knox v64) read 90 rows and would have sent 17 to
+Darwin. Read against source, 11 of 17 were right. The other 6 were a $1,000 ATM withdrawal limit, an
+ATM fee rebate, a courtesy-pay fee filed as an ATM fee, an ATM misuse fee filed as a non-network
+ATM fee, a money market excess-transaction fee at $5 where the page says $10, and an arguable ATM
+balance inquiry fee. That is below the 18/20 bar for bulk re-selects, so the switch stayed off.
+
+The re-check now reads only rows Knox's paid reader produced (`knox_paid_extraction`, 43 rows on
+9 Oct). A row comes back only when the paid reader and today's free rules agree on its name, amount
+and category. Northern Trust's overdraft is one of them. The dry read runs again on these rows and
+gets a new source spot check before the switch goes on.
