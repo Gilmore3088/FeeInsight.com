@@ -180,9 +180,8 @@ describe("top-50 fold", () => {
       ["late_payment", "VISA Late Charge (if payment not satisfied by end of current month)", 30, null],
       ["account_research", "IRA Transfer (outgoing)", 50, "ira_termination"],
       ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
-      ["account_research", "IRA Excessive Withdrawal", 10, "ira_administration"],
-      ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, "ira_administration"],
-      ["account_research", "Excessive Withdrawal (IRA)", 10, "ira_administration"],
+      ["account_research", "IRA Excessive Withdrawal", 10, null],
+      ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, null],
       ["account_research", "Excessive Withdrawal Fee", 5, null],
       ["account_research", "All Checking and Savings Accounts EXCEPT Grow Account, Student Edge, IRA Savings: Account Reconciliation", 25, null],
       ["account_research", "IRA Transfer Incoming", 0, null],
@@ -201,6 +200,9 @@ describe("top-50 fold", () => {
       ["paper_statement", "Return Statement Charge", 5, "account_research"],
       ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, "account_research"],
       ["paper_statement", "Paper Statement Fee", 3, null],
+      ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
+      ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
+      ["other_lending_fee", "Loan Payoff Statement", 20, null],
     ];
     for (const [key, name, amount, want] of moves) {
       const got = splitLiveCategory(key, name)?.to ?? null;
