@@ -81,3 +81,11 @@ both are separate fees on their source:
 
 **Duplicates:** raw 468046, the second read of the same SCCU line, is not verified yet. Once
 119831 is live, the same-name same-document check skips it as identical.
+
+## When the older line is the bad read
+
+After 920 went live, the cleanup flagged 104667 ("All Money Market Accounts Withdrawals in excess of
+6 per month", $5) as a repeat of 70143 ("Transactions in excess of 6 per month will be subject to a",
+$5). Archiving 104667 would have left the cut-off name live. The cleanup now checks which side is
+unclear: when the newer line's name is clear and the older live line's name is cut off, the newer
+line passes (clearing its flag) and the older one goes through the same flag and 12h second look.

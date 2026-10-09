@@ -889,7 +889,7 @@ function significantWords(name: string | null | undefined): Set<string> {
 /** A name read from page text or a page header: it says nothing about which line it is. */
 const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
 const MAX_LINE_WORDS = 10;
-function unclearName(name: string | null | undefined): boolean {
+export function unclearName(name: string | null | undefined): boolean {
   const text = (name ?? "").replace(/[\u200b\ufeff]/g, "").trim();
   // A name starting lower-case is the rest of a line ("per mailed statement"), not its start;
   // a box size ("3 x 5") is a line's start. A name ending on "a" or "of" is a cut-off sentence

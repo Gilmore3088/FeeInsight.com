@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { HAMILTON_PUBLISH_STRATEGY, sameLineDuplicateOf, type VerifiedFeeRow } from "@/lib/agents/hamilton/publish";
+import { HAMILTON_PUBLISH_STRATEGY, sameLineDuplicateOf, unclearName, type VerifiedFeeRow } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -141,6 +141,19 @@ export async function retireSameLineDuplicates(
       passing.push(feePublishedId);
       continue;
     }
+    // When the older line is the bad read ("Transactions in excess of 6 per month will be subject
+    // to a" beside "All Money Market Accounts Withdrawals in excess of 6 per month", both $5), the
+    // clear newer line stays and the older one goes through the second look instead.
+    if (!unclearName(row.fee_name)) {
+      const twin = await liveRepeat(db, older, feePublishedId);
+      if (twin && unclearName(twin.feeName)) {
+        passing.push(feePublishedId);
+        if (!failing.some((fee) => fee.feePublishedId === older)) {
+          failing.push({ ...twin.fee, reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${feePublishedId}` });
+        }
+        continue;
+      }
+    }
     failing.push({
       feePublishedId,
       feeVerifiedId: Number(row.fee_verified_id),
@@ -154,7 +167,7 @@ export async function retireSameLineDuplicates(
   }
   for (const [repeat, kept] of REVIEWED_REPEATS) {
     const twin = await liveRepeat(db, repeat, kept);
-    if (twin) failing.push({ ...twin, reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${kept}` });
+    if (twin) failing.push({ ...twin.fee, reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${kept}` });
   }
   result.duplicates = failing.length;
 
@@ -223,13 +236,13 @@ export async function retireSameLineDuplicates(
 }
 
 /** A reviewed repeat while both it and the line that stays are live. */
-async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Promise<Omit<SameLineDuplicate, "reason"> | null> {
+async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Promise<{ fee: Omit<SameLineDuplicate, "reason">; feeName: string | null } | null> {
   try {
     const [row] = await inSavepoint(db, (scope) => scope<{
-      lineage_ref: number | string; institution_id: number | string; canonical_fee_key: string;
+      lineage_ref: number | string; institution_id: number | string; canonical_fee_key: string; fee_name: string | null;
       amount: number | string | null; source_document_id: number | string | null;
     }[]>`
-      SELECT fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.amount, fr.source_document_id
+      SELECT fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.source_document_id
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -239,13 +252,16 @@ async function liveRepeat(db: SqlTag, feePublishedId: number, kept: number): Pro
     `);
     if (!row) return null;
     return {
-      feePublishedId,
-      feeVerifiedId: Number(row.lineage_ref),
-      institutionId: Number(row.institution_id),
-      canonicalFeeKey: row.canonical_fee_key,
-      amount: num(row.amount),
-      sourceDocumentId: num(row.source_document_id),
-      olderFeePublishedId: kept,
+      fee: {
+        feePublishedId,
+        feeVerifiedId: Number(row.lineage_ref),
+        institutionId: Number(row.institution_id),
+        canonicalFeeKey: row.canonical_fee_key,
+        amount: num(row.amount),
+        sourceDocumentId: num(row.source_document_id),
+        olderFeePublishedId: kept,
+      },
+      feeName: row.fee_name,
     };
   } catch (error) {
     console.error("liveRepeat read failed:", error);
