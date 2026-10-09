@@ -43,6 +43,7 @@ export interface RepeatedError {
 export interface AgentQuality {
   evalCases: EvalCaseCount[] | null;
   deming: LatestStep | null | undefined;
+  freshAudit: LatestStep | null | undefined;
   replayJobs: ReplayJobRow[] | null;
   bayes: LatestStep | null | undefined;
   schedules: LatestStep | null | undefined;
@@ -105,7 +106,7 @@ async function stepOrUnknown(db: SqlTag, stepKey: string): Promise<LatestStep | 
 }
 
 export async function getAgentQuality(db: SqlTag = sql): Promise<AgentQuality> {
-  const [evalCases, deming, replayJobs, bayes, schedules, repeatedErrors] = await Promise.all([
+  const [evalCases, deming, freshAudit, replayJobs, bayes, schedules, repeatedErrors] = await Promise.all([
     orNull("eval cases", async () => {
       const rows = await db<Array<{ dataset: string; status: string; count: number | string }>>`
         SELECT dataset, status, COUNT(*) AS count FROM eval_cases GROUP BY 1, 2 ORDER BY 1, 2
@@ -113,6 +114,7 @@ export async function getAgentQuality(db: SqlTag = sql): Promise<AgentQuality> {
       return rows.map((row) => ({ dataset: row.dataset, status: row.status, count: Number(row.count) }));
     }),
     stepOrUnknown(db, "deming-regression"),
+    stepOrUnknown(db, "deming-fresh-audit"),
     orNull("replay jobs", async () => {
       const rows = await db<Array<Record<string, unknown>>>`
         SELECT change_key, owner_agent, unit, status, affected, done, queued, excluded, note, last_checked_at
@@ -148,7 +150,7 @@ export async function getAgentQuality(db: SqlTag = sql): Promise<AgentQuality> {
       return rows.map((row) => ({ category: row.canonical_fee_key, checkName: row.check_name ?? "unnamed check", count: Number(row.count) }));
     }),
   ]);
-  return { evalCases, deming, replayJobs, bayes, schedules, repeatedErrors };
+  return { evalCases, deming, freshAudit, replayJobs, bayes, schedules, repeatedErrors };
 }
 
 export interface ScheduleProblem {

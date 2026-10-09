@@ -34,6 +34,7 @@ function Regressions({ quality }: { quality: AgentQuality }) {
     <section className="admin-card space-y-3 p-4" aria-label="Regressions">
       <p className="admin-section-title">Regressions (Deming)</p>
       <LastRun step={quality.deming} name="Deming" />
+      <LastRun step={quality.freshAudit} name="Deming's fresh audit" />
       {quality.evalCases === null ? (
         <Unreadable what="The test-case store" />
       ) : (
