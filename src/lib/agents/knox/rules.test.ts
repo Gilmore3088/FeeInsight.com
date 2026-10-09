@@ -452,6 +452,7 @@ describe("Knox extract.rules", () => {
     ["Checkbook Balancing", "account_research"],
     ["Assistance in Balancing Checkbook", "account_research"],
     ["Check Book Order", "check_printing"],
+    ["Checkbook Order (includes balance register)", "check_printing"],
     ["NSF Fee ( Fee applies when overdraft is", "nsf"],
     ["Insufficient Funds Fee (when overdraft coverage is not available)", "nsf"],
     ["Non-Sufficient Funds (NSF)/Overdraft Fee", "overdraft"],
@@ -470,6 +471,14 @@ describe("Knox extract.rules", () => {
     ["Research Request - Per Page Copied", "document_reproduction"],
     ["Account Research (Per hour + $0.50 per copy)", "account_research"],
   ])("v54 reads %s as %s (a copy charged by the page)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["Checkbook Reconciliation (per hour)", "account_research"],
+    ["Balance Check Book", "account_research"],
+    ["Check Book Order", "check_printing"],
+  ])("v56 reads %s as %s (checkbook reconciliation)", (name, key) => {
     expect(classifyFeeText(name)).toBe(key);
   });
 

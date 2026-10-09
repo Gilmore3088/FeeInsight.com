@@ -25,6 +25,7 @@ function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | nul
   const query = (strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("NOT EXISTS")) return Promise.resolve([]);
     if (text.includes("FROM pipeline_feedback")) {
       return Promise.resolve(pendingFlag ? [{ fee_published_id: 97905, kind: "takedown_pending", evidence: { ...pendingFlag, reason: "not_a_fee:rebate" } }] : []);
     }
@@ -124,6 +125,10 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     const query = (strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("NOT EXISTS")) {
+        // One clear made before the audit trail existed: its first look is rebuilt.
+        return Promise.resolve([{ dedupe_key: "hamilton.second_look:hamilton.eval_verdict:pub:54772", fee_published_id: 54772, institution_id: 12, source_document_id: 99, canonical_fee_key: "gift_card_purchase", amount: "5.00", evidence: { flag_run_id: 3232, flagged_at: "2026-10-09T02:58:41.000Z", reason: "wrong_amount:price_in_name", cleared_run_id: 3240, cleared_at: "2026-10-09T04:21:57.000Z" } }]);
+      }
       if (text.includes("FROM pipeline_feedback")) {
         return Promise.resolve([{ fee_published_id: 62322, kind: "takedown_pending", evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 3_600_000).toISOString(), reason: "wrong_amount:price_in_name" } }]);
       }
@@ -134,9 +139,17 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(rows));
     const result = await retireEvalVerdictFees(db, options);
     expect(result.cleared).toBe(1);
+    expect(result.reconstructed).toBe(1);
     expect(result.rolledBack.map((fee) => fee.feePublishedId)).toEqual([95816]);
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("takedown_cleared");
+    // The clear appends its own row and keeps the first look's run, time and reason.
+    expect(calls).toContain("hamilton.second_look:hamilton.eval_verdict:pub:62322:cleared:5");
+    expect(calls).toContain("flag_cleared");
+    expect(calls).toContain("hamilton.second_look:hamilton.eval_verdict:pub:62322:flag:1");
+    // The rebuilt first look names what it was rebuilt from and why it was cleared.
+    expect(calls).toContain("hamilton.second_look:hamilton.eval_verdict:pub:54772:flag:3232");
+    expect(calls).toContain("reconstructed_from");
     expect(calls).toContain("hamilton.eval_verdict:rule_revised:v5");
     expect(writes(db).some((text) => text.includes("DELETE"))).toBe(false);
   });
@@ -165,6 +178,9 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(calls).toContain("takedown_pending");
     expect(calls).toContain("hamilton.eval_verdict:pub:95816");
     expect(calls).toContain("hamilton.eval_verdict:flag:non_customer_price:pub:70100");
+    // The first look's audit row, keyed by the run and never rewritten.
+    expect(calls).toContain("flag_recorded");
+    expect(calls).toContain("hamilton.second_look:hamilton.eval_verdict:pub:97905:flag:5");
     expect(calls).toContain("wrong_amount:two_fees_one_line");
     expect(writes(db).some((text) => text.includes("hamilton.eval_verdict_rolled_back"))).toBe(true);
   });
@@ -174,6 +190,9 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     const result = await retireEvalVerdictFees(db, options);
     expect(result.rolledBack.map((fee) => fee.feePublishedId).sort()).toEqual([95816, 97905]);
     expect(result.rolledBack.find((fee) => fee.feePublishedId === 97905)?.reason).toBe("not_a_fee:rebate");
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("flag_confirmed");
+    expect(calls).toContain("hamilton.second_look:hamilton.eval_verdict:pub:97905:confirmed:5");
   });
 
   it("reads the merchant's fee and two fees on one line as takedowns, and flags the rest (v3)", () => {

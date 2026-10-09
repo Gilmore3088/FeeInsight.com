@@ -20,7 +20,7 @@ import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisRespo
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { writeStorylineMemo } from "./memo";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
-import { buildAskResponse, clarifyAgain, parseAsk, parseObjective } from "./workspace/ask";
+import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, withSegmentDefault } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
@@ -212,6 +212,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   // answers in full for the fee furthest from its median when the question named none.
   const why = await incomeWhyFor(institutionId, question, peers);
   if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  intent = withSegmentDefault(intent);
   const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
@@ -366,6 +367,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
   const why = await incomeWhyFor(institutionId, question, peers);
   if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  intent = withSegmentDefault(intent);
   if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
   const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
   if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
