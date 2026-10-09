@@ -46,6 +46,13 @@ const BANKING_CONTEXT =
 
 const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies))\b/i;
 
+/**
+ * Words that place a bill in tax or state agency payments. A bounced tax payment draws a state
+ * penalty, not a bank fee, so "Insufficient Funds for Taxes Penalty Modification" (NC HB 1164,
+ * prod 2026-10-09) is not a bank fee bill unless the sentence also names a bank or account holder.
+ */
+const GOVERNMENT_PAYMENT_CONTEXT = /\b(tax(es|ation|payers?)?|revenue|state agenc(y|ies))\b/i;
+
 /** The overdraft and insufficient funds terms that set the overdraft_nsf topic. */
 const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient funds|nsf|returned (check|item)s?)\b/gi;
 
@@ -53,7 +60,7 @@ const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient fund
  * The bill's text with non-banking overdraft and insufficient funds wording taken out. Known water
  * phrases always go. Then each sentence (the title is its own) keeps its overdraft or insufficient
  * funds terms only when that sentence names a bank, account holder or consumer, or names a fee or
- * charge without being about water. Budget language ("if insufficient funds are appropriated") and
+ * charge without being about water or tax payments. Budget language ("if insufficient funds are appropriated") and
  * groundwater "overdraft" fall out. Tagging v3 judged the whole text at once and kept CA AB 1520
  * ("Public resources: conservation.") on its 2026-10-08 20:27 UTC re-read, because a banking or
  * fee word somewhere else in its digest vouched for an unrelated sentence.
@@ -63,7 +70,8 @@ export function withoutWaterOverdraft(text: string): string {
   return stripped
     .split(/(?<=[.;:!?])\s+/)
     .map((sentence) =>
-      BANKING_CONTEXT.test(sentence) || (FEE_WORDS.test(sentence) && !WATER_CONTEXT.test(sentence))
+      BANKING_CONTEXT.test(sentence) ||
+      (FEE_WORDS.test(sentence) && !WATER_CONTEXT.test(sentence) && !GOVERNMENT_PAYMENT_CONTEXT.test(sentence))
         ? sentence
         : sentence.replace(OVERDRAFT_TERMS, " "),
     )
