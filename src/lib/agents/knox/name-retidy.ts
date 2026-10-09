@@ -358,8 +358,9 @@ export const NAME_RETIDY_KIND = "name_retidied";
  * the ones with a threshold publish cut off (102976, 102987/8, 101305, 101842/3, 102654/6,
  * 102568, 102644) and Maple FCU's "Name ..." rows, which v8 had not reached.
  * v10: City National Bank of Florida (76), whose glued cell names Accuracy flagged.
+ * v14: Security Federal (722), and the v13 font names v13's pass had not reached (8535, 5545).
  */
-export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499];
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499, 722, 8535, 5545];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
