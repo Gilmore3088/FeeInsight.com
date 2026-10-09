@@ -16,5 +16,13 @@ verifies and goes to Hamilton publish under every publish rule (category guard, 
 eval name rules, price-in-name hold); nothing is released on Darwin's say-so. Sample of 20 held
 rows read by hand: 19 right on name, amount and category; one cut-off name ("Research Fee (plus"
 at the $1 per-copy price). 14 of 20 state "per page" on the line with a blank frequency. This PR.
+**Follow-up (same PR):** a second read of 40 more held rows after the publish name rules: 37 publish,
+"Research Fee (plus" held `price_is_addon`, one sentence name held `cutoff_name`; three
+excess-withdrawal rows carried frequency "monthly" where the line says "$1.00 per withdrawal",
+so verify now settles frequency from the fee's own line (`settledFrequency`) and flags the row
+`darwin_frequency_settled`. The $1 floor also widens Knox's reads (`passesDarwinChecks`): on the
+seven-state answer keys 19 more sub-$5 lines are read, 13 right and 6 fax or copy lines the Oct 6
+keys file under document_reproduction where the taxonomy maps fax to account_research. The gate's
+floors carry those six with the reason written beside them; the keys want re-filing to the taxonomy.
 **Lesson:** every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's
 own value, as the guard version has, or a change to the rule is a change for new reads only.
