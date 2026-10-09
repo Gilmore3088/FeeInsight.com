@@ -10,6 +10,7 @@
  */
 import { sql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface MergerBankInfo {
   id: number;
@@ -104,7 +105,7 @@ export async function getMergerBanks(a: number, b: number): Promise<[MergerBankI
   if (!ra || !rb) return null;
   const info = (r: typeof ra): MergerBankInfo => ({
     id: Number(r.id),
-    name: r.institution_name,
+    name: institutionDisplayName(r.institution_name),
     city: r.city,
     stateCode: r.state_code,
     charterType: r.charter_type,
@@ -143,7 +144,7 @@ export async function getMergerCandidates(subjectId: number, limit = 12): Promis
      LIMIT ${limit}`;
   return rows.map((r) => ({
     id: Number(r.id),
-    name: r.institution_name,
+    name: institutionDisplayName(r.institution_name),
     city: r.city,
     stateCode: r.state_code,
     sharedCounties: Number(r.counties),
