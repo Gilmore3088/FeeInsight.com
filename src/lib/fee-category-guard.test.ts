@@ -865,7 +865,7 @@ describe("checkFeeCategory", () => {
     expect(guard("od_protection_transfer", "Overdraft Protection", "5.00", "Overdraft Protection | $5.00 per item")).toBe(true);
   });
 
-  it("v48 keeps treasury service monthly charges out of monthly maintenance", () => {
+  it("v49 keeps treasury service monthly charges out of monthly maintenance", () => {
     for (const name of ["Monthly Fee (per account)", "API Service Monthly Fee (per account)", "MODULES ACH Module Monthly maintenance", "Treasury Management Monthly fee (includes Positive Pay)", "Cash Management Monthly Fee", "ACH Monthly Fee, per account"]) {
       expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
     }

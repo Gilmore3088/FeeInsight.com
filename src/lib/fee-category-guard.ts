@@ -87,7 +87,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v38: an "Overdraft Privilege Service Charge" ($20) is the overdraft fee; a paper statement
     // fee ("Maintenance Fee – Paper Stmt Fee"), a transfer service charge, a wire module's
     // monthly fee, an ATM card's monthly fee and table or waiver fragments are not it either.
-    // v48: a treasury service's monthly charge (ACH or wire module, API service, Positive Pay,
+    // v49: a treasury service's monthly charge (ACH or wire module, API service, Positive Pay,
     // cash management, "Monthly Fee (per account)" on BankUnited's treasury schedule) is not it.
     exclude:
       /(\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
@@ -354,7 +354,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // copies and replacements, wire research, business-only and payee-returned NSF rows, and a
 // per-item "Overdraft Protection" fee priced like courtesy pay.
 // v48: subordination leaves legal process for other lending; a money order copy is a check copy.
-export const CATEGORY_GUARD_VERSION = 48;
+// v49: treasury service monthly charges filed as monthly maintenance (Darwin eval 94121).
+export const CATEGORY_GUARD_VERSION = 49;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
