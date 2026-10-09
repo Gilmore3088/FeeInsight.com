@@ -54,10 +54,15 @@ type SqlTag = typeof sql;
  * `'not_a_fee:<rule>'`, the verified row rejected with the same flag so it is not republished,
  * and one lesson per fee in `pipeline_feedback` (stage extract, the verdict as its kind), so
  * Knox's learning reads what was wrong.
+ *
+ * v6: a rename is not a fix. Rows Knox's name retidy renamed are judged under the name before the
+ * retidy too, so "Monthly Service Charge if any of the following qualifications are met" at $0
+ * stays a waiver as "Monthly Service Charge", and a labelled row matches under either name.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 5;
+export const EVAL_VERDICT_VERSION = 7;
 /** Why v5 cleared v4's price_in_name flags; written on the rule_revised lesson and each reconstructed first look. */
+const RULE_REVISED_VERSION = 5;
 export const RULE_REVISED_WHY = "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own";
 const EVAL_REASON_PREFIX = "eval_critical";
 const RULE_REASON_PREFIX = "not_a_fee";
@@ -190,6 +195,18 @@ const NO_FEE_SENTENCE = /^\s*(no|without)\s+(fee|charge)s?\s+(for|to|on|when|if)
 /** The condition under which a fee is waived, or the balance that avoids it, as a $0 "fee". */
 const WAIVER_SENTENCE = /\b(if|when|unless)\s+you\b|\bof\s+the\s+following\b|\bqualifications?\s+(are|is)\s+met\b|^\s*to\s+avoid\b|\bto\s+avoid\s+(a\s+|an\s+|the\s+)?(monthly\s+|maintenance\s+)?(service\s+charge|monthly\s+fee|maintenance\s+fee|fee)/i;
 
+/**
+ * v7: the balance that avoids a fee, published at any amount: a label row ("Minimum balance
+ * required to avoid service charge" at $50, "Average Balance Required to Avoid Monthly Fee" at
+ * $10) whose amount is the threshold or a neighbouring cell, not a fee (15/15 such live names on
+ * Oct 9 were not fees against the source). A name that goes on to state the fee ("...service
+ * charge fee of", "Otherwise, a fee of") is the fee's own row and is left alone, and so is a
+ * glued line whose next cell is another fee ("... to avoid maintenance | Bill Pay Return Item",
+ * 37067's name before its retidy).
+ */
+const BALANCE_THRESHOLD = /^\s*(minimum|average|min\.?)\b[a-z ]{0,30}?\bbalance\s+(required\s+|requirement\s+)?to\s+avoid\b/i;
+const STATES_FEE = /\bof\s*[-–:]?\s*$|\botherwise\b|\|/i;
+
 /** A fee the merchant or payee pays, not the account holder. */
 const MERCHANT_PAYER = /\b(merchant|payee)\s+(pays|presenting|presented)\b|\bpaid\s+by\s+(the\s+)?(merchant|payee)\b/i;
 /** A name that pairs two directions or scopes of one service: two fees, one row. */
@@ -263,7 +280,7 @@ export function distinctPrices(text: string | null | undefined): number {
  */
 const RATE_BOUND_NAME = /\d\s*%.*\b(minimum|maximum|min|max)\.?:?\s*$/i;
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound";
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name" | "rate_bound" | "balance_threshold";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
@@ -272,6 +289,7 @@ export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   two_fees_one_line: "wrong_amount",
   price_in_name: "wrong_amount",
   rate_bound: "wrong_amount",
+  balance_threshold: "not_a_fee",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -281,6 +299,7 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
   price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
   rate_bound: "The name states a percent and ends on minimum or maximum: the amount is the rate fee's floor or cap, not the fee",
+  balance_threshold: "The balance that avoids a fee, published as a fee: the amount is the threshold or another cell, not a charge",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
@@ -289,6 +308,7 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
   if (NO_FEE_SENTENCE.test(name)) return "no_fee_sentence";
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
+  if (BALANCE_THRESHOLD.test(name) && !STATES_FEE.test(name)) return "balance_threshold";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
   if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
   if (amount != null && amount > 0 && RATE_BOUND_NAME.test(name)) return "rate_bound";
@@ -319,12 +339,14 @@ const LABELLED_IDS = new Set([...EVAL_CRITICAL_VERDICTS, ...HAND_CHECKED_VERDICT
 
 /** The eval verdict a live record still matches, or null when none or the record has changed. Pure. */
 export function verdictFor(
-  row: { feePublishedId: number; feeName: string; amount: number | null; canonicalFeeKey: string },
+  row: { feePublishedId: number; feeName: string; amount: number | null; canonicalFeeKey: string; originalFeeName?: string | null },
   verdicts: readonly EvalVerdict[] = EVAL_CRITICAL_VERDICTS,
 ): EvalVerdict | null {
   const verdict = verdicts.find((entry) => entry.feePublishedId === row.feePublishedId);
   if (!verdict) return null;
-  const sameName = verdict.feeName.trim() === row.feeName.trim();
+  // v6: a logged retidy keeps the labelled name as the row's original name; a rename alone
+  // ("... banking: Cashier's Checks" -> "Cashier's Checks", 100161) does not fix the record.
+  const sameName = verdict.feeName.trim() === row.feeName.trim() || verdict.feeName.trim() === (row.originalFeeName ?? "").trim();
   const sameAmount = row.amount != null && Math.abs(row.amount - verdict.amount) < 0.005;
   return sameName && sameAmount && verdict.canonicalFeeKey === row.canonicalFeeKey ? verdict : null;
 }
@@ -336,6 +358,8 @@ interface LiveRow {
   source_document_id: number | string | null;
   canonical_fee_key: string;
   fee_name: string | null;
+  /** The name before Knox's first logged retidy, when it renamed the row. */
+  original_fee_name?: string | null;
   amount: number | string | null;
   conditions: string | null;
 }
@@ -394,18 +418,28 @@ function num(value: number | string | null | undefined): number | null {
 export function evalVerdictFeesSql(byInstitution: boolean): string {
   return `
     SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
-           fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions
+           fp.canonical_fee_key, fp.fee_name, retidy.old_name AS original_fee_name, fp.amount, fr.conditions
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      LEFT JOIN LATERAL (
+        SELECT pf.evidence->>'old_name' AS old_name
+          FROM pipeline_feedback pf
+         WHERE pf.check_name = 'knox.name_retidy' AND pf.kind = 'name_retidied'
+           AND pf.fee_published_id = fp.fee_published_id
+         ORDER BY pf.created_at, pf.id
+         LIMIT 1
+      ) retidy ON TRUE
      WHERE fp.rolled_back_at IS NULL
        ${byInstitution ? "AND fp.institution_id = $2" : ""}
        AND (fp.fee_published_id = ANY($1::bigint[])
+            OR retidy.old_name IS NOT NULL
             OR fp.fee_published_id IN (SELECT pf.fee_published_id FROM pipeline_feedback pf
                                         WHERE pf.check_name = '${EVAL_VERDICT_CHECK}' AND pf.kind = 'takedown_pending')
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
             OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
+            OR fp.fee_name ~* '^\\s*(minimum|average|min\\.?)\\y[a-z ]{0,30}?\\ybalance\\s+(required\\s+|requirement\\s+)?to\\s+avoid\\y'
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
             OR fp.fee_name ~ '\\$\\s?[0-9]'
             OR (fp.fee_name ~ '[0-9]\\s*%' AND fp.fee_name ~* '\\y(minimum|maximum|min|max)\\.?:?\\s*$')
@@ -457,12 +491,13 @@ export async function retireEvalVerdictFees(
       amount: num(row.amount),
       feeName: row.fee_name ?? "",
     };
-    const verdict = verdictFor(base);
+    const originalFeeName = row.original_fee_name && row.original_fee_name !== base.feeName ? row.original_fee_name : null;
+    const verdict = verdictFor({ ...base, originalFeeName });
     if (verdict) {
       evalRows.push({ ...base, kind: verdict.verdict, reason: `${EVAL_REASON_PREFIX}:${verdict.verdict}`, why: verdict.why, source: "eval" });
       continue;
     }
-    const handVerdict = verdictFor(base, HAND_CHECKED_VERDICTS);
+    const handVerdict = verdictFor({ ...base, originalFeeName }, HAND_CHECKED_VERDICTS);
     if (handVerdict) {
       const pattern = HAND_CHECKED_VERDICTS.find((entry) => entry.feePublishedId === base.feePublishedId)?.pattern;
       const prefix = handVerdict.verdict === "not_a_fee" ? RULE_REASON_PREFIX : handVerdict.verdict;
@@ -474,7 +509,10 @@ export async function retireEvalVerdictFees(
       continue;
     }
     const excerpt = excerptOf(row.conditions);
-    const rule = ruleFor(base.canonicalFeeKey, base.feeName, base.amount, excerpt);
+    // v6: a rename keeps what the fee is: "Monthly Service Charge if any of the following
+    // qualifications are met" at $0 is a waiver after its retidy to "Monthly Service Charge" too.
+    const rule = ruleFor(base.canonicalFeeKey, base.feeName, base.amount, excerpt)
+      ?? (originalFeeName ? ruleFor(base.canonicalFeeKey, originalFeeName, base.amount, excerpt) : null);
     if (rule) {
       const kind = RULE_VERDICTS[rule];
       const prefix = kind === "not_a_fee" ? RULE_REASON_PREFIX : kind;
@@ -538,16 +576,16 @@ export async function retireEvalVerdictFees(
       await inSavepoint(db, (scope) => recordFeedback(scope, [{
         aboutStage: "publish",
         aboutStrategy: EVAL_VERDICT_CHECK,
-        aboutVersion: EVAL_VERDICT_VERSION,
+        aboutVersion: RULE_REVISED_VERSION,
         signal: "right",
         kind: "rule_revised",
         reportedBy: "hamilton",
         checkName: EVAL_VERDICT_CHECK,
         weight: 0,
         runId: options.runId,
-        dedupeKey: `${EVAL_VERDICT_CHECK}:rule_revised:v${EVAL_VERDICT_VERSION}`,
+        dedupeKey: `${EVAL_VERDICT_CHECK}:rule_revised:v${RULE_REVISED_VERSION}`,
         evidence: {
-          version: EVAL_VERDICT_VERSION,
+          version: RULE_REVISED_VERSION,
           cleared: look.cleared,
           why: RULE_REVISED_WHY,
         },
