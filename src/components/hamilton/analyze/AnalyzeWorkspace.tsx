@@ -531,8 +531,45 @@ export function AnalyzeWorkspace({
     "Who in our state changed their NSF fee this year?",
   ];
 
+  // The ask box sits in the page, never over it: under the heading before the first question,
+  // and after the answer once there is one, so it never covers a line of the answer.
+  const askBox = (
+    <form
+      id="hamilton-ask"
+      onSubmit={handleSubmit}
+      aria-label="Ask Hamilton"
+      className="flex scroll-mb-8 flex-col gap-2 rounded-xl border-2 border-terra bg-terra-soft p-3 shadow-sm print:hidden sm:p-4"
+    >
+      <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-terra-text">
+        {askedQuestion || shown ? "Ask a follow-up" : "Your question"}
+      </label>
+      <div className="flex items-end gap-2 rounded-lg border border-terra/40 bg-white p-2 pl-3 focus-within:border-terra">
+        <textarea
+          id="hamilton-ask-page"
+          ref={textareaRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          rows={1}
+          maxLength={500}
+          placeholder={askedQuestion || shown ? "What about our NSF fee?" : "Ask about your fees or your market"}
+          className="min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-relaxed text-warm-900 placeholder:text-warm-500 focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={isLoading || engineBusy || !input.trim()}
+          aria-label="Ask"
+          className="flex min-h-11 items-center gap-1.5 rounded-md bg-terra px-4 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50 sm:min-h-9"
+        >
+          {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
+          Ask
+        </button>
+      </div>
+    </form>
+  );
+
   return (
-    <MemoPage>
+    <MemoPage width="reading">
       {chatError && !isLoading ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
           <span>{askErrorMessage(chatError)}</span>
@@ -566,6 +603,18 @@ export function AnalyzeWorkspace({
             compact={longQuestion}
             dek={thread.length > 0 && askedQuestion ? `Following up on: “${thread[thread.length - 1].question}”` : undefined}
             actions={
+              <div className="flex flex-wrap gap-2">
+              <a
+                href="#hamilton-ask"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById("hamilton-ask")?.scrollIntoView({ behavior: "smooth", block: "end" });
+                  textareaRef.current?.focus({ preventScroll: true });
+                }}
+                className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 no-underline hover:border-warm-500 sm:min-h-9"
+              >
+                Ask a follow-up
+              </a>
               <button
                 type="button"
                 onClick={newQuestion}
@@ -573,6 +622,7 @@ export function AnalyzeWorkspace({
               >
                 New question
               </button>
+              </div>
             }
           />
         </div>
@@ -583,6 +633,7 @@ export function AnalyzeWorkspace({
             title={instName ? `Ask anything about ${instName}'s fees` : "Ask anything about your fees and your market"}
             dek="Answers from published fee schedules and regulator filings, with every figure checked."
           />
+          {askBox}
           <MemoSection title="Questions bankers start with">
             <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
               {suggestions.map((s) => (
@@ -669,24 +720,24 @@ export function AnalyzeWorkspace({
               {renderInline(view.lead)}
             </p>
             {view.paragraphs.slice(0, 1).map((para, i) => (
-              <p key={i} className="text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
+              <p key={i} className="text-base leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
                 {renderInline(para)}
               </p>
             ))}
             {view.paragraphs.length > 1 || shown.whatThisMeans || shown.whyItMatters.length > 0 ? (
               <More label="Read the full answer">
                 {view.paragraphs.slice(1).map((para, i) => (
-                  <p key={i} className="text-[17px] leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
+                  <p key={i} className="text-base leading-relaxed text-warm-800 [font-variant-numeric:tabular-nums]">
                     {renderInline(para)}
                   </p>
                 ))}
                 {shown.whatThisMeans ? (
-                  <p className="text-[17px] leading-relaxed text-warm-800">{renderInline(shown.whatThisMeans)}</p>
+                  <p className="text-base leading-relaxed text-warm-800">{renderInline(shown.whatThisMeans)}</p>
                 ) : null}
                 {shown.whyItMatters.length > 0 ? (
                   <section>
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Why it matters</h3>
-                    <ul className="flex list-disc flex-col gap-2 pl-5 text-[15px] text-warm-800">
+                    <ul className="flex list-disc flex-col gap-2 pl-5 text-base text-warm-800">
                       {shown.whyItMatters.map((item, i) => (
                         <li key={i}>{renderInline(item)}</li>
                       ))}
@@ -767,40 +818,7 @@ export function AnalyzeWorkspace({
       ) : null}
       </div>
 
-      <div className="sticky bottom-4 z-30 print:hidden">
-        <form
-          onSubmit={handleSubmit}
-          aria-label="Ask Hamilton"
-          className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-xl border border-warm-ink-700 bg-warm-ink-900 p-2 pl-4 shadow-2xl"
-        >
-          <span aria-hidden className="pb-2 text-sm text-warm-ink-50" style={SERIF}>
-            H
-          </span>
-          <label htmlFor="hamilton-ask-page" className="sr-only">
-            Ask Hamilton
-          </label>
-          <textarea
-            id="hamilton-ask-page"
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={1}
-            maxLength={500}
-            placeholder={askedQuestion ? "Ask a follow-up…" : "Ask Hamilton about your fees or your market"}
-            className="min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-relaxed text-warm-ink-50 placeholder:text-warm-ink-300 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={isLoading || engineBusy || !input.trim()}
-            aria-label="Ask"
-            className="flex items-center gap-1.5 rounded-lg bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
-          >
-            {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
-            Ask
-          </button>
-        </form>
-      </div>
+      {askedQuestion || shown ? askBox : null}
     </MemoPage>
   );
 }
