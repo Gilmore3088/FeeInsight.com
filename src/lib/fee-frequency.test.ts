@@ -61,4 +61,14 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(wordsAfterPrice("6 withdrawals included per month; $5.00 each after 6", 5)).toBe(" each after 6");
     expect(wordsAfterPrice("no price here", 5)).toBe("no price here");
   });
+
+  it("reads ea., /page, /transfer and per order as per item (v3)", () => {
+    expect(frequencyFromLine("Money Orders | $5.00 ea.", 5)).toBe("per_item");
+    expect(frequencyFromLine("Stop Payment | $30.00/ea", 30)).toBe("per_item");
+    expect(frequencyFromLine("Statement Copy | $2.00/page", 2)).toBe("per_item");
+    expect(frequencyFromLine("Internal Transfer | $5.00 / transfer", 5)).toBe("per_item");
+    expect(frequencyFromLine("Check Printing | $25.00 per order", 25)).toBe("per_item");
+    expect(frequencyFromLine("Easy Checking | $5.00 eastern branches", 5)).toBeNull();
+    expect(frequencyFromLine("Account Research | $25.00 per hour", 25)).toBeNull();
+  });
 });

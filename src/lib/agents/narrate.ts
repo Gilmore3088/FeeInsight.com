@@ -1,4 +1,4 @@
-import type { AdminAgent } from "./types";
+import { isMarketingStep, type AdminAgent } from "./types";
 
 /**
  * Turns run-ledger events into one plain-English sentence each, for the crew
@@ -34,8 +34,21 @@ function joinParts(parts: Array<string | null | false>): string {
   return kept.length > 0 ? `: ${kept.join(", ")}` : "";
 }
 
-/** One sentence for a finished step, from the step key and its recorded detail. */
+/**
+ * One sentence for a finished step, from the step key and its recorded detail. A marketing
+ * step's dry run (the daily growth loop) says so first, so "Drafted 3 emails" isn't read as
+ * three drafts in the queue.
+ */
 export function narrateStepFinished(
+  stepKey: string,
+  detail: Detail,
+  stateCode?: string | null,
+): string | null {
+  const sentence = narrateFinished(stepKey, detail, stateCode);
+  return sentence && detail.dryRun === true && isMarketingStep(stepKey) ? `Dry run, nothing saved: ${sentence}` : sentence;
+}
+
+function narrateFinished(
   stepKey: string,
   detail: Detail,
   stateCode?: string | null,
@@ -64,7 +77,7 @@ export function narrateStepFinished(
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
-      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? ", stopped at the budget cap" : ""}.`;
+      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
     case "discover":
     case "rescue": {
@@ -232,6 +245,12 @@ export function narrateStepFinished(
       if (!checked) return "No prospect was due a contact check.";
       return `Read ${count(checked, "prospect website")} and kept ${count(n(detail, "people"), "published executive address", "published executive addresses")}.`;
     }
+    case "growth-contact-picks": {
+      if (detail.schemaReady === false) return "Ranked no contacts; the ranking columns are not there yet.";
+      const contacts = n(detail, "contacts");
+      if (!contacts) return "No saved contact to rank.";
+      return `Ranked ${count(contacts, "saved contact")} and marked ${count(n(detail, "primary"), "primary buyer contact")} and ${count(n(detail, "backup"), "backup")}.`;
+    }
     case "growth-outreach": {
       if (detail.schemaReady === false) return "Drafted no emails; the queue or contacts tables are not there yet.";
       const drafted = n(detail, "drafted");
@@ -255,6 +274,11 @@ export function narrateStepFinished(
       return broken
         ? `Found ${count(broken, "broken destination")} and filed the week's conversion check.`
         : "Checked every destination and the week's funnel, and filed the conversion check.";
+    }
+    case "growth-tools": {
+      const fees = Array.isArray(detail.fees) ? (detail.fees as Array<{ fee?: unknown; checked?: unknown }>) : [];
+      const counts = fees.map((fee) => `${String(fee.fee)} ${Number(fee.checked ?? 0)}`).join(", ");
+      return `Ran the free price check for ${String(detail.state)}${counts ? ` (source-checked institutions: ${counts})` : ""}.`;
     }
     case "growth-intake": {
       if (detail.alreadyFiled === true) return `Found ${String(detail.agent)}'s ${String(detail.kind ?? "item").replace(/_/g, " ")} already in the queue.`;
@@ -474,10 +498,12 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "content-market-spread": "growth",
   "content-od-by-state": "growth",
   "growth-contacts": "growth",
+  "growth-contact-picks": "growth",
   "growth-outreach": "growth",
   "growth-learning": "growth",
   "growth-intel": "growth",
   "growth-conversion": "growth",
+  "growth-tools": "growth",
   "growth-intake": "growth",
   "growth-score": "growth",
   "marketing-score": "growth",

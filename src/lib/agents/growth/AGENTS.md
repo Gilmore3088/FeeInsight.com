@@ -14,11 +14,13 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
-| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
 | Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
 | Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
+| Price check (EDISON) | in the daily loop below | `growth-tools` | runs `src/lib/price-check.ts` for one state a day, read-only |
+| Daily growth loop | `/api/admin/crew/growth-loop`, daily 00:57 UTC | every step in `loop.ts`, as one `dry_run` run | nothing saved or sent; leaves out `marketing-write` (paid) and `marketing-send` |
 
 ### Prospect contacts (`contacts.ts`)
 
@@ -32,7 +34,19 @@ sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 
 Each contact has a confidence (`contactConfidence`): high for a named person with a title in a
 buying role, medium for a person's own address with a name or title, low for anything else or a
 shared mailbox. `rankContacts` orders an institution's contacts (confidence, then marketing,
-retail, executive, finance); the CSV marks the first as primary and the second as backup.
+retail, executive, finance). `pickContacts` marks the first decision-maker in that order
+(`isDecisionMaker`, the rule outreach uses) as the institution's primary buyer contact and the
+second as backup; an institution with no decision-maker has neither.
+
+These are stored on `prospect_contacts` (migration `20270110000031`): `role` re-read with today's
+rules (`normalizeContact`), `confidence`, `pick` (`primary`, `backup` or null) and `ranked_at`.
+`refreshContactPicks` writes them, only on rows whose values change. `growth-contacts` runs it for
+the institutions it just read; the second step of the same run, `growth-contact-picks`, re-ranks
+every saved contact, so a rule change reaches old rows each Monday (its first run is the backfill
+for rows saved before the columns). Both skip the write before the migration and on a dry run.
+The CSV reads the stored confidence and pick, and ranks an institution itself, the same way, only
+while any of its rows is unranked. Outreach still ranks each candidate's contacts when it drafts
+(`buildOutreachDraft`), with the same functions, so its choice matches the stored pick.
 
 ### First-email drafts (`outreach.ts`, `market-snapshot.ts`)
 
@@ -47,8 +61,9 @@ tier-A comparison (the prospect and at least 5 named local competitors all verif
 the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
 only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
 otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
-no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, and a
-value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
+no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
+nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
+90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
 Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
 weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
 drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
@@ -219,7 +234,8 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `pr_url` and `score` / `scored_at` (migration `20270110000025`). Scheduled sessions file into
   it through the intake route above.
 - Prospect contacts go to `prospect_contacts` and `prospect_contact_checks` (migration
-  `20270110000028`).
+  `20270110000028`); their stored confidence and primary/backup pick are columns on
+  `prospect_contacts` (migration `20270110000031`).
 - Snapshot page events go to `snapshot_events`, and outreach outcomes to `outreach_outcomes`
   (migration `20270110000029`).
 - No other tables for marketing results.

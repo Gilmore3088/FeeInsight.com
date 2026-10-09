@@ -13,6 +13,71 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Link words retired hand-found fee schedules before anyone read them
+Magellan's companion review retires any stored page whose link text or URL has a word like
+"privacy", "opt in", "loan" or "apply" (`isNonDepositLink`). That rule is for links the finder
+picks up on its own, but it also ran on schedules a person found: Valley National's
+"Schedule of Fees-Privacy Policy-ADA.pdf" and First United's overdraft "opt-in-form.pdf" were
+retired as "loan or other non-deposit document", so neither $10B+ bank got a live overdraft fee.
+Fix: the review never retires a `discover.operator_schedule` row for its link words (Rosetta's
+read and the source check judge it), and puts back the ones it had retired. First United's
+earlier first.bank row (another bank's schedule) is still stored as fetched; the cross-bank
+takedown is what keeps its fees off the site.
+
+## 2026-10-09: The Knox decisions queue read a reason field no verdict has
+**What happened:** an admin audit found all sampled rows of `/admin/knox?queue=decisions` (746 pending) shown as "Other (no reason)". Read-only queries on prod (Oct 9): all 746 Knox `reject` messages store `payload.reasons`, an array, and none has `payload.reason` or `payload.confidence`, which the page read. Their reasons are of five shapes: 638 rejections are "$0 or missing amount, not marked free" (472 of those fees have no amount at all; Knox read a missing amount as $0) and 108 are "above 5x the peer median". 726 of the 746 come from the `migration_v10` legacy import and 85 already have a live published record. Darwin's last `accept` message and the last Knox reject were both on 2026-08-12.
+**Cause:** the queue's reason categories were written for a single-string `reason` that Knox never stored in this shape. Separately, the page said an override "will complete on Darwin's next pass": the override calls `promote_to_tier3`, which needs a Darwin accept from the last 30 days, and no agent reads `knox_overrides` or retries afterwards, so on every pending row the override records a verdict but cannot publish.
+**Fix:** this PR interprets `payload.reasons` (`src/lib/knox-reasons.ts`), filters the queue by reason group with counts, shows source evidence, institution identity and lineage, and words the override truthfully. Whether to retire this legacy queue or wire overrides into Darwin/Hamilton is not decided.
+**Lesson:** read the stored payload shape on prod before building a reviewer view on it, and describe what an action does from the code path, not the comment.
+
+## 2026-10-09: Plan watch list blamed the database for a Stripe failure
+**What happened:** /admin/customers said "Plan watch list could not be read; check the database connection." Its three SQL reads (`getPaidProUsers`, `getProRequestInstitutions`, `getWatchInstitutions`) all run cleanly on prod (read-only, 2026-10-09): 3 active paid users with a Stripe customer id (users 9, 10, 18), no `pro_request` runs for them in 30 days.
+**Cause:** not confirmed, since the cloud cannot call Stripe. The remaining step is one `stripe.subscriptions.list` per paid user inside a single `Promise.all`, so one rejected Stripe read failed the whole section. Users 9 and 10 were created on 2026-03-16, months before the current checkout, so an id the configured key doesn't know (`resource_missing`) is the likeliest trigger. The page's catch-all message named the database for any error.
+**Fix:** a plan Stripe can't read is listed with Stripe's error code instead of failing the rest; a section that does fail shows its error code, a log reference and a Retry link (this PR). The next page load names the real code.
+**Lesson:** an error state names what was being read and the error code it got; never guess the cause in the copy.
+
+## 2026-10-09: Admin panels showed placeholder zeros, cached fallbacks and dead anchors as facts
+**What happened:** the 2026-10-08 admin audit saw Magellan and Darwin at "Spend today $0.00", Darwin
+"Promoted today 0" and "No recent run" while Controls attributed spend to both and the run ledger
+had completed Darwin steps; Today briefly showed the provider stop "active" and the pipeline
+"paused" while Controls showed both running; the Atlas lane table showed Running for runs the
+ledger had completed (IA 3151); and links to `/admin#atlas-safety` and `/admin#atlas-live-status`
+went nowhere. A KS paid pass read "stopped at the budget cap" though its step event recorded the
+cap ("Provider call cap exhausted for run 3152 under agent:magellan").
+**Cause:** `fetchDarwinStatus` and `fetchMagellanStatus` returned hard-coded 0 for spend (and
+Darwin for every counter). The command center turns a failed control read into a fail-closed
+"stopped" row, and `unstable_cache` keeps serving that row (and stale lane snapshots) until it
+revalidates. The anchors moved to Controls and Atlas details when Today was slimmed down. The
+step summary dropped the recorded `budget_reason`.
+**Fix:** this branch: the panels read the shared spend ledger (`getAgentSpendToday`) and run ledger
+with an as-of time; an unreadable control is shown as "Couldn't read the control" with a retry;
+the lane table shows its snapshot age and takes terminal status from the live run feed; anchors
+point at Controls / Live board / Atlas details with a test against dead `/admin#` fragments;
+budget messages name cap, limit, used and reset.
+**Lesson:** never return a literal 0 for a value that was not read; return null and say so. A
+fail-closed fallback must carry an "unreadable" flag so a display never presents it as a switch
+setting.
+
+## 2026-10-09: Magellan's fee-page classifier never trained
+**What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
+**Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
+**Fix:** the discover step calls `refreshPageClassifier` again and reports `page_classifier` (this PR). It still only records its opinion (shadow).
+**Lesson:** when a feature writes to its own table, check that table's row count after merges that touch its caller; a loader that finds nothing fails silently.
+
+## 2026-10-09: A hand-found schedule fetched in another state's lane was never read
+Companion fetch takes hand-found schedules in any state's lane (2026-10-08 fix), but every read
+step is scoped to its run's state. First United's (OK) overdraft disclosure was fetched in the NC
+lane at 23:55 UTC on 8 Oct and sat unread: the priority picker only saw it as "found by hand" while
+it was unfetched. Fix: the picker's unread-document tier (paid fetch) now also covers documents
+fetched from hand-found links, and a dormant bank with a hand-found link can get its run. The paid
+fetch for blocked companion links admits the same dormant case (Stock Yards' syb.com answered 403).
+
+## 2026-10-09: The companion search stopped running on Oct 7
+**What happened:** `pipeline_attempts` holds no `discover.second_document` row after 07:00 UTC Oct 7, through 00:20 UTC Oct 9, while discover steps kept completing (1,126 in all). At 00:20 Oct 9, top-10 banks such as American Savings (HI), Trustone (MN), First Community (WV), Dupaco (IA), Hawaii State FCU and Yellowstone (MT) had a verified overdraft fee but fewer than 3 fee categories, so Hamilton held it, and the search that finds the rest of their schedule had not run for them.
+**Cause:** discovery stopped starting banks at 75 s and ran the companion search only if the bank loop had ended before 75 s. Once the queue had enough banks to fill every step (steps ran 82 to 104 s on Oct 8), the loop always ran past 75 s and the search never started.
+**Fix:** each discover step keeps its last 25 s for the companion search (`COMPANION_RESERVE_MS`): banks stop starting at 50 s and stop running at 75 s, and the search runs until the step's 100 s limit (this PR).
+**Lesson:** work that runs "with whatever time is left" needs its own reserved slice, plus a count that shows when it stops: check its attempt rows by hour after any change to the step.
+
 ## 2026-10-08: Seven of the "192 $10B+ banks" are closed charters
 **What happened:** the large-bank overdraft count (106 of 192 at 23:25 UTC) counts every `institution_sources` row at $10B+ in assets. Seven are marked closed by the FDIC or NCUA registry sync (`regulatory_status = 'inactive'`): Webster Bank (closed 2026-08-20), Comerica Bank and Cadence Bank (2026-02-01), FirstBank of Colorado (2026-06-18), First Foundation Bank (2026-04-01), Stellar Bank (2026-07-01) and First Technology FCU (no closed date; NCUA's list no longer has its charter). Six of the seven have no live overdraft fee, and companion fetch skips inactive banks, so their hand-found schedules never fetched. Stock Yards ($10B) is `dormant`, which companion fetch also skipped.
 **Cause:** the count's denominator was never filtered on registry status; the merged banks' fees now belong to the acquirers' charters.
@@ -3738,6 +3803,17 @@ and quarter were already stored, without looking at the periods of the data behi
   so there is no row to count. The next break shows on the admin home page as soon as a third
   run fails with the same error.
 
+## 2026-10-08: Bank and credit union numbers share one namespace
+- **What happened.** 314 credit unions in `institution_sources` have the same `cert_number` as
+  an FDIC bank (NCUA charter numbers and FDIC certificate numbers are separate series). The
+  quarterly revenue snapshot counted institutions with `COUNT(DISTINCT ct.cert_number)`, so
+  each pair counted once: on prod, quarter 2026-06 has 8,548 institutions with filings but
+  only 8,246 distinct numbers.
+- **Fix.** Count institutions by `ct.id`. Registry joins and upserts were already keyed by
+  `source` plus `cert_number`, so they are unaffected.
+- **Watch.** A lookup by `cert_number` alone can match the wrong institution; always add
+  `source` (or `charter_type`).
+
 ## 2026-10-08: Stated frequencies were read from the row above
 - **What happened.** In the seven-state answer keys, 25 of 131 live fees with a stated
   frequency had the wrong one: "Reverse Stop Payment Request $20" was published as annual, and
@@ -3753,3 +3829,52 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** `pipeline_feedback` rows for `hamilton.frequency_fill`, by kind, after the next
   publish step.
 
+
+## 2026-10-08: A fee-change notice published its old column
+- **What happened.** Jeanne D'Arc CU (8130) showed Money Orders $2, Rush Card $20, Account
+  Research $35/hr, Tax Levy $50 and Mortgage Subordination $75. Its notice (document 21764) prints
+  "Fee through July 31, 2026 | Fee as of August 1, 2026", so those were the old prices. The five
+  changes recorded from them (1060-1064) read as cuts.
+- **Why.** Knox took the first price on a row, and the source check accepted any price on the
+  fee's own row.
+- **Fix.** `newestColumnText` (`src/lib/fee-change-columns.ts`) keeps only the newest price on a
+  row under a "through / as of", "current / new" or "old / new" header. Knox v48 and source check
+  v16 read the text through it, so the old prices fail the check and go through flag, second look
+  and archive. On prod this table shape held live fees at one institution only (13 fees, one
+  document).
+- **Watch.** 88942, 88945, 88950, 88951 and 88952 are `takedown_pending` after the next source
+  check pass on 8130, and change records 1060-1064 drop out of change lists.
+
+
+## 2026-10-09: A two-column notice drawn letter by letter was read across its columns
+- **What happened.** First United (118) had a raw fee named "additional" at $5 (fee_raw_id
+  431341). Its overdraft notice is set in two columns, and the page was read across them, so
+  "we will charge an additional $5.00 per day" lost its sentence.
+- **Why.** `proseColumns` allowed a gutter as many covering text items as 3% of the page's
+  items. This PDF draws each letter as its own item (2,243 on one page), so the allowance (53)
+  was larger than any column's line count, and no strip of the page counted as covered. No
+  gutter was ever found.
+- **Fix.** Gutter coverage counts lines, not items, and a gutter may be crossed by up to 10% of
+  the page's lines (a title, a form below the columns). `PDF_LAYOUT_VERSION` is now 3. The
+  fixture `src/lib/agents/rosetta/test-fixtures/first-united-opt-in.pdf` is read column by column
+  in `pdf-layout.test.ts`.
+- **Watch.** Texts already read across their columns are read again only when they hold
+  `INTERLEAVED_PROSE_CELLS` cell breaks or more. The First United notice holds fewer, so its old
+  text stays until the bank's bytes change. Its full schedule (OAC_Account_Disclosures.pdf) is now
+  the hand-found source.
+
+## 2026-10-09: The other-bank check only knew hosts that are another bank's website
+- **What happened.** The admin audit (Oct 8) found Peoples Bank of Rock Valley IA (915) showing
+  22 "verified" fees from Peoples Bank of Bellingham WA's PDF. #691 took those down, but its check
+  only matches a document host that is another registry institution's `website_url`. A schedule
+  on a host that is no institution's in the registry passed with no identity check at all.
+- **Why.** Source-text checks prove a fee is in the document, not that the document is the bank's.
+- **Fix.** `unconfirmedHostFeesSql` (`src/lib/agents/hamilton/other-bank-document.ts`) checks the
+  rest: a document off the bank's own site and off shared file hosts must name the bank (website,
+  its name, city or the bank's name), share the website's name, or be locked by a person.
+  Failing fees take the 12-hour second look and are archived, never deleted. Read-only dry run on
+  prod (Oct 9): 277 of 1,894 such live fees, at 17 banks, fail (e.g. USF FCU Tampa read from
+  usfcu.com).
+- **Watch.** `pipeline_feedback` rows for `hamilton.unconfirmed_document_host` after the next
+  publish steps; rebranded banks whose registry website is stale (First National Bank Texas,
+  website on record `validate.perfdrive.com`) go back to discovery and should be re-found.

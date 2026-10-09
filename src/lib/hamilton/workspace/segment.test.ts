@@ -92,8 +92,9 @@ describe("segment answer", () => {
     };
     const answer = buildFeeAnswer(research, { focus: "competitors" });
     expect(answer.headline).toBe("Your $32 overdraft fee is at the 33rd percentile of 6 $10B+ institutions (median $35).");
-    expect(answer.claims[0].text).toBe("6 of the 184 institutions with $10 billion or more in assets publish an overdraft fee in the index.");
+    expect(answer.claims[0].text).toBe("6 of the 184 $10B+ institutions publish an overdraft fee in the index.");
     expect(answer.claims.map((c) => c.text)).toContain("1 charge $0: Beta Bank.");
+    expect(answer.claims.find((c) => c.text.startsWith("The largest by assets:"))?.text).not.toMatch(/National Association|Federal Credit Union/);
     expect(answer.claims.map((c) => c.text)).toContain("2 of them limit how many overdraft fees they charge in a day; the most common limit is 3.");
     expect(answer.claims.map((c) => c.text)).toContain("Your institution is outside this segment; your $32 is placed against it for comparison.");
     expect(answer.exhibit).toMatchObject({ kind: "competitor_range" });
@@ -105,6 +106,11 @@ describe("segment answer", () => {
     const verdict = evaluateFourRoles(answer);
     expect(verdict.roles.flatMap((r) => r.failures)).toEqual([]);
     expect(verdict.pass).toBe(true);
+  });
+
+  it("says a fee at the bottom of the segment is at the bottom, not at the 0th percentile", () => {
+    const seg = buildSegmentResearch({ segment, feeCategory: "overdraft", institutionsInSegment: 184, members, current: 0, ownInSegment: false });
+    expect(buildFeeAnswer({ ...overdraftResearch(), current: 0, segment: seg }, { focus: "competitors" }).headline).not.toContain("0th percentile");
   });
 
   it("says so in the first claim when the segment can't be built, then falls back to peers", () => {

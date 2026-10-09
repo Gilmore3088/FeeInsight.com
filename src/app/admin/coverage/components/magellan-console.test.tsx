@@ -29,6 +29,7 @@ const initialStatus: MagellanStatus = {
   needs_human: 0,
   retry_after: 0,
   today_cost_usd: 0,
+  spend_read_at: null,
 };
 
 beforeEach(() => {

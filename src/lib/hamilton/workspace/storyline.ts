@@ -11,7 +11,7 @@
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { formatRatePercent } from "@/lib/percent-fees";
-import { proseFeeName } from "./names";
+import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
@@ -304,6 +304,51 @@ function structurePiece(research: FeeResearch): Piece | null {
   };
 }
 
+/** Monthly maintenance: the bank's account lineup beside the group's, one row per institution. */
+function lineupPiece(research: FeeResearch): Piece | null {
+  const set = research.lineup;
+  const own = set?.rows.find((r) => r.own);
+  if (!set || !own) return null;
+  const group = set.rows.filter((r) => !r.own);
+  const label = set.groupLabel.startsWith("peers") ? "peers" : set.groupLabel;
+  const withFree = group.filter((r) => r.summary.shareWithFreeAccount === 1).length;
+  const ownSummary = own.summary;
+  const ownLowest = ownSummary.lowestMonthlyFee;
+  const actionTitle =
+    group.length >= MIN_PEERS_FOR_POSITION
+      ? `You publish ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"} with a monthly fee from ${money(ownLowest ?? 0)}; ${count(withFree)} of ${count(group.length)} ${label} publish an account with no monthly fee.`
+      : `You publish ${count(ownSummary.accounts)} ${ownSummary.accounts === 1 ? "account" : "accounts"} with a monthly fee from ${money(ownLowest ?? 0)}; too few ${label} publish their lineup to compare.`;
+  const named = set.ownAccounts.filter((a) => a.productName).length;
+  const shown = [own, ...group.slice(0, MAX_MATRIX_ROWS)];
+  return {
+    key: "lineup",
+    actionTitle,
+    exhibit: {
+      kind: "structure_matrix",
+      title: `Checking lineup: you and ${label}`,
+      columns: ["Accounts", "Lowest monthly fee", "Median monthly fee", "No-fee account", "Median balance to avoid the fee"],
+      rows: shown.map((r) => ({
+        name: r.name,
+        cells: [
+          count(r.summary.accounts),
+          r.summary.lowestMonthlyFee === null ? null : money(r.summary.lowestMonthlyFee),
+          r.summary.medianMonthlyFee === null ? null : money(r.summary.medianMonthlyFee),
+          r.summary.shareWithFreeAccount === 1 ? "Yes" : "No",
+          r.summary.medianMinBalanceToAvoid === null ? null : money(r.summary.medianMinBalanceToAvoid),
+        ],
+        own: r.own || undefined,
+      })),
+      sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
+      note: [
+        group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : null,
+        `${count(named)} of your ${count(set.ownAccounts.length)} accounts are named on the schedule. A blank balance means the schedule states none.`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    },
+  };
+}
+
 /** The fee as a rate: the bank's own rate beside the national rate picture, never beside dollars. */
 function ratePiece(research: FeeResearch, name: string): Piece | null {
   const rates = ratesOf(research);
@@ -433,11 +478,11 @@ export function storylineKind(research: FeeResearch, intent: StoryIntent): Story
 }
 
 const ORDER: Record<StorylineKind, string[]> = {
-  position: ["position", "rate", "local", "archetype", "structure", "money", "changes"],
+  position: ["position", "lineup", "rate", "local", "archetype", "structure", "money", "changes"],
   segment: ["segment", "archetype", "structure", "changes", "position", "rate", "money"],
-  price_test: ["position", "money", "rate", "archetype", "local", "changes"],
-  board_decision: ["position", "money", "rate", "archetype", "changes", "local", "structure"],
-  structure: ["structure", "archetype", "position", "rate", "local", "changes"],
+  price_test: ["position", "money", "lineup", "rate", "archetype", "local", "changes"],
+  board_decision: ["position", "money", "lineup", "rate", "archetype", "changes", "local", "structure"],
+  structure: ["structure", "lineup", "archetype", "position", "rate", "local", "changes"],
   trend: ["trend", "money", "changes", "position", "rate", "local"],
 };
 
@@ -449,6 +494,7 @@ function pieces(research: FeeResearch, name: string): Record<string, () => Piece
     local: () => localPiece(research, name),
     archetype: () => archetypePiece(research, name),
     structure: () => structurePiece(research),
+    lineup: () => lineupPiece(research),
     changes: () => changePiece(research, name),
     money: () => moneyPiece(research, name),
     trend: () => trendPiece(research),
@@ -553,13 +599,7 @@ function customerGroup(research: FeeResearch): { label: string; members: { name:
   return null;
 }
 
-/** A competitor's name as a reader says it: no ", National Association"; "Federal Credit Union" as "FCU". */
-export function plainName(name: string): string {
-  return name
-    .replace(/,?\s+(National Association|N\.A\.)$/i, "")
-    .replace(/\s+Federal Credit Union$/i, " FCU")
-    .trim();
-}
+export { plainName };
 
 function names(list: { name: string }[], max = 3): string {
   const shown = list.slice(0, max).map((m) => m.name);
@@ -604,8 +644,12 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const dearer = group.members.filter((m) => m.amount > current);
     const n = group.members.length;
     if (cheaper.length === 0) {
+      // Neutral: who is higher, by name, never whether that helps or hurts.
+      const highest = [...dearer].sort((a, b) => b.amount - a.amount)[0];
       out.push({
-        text: `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; price works in your favor.`,
+        text: highest
+          ? `None of the ${count(n)} ${group.label} charge less than your ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`
+          : `All ${count(n)} ${group.label} charge the same ${money(current)} you do.`,
         source: group.source,
         sampleSize: n,
       });
@@ -617,7 +661,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       });
       if (dearer.length === 0) {
         out.push({
-          text: `No one in that group charges more than your ${money(current)}, so every price comparison works against you.`,
+          text: `No one in that group charges more than your ${money(current)}.`,
           source: group.source,
           sampleSize: n,
         });

@@ -51,6 +51,18 @@ export function isRequestLead(source: string | null | undefined): boolean {
   return source.split(",").some((part) => REQUEST_SOURCE.test(part.trim()));
 }
 
+const TEST_WORD = /\btest(?:ing)?\b/i;
+const TEST_EMAIL_DOMAIN = /@(?:example\.(?:com|org|net)|test[a-z0-9-]*\.[a-z.]+)$/i;
+
+/**
+ * A request James or a teammate sent to try the site: "test" as a word in the name or company,
+ * or an example.com / test* email domain. Kept out of operational counts, not deleted.
+ */
+export function isTestLead(lead: { name?: string | null; company?: string | null; email?: string | null }): boolean {
+  if (TEST_WORD.test(lead.name ?? "") || TEST_WORD.test(lead.company ?? "")) return true;
+  return TEST_EMAIL_DOMAIN.test((lead.email ?? "").trim());
+}
+
 /** When an open request is due; null for subscriptions and answered leads. */
 export function leadDueAt(lead: { source: string | null; status: string; created_at: string | Date }): Date | null {
   if (!isRequestLead(lead.source) || !OPEN_LEAD_STATUSES.includes(lead.status as LeadStatus)) return null;

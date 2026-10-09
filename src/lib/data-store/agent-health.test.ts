@@ -66,6 +66,20 @@ describe("agent health", () => {
     ]);
   });
 
+  it("keeps a failed IndexNow ping out of Atlas's pipeline health and lists it on its own", () => {
+    const [atlas] = summarizeAgentHealth(
+      [
+        row({ agent: "atlas", stepKey: "state-expert", day: "2026-10-08", count: 40, lastAt: "2026-10-08T08:00:00Z" }),
+        row({ agent: "atlas", stepKey: "indexnow-ping", day: "2026-10-08", status: "failed", count: 1, lastAt: "2026-10-08T08:30:00Z" }),
+      ],
+      NOW,
+    );
+    expect(atlas.tone).toBe("good");
+    expect(atlas.failing).toEqual([]);
+    expect(atlas.failed).toBe(0);
+    expect(atlas.notifications.map((step) => [step.stepKey, step.stillFailing])).toEqual([["indexnow-ping", true]]);
+  });
+
   it("lists every pipeline agent, quiet when the log has nothing for it", () => {
     const agents = summarizeAgentHealth([], NOW);
     expect(agents.map((agent) => agent.agent)).toEqual(["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton"]);
