@@ -45,7 +45,8 @@ import { settledFrequency } from "@/lib/fee-frequency";
 // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
 // v55: a monthly fee's lineup is never read from a neighbour: the next account's fee line, another
 // account's clause of a one-line footnote, or a fee heading above "Money Market" (`lineup.ts`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 55 } as const;
+// v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 56 } as const;
 
 export interface SpecialistRun {
   strategy: string;

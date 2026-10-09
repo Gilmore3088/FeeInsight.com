@@ -228,6 +228,17 @@ export function reportRuleCheckFromCoverage(
 }
 
 /**
+ * The report rule from loaded coverage rows alone. Null when the institution has no headline
+ * category live: it has no row, and with no categories it cannot pass the rule.
+ */
+export function reportRuleCheckFromRows(institutionId: number, coverage: HeadlineCoverageRow[]): ReportRuleCheck | null {
+  const own = coverage.find(([id]) => id === institutionId);
+  if (!own) return null;
+  const [, , state_code, charter_type, fed_district] = own;
+  return reportRuleCheckFromCoverage({ id: institutionId, state_code, charter_type, fed_district }, coverage);
+}
+
+/**
  * James's report rule for one institution, from the same counts getMarketReadiness uses.
  * `loadCoverage` lets a caller pass a shared (cached) copy of the coverage rows; by default
  * they are read live.
