@@ -22,7 +22,9 @@ const SCHEDULE_TEXT = [
   "Monthly fee for balance of $500 & over | FREE",
   "E-Statement | FREE",
 ].join("\n");
+const PINNACLE_TEXT = "- We've eliminated Non-sufficient Funds (NSF) Returned Item fees for consumer clients and lowered them from $38 to $30 for business clients.";
 const SOURCE_TEXTS = [
+  { source_document_id: 21164, normalized_text: PINNACLE_TEXT },
   { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
   { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
   {
@@ -72,6 +74,17 @@ describe("Darwin agentic verification", () => {
   beforeEach(() => {
     resetLearnedEnvelopeCache();
     resetWiderPeerLevelCache();
+  });
+
+  it("fully verifies Pinnacle's eliminated consumer NSF and charged business NSF", async () => {
+    const observations = ([['consumer', 0], ['business', 30]] as const).map(([fee_audience, amount], index) => ({
+      ...rawFee, fee_raw_id: 321490 + index, institution_id: 47, source_document_id: 21164,
+      fee_name: `Non-sufficient Funds (NSF) Returned Item fees (${fee_audience})`, fee_audience, amount,
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:nsf", ...(amount === 0 ? ["knox_review:zero"] : [])],
+      conditions: `canonical_hint=nsf; excerpt="${PINNACLE_TEXT}"`,
+    }));
+    const result = await runDarwinVerify({ runId: 101, db: asVerifyDb(createDbMock(observations)) });
+    expect(result.results.map((row) => [row.amount, row.status, row.reasonCode])).toEqual([[0, "verified", null], [30, "verified", null]]);
   });
 
   it("verifies Knox raw rows with canonical hints into verified_fee_observations", async () => {
@@ -441,6 +454,15 @@ describe("Darwin agentic verification", () => {
     expect(calls).toContain("outside_envelope");
   });
 
+  it("does not collapse equal prices across customer audiences", async () => {
+    const db = createDbMock([
+      { ...rawFee, fee_audience: "consumer" },
+      { ...rawFee, fee_raw_id: 802, fee_audience: "business" },
+    ]);
+    const result = await runDarwinVerify({ runId: 107, db: asVerifyDb(db) });
+    expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 0 });
+  });
+
   it("verifies the same fee line once per batch", async () => {
     const db = createDbMock([rawFee, { ...rawFee, fee_raw_id: 802 }]);
 
@@ -466,7 +488,7 @@ describe("Darwin agentic verification", () => {
 
     // The same line read twice (raw 803) is still one fee.
     expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 1, reasonCounts: { duplicate_in_batch: 1 } });
-    expect(DARWIN_BATCH_KEY_VERSION).toBe(3);
+    expect(DARWIN_BATCH_KEY_VERSION).toBe(4);
   });
 
   it("verifies the same fee once on each stored copy of a page", async () => {

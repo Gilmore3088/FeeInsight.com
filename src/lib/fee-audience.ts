@@ -30,9 +30,13 @@ const CONSUMER = /\b(?:consumer|personal)\s+(?:clients?|customers?|accounts?|che
 const BUSINESS = /\b(?:business|commercial|corporate)\s+(?:clients?|customers?|accounts?|checking|savings)\b|\((?:business|commercial)\)|\bbusiness[- ]only\b/i;
 const BOTH = /\b(?:all|both consumer and business|consumer and business|personal and business)\s+(?:clients?|customers?|accounts?)\b/i;
 
+const statementCache = new Map<string, ScopedFeeStatement[]>();
+
 /** The narrow mixed-audience construction that caused Pinnacle's two prices to collapse. */
 export function scopedFeeStatements(text: string): ScopedFeeStatement[] {
   if (!/\beliminated\b/i.test(text)) return [];
+  const cached = statementCache.get(text);
+  if (cached) return cached;
   const result: ScopedFeeStatement[] = [];
   for (const original of text.split(/\n+/)) {
     const match = ELIMINATED.exec(clean(original));
@@ -56,6 +60,8 @@ export function scopedFeeStatements(text: string): ScopedFeeStatement[] {
         feeTreatment: amount === 0 ? "no_charge" : "charged", excerpt });
     }
   }
+  if (statementCache.size >= 16) statementCache.delete(statementCache.keys().next().value!);
+  statementCache.set(text, result);
   return result;
 }
 

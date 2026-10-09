@@ -1,3 +1,4 @@
+import type { FeeAudience } from "@/lib/fee-audience";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
@@ -31,7 +32,7 @@ import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/ham
 type SqlTag = typeof sql;
 
 /** The publisher recorded in the attempt log; bump the version when the rules change. */
-export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
+export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 3 } as const;
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
@@ -58,6 +59,7 @@ const BLOCKING_FLAGS = new Set([
 ]);
 
 export interface VerifiedFeeRow extends RateFields {
+  fee_audience?: FeeAudience;
   fee_verified_id: number | string;
   fee_raw_id: number | string;
   institution_id: number | string;
@@ -416,6 +418,7 @@ async function selectVerifiedFees(
              fv.fee_name,
              fv.amount,
              fv.frequency,
+             fv.fee_audience,
              fv.amount_kind,
              fv.rate_percent,
              fv.rate_min_amount,
@@ -626,6 +629,8 @@ async function selectLivePublishedFees(
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fp.institution_id = ${Number(row.institution_id)}
          AND fp.canonical_fee_key = ${row.canonical_fee_key}
+         AND fp.fee_audience = ${row.fee_audience ?? "unknown"}
+         AND fp.quarantined_at IS NULL
          AND (${anyVariant} OR COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, ''))
          AND (${anyVariant} OR COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, ''))
          AND fp.rolled_back_at IS NULL

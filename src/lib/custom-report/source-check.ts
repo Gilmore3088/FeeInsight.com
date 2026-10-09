@@ -734,7 +734,7 @@ export function checkFeeAgainstSource(
     fee.feeName.toLowerCase() === feeName.toLowerCase() && fee.amount === amount &&
     (canonicalFeeKey == null || canonicalFeeKey === fee.canonicalHint));
   if (scoped) return { ok: true, sourceLine: scoped.excerpt };
-  if (statements.length > 0 && (canonicalFeeKey === "nsf" || /\b(?:nsf|non[- ]sufficient funds)\b/i.test(feeName))) {
+  if (statements.length > 0 && /\beliminated\b/i.test(feeName) && (canonicalFeeKey === "nsf" || /\b(?:nsf|non[- ]sufficient funds)\b/i.test(feeName))) {
     return { ok: false, reason: "amount_not_the_fee" };
   }
   if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
@@ -756,6 +756,10 @@ export function checkFeeAgainstSource(
     if (!asCap) continue;
     const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
     if (cap.ok) return cap;
+  }
+  if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
+      (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {
+    return { ok: false, reason: "amount_not_the_fee" };
   }
   return first ?? { ok: false, reason: "no_source_text" };
 }

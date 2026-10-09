@@ -1,3 +1,4 @@
+import { feeApplicability } from "@/lib/fee-audience";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -87,6 +88,8 @@ export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
  * a priced line for the missing fee (report-ready thread, 2026-10-07), and Space Coast CU.
  */
 export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
+  // Pinnacle: replace the quarantined unscoped observations through normal verification.
+  47,
   // In this order: S&T (most missing-fee leads), Space Coast, then First National Bank Alaska
   // (last read at v22, which missed its two outgoing wires; v32 reads both. 8 of 15 report fees).
   161, 8109, 281, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
@@ -617,6 +620,7 @@ export async function insertCandidate(
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
   // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
   // monthly maintenance fee carries them.
+  const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
   const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
   // The dedupe index is (document, fee name, amount), so a line an older version held
   // as unclassified or untraced would block this fee forever. Such a held row takes the
@@ -638,7 +642,8 @@ export async function insertCandidate(
       product_name,
       min_balance_to_avoid,
       min_opening_deposit,
-      waiver_text
+      waiver_text,
+      fee_audience, audience_evidence, fee_treatment
     )
     VALUES (
       ${institutionId},
@@ -656,15 +661,18 @@ export async function insertCandidate(
       ${lineup?.productName ?? null},
       ${lineup?.minBalanceToAvoid ?? null},
       ${lineup?.minOpeningDeposit ?? null},
-      ${lineup?.waiverText ?? null}
+      ${lineup?.waiverText ?? null},
+      ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
     )
-    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric))
+    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
     DO UPDATE SET
       extraction_confidence = EXCLUDED.extraction_confidence,
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       conditions = EXCLUDED.conditions,
+      audience_evidence = EXCLUDED.audience_evidence,
+      fee_treatment = EXCLUDED.fee_treatment,
       product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
@@ -720,6 +728,7 @@ export async function insertHeldCandidate(
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const { held } = options;
+  const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
@@ -747,7 +756,7 @@ export async function insertHeldCandidate(
       frequency,
       conditions,
       outlier_flags,
-      source
+      source, fee_audience, audience_evidence, fee_treatment
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -761,7 +770,7 @@ export async function insertHeldCandidate(
       ${held.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox'
+      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id
@@ -783,6 +792,7 @@ export async function insertRateCandidate(
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const { rate } = options;
+  const applicability = feeApplicability(rate.feeName, rate.excerpt);
   const agentEventId = stableUuid(
     `knox:rate:${options.runId}:${documentTextId}:${sourceDocumentId}:${rate.canonicalHint}:${rate.feeName}:${rate.ratePercent}`,
   );
@@ -795,7 +805,8 @@ export async function insertRateCandidate(
     INSERT INTO raw_fee_observations (
       institution_id, source_document_id, document_r2_key, source_url, extraction_confidence,
       agent_event_id, fee_name, amount, frequency, conditions, outlier_flags, source,
-      amount_kind, rate_percent, rate_min_amount, rate_max_amount, rate_basis
+      amount_kind, rate_percent, rate_min_amount, rate_max_amount, rate_basis,
+      fee_audience, audience_evidence, fee_treatment
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -814,7 +825,8 @@ export async function insertRateCandidate(
       ${rate.ratePercent},
       ${rate.rateMinAmount},
       ${rate.rateMaxAmount},
-      ${rate.rateBasis}
+      ${rate.rateBasis},
+      ${applicability.feeAudience}, ${applicability.audienceEvidence}, 'charged'
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id

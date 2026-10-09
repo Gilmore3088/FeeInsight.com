@@ -1,3 +1,4 @@
+import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -223,6 +224,10 @@ function ownClause(cell: string, tokens: string[]): string {
  */
 export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
   if (amount !== 0) return false;
+  // In a completed audience-specific elimination, the other audience's old/new
+  // prices are not conditions on this consumer's $0. Exact source pairing only.
+  if (scopedFeeStatements(line ?? "").some((fee) =>
+    fee.amount === 0 && fee.feeTreatment === "eliminated" && fee.feeName.toLowerCase() === feeName?.toLowerCase())) return false;
   const text = `${line ? ownSegment(line, feeName) : ""} ${feeName ?? ""}`.replace(NON_CUSTOMER_PRICE, " ").replace(OPENING_DEPOSIT, " ");
   return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
 }
@@ -261,6 +266,7 @@ function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
 }
 
 export interface RawFeeRow extends RateFields {
+  fee_audience?: FeeAudience;
   fee_raw_id: number | string;
   institution_id: number | string;
   source_url: string | null;
@@ -503,7 +509,7 @@ export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promis
  * $15/mo." and "Interest Checking (below $1,500) | $15/mo.", SCCU 8109) are two fees, while the
  * same line read twice (two Knox runs of one document) is still one.
  */
-export const DARWIN_BATCH_KEY_VERSION = 3;
+export const DARWIN_BATCH_KEY_VERSION = 4;
 
 /** The source line Knox read, spacing folded; empty when the row has none. */
 function sourceLineKey(conditions: string | null): string {
@@ -522,6 +528,7 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
       ? `doc:${Number(row.source_document_id)}`
       : (row.source_url ?? row.document_r2_key ?? "").trim(),
     sourceLineKey(row.conditions),
+    row.fee_audience ?? "unknown",
   ].join("|");
 }
 
@@ -624,6 +631,7 @@ ${duplicateRecheck}
              fr.frequency,
              fr.outlier_flags,
              fr.conditions,
+             fr.fee_audience,
              fr.amount_kind,
              fr.rate_percent,
              fr.rate_min_amount,

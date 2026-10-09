@@ -185,6 +185,8 @@ export async function selectFootnoteBusinessFeeIds(db: SqlTag, institutionId?: n
          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         WHERE fp.rolled_back_at IS NULL
+          AND fp.quarantined_at IS NULL
+          AND fp.fee_audience = 'unknown'
           AND fr.source_document_id IS NOT NULL
           ${institutionId ? "AND fp.institution_id = $1" : ""}
      ),
@@ -258,6 +260,8 @@ export async function retireBusinessScheduleFees(
            JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
            JOIN source_documents sd ON sd.id = fr.source_document_id
           WHERE fp.rolled_back_at IS NULL
+          AND fp.quarantined_at IS NULL
+          AND fp.fee_audience = 'unknown'
             ${options.institutionId ? "AND fp.institution_id = $1" : ""}
        ),
        -- The first live consumer fee per bank and category, grouped once. A subquery per
@@ -423,6 +427,7 @@ export async function restoreBusinessScheduleTakedowns(
         SELECT fp.fee_published_id, fp.lineage_ref
           FROM published_fee_records fp
          WHERE fp.rolled_back_at IS NOT NULL
+           AND fp.quarantined_at IS NULL
            AND fp.rolled_back_reason LIKE ${`${BUSINESS_SCHEDULE_REASON}:%`}
            AND fp.rolled_back_reason <> ${BUSINESS_FOOTNOTE_REASON}
            ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
