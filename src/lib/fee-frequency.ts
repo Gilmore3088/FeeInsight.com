@@ -14,7 +14,9 @@ const QUARTERLY_WORDING = /\b(per quarter|quarterly)\b/i;
 /** Wording that makes the price something other than a flat charge per event or period. */
 const OTHER_BASIS = /(\bper (day|hour|dollar|hundred|thousand)\b|\bper\s*\$|\bdaily\b|\bhourly\b|\bper\s+\d|\bminimum\b|\bmaximum\b|\bmax\b)/i;
 /** Per-event wording beyond the shared set, for filling a blank frequency. */
-const MORE_PER_ITEM = /\bper (presentment|transfer|wire|card|key|inquiry|document|piece|sheet|occasion|money order|notary)\b|\/\s?(item|check|transaction|each|copy|page|request|transfer|wire)\b/i;
+// v3: "ea." / "/ea", "per order", "per draft", "per signature", "per payment", "/card" and
+// "/occurrence" (about 700 live fees left blank, Oct 9).
+const MORE_PER_ITEM = /\bper (presentment|transfer|wire|card|key|inquiry|document|piece|sheet|occasion|money order|notary|order|draft|signature|payment)\b|\/\s?(item|check|transaction|each|ea|copy|page|request|transfer|wire|card|occurrence)\b|^\s*ea\b/i;
 /** A cell after the price ("| $6.00 | Per Item") is read when it is this short. */
 const NEXT_CELL_MAX = 25;
 const PRICE = /\$\s?(\d[\d,]*(?:\.\d+)?)/g;
