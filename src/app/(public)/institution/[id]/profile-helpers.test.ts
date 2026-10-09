@@ -8,7 +8,15 @@ import {
   normalizeFinancial,
   selectFinancialsByQuarter,
 } from "./financial-units";
-import { buildLocationParts, buildProfileTitle, pickHeadlineFees } from "./profile-data";
+import {
+  buildLocationParts,
+  buildProfileDescription,
+  buildProfileTitle,
+  pickHeadlineFees,
+  pickHeadlineLines,
+  sourcePageLabel,
+} from "./profile-data";
+import { accountNotes } from "./fee-schedule-table";
 import type { ExtractedFee } from "@/lib/data-store/types";
 
 const ncuaRecord = {
@@ -168,7 +176,7 @@ describe("headline fees", () => {
       fee({ id: 4, fee_name: "NSF Fee", fee_category: "nsf", amount: 33 }),
       fee({ id: 5, fee_name: "Monthly Service Fee", fee_category: "monthly_maintenance", amount: 1 }),
     ]);
-    expect(headline).toEqual({ overdraft: null, nsf: 33, monthly: 1 });
+    expect(headline).toEqual({ overdraft: null, nsf: 33, monthly: 1, monthlyHigh: null });
   });
 
   it("uses the paid-item overdraft fee when it is categorized", () => {
@@ -178,6 +186,82 @@ describe("headline fees", () => {
     ]);
     expect(headline.overdraft).toBe(30);
   });
+
+  // Wells Fargo (institution 4) on Oct 9 2026: four checking accounts, one row naming none.
+  const account = (name: string | null) => ({ name, nameSource: name ? ("stored" as const) : null, minBalanceToAvoid: null, waiverText: null });
+  const wells = [
+    fee({ id: 68710, fee_name: "Everyday Checking Monthly service fee", fee_category: "monthly_maintenance", frequency: "monthly", amount: 15, account: account("Everyday Checking") }),
+    fee({
+      id: 105417,
+      fee_name: "Monthly service fee",
+      fee_category: "monthly_maintenance",
+      frequency: "monthly",
+      amount: 5,
+      account: account(null),
+      source_url: "https://www.wellsfargo.com/checking/clear-access-banking/account-fees-summary/",
+    }),
+    fee({ id: 68708, fee_name: "Prime Checking Monthly service fee", fee_category: "monthly_maintenance", frequency: "monthly", amount: 25, account: account("Prime Checking") }),
+    fee({ id: 68712, fee_name: "Wells Fargo Premier Checking Monthly service fee", fee_category: "monthly_maintenance", frequency: "monthly", amount: 35, account: account("Wells Fargo Premier Checking") }),
+    fee({ id: 68707, fee_name: "Overdraft fee", fee_category: "overdraft", frequency: "per_item", amount: 35 }),
+  ];
+
+  it("leads monthly with the lowest account and lists the others", () => {
+    const lines = pickHeadlineLines(wells);
+    expect(lines.monthly?.pick).toMatchObject({ id: 105417, amount: 5, account: null });
+    expect(lines.monthly?.others.map((row) => [row.account, row.amount])).toEqual([
+      ["Everyday Checking", 15],
+      ["Prime Checking", 25],
+      ["Wells Fargo Premier Checking", 35],
+    ]);
+    expect(lines.monthly).toMatchObject({ low: 5, high: 35 });
+    expect(pickHeadlineFees(wells)).toEqual({ overdraft: 35, nsf: null, monthly: 5, monthlyHigh: 35 });
+  });
+
+  it("keeps checking accounts but not check or card charges filed as maintenance", () => {
+    const lines = pickHeadlineLines([
+      fee({ id: 1, fee_name: "Check Printing", fee_category: "monthly_maintenance", frequency: "monthly", amount: 2 }),
+      fee({ id: 2, fee_name: "Debit Card Monthly Fee", fee_category: "monthly_maintenance", frequency: "monthly", amount: 3 }),
+      fee({ id: 3, fee_name: "Basic Checking Monthly Fee", fee_category: "monthly_maintenance", frequency: "monthly", amount: 8 }),
+    ]);
+    expect(lines.monthly?.pick.id).toBe(3);
+    expect(lines.monthly?.others).toEqual([]);
+  });
+
+  it("takes the highest paid-item overdraft, whatever the row order", () => {
+    const lines = pickHeadlineLines([
+      fee({ id: 1, fee_name: "Overdraft - items $5 or less", fee_category: "overdraft", amount: 5 }),
+      fee({ id: 2, fee_name: "Overdraft Fee", fee_category: "overdraft", amount: 34 }),
+    ]);
+    expect(lines.overdraft?.pick.amount).toBe(34);
+    expect(lines.overdraft?.others.map((row) => row.amount)).toEqual([5]);
+  });
+
+  it("says the monthly figure is one account among several in the search summary", () => {
+    const description = buildProfileDescription("Wells Fargo Bank, National Association", "Sioux Falls, SD", pickHeadlineLines(wells), "Fee Insight");
+    expect(description).toBe(
+      "Published fees for Wells Fargo Bank, National Association (Sioux Falls, SD), from its own fee schedule: overdraft $35; monthly fee from $5 for an account the record does not name; 3 other accounts $15\u2013$35. National benchmarks from Fee Insight.",
+    );
+    const single = buildProfileDescription("Test Bank", null, pickHeadlineLines([wells[0]]), "Fee Insight");
+    expect(single).toBe("Published fees for Test Bank, from its own fee schedule: monthly fee $15 for Everyday Checking. National benchmarks from Fee Insight.");
+  });
+
+  it("labels a source page by host and path", () => {
+    expect(sourcePageLabel("https://www.wellsfargo.com/checking/clear-access-banking/account-fees-summary/")).toBe(
+      "wellsfargo.com/checking/clear-access-banking/account-fees-summary",
+    );
+    expect(sourcePageLabel("not a url")).toBeNull();
+  });
+
+  it("names the account under a generic fee row, or says no record names it", () => {
+    expect(accountNotes({ feeName: "Monthly service fee", account: account(null) })).toEqual([
+      "Account not named in this record; its source page shows which account it is",
+    ]);
+    expect(accountNotes({ feeName: "Everyday Checking Monthly service fee", account: account("Everyday Checking") })).toEqual([]);
+    expect(
+      accountNotes({ feeName: "Monthly fee", account: { name: "Value Checking", nameSource: "derived", minBalanceToAvoid: 500, waiverText: null } }),
+    ).toEqual(["Account: Value Checking", "Waived with a $500 balance"]);
+    expect(accountNotes({ feeName: "Overdraft fee", account: null })).toEqual([]);
+  });
 });
 
 describe("profile title", () => {
@@ -185,6 +269,9 @@ describe("profile title", () => {
     const year = new Date().getFullYear();
     expect(buildProfileTitle("Georgia Heritage FCU", { overdraft: 30, nsf: 33, monthly: 4.95 })).toBe(
       `Georgia Heritage FCU Fees: Overdraft $30, NSF $33, Monthly $4.95 (${year})`,
+    );
+    expect(buildProfileTitle("Wells Fargo", { overdraft: 35, nsf: null, monthly: 5, monthlyHigh: 35 })).toBe(
+      `Wells Fargo Fees: Overdraft $35, Monthly $5\u2013$35 (${year})`,
     );
     expect(buildProfileTitle("Test Bank", { overdraft: null, nsf: null, monthly: null })).toBe(
       "Test Bank Fees and Fee Schedule",

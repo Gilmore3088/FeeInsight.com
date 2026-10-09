@@ -33,6 +33,18 @@ export interface ExtractedFee {
   fee_family?: string | null;
   source_url?: string | null;
   created_at?: string | Date;
+  /** Monthly maintenance only: the account the fee belongs to (getFeesByInstitution). */
+  account?: FeeAccount | null;
+}
+
+/** The account behind a monthly maintenance fee, and how the bank says it is avoided. */
+export interface FeeAccount {
+  /** The account's name; null when neither the record nor its schedule line names it. */
+  name: string | null;
+  /** "stored": the record's own field; "derived": read from the fee's name or schedule line. */
+  nameSource: "stored" | "derived" | null;
+  minBalanceToAvoid: number | null;
+  waiverText: string | null;
 }
 
 export interface ReviewableFee extends ExtractedFee {

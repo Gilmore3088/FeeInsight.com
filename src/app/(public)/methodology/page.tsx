@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
@@ -54,6 +55,17 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/** Sections in page order, for the "On this page" list. */
+const SECTIONS = [
+  { id: "data-sources", label: "Data sources" },
+  { id: "collection", label: "Collection process" },
+  { id: "reading", label: "Reading the fees" },
+  { id: "categorization", label: "Categorization" },
+  { id: "checks", label: "Checks before publication" },
+  { id: "headline-fees", label: "Representative values" },
+  { id: "coverage", label: "Coverage and limitations" },
+] as const;
+
 export default async function MethodologyPage() {
   const summary = await getPublicStatsSummary();
   const institutions = summary.institutionsLabel;
@@ -64,26 +76,47 @@ export default async function MethodologyPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdData) }}
       />
-      <div style={{ maxWidth: "760px", margin: "0 auto", padding: "64px 24px 96px" }}>
+      <div className="mx-auto max-w-page px-6 pb-24 pt-16">
 
         {/* Header */}
-        <div style={{ borderBottom: "2px solid #1A1815", paddingBottom: "24px", marginBottom: "48px" }}>
-          <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#A93D25", fontWeight: 700, marginBottom: "12px" }}>
+        <div className="mb-12 border-b-2 border-[#1A1815] pb-6">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
             Research Methodology
           </p>
-          <h1 style={{ fontSize: "36px", fontWeight: 600, letterSpacing: "-0.02em", color: "#1A1815", marginBottom: "12px", fontFamily: "var(--font-newsreader), Georgia, serif", lineHeight: 1.2 }}>
+          <h1 className="mb-3 text-[36px] font-semibold leading-[1.2] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
             How the Bank Fee Index works
           </h1>
-          <p style={{ fontSize: "16px", color: "#5A5347", lineHeight: 1.6, maxWidth: "600px" }}>
+          <p className="text-base leading-relaxed text-[#5A5347]">
             A transparent account of how we collect, classify, and verify fee data across {institutions} financial institutions — and what that means for the accuracy of our benchmarks.
           </p>
-          <p style={{ fontSize: "12px", color: "#7A7062", marginTop: "16px" }}>
+          <p className="mt-4 text-xs text-[#6B6255]">
             {RESEARCH_IMPRINT} &mdash; {summary.freshnessLabel}
           </p>
         </div>
 
+        <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-16">
+          <nav aria-label="On this page" className="hidden lg:block">
+            <div className="sticky top-24">
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">On this page</p>
+              <ul className="space-y-1 text-sm">
+                {SECTIONS.map((section) => (
+                  <li key={section.id}>
+                    <a
+                      href={`#${section.id}`}
+                      className="inline-flex min-h-8 items-center text-[#3D3830] underline-offset-2 transition-colors duration-200 hover:text-[#A93D25] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A93D25]"
+                    >
+                      {section.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </nav>
+
+          <div className="min-w-0">
         {/* Section 1: Data Sources */}
         <Section
+          id="data-sources"
           label="Data Sources"
           title="We start with every regulated U.S. bank and credit union"
           body={[
@@ -95,6 +128,7 @@ export default async function MethodologyPage() {
 
         {/* Section 2: Collection Process */}
         <Section
+          id="collection"
           label="Collection Process"
           title="Automated collection runs on a rolling calendar"
           body={[
@@ -107,6 +141,7 @@ export default async function MethodologyPage() {
 
         {/* Section 3: Extraction */}
         <Section
+          id="reading"
           label="Reading the fees"
           title="Only what the document says, and a person checks the rest"
           body={[
@@ -119,6 +154,7 @@ export default async function MethodologyPage() {
 
         {/* Section 4: Categorization */}
         <Section
+          id="categorization"
           label="Categorization"
           title="Standardized fee categories make institutions comparable"
           body={[
@@ -131,6 +167,7 @@ export default async function MethodologyPage() {
 
         {/* Section 5: Statistical Validation */}
         <Section
+          id="checks"
           label="Checks before publication"
           title="Uncertain fees are held; outliers are looked at by a person"
           body={[
@@ -141,8 +178,12 @@ export default async function MethodologyPage() {
           ]}
         />
 
-        {/* Section 6: Coverage and Limitations */}
+        {/* Section 6: Representative values — what the code does, function by function */}
+        <RepresentativeValues />
+
+        {/* Section 7: Coverage and Limitations */}
         <Section
+          id="coverage"
           label="Coverage and Limitations"
           title="What our data covers — and what it does not"
           body={[
@@ -154,12 +195,14 @@ export default async function MethodologyPage() {
         />
 
         {/* Footer */}
-        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #E8DFD1", fontSize: "12px", color: "#7A7062" }}>
+        <div className="mt-16 border-t border-[#E8DFD1] pt-6 text-xs text-[#6B6255]">
           <p>{SITE_NAME} is independently operated. Our data collection methodology is designed to comply with the terms of service of the financial institutions we monitor. We collect only publicly disclosed fee information.</p>
-          <p style={{ marginTop: "8px" }}>
+          <p className="mt-2">
             Questions about our methodology:{" "}
-            <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "#5A5347" }}>{CONTACT_EMAIL}</a>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] underline underline-offset-2">{CONTACT_EMAIL}</a>
           </p>
+        </div>
+          </div>
         </div>
 
       </div>
@@ -167,21 +210,139 @@ export default async function MethodologyPage() {
   );
 }
 
+const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+
+const SECTION_LABEL = "mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]";
+const SECTION_TITLE = "mb-4 text-[22px] font-semibold leading-[1.3] tracking-[-0.01em] text-[#1A1815]";
+const PARAGRAPH = "mb-4 text-[15px] leading-[1.75] text-[#3D3830]";
+
 // Internal section component — page-local only
-function Section({ label, title, body }: { label: string; title: string; body: string[] }) {
+function Section({ id, label, title, body }: { id: string; label: string; title: string; body: string[] }) {
   return (
-    <section style={{ marginBottom: "48px" }}>
-      <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#A93D25", fontWeight: 700, marginBottom: "8px" }}>
-        {label}
-      </p>
-      <h2 style={{ fontSize: "22px", fontWeight: 600, color: "#1A1815", marginBottom: "16px", fontFamily: "var(--font-newsreader), Georgia, serif", letterSpacing: "-0.01em", lineHeight: 1.3 }}>
+    <section id={id} className="mb-12 scroll-mt-24" aria-labelledby={`${id}-title`}>
+      <p className={SECTION_LABEL}>{label}</p>
+      <h2 id={`${id}-title`} className={SECTION_TITLE} style={SERIF}>
         {title}
       </h2>
       {body.map((paragraph, i) => (
-        <p key={i} style={{ fontSize: "15px", color: "#3D3830", lineHeight: 1.75, marginBottom: "16px" }}>
+        <p key={i} className={PARAGRAPH}>
           {paragraph}
         </p>
       ))}
+    </section>
+  );
+}
+
+/** A function name and its file, so an analyst can read the rule itself. */
+function CodeRef({ fn, file }: { fn: string; file: string }) {
+  return (
+    <p className="mt-3 text-xs leading-relaxed text-[#5A5347]">
+      In the code: <code className="font-mono text-[#1A1815]">{fn}</code> in{" "}
+      <code className="font-mono [overflow-wrap:anywhere]">{file}</code>
+    </p>
+  );
+}
+
+function RuleCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 border border-[#E0D7C9] bg-white px-5 py-4">
+      <h3 className="mb-2 text-base font-semibold text-[#1A1815]">{title}</h3>
+      <div className="space-y-2 text-sm leading-relaxed text-[#3D3830]">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * How several amounts for one fee become one number, stated as the code does it. Each card
+ * cites its function; change the copy when the function changes.
+ */
+function RepresentativeValues() {
+  return (
+    <section id="headline-fees" className="mb-12 scroll-mt-24" aria-labelledby="headline-fees-title">
+      <p className={SECTION_LABEL}>Representative values</p>
+      <h2 id="headline-fees-title" className={SECTION_TITLE} style={SERIF}>
+        How several published amounts become one number
+      </h2>
+      <p className={PARAGRAPH}>
+        Many institutions publish more than one amount for the same fee: a monthly fee for each checking account,
+        or an overdraft fee that changes with the amount overdrawn. Every verified amount is listed in the
+        institution&apos;s fee table. Where one number has to stand for the institution, the rule depends on where
+        the number appears, and the three places use different rules.
+      </p>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <RuleCard title="Institution pages: page title, search summary and Headline fees">
+          <p>
+            <strong className="font-semibold text-[#1A1815]">Monthly maintenance:</strong> the lowest verified amount above
+            $0 among rows that are a recurring account fee (charged monthly, or named as a maintenance or service fee;
+            check, card, wire, statement, research, copy and fax charges filed there are left out). It is written
+            &ldquo;from&rdquo; that amount and names its account; the other accounts and their amounts are listed beside
+            it and linked to their rows in the fee table. A free ($0) account stays in the table but does not set the
+            headline.
+          </p>
+          <p>
+            <strong className="font-semibold text-[#1A1815]">Overdraft:</strong> the highest verified paid-item overdraft
+            amount. Rows naming a transfer, protection, line of credit, continuous, daily, sweep, extended or sustained
+            charge do not count. The page&apos;s comparison with the national median uses the same row.
+          </p>
+          <p>
+            <strong className="font-semibold text-[#1A1815]">NSF:</strong> the highest verified NSF amount.
+          </p>
+          <p>
+            When a record does not name the account a monthly fee belongs to, the page says so and links the page the
+            fee was read from, rather than guessing a name.
+          </p>
+          <CodeRef fn="pickHeadlineLines" file="src/app/(public)/institution/[id]/profile-data.ts" />
+        </RuleCard>
+
+        <RuleCard title="National, state and district benchmarks">
+          <p>
+            Each institution counts once per fee category. Its value is the median of its own verified amounts for
+            that category, so an institution with monthly fees of $5, $15, $25 and $35 enters the monthly maintenance
+            benchmark at $20. Overdraft is the exception: an institution enters at its highest amount, so one charging
+            $5, $20 and $35 by the amount overdrawn is compared at $35.
+          </p>
+          <p>
+            Free ($0) amounts count. Only rows traced to a stored source document count, and amounts read from a
+            business-only schedule are left out. No median is shown for a category with fewer than{" "}
+            {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. On an institution page, each row of the fee table is compared
+            with the national median on its own.
+          </p>
+          <CodeRef fn="valuePerInstitution, institutionValue" file="src/lib/data-store/fee-stats.ts" />
+        </RuleCard>
+
+        <RuleCard title="Competitive Fee Position Report">
+          <p>
+            One amount per institution and fee line. Fee caps, business prices, rows waiting on a correction review and
+            rows whose name is a cut-off sentence are left out, and the monthly maintenance line compares checking, not
+            savings or money market accounts.
+          </p>
+          <p>
+            The remaining rows are ranked: an amount above $0 first; then the standard consumer version (names with
+            online, mobile, internet, electronic, business, commercial and similar words rank lower); then the shorter
+            fee name; then the lowest amount for monthly maintenance and the highest for every other line. The first
+            ranked row that a line of the institution&apos;s own stored schedule states as the fee is used.
+          </p>
+          <CodeRef fn="getCustomReportMarketData" file="src/lib/data-store/custom-report-market.ts" />
+          <CodeRef fn="checkFeeAgainstSource" file="src/lib/custom-report/source-check.ts" />
+        </RuleCard>
+
+        <RuleCard title="Tiers and waivers">
+          <p>
+            <strong className="font-semibold text-[#1A1815]">Tiers.</strong> An institution page lists each tier as its
+            own row. Benchmarks take the median of an institution&apos;s amounts, or the highest for overdraft. The report
+            leaves out an amount that depends on a balance band or is itself a balance threshold, and shows further
+            checked amounts for the same line as tiers without comparing them.
+          </p>
+          <p>
+            <strong className="font-semibold text-[#1A1815]">Waivers.</strong> Every figure is the fee as published, before
+            any waiver. Benchmarks are not adjusted for waivers or for how many customers pay. On an institution page a
+            monthly fee shows the balance that waives it, or the waiver wording, when the record stores it or the
+            fee&apos;s own schedule line states it. Where neither does, no waiver is shown; that does not mean the
+            institution offers none.
+          </p>
+          <CodeRef fn="lineupAccountFromRow" file="src/lib/data-store/account-lineup.ts" />
+        </RuleCard>
+      </div>
     </section>
   );
 }

@@ -47,14 +47,17 @@ import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
 import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
+import { HeadlineFees } from "./headline-fees";
 import {
   buildLocationParts,
+  buildProfileDescription,
   buildProfileTitle,
+  headlineAmounts,
   getPublicInstitutionForPage,
   getRateFeesForPage,
   getVisibleFeesForPage,
   isVerifiedFee,
-  pickHeadlineFees,
+  pickHeadlineLines,
   toDisplayFees,
   toPipelineDisplayFees,
   toRateDisplayFees,
@@ -94,7 +97,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(instId) : [];
   const verifiedFees = fees.filter(isVerifiedFee);
-  const headline = pickHeadlineFees(verifiedFees);
+  const headlineLines = pickHeadlineLines(verifiedFees);
   const city = toTitleCase(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
@@ -103,8 +106,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Thin profiles (fewer verified fees than the page's own thin threshold) stay reachable
     // but out of the index.
     robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
-    title: buildProfileTitle(inst.institution_name, headline),
-    description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, from its own fee schedule, with national benchmarks from ${SITE_NAME}.`,
+    title: buildProfileTitle(inst.institution_name, headlineAmounts(headlineLines)),
+    description: buildProfileDescription(inst.institution_name, place || null, headlineLines, SITE_NAME),
     keywords: [
       inst.institution_name,
       `${inst.institution_name} fees`,
@@ -194,7 +197,10 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   const nationalIndex =
     verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
-  const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
+  // Highest amount first, so the rating's paid-item fee is the same row as the overdraft
+  // headline (pickHeadlineLines takes the highest paid-item overdraft).
+  const byAmountDesc = [...verifiedFees].sort((a, b) => (b.amount ?? -1) - (a.amount ?? -1));
+  const rating = verifiedFees.length > 0 ? computeInstitutionRating(byAmountDesc, nationalIndex) : null;
   // Medians for the per-row comparison: the same verified-only index the rating uses, and
   // only where enough institutions publish the fee for a median to mean something.
   const nationalMedians = new Map<string, number | null>(
@@ -231,7 +237,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
   const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
-  const headline = pickHeadlineFees(verifiedFees);
+  const headlineLines = pickHeadlineLines(verifiedFees);
+  const headline = headlineAmounts(headlineLines);
   const interpretation =
     showNarrative && rating
       ? generateInterpretation({
@@ -324,6 +331,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {displayFees.length > 0 ? (
                   <>
                     {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
+                    <HeadlineFees institutionId={instId} lines={headlineLines} />
                     <FeeScheduleTable
                       fees={displayFees}
                       disclosureUrl={inst.fee_schedule_url}
