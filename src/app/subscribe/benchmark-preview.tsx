@@ -56,7 +56,19 @@ function RangeBar({ row }: { row: BenchmarkRow }) {
  * institution's own published fees compared like for like. Positions are facts about the
  * market, never advice on what to charge.
  */
-export function BenchmarkPreview({ institution, rows }: { institution: string | null; rows: BenchmarkRow[] }) {
+/**
+ * `totalInstitutions` is the index-wide count of institutions with a verified fee, the same figure
+ * the home page shows; each row's own `institutions` is only that one fee's coverage.
+ */
+export function BenchmarkPreview({
+  institution,
+  rows,
+  totalInstitutions,
+}: {
+  institution: string | null;
+  rows: BenchmarkRow[];
+  totalInstitutions: number;
+}) {
   const mine = institution !== null;
   const compared = rows.filter((r) => r.value !== null).length;
   return (
@@ -137,8 +149,10 @@ export function BenchmarkPreview({ institution, rows }: { institution: string | 
           )}
         </p>
         <p className="mt-1.5">
-          Source-backed fee data from {Math.min(...rows.map((r) => r.institutions)).toLocaleString("en-US")}+ institutions. In
-          Pro, pick your own peers.
+          {totalInstitutions > 0
+            ? `Source-backed fee data from ${totalInstitutions.toLocaleString("en-US")} institutions.`
+            : `Each fee benchmarked across ${Math.min(...rows.map((r) => r.institutions)).toLocaleString("en-US")}+ institutions.`}{" "}
+          In Pro, pick your own peers.
         </p>
       </div>
     </figure>

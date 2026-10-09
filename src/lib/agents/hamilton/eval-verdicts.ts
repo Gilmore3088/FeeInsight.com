@@ -183,6 +183,33 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_amount", pattern: "two_column_glue",
     why: "Footnote 11: incoming is $0 only from a CNB account to a CNB personal account; the schedule's incoming wire fee is $15.00",
   },
+  // Keys FCU (4838), Oct 9, doc 2628: a three-column page joins Keys Premier Checking's "(balance
+  // falls below $1,000) $15.00" to the next column's "Copy of Check $3.00 (in house)". Publish now
+  // holds a name that is only a condition (`condition_only_name`).
+  {
+    feePublishedId: 106318, institution: "Keys Federal Credit Union",
+    feeName: "(balance falls below $1,000)", amount: 15, canonicalFeeKey: "check_image",
+    verdict: "wrong_category", pattern: "column_glue",
+    why: "$15 is Keys Premier Checking's low balance fee (below $1,000), filed as a check copy; the check copy fee on that line is $3.00",
+  },
+  // Data inventory's live "to avoid" names (audits/to-avoid-names-for-accuracy.md), Oct 9: each
+  // read against its stored text. Two with the right price under the wrong type are re-filed
+  // instead (taxonomy-fold HAND_REFILES: 56804, 79217); the other priced rows there carry the
+  // right price and type under a sentence for a name, or already hold a pending flag. 36498's
+  // line is an outgoing international wire, but no name that traces on its two-column page says
+  // "wire", so Darwin's wire check would refuse a re-file.
+  {
+    feePublishedId: 36498, institution: "Mission Federal Credit Union",
+    feeName: "in online or mobile banking to avoid a monthly maintenance fee. | International U.S. Currency", amount: 45, canonicalFeeKey: "monthly_maintenance",
+    verdict: "wrong_category", pattern: "two_column_glue",
+    why: "Doc 6201: $45 is the next column's outgoing \"International U.S. Currency\" wire line, not a monthly maintenance fee",
+  },
+  {
+    feePublishedId: 90839, institution: "1st Security Bank of Washington",
+    feeName: "To avoid the monthly service charge, the customer must have a related 1st Gold Student Checking Account and a one-time m", amount: 25, canonicalFeeKey: "monthly_maintenance",
+    verdict: "not_a_fee", pattern: "fee_in_sentence",
+    why: "Doc 21939: $25 is the monthly transfer from the student checking account that waives the service charge, not a charge",
+  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */

@@ -44,7 +44,10 @@ async function handleGET() {
           : HANDLED_STRIPE_EVENTS.filter((name) => !endpoint.enabled_events.includes(name as never)),
         enabledEvents: endpoint.enabled_events,
       }));
-    const ok = checked.length > 0 && checked.every((endpoint) => endpoint.status === "enabled" && endpoint.missing.length === 0);
+    // A disabled endpoint receives nothing, so only the enabled ones decide ok (the retired
+    // fly.dev endpoint stays listed, disabled, and must not turn a correct setup red).
+    const enabled = checked.filter((endpoint) => endpoint.status === "enabled");
+    const ok = enabled.length > 0 && enabled.every((endpoint) => endpoint.missing.length === 0);
     return NextResponse.json({ ok, endpoints: checked, checkedAt: new Date().toISOString() });
   } catch (err) {
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 502 });

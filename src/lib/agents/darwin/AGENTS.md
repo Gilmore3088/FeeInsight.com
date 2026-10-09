@@ -51,11 +51,17 @@ Darwin owns verification and classification.
   into the retired `estatement_fee` type. The same checks are Hamilton's publish-time rules, so a
   row that would come down after publishing now stops before it is verified.
 - `verify.recheck` (`verified-recheck.ts`, version 1, 2026-10-09) ends every learning verify step
-  by reading up to 200 rows `verify.rules` v3 verified, newest first, once each under
-  `postSourceCheck`. A failing row that is not live is rejected with an `outlier_flags` entry
-  `darwin_recheck:<code>[:<rule>]`; a live one is flagged `takedown_pending` through Hamilton's
-  shared second look (`darwin.verified_recheck`) and is rolled back only when a run 12 hours on
-  fails it again, with the verified row rejected and the public read cache cleared. Each row
+  by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
+  verified first, then newest first), once each under `postSourceCheck`. A failing row that is
+  not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
+  is archived in the same step (`published_fee_records` rolled back with that reason, batch
+  `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
+  public read cache cleared, once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on (James, 11:55 UTC
+  2026-10-09: "stop waiting 12 hours. go"). While it is off (the default) the live row is flagged
+  `takedown_pending` through the shared second look (`darwin.verified_recheck`), which is the dry
+  read: the switch turns on by PR once UAT has hand-checked 10 flagged rows and found at least 9
+  right. A $0's conditional price is read from the fee's own table cell (`ownSegment`), not a
+  neighbour's in the same row. Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
 - The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,

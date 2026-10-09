@@ -58,8 +58,13 @@ Fix: `postSourceCheck` in `verify.ts` runs after the source check on the matched
 retired category (`retired_category`, rejected), a $0 whose own line or excerpt carries a price
 (`conditional_zero`, needs_review) and any of Hamilton's name rules (`name_rule`, rejected). A
 `verify.recheck` pass (`verified-recheck.ts`) reads every row v3 verified once under the same
-checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones go through the
-shared 12-hour second look before rollback. The recheck never judges an amount; the shared
+checks: unpublished failures are rejected with a `darwin_recheck:` flag, live ones are archived in
+the same step (rolled back with the reason, never deleted; James at 11:55 UTC: "stop waiting 12
+hours. go") once UAT has passed 10 of them at 9/10; until then they are flagged. A dry read of the
+27 live rows the re-select had verified by 12:00 UTC found 6 the first rule would take down, 3 of
+them wrong: a neighbour's price in the same table row ("Monthly Maintenance | Free | Assisted
+Phone Transactions* | $3") read as this fee's. The rule now reads the fee's own cell; 3 of 27 come
+down (two conditional $0s and a two-fees line). The recheck never judges an amount; the shared
 source check (Accuracy's `checkFeeAgainstSource`) stays the one amount check.
 
 ## Lesson

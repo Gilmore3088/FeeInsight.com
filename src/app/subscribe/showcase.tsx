@@ -172,7 +172,7 @@ function StaticPillars() {
       {PILLARS.map((pillar) => (
         <li key={pillar.key} className="py-4 first:pt-0 last:pb-0 sm:py-0">
           <h3 className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</h3>
-          <p className="mt-1 text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+          <p className="mt-1 break-words text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
             <span className="sm:hidden">{pillar.short}</span>
             <span className="hidden sm:inline">{pillar.body}</span>
           </p>
@@ -241,7 +241,7 @@ export function ShowcasePillars({ interactive = true }: { interactive?: boolean 
                   {on ? "Showing above" : "See example"}
                 </span>
               </span>
-              <span className="mt-1 block text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+              <span className="mt-1 block break-words text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
                 <span className="sm:hidden">{pillar.short}</span>
                 <span className="hidden sm:inline">{pillar.body}</span>
               </span>
