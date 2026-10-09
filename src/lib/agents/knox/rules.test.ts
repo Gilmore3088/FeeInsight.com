@@ -466,6 +466,14 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
+    ["Account Research Copies (per page)", "document_reproduction"],
+    ["Research Request - Per Page Copied", "document_reproduction"],
+    ["Account Research (Per hour + $0.50 per copy)", "account_research"],
+  ])("v54 reads %s as %s (a copy charged by the page)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
     ["Returned Mail Fee", "account_research"],
     ["Bad Address Fee", "account_research"],
     ["Fax Outgoing", "document_reproduction"],

@@ -2,7 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { FAX_SERVICE } from "@/lib/fee-fold";
+import { FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -293,6 +293,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
   { key: "dormant_account", pattern: /\b(dorman(?:t|cy)|inactiv(?:e|ity)|escheat\w*|abandoned)\b/i },
+  // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+  { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",
