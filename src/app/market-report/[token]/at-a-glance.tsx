@@ -119,14 +119,14 @@ export function AtAGlance({ lines }: { lines: ReportLine[] }) {
           </div>
         ))}
 
-        <div className="mt-2 flex justify-between text-[11px] text-[#8A8173] sm:hidden" aria-hidden="true">
+        <div className="mt-2 flex justify-between text-[11px] text-warm-600 sm:hidden" aria-hidden="true">
           <span>Lower</span>
           <span>Median</span>
           <span>Higher</span>
         </div>
       </div>
 
-      <p className="mt-5 text-[12px] leading-relaxed text-[#8A8173]">
+      <p className="mt-5 text-[12px] leading-relaxed text-warm-600">
         Each dot is your fee, ranked against the local competitors that publish the same fee. The shaded band is the
         middle half of those competitors and the line is the median. The last column is your fee less the local median.
       </p>
@@ -172,7 +172,7 @@ export function SinceBought({ savedAt, changes }: { savedAt: string; changes: Re
               <tr key={`${change.subject}:${change.who ?? ""}:${change.key}`} className="border-b border-[#F1ECE4] last:border-0">
                 <td className="py-2.5 pr-3 text-[#1A1815]">{whose(change)}</td>
                 <td className="py-2.5 pr-3 text-[#5A5347]">{change.label}</td>
-                <td className="py-2.5 pr-3 text-right tabular-nums text-[#8A8173]">
+                <td className="py-2.5 pr-3 text-right tabular-nums text-warm-600">
                   {change.before === null ? "not published" : money(change.before)}
                 </td>
                 <td className="py-2.5 text-right font-semibold tabular-nums text-[#1A1815]">

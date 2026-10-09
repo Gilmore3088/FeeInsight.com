@@ -65,6 +65,23 @@ export interface CustomReportAnalysis {
   findings: string[];
 }
 
+/**
+ * Why a fee line has no position against the local market, naming the missing input:
+ * the institution's own verified fee, enough local competitors (MIN_LOCAL_PEERS_PER_LINE),
+ * or both. Null when the line is compared. A missing own fee is never read as $0.
+ */
+export type UnavailableReason = "own_fee_missing" | "too_few_peers" | "own_fee_missing_and_too_few_peers";
+
+export function unavailableReason(line: Pick<ReportLine, "own" | "peers" | "comparable">): UnavailableReason | null {
+  if (line.comparable) return null;
+  const ownMissing = !line.own;
+  const tooFewPeers = (line.peers?.n ?? 0) < MIN_LOCAL_PEERS_PER_LINE;
+  if (ownMissing && tooFewPeers) return "own_fee_missing_and_too_few_peers";
+  if (ownMissing) return "own_fee_missing";
+  if (tooFewPeers) return "too_few_peers";
+  return null;
+}
+
 export function quantile(sorted: number[], q: number): number {
   if (sorted.length === 0) return NaN;
   const pos = (sorted.length - 1) * q;

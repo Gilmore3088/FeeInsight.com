@@ -10,6 +10,7 @@ import { SITE_NAME } from "@/lib/constants";
 import {
   MIN_LOCAL_PEERS_PER_LINE,
   NAMED_WITHOUT_DEPOSITS,
+  unavailableReason,
   type LinePosition,
   type ReportLine,
 } from "@/lib/custom-report/analysis";
@@ -42,8 +43,62 @@ const POSITION_CLASS: Record<LinePosition, string> = {
   free: "bg-[#E8EEF6] text-[#2F5585]",
 };
 
+/**
+ * The status shown in place of a position when a line cannot be compared: what is missing
+ * (the institution's own verified fee, enough local competitors, or both) and what to do
+ * next. A missing fee is never shown or described as $0. Null for a compared line.
+ */
+export function unavailableStatus(
+  line: Pick<ReportLine, "own" | "peers" | "comparable">,
+): { label: string; detail: string; action: string } | null {
+  const reason = unavailableReason(line);
+  if (!reason) return null;
+  const n = line.peers?.n ?? 0;
+  const min = MIN_LOCAL_PEERS_PER_LINE;
+  const publish = n === 1 ? "competitor publishes" : "competitors publish";
+  if (reason === "own_fee_missing") {
+    return {
+      label: "Your fee not found",
+      detail: `${n} local ${publish} this fee, but no verified amount from your own schedule is on file. That is not the same as no fee.`,
+      action: "Send your current fee schedule to compare this line",
+    };
+  }
+  if (reason === "too_few_peers") {
+    return {
+      label: "Too few local competitors",
+      detail:
+        n === 0
+          ? `No local competitor publishes this fee in our verified data; a comparison needs ${min}.`
+          : `Only ${n} local ${publish} this fee; a comparison needs ${min}.`,
+      action: "Tell us about competitor schedules we may be missing",
+    };
+  }
+  return {
+    label: "Your fee not found; too few competitors",
+    detail: `No verified amount from your own schedule is on file, and ${n === 0 ? "no" : `only ${n}`} local ${publish} this fee (${min} needed).`,
+    action: "Send your current fee schedule to start this line",
+  };
+}
+
+function UnavailableStatus({ line, contactHref }: { line: ReportLine; contactHref: string }) {
+  const status = unavailableStatus(line);
+  if (!status) return <span className="text-[12px] text-warm-600">—</span>;
+  return (
+    <span className="block text-[12px] leading-snug">
+      <span className="block font-semibold text-[#5A5347]">{status.label}</span>
+      <span className="block text-warm-600">
+        {status.detail}{" "}
+        <a href={contactHref} className="text-[#5A5347] underline underline-offset-2 hover:text-[#A93D25]">
+          {status.action}
+        </a>
+        .
+      </span>
+    </span>
+  );
+}
+
 function PositionChip({ line }: { line: ReportLine }) {
-  if (!line.position) return <span className="text-[12px] text-[#8A8173]">—</span>;
+  if (!line.position) return <span className="text-[12px] text-warm-600">—</span>;
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION_CLASS[line.position]}`}>
       {POSITION_LABEL[line.position]}
@@ -220,7 +275,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             <p className="mt-1 text-[13px] text-[#6B6255]">
               A line is compared only when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.
             </p>
-            <table className="mt-4 w-full min-w-[640px] text-left text-sm">
+            <table className="mt-4 w-full min-w-[760px] text-left text-sm">
               <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
@@ -237,23 +292,23 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   <tr key={line.key} className="border-b border-[#EFE8DD] last:border-0">
                     <td className="py-2 pr-3 text-[#1A1815]">{line.label}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">
-                      {line.own ? money(line.own.amount) : "Not found"}
+                      {line.own ? money(line.own.amount) : <span className="whitespace-nowrap">Not found</span>}
                       {line.own?.tiers && line.own.tiers.length > 1 && (
-                        <span className="block text-[11px] text-[#8A8173]">
+                        <span className="block text-[11px] text-warm-600">
                           tiered: {line.own.tiers.map((tier) => money(tier.amount)).join(" / ")}
                         </span>
                       )}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
+                    <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
                       {line.comparable && line.peers ? `${money(line.peers.p25)}–${money(line.peers.p75)}` : "—"}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.peers?.n ?? 0}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">
                       {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
                     </td>
-                    <td className="py-2">
-                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-[#8A8173]">Not enough local data</span>}
+                    <td className="min-w-[15rem] py-2">
+                      {line.comparable ? <PositionChip line={line} /> : <UnavailableStatus line={line} contactHref={contactHref} />}
                     </td>
                   </tr>
                 ))}
@@ -306,7 +361,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         <a href={`/institution/${competitor.institution_id}`} className="text-[#1A1815] underline-offset-2 hover:underline">
                           {competitor.institution_name}
                         </a>
-                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-[#8A8173]"> · {cityLabel(competitor.city)}</span>}
+                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-warm-600"> · {cityLabel(competitor.city)}</span>}
                         {footprintLine(branches, competitor.institution_id) && (
                           <span className="block whitespace-nowrap text-[12px] text-[#6B6255]">{footprintLine(branches, competitor.institution_id)}</span>
                         )}
