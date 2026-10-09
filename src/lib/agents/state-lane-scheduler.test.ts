@@ -44,6 +44,7 @@ import {
   stateLaneCadence,
   stateLaneSteps,
   wakeLanesAfterRecovery,
+  wakeLanesWithPendingSecondLooks,
 } from "./state-lane-scheduler";
 import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
 import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
@@ -56,7 +57,8 @@ function laneUpdate(): { text: string; values: unknown[] } | undefined {
   // The priority refresh also updates every lane; the lane's own schedule update is the one wanted.
   const call = sqlMock.mock.calls.find((entry) => {
     const text = templateText(entry[0]);
-    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score") && !text.includes("WITH failures AS");
+    // Since #808 a wake of sleeping lanes with a pending second look also updates lanes.
+    return text.includes("UPDATE public.agent_state_lanes") && !text.includes("SET priority_score") && !text.includes("WITH failures AS") && !text.includes("takedown_pending");
   });
   return call ? { text: templateText(call[0]), values: call.slice(1) } : undefined;
 }
@@ -187,6 +189,28 @@ describe("state lane scheduler", () => {
     const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
     expect(backlogQuery).toContain("inst.last_crawl_at < NOW() - make_interval(days =>");
     expect(sqlMock.mock.calls[0]).toContain(30);
+  });
+
+  it("counts a live fee flagged since its bank's last fetch as backlog, so the page is re-fetched before the second look", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("TX");
+
+    const query = templateText(sqlMock.mock.calls[0][0]);
+    expect(query).toContain("pending.kind = 'takedown_pending'");
+    expect(query).toContain("pending_fee.rolled_back_at IS NULL");
+    expect(query).toContain("(pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
+  });
+
+  it("wakes sleeping lanes whose state has a live fee waiting on a second look", async () => {
+    sqlMock.mockResolvedValue(Object.assign([], { count: 2 }));
+
+    await expect(wakeLanesWithPendingSecondLooks()).resolves.toBe(2);
+
+    const query = templateText(sqlMock.mock.calls[0][0]);
+    expect(query).toContain("UPDATE public.agent_state_lanes lane");
+    expect(query).toContain("upper(btrim(inst.state_code)) = lane.state_code");
+    expect(query).toContain("pending.kind = 'takedown_pending'");
   });
 
   it("does not count a text Knox already extracted under another document as backlog", async () => {

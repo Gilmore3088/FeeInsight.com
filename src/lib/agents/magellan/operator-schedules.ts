@@ -73,8 +73,10 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
   {
     institutionId: 27,
     institutionName: "Regions Bank",
-    url: "https://www.regions.com/virtualDocuments/Checking-Pricing-Schedule.pdf",
-    givenBy: "web search for James's largest-bank list, 2026-10-07 01:05",
+    // The virtualDocuments copy is Rev. 8/20 (found stale by the accuracy check, 2026-10-09);
+    // regions.com now serves the personal pricing schedule from its media library.
+    url: "https://www.regions.com/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf",
+    givenBy: "web search for the accuracy check's stale Regions schedule, 2026-10-09 02:30",
   },
   {
     institutionId: 30,
@@ -426,7 +428,11 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     [102, "TowneBank", "https://www.townebank.com/member-support/overdraft-protection/"],
     // Search snippets show a per-item overdraft fee on each (2026-10-08 15:00).
     [123, "NBT Bank, National Association", "https://www.nbtbank.com/assets/pdfs/PricingScheduleforProductsandServices.pdf"],
-    [41, "Old National Bank", "https://www.oldnational.com/personal/services/overdraft-solutions/"],
+    // Old National publishes no stand-alone personal fee schedule (its deposit agreement points
+    // to one per account). Its overdraft page (held since 8 Oct: $36 paid item) gives two fees,
+    // under the 3-fee bar; the Everyday Checking page lists the monthly, paper statement and
+    // early-closure fees (replaced the overdraft page link, 2026-10-09 03:50).
+    [41, "Old National Bank", "https://www.oldnational.com/personal/checking/onb-everyday-checking/"],
     [165, "Origin Bank", "https://www.origin.bank/deposit-account-agreement-disclosures.pdf"],
     [7559, "Idaho Central Federal Credit Union", "https://www.iccu.com/file/notices/account-agreement.pdf"],
     // Overdrafts and overdraft fees: $33 each time (replaced the 2023 flyer at 16:05).

@@ -5,7 +5,7 @@ import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { fillBlankFrequencies } from "@/lib/agents/hamilton/frequency-fill";
+import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -24,6 +24,7 @@ import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
+import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
@@ -395,10 +396,10 @@ async function executeAgenticStep(
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
-    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 2 });
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }
@@ -1093,6 +1094,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
+      // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
+      const lineupCorrect = await correctStoredLineups(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       // Fees an older re-check restored with no check at all get the restore bar on a second look.
       const restoreRecheck = await recheckUncheckedRestores(tx, {
@@ -1427,6 +1435,11 @@ async function executeAgenticStep(
             renamed: accountNames.renames.length,
             skipped: accountNames.skipped,
           },
+          lineup_correct: {
+            documents_checked: lineupCorrect.documentsChecked,
+            rows_checked: lineupCorrect.rowsChecked,
+            rows_corrected: lineupCorrect.corrected.length,
+          },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
           refresh_copy_skipped: refreshCopy.skipped,
@@ -1567,6 +1580,9 @@ async function executeAgenticStep(
           failing_fees: guard.failingFees,
           rolled_back_fees: guard.rolledBackFees,
           rejected_verified_fees: guard.rejectedVerifiedFees,
+          flagged_fees: guard.flaggedFees,
+          awaiting_second_look: guard.awaitingSecondLook,
+          restored_fees: guard.restoredFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -1581,6 +1597,37 @@ async function executeAgenticStep(
             fee_name: failure.feeName,
             amount: failure.amount,
             code: failure.code,
+          })),
+        },
+      };
+    }
+    case "frequency-fill": {
+      // The frequency half of a guard catch-up run (hamilton/guard-catch-up.ts): every live fee,
+      // not one lane's, so a frequency fix reaches live rows on the tick after its deploy.
+      const fill = await fillBlankFrequencies(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const blanks = fill.filled.filter((row) => row.from == null).length;
+      const cleared = fill.filled.filter((row) => row.frequency == null).length;
+      return {
+        status: "completed",
+        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared).`,
+        detail: {
+          frequency_fill_version: FREQUENCY_FILL_VERSION,
+          frequency_fill_scanned: fill.scanned,
+          frequency_fills: fill.filled.length,
+          frequency_filled_blank: blanks,
+          frequency_cleared: cleared,
+          dry_run: fill.dryRun,
+          frequency_fill_samples: fill.filled.slice(0, 25).map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            canonical_fee_key: row.canonicalFeeKey,
+            amount: row.amount,
+            from: row.from,
+            to: row.frequency,
           })),
         },
       };
@@ -2925,7 +2972,8 @@ export async function executeQueuedAgentRuns({
                 AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
             )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page. Then a
+     -- Report runs go first: someone pressed Generate and is watching the page. Then a guard
+     -- catch-up run. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
      -- lane), then a retry of a failed state lane, then a state whose report James is
@@ -2933,6 +2981,9 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
+              -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
+              COALESCE(r.params_json->>'source' = 'hamilton.guard_catch_up', false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'

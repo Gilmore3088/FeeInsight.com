@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -76,7 +76,73 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(ruleFor("monthly_maintenance", "Maintenance fee waived for students under age 25", 0)).toBeNull();
   });
 
+  it("reads a price the name presents as the fee's own, and not the amount, as a wrong amount (v4, UAT row 100439)", () => {
+    expect(ruleFor("overdraft", "Courtesy Pay (Paid Overdraft) Fee .. . . .$35.005", 50)).toBe("price_in_name");
+    expect(ruleFor("overdraft", "Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", 50)).toBe("price_in_name");
+    expect(ruleFor("stop_payment", "Stop Payment (per item) $30.00 Lost Key", 25)).toBe("price_in_name");
+    expect(ruleFor("check_copy", "Check Copy Fee $2.00 per copy Pay Card Savings", 1)).toBe("price_in_name");
+    // ADMIN's expected set from run 3232: glued two-item lines carrying the next item's price.
+    expect(ruleFor("overdraft", "Courtesy Pay per debit as applicable $29.00 Inactivity Fee (first charged to checking then savings)", 10)).toBe("price_in_name");
+    expect(ruleFor("wire_domestic_outgoing", "Wire Out (domestic) $25.00 5X10 Box Annually", 55)).toBe("price_in_name");
+    expect(ruleFor("counter_check", "Counter Checks (per page) $0.50 Signature Validation Program (SVP)", 5)).toBe("price_in_name");
+    expect(ruleFor("overdraft", "Overdraft (OD) or Non-sufficient Funds (NSF) item - account overdrawn more than $5.00 Fees for", 30)).toBeNull();
+    expect(ruleFor("check_cashing", "Check Cashing / Non-Customer / On Us Only ≥$10.000", 100)).toBeNull();
+    // The same price in the name is only glue; no price in the name says nothing.
+    expect(ruleFor("overdraft", "Courtesy Pay Fee…..$35.005", 35)).toBeNull();
+    expect(ruleFor("overdraft", "Courtesy Pay Fee", 50)).toBeNull();
+    expect(priceInName("Fee $1,250.50 each")).toBe(1250.5);
+    expect(priceInName("Stop Payment")).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("fp.fee_name ~ '\\$\\s?[0-9]'");
+  });
+
+  it("leaves a threshold, floor, cap, balance, range or second price in the name alone (v5, UAT 03:44)", () => {
+    // v4's first run flagged 389 live fees; UAT read 18 of 20 as correct fees. These are theirs.
+    expect(ruleFor("gift_card_purchase", "Gift Cards ($25 up to $500 Only)", 5)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum Balance (below $50 per month)", 5)).toBeNull();
+    expect(ruleFor("stop_payment", "Stop Payment on CU Checks Fee (over $500, must purchase an Indemnity Bond)", 50)).toBeNull();
+    expect(ruleFor("overdraft", "Overdraft Fee – Each overdraft paid over $5", 33)).toBeNull();
+    expect(ruleFor("account_research", "Account Research - per hour ($20.00 minimum)", 30)).toBeNull();
+    expect(ruleFor("account_research", "Research Fee ($5 min)", 20)).toBeNull();
+    expect(ruleFor("account_research", "Research Fee (hourly fee; 15 minute minimum charge of $10.00)", 40)).toBeNull();
+    expect(ruleFor("money_order", "Money Orders ($1,000 maximum)", 2)).toBeNull();
+    expect(ruleFor("minimum_balance", "Service Fee (daily balance falls below $2,500)", 8)).toBeNull();
+    expect(ruleFor("gift_card_purchase", "Visa Gift Cards $10.00-$500.00", 3.5)).toBeNull();
+    expect(ruleFor("cashiers_check", "Cashier’s checks $1,000.00 or less per item", 5)).toBeNull();
+    expect(ruleFor("cashiers_check", "Bank Checks: $1,000 and up", 5)).toBeNull();
+    expect(ruleFor("stop_payment", "Stop Payment ($15.00 if initiated through on-line banking)", 25)).toBeNull();
+    expect(ruleFor("card_replacement", "Debit / ATM Replacement Card (rush order $80.00)", 10)).toBeNull();
+    expect(ruleFor("account_research", "Research Fee (plus $1.00 per copy) per hour", 50)).toBeNull();
+    expect(ruleFor("safe_deposit_box", "Safe Deposit Box 3x5 $1,250 deductible", 25)).toBeNull();
+    expect(ruleFor("check_cashing", "Check Cashing Fee (Non-Use of Account) $1,000.01 +", 10)).toBeNull();
+    expect(ruleFor("nsf", "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)", 25)).toBeNull();
+    // Fees holding a pending flag are read again so today's rule can clear them.
+    expect(evalVerdictFeesSql(false)).toContain("pf.check_name = 'hamilton.eval_verdict' AND pf.kind = 'takedown_pending'");
+  });
+
+  it("clears a pending flag the current rule no longer supports and logs the lesson (v5)", async () => {
+    // 62322 (a fee, no rule fails it) holds a pending flag from an earlier rule version.
+    const query = (strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback")) {
+        return Promise.resolve([{ fee_published_id: 62322, kind: "takedown_pending", evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 3_600_000).toISOString(), reason: "wrong_amount:price_in_name" } }]);
+      }
+      if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 95816 }]);
+      return Promise.resolve([]);
+    };
+    const db = vi.fn(query) as unknown as ReturnType<typeof createDb>;
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(rows));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result.cleared).toBe(1);
+    expect(result.rolledBack.map((fee) => fee.feePublishedId)).toEqual([95816]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("takedown_cleared");
+    expect(calls).toContain("hamilton.eval_verdict:rule_revised:v5");
+    expect(writes(db).some((text) => text.includes("DELETE"))).toBe(false);
+  });
+
   it("reads the eval's rows and the rule candidates, scoped to a bank when asked", () => {
+
     expect(evalVerdictFeesSql(false)).toContain("fp.fee_published_id = ANY($1::bigint[])");
     expect(evalVerdictFeesSql(false)).not.toContain("$2");
     expect(evalVerdictFeesSql(true)).toContain("fp.institution_id = $2");

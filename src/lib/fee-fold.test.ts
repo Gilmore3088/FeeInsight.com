@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
 import { passesDarwinChecks } from "./agents/knox/layout";
-import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
+import { foldContext, foldRetiredCategory, ownAtmSection, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
@@ -180,8 +180,8 @@ describe("top-50 fold", () => {
       ["late_payment", "VISA Late Charge (if payment not satisfied by end of current month)", 30, null],
       ["account_research", "IRA Transfer (outgoing)", 50, "ira_termination"],
       ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
-      ["account_research", "IRA Excessive Withdrawal", 10, null],
-      ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, null],
+      ["account_research", "IRA Excessive Withdrawal", 10, "ira_administration"],
+      ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, "ira_administration"],
       ["account_research", "Excessive Withdrawal Fee", 5, null],
       ["account_research", "All Checking and Savings Accounts EXCEPT Grow Account, Student Edge, IRA Savings: Account Reconciliation", 25, null],
       ["account_research", "IRA Transfer Incoming", 0, null],
@@ -200,6 +200,27 @@ describe("top-50 fold", () => {
       ["paper_statement", "Return Statement Charge", 5, "account_research"],
       ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, "account_research"],
       ["paper_statement", "Paper Statement Fee", 3, null],
+      ["account_research", "Fax (Outgoing)", 5, "document_reproduction"],
+      ["account_research", "Copy of previous statement", 5, "document_reproduction"],
+      ["account_research", "Fax, Photo, Imaged and Microfilm Copies", 6, "document_reproduction"],
+      ["account_research", "Account Research (Per hour + $0.50 per copy)", 20, null],
+      ["account_research", "Account Research Copies (per page)", 2, "document_reproduction"],
+      ["account_research", "Research Request - Per Page Copied", 1, "document_reproduction"],
+      ["account_research", "Account Research (Min $40.00 Fee, Copies $0.20 Pg, + Postage)", 40, null],
+      ["account_research", "Research Fee (3hour minimum and 25 cents per copy fee)", 11, null],
+      ["account_research", "Document copies - greater than 1 year - Per item, may also be subject to research fee", 5, "document_reproduction"],
+      ["account_research", "Microfilm Copy (plus Account Research)", 5, "document_reproduction"],
+      ["account_research", "Member personal fax request (in state)", 1, "document_reproduction"],
+      ["account_research", "Research and Account Reconciliation and Copies of Paid Chck", 25, null],
+      ["account_research", "Account Research per hour ($12.50 minimum, Copies & Postage Extra)", 25, null],
+      ["account_research", "Fax Loan Pay-off", 40, null],
+      ["account_research", "Domestic incoming (fax)", 26, null],
+      ["account_research", "initiated by phone, fax or in branch", 25, null],
+      ["account_research", "Fax Loan Payoff", 15, null],
+      ["account_research", "Car Fax Fee", 25, null],
+      ["account_research", "Account Closing by Mail/Fax", 8, null],
+      ["late_payment", "Statement Copies", 2, "document_reproduction"],
+      ["ira_administration", "IRA Savings Excessive Withdrawal", 15, null],
       ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
       ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
       ["other_lending_fee", "Loan Payoff Statement", 20, null],
@@ -216,5 +237,32 @@ describe("top-50 fold", () => {
     expect(foldContext(text, "Balance Inquiry")).toBe("ATM Fees Non-Bank ATM Withdrawal $2.00 ");
     expect(foldContext(text, "Wire")).toBeNull();
     expect(foldContext(null, "Balance Inquiry")).toBeNull();
+  });
+});
+
+describe("own-ATM balance inquiry (Regions, Oct 9)", () => {
+  const text = [
+    "All fees are per item unless otherwise indicated.",
+    "Regions ATM:",
+    "Withdrawal . . . . . . . . . . . . . . . . . .$0.00",
+    "Balance Inquiry . . . . . . . . . . . . . . .$0.00",
+    "Transfer . . . . . . . . . . . . . . . . . . .$0.00",
+    "Mini Statements (available at select ATMs) . . . .$2.00",
+    "Non-Regions ATM:",
+    "Withdrawal . . . . . . . . . . . . . . . . . .$3.00",
+    "(Applies to all withdrawal requests, approved or declined)",
+    "Balance Inquiry . . . . . . . . . . . . . . .$3.00",
+  ].join("\n");
+
+  it("files an inquiry under another bank's ATM heading as a non-network ATM fee", () => {
+    expect(foldRetiredCategory("balance_inquiry", "Balance Inquiry", foldContext(text, "Balance Inquiry", 3))?.to).toBe("atm_non_network");
+  });
+
+  it("gives an inquiry at the bank's own ATM no home", () => {
+    expect(foldRetiredCategory("balance_inquiry", "Balance Inquiry", foldContext(text, "Balance Inquiry", 0))?.to).toBeNull();
+    expect(ownAtmSection("Our ATM: Withdrawal $0.00")).toBe(true);
+    expect(ownAtmSection("Foreign ATM: Withdrawal $2.00")).toBe(false);
+    expect(ownAtmSection("ATM Fees Withdrawal $2.00")).toBe(false);
+    expect(ownAtmSection("Non-Regions ATM: Withdrawal $3.00")).toBe(false);
   });
 });

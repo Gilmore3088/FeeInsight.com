@@ -30,6 +30,12 @@ type SqlTag = typeof sql;
  *   - two fees on one line published as one ("Wire Domestic In/Out $10/$20"): the name pairs two
  *     directions or scopes and the line Knox read carries two prices, so the one published is at
  *     best half right (v3; 3 live on Oct 9).
+ *   - a price inside the name that is not the published amount ("Courtesy Pay (Paid Overdraft)
+ *     Fee .. . . .$35.005" at $50: the $50 was the next cell's box rent; UAT, Oct 9). The name
+ *     says what the fee costs, so the amount is in doubt (v4, `price_in_name`; narrowed in v5 to a
+ *     price the name presents as the fee's own, see `priceInName`). The same shape at
+ *     publish is `publish_hold:price_in_name`; this is the live-row twin, because a hold acts
+ *     only on a row not yet live.
  *
  * Three shapes are flagged, never taken down (v3): each writes one `pipeline_feedback` row per
  * fee (weight 0.5, a judgement, not proof) that a report or a later rule can read:
@@ -50,7 +56,7 @@ type SqlTag = typeof sql;
  * Knox's learning reads what was wrong.
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
-export const EVAL_VERDICT_VERSION = 3;
+export const EVAL_VERDICT_VERSION = 5;
 const EVAL_REASON_PREFIX = "eval_critical";
 const RULE_REASON_PREFIX = "not_a_fee";
 const ROLLBACK_LIMIT = 500;
@@ -151,6 +157,55 @@ const WIRE_KEYS = new Set(["wire_domestic_incoming", "wire_domestic_outgoing", "
 const WIRE_SCOPE_A = /\b(domestic|incoming|in)\b/i;
 const WIRE_SCOPE_B = /\b(international|foreign|outgoing|out)\b/i;
 const PRICE = /\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/g;
+/** Every dollar price printed in a name; a footnote digit glued to the cents ("$35.005") is dropped. */
+const PRICE_IN_NAME = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)(\d)?(?![\d.])/g;
+/** Leaders a schedule prints between a fee's name and its price: dots, a colon, a dash. */
+const PRICE_LEADER = /(?:\s|\.|…|:|-|–|—)+$/;
+/** A fee noun right before the price ("Fee $35", "Fee of $35", "per copy $2"), or a closed parenthetical ("(per item) $30"). */
+const PRICE_LEAD = /\b(fee|fees|charge|charges|cost|price|each|item|copy|page|transfer|transaction)$|\)$/i;
+/** A word before the fee noun that makes the price a floor, a cap or another price, not the fee ("minimum charge $10"). */
+const PRICE_LEAD_QUALIFIER = /\b(minimum|min|maximum|max|limit|additional|extra|plus|rush|late|discount|per)\.?$/i;
+/** Words after the price that make it a threshold, a cap or a range ("$500 or less", "$10 - $500", "$25.00 minimum"). */
+/** Words in the three before the price that make it a threshold or a range, whatever follows. */
+const PRICE_THRESHOLD_WORDS = /\b(over|under|below|above|than|minimum|min|max|maximum|limit|balance|balances|of|from|between|to|if|with|for|or|up|exceeding|least)\b|[=+<>≥≤]/i;
+/** The next item of a schedule glued onto the line after the price: a capitalised fee name ("$29.00 Inactivity Fee"). */
+const GLUED_FEE_AFTER_PRICE = /^(?:[A-Z][\w'’-]*\s+){0,3}(?:Fee|Fees|Charge|Charges)\b/;
+const PRICE_TAIL_QUALIFIER = /^(?:minimum|min\b|min\.|maximum|max\b|max\.|limit|discount|deductible|increments?|or\s+(?:more|less|greater|under|over|above|below)|and\s+(?:under|over|above|up|below|less|more)|[+\-–—]|to\s+\$|through\b|up\s+to\b)/i;
+
+/**
+ * The price a fee's name states as the fee's own price, or null. v5: the first run of v4
+ * (02:58 Oct 9) flagged 389 live fees and about nine in ten were right: the dollar figure in
+ * their names is a threshold ("Overdraft Fee – Each overdraft paid over $5"), a floor or cap
+ * ("Account Research per hour ($20.00 minimum)", "Money Orders ($1,000 maximum)"), a balance
+ * ("Service charge (balance falls below $1,000)"), a range ("Visa Gift Cards $10.00-$500.00")
+ * or another price ("Stop Payment ($15.00 if initiated through on-line banking)"). So a price
+ * counts only when the name presents it as the fee's price: the name carries one price, a fee
+ * noun or a closed parenthetical sits right before it (dots, a colon or a dash between are a
+ * printed leader), no floor/cap word qualifies that noun, and no threshold or range word
+ * follows the price. A glued line, where the next item's capitalised fee name follows the price
+ * and no threshold word precedes it, counts too. Pure.
+ */
+export function priceInName(feeName: string | null | undefined): number | null {
+  if (!feeName) return null;
+  const matches = Array.from(feeName.matchAll(PRICE_IN_NAME));
+  if (matches.length !== 1) return null;
+  const [match] = matches;
+  const before = feeName.slice(0, match.index).replace(PRICE_LEADER, "").replace(/\s+of$/i, "");
+  const after = feeName.slice(match.index + match[0].length).trimStart();
+  if (PRICE_TAIL_QUALIFIER.test(after)) return null;
+  const lead = PRICE_LEAD.exec(before);
+  if (lead) {
+    if (lead[1] && PRICE_LEAD_QUALIFIER.test(before.slice(0, lead.index).trim())) return null;
+  } else {
+    // A glued line: the price ends this fee's text and the next item's name follows it
+    // ("Courtesy Pay per debit as applicable $29.00 Inactivity Fee", run 3232 row 58437), with
+    // no threshold word in the three words before the price ("overdrawn more than $5.00 Fees").
+    const leadWords = before.split(/\s+/).slice(-3).join(" ");
+    if (!GLUED_FEE_AFTER_PRICE.test(after) || PRICE_THRESHOLD_WORDS.test(leadWords)) return null;
+  }
+  const value = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(value) ? value : null;
+}
 
 /** How many distinct dollar prices a schedule line carries. Pure. */
 export function distinctPrices(text: string | null | undefined): number {
@@ -158,13 +213,14 @@ export function distinctPrices(text: string | null | undefined): number {
   return new Set(Array.from(text.matchAll(PRICE), (match) => Number(match[1].replace(/,/g, "")))).size;
 }
 
-export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line";
+export type NameRule = "rebate" | "no_fee_sentence" | "waiver_sentence" | "merchant_payer" | "two_fees_one_line" | "price_in_name";
 export const RULE_VERDICTS: Readonly<Record<NameRule, Verdict>> = {
   rebate: "not_a_fee",
   no_fee_sentence: "not_a_fee",
   waiver_sentence: "not_a_fee",
   merchant_payer: "wrong_payer",
   two_fees_one_line: "wrong_amount",
+  price_in_name: "wrong_amount",
 };
 export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   rebate: "A surcharge rebate or reimbursement the bank gives, published as the ATM fee it charges",
@@ -172,6 +228,7 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
   waiver_sentence: "The condition that waives a fee, or the balance that avoids it, published as a $0 fee",
   merchant_payer: "A fee the merchant or payee pays, published as the account holder's fee",
   two_fees_one_line: "Two fees on one line (two directions or scopes, two prices) published as one price",
+  price_in_name: "The name states a price that is not the published amount, so the amount came from another cell",
 };
 
 /** Which name rule, if any, takes a live fee down. `excerpt` is the schedule line Knox read. Pure. */
@@ -182,6 +239,10 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
   if (amount != null && Math.abs(amount) < 0.005 && WAIVER_SENTENCE.test(name)) return "waiver_sentence";
   if (MERCHANT_PAYER.test(name)) return "merchant_payer";
   if (TWO_FEES_NAME.test(name) && distinctPrices(excerpt) >= 2) return "two_fees_one_line";
+  if (amount != null) {
+    const stated = priceInName(name);
+    if (stated != null && Math.abs(stated - amount) > 0.005) return "price_in_name";
+  }
   return null;
 }
 
@@ -245,6 +306,8 @@ export interface EvalVerdictResult {
   ruleFailing: number;
   flagged: number;
   waiting: number;
+  /** Pending flags cleared because the current rule no longer fails the fee. */
+  cleared: number;
   rolledBack: EvalTakedown[];
   /** Live fees flagged, never taken down, by flag. */
   flags: Record<FlagRule, number>;
@@ -258,7 +321,11 @@ function num(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** The live-fee read: the eval's rows and every live fee a name rule might match. */
+/**
+ * The live-fee read: the eval's rows, every live fee a name rule might match, and every live fee
+ * holding a pending flag from this check, so the current rule re-judges it and clears the flag
+ * when it no longer fails (v5).
+ */
 export function evalVerdictFeesSql(byInstitution: boolean): string {
   return `
     SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
@@ -269,10 +336,13 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
      WHERE fp.rolled_back_at IS NULL
        ${byInstitution ? "AND fp.institution_id = $2" : ""}
        AND (fp.fee_published_id = ANY($1::bigint[])
+            OR fp.fee_published_id IN (SELECT pf.fee_published_id FROM pipeline_feedback pf
+                                        WHERE pf.check_name = '${EVAL_VERDICT_CHECK}' AND pf.kind = 'takedown_pending')
             OR (fp.canonical_fee_key IN ('atm_non_network', 'atm_international') AND fp.fee_name ~* '(rebate|reimburse|refund)')
             OR fp.fee_name ~* '^\\s*(no|without)\\s+(fee|charge)s?\\s+(for|to|on|when|if)\\y'
             OR (fp.amount = 0 AND fp.fee_name ~* '\\y(if|when|unless)\\s+you\\y|\\yof\\s+the\\s+following\\y|\\yqualifications?\\s+(are|is)\\s+met\\y|\\yto\\s+avoid\\y')
             OR fp.fee_name ~* '\\y(merchant|payee)\\s+(pays|presenting|presented)\\y|\\ypaid\\s+by\\s+(the\\s+)?(merchant|payee)\\y'
+            OR fp.fee_name ~ '\\$\\s?[0-9]'
             OR fp.fee_name ~* '\\yin\\s*/\\s*out\\y|\\yout\\s*/\\s*in\\y|incoming\\s*/\\s*outgoing|outgoing\\s*/\\s*incoming|domestic\\s*/\\s*international|international\\s*/\\s*domestic'
             OR fp.fee_name ~* 'non[- ]?(customer|member|account ?holder)s?\\y|\\ynot\\s+a\\s+(customer|member)\\y|\\yfor\\s+non-?(members|customers)\\y|non-?clients?\\y'
             OR (fp.canonical_fee_key LIKE 'wire\\_%' AND fr.conditions ~ '\\$.*\\$'))
@@ -290,7 +360,7 @@ export async function retireEvalVerdictFees(
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
   const result: EvalVerdictResult = {
-    evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, rolledBack: [],
+    evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, cleared: 0, rolledBack: [],
     flags: { non_customer_price: 0, wire_shared_line: 0 }, flagSamples: [], dryRun: options.dryRun,
   };
   let rows: LiveRow[];
@@ -372,13 +442,42 @@ export async function retireEvalVerdictFees(
       console.error("eval verdict flags failed:", error);
     }
   }
-  if (evalRows.length === 0 && ruleRows.length === 0) return result;
-
   // Every takedown is logged; the eval rows come down now (James, Oct 8), the rule rows after
-  // the usual second look.
-  const look = await secondLook(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, failing: [...evalRows, ...ruleRows], dryRun: options.dryRun });
+  // the usual second look. Every row read that no rule fails today passes: a pending flag it
+  // holds from an earlier rule is cleared (`takedown_cleared`), never confirmed, so a narrowed
+  // rule (v5) lets the fees its predecessor flagged stay live through the normal path.
+  const failingIds = new Set([...evalRows, ...ruleRows].map((fee) => fee.feePublishedId));
+  const passing = rows.map((row) => Number(row.fee_published_id)).filter((id) => !failingIds.has(id));
+  const look = await secondLook(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, failing: [...evalRows, ...ruleRows], passing, dryRun: options.dryRun });
   result.flagged = look.flagged;
   result.waiting = look.waiting;
+  result.cleared = look.cleared;
+  if (look.cleared > 0 && !options.dryRun) {
+    // The lesson, in the shared learning store: a rule that flagged fees it no longer fails
+    // overfired, and the count says by how much. One row per rule version (dedupe key).
+    try {
+      await inSavepoint(db, (scope) => recordFeedback(scope, [{
+        aboutStage: "publish",
+        aboutStrategy: EVAL_VERDICT_CHECK,
+        aboutVersion: EVAL_VERDICT_VERSION,
+        signal: "right",
+        kind: "rule_revised",
+        reportedBy: "hamilton",
+        checkName: EVAL_VERDICT_CHECK,
+        weight: 0,
+        runId: options.runId,
+        dedupeKey: `${EVAL_VERDICT_CHECK}:rule_revised:v${EVAL_VERDICT_VERSION}`,
+        evidence: {
+          version: EVAL_VERDICT_VERSION,
+          cleared: look.cleared,
+          why: "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own",
+        },
+      }]));
+    } catch (error) {
+      console.error("eval verdict rule lesson failed:", error);
+    }
+  }
+  if (evalRows.length === 0 && ruleRows.length === 0) return result;
   const confirmedRules = new Set(look.confirmed.filter((fee) => fee.source === "rule").map((fee) => fee.feePublishedId));
   const confirmed = [...evalRows, ...ruleRows.filter((fee) => confirmedRules.has(fee.feePublishedId))].slice(0, limit);
   if (options.dryRun) {
