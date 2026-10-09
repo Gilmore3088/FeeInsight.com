@@ -102,8 +102,10 @@ export function pageLines(html: string): string[] {
       .replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, " ")
       // A mail link becomes its address alone: its text ("Email Jane") is neither a name nor a title.
       .replace(/<a\b[^>]*href=["']mailto:([^"'?]+)[^"']*["'][^>]*>[\s\S]*?<\/a>/gi, (_m, address: string) => ` ${safeDecode(address)} `)
-      .replace(/<\/?(p|div|li|tr|td|th|h[1-6]|br|section|article|header|footer|ul|ol|dt|dd|figure|figcaption|strong|b|em)\b[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, " "),
+      // Quoted attribute values may hold ">" (script in an Alpine or Vue attribute), so a tag
+      // ends at the first ">" outside quotes.
+      .replace(/<\/?(p|div|li|tr|td|th|h[1-6]|br|section|article|header|footer|ul|ol|dt|dd|figure|figcaption|strong|b|em)\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi, "\n")
+      .replace(/<(?:"[^"]*"|'[^']*'|[^'">])+>/g, " "),
   );
   return text
     .split(/\n+/)
