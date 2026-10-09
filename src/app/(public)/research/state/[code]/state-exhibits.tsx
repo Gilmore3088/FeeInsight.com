@@ -62,7 +62,7 @@ export function StateHero(props: StateHeroProps) {
 
   return (
     <section className="relative overflow-hidden bg-[#1A1815] text-[#F5EFE6]">
-      <div className="relative mx-auto max-w-7xl px-4 pb-10 pt-8 sm:px-6 sm:pb-12 sm:pt-10">
+      <div className="relative mx-auto max-w-page px-4 pb-10 pt-8 sm:px-6 sm:pb-12 sm:pt-10">
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#F5EFE6]/60 print:hidden">
           <Link href="/" className="hover:text-white">Home</Link>
           <span aria-hidden="true">/</span>

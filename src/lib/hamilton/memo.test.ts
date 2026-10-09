@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/ai-provider", () => ({
+vi.mock("@/lib/ai-provider", async (importOriginal) => ({
+  isProviderLimitError: (await importOriginal<typeof import("@/lib/ai-provider")>()).isProviderLimitError,
   getAnthropicMessagesClient: () => {
     throw new Error("no provider in tests");
   },
@@ -11,6 +12,7 @@ vi.mock("@/lib/ai-provider", () => ({
 vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
 
 import { memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
+import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildFeeAnswer } from "./workspace/answer";
 import { overdraftResearch } from "./workspace/test-fixtures";
 
@@ -102,6 +104,15 @@ describe("storyline memo", () => {
   it("says the writer is unavailable when the budget blocks the call", async () => {
     const c: MemoClient = { create: async () => { throw new Error("Provider budget exceeded for route:api.hamilton.chat"); } };
     expect(await writeStorylineMemo(storyline, "q", { client: c })).toEqual({ status: "unavailable", reason: "Hamilton's writing budget for today is used up." });
+  });
+
+  it("says written answers are paused when the provider's usage limit is reached", async () => {
+    const c: MemoClient = {
+      create: async () => {
+        throw Object.assign(new Error("400 You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC."), { status: 400 });
+      },
+    };
+    expect(await writeStorylineMemo(storyline, "q", { client: c })).toEqual({ status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE });
   });
 
   it("needs a configured key when no client is given", async () => {

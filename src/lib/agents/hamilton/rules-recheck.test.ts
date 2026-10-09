@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { trainCategoryModel } from "@/lib/agents/darwin/category-model";
 
-import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_REASON, RULES_RECHECK_RESTORED_FLAG, RULES_RECHECK_STRATEGY } from "./rules-recheck";
+import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_CHECK, RULES_RECHECK_REASON, RULES_RECHECK_TAKEDOWN_LIVE, RULES_RECHECK_RESTORED_FLAG, RULES_RECHECK_STRATEGY } from "./rules-recheck";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -13,10 +13,26 @@ const TEXT = [
   "per Overdraft 3\"X10\"X 21\" | $30.00",
 ].join("\n");
 
-function createDbMock(liveRows: Array<Record<string, unknown>>, texts: Array<Record<string, unknown>>): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) =>
-    Promise.resolve(strings.join("?").includes("FROM agent_source_texts") ? texts : []),
-  ) as DbMock;
+/** A first look on another run 13 hours ago: the re-check's second look takes the fee down now. */
+function firstLooksFor(liveRows: Array<Record<string, unknown>>) {
+  return liveRows.map((row) => ({
+    fee_published_id: row.fee_published_id,
+    kind: "takedown_pending",
+    evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: RULES_RECHECK_REASON },
+  }));
+}
+
+function createDbMock(
+  liveRows: Array<Record<string, unknown>>,
+  texts: Array<Record<string, unknown>>,
+  flags: Array<Record<string, unknown>> = firstLooksFor(liveRows),
+): DbMock {
+  const db = vi.fn((strings: TemplateStringsArray) => {
+    const text = strings.join("?");
+    if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("FROM pipeline_feedback")) return Promise.resolve(flags);
+    return Promise.resolve(text.includes("FROM agent_source_texts") ? texts : []);
+  }) as DbMock;
   db.unsafe = vi.fn(() => Promise.resolve(liveRows));
   return db;
 }
@@ -73,6 +89,7 @@ describe("Hamilton rules re-check", () => {
     const result = await rollBackUnreproducedFees(asDb(db), {
       runId: 301,
       batchId: "agentic-run-301",
+      takedownLive: true,
       dryRun: false,
       stateCode: "TX",
     });
@@ -90,8 +107,8 @@ describe("Hamilton rules re-check", () => {
     const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
     expect(query).toContain("fr.source = 'knox'");
     expect(query).toContain("knox_paid_extraction");
-    expect(query).toContain("upper(btrim(inst.state_code)) = $6");
-    expect(params).toEqual([25, "hamilton.rules_recheck", RULES_RECHECK_STRATEGY.version, knoxFreeSignature(), RULES_RECHECK_REASON, "TX"]);
+    expect(query).toContain("upper(btrim(inst.state_code)) = $10");
+    expect(params).toEqual([25, "hamilton.rules_recheck", RULES_RECHECK_STRATEGY.version, knoxFreeSignature(), RULES_RECHECK_REASON, RULES_RECHECK_CHECK, "takedown_pending", 720, true, "TX"]);
     const writes = JSON.stringify(db.mock.calls);
     expect(writes).toContain("UPDATE published_fee_records");
     expect(writes).toContain("UPDATE verified_fee_observations");
@@ -100,13 +117,27 @@ describe("Hamilton rules re-check", () => {
     expect(writes).toContain("hamilton.rules_recheck");
   });
 
+  it("re-checks the documents whose last re-check is oldest first, so a Knox bump cannot starve a lane's later documents", async () => {
+    const db = createDbMock([], texts);
+
+    await rollBackUnreproducedFees(asDb(db), { runId: 302, batchId: "agentic-run-302", dryRun: true, stateCode: "WA" });
+
+    const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("ORDER BY pending.second_look_due DESC, last_check.checked_at NULLS FIRST, pending.source_document_id");
+    expect(query).not.toContain("ORDER BY live.source_document_id");
+    // The last re-check counts under any Knox version, never only the current signature.
+    const lateral = query.slice(query.indexOf("LEFT JOIN LATERAL"), query.indexOf("last_check ON TRUE"));
+    expect(lateral).toContain("pa.strategy = $2");
+    expect(lateral).not.toContain("$4");
+  });
+
   it("keeps a fee Knox's learning reader re-filed when today's rules read it under the rejected category", async () => {
     // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
     const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
     const unrelated = { ...live(3, "bill_pay", "Copy of Draft (Check)", "4.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), refiled, unrelated], texts);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", takedownLive: true, dryRun: true });
 
     expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([3]);
     const [query] = db.unsafe.mock.calls[0] as [string];
@@ -116,7 +147,7 @@ describe("Hamilton rules re-check", () => {
   it("never takes a fee down for a text other than the one it was read from", async () => {
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "bill_pay", "Copy of Draft (Check)", "3.00", "older")], texts);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", dryRun: true });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", takedownLive: true, dryRun: true });
 
     expect(result.rollbacks).toEqual([]);
     expect(result.textGone).toBe(1);
@@ -146,7 +177,7 @@ describe("Hamilton rules re-check", () => {
       newestTexts,
     );
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: true, categoryModel });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", takedownLive: true, dryRun: true, categoryModel });
 
     expect(result.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "newer_text"]]);
   });
@@ -154,7 +185,7 @@ describe("Hamilton rules re-check", () => {
   it("never restores a fee whose own text is gone without Darwin's category model", async () => {
     const newest = [{ id: 2, source_document_id: 9, text_hash: "abc", normalized_text: "Stop Payment | $30.00\nReturned Item | $25.00" }];
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "nsf", "Returned Item", "25.00", "older", true)], newest);
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 308, batchId: "b", dryRun: true, categoryModel: null });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 308, batchId: "b", takedownLive: true, dryRun: true, categoryModel: null });
     expect(result.restores).toEqual([]);
   });
 
@@ -164,7 +195,7 @@ describe("Hamilton rules re-check", () => {
       texts,
     );
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 303, batchId: "b", dryRun: false });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 303, batchId: "b", takedownLive: true, dryRun: false });
 
     expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([1]);
     // check_image $3 and safe_deposit_box $30 are read from the text but not live.
@@ -175,7 +206,7 @@ describe("Hamilton rules re-check", () => {
   it("checks against the document's latest text when the original text is gone", async () => {
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00", "gone")], texts);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 302, batchId: "b", dryRun: true });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 302, batchId: "b", takedownLive: true, dryRun: true });
 
     expect(result.rollbacks).toEqual([]);
     expect(result.liveFeesChecked).toBe(1);
@@ -184,7 +215,7 @@ describe("Hamilton rules re-check", () => {
   it("leaves fees live when their document has no text, and records the attempt", async () => {
     const db = createDbMock([live(1, "overdraft", "Overdraft", "30.00")], []);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 303, batchId: "b", dryRun: false, institutionId: 42 });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 303, batchId: "b", takedownLive: true, dryRun: false, institutionId: 42 });
 
     expect(result.rollbacks).toEqual([]);
     expect(result.documentsWithoutText).toBe(1);
@@ -216,7 +247,7 @@ describe("Hamilton rules re-check", () => {
       return Promise.resolve([]);
     }) as never);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 305, batchId: "b", dryRun: false });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 305, batchId: "b", takedownLive: true, dryRun: false });
 
     expect(result.rollbacks).toEqual([]);
     expect(result.liveFeesChecked).toBe(1);
@@ -257,7 +288,7 @@ describe("Hamilton rules re-check", () => {
       return Promise.resolve([]);
     }) as never);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", dryRun: false, categoryModel });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 307, batchId: "b", takedownLive: true, dryRun: false, categoryModel });
 
     expect(result.restores.map((fee) => [fee.feePublishedId, fee.restoreReason])).toEqual([[2, "restore_bar"]]);
     expect(JSON.stringify(db.mock.calls)).toContain(`${RULES_RECHECK_RESTORED_FLAG}:restore_bar`);
@@ -266,7 +297,7 @@ describe("Hamilton rules re-check", () => {
   it("re-checks documents whose live fees were all taken down", async () => {
     const db = createDbMock([live(2, "check_image", "Copy of Draft (Check)", "3.00", "abc", true)], texts);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", dryRun: true });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", takedownLive: true, dryRun: true });
 
     expect(result.documentsChecked).toBe(1);
     expect(result.liveFeesChecked).toBe(0);
@@ -276,10 +307,56 @@ describe("Hamilton rules re-check", () => {
   it("only reads in a dry run", async () => {
     const db = createDbMock([live(4, "stop_payment", "Stop Payment", "25.00")], texts);
 
-    const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", dryRun: true });
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 304, batchId: "b", takedownLive: true, dryRun: true });
 
     expect(result.rollbacks).toHaveLength(1);
     expect(JSON.stringify(db.mock.calls)).not.toContain("UPDATE");
     expect(JSON.stringify(db.mock.calls)).not.toContain("INSERT");
+  });
+
+  it("flags a fee failing for the first time and keeps it live until a run 12 hours on fails it again", async () => {
+    const rows = [live(1, "stop_payment", "Stop Payment", "30.00"), live(4, "stop_payment", "Stop Payment", "25.00")];
+    // No first look on record: the $25 fails both looks but stays live, flagged takedown_pending.
+    const db = createDbMock(rows, texts, []);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 310, batchId: "b", takedownLive: true, dryRun: false });
+
+    expect(result.rollbacks).toEqual([]);
+    expect(result.flagged).toBe(1);
+    const writes = JSON.stringify(db.mock.calls);
+    expect(writes).not.toContain("UPDATE published_fee_records");
+    expect(writes).toContain("takedown_pending");
+    expect(writes).toContain("hamilton.second_look:hamilton.rules_recheck:pub:4");
+
+    // A first look under 12 hours old does not confirm.
+    const recent = [{ fee_published_id: 4, kind: "takedown_pending", evidence: { flag_run_id: 309, flagged_at: new Date(Date.now() - 3_600_000).toISOString() } }];
+    const waiting = await rollBackUnreproducedFees(asDb(createDbMock(rows, texts, recent)), { runId: 311, batchId: "b", takedownLive: true, dryRun: true });
+    expect(waiting.rollbacks).toEqual([]);
+    expect(waiting.waitingSecondLook).toBe(1);
+  });
+
+  it("takes nothing down while paused, even with a 12-hour-old first look", async () => {
+    expect(RULES_RECHECK_TAKEDOWN_LIVE).toBe(true);
+    const rows = [live(1, "stop_payment", "Stop Payment", "30.00"), live(4, "stop_payment", "Stop Payment", "25.00")];
+    const db = createDbMock(rows, texts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 313, batchId: "b", dryRun: false, takedownLive: false });
+
+    expect(result.rollbacks).toEqual([]);
+    expect(result.waitingSecondLook).toBe(1);
+    expect(JSON.stringify(db.mock.calls)).not.toContain("UPDATE published_fee_records");
+    // A due flag does not re-select its document while off.
+    const [, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(params[8]).toBe(false);
+  });
+
+  it("re-selects a checked document when a live fee's first look is 12 hours old", async () => {
+    const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00")], texts);
+
+    await rollBackUnreproducedFees(asDb(db), { runId: 312, batchId: "b", takedownLive: true, dryRun: true });
+
+    const [query] = db.unsafe.mock.calls[0] as [string];
+    expect(query).toContain("FROM pipeline_feedback pf");
+    expect(query).toContain("make_interval(mins => $8::int)");
   });
 });

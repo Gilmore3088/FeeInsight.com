@@ -119,7 +119,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const belowNational = comparisons.filter((c) => c.delta !== null && c.delta < -2).length;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14">
+    <div className="mx-auto max-w-page px-6 py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },

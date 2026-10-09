@@ -69,7 +69,7 @@ export function LandingPriceStrip({
 
   return (
     <section className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
             <h2

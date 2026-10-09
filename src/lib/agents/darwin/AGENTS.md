@@ -103,7 +103,10 @@ Darwin owns verification and classification.
 - Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
   category review's and the release review's verdicts at answer-key institutions are scored
   against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
-  fixtures) in chunks of 20 decided verdicts. Each chunk is a `verify.verdict_score` attempt
+  fixtures) in chunks of 20 decided verdicts, per review and per prompt version; a version
+  below the newest one seen gets no more verdicts, so its open chunk is closed as a partial
+  chunk (`detail.partial`, read with `decided`; 2026-10-09, after the release review went v11
+  to v17 in a day and no version reached 20). Each chunk is a `verify.verdict_score` attempt
   (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
   outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
   `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent

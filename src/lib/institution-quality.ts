@@ -117,7 +117,7 @@ export function classifyAgentFailure(
 ): AgentFailureClass {
   if (!hasValue(error)) return "none";
   const lower = String(error).toLowerCase();
-  if (lower.includes("credit balance is too low")) return "provider_credit";
+  if (lower.includes("credit balance is too low") || lower.includes("reached your specified api usage limits")) return "provider_credit";
   if (lower.includes("tool_use")) return "tool_protocol";
   if (lower.includes("timeout") || lower.includes("timed out")) return "timeout";
   return "other";
