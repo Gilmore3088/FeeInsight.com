@@ -98,7 +98,10 @@ Darwin owns verification and classification.
   (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
   outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
   `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent
-  misses for the categories in a batch as lessons. Coverage is small: about 5% of the
+  tuning-key misses for the categories in a batch as lessons. Holdout-key misses are recorded
+  at weight 0 (`lesson: false`) and never read back, so `detail.holdout.hit_rate` measures the
+  review on fees it was never corrected on (2026-10-09; before that, 29 holdout misses had
+  been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
