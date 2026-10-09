@@ -59,7 +59,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                 <svg
                   viewBox="0 0 960 600"
                   className="mt-4 h-auto w-full"
-                  role="img"
+                  role="group"
                   aria-label={`Map of U.S. states shaded by institutions with published fees; ${summary.statesLabel} states covered`}
                 >
                   {US_STATES.map((state) => {
@@ -97,6 +97,37 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                   </span>
                   <span>More published</span>
                 </div>
+                {/* Every state the map links to, as a list control: the same route for keyboard
+                    and screen-reader users, and for anyone who can't pick a small state by tap. */}
+                <form action="/institutions" method="get" className="mt-3 flex items-center justify-center gap-2">
+                  <label htmlFor="landing-state-pick" className="text-[12px] text-warm-700">
+                    Or pick a state
+                  </label>
+                  <select
+                    id="landing-state-pick"
+                    name="state"
+                    defaultValue=""
+                    required
+                    className="min-h-9 rounded-md border border-warm-300 bg-white px-2 text-[13px] text-warm-900"
+                  >
+                    <option value="" disabled>
+                      Choose…
+                    </option>
+                    {[...US_STATES]
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((state) => (
+                        <option key={state.id} value={state.id}>
+                          {state.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="min-h-9 rounded-md bg-terra px-3 text-[13px] font-semibold text-white hover:bg-terra-dark"
+                  >
+                    View
+                  </button>
+                </form>
               </>
             )}
           </div>
