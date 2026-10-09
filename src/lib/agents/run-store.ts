@@ -1318,6 +1318,14 @@ async function executeAgenticStep(
             flagged: evalVerdicts.flagged,
             waiting: evalVerdicts.waiting,
             rolled_back: evalVerdicts.rolledBack.length,
+            flags: evalVerdicts.flags,
+            flag_samples: evalVerdicts.flagSamples.slice(0, 10).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              flag: fee.flag,
+              canonical_fee_key: fee.canonicalFeeKey,
+              fee_name: fee.feeName,
+              amount: fee.amount,
+            })),
             samples: evalVerdicts.rolledBack.slice(0, 11).map((fee) => ({
               fee_published_id: fee.feePublishedId,
               fee_name: fee.feeName,

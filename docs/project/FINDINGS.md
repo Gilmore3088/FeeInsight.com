@@ -13,6 +13,28 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: The eval's zero criticals came from archiving by id, not from rules
+- **What happened.** The 211-row complete-record eval re-scored at 00:51 UTC showed 0 critical
+  errors (from 11), but 8 of the 11 came down by `fee_published_id` (PR 714). Only three of the
+  eleven error shapes had a catalog-wide rule (ATM rebate, "no fee for" sentence, $0 waiver
+  sentence), so the same mistakes could stand anywhere else in the catalog.
+- **Why.** The verdict list was built to resolve the labelled rows fast; the shapes behind them
+  (a wire fee read from the wrong column, a non-customer price pooled with customer prices, a
+  merchant's fee, two fees on one line) need the schedule line, which the eval check did not read.
+- **Fix.** Eval-verdict v3 (`hamilton/eval-verdicts.ts`) reads Knox's excerpt for each live fee.
+  Takedowns after the 12-hour second look: a fee the merchant or payee pays (0 live on Oct 9 after
+  the archive) and a name pairing two directions or scopes over a line with two prices (3 live).
+  Flags only, one `pipeline_feedback` row per fee at weight 0.5, never a takedown: a non-customer
+  price (1,244 live, 28 categories; Flag or Hide on the site is James's open call, default Flag)
+  and a wire fee on a line naming both scopes with two prices (173 live, 144 banks). A heading
+  joined to another fee's name is the category guard's `name_contradicts` already (0 of 201 such
+  names needed more). Still without a rule: a line filed by the heading it sits under (State
+  Police CU's "Corporate Check" under Stop Payments) and a surcharge named by the bank's own ATMs
+  (Trax); both need the page layout, so they are Knox's to read.
+- **Watch.** Step detail `eval_verdict.flags` and `pipeline_feedback` kinds `non_customer_price`
+  and `wire_shared_line` after the next publish step; `wrong_amount:two_fees_one_line` takedowns
+  after 12 hours.
+
 ## 2026-10-09: Guard-rejected rows that were never published had no way back
 - **What happened.** Darwin's returned-check re-file (PR 677) moved 116 verified rows from nsf to
   deposited_item_return. Publish rejected four of them (40440, 48556, 56589, 63877) because their
