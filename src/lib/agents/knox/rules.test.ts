@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -288,7 +288,7 @@ describe("Knox extract.rules", () => {
     ["Statement Copy", "document_reproduction"],
     ["Deposit Bags", "night_deposit"],
     ["Verification of Deposit", "account_verification"],
-    ["Mortgage Subordination Fee", "legal_process"],
+    ["Mortgage Subordination Fee", "other_lending_fee"],
     ["Loan Application Fee", "other_lending_fee"],
     ["Same Day Bill Payment", "bill_pay"],
     ["Gift Cards (Visa)", "gift_card_purchase"],
@@ -888,5 +888,37 @@ describe("Knox extract.rules", () => {
     expect(fees("Consecutive Day OD Fee(3) | $35.00")).toEqual([["Consecutive Day OD Fee(3)", 35, "continuous_od"]]);
     expect(fees("OD Protection Transfer | $10.00")).toEqual([["OD Protection Transfer", 10, "od_protection_transfer"]]);
     expect(runFreeSpecialists("NSF/OD Charges* | $30.00").candidates.map((fee) => fee.canonicalHint).sort()).toEqual(["nsf", "overdraft"]);
+  });
+});
+
+describe("v46 wrapped paragraphs", () => {
+  const ORIGIN = [
+    "charges. We will generally not pay items which will create in excess of a $500",
+    "overdraft (negative) balance in your account. Normal bank fees and charges,",
+    "including returned item charge/overdraft item charge of $35.00 for each item",
+    "will be included in the calculation of this limit. However, we will charge you",
+    "no more than five overdraft item charges per day and will not charge an",
+    "overdraft item charge if your checking account is overdrawn $5 or less at",
+    "the end of each business day. The $35.00 overdraft item charge applies to",
+    "overdrafts created by check, in-person withdrawal, ATM withdrawal or other",
+    "electronic means if you opted in to the authorization and payment of ATM",
+    "and everyday debit card transactions (Regulation E). Also, we will charge",
+    "you an overdrawn account fee of$10.00 on the 5th consecutive business",
+    "day your account is overdrawn; if your account is overdrawn for more than",
+    "5 consecutive business days, we will charge an additional $10.00 per week.",
+  ].join("\n");
+
+  it("reads Origin Bank's overdraft paragraph as sentences: one $35 overdraft fee, no $10 or $5", () => {
+    const found = runFreeSpecialists(ORIGIN).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+    expect(found).toEqual([["Returned item charge/overdraft item charge", 35, "overdraft"]]);
+  });
+
+  it("joins only long prose lines that end mid-sentence onto a lower-case line", () => {
+    expect(joinWrappedProse(["The overdraft item charge of $35.00 applies to each", "item we pay."])).toEqual([
+      "The overdraft item charge of $35.00 applies to each item we pay.",
+    ]);
+    expect(joinWrappedProse(["Overdraft Fee", "per item | $35"])).toEqual(["Overdraft Fee", "per item | $35"]);
+    expect(joinWrappedProse(["Stop payment fee charged for each request we receive.", "wire fee $25"])).toHaveLength(2);
+    expect(joinWrappedProse(["Overdraft Fee (each item we pay into the overdraft) | $35", "per item"])).toHaveLength(2);
   });
 });
