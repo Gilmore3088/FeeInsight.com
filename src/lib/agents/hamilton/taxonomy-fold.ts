@@ -306,6 +306,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 1349, doc 24074: \"*unlimited 1st National ATM access / $5.00 monthly maintenance fee\"" },
   { feePublishedId: 95142, from: "money_order", amount: 10, to: "account_research", name: "Money Order Research Fee",
     why: "inst 8581, doc 16111: \"Money Order Research Fee - $10.00/money order\" (Deming audit, run 3516)" },
+  // UAT's retidy v16 scoring (Oct 9): the right price under the wrong type.
+  { feePublishedId: 58050, from: "monthly_maintenance", amount: 2, to: "dormant_account", name: "Inactive account monthly fee",
+    why: "inst 849, doc 17455: \"Inactive Account (no activity for 365 days, balances under $50) - monthly fee | $2.00\"" },
+  { feePublishedId: 59464, from: "money_order", amount: 10, to: "stop_payment", name: "Stop Payment - Money Order",
+    why: "inst 1604, doc 735: under \"Stop Payment Fee:\", \"o Money Order | $10.00\"" },
 ];
 
 interface HandRow {

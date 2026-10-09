@@ -25,6 +25,8 @@ const PAGE_LINES: Record<number, string> = {
   44516: "(if balance falls below minimum daily balance) • Excessive transaction fee is $25/transaction",
   91458: "*unlimited 1st National ATM access / $5.00 monthly maintenance fee",
   95142: "• Stop Payment Fee - $30.00\n• Account Research Fee (minimum 1 hour) - $25.00/hour | • Money Order Research Fee - $10.00/money order\nSHARE & SHARE DRAFT FEES",
+  58050: "Foreign Currency Order or Foreign Currency deposited item | $20.00\nInactive Account (no activity for 365 days, balances under $50) - monthly fee | $2.00\nLevy attachment | $50.00",
+  59464: "• Stop Payment Fee:\no Customer Checking | $10.00\no Bank Issued (Restricted) | $25.00\no Money Order | $10.00",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
