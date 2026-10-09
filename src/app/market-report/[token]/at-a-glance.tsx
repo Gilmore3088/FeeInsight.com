@@ -13,7 +13,7 @@ type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: No
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
   above: { dot: "bg-[#C44B2E]", text: "text-[#A93D25]" },
   inside: { dot: "bg-[#5A5347]", text: "text-[#1A1815]" },
-  below: { dot: "bg-[#2F5585]", text: "text-[#2F5585]" },
+  below: { dot: "bg-[#4F8078]", text: "text-[#3D3830]" },
 };
 
 function toneFor(line: ReportLine): keyof typeof TONE {

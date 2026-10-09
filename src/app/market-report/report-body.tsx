@@ -40,8 +40,8 @@ export const POSITION_LABEL: Record<LinePosition, string> = {
 const POSITION_CLASS: Record<LinePosition, string> = {
   above_market: "bg-[#FBE9E4] text-[#A93D25]",
   in_market: "bg-[#EEF3EC] text-[#3D6B3A]",
-  below_market: "bg-[#E8EEF6] text-[#2F5585]",
-  free: "bg-[#E8EEF6] text-[#2F5585]",
+  below_market: "bg-[#F1EBE1] text-[#3D3830]",
+  free: "bg-[#F1EBE1] text-[#3D3830]",
 };
 
 /**
