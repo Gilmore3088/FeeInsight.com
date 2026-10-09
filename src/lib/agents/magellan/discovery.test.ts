@@ -159,7 +159,7 @@ describe("Magellan agentic discovery", () => {
 
     expect(result.discovered).toBe(1);
     // Only reads: the market-leader ranking and the candidate list.
-    expect(db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("market leaders by state"))).toHaveLength(1);
+    expect(db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:"))).toHaveLength(1);
   });
 
   it("searches the state's market leaders first", async () => {

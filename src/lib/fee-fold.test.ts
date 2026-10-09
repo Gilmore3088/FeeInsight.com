@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
+import { passesDarwinChecks } from "./agents/knox/layout";
 import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -58,12 +59,15 @@ describe("top-50 fold", () => {
     expect(to("nsf_daily_cap", "Wire Transfer (over daily limit)")).toBeNull();
   });
 
-  test("international ATM fees are International ATM & Card; a line that rules them out has no home", () => {
+  test("international ATM fees are International ATM & Card; a domestic ATM line is the network ATM fee", () => {
     expect(to("atm_international", "International ATM Withdrawal Fee")).toBe("card_foreign_txn");
     expect(to("atm_international", "Non–Wells Fargo ATMs outside the U.S.")).toBe("card_foreign_txn");
     expect(to("atm_international", "Non-IBC ATM locations (outside the U.S.): Withdrawal")).toBe("card_foreign_txn");
-    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBeNull();
-    expect(to("atm_international", "ATMs inside United States & internationally")).toBeNull();
+    expect(to("atm_international", "ATM Inquiry (any non-international ATM)")).toBe("atm_non_network");
+    expect(to("atm_international", "ATMs inside United States & internationally")).toBe("atm_non_network");
+    expect(passesDarwinChecks("atm_non_network", "ATM Inquiry (any non-international ATM)", 0)).toBe(true);
+    expect(passesDarwinChecks("atm_non_network", "ATMs inside United States & internationally", 3)).toBe(true);
+    expect(to("atm_international", "Allpoint ATM Transactions – Domestic/International")).toBeNull();
     expect(to("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)")).toBeNull();
     expect(to("card_foreign_txn", "Foreign Transaction Fee")).toBeUndefined();
   });
@@ -155,7 +159,56 @@ describe("top-50 fold", () => {
     expect(split("legal_process", "SUBORDINATION REQUEST: Outgoing Foreign")).toBeNull();
     expect(split("legal_process", "Garnishment / Levy")).toBeNull();
     expect(split("money_order", "Copy of Cleared Cashier's Check/ Money Order (per item)")).toBe("check_image");
+    expect(split("money_order", "Photocopy of Money Order")).toBe("check_image");
     expect(split("money_order", "Cashier's Check / Money Order")).toBeNull();
+  });
+
+  test("night deposit keys, box rent late charges, IRA transfers out, lien releases, prepaid card buys and returned statements move to their own types (Oct 9)", () => {
+    const moves: [string, string, number, string | null][] = [
+      ["safe_deposit_box", "Night Drop Key Replacement", 15, "night_deposit"],
+      ["safe_deposit_box", "Replacement Night Depository Bag or Lost Key", 35, "night_deposit"],
+      ["safe_deposit_box", "Lost Key - Safe Deposit Box", 25, null],
+      ["late_payment", "Box Rental Late Fee", 25, "safe_deposit_box"],
+      ["late_payment", "Late charge for safety deposit box rental after 10 days", 10, "safe_deposit_box"],
+      ["late_payment", "Late Payment Fee - Consumer Loans", 25, null],
+      ["late_payment", "Box Late Payment Fee (30 Days)", 10, "safe_deposit_box"],
+      ["late_payment", "SDB Late payment", 15, "safe_deposit_box"],
+      ["late_payment", "Safe Box Late Payment (per month)", 10, "safe_deposit_box"],
+      ["late_payment", "Safety Deposit Late Fee", 10, "safe_deposit_box"],
+      ["late_payment", "Rental Late Fee (Past Due 30 Days)", 20, "safe_deposit_box"],
+      ["late_payment", "Late Payment of Annual Rent", 5, "safe_deposit_box"],
+      ["late_payment", "VISA Late Charge (if payment not satisfied by end of current month)", 30, null],
+      ["account_research", "IRA Transfer (outgoing)", 50, "ira_termination"],
+      ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
+      ["account_research", "IRA Excessive Withdrawal", 10, null],
+      ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, null],
+      ["account_research", "Excessive Withdrawal Fee", 5, null],
+      ["account_research", "All Checking and Savings Accounts EXCEPT Grow Account, Student Edge, IRA Savings: Account Reconciliation", 25, null],
+      ["account_research", "IRA Transfer Incoming", 0, null],
+      ["account_research", "Account Research (per hour)", 25, null],
+      ["legal_process", "Lien Release for Lost Title", 15, "other_lending_fee"],
+      ["legal_process", "Legal Process (Liens, levies, restraining orders, etc,) Per Action", 100, null],
+      ["legal_process", "Duplicate Lien Satisfied", 10, "other_lending_fee"],
+      ["legal_process", "Temporary Lien Fee", 10, null],
+      ["atm_non_network", "Reloadable ATM/Debit Card – Reload Fee", 2, "gift_card_purchase"],
+      ["atm_non_network", "ATM/Debit Card/ Prepaid Card - Fee for Purchase", 5, "gift_card_purchase"],
+      ["atm_non_network", "VISA Reloadable Card - ATM Withdrawal Fees", 1.5, null],
+      ["atm_non_network", "Visa travel card ($3,000 max.) Initial purchase Reload ATM withdrawal ATM balance inquiry", 5, null],
+      ["atm_non_network", "Non-Network ATM Withdrawal", 3, null],
+      ["paper_statement", "Returned Mailed Statement", 5, "account_research"],
+      ["paper_statement", "Returned statement fee for returned mail", 5, "account_research"],
+      ["paper_statement", "Return Statement Charge", 5, "account_research"],
+      ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, "account_research"],
+      ["paper_statement", "Paper Statement Fee", 3, null],
+      ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
+      ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
+      ["other_lending_fee", "Loan Payoff Statement", 20, null],
+    ];
+    for (const [key, name, amount, want] of moves) {
+      const got = splitLiveCategory(key, name)?.to ?? null;
+      expect([key, name, got]).toEqual([key, name, want]);
+      if (want) expect([name, passesDarwinChecks(want, name, amount)]).toEqual([name, true]);
+    }
   });
 
   test("foldContext returns the text before the fee's line", () => {

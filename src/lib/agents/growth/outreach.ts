@@ -2,7 +2,7 @@ import { SITE_DOMAIN } from "@/lib/constants";
 import { sql } from "@/lib/data-store/connection";
 import { contentSchemaReady, insertContentDraft, setContentDraftStatus } from "@/lib/data-store/content-drafts";
 import { journeySchemaReady } from "@/lib/data-store/outreach-journey";
-import { contactConfidence, contactsSchemaReady, isSharedMailbox, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
+import { contactConfidence, contactsSchemaReady, isDecisionMaker, normalizeContact, rankContacts, type ContactConfidence, type ContactKind, type ContactRole } from "./contacts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { loadMarketSnapshot, marketLabel, SNAPSHOT_MIN_PEERS, type MarketSnapshot, type SnapshotValue } from "./market-snapshot";
 import { roleProblem, scoreProspect, type ProspectScore } from "./prospect-score";
@@ -124,14 +124,8 @@ export interface OutreachDraft {
 /** C needs this many tier-A comparisons; B needs this many supported fee types. */
 export const OUTREACH_MIN_FINDINGS = 3;
 
-/**
- * A first email goes only to a person whose printed title is a buying role (marketing, retail
- * and deposits, the executive team, finance, operations, compliance). A person's address with a
- * lender's, branch or committee title, or with a name and no title, is not a decision-maker.
- */
-export function isDecisionMaker(contact: Pick<OutreachContact, "kind" | "role" | "email">): boolean {
-  return contact.kind === "person" && contact.role !== "other" && !isSharedMailbox(contact.email);
-}
+/** Lives in `contacts.ts` now, so the stored primary/backup pick and this step choose the same way. */
+export { isDecisionMaker };
 
 /**
  * The pilot campaigns James chose (`OUTREACH_CAMPAIGNS`, letters such as "A,B"). Until he chooses,

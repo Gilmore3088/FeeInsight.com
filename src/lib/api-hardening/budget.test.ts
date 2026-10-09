@@ -177,6 +177,33 @@ describe("API budget guard", () => {
     const blocked = await assertProviderBudgetAllowed(context);
     expect(blocked.allowed).toBe(false);
     expect(blocked.reasonCode).toBe("budget_run_cap_exhausted");
+    expect(blocked.message).toBe(
+      "Per-run call cap agent:darwin (agent darwin) reached in run 1843: 10 of 10 calls by darwin in this run; a new run starts at 0.",
+    );
+  });
+
+  it("names the window cap, its limit, the spend and the reset when a daily cap blocks", async () => {
+    const magellanPolicy = {
+      ...enabledPolicy,
+      id: 6,
+      policy_key: "agent:magellan",
+      scope: "agent",
+      agent_name: "magellan",
+      hard_daily_microusd: 20_000_000,
+    };
+    sqlMock.mockImplementation((strings: unknown) => {
+      const query = templateText(strings);
+      if (query.includes("FROM public.api_budget_policies")) return Promise.resolve([enabledPolicy, magellanPolicy]);
+      if (query.includes("agent_name =")) return Promise.resolve([{ microusd: 20_040_000 }]);
+      if (query.includes("FROM public.ai_api_usage_events")) return Promise.resolve([{ microusd: 0 }]);
+      return Promise.resolve([]);
+    });
+
+    const blocked = await assertProviderBudgetAllowed({ provider: "anthropic", model: "claude-haiku", agent: "magellan", operation: "find" });
+    expect(blocked.reasonCode).toBe("budget_daily_exhausted");
+    expect(blocked.message).toBe(
+      "Daily cap agent:magellan (agent magellan): $20.04 used of $20.00; resets 00:00 UTC.",
+    );
   });
 
   it("returns a typed error from blocked decisions", () => {

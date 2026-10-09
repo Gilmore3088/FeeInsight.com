@@ -92,6 +92,10 @@ describe("secondLookFeesNotOnCurrentCopy", () => {
     expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
     expect(JSON.stringify(db.mock.calls)).toContain("takedown_pending");
     expect(writes(db).some((text) => text.includes("hamilton.current_copy_check"))).toBe(true);
+    // UAT reads which fees passed and which copies were judged, even when nothing fails.
+    expect(result.statedFeeIds).toEqual([1]);
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true }]);
+    expect(JSON.stringify(db.mock.calls)).toContain("stated_fee_ids");
   });
 
   it("confirms nothing while confirmations are off, even when the second look is due", async () => {
@@ -141,5 +145,27 @@ describe("currentCopyVerdict (first hand check, 7 Oct)", () => {
 
   it("still suspects a fee the current page prices differently", () => {
     expect(currentCopyVerdict(fee(2, "Stop Payment", "30.00", { canonical_fee_key: "stop_payment" }), CURRENT, OLDER)).toBe("still_named");
+  });
+});
+
+describe("currentCopyVerdict (second hand check, 9 Oct)", () => {
+  // Tampa Bay FCU's current service-fees page (prod, document 14095).
+  const TAMPA = "Checking Accounts\nFresh Start Checking\n$9.95/month\nRewards Checking      (Waived with $1,500 combined savings and checking balance or $15,000 loan balances)\n$5.95/month\nDocuments &amp; Research\n";
+  const older = "Checking Accounts\nFresh Start Checking | $9.95/month\nRewards Checking (Waived with $1,500 combined savings and checking balance or $15,000 loan balances) | $5.95/month\n";
+
+  it("reads a name Hamilton gave its account heading without the fee words", () => {
+    const verdict = currentCopyVerdict(fee(1, "Fresh Start Checking Monthly Maintenance Fee", "9.95", { canonical_fee_key: "monthly_maintenance" }), TAMPA, older);
+    expect(verdict).toBe("still_stated");
+  });
+
+  it("reads past a waiver condition in parentheses", () => {
+    const verdict = currentCopyVerdict(fee(2, "Rewards Checking Monthly Maintenance Fee", "5.95", { canonical_fee_key: "monthly_maintenance" }), TAMPA, older);
+    expect(verdict).toBe("still_stated");
+  });
+
+  it("still suspects the account fee at a new price", () => {
+    const raised = TAMPA.replace("$9.95/month", "$12.95/month");
+    const verdict = currentCopyVerdict(fee(1, "Fresh Start Checking Monthly Maintenance Fee", "9.95", { canonical_fee_key: "monthly_maintenance" }), raised, older);
+    expect(verdict).not.toBe("still_stated");
   });
 });

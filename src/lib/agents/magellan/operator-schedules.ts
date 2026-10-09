@@ -3,6 +3,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 
 import { looksLikePdfUrl } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { otherInstitutionAtHost } from "./other-bank-host";
 
 type SqlTag = typeof sql;
 
@@ -287,15 +288,6 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // The bank's own overdraft disclosure on mybank.com (fee per paid item, $5 a day after 4
-    // days, $240 daily cap). The first.bank link given before was First Bank of St. Louis's
-    // schedule, which Hamilton took down as another bank's document (2026-10-08 23:15).
-    institutionId: 118,
-    institutionName: "First United Bank and Trust Company",
-    url: "https://mybank.com/wp-content/uploads/opt-in-form.pdf",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 23:30",
-  },
-  {
     // schedule of service fees, 2025-03-25.
     institutionId: 142,
     institutionName: "First Commonwealth Bank",
@@ -519,7 +511,60 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url: "https://www.theq.org/service-fee-schedule",
     givenBy: "web search for Marketing's outreach batch, 2026-10-08 18:45",
   },
+  // State top-10 banks whose sites refuse our fetcher (HTTP 403). The Mac session's browser,
+  // signed out, found no fee schedule PDF; the fees are on the product pages, with no overdraft
+  // amount published (2026-10-09 00:57). The paid companion fetch reads the blocked pages.
+  ...([
+    [276, "Bridgewater Bank", "https://www.bridgewaterbankmn.com/personal-banking/personal-deposits/interest-checking"],
+    [295, "Dacotah Bank", "https://www.dacotahbank.com/personal-checking-and-debit"],
+  ] as const).map(([institutionId, institutionName, url]) => ({
+    institutionId,
+    institutionName,
+    url,
+    givenBy: "Mac session browser check of blocked top-10 banks, 2026-10-09 00:57",
+  })),
+  {
+    // Market-gap list (2026-10-09): Magellan's paid search proposed this PDF four times on
+    // 7 Oct ("personal deposit account fees including overdraft ($25.00)") but timed out
+    // opening it; the link on file is a page-not-found page.
+    institutionId: 25,
+    institutionName: "The Northern Trust Company",
+    url: "https://www.northerntrust.com/content/dam/northerntrust/pws/nt/documents/wealth-management/banking/disclosures/deposit-account-descriptions-and-fees.pdf",
+    givenBy: "Magellan's paid schedule search (proposed 4 times, 2026-10-07), for the market-gap list 2026-10-09",
+  },
 ];
+
+export interface NoConsumerSchedule {
+  institutionId: number;
+  institutionName: string;
+  reason: string;
+}
+
+/**
+ * Large-deposit banks with no consumer deposit fee schedule to find: their deposits are
+ * wholesale, custody or fee-free online savings. Discovery does not put them first as market
+ * gaps, and the gap ranking leaves them out (2026-10-09). A bank leaves this list when it
+ * publishes a consumer schedule.
+ */
+export const NO_CONSUMER_SCHEDULE: readonly NoConsumerSchedule[] = [
+  {
+    institutionId: 7,
+    institutionName: "Goldman Sachs Bank USA",
+    reason: "Marcus online savings and CDs charge no account fees; web search found no consumer fee schedule (paid web search)",
+  },
+  {
+    institutionId: 10,
+    institutionName: "The Bank of New York Mellon",
+    reason: "Custody and wholesale bank; the only schedule is Pershing's broker-client bank sweep charges; web search found no consumer fee schedule",
+  },
+  {
+    institutionId: 817,
+    institutionName: "The Bank of New York Mellon Trust Company, National Association",
+    reason: "Trust company; same Pershing sweep schedule as BNY; web search found no consumer fee schedule",
+  },
+];
+
+export const NO_CONSUMER_SCHEDULE_IDS: ReadonlySet<number> = new Set(NO_CONSUMER_SCHEDULE.map((bank) => bank.institutionId));
 
 /** A stored copy of the schedule counts as held only when it is this recent. */
 export const HELD_DOCUMENT_DAYS = 30;
@@ -578,6 +623,10 @@ async function insertHandFoundSchedule(
   schedule: Pick<OperatorSchedule, "institutionId" | "url" | "givenBy">,
   run: { runId: number | null; stepId: number | null },
 ): Promise<boolean> {
+  // A person can be fooled by a same-name bank too: First United of Durant, Oklahoma was given
+  // First United of Oakland, Maryland's mybank.com disclosures (2026-10-09). A page on another
+  // institution's own website is that bank's schedule, as in discovery.
+  if (await otherInstitutionAtHost(db, schedule.institutionId, schedule.url)) return false;
   const reason = `Consumer fee schedule given by ${schedule.givenBy}`;
   const inserted = await db`
     INSERT INTO institution_additional_sources
@@ -636,6 +685,8 @@ export async function addHandFoundLink(options: {
   `;
   if (!institution) return { ok: false, error: "Institution not found" };
   const institutionName = String(institution.institution_name);
+  const other = await otherInstitutionAtHost(db, options.institutionId, url);
+  if (other) return { ok: false, error: `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution` };
   const added = await insertHandFoundSchedule(
     db,
     { institutionId: options.institutionId, url, givenBy: options.givenBy },

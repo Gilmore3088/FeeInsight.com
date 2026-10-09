@@ -28,10 +28,12 @@ function getValue(row: Record<string, unknown>, key: string): unknown {
   return row[key];
 }
 
-function compareValues(a: unknown, b: unknown): number {
+export function compareValues(a: unknown, b: unknown): number {
   if (a === null || a === undefined) return 1;
   if (b === null || b === undefined) return -1;
   if (typeof a === "number" && typeof b === "number") return a - b;
+  // Timestamps from Postgres arrive as Dates; String(date) starts with the weekday, so compare times.
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
   return String(a).localeCompare(String(b));
 }
 

@@ -53,10 +53,29 @@ describe("what we learned", () => {
       contacted: 4,
       qualified: 1,
       qualifiedPer100: 25,
+      qualifiedInbound: 0,
       reachedProposal: 1,
       paid: 1,
       medianDaysToPurchase: 4,
     });
+  });
+
+  it("counts leads James marked qualified", () => {
+    const marks = [
+      { leadId: 10, institutionId: 3, at: "2026-10-15T10:00:00Z" }, // emailed: joins the per-100 rate
+      { leadId: 11, institutionId: 1, at: "2026-10-15T10:00:00Z" }, // already qualified by an outcome
+      { leadId: 12, institutionId: 99, at: "2026-10-15T10:00:00Z" }, // inbound, not emailed
+      { leadId: 13, institutionId: 99, at: "2026-10-16T10:00:00Z" }, // same institution again
+      { leadId: 14, institutionId: null, at: "2026-10-16T10:00:00Z" }, // inbound, no institution
+    ];
+    const metrics = learningMetrics(outcomes, marks);
+    expect(metrics.qualified).toBe(2);
+    expect(metrics.qualifiedPer100).toBe(50);
+    expect(metrics.qualifiedInbound).toBe(2);
+    const { body } = buildLearningReport(input({ qualifiedLeads: marks }));
+    expect(body).toContain("- Qualified conversations per 100 contacts: 50 (2 of 4 contacted).");
+    expect(body).toContain("- Leads marked qualified outside outreach: 2.");
+    expect(body).toContain("So far: 4 qualified, 1 at a proposal or later.");
   });
 
   it("reports counts and James's own notes, and says when there is nothing to measure", () => {

@@ -131,11 +131,17 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   // Using an ATM abroad and using a card abroad are one type, International ATM & Card (James,
   // Oct 8: Foreign Transaction gave up its spot). The survivor keeps the card_foreign_txn key,
-  // which holds the rates and the spotlight guide; a line that excludes international ATMs, or
-  // names them only beside domestic ones, is not this fee.
+  // which holds the rates and the spotlight guide. A line priced for any domestic ATM, or for
+  // domestic and international ATMs together, is the network ATM fee ("ATMs inside United States
+  // & internationally" $3 under "Not at North Shore Bank or MoneyPass network"). A reimbursement
+  // cap ("up to $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner
+  // network ("Allpoint ATM Transactions" $0 at SoFi) have no home (Oct 9 review of the last 4).
   atm_international: {
     family: "ATM & Card",
-    rules: [{ to: null, name: /\bnon[- ]?international\b|outside (?:the )?u\.?s\.?a?\.? excluded|\binside (?:the )?united states\b/i }],
+    rules: [
+      { to: null, name: /outside (?:the )?u\.?s\.?a?\.? excluded|^allpoint\b/i },
+      { to: "atm_non_network", name: /\bnon[- ]?international\b|\binside (?:the )?united states\b/i },
+    ],
     otherwise: "card_foreign_txn",
   },
   // A distribution closes out (part of) the IRA.
@@ -158,7 +164,40 @@ export const COLLECTION_ITEM =
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
 /** A copy of an item, not the item. */
-export const ITEM_COPY = /\bcop(?:y|ies)\b/i;
+export const ITEM_COPY = /\b(?:photo ?)?cop(?:y|ies)\b/i;
+
+/** A subordination or a lien release or satisfaction ("Duplicate Lien Satisfied") filed as legal process. */
+const LENDING_LEGAL = new RegExp(
+  String.raw`${SUBORDINATION.source}|\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:the )?lien`,
+  "i",
+);
+
+/** A night depository's key, bag or service. */
+const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
+
+/**
+ * A late charge on safe deposit box rent. Banks write it many ways ("Box Late Payment Fee",
+ * "SDB Late payment", "Safe Box Late Fee", "Rental Late Fee"); a loan's late charge never
+ * names a box or rent.
+ */
+const BOX_RENT = /\bbox(?:es)?\b|\bsdb\b|\bsafe(?:ty)? (?:deposit|box)|\brent(?:al)?\b/i;
+
+/** An IRA moved out to another institution ("IRA Transfer (outgoing)", "IRA Transfer Closeout"). */
+const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btransfer/i;
+
+/** Buying or reloading a prepaid card ("Reloadable ATM/Debit Card – Reload Fee"), not using one at an ATM. */
+const PREPAID_BUY_OR_RELOAD =
+  /^(?=[\s\S]*\b(?:pre-?paid|reloadable)\b)(?![\s\S]*\b(?:withdrawals?|inquiry|inquiries)\b)[\s\S]*\b(?:purchase|reload)\b/i;
+
+/**
+ * A charge for savings or money market activity past the free count ("Excess withdrawal fee
+ * (MMDA)", "Savings account excess debit fee"), a Reg D-style fee. Within the top 50 it is
+ * account servicing, which account research holds, as it already does for ~290 such fees.
+ */
+const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
+
+/** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
+const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
 interface SplitCategory {
   to: string;
@@ -176,9 +215,23 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
   // A mortgage or lien subordination is a lending service (median $150), not legal process like
   // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
-  legal_process: { to: "other_lending_fee", name: SUBORDINATION, sqlPattern: "subordinat" },
+  // A lien release is other lending too (James, Oct 8: Lien Release gave up its spot).
+  legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "subordinat|lien" },
   // A copy of a money order or cashier's check is a check copy, not the money order itself.
   money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
+  // A night deposit or night drop key is the night depository's, not a safe deposit box's.
+  safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
+  // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
+  late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent" },
+  // Moving an IRA to another institution closes it here; it is not account research. An IRA's
+  // excess withdrawal charge stays: excess activity is account servicing wherever it occurs.
+  account_research: { to: "ira_termination", name: IRA_TRANSFER_OUT, sqlPattern: "\\mira\\M" },
+  // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
+  atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
+  // A statement mailed back undelivered is returned mail, which account research holds.
+  paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
+  // Excess savings or money market activity is account servicing, not a lending fee.
+  other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -192,7 +245,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 4;
+export const FOLD_RULES_VERSION = 9;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

@@ -60,8 +60,10 @@ Magellan owns institution source discovery and source fetching.
 ## Discovery (the find team)
 
 The `discover` step (`discovery.ts`) searches banks with a website but no fee link.
-The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) go
-first among banks due, after corrections.
+The state's market leaders (top 15 by deposits or fee income, `loadMarketLeaderIds`) and the
+top 100 market gaps (banks with no live fees whose fees would add the most competitor coverage
+across every bank's branch counties, `loadMarketGapIds` in `src/lib/data-store/competitor-coverage.ts`)
+go first among banks due, after corrections.
 For one bank it first repairs the stored website (`website-repair.ts`, below), reads the
 homepage once, then calls the specialists in `finders.ts` in order and stops at the first
 link that passes the fee-page check. Each specialist
@@ -332,6 +334,9 @@ A learned check on whether an opened page is the bank's fee schedule, trained on
 above: links with 3+ live fees are fee pages, thin and rejected links are not, dead links are
 left out. The text is what Rosetta stored (`agent_source_texts`, first 8,000 characters). It is
 a naive Bayes over word stems, address words and the rule check's own counts; no model call.
+Some bank site platforms print the request they were sent at the top of the page (our user agent,
+header names such as x-vercel-id): when our crawler token is on a page, that echo is dropped
+before features are read (`withoutRequestEcho`, version 2).
 
 - The discover step retrains it when the newest stored copy is 6+ hours old (up to 300 links of
   each label) and writes one row to `magellan_page_classifier`: weights, label counts and its

@@ -83,7 +83,7 @@ has been broken for more than 2 hours with no PR, tell the coordinator once.
 - Work on this thread's own branch. After a merge, `git fetch origin main && git merge
   origin/main`. Never reset, rebase, force-push, push to main or delete branches.
 - Keep the fix to what the failure needs. Add the failing test.
-- Add an entry to `docs/project/FINDINGS.md` in the same PR.
+- Add a finding file, `docs/project/findings/YYYY-MM-DD-short-slug.md`, in the same PR.
 - Before pushing: the changed area's `vitest`, `npx tsc --noEmit`, `eslint` on the changed
   files, and `npm run guard:legacy`.
 - Open the PR, subscribe to its activity, drive it to green, and merge on green
@@ -97,8 +97,11 @@ deploys:
 - check that the step type now completes (count completed since the deploy), and
 - check that every failed state reran and its step completed.
 
-A run that isn't a state lane does not rerun by itself. Start it again the same way it was
-started (its `run_kind`, `params_json` and `trigger_source`), through its typed agent
+A priority-institution run (`atlas.priority_institution`) that failed on such a break
+reruns by itself too: once the current deploy has not repeated the failure, the failed run
+stops holding its institution for the 24-hour retry window (`PRIORITY_FIXED_BREAK_RUNS`).
+Any other run that isn't a state lane does not rerun by itself. Start it again the same way
+it was started (its `run_kind`, `params_json` and `trigger_source`), through its typed agent
 module or admin action. Never through hand-written SQL that changes data.
 
 ## 6. Tell James

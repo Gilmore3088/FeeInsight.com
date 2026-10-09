@@ -145,7 +145,7 @@ export function repairHrefForQualitySignal(
     case "extracted_not_published":
       return "/admin/darwin";
     case "provider_failure":
-      return "/admin#agent-failures";
+      return "/admin/agents/health";
     case "no_published_fees":
       return "/admin/magellan";
     case "identity_gap":
