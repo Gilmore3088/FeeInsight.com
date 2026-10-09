@@ -2,7 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -221,6 +221,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "card_foreign_txn",
     pattern: /\b(foreign transactions?|international (?:transaction\b|purchases?|point of sale|pos|currency fee|service (?:assessment|fee))|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   },
+  // v61: adjusting an ATM deposit or dispute is account research (`ATM_ADJUSTMENT`).
+  { key: "account_research", pattern: ATM_ADJUSTMENT },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
@@ -626,8 +628,20 @@ export function confidenceFor(segment: string): number {
   return Math.min(confidence, 0.94);
 }
 
+/** v60: a parenthetical that states a threshold of the fee ("($10,000.01 and Over)", "(below $500)", "($25 minimum)"). */
+const THRESHOLD_PARENTHETICAL =
+  /\b(?:below|under|over|above|than|up to|exceed(?:s|ing)?|least|min(?:imum)?|max(?:imum)?|limit|greater|less|or more|and up)\b|[<>]/i;
+
 export function nameFrom(value: string): string {
-  return stripFootnoteMarks(normalizeSegment(value.replace(AMOUNT_PATTERN, " "))).slice(0, 120).trim();
+  // v60: a figure in a threshold parenthetical stays in the name; every other figure is the price.
+  const kept: string[] = [];
+  const masked = value.replace(/\([^()]*\$\s*\d[^()]*\)/g, (group) => {
+    if (!THRESHOLD_PARENTHETICAL.test(group.replace(AMOUNT_PATTERN, " "))) return group;
+    kept.push(group);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const stripped = masked.replace(AMOUNT_PATTERN, " ").replace(/\u0000(\d+)\u0000/g, (_, index: string) => kept[Number(index)]);
+  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, 120).trim();
 }
 
 /**

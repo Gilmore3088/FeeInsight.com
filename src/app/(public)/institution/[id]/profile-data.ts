@@ -7,6 +7,7 @@ import { NON_PAID_ITEM_OVERDRAFT_PATTERN } from "@/lib/institution-rating";
 import type { DisplayFee } from "./fee-schedule-table";
 import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fees";
 import { rateDisplayParts } from "@/lib/percent-fees";
+import { feeDisplayName } from "@/lib/fee-display-name";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -53,7 +54,7 @@ export function isVerifiedFee(fee: ExtractedFee): boolean {
 export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `catalog-${fee.id}`,
-    feeName: fee.fee_name,
+    feeName: feeDisplayName(fee.fee_name, fee.fee_category),
     feeCategory: fee.fee_category ?? null,
     amount: fee.amount,
     frequency: fee.frequency,
@@ -72,7 +73,7 @@ export function toPipelineDisplayFees(evidence: InstitutionFeeScheduleEvidence |
     .filter((fee) => fee.review_status !== "rejected")
     .map((fee) => ({
       id: `verified-${fee.fee_verified_id}`,
-      feeName: fee.fee_name,
+      feeName: feeDisplayName(fee.fee_name, fee.canonical_fee_key),
       feeCategory: fee.canonical_fee_key,
       amount: fee.amount,
       frequency: fee.frequency,
