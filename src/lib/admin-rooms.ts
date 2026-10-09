@@ -21,6 +21,8 @@ export interface RoomPage {
   card?: boolean;
   /** Key into the layout's badge counts. */
   badgeKey?: string;
+  /** Other words people search for this screen by (⌘K), e.g. "safety" for Controls. */
+  aliases?: string[];
 }
 
 export interface Room {
@@ -67,7 +69,7 @@ export const ROOMS: Room[] = [
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
       { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },
-      { href: "/admin/agents/replay", label: "Replay", role: "Re-run a past step", more: true },
+      { href: "/admin/agents/replay", label: "Replay", role: "Trace a run", more: true },
       { href: "/admin/agents/messages", label: "Messages", role: "Agent to agent", more: true },
       { href: "/admin/scoreboard", label: "Scoreboard", role: "Daily score", more: true },
     ],
@@ -150,8 +152,19 @@ export const ROOMS: Room[] = [
     question: "What are we spending, and how do I stop it?",
     href: "/admin/controls",
     pages: [
-      { href: "/admin/controls", label: "Overview", role: "Spend, switches, launch", exact: true },
-      { href: "/admin/api-trust", label: "Spend guard", role: "Caps and blocked calls" },
+      {
+        href: "/admin/controls",
+        label: "Overview",
+        role: "Spend, switches, launch",
+        exact: true,
+        aliases: ["safety", "stop", "emergency stop", "provider stop", "pause", "pipeline pause", "resume", "budget", "caps"],
+      },
+      {
+        href: "/admin/api-trust",
+        label: "Spend guard",
+        role: "Caps and blocked calls",
+        aliases: ["budget", "budget policy", "blocked calls", "cost", "stop"],
+      },
     ],
   },
 ];
@@ -210,7 +223,7 @@ export function searchScreens(query: string, limit = 6): ScreenMatch[] {
           ? 1
           : name.includes(needle)
             ? 2
-            : `${page.label} ${page.role} ${room.label}`.toLowerCase().includes(needle)
+            : `${page.label} ${page.role} ${room.label} ${(page.aliases ?? []).join(" ")}`.toLowerCase().includes(needle)
               ? 3
               : -1;
       if (score >= 0) scored.push({ href: page.href, label, room: room.label, score, order });

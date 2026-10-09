@@ -15,9 +15,24 @@ export interface SentEmail {
   lastEvent: string | null;
 }
 
+/**
+ * `send_only`: Resend recognized the key but it may only send (its "restricted_api_key" answer),
+ * so the sent-email list isn't readable. Sending itself isn't affected. Nothing in Postgres logs
+ * sends, so there is no second source for the list.
+ */
 export type SentEmailLog =
   | { status: "ok"; emails: SentEmail[] }
+  | { status: "send_only"; reason: string }
   | { status: "not_configured" | "failed"; reason: string };
+
+async function errorName(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as { name?: unknown } | null;
+    return body && typeof body.name === "string" ? body.name : null;
+  } catch {
+    return null;
+  }
+}
 
 const RESEND_LIST_ENDPOINT = "https://api.resend.com/emails";
 
@@ -52,10 +67,17 @@ export async function getSentEmailLog(limit = 25): Promise<SentEmailLog> {
       cache: "no-store",
     });
     if (!response.ok) {
+      const name = await errorName(response);
+      if ((response.status === 401 || response.status === 403) && name === "restricted_api_key") {
+        return {
+          status: "send_only",
+          reason: "Resend recognizes the key as a sending key; its sent-email list needs a key with read access.",
+        };
+      }
       const hint = response.status === 401 || response.status === 403
-        ? " The key may be limited to sending; a key with full access can list sent emails."
+        ? " Resend refused the key for listing; a key with full access can list sent emails."
         : "";
-      return { status: "failed", reason: `Resend answered ${response.status}.${hint}` };
+      return { status: "failed", reason: `Resend answered ${response.status}${name ? ` (${name})` : ""}.${hint}` };
     }
     return { status: "ok", emails: parseSentEmails(await response.json()) };
   } catch (error) {

@@ -24,6 +24,40 @@ read and the source check judge it), and puts back the ones it had retired. Firs
 earlier first.bank row (another bank's schedule) is still stored as fetched; the cross-bank
 takedown is what keeps its fees off the site.
 
+## 2026-10-09: The Knox decisions queue read a reason field no verdict has
+**What happened:** an admin audit found all sampled rows of `/admin/knox?queue=decisions` (746 pending) shown as "Other (no reason)". Read-only queries on prod (Oct 9): all 746 Knox `reject` messages store `payload.reasons`, an array, and none has `payload.reason` or `payload.confidence`, which the page read. Their reasons are of five shapes: 638 rejections are "$0 or missing amount, not marked free" (472 of those fees have no amount at all; Knox read a missing amount as $0) and 108 are "above 5x the peer median". 726 of the 746 come from the `migration_v10` legacy import and 85 already have a live published record. Darwin's last `accept` message and the last Knox reject were both on 2026-08-12.
+**Cause:** the queue's reason categories were written for a single-string `reason` that Knox never stored in this shape. Separately, the page said an override "will complete on Darwin's next pass": the override calls `promote_to_tier3`, which needs a Darwin accept from the last 30 days, and no agent reads `knox_overrides` or retries afterwards, so on every pending row the override records a verdict but cannot publish.
+**Fix:** this PR interprets `payload.reasons` (`src/lib/knox-reasons.ts`), filters the queue by reason group with counts, shows source evidence, institution identity and lineage, and words the override truthfully. Whether to retire this legacy queue or wire overrides into Darwin/Hamilton is not decided.
+**Lesson:** read the stored payload shape on prod before building a reviewer view on it, and describe what an action does from the code path, not the comment.
+
+## 2026-10-09: Plan watch list blamed the database for a Stripe failure
+**What happened:** /admin/customers said "Plan watch list could not be read; check the database connection." Its three SQL reads (`getPaidProUsers`, `getProRequestInstitutions`, `getWatchInstitutions`) all run cleanly on prod (read-only, 2026-10-09): 3 active paid users with a Stripe customer id (users 9, 10, 18), no `pro_request` runs for them in 30 days.
+**Cause:** not confirmed, since the cloud cannot call Stripe. The remaining step is one `stripe.subscriptions.list` per paid user inside a single `Promise.all`, so one rejected Stripe read failed the whole section. Users 9 and 10 were created on 2026-03-16, months before the current checkout, so an id the configured key doesn't know (`resource_missing`) is the likeliest trigger. The page's catch-all message named the database for any error.
+**Fix:** a plan Stripe can't read is listed with Stripe's error code instead of failing the rest; a section that does fail shows its error code, a log reference and a Retry link (this PR). The next page load names the real code.
+**Lesson:** an error state names what was being read and the error code it got; never guess the cause in the copy.
+
+## 2026-10-09: Admin panels showed placeholder zeros, cached fallbacks and dead anchors as facts
+**What happened:** the 2026-10-08 admin audit saw Magellan and Darwin at "Spend today $0.00", Darwin
+"Promoted today 0" and "No recent run" while Controls attributed spend to both and the run ledger
+had completed Darwin steps; Today briefly showed the provider stop "active" and the pipeline
+"paused" while Controls showed both running; the Atlas lane table showed Running for runs the
+ledger had completed (IA 3151); and links to `/admin#atlas-safety` and `/admin#atlas-live-status`
+went nowhere. A KS paid pass read "stopped at the budget cap" though its step event recorded the
+cap ("Provider call cap exhausted for run 3152 under agent:magellan").
+**Cause:** `fetchDarwinStatus` and `fetchMagellanStatus` returned hard-coded 0 for spend (and
+Darwin for every counter). The command center turns a failed control read into a fail-closed
+"stopped" row, and `unstable_cache` keeps serving that row (and stale lane snapshots) until it
+revalidates. The anchors moved to Controls and Atlas details when Today was slimmed down. The
+step summary dropped the recorded `budget_reason`.
+**Fix:** this branch: the panels read the shared spend ledger (`getAgentSpendToday`) and run ledger
+with an as-of time; an unreadable control is shown as "Couldn't read the control" with a retry;
+the lane table shows its snapshot age and takes terminal status from the live run feed; anchors
+point at Controls / Live board / Atlas details with a test against dead `/admin#` fragments;
+budget messages name cap, limit, used and reset.
+**Lesson:** never return a literal 0 for a value that was not read; return null and say so. A
+fail-closed fallback must carry an "unreadable" flag so a display never presents it as a switch
+setting.
+
 ## 2026-10-09: Magellan's fee-page classifier never trained
 **What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
 **Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
@@ -3828,3 +3862,19 @@ and quarter were already stored, without looking at the periods of the data behi
   `INTERLEAVED_PROSE_CELLS` cell breaks or more. The First United notice holds fewer, so its old
   text stays until the bank's bytes change. Its full schedule (OAC_Account_Disclosures.pdf) is now
   the hand-found source.
+
+## 2026-10-09: The other-bank check only knew hosts that are another bank's website
+- **What happened.** The admin audit (Oct 8) found Peoples Bank of Rock Valley IA (915) showing
+  22 "verified" fees from Peoples Bank of Bellingham WA's PDF. #691 took those down, but its check
+  only matches a document host that is another registry institution's `website_url`. A schedule
+  on a host that is no institution's in the registry passed with no identity check at all.
+- **Why.** Source-text checks prove a fee is in the document, not that the document is the bank's.
+- **Fix.** `unconfirmedHostFeesSql` (`src/lib/agents/hamilton/other-bank-document.ts`) checks the
+  rest: a document off the bank's own site and off shared file hosts must name the bank (website,
+  its name, city or the bank's name), share the website's name, or be locked by a person.
+  Failing fees take the 12-hour second look and are archived, never deleted. Read-only dry run on
+  prod (Oct 9): 277 of 1,894 such live fees, at 17 banks, fail (e.g. USF FCU Tampa read from
+  usfcu.com).
+- **Watch.** `pipeline_feedback` rows for `hamilton.unconfirmed_document_host` after the next
+  publish steps; rebranded banks whose registry website is stale (First National Bank Texas,
+  website on record `validate.perfdrive.com`) go back to discovery and should be re-found.

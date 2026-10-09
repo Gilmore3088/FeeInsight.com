@@ -1,5 +1,6 @@
 "use client";
 
+import { formatAdminDateTime } from "@/lib/admin-time";
 import type { MagellanStatus } from "../types";
 
 export function StatusPanel({ status }: { status: MagellanStatus }) {
@@ -9,7 +10,15 @@ export function StatusPanel({ status }: { status: MagellanStatus }) {
     { label: "No source found", value: status.dead, color: "text-gray-500 dark:text-gray-400", detail: "Exhausted attempts" },
     { label: "Needs human", value: status.needs_human, color: "text-amber-700 dark:text-amber-400", detail: "Manual review queue" },
     { label: "Retry later", value: status.retry_after, color: "text-blue-700 dark:text-blue-400", detail: "Temporary block" },
-    { label: "Spend today", value: `$${status.today_cost_usd.toFixed(2)}`, color: "text-gray-900 dark:text-gray-100", detail: "Provider spend" },
+    {
+      label: "Spend today",
+      value: status.today_cost_usd == null ? "Couldn't read" : `$${status.today_cost_usd.toFixed(2)}`,
+      color: "text-gray-900 dark:text-gray-100",
+      // Same ledger and UTC day as Controls: every Magellan provider call, scheduled or manual.
+      detail: status.spend_read_at
+        ? `All Magellan provider calls, UTC day · as of ${formatAdminDateTime(status.spend_read_at)}`
+        : "Spend ledger unavailable",
+    },
   ];
 
   return (
