@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
+import { boxTableAnnualHeader, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
@@ -28,7 +28,17 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // "one-time"; a period the line never states is cleared from a per-event fee; an allowance ("1 free
 // per month") is not the fee's period (Darwin's 211-row eval, Oct 9).
 // v5: "More than 2 per year" is an allowance, not the fee's period.
-export const FREQUENCY_FILL_VERSION = 5;
+// v6: footnote marks ("per month6", "each2"), a cap ("up to a maximum of $5.00") and a second
+// price's label ("$1.00/page Business: $3.00/page") no longer hide the fee's own words.
+// v7: "each after 3 in a month" and "exceeding two per month" are allowances too.
+// v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") clears a
+// flat frequency (whole-record sample 2, Oct 9).
+// v9: "each above 6/month" is an allowance, and a cell priced "N/C" is another fee's row (101933).
+// v10: a box rent named by its size takes "annual" from its table's column header ("Box Size: |
+// Annual Rental:" over "3 x 5 x 21 | $25", Altra 104006; 1,466 live box-size rents were blank).
+export const FREQUENCY_FILL_VERSION = 10;
+/** Documents read per step for box-table headers; later steps take the rest. */
+export const BOX_HEADER_DOCUMENT_LIMIT = 300;
 export const FREQUENCY_FILL_LIMIT = 2_000;
 /** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
 const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?[a-z])`;
@@ -59,6 +69,8 @@ export interface FrequencyFill {
   from: string | null;
   frequency: string | null;
   sourceLine: string;
+  /** v10: "box_table_header" when the period came from the box table's column header. */
+  basis?: string;
 }
 
 export interface FrequencyFillResult {
@@ -106,7 +118,73 @@ export async function fillBlankFrequencies(
     console.error("fillBlankFrequencies read failed:", error);
     return result;
   }
-  result.scanned = rows.length;
+  // v10: blank box rents named by their size, read against their document's column headers.
+  let boxRows: BlankFrequencyRow[] = [];
+  const textsByDocument = new Map<number, string>();
+  try {
+    boxRows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
+      `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
+              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions
+         FROM published_fee_records fp
+         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        WHERE fp.rolled_back_at IS NULL
+          AND fp.amount_kind = 'flat'
+          AND fp.amount IS NOT NULL
+          AND fp.frequency IS NULL
+          AND fp.canonical_fee_key = 'safe_deposit_box'
+          AND fp.fee_name ~* '^\\W*[0-9]{1,2}(\\.[0-9])?\\s*[x×]\\s*[0-9]{1,2}'
+          AND fr.source_document_id IS NOT NULL
+          AND fr.conditions LIKE '%excerpt=%'
+          ${options.institutionId ? "AND fp.institution_id = $1" : ""}
+        ORDER BY fp.fee_published_id`,
+      options.institutionId ? [options.institutionId] : [],
+    ));
+    const documentIds = [...new Set(boxRows.map((row) => Number(row.source_document_id)))].slice(0, BOX_HEADER_DOCUMENT_LIMIT);
+    boxRows = boxRows.filter((row) => documentIds.includes(Number(row.source_document_id)));
+    if (documentIds.length > 0) {
+      const texts = await inSavepoint(db, (scope) => scope.unsafe<Array<{ source_document_id: number | string; normalized_text: string | null }>>(
+        `SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+           FROM agent_source_texts
+          WHERE source_document_id = ANY($1::bigint[])
+            AND status = 'completed'
+            AND normalized_text IS NOT NULL
+          ORDER BY source_document_id, id DESC`,
+        [documentIds],
+      ));
+      for (const text of texts) {
+        if (typeof text.normalized_text === "string") textsByDocument.set(Number(text.source_document_id), text.normalized_text);
+      }
+    }
+  } catch (error) {
+    console.error("fillBlankFrequencies box header read failed:", error);
+    boxRows = [];
+  }
+  const seen = new Set(rows.map((row) => Number(row.fee_published_id)));
+  result.scanned = rows.length + boxRows.filter((row) => !seen.has(Number(row.fee_published_id))).length;
+  for (const row of boxRows) {
+    if (seen.has(Number(row.fee_published_id)) || result.filled.length >= limit) continue;
+    const amount = Number(row.amount);
+    const sourceLine = excerptOf(row.conditions);
+    const text = textsByDocument.get(Number(row.source_document_id));
+    if (!sourceLine || !text || !Number.isFinite(amount)) continue;
+    // The fee's own line decides first; the header only fills a blank it leaves.
+    if (settledFrequency(sourceLine, amount, null, row.canonical_fee_key) != null) continue;
+    if (boxTableAnnualHeader(text, sourceLine, amount) !== "annual") continue;
+    result.filled.push({
+      feePublishedId: Number(row.fee_published_id),
+      feeVerifiedId: num(row.fee_verified_id),
+      feeRawId: num(row.fee_raw_id),
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: num(row.source_document_id),
+      canonicalFeeKey: row.canonical_fee_key,
+      amount,
+      from: null,
+      frequency: "annual",
+      sourceLine: sourceLine.slice(0, 300),
+      basis: "box_table_header",
+    });
+  }
   for (const row of rows) {
     const amount = Number(row.amount);
     const sourceLine = excerptOf(row.conditions);
@@ -179,7 +257,7 @@ export async function fillBlankFrequencies(
     feePublishedId: fee.feePublishedId,
     canonicalFeeKey: fee.canonicalFeeKey,
     amount: fee.amount,
-    evidence: { from: fee.from, to: fee.frequency, source_line: fee.sourceLine },
+    evidence: { from: fee.from, to: fee.frequency, source_line: fee.sourceLine, ...(fee.basis ? { basis: fee.basis } : {}) },
     runId: options.runId,
     dedupeKey: fee.from == null ? `${FREQUENCY_FILL_CHECK}:fill:${fee.feePublishedId}` : `${FREQUENCY_FILL_CHECK}:fix:${fee.feePublishedId}:${fee.frequency ?? "none"}`,
   }));

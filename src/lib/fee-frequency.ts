@@ -5,25 +5,36 @@
  * fee). Only wording that points one way counts; anything else stays unknown.
  */
 
-export const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))\b/i;
+export const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))(?![a-z])/i;
 export const PERIODIC_WORDING = /\b(per (month|year|quarter)|monthly|annual(ly)?|quarterly|\/\s?(mo|month|yr|year)\b|a month|a year)/i;
 
 // "/MO" after a word is a money order ("per check/MO"), not a month.
-const MONTHLY_WORDING = /\b(per (calendar month|month|mo|statement cycle|statement period|cycle)|monthly|a month)\b|(?<![a-z])\/\s?mo\b|\/\s?month\b/i;
-const ANNUAL_WORDING = /\b(per year|annual(ly)?|yearly|a year)\b|\/\s?(yr|year)\b/i;
-const QUARTERLY_WORDING = /\b(per quarter|quarterly)\b|\/\s?(qtr|quarter)\b/i;
+const MONTHLY_WORDING = /\b(per (calendar month|month|mo|statement cycle|statement period|cycle)|monthly|a month)(?![a-z])|(?<![a-z])\/\s?mo(?![a-z])|\/\s?month(?![a-z])/i;
+const ANNUAL_WORDING = /\b(per year|annual(ly)?|yearly|a year)(?![a-z])|\/\s?(yr|year)(?![a-z])/i;
+const QUARTERLY_WORDING = /\b(per quarter|quarterly)(?![a-z])|\/\s?(qtr|quarter)(?![a-z])/i;
 // v4: a fee charged per day ("$5.00 per business day" on a continuous overdraft) is daily.
 // A bare "daily" is often a limit ("this $33 fee can be charged daily"), so only "per day" counts.
 const DAILY_WORDING = /\bper (business |calendar )?day\b/i;
 const ONE_TIME_WORDING = /\bone[- ]time\b/i;
-/** Wording that makes the price something other than a flat charge per event or period. */
-const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\bper\s+\d|\bminimum\b|\bmaximum\b|\bmax\b)/i;
+/**
+ * Wording that makes the price something other than a flat charge per event or period. v6: a
+ * maximum caps a per-item fee ("$2.00 per page up to a maximum of $5.00"); it is not a basis.
+ */
+const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\bper\s+\d|\bminimum\b)/i;
 /**
  * An allowance is not the fee's period: "Cashier Checks (1 free per month) | $2.00" and "$1.00
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
 // v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
-const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond)\b[^|$]{0,40}?\bper (month|statement cycle|cycle|year)\b/gi;
+// v9: "each above 6/month" (101933, Oct 9).
+const ALLOWANCE = /\b(free|after|first|more than|over|above|in excess of|beyond|exceeding)\b[^|$]{0,40}?(\b(per|in a|a|each) |\/\s?)(month|statement cycle|cycle|year)\b/gi;
+
+/**
+ * v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") makes the
+ * "Each" after the price a per-hour charge, not a flat one. Only rate words count: a name that
+ * mentions a minimum balance still takes its period.
+ */
+const NAME_BASIS = /\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\/\s?(hr|hour)(?![a-z])/i;
 
 function withoutAllowance(text: string): string {
   return text.replace(ALLOWANCE, " ");
@@ -34,7 +45,7 @@ function withoutAllowance(text: string): string {
 // v4: "per loan", "per notice", "per levy", "per stop payment", "per file", "/sheet", "/key"
 // and other per-event nouns, and "occurance"/"occurence" misspelt (Oct 9). "Per statement"
 // stays unknown: a paper-statement fee charged per statement is a monthly charge.
-const MORE_PER_ITEM = /\bper (presentment|transfer|wire|card|key|inquiry|document|piece|sheet|occasion|money order|notary|order|draft|signature|payment|loan|notice|garnishment|levy|submission|incident|instance|application|stop( payment)?|overdraft|returned item|return|advance|verification|replacement|file|skip|reload|event|bag|stamp|occurr?[ae]nce)\b|\/\s?(item|check|transaction|each|ea|copy|page|request|transfer|wire|card|occurrence|loan|key|sheet|withdrawal|document|draft|order|box|money order|inquiry)\b|^\s*ea\b/i;
+const MORE_PER_ITEM = /\bper (presentment|transfer|wire|card|key|inquiry|document|piece|sheet|occasion|money order|notary|order|draft|signature|payment|loan|notice|garnishment|levy|submission|incident|instance|application|stop( payment)?|overdraft|returned item|return|advance|verification|replacement|file|skip|reload|event|bag|stamp|occurr?[ae]nce)(?![a-z])|\/\s?(item|check|transaction|each|ea|copy|page|request|transfer|wire|card|occurrence|loan|key|sheet|withdrawal|document|draft|order|box|money order|inquiry)(?![a-z])|^\s*ea\b/i;
 /** A cell after the price ("| $6.00 | Per Item") is read when it is this short. */
 const NEXT_CELL_MAX = 25;
 const PRICE = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/g;
@@ -65,7 +76,8 @@ function priceWords(sourceLine: string, amount: number | null, nextCell: boolean
     // Words after the price stop at the next price, and a label ending in a colon is the next
     // price's ("$8.00 Per check: $0.20").
     const own = cells[0].split(/\$\s?\.?\d/)[0];
-    if (own !== cells[0] && own.trim().endsWith(":")) found.push("");
+    // v6: words before that label are still the fee's own ("$1.00/page Business: $3.00/page").
+    if (own !== cells[0] && own.trim().endsWith(":")) found.push(own.replace(/[A-Za-z]+:\s*$/, ""));
     else if (own.trim() === "" && own === cells[0] && cells.length > 1 && cells[1].trim().length <= NEXT_CELL_MAX && !/\$\s?\.?\d/.test(cells[1])) found.push(cells[1]);
     else found.push(own.slice(0, 40));
   }
@@ -87,6 +99,7 @@ export function frequencyFromLine(sourceLine: string | null | undefined, amount:
   if (readings.size > 1) return null;
   const words = read[0];
   if (OTHER_BASIS.test(words)) return null;
+  if (namedBasis(sourceLine, amount)) return null;
   const after = statedFrequency(words);
   if (after !== "none") return after;
   // Nothing after the price: the fee's own name may carry it ("Lost Key (each) | $15.00",
@@ -96,6 +109,13 @@ export function frequencyFromLine(sourceLine: string | null | undefined, amount:
   if (before == null || OTHER_BASIS.test(before)) return null;
   const named = statedFrequency(before);
   return named === "none" ? null : named;
+}
+
+/** True when the fee's own name, before its price, states a rate basis such as per hour. */
+export function namedBasis(sourceLine: string | null | undefined, amount: number | null): boolean {
+  if (!sourceLine) return false;
+  const name = nameWords(sourceLine, amount);
+  return name != null && NAME_BASIS.test(name);
 }
 
 /** "each month" is a period, not an item: "a $15.00 service charge will be imposed each month". */
@@ -181,7 +201,8 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   // the returned-deposit fee "daily".
   if (!wording.test(sourceLine)) return MISREAD_PERIOD[stated!]?.test(sourceLine) ?? false;
   const cells = sourceLine.split("|");
-  const priced = cells.map((cell) => feePrices(cell).length > 0);
+  // v9: a cell priced "N/C" or "Free" is another fee's row too ("Monthly service fee ... N/C | ATM ... $1.00").
+  const priced = cells.map((cell) => feePrices(cell).length > 0 || NO_CHARGE.test(cell));
   const own = cells
     .map((cell, index) => (feePrices(cell).some((price) => Math.abs(price - amount) < 0.005) ? index : -1))
     .filter((index) => index >= 0);
@@ -199,6 +220,43 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   return cells.some((cell, index) => !ownCells.has(index) && priced[index] && wording.test(cell));
 }
 const PRICE_START = /\$\s?\.?\d/;
+const NO_CHARGE = /(^|[\s.…])(n\/c|no charge|free)\s*\*?\s*$/i;
+
+/** A safe deposit box named by its size ("3 x 5", "10x10x21", "5 x 10” box"). */
+export const BOX_SIZE_NAME = /^\W*\d{1,2}(?:\.\d)?\s*[x×]\s*\d{1,2}/i;
+const ANNUAL_HEADER_MAX = 40;
+const HEADER_LOOK_BACK = 12;
+/** A cell that starts with a box size, fractions included ("2 ½ x 5", "3x5 ....$40"). */
+const BOX_SIZE_CELL = /^\W*\d{1,2}(?:[.,]\d+)?\s*(?:[½¼¾]|\d\/\d)?\s*[x×]\s*\d/i;
+
+/**
+ * v10: the annual period a box table's column header gives its rows ("Box Size: | Annual Rental:"
+ * over "3 x 5 x 21 | $25", Altra 104006). The fee's own line is found in the document text, and the
+ * lines above it, up to 12, are read for the header: a short cell saying "annual", "per year" or
+ * "yearly" that prints no price and is not followed by a price cell (so "Annual Fee | $10.00" is a
+ * fee, not a header), on a line with no "monthly". Every priced line between the header and the fee
+ * must carry a box size, so a header above another table never reaches the box rows. Only annual is read: a box
+ * rent is charged by the year, and a "per month" cell near a box table is another product's ("$10
+ * per month ... if account balance is less than $100"). Null when the line is not found or no such
+ * header is above it. Pure.
+ */
+export function boxTableAnnualHeader(text: string, sourceLine: string, amount: number): "annual" | null {
+  const lines = text.split(/\r?\n/);
+  const target = sourceLine.replace(/\s+/g, " ").trim();
+  if (!target) return null;
+  const at = lines.findIndex((line) => line.replace(/\s+/g, " ").includes(target));
+  if (at < 0 || !feePrices(lines[at]).some((price) => Math.abs(price - amount) < 0.005)) return null;
+  for (let index = at - 1; index >= Math.max(0, at - HEADER_LOOK_BACK); index -= 1) {
+    const line = lines[index];
+    const cells = line.split("|").map((cell) => cell.trim());
+    const priced = cells.map((cell) => PRICE_START.test(cell));
+    const header = cells.some((cell, cellIndex) =>
+      cell.length > 0 && cell.length <= ANNUAL_HEADER_MAX && !priced[cellIndex] && !priced[cellIndex + 1] && STATED_WORDING.annual.test(cell));
+    if (header) return STATED_WORDING.monthly.test(line) ? null : "annual";
+    if (priced.some(Boolean) && !cells.some((cell) => BOX_SIZE_CELL.test(cell))) return null;
+  }
+  return null;
+}
 
 /**
  * Categories charged per period or per day. A per-item reading of one of these is a
@@ -218,6 +276,8 @@ export function settledFrequency(
   stated: string | null | undefined,
   canonicalKey: string | null | undefined,
 ): string | null {
+  // v8: a fee charged per hour has no flat frequency, whatever was stated.
+  if (namedBasis(sourceLine, amount)) return null;
   const own = frequencyFromLine(sourceLine, amount);
   const periodCategory = canonicalKey != null && PERIOD_FEE_KEYS.has(canonicalKey);
   const ownUsable = own && !(frequencyFamily(own) === "per_item" && periodCategory) ? own : null;

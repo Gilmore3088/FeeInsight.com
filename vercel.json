@@ -45,6 +45,10 @@
       "schedule": "17 12 * * *"
     },
     {
+      "path": "/api/admin/crew/bayes",
+      "schedule": "43 12 * * *"
+    },
+    {
       "path": "/api/admin/reports/schedule?type=monthly_pulse",
       "schedule": "30 14 3 * *"
     },
@@ -70,7 +74,7 @@
     },
     {
       "path": "/api/admin/crew/contacts?limit=60",
-      "schedule": "37 12 * * 1"
+      "schedule": "37 12 * * *"
     },
     {
       "path": "/api/admin/crew/growth-score",

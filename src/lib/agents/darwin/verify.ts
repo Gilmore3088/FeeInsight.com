@@ -8,6 +8,8 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
+import { settledFrequency } from "@/lib/fee-frequency";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
@@ -25,6 +27,7 @@ import {
   isExplicitZeroFee,
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
+  CATEGORY_AMOUNT_ENVELOPES,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
@@ -53,6 +56,24 @@ type SqlTag = typeof sql;
 // re-selects every decided row, and rows once held back as `duplicate_in_batch` would
 // then be verified as second copies of an already verified fee (only `fee_raw_id` is unique).
 export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } as const;
+/**
+ * The source check (`checkFeeAgainstSource`, Accuracy's `src/lib/custom-report/source-check.ts`)
+ * as Darwin read it, recorded on every decision. A `not_in_source` rejection was final: the row
+ * was never read again, so a fee the check could not trace before a fix stayed rejected after it
+ * (1,126 rows at 499 banks by 2026-10-09, Northern Trust's wrapped-name $25 overdraft among them).
+ * Raising this number gives every `not_in_source` rejection stamped lower one more read, the way
+ * a guard bump re-checks `category_mismatch`; a row the check still fails is stamped and done.
+ * Bump it when a source-check fix lands that should reach rejected rows. v1: 2026-10-09, after
+ * Knox v62 (#861) taught the check wrapped leader names, per-wire lines and former-fee columns.
+ */
+export const DARWIN_SOURCE_CHECK_VERSION = 1;
+/**
+ * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
+ * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency
+ * contradicted it or was never stated there: "$1.00 per withdrawal in excess of six per month"
+ * read as monthly is charged per item (held excess-withdrawal rows, Oct 9).
+ */
+export const FREQUENCY_SETTLED_FLAG = "darwin_frequency_settled";
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
@@ -74,7 +95,8 @@ export type DarwinReasonCode =
   | "peer_outlier"
   | "duplicate_in_batch"
   | "duplicate_verified"
-  | "percent_not_publishable";
+  | "percent_not_publishable"
+  | "category_lesson_pending";
 
 /**
  * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
@@ -96,11 +118,38 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   duplicate_in_batch: "Same fee already verified in this batch",
   duplicate_verified: "Duplicate verified row",
   percent_not_publishable: "A rate in a category that does not publish rates (often an interest rate, not a fee)",
+  category_lesson_pending: "Fee name belongs to a category the guard does not place it in yet; held until the guard learns it",
 };
+
+/**
+ * Category lessons Darwin knows before the shared guard does. The guard
+ * (`src/lib/fee-category-guard.ts`, Accuracy's) is the one place a name is matched to a
+ * category, so Darwin never re-files a row itself: a row whose filed category matches a
+ * lesson here is held as `category_lesson_pending` (needs_review, no verified row, so Hamilton
+ * cannot publish it) and comes back for one more read when `CATEGORY_GUARD_VERSION` rises,
+ * the same path a `category_mismatch` takes. Once the guard carries the lesson its re-file rule
+ * moves the row and the hold no longer matches; drop the entry here in the same change.
+ * 2026-10-09: "Bond return items" $35 (raw 246460) filed `nsf` passed the v57 guard; a returned
+ * bond or coupon is a returned deposited item (RDI), not a customer NSF.
+ */
+export const DARWIN_CATEGORY_HOLDS: ReadonlyArray<{
+  filedAs: string;
+  shouldBe: string;
+  when: RegExp;
+  since: string;
+}> = [
+  // The bond-return hold (2026-10-09) ended with guard v58, which re-files those rows.
+];
+
+/** The pending category lesson that holds this row, if any. */
+export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: string | null | undefined) {
+  if (!canonicalFeeKey || !feeName) return null;
+  return DARWIN_CATEGORY_HOLDS.find((hold) => hold.filedAs === canonicalFeeKey && hold.when.test(feeName)) ?? null;
+}
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -309,11 +358,19 @@ export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promis
  * Version of the in-batch duplicate key, recorded on each attempt. Version 1 keyed on the
  * source URL, so a fee on a bank's current copy of a page was held as a duplicate of the
  * same fee on an older copy at that URL, and only the older copy was ever verified.
- * Version 2 keys on the stored document.
+ * Version 2 keys on the stored document. Version 3 adds the fee's own source line, so two
+ * products' fees with one price on one document ("Money Market Savings Account (below $2,500) |
+ * $15/mo." and "Interest Checking (below $1,500) | $15/mo.", SCCU 8109) are two fees, while the
+ * same line read twice (two Knox runs of one document) is still one.
  */
-export const DARWIN_BATCH_KEY_VERSION = 2;
+export const DARWIN_BATCH_KEY_VERSION = 3;
 
-/** Same institution, category, amount, frequency and document: the same fee line. */
+/** The source line Knox read, spacing folded; empty when the row has none. */
+function sourceLineKey(conditions: string | null): string {
+  return (excerptOf(conditions) ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Same institution, category, amount, frequency, document and source line: the same fee line. */
 function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
   return [
     Number(row.institution_id),
@@ -324,6 +381,7 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
     row.source_document_id != null
       ? `doc:${Number(row.source_document_id)}`
       : (row.source_url ?? row.document_r2_key ?? "").trim(),
+    sourceLineKey(row.conditions),
   ].join("|");
 }
 
@@ -353,12 +411,22 @@ async function selectRawFees(
     const versionParam = `$${params.push(DARWIN_VERIFY_STRATEGY.version)}`;
     // A category rejection under an older guard version is the exception: a guard change
     // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
-    // rejected, or one a new re-file rule now places, is not lost.
+    // rejected, or one a new re-file rule now places, is not lost. A row held for a category
+    // lesson the guard has not learned yet (DARWIN_CATEGORY_HOLDS) takes the same path.
     const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
-    // A row held as an in-batch duplicate under the old URL key is re-checked once when it
-    // sits on the bank's current copy and nothing on that same document is verified as the
-    // same fee; a row with a verified twin on its own document stays a duplicate. Needs the
-    // current-copy column (source_documents.superseded_by_id).
+    // A `not_in_source` rejection under an older source-check version is re-read once
+    // (DARWIN_SOURCE_CHECK_VERSION), so a fix to the shared source check reaches the rows it
+    // was made for; a row the check still fails is stamped with today's version and rests.
+    const sourceCheckParam = `$${params.push(DARWIN_SOURCE_CHECK_VERSION)}`;
+    // A row held outside its category's hand-set amount envelope is re-checked once when
+    // today's envelope would take its amount (the account_research floor went from $5 to $1 on
+    // 2026-10-09 for the returned mail and fax fees pooled there), so an envelope change reaches
+    // the rows it was made for. Learned envelopes move with the data and never re-select.
+    const envelopesParam = `$${params.push(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}`;
+    // A row held as an in-batch duplicate under an older key is re-checked once when it sits
+    // on the bank's current copy and nothing on that same document is verified as the same fee
+    // from the same source line (v3); a row with a verified twin on its own line stays a
+    // duplicate. Needs the current-copy column (source_documents.superseded_by_id).
     const batchKeyParam = currentCopy ? `$${params.push(DARWIN_BATCH_KEY_VERSION)}` : null;
     const duplicateRecheck = batchKeyParam ? `
               AND NOT (
@@ -375,6 +443,8 @@ async function selectRawFees(
                    WHERE twin_raw.source_document_id = fr.source_document_id
                      AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
                      AND twin.amount IS NOT DISTINCT FROM fr.amount
+                     AND lower(regexp_replace(COALESCE(substring(twin_raw.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                         = lower(regexp_replace(COALESCE(substring(fr.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
     filters.push(`AND NOT EXISTS (
@@ -384,8 +454,19 @@ async function selectRawFees(
               AND pa.strategy = ${strategyParam}
               AND pa.strategy_version = ${versionParam}
               AND NOT (
-                pa.detail->>'reason_code' = 'category_mismatch'
+                pa.detail->>'reason_code' IN ('category_mismatch', 'category_lesson_pending')
                 AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'not_in_source'
+                AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${sourceCheckParam}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND ${envelopesParam}::jsonb ? (pa.detail->>'canonical_fee_key')
+                AND (pa.detail->>'amount')::numeric
+                    BETWEEN (${envelopesParam}::jsonb->(pa.detail->>'canonical_fee_key')->>'min')::numeric
+                        AND (${envelopesParam}::jsonb->(pa.detail->>'canonical_fee_key')->>'max')::numeric
               )
 ${duplicateRecheck}
          )`);
@@ -452,6 +533,9 @@ export async function insertVerifiedFee(
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags);
+  const stated = options.row.frequency ?? null;
+  const frequency = amount == null ? stated : settledFrequency(excerptOf(options.row.conditions), amount, stated, options.canonicalFeeKey);
+  if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -485,7 +569,7 @@ export async function insertVerifiedFee(
       ${eventId}::uuid,
       ${options.row.fee_name},
       ${amount},
-      ${options.row.frequency},
+      ${frequency},
       'verified',
       ${percent ? "percent" : "flat"},
       ${percent ? ratePercentOf(options.row) : null},
@@ -766,6 +850,8 @@ export async function runDarwinVerify(
   for (const row of rows) {
     const canonicalFeeKey = categoryOf(row);
     let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
+    const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
+    if (categoryHold) reasonCode = "category_lesson_pending";
     if (!reasonCode && !statedInOwnSource(row, sourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
@@ -869,7 +955,11 @@ export async function runDarwinVerify(
           reason_code: result.reasonCode,
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
+          source_check_version: DARWIN_SOURCE_CHECK_VERSION,
           batch_key_version: DARWIN_BATCH_KEY_VERSION,
+          category_hold: categoryHold
+            ? { filed_as: categoryHold.filedAs, should_be: categoryHold.shouldBe, since: categoryHold.since }
+            : undefined,
           amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
             ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
             : undefined,

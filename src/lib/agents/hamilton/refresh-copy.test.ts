@@ -92,6 +92,20 @@ describe("planRefreshes", () => {
     expect(plan.skipped[0]).toMatchObject({ reason: "publish_rule", detail: "Below publish confidence threshold" });
   });
 
+  it("never moves a product page's $0 benefit to its page's new copy (55986, Oct 9)", () => {
+    const benefit = { amount: "0.00", prior_amount: "0.00", free_read: true, document_url: "https://www.paccrest.com/personal-banking/" };
+    const plan = planRefreshes([candidate(benefit)]);
+    expect(plan.skipped[0]).toMatchObject({ reason: "publish_rule", detail: "Read from a product page's benefits, not a fee schedule" });
+  });
+
+  it("selects what the product-page rule reads", async () => {
+    const db = createDb([]);
+    await refreshFeesFromCurrentCopy(asDb(db), { runId: 1, batchId: "b", dryRun: true });
+    const text = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(text).toContain("AS free_read");
+    expect(text).toContain("AS document_url");
+  });
+
   it("uses each live fee and each current-copy row once", () => {
     const plan = planRefreshes([
       candidate(),

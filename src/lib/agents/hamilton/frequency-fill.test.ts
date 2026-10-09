@@ -72,4 +72,24 @@ describe("Hamilton frequency fill", () => {
     expect(result.filled).toHaveLength(1);
     expect(db).not.toHaveBeenCalled();
   });
+
+  it("fills a blank box rent from its table's annual header and logs the basis (v10)", async () => {
+    const box = { ...row(4, "25.00", "3 x 5 x 21 | $25"), canonical_fee_key: "safe_deposit_box" };
+    const plain = { ...row(5, "20.00", "3 x 5 | $20"), canonical_fee_key: "safe_deposit_box", source_document_id: 10 };
+    const db = createDbMock([]);
+    db.unsafe = vi.fn((sql: string) => {
+      if (sql.includes("agent_source_texts")) {
+        return Promise.resolve([
+          { source_document_id: 9, normalized_text: "Box Size: | Annual Rental:\n3 x 5 x 21 | $25" },
+          { source_document_id: 10, normalized_text: "Safe Deposit Boxes:\n3 x 5 | $20" },
+        ]);
+      }
+      if (sql.includes("fp.fee_name ~*")) return Promise.resolve([box, plain]);
+      return Promise.resolve([]);
+    });
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.frequency, fee.basis])).toEqual([[4, "annual", "box_table_header"]]);
+    const sqlText = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
+    expect(sqlText).toContain("INSERT INTO pipeline_feedback");
+  });
 });

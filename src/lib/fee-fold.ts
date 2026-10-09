@@ -17,6 +17,8 @@ interface FoldRule {
   name?: RegExp;
   /** Tested against the schedule text just before the fee's line, when it is known. */
   context?: RegExp;
+  /** Like `context`, for a test a pattern cannot state. */
+  contextTest?: (before: string) => boolean;
 }
 
 interface RetiredCategory {
@@ -31,6 +33,21 @@ interface RetiredCategory {
 /** An ATM or a shared ATM network, named on the line or in the section heading above it. */
 const ATM_CUE =
   /\b(?:atms?(?!\s*deposit)|automated teller|machines?|terminals?|cajero|allpoint|shazam|co-?op network|moneypass|cirrus|network atm|atm network|(?:debit|check|atm) cards?)\b|\bnon[- ][\w'’ -]{1,30}\b(?:atms?|machines?)\b|\bforeign atm|\bother (?:banks?|institutions?)['’]? (?:atms?|machines?)/i;
+/** A word before "ATM:" that makes it another bank's or network's machine. */
+const OTHER_ATM_WORD = /^(?:non\b|non-|foreign|other|out-of|outside|shared|network|surcharge|international|domestic|all\b|any\b)/i;
+
+/**
+ * True when the nearest ATM heading above a fee is the bank's own machine: "Regions ATM:" over
+ * "Balance Inquiry $0.00" (Regions, institution 27, Oct 9), "Our ATM:", "Proprietary ATM:". A
+ * fee there is not what a customer pays at another network's ATM. "Non-Regions ATM:", "Foreign
+ * ATM:" and a heading with no word before it ("ATM Fees") are not.
+ */
+export function ownAtmSection(before: string): boolean {
+  const headings = [...before.matchAll(/(\S+)\s+(?:atms?|machines?)\s*:/gi)];
+  const word = headings.at(-1)?.[1]?.replace(/^[^\w]+/, "");
+  if (!word || OTHER_ATM_WORD.test(word)) return false;
+  return /^(?:our|proprietary|in-network)$/i.test(word) || /^[A-Z][\w&'.]*$/.test(word);
+}
 /** A person, a phone line or a channel other than an ATM. */
 const ASSISTED_CUE =
   /\b(?:tele?phone|phone|calls?|call center|representative|staff|employee|teller|member service|service center|assisted|audio|night owl|online|internet|web|mail|printout|in[- ]person|by person|shared branch|non[- ]?automated|manual)\b/i;
@@ -44,6 +61,8 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
       { to: null, name: /^(?![\s\S]*(?:\binquir|\binq\b|\bbalance check|\bsolicitud de balance))/i },
       { to: "atm_non_network", name: ATM_CUE },
       { to: null, name: ASSISTED_CUE },
+      // A bare "Balance Inquiry" under the bank's own ATM heading has no home.
+      { to: null, contextTest: ownAtmSection },
       // A bare "Balance Inquiry" under an ATM heading ("Foreign ATM Transactional Fees").
       { to: "atm_non_network", context: ATM_CUE },
     ],
@@ -189,8 +208,74 @@ const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btra
 const PREPAID_BUY_OR_RELOAD =
   /^(?=[\s\S]*\b(?:pre-?paid|reloadable)\b)(?![\s\S]*\b(?:withdrawals?|inquiry|inquiries)\b)[\s\S]*\b(?:purchase|reload)\b/i;
 
-/** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"). */
+/**
+ * A charge for savings or money market activity past the free count ("Excess withdrawal fee
+ * (MMDA)", "Savings account excess debit fee"), a Reg D-style fee. Within the top 50 it is
+ * account servicing, which account research holds, as it already does for ~290 such fees.
+ */
+const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
+
+/** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"), a charge on the IRA itself. */
 const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
+
+/** Lines where "fax" is how something else is requested or sent, not a fax service. */
+const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)`;
+
+/**
+ * Sending or receiving a fax ("Fax (Outgoing)"), which document reproduction holds. Fax as the
+ * way a wire, transfer or closing is requested, a verification or loan payoff sent by fax, a
+ * Carfax report, and research priced with copies stay where they are. Knox reads fax lines
+ * with this too (`FOLDED_PATTERNS`), so its reads and the fold agree.
+ */
+export const FAX_SERVICE = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*\bfax(?:es|ed|ing)?\b`, "i");
+
+/** A fax or a document copy ("Copy of previous statement"), outside the same exceptions. */
+const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)`, "i");
+
+/**
+ * A copy charge priced by the page ("Account Research Copies (per page)", "Research Request - Per
+ * Page Copied"), which document reproduction holds even when the copies come from research.
+ * Research priced by the hour or with a minimum, copies extra, stays research. Knox reads these
+ * lines with this too, ahead of its research pattern.
+ */
+export const PER_PAGE_COPY =
+  /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?=[\s\S]*\bcop(?:y|ies|ied|ying)\b)[\s\S]*(?:\bper (?:page|pg)\b|\/ ?(?:page|pg)\b)/i;
+
+/**
+ * A line led by the copy itself ("Document copies - greater than 1 year - Per item, may also be
+ * subject to research fee", "Microfilm Copy (plus Account Research)"), or a member's own fax
+ * ("Member personal fax request (in state)"): document reproduction, even where research is
+ * named as a further charge. Research priced by the hour or with a minimum stays research.
+ */
+const COPY_LED = /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?:(?:[\w-]+ ){0,2}(?:photo ?)?cop(?:y|ies)\b|[\s\S]*\bpersonal fax\b)/i;
+
+/**
+ * Balancing or reconciling a member's checkbook, usually priced by the hour ("Checkbook
+ * Reconciliation (per hour)", "Balance Check Book"): reconciliation work, which account research
+ * holds, not a check order; a line naming a check order, printing or style stays. Knox reads these lines with this too, ahead of its check printing rule.
+ */
+export const CHECKBOOK_RECONCILIATION =
+  /^(?![\s\S]*\b(?:orders?|ordering|reorder\w*|printing|styles?|box(?:es)?)\b)[\s\S]*\b(?:reconcil\w*|balancing|balance (?:the |your |a |customer )?(?:check ?books?|statements?)|research)\b/i;
+
+/**
+ * A "Cross-Border Banking" bundle, package or account (RBC's U.S. Premium Checking "Cross-Border
+ * Banking Bundle annual fee", $99.50 a year or $9.95 a month; TD and BMO use the name too) is an
+ * account, so its fee is the account's maintenance fee, not the card's currency fee. A line naming
+ * a transaction, purchase, conversion, currency, exchange, ATM, wire or a percentage stays the
+ * card's. Knox reads these lines with this too, ahead of its currency fee rule.
+ */
+export const CROSS_BORDER_BUNDLE =
+  /^(?![\s\S]*(?:%|\b(?:transactions?|purchases?|conversions?|currency|exchange|atms?|wires?)\b))[\s\S]*\bcross[- ]?border (?:banking|bundles?|packages?|accounts?)\b/i;
+
+/**
+ * Adjusting an ATM transaction ("ATM Adjustment" $5 at Wildfire, "ATM Adjustment Fee", "Special
+ * Handling (i.e. ATM adjustment, etc.)"): correcting a deposit or dispute after the fact, which is
+ * research work that account research holds, not a charge for using another network's ATM. A
+ * limit change stays, and so does a line naming the deposit ("ATM Deposit Correction Adjustment"),
+ * which the CA answer key files as a deposited item return. Knox reads these lines with this too,
+ * ahead of its ATM rule.
+ */
+export const ATM_ADJUSTMENT = /^(?![\s\S]*\b(?:limits?|deposit\w*)\b)[\s\S]*\batm\b[\s\S]{0,20}\badjust(?:ment|ments|ed)?\b/i;
 
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
@@ -220,19 +305,44 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   // A night deposit or night drop key is the night depository's, not a safe deposit box's.
   safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
   // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
-  late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent" },
+  // A statement or item copy is document reproduction, not a late payment.
+  late_payment: {
+    to: "safe_deposit_box",
+    name: BOX_RENT,
+    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+    sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
+  },
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
-  // excess withdrawal charge is the IRA's own fee.
+  // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
+  // A fax or a document copy is document reproduction, not research, and so is a copy charged
+  // by the page during research, or a line led by the copy (a member's own fax too).
   account_research: {
     to: "ira_termination",
     name: IRA_TRANSFER_OUT,
-    also: [{ to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL }],
-    sqlPattern: "\\mira\\M",
+    also: [
+      { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
+      { to: "document_reproduction", name: FAX_OR_COPY },
+      { to: "document_reproduction", name: PER_PAGE_COPY },
+      { to: "document_reproduction", name: COPY_LED },
+    ],
+    sqlPattern: "\\mira\\M|fax|cop(y|ies|ied)|reproduc",
   },
+  // Balancing or reconciling a checkbook is reconciliation work, not a check order.
+  check_printing: { to: "account_research", name: CHECKBOOK_RECONCILIATION, sqlPattern: "reconcil|balanc|research" },
+  // A cross-border banking bundle's fee is the account's maintenance fee, not a currency fee.
+  card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
-  atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
+  // Adjusting an ATM deposit or dispute is research work, not a network ATM fee.
+  atm_non_network: {
+    to: "gift_card_purchase",
+    name: PREPAID_BUY_OR_RELOAD,
+    also: [{ to: "account_research", name: ATM_ADJUSTMENT }],
+    sqlPattern: "prepaid|reload|adjust",
+  },
   // A statement mailed back undelivered is returned mail, which account research holds.
   paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
+  // Excess savings or money market activity is account servicing, not a lending fee.
+  other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -248,7 +358,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 9;
+export const FOLD_RULES_VERSION = 14;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
@@ -276,13 +386,30 @@ export const FOLD_CONTEXT_CHARS = 200;
  * The schedule text just before a fee's line (its section heading, in a table the row's
  * neighbours), or null when the name is not found in the text. Pure.
  */
-export function foldContext(text: string | null | undefined, feeName: string | null | undefined): string | null {
+export function foldContext(
+  text: string | null | undefined,
+  feeName: string | null | undefined,
+  amount?: number | null,
+): string | null {
   if (!text || !feeName) return null;
   const body = plain(text);
   const name = plain(feeName);
   if (name.length < 4) return null;
-  const at = body.toLowerCase().indexOf(name.toLowerCase());
+  const lower = body.toLowerCase();
+  const needle = name.toLowerCase();
+  let at = lower.indexOf(needle);
   if (at < 0) return null;
+  // A name the schedule prints twice ("Regions ATM: ... Balance Inquiry $0.00", "Non-Regions
+  // ATM: ... Balance Inquiry $3.00") takes the section of the copy priced at the fee's amount.
+  if (amount != null && Number.isFinite(amount)) {
+    for (let next = at; next >= 0; next = lower.indexOf(needle, next + 1)) {
+      const price = body.slice(next + needle.length, next + needle.length + 60).match(/\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/);
+      if (price && Math.abs(Number(price[1].replace(/,/g, "")) - amount) < 0.005) {
+        at = next;
+        break;
+      }
+    }
+  }
   return body.slice(Math.max(0, at - FOLD_CONTEXT_CHARS), at);
 }
 
@@ -310,6 +437,7 @@ export function foldRetiredCategory(
   for (const [index, rule] of retired.rules.entries()) {
     if (rule.name && !rule.name.test(name)) continue;
     if (rule.context && !(before && rule.context.test(before))) continue;
+    if (rule.contextTest && !(before && rule.contextTest(before))) continue;
     return { to: rule.to, rule: `${key}#${index}` };
   }
   return { to: retired.otherwise, rule: `${key}#otherwise` };

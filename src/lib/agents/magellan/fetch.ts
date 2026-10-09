@@ -15,11 +15,17 @@ import {
   type VaultStoreStatus,
 } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
-import { markCurrentCopy, supersedeSamePageCopies, type SamePageCopyResult } from "@/lib/agents/magellan/current-copy";
+import {
+  markCurrentCopy,
+  supersedeMovedHandFoundCopies,
+  supersedeSamePageCopies,
+  type MovedHandFoundCopyResult,
+  type SamePageCopyResult,
+} from "@/lib/agents/magellan/current-copy";
 import { detectFormat, documentTypeForFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
-import { addOperatorSchedules, type OperatorScheduleResult } from "./operator-schedules";
+import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isErrorPageLink } from "./link-coverage";
 
 type SqlTag = typeof sql;
@@ -34,6 +40,15 @@ export const MAGELLAN_FETCH_MAX_LIMIT = 50;
  * is free; changed text is read and extracted on the state's normal cadence.
  */
 export const MAGELLAN_STALE_LINK_REFETCH_DAYS = 30;
+/*
+ * Second-look re-fetch: a bank with a live fee a Hamilton check flagged
+ * (`takedown_pending` in pipeline_feedback) since its last fetch is fetched in the next
+ * backlog run, first after new links. The second look comes 12 hours after the flag; before
+ * this, full passes ran monthly and backlog runs skipped the bank, so 419 fetchable banks with live
+ * flagged fees (9 Oct 02:30 UTC) were headed for the second look on a copy fetched before the flag.
+ * A changed page goes on to the run's read and extract steps; an unchanged page
+ * stamps last_crawl_at, so a bank is fetched once per flag.
+ */
 
 /** The fetch strategy recorded in the attempt log; bump the version when its behavior changes. */
 export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 2 } as const;
@@ -139,6 +154,7 @@ export interface RunMagellanFetchResult {
   operatorSchedules: OperatorScheduleResult | null;
   /** Current copies superseded (or logged, in shadow mode) by a newer spelling of their page. */
   samePageCopies: SamePageCopyResult | null;
+  movedHandFoundCopies: MovedHandFoundCopyResult | null;
   results: FetchResult[];
 }
 
@@ -436,14 +452,31 @@ async function selectCandidates(
        )
        AND (${normalizedState}::text IS NULL OR upper(btrim(inst.state_code)) = ${normalizedState})
        -- A link discovery found after the last fetch is fetched at once and first. An
-       -- hourly backlog run fetches those and links last fetched over a month ago.
+       -- hourly backlog run fetches those, links last fetched over a month ago, and banks
+       -- with a live fee waiting on a second look (see "Second-look re-fetch" above).
        AND (NOT ${newLinksOnly}::boolean OR (
          inst.rescue_status = 'rescued'
          AND inst.last_rescue_attempt_at > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
-       ) OR inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS}))
+       ) OR inst.last_crawl_at < NOW() - make_interval(days => ${MAGELLAN_STALE_LINK_REFETCH_DAYS})
+         OR EXISTS (
+           SELECT 1 FROM pipeline_feedback pending
+             JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
+            WHERE pending.institution_id = inst.id
+              AND pending.kind = 'takedown_pending'
+              AND pending_fee.rolled_back_at IS NULL
+              AND (pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
+         ))
        AND (
          inst.last_crawl_at IS NULL
          OR (inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at)
+         OR EXISTS (
+           SELECT 1 FROM pipeline_feedback pending
+             JOIN published_fee_records pending_fee ON pending_fee.fee_published_id = pending.fee_published_id
+            WHERE pending.institution_id = inst.id
+              AND pending.kind = 'takedown_pending'
+              AND pending_fee.rolled_back_at IS NULL
+              AND (pending.evidence->>'flagged_at')::timestamptz > inst.last_crawl_at
+         )
          OR inst.last_crawl_at < NOW() - CASE
            WHEN COALESCE(inst.consecutive_failures, 0) >= 3 THEN INTERVAL '7 days'
            WHEN COALESCE(inst.consecutive_failures, 0) > 0 THEN INTERVAL '24 hours'
@@ -454,6 +487,12 @@ async function selectCandidates(
        CASE WHEN profile.locked_by_correction IS TRUE AND profile.canonical_source_url IS NOT NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.last_crawl_at IS NULL THEN 0 ELSE 1 END,
        CASE WHEN inst.rescue_status = 'rescued' AND inst.last_rescue_attempt_at > inst.last_crawl_at THEN 0 ELSE 1 END,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM pipeline_feedback pending
+          WHERE pending.institution_id = inst.id
+            AND pending.kind = 'takedown_pending'
+            AND (pending.evidence->>'flagged_at')::timestamptz > inst.last_crawl_at
+       ) THEN 0 ELSE 1 END,
        inst.last_crawl_at ASC NULLS FIRST,
        COALESCE(inst.consecutive_failures, 0) ASC,
        inst.asset_size DESC NULLS LAST,
@@ -921,6 +960,7 @@ export async function runMagellanFetch(
   let companions: RunCompanionFetchResult | null = null;
   let operatorSchedules: OperatorScheduleResult | null = null;
   let samePageCopies: SamePageCopyResult | null = null;
+  let movedHandFoundCopies: MovedHandFoundCopyResult | null = null;
   if (!dryRun) {
     try {
       samePageCopies = await inSavepoint(db, (scope) =>
@@ -936,6 +976,19 @@ export async function runMagellanFetch(
       );
     } catch (error) {
       console.error("Operator schedules failed:", error);
+    }
+    // A hand-found schedule that moved on the bank's site: its old link's copy stops being current.
+    try {
+      movedHandFoundCopies = await inSavepoint(db, (scope) =>
+        supersedeMovedHandFoundCopies(scope, {
+          runId: options.runId,
+          strategy: OPERATOR_SCHEDULE_STRATEGY.strategy,
+          links: OPERATOR_SCHEDULES,
+          institutionId: options.institutionId ?? null,
+        }),
+      );
+    } catch (error) {
+      console.error("Moved hand-found copies failed:", error);
     }
     try {
       const companionVault = vault.configured && (await documentVaultSchemaReady(db)) ? vault : null;
@@ -972,6 +1025,7 @@ export async function runMagellanFetch(
     companions,
     operatorSchedules,
     samePageCopies,
+    movedHandFoundCopies,
     results,
   };
 }

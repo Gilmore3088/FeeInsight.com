@@ -3,6 +3,7 @@ import { currentCongress, fetchFederalFeeBills } from "@/lib/regulatory/congress
 import { type RegistryFetchOptions } from "@/lib/regulatory/http";
 import type { BillStage } from "@/lib/regulatory/open-states";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
+import { flagOn, flagState } from "./live-flag";
 
 /**
  * Magellan registry step: scan the current Congress's bills on Congress.gov once a day
@@ -20,7 +21,7 @@ const FEDERAL_BILLS_REFRESH_HOURS = 24;
 const MISSING_KEY_RETRY_HOURS = 24;
 
 export function federalBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.FEDERAL_BILLS_TRACKER_LIVE === "true";
+  return flagOn(env.FEDERAL_BILLS_TRACKER_LIVE);
 }
 
 export interface RegistryFederalBillsResult {
@@ -138,6 +139,7 @@ export async function runRegistryFederalBills(
       requests,
       stages,
       shadow: result.shadow,
+      live_flag: options.live === undefined ? flagState(process.env.FEDERAL_BILLS_TRACKER_LIVE) : "override",
       bills: items.slice(0, 25).map((item) => `${item.identifier} (${item.stage})`),
     },
   });

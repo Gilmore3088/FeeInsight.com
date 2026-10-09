@@ -6,8 +6,10 @@
  */
 
 /** A header naming an old column and then a new one. */
+// "SERVICES | FORMER FEES | NEW FEES": a conversion guide's table (Citizens Business Bank 124,
+// 9 Oct) listed the acquired bank's former fees beside the new ones.
 const CHANGE_TABLE_HEADER =
-  /(?:\bfees?\s+(?:through|thru|until|prior to)\b[^\n]{0,40}?\bfees?\s+(?:as of|effective|beginning|starting)\b)|(?:\b(?:current|old|previous|existing|prior)\s+(?:fee|price|amount|charge)s?\s*\|?\s*(?:new|revised|proposed|updated)\s+(?:fee|price|amount|charge)s?\b)/i;
+  /(?:\bfees?\s+(?:through|thru|until|prior to)\b[^\n]{0,40}?\bfees?\s+(?:as of|effective|beginning|starting)\b)|(?:\b(?:current|old|previous|existing|prior|former)\s+(?:fee|price|amount|charge)s?\s*\|?\s*(?:new|revised|proposed|updated)\s+(?:fee|price|amount|charge)s?\b)/i;
 /** Lines a row may sit below its header. */
 const CHANGE_TABLE_LOOKBACK = 40;
 const MONEY = /\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\.\d{1,2})/g;
@@ -35,8 +37,12 @@ export function newestColumnText(text: string): string {
   const lines = text.split("\n");
   return lines
     .map((line, index) => {
-      if (!line.includes("|") || prices(line).length < 2 || !underChangeHeader(lines, index)) return line;
+      if (!line.includes("|") || !underChangeHeader(lines, index)) return line;
       const cells = line.split("|").map((cell) => cell.trim());
+      // A three-column row ("Hold Mail | No charge | $20.00", "Coin Counting | $15.00 | Not
+      // offered") is the name and its newest cell, whatever the older cell says.
+      if (cells.length === 3 && /[a-z]{3}/i.test(cells[0]) && !/\$\s?\.?\d/.test(cells[0])) return `${cells[0]} | ${cells[2]}`;
+      if (prices(line).length < 2) return line;
       const priced = cells.map((cell) => /\$\s?\.?\d/.test(cell));
       const lastPriced = priced.lastIndexOf(true);
       return cells.filter((_, cell) => !priced[cell] || cell === lastPriced).join(" | ");

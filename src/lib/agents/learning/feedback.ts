@@ -44,6 +44,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     unresolved_fee_page, unread, batch_error_rate (one row per batch of reads)
  *   Extract level (Knox, `knox/batch-review.ts`): batch_miss, batch_error_rate (one row per
  *     batch of 500 Knox reads)
+ *   Second look (Hamilton, `hamilton/second-look.ts`): takedown_pending, takedown_confirmed,
+ *     takedown_cleared (a fee's current state, one row per fee and check) and the appended
+ *     audit trail flag_recorded, flag_cleared, flag_confirmed (one row per event, never rewritten)
  */
 export type FeedbackKind =
   | "wrong_category"
