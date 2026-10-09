@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { isProductPage, productPageTakedownEnabled, retireProductPageFees } from "./product-page";
+import { isProductPage, PRODUCT_PAGE_TAKEDOWN_ON, productPageTakedownEnabled, retireProductPageFees } from "./product-page";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -47,6 +47,14 @@ const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => 
 const options = { runId: 7, batchId: "agentic-run-7", dryRun: false };
 
 describe("retireProductPageFees", () => {
+  it("changes nothing with the switch as shipped: it only counts", async () => {
+    expect(PRODUCT_PAGE_TAKEDOWN_ON).toBe(false);
+    const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() });
+    const result = await retireProductPageFees(db, options);
+    expect(result).toMatchObject({ enabled: false, productFees: 1, flagged: 0, waiting: 0, rolledBack: [] });
+    expect(db).not.toHaveBeenCalled();
+  });
+
   it("only counts while off: no flag, no takedown", async () => {
     const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() });
     const result = await retireProductPageFees(db, { ...options, enabled: false });

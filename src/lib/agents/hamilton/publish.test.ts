@@ -181,6 +181,23 @@ describe("Hamilton agentic publish", () => {
     expect(publishSkipReason({ ...benefit, free_read: false }, 0.85, true)).not.toBe(reason);
   });
 
+  it("publishes a product-page $0 benefit as before while the product-page switch is off", async () => {
+    const benefit = {
+      ...verifiedFee,
+      canonical_fee_key: "overdraft",
+      fee_name: "Overdraft Fees",
+      amount: "0.00",
+      outlier_flags: ["agentic_darwin_verified", "free_fee_verified"],
+      free_read: true,
+      document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
+    };
+    const plain = { ...benefit, free_read: false };
+    const withSwitch = await runHamiltonPublish({ runId: 123, db: asPublishDb(createDbMock([benefit])) });
+    const without = await runHamiltonPublish({ runId: 124, db: asPublishDb(createDbMock([plain])) });
+    expect(withSwitch.results[0].reason).not.toBe("Read from a product page's benefits, not a fee schedule");
+    expect([withSwitch.results[0].status, withSwitch.results[0].reason]).toEqual([without.results[0].status, without.results[0].reason]);
+  });
+
   it("never publishes a row read from an article page", async () => {
     const db = createDbMock([{ ...verifiedFee, source_url: "https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid" }]);
 
