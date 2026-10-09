@@ -43,3 +43,9 @@ The re-check now reads only rows Knox's paid reader produced (`knox_paid_extract
 9 Oct). A row comes back only when the paid reader and today's free rules agree on its name, amount
 and category. Northern Trust's overdraft is one of them. The dry read runs again on these rows and
 gets a new source spot check before the switch goes on.
+
+## The pass read only its own lane
+Two hours after the paid-only change, the pass had read 7 of the 43 paid rows. Each extract run read
+only the rows of its own state lane or institution, so most runs read none, and Northern Trust (IL)
+waited for the IL lane. The pass now reads paid rows from every bank in each run. There are few of
+them, and each is read once per Knox version.
