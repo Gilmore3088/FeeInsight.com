@@ -1,0 +1,53 @@
+{
+  "id": "fee-taxonomy-regression",
+  "version": 1,
+  "maintainer": "darwin",
+  "owning_agent": "darwin",
+  "inputs": [
+    "base and head commits, or a PR number",
+    "categories touched (CANONICAL_KEY_MAP keys)",
+    "optional flagged live fee ids"
+  ],
+  "outputs": [
+    "taxonomy, fold and guard test results",
+    "answer-key category errors before and after, tuning and holdout apart",
+    "live impact per category: still ok / would re-file / would fail, with spot checks"
+  ],
+  "data_access": [
+    { "table": "published_fee_catalog", "mode": "read" },
+    { "table": "published_fee_rate_catalog", "mode": "read" },
+    { "table": "agent_source_texts", "mode": "read" }
+  ],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "deterministic, no paid calls; unit tests plus one read-only query per touched category",
+  "triggering_workflows": [
+    "PR that bumps CATEGORY_GUARD_VERSION or FOLD_RULES_VERSION",
+    "PR that edits FEE_FAMILIES, CANONICAL_KEY_MAP, CATEGORY_GUARD_RULES, RETIRED_CATEGORIES or SPLIT_CATEGORIES",
+    "report of a fee under the wrong heading"
+  ],
+  "evaluation_suite": [
+    "src/lib/fee-taxonomy.test.ts",
+    "src/lib/fee-category-guard.test.ts",
+    "src/lib/fee-fold.test.ts",
+    "src/lib/agents/hamilton/category-guard.test.ts",
+    "src/lib/agents/knox/answer-key-gate.test.ts"
+  ],
+  "failure_behavior": "Failing tests or a rise in tuning-set category errors are reported as findings with no pass verdict; a step that cannot run is reported as not run.",
+  "approval_requirements": "None to run (read-only). A taxonomy change itself is a code PR; a change to the 50 types is James's decision.",
+  "dependencies": [
+    { "path": "src/lib/fee-taxonomy.ts" },
+    { "path": "src/lib/fee-fold.ts", "version_constant": "FOLD_RULES_VERSION" },
+    { "path": "src/lib/fee-category-guard.ts", "version_constant": "CATEGORY_GUARD_VERSION" },
+    { "path": "src/lib/agents/knox/answer-key-gate.ts" },
+    { "path": "src/lib/agents/bayes/manifests.ts" },
+    { "path": "src/lib/agents/deming/severity.ts" }
+  ],
+  "last_validated": "2026-10-09",
+  "abstain_when": [
+    "the change touches only display names or colors",
+    "no live fees exist in the touched categories",
+    "answer keys do not cover the touched categories (report key result as unknown)",
+    "the base commit cannot be checked out or tests cannot run"
+  ]
+}
