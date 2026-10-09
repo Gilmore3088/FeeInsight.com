@@ -208,6 +208,7 @@ function narrateFinished(
     case "registry-state-bill-news":
     case "registry-enforcement":
     case "registry-state-enforcement":
+    case "registry-wire-research":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -475,6 +476,13 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       const states = Array.isArray(detail.by_state) ? (detail.by_state as Array<{ pages?: number }>).filter((s) => (s.pages ?? 0) > 0).length : 0;
       return `Read ${count(states, "state banking department")} and refreshed ${count(n(detail, "upserted"), "state enforcement order")}.`;
     }
+    case "registry-wire-research": {
+      if (detail.schema_missing) return "Skipped Regulatory Wire research notes (migration not applied yet).";
+      if (detail.shadow) {
+        return `Picked ${count(n(detail, "selected"), "wire item")} for research notes and could read ${n(detail, "would_summarise")}; wrote none (shadow mode).`;
+      }
+      return `Wrote ${count(n(detail, "written"), "Regulatory Wire research note")} from ${count(n(detail, "selected"), "item")}; ${n(detail, "unreadable")} unreadable, ${n(detail, "failed")} failed.`;
+    }
     default:
       return null;
   }
@@ -584,6 +592,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-state-bill-news": "magellan",
   "registry-enforcement": "magellan",
   "registry-state-enforcement": "magellan",
+  "registry-wire-research": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

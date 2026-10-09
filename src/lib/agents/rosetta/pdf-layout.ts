@@ -18,6 +18,9 @@
  * Layout version 3: a gutter is found by how many lines cross it, not how many text items.
  * First United's overdraft notice draws each letter as its own item, so version 2 found no
  * gutter and read "we will charge an additional $5.00 per day" as a fee named "additional".
+ *
+ * Layout version 4: a dot-leader fee list beside a table is read as its own column
+ * (`leaderListColumns`).
  */
 
 import { CELL_SEPARATOR } from "./html-dom";
@@ -27,7 +30,7 @@ import { CELL_SEPARATOR } from "./html-dom";
  * columns column by column; a text an older layout read across the columns is read again
  * once (`INTERLEAVED_PROSE_CELLS_SQL` in read.ts).
  */
-export const PDF_LAYOUT_VERSION = 3;
+export const PDF_LAYOUT_VERSION = 4;
 
 export interface PdfTextItem {
   str: string;
@@ -128,13 +131,13 @@ type Band = [start: number, end: number];
 const inBand = (item: PositionedItem, [start, end]: Band) => item.x >= start - 1 && item.end <= end + 1;
 
 /**
- * The page's prose columns, left to right, or null when the page is not set in columns of
- * running prose. A gutter is a vertical strip at least a font height wide that few text
- * items cover; each item belongs to the column it starts in, and an item that runs into
- * the next column's text (a title over the columns) belongs to none. Every column must
- * read as prose.
+ * The page's text items (word spaces left out), their left and right edges, and the middle
+ * of each gutter: a vertical strip at least a font height wide that few lines cover. Null
+ * when the page has too few items to tell.
  */
-function proseColumns(all: PositionedItem[]): Band[] | null {
+function pageGutters(
+  all: PositionedItem[],
+): { items: PositionedItem[]; left: number; right: number; middles: number[] } | null {
   // Word spaces drawn as their own items say nothing about where the text is.
   const items = all.filter((item) => item.text.trim().length > 0);
   if (items.length < MIN_COLUMN_PAGE_ITEMS) return null;
@@ -170,6 +173,20 @@ function proseColumns(all: PositionedItem[]): Band[] | null {
       runStart = -1;
     }
   }
+  return { items, left, right, middles };
+}
+
+/**
+ * The page's prose columns, left to right, or null when the page is not set in columns of
+ * running prose. A gutter is a vertical strip at least a font height wide that few text
+ * items cover; each item belongs to the column it starts in, and an item that runs into
+ * the next column's text (a title over the columns) belongs to none. Every column must
+ * read as prose.
+ */
+function proseColumns(all: PositionedItem[]): Band[] | null {
+  const gutters = pageGutters(all);
+  if (!gutters) return null;
+  const { items, left, right, middles } = gutters;
   if (middles.length === 0) return null;
   const column = (item: PositionedItem) => middles.filter((middle) => item.x >= middle).length;
   const starts = middles.map((_, index) => Math.min(...items.filter((item) => column(item) === index + 1).map((item) => item.x)));
@@ -195,13 +212,56 @@ function proseColumns(all: PositionedItem[]): Band[] | null {
   return bands;
 }
 
+/** A dot-leader fee line: "Cashier's Checks ......... $8.00" or "...3% of transaction". */
+const LEADER_PRICE = /\.{4,}\s*(?:\$\s?\d|\$?\.\d|\d+(?:\.\d+)?\s?%)/;
+/** A fee list column holds at least this many dot-leader fee lines... */
+const MIN_LEADER_LINES = 5;
+/** ...and they are at least this share of its lines (the rest wrap a name or a note). */
+const MIN_LEADER_LINE_SHARE = 0.25;
+/** A fee list column is one column: at most this share of its lines hold a cell break. */
+const MAX_LIST_CELL_SHARE = 0.1;
+
+/**
+ * Layout version 4: a dot-leader fee list set beside a table (Northern Trust's personal
+ * deposit schedule, 2026-10-09: an account table on the left, "Cashier's Checks ...... $8.00"
+ * down the right). Read across, each list line was appended to a table row as its last cell,
+ * and a fee whose name wraps ("Overdrafts Paid and Items Paid against Nonsufficient Funds
+ * ... $25.00 per Occurrence") was spread over three table rows. The page is split at the
+ * leftmost gutter right of which the text is one column of leader lines: the rest of the page
+ * is read first, row by row as before, then the list. Each leader line pairs its own name and
+ * price, so no table loses a pairing.
+ */
+function leaderListColumns(all: PositionedItem[]): Band[] | null {
+  const gutters = pageGutters(all);
+  if (!gutters) return null;
+  const { items, left, right, middles } = gutters;
+  for (const middle of middles) {
+    const crossing = items.filter((item) => item.x < middle && item.end > middle);
+    if (crossing.length > Math.floor(items.length * MAX_CROSSING_SHARE)) continue;
+    const list = items.filter((item) => item.x >= middle);
+    const lines = linesText(list);
+    const leaders = lines.filter((line) => LEADER_PRICE.test(line)).length;
+    if (leaders < MIN_LEADER_LINES || leaders < lines.length * MIN_LEADER_LINE_SHARE) continue;
+    if (lines.filter((line) => line.includes(CELL_SEPARATOR.trim())).length > lines.length * MAX_LIST_CELL_SHARE) continue;
+    // Lines that open with a price are a table's amount column, paired with names to the left.
+    if (lines.filter((line) => LEADING_PRICE.test(line)).length > lines.length * MAX_LEADING_PRICE_SHARE) continue;
+    const rest = items.filter((item) => item.end <= middle);
+    if (rest.length === 0) continue;
+    return [
+      [left, Math.max(...rest.map((item) => item.end))],
+      [Math.min(...list.map((item) => item.x)), right],
+    ];
+  }
+  return null;
+}
+
 /**
  * Text of one page with one line per baseline. A page in prose columns reads each column
  * top to bottom; a line that crosses the gutters (a title) closes the columns above it.
  */
 export function layoutPageText(items: PdfTextItem[]): string {
   const all = positioned(items);
-  const bands = proseColumns(all);
+  const bands = proseColumns(all) ?? leaderListColumns(all);
   if (!bands) return linesText(all).join("\n");
   const out: string[] = [];
   let block: PositionedItem[] = [];

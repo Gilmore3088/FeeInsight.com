@@ -19,6 +19,19 @@ type SqlTag = typeof sql;
  * look (check `hamilton.cross_page_conflict`) and is archived with both document ids in its
  * reason, its verified row rejected. Nothing is deleted. The lesson goes to Hamilton's publish
  * stage (`stale_price`), since publish let the older price go live beside the newer one.
+ *
+ * Two editions of one document (Largest banks, Oct 9). Valley (44) has its 2025 deposit agreement
+ * (doc 23743, Last-Modified 17 Mar 2025, "Overdrafts: $30 per paid item") and its 2026 one
+ * (doc 23731, Last-Modified 25 Mar 2026, "$35") both current under two sources, so the $30 stayed
+ * live beside the $35. An overdraft line has no product heading, so a pair also qualifies when the
+ * two texts are editions of one document (`sameDocumentEdition`: they share at least 95% of the
+ * larger text's words, and the texts differ), each prints its own price on a line
+ * naming the fee, and neither prints the other's price on such a line.
+ *
+ * "Newer" is the document's own date when both carry a Last-Modified header (`newerDocument`),
+ * else the time it was fetched. Valley's 2025 edition was fetched five minutes after the 2026
+ * one, so fetch time alone would keep the old price. An edition pair needs both dates, at least a
+ * day apart; without them nothing is judged.
  */
 export const CROSS_PAGE_CHECK = "hamilton.cross_page_conflict";
 export const CROSS_PAGE_REASON = "cross_page_conflict";
@@ -102,6 +115,67 @@ export function productHeadings(text: string, feeName: string, amount: number): 
   return headings;
 }
 
+/** Words of four or more letters a text uses; editions of one document share nearly all of them. */
+function wordSet(texts: string[]): Set<string> {
+  return new Set(texts.join("\n").toLowerCase().match(/[a-z]{4,}/g) ?? []);
+}
+
+const EDITION_SHARED_WORDS = 0.95;
+const EDITION_MIN_WORDS = 200;
+const DAY_MS = 86_400_000;
+
+/**
+ * True when two documents' texts are editions of one document: each has at least 200 distinct
+ * words, they share at least 95% of the larger text's words, and the texts are not the same. Pure.
+ */
+export function sameDocumentEdition(a: string[], b: string[]): boolean {
+  if (a.length === 0 || b.length === 0 || a.join("\n") === b.join("\n")) return false;
+  const wordsA = wordSet(a);
+  const wordsB = wordSet(b);
+  const smaller = wordsA.size <= wordsB.size ? wordsA : wordsB;
+  const larger = smaller === wordsA ? wordsB : wordsA;
+  if (smaller.size < EDITION_MIN_WORDS) return false;
+  let shared = 0;
+  for (const word of smaller) if (larger.has(word)) shared += 1;
+  // Measured against the larger text too: one product's schedule printed from the bank's template
+  // (PNC's Simple Checking schedule beside its full schedule) shares the smaller text's words, not
+  // the larger's.
+  return shared / larger.size >= EDITION_SHARED_WORDS;
+}
+
+/** A Last-Modified header as epoch milliseconds, or null. Pure. */
+function headerTime(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
+/**
+ * True when `candidate`'s document is newer than `older`'s: by Last-Modified when both carry one,
+ * else by fetch time. `ownDatesOnly` (edition pairs) needs both headers, a day or more apart. Pure.
+ */
+export function newerDocument(candidate: CrossPageRow, older: CrossPageRow, ownDatesOnly = false): boolean {
+  const candidateHeader = headerTime(candidate.document_last_modified);
+  const olderHeader = headerTime(older.document_last_modified);
+  if (candidateHeader != null && olderHeader != null) {
+    return ownDatesOnly ? candidateHeader - olderHeader >= DAY_MS : candidateHeader > olderHeader;
+  }
+  if (ownDatesOnly) return false;
+  return new Date(candidate.document_crawled_at).getTime() > new Date(older.document_crawled_at).getTime();
+}
+
+/** True when some line of the texts prints this price and every word of the fee's name. Pure. */
+function printsOnNamedLine(texts: string[], feeName: string, amount: number): boolean {
+  const tokens = nameTokens(feeName).slice(0, 3);
+  if (tokens.length === 0) return false;
+  return texts.some((text) => text.split(/\r?\n/).some((line) => {
+    const lower = line.toLowerCase();
+    return printsPrice(line, amount) && tokens.every((token) => lower.includes(token));
+  }));
+}
+
+export const EDITION_HEADING = "(newer edition of the same document)";
+
 export interface CrossPageRow {
   fee_published_id: number | string;
   fee_verified_id: number | string;
@@ -111,6 +185,8 @@ export interface CrossPageRow {
   amount: number | string;
   source_document_id: number | string;
   document_crawled_at: string | Date;
+  /** The document's Last-Modified header, when the server sent one. */
+  document_last_modified?: string | null;
 }
 
 export interface CrossPageTakedown {
@@ -155,6 +231,34 @@ export function crossPageConflicts(rows: CrossPageRow[], textsByDocument: Map<nu
       !printsUnder(newer, older.fee_name, Number(older.amount), heading) &&
       !printsUnder(older, newer.fee_name, Number(newer.amount), heading)) ?? null;
   };
+  const editionCache = new Map<string, boolean>();
+  const editions = (a: CrossPageRow, b: CrossPageRow): boolean => {
+    const ids = [Number(a.source_document_id), Number(b.source_document_id)].sort((x, y) => x - y);
+    const key = ids.join(":");
+    let found = editionCache.get(key);
+    if (found === undefined) {
+      found = sameDocumentEdition(textsByDocument.get(ids[0]) ?? [], textsByDocument.get(ids[1]) ?? []);
+      editionCache.set(key, found);
+    }
+    return found;
+  };
+  // Two editions of one document: each prints its own price on a line naming the fee, and not the other's.
+  const editionPair = (older: CrossPageRow, newer: CrossPageRow): boolean => {
+    if (!newerDocument(newer, older, true) || !editions(older, newer)) return false;
+    const olderTexts = textsByDocument.get(Number(older.source_document_id)) ?? [];
+    const newerTexts = textsByDocument.get(Number(newer.source_document_id)) ?? [];
+    return printsOnNamedLine(olderTexts, older.fee_name, Number(older.amount)) &&
+      printsOnNamedLine(newerTexts, newer.fee_name, Number(newer.amount)) &&
+      !printsOnNamedLine(newerTexts, older.fee_name, Number(older.amount)) &&
+      !printsOnNamedLine(olderTexts, newer.fee_name, Number(newer.amount));
+  };
+  const conflictHeading = (older: CrossPageRow, newer: CrossPageRow): string | null => {
+    if (newerDocument(newer, older)) {
+      const heading = sharedHeading(older, newer);
+      if (heading != null) return heading;
+    }
+    return editionPair(older, newer) ? EDITION_HEADING : null;
+  };
   const groups = new Map<string, CrossPageRow[]>();
   for (const row of rows) {
     const key = `${row.institution_id}:${row.canonical_fee_key}`;
@@ -164,14 +268,14 @@ export function crossPageConflicts(rows: CrossPageRow[], textsByDocument: Map<nu
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     for (const older of group) {
-      const olderTime = new Date(older.document_crawled_at).getTime();
-      const newer = group.find((candidate) =>
-        String(candidate.source_document_id) !== String(older.source_document_id) &&
-        Math.abs(Number(candidate.amount) - Number(older.amount)) >= 0.005 &&
-        new Date(candidate.document_crawled_at).getTime() > olderTime &&
-        sharedHeading(older, candidate) != null);
-      if (!newer) continue;
-      const heading = sharedHeading(older, newer)!;
+      let heading: string | null = null;
+      const newer = group.find((candidate) => {
+        if (String(candidate.source_document_id) === String(older.source_document_id)) return false;
+        if (Math.abs(Number(candidate.amount) - Number(older.amount)) < 0.005) return false;
+        heading = conflictHeading(older, candidate);
+        return heading != null;
+      });
+      if (!newer || heading == null) continue;
       result.push({
         feePublishedId: Number(older.fee_published_id),
         feeVerifiedId: Number(older.fee_verified_id),
@@ -184,7 +288,9 @@ export function crossPageConflicts(rows: CrossPageRow[], textsByDocument: Map<nu
         keptDocumentId: Number(newer.source_document_id),
         keptAmount: Number(newer.amount),
         heading,
-        reason: `${CROSS_PAGE_REASON}: #${older.source_document_id} older than #${newer.source_document_id} (fee ${newer.fee_published_id})`,
+        reason: heading === EDITION_HEADING
+          ? `${CROSS_PAGE_REASON}: #${older.source_document_id} older edition of #${newer.source_document_id} (fee ${newer.fee_published_id})`
+          : `${CROSS_PAGE_REASON}: #${older.source_document_id} older than #${newer.source_document_id} (fee ${newer.fee_published_id})`,
       });
     }
   }
@@ -213,7 +319,8 @@ export async function retireCrossPageConflicts(
     rows = await inSavepoint(db, (scope) => scope.unsafe<CrossPageRow[]>(
       `WITH live AS (
          SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fp.canonical_fee_key,
-                fp.fee_name, fp.amount, fr.source_document_id, sd.crawled_at AS document_crawled_at
+                fp.fee_name, fp.amount, fr.source_document_id, sd.crawled_at AS document_crawled_at,
+                sd.last_modified AS document_last_modified
            FROM published_fee_records fp
            JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
            JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -333,7 +440,7 @@ export async function retireCrossPageConflicts(
     runId: options.runId,
     dedupeKey: `${CROSS_PAGE_CHECK}:published:${fee.feePublishedId}`,
     evidence: {
-      reason: "same_product_older_document",
+      reason: fee.heading === EDITION_HEADING ? "older_edition_of_document" : "same_product_older_document",
       heading: fee.heading,
       older_document_id: fee.sourceDocumentId,
       kept_document_id: fee.keptDocumentId,

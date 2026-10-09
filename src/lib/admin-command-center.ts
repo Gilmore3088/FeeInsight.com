@@ -7,7 +7,6 @@ import {
   type AutomationControlState,
 } from "./automation-control";
 import { getJobFreshness, getSourceSubmissionCounts } from "./admin-queries";
-import { getKnoxReviewCounts } from "./data-store/knox-reviews";
 import type { AdminAgent, AgentRunStatus } from "./agents/types";
 import { toISO } from "./pg-helpers";
 import { hasAnthropicApiKey } from "./ai-provider";
@@ -535,8 +534,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     getJobFreshness(),
   ]);
 
-  const [knoxCounts, sourceSubmissionCounts, automation, pipeline, marketing, apiUsage, agentHealth, openCreditFailure] = await Promise.all([
-    getKnoxReviewCounts(),
+  const [sourceSubmissionCounts, automation, pipeline, marketing, apiUsage, agentHealth, openCreditFailure] = await Promise.all([
     getSourceSubmissionCounts(),
     getAutomationControl().catch((error) => {
       console.error("Atlas automation control query failed", error);
@@ -663,17 +661,6 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
     });
   }
 
-  if (knoxCounts.pending > 0) {
-    attention.push({
-      id: "review:knox",
-      severity: "work",
-      owner: "knox",
-      title: `${knoxCounts.pending.toLocaleString()} Knox decisions need a human verdict`,
-      detail: "Confirm correct rejections or override false positives.",
-      href: "/admin/knox?queue=decisions",
-      action: "Review Knox decisions",
-    });
-  }
   if (sourceSubmissionCounts.pending > 0) {
     attention.push({
       id: "trust:source-submissions",
