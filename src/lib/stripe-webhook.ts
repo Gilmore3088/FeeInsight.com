@@ -81,6 +81,8 @@ export interface StripeEventEffects {
   reportPaid: ReportPaidEffect[];
   /** A second paid session for a request already paid: James refunds it in Stripe. */
   reportDuplicate: Array<{ leadId: number; cents: number; checkoutSessionId: string }>;
+  /** A paid request refunded in full: its report link is closed and James is told. */
+  reportRefunded: Array<{ leadId: number; name: string; email: string; cents: number; chargeId: string }>;
 }
 
 /**
@@ -104,7 +106,7 @@ export async function recordStripeEvent(tx: Tx, event: Stripe.Event): Promise<bo
  * reset by later failures) and clears whenever the subscription is active or ends.
  */
 export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<StripeEventEffects> {
-  const effects: StripeEventEffects = { welcome: [], reportPaid: [], reportDuplicate: [] };
+  const effects: StripeEventEffects = { welcome: [], reportPaid: [], reportDuplicate: [], reportRefunded: [] };
   await applyEvent(tx, event, effects);
   return effects;
 }
@@ -161,6 +163,38 @@ async function markReportPaid(
       cents: session.amount_total ?? 0,
       checkoutSessionId: session.id,
     });
+  }
+}
+
+/**
+ * The report request a charge paid for. Card checkout copies kind and lead_id onto the
+ * PaymentIntent (payment_intent_data.metadata); older charges are looked up there. A
+ * Stripe error throws, so the webhook returns 500 and Stripe redelivers.
+ */
+async function reportLeadIdForCharge(charge: Stripe.Charge): Promise<number | null> {
+  let metadata: Stripe.Metadata | null | undefined = charge.metadata;
+  if (metadata?.kind !== REPORT_PAYMENT_KIND && charge.payment_intent) {
+    const intent =
+      typeof charge.payment_intent === "string"
+        ? await getStripe().paymentIntents.retrieve(charge.payment_intent)
+        : charge.payment_intent;
+    metadata = intent.metadata;
+  }
+  if (metadata?.kind !== REPORT_PAYMENT_KIND) return null;
+  const leadId = Number(metadata.lead_id);
+  return Number.isSafeInteger(leadId) && leadId > 0 ? leadId : null;
+}
+
+/** A full refund of a paid report: the request reads Refunded and its link stops opening. */
+async function markReportRefunded(tx: Tx, charge: Stripe.Charge, leadId: number, effects: StripeEventEffects): Promise<void> {
+  const refunded = await tx<Array<{ id: string | number; name: string; email: string }>>`
+    UPDATE leads
+    SET refunded_at = NOW(), status = 'refunded'
+    WHERE id = ${leadId} AND paid_at IS NOT NULL AND refunded_at IS NULL
+    RETURNING id, name, email
+  `;
+  for (const lead of refunded) {
+    effects.reportRefunded.push({ leadId: Number(lead.id), name: lead.name, email: lead.email, cents: charge.amount_refunded, chargeId: charge.id });
   }
 }
 
@@ -254,6 +288,15 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
       if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) await applyReportInvoicePayment(tx, invoice, effects);
+      return;
+    }
+
+    case "charge.refunded": {
+      const charge = event.data.object as Stripe.Charge;
+      // A partial refund leaves the report paid; only a full refund closes it.
+      if (!charge.refunded) return;
+      const leadId = await reportLeadIdForCharge(charge);
+      if (leadId) await markReportRefunded(tx, charge, leadId, effects);
       return;
     }
 

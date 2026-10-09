@@ -5,8 +5,11 @@ import { growthAgentForStep } from "@/lib/data-store/growth-board";
 import {
   contactsCsv,
   isDecisionMaker,
+  isLocalPresident,
   pickContacts,
+  rankContacts,
   refreshContactPicks,
+  roleFor,
   runContactFinder,
   summarizeContactPicks,
   type ProspectContactRow,
@@ -44,6 +47,54 @@ describe("pickContacts", () => {
     expect(outreachIsDecisionMaker).toBe(isDecisionMaker);
     expect(isDecisionMaker(lender)).toBe(false);
     expect(isDecisionMaker({ ...marketing, email: "marketing@firstbank.com" })).toBe(false);
+  });
+});
+
+/** A person with a printed title, its role read the way the finder reads it. */
+function titled(email: string, title: string, name: string | null = "Pat Doe") {
+  return { kind: "person" as const, name, title, role: roleFor(title), email };
+}
+
+describe("market and regional presidents", () => {
+  const dieterich = titled("rpickens@dieterichbank.com", "Market President - Metro Market", "Randall Pickens");
+  const variants = ["Market President - Metro Market", "Regional President", "President - Western Region", "Community President", "SVP / Market President", "President, Northern Division"];
+
+  it("reads a market or regional president as a local president, and the bank's president or CEO as not", () => {
+    for (const title of variants) expect(isLocalPresident(titled("x@bank.com", title)), title).toBe(true);
+    for (const title of ["President & CEO", "President", "Chief Executive Officer", "SVP Deposit Products", "Director of Marketing", "Vice President, Regional Marketing"]) {
+      expect(isLocalPresident(titled("x@bank.com", title)), title).toBe(false);
+    }
+  });
+
+  it("ranks marketing, product and deposit titles above a market president (Dieterich Bank, Oct 9)", () => {
+    const deposits = titled("deposits.lead@dieterichbank.com", "SVP Deposit Products");
+    const marketingDirector = titled("mdirector@dieterichbank.com", "Director of Marketing");
+    const retail = titled("retail@dieterichbank.com", "EVP Retail Banking");
+    expect(dieterich.role).toBe("executive");
+    for (const buyer of [deposits, marketingDirector, retail]) {
+      expect(buyer.role, buyer.title).not.toBe("other");
+      const picked = pickContacts([dieterich, buyer]);
+      expect(picked.map((contact) => contact.pick), buyer.title).toEqual(["backup", "primary"]);
+    }
+  });
+
+  it("puts every variant below a buying title even when that title has no name (lower confidence)", () => {
+    const unnamed = titled("marketing.director@firstbank.com", "Director of Marketing", null);
+    expect(pickContacts([unnamed]).map((contact) => contact.confidence)).toEqual(["medium"]);
+    for (const title of variants) {
+      const president = titled("president@firstbank.com", title, "Lee Grant");
+      expect(rankContacts([president, unnamed]).map((contact) => contact.email), title).toEqual([unnamed.email, president.email]);
+    }
+  });
+
+  it("ranks a market president below the bank's CEO and CFO too", () => {
+    expect(rankContacts([dieterich, cfo, ceo]).map((contact) => contact.email)).toEqual([ceo.email, cfo.email, dieterich.email]);
+  });
+
+  it("keeps a market president as the fallback primary when no other decision-maker is listed", () => {
+    const lending = titled("lending@dieterichbank.com", "VP of Lending");
+    const picked = pickContacts([lending, dieterich, info]);
+    expect(picked.map((contact) => contact.pick)).toEqual([null, "primary", null]);
   });
 });
 

@@ -10,6 +10,8 @@ import {
   otherBankFeesSql,
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
+import { nameIsFragment } from "@/lib/agents/darwin/release-review";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
 
@@ -20,11 +22,14 @@ type SqlTag = typeof sql;
  * source check Hamilton runs. Category: `checkFeeCategory`. Evidence (the source-evidence-audit
  * skill, v2): the document must be the bank's own (`otherBankFeesSql`, `unconfirmedHostFeesSql`)
  * and a fee schedule, not an article or product page (`isArticlePage`, `isProductPage`).
+ * Whole record (v3, after UAT scored 10 "right" rows 8/10): a $0 row must be a priced line, not
+ * a perk ("Free checks" in a feature list), and the name must read as a fee's name (no glyph
+ * junk, no cut sentence: Darwin's `nameIsFragment`).
  * Read-only; no writes, no flags, no model calls. Rate fees are not in this sample (they are
  * never pooled with dollars).
  */
 
-export const FRESH_AUDIT_VERSION = 2;
+export const FRESH_AUDIT_VERSION = 3;
 export const FRESH_AUDIT_SAMPLE = 200;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = 30;
@@ -66,6 +71,10 @@ export interface FreshAuditScore {
   categoryMiss: number;
   /** Amount and category hold, but the document is not the bank's own schedule. */
   evidenceMiss: number;
+  /** A $0 row that is a perk in a feature list, not a priced schedule line. */
+  notAFee: number;
+  /** Everything else holds, but the name is glyph junk or a cut sentence. */
+  nameMiss: number;
   /** Stated in another stored document of the bank than the one it was read from. */
   relinked: number;
   /** No completed stored text for the fee: unknown, never right or wrong. */
@@ -75,6 +84,8 @@ export interface FreshAuditScore {
   accuracy: number | null;
   bySeverity: Record<Severity, number>;
   misses: FreshAuditMiss[];
+  /** Every sampled `fee_published_id`, in draw order, so a reviewer can re-check the same rows. */
+  sampleIds: number[];
 }
 
 export interface FreshAuditResult extends FreshAuditScore {
@@ -96,12 +107,15 @@ export function scoreFreshAudit(
     amountMiss: 0,
     categoryMiss: 0,
     evidenceMiss: 0,
+    notAFee: 0,
+    nameMiss: 0,
     relinked: 0,
     noText: 0,
     scorable: 0,
     accuracy: null,
     bySeverity: { critical: 0, major: 0, minor: 0, info: 0 },
     misses: [],
+    sampleIds: fees.map((fee) => Number(fee.fee_published_id)),
   };
   const miss = (fee: FreshAuditFee, check: string, reason: string) => {
     const severity = severityFor(check, reason);
@@ -142,6 +156,19 @@ export function scoreFreshAudit(
       miss(fee, evidenceCheck, evidenceCheck.replace(/^hamilton\./, ""));
       continue;
     }
+    const texts = textsByInstitution.get(Number(fee.institution_id)) ?? [];
+    const own = texts.find((text) => Number(text.source_document_id) === verdict.sourceDocumentId);
+    if (own && zeroIsAPerk(fee, own.normalized_text)) {
+      score.notAFee += 1;
+      miss(fee, NOT_A_FEE_CHECK, "perk_not_a_price");
+      continue;
+    }
+    const nameProblem = nameQuality(fee.fee_name);
+    if (nameProblem) {
+      score.nameMiss += 1;
+      miss(fee, NAME_QUALITY_CHECK, nameProblem);
+      continue;
+    }
     if (verdict.kind === "relinked") score.relinked += 1;
     score.right += 1;
   }
@@ -149,6 +176,26 @@ export function scoreFreshAudit(
   const order: Record<Severity, number> = { critical: 0, major: 1, minor: 2, info: 3 };
   score.misses.sort((a, b) => order[a.severity] - order[b.severity] || a.feeId - b.feeId);
   return score;
+}
+
+export const NOT_A_FEE_CHECK = "deming.not_a_fee_line";
+export const NAME_QUALITY_CHECK = "deming.name_quality";
+/** A price written as zero on the line: "$0", "0.00", "No charge", "N/C", "None", "Waived". */
+const ZERO_PRICE_TOKEN = /\$\s*0(?:\.00)?(?!\d)|(?<![\d.])0\.00\b|\bno\s+(?:charge|fee|cost)\b|\bn\/c\b|\bnone\b|\bwaived\b/i;
+/** Glyphs no fee name carries: Latin Extended letters from a broken font map, the replacement character, controls. */
+const JUNK_GLYPH = /[\u0100-\u024F\uFFFD\u0000-\u0008\u000E-\u001F]/;
+
+/** A $0 row named "Free ..." whose own line states no zero price is a perk, not a fee line. */
+function zeroIsAPerk(fee: FreshAuditFee, text: string): boolean {
+  if (fee.amount == null || Number(fee.amount) !== 0 || !/^\W*free\b/i.test(fee.fee_name)) return false;
+  const check = checkFeeAgainstSource(text, fee.fee_name, 0, ".", fee.canonical_fee_key);
+  return !check.ok || !ZERO_PRICE_TOKEN.test(check.sourceLine);
+}
+
+function nameQuality(name: string): string | null {
+  if (JUNK_GLYPH.test(name)) return "junk_glyphs";
+  if (nameIsFragment(name)) return "name_fragment";
+  return null;
 }
 
 /** The first evidence check the fee fails, or null when its document is the bank's own schedule. */
@@ -236,7 +283,7 @@ export function summarizeFreshAudit(result: FreshAuditResult): string {
     return `Deming audited ${result.sampled} live fees but only ${result.scorable} had stored text, too few for a percentage: ${result.right} right${unknown}.`;
   }
   const pct = (result.accuracy * 100).toFixed(1);
-  return `Deming audited ${result.sampled} live fees (seed ${result.seed}): ${result.right} of ${result.scorable} right (${pct}%), ${result.amountMiss} amount not supported, ${result.categoryMiss} category not supported, ${result.evidenceMiss} not from the bank's own schedule${unknown}. Critical misses: ${result.bySeverity.critical}.`;
+  return `Deming audited ${result.sampled} live fees (seed ${result.seed}): ${result.right} of ${result.scorable} right on amount, category, source, fee line and name (${pct}%); ${result.amountMiss} amount not supported, ${result.categoryMiss} category not supported, ${result.evidenceMiss} not from the bank's own schedule, ${result.notAFee} not a fee line, ${result.nameMiss} bad name${unknown}. Critical misses: ${result.bySeverity.critical}.`;
 }
 
 export function freshAuditDetail(result: FreshAuditResult) {
@@ -252,11 +299,14 @@ export function freshAuditDetail(result: FreshAuditResult) {
     amount_miss: result.amountMiss,
     category_miss: result.categoryMiss,
     evidence_miss: result.evidenceMiss,
+    not_a_fee: result.notAFee,
+    name_miss: result.nameMiss,
     relinked: result.relinked,
     pending: result.misses.filter((miss) => miss.pending).length,
     no_text: result.noText,
     accuracy: result.accuracy,
     by_severity: result.bySeverity,
     misses: result.misses.slice(0, MISS_LIMIT),
+    sample_fee_published_ids: result.sampleIds,
   };
 }

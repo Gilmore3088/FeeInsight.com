@@ -20,7 +20,21 @@ const PAGE_LINES: Record<number, string> = {
   104858: "and Reconciliation | ($50.00 minimum) | Cashback Checking Plus Account | $10.00 /month3\nCashier’s Check | $1.00 /check | Fresh Start Checking Account | $10.00 /month3",
   56804: "** To avoid a Monthly Service Fee of $5 per paper statement, you must enroll for E-Statements within 30 days of account opening.",
   79217: "deposit, OR branch deposit each statement cycle. Internal account to account | Canadian/Foreign Check Handling Charge | $6.00 per item",
+  28554: "purchases, or ATM withdrawals exceed your account’s available | No contents (e.g. check) included in the ATM | $2/envelope",
+  37068: "primary account. 8Up to 5 copies, then $25/hr research fee. 9As of July 25, 2025, new safe deposit box agreements will not be accepted.",
+  44516: "(if balance falls below minimum daily balance) • Excessive transaction fee is $25/transaction",
+  91458: "*unlimited 1st National ATM access / $5.00 monthly maintenance fee",
   95142: "• Stop Payment Fee - $30.00\n• Account Research Fee (minimum 1 hour) - $25.00/hour | • Money Order Research Fee - $10.00/money order\nSHARE & SHARE DRAFT FEES",
+  58050: "Foreign Currency Order or Foreign Currency deposited item | $20.00\nInactive Account (no activity for 365 days, balances under $50) - monthly fee | $2.00\nLevy attachment | $50.00",
+  59464: "• Stop Payment Fee:\no Customer Checking | $10.00\no Bank Issued (Restricted) | $25.00\no Money Order | $10.00",
+  46752: "ATM Transactions (If using a Presto! Or Plus ATM.) | $.50 each\n\nDebit/ATM Card Reissuance | $4.00 each\n\nDebit Card Hot Card Fee | $5.00 each",
+  16698: "- Over 10 Roll Penny (DEBIT MEMO) | $0.05 | ATM/Check Card Re-issuance | $10 /each\n\n- Loose Coin Deposit per Roll(DEBIT MEMO) | $0.50",
+  53034: "Copies of a canceled draft (check) .................... $2.00 each\nCounter Draft (check) (limit 8per month) …........ $1.00 each\nATM Withdrawal Overdraft …………………………$28.00 each",
+  56385: "Wire Research Fee (earnings credit available) | $25.00\nNIGHT DEPOSITORY SERVICE\n Monthly Fee (earnings credit available) | $2.00\n Disposable Bags | varies",
+  21141: "Mailed Statement Fee $\u0017.00 per statement Returned Statement Fee $5.00 per statement Check",
+  77918: "\u0125page Return Mail Fee (no forwarding) ……………$5.00",
+  97560: "Out of Network ATMs \ufffd\ufffd\ufffd $2\ufffd00/Transaction | Non-Sufficient Funds \ufffd\ufffd\ufffd\ufffd$30/item",
+  98064: "Copies of a canceled draft (check) .................... $2.00 each | Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b$5.00\u0125month",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
@@ -59,5 +73,15 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("never moves a fee to a category whose guard rejects the new name", () => {
     const refiles = [{ feePublishedId: 1, from: "bill_pay", amount: 15, to: "overdraft", name: "Non-Return Fee", why: "test" }];
     expect(planHandRefiles([liveRow(1, "bill_pay", "15.00")], refiles)).toEqual([]);
+  });
+
+  it("renames a fee in place once, leaving it alone when the live name already reads as listed", () => {
+    const moves = planHandRefiles([
+      liveRow(97560, "nsf", "30.00", "�00/Transaction: Non-Sufficient Funds ���"),
+      liveRow(21141, "account_research", "5.00", "Returned Statement Fee"),
+    ]);
+    expect(moves.map((move) => [move.refile.feePublishedId, move.refile.to, move.refile.name])).toEqual([
+      [97560, "nsf", "Non-Sufficient Funds"],
+    ]);
   });
 });

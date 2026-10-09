@@ -161,6 +161,15 @@ function ReportQuotePanel({ lead }: { lead: LeadRow }) {
   const quoted = quote.status === "saved" || lead.quote_cents !== null;
   const institutionHint = lead.quote_institution_id ?? institutionIdFromUseCase(lead.use_case);
 
+  if (lead.paid_at && lead.refunded_at) {
+    return (
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-900/20 dark:text-amber-300">
+        Paid {lead.quote_cents !== null ? formatUsd(lead.quote_cents) : ""} on {formatStamp(lead.paid_at)}, refunded in full on{" "}
+        {formatStamp(lead.refunded_at)}. Their private report link no longer opens.
+      </div>
+    );
+  }
+
   if (lead.paid_at) {
     return (
       <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-300">

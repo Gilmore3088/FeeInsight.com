@@ -22,8 +22,13 @@ type SqlTag = typeof sql;
  * v1 (2026-10-09): UAT's 20-row check of the not_in_source re-select (#883) found 16 right;
  * three misses were $0 "free if you meet a condition" readings of $2.50-$6.95 fees, one a
  * package list verified into the retired `estatement_fee` type.
+ * v2 (2026-10-09): UAT's 10-row takedown check of v1 found 7 right; the misses read a non-member
+ * price, a comparison table's other column and another label's figure as the fee's fallback
+ * price. The $0 rule now reads the fee's own cell and label (`ownSegment`). v2 also re-reads the
+ * rows v1 rejected (flag `darwin_recheck:*`): one that passes now is restored to verified with the
+ * flag removed; a live row that passes now has its pending second-look flag cleared.
  */
-export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 1 } as const;
+export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 2 } as const;
 export const RECHECK_LIMIT = 200;
 /** The shared second look's check name while live failures are only flagged. */
 export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";
@@ -39,6 +44,7 @@ export const RECHECK_REJECTED_FLAG_PREFIX = "darwin_recheck";
 
 interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
+  review_status: string;
   canonical_fee_key: string;
   verified_amount: number | string | null;
   fee_published_id: number | string | null;
@@ -48,6 +54,10 @@ export interface VerifiedRecheckResult {
   checked: number;
   passed: number;
   rejected: Array<{ feeVerifiedId: number; code: string }>;
+  /** Rows an earlier recheck version rejected that pass now, set back to verified. */
+  restored: number[];
+  /** Live rows whose pending second-look flag was cleared because they pass now. */
+  cleared: number;
   /** Live rows flagged for the 12-hour second look (switch off). */
   flagged: number;
   /** Live rows already flagged and still inside the 12 hours (switch off). */
@@ -56,11 +66,11 @@ export interface VerifiedRecheckResult {
   takenDown: number[];
 }
 
-const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], flagged: 0, waiting: 0, takenDown: [] };
+const EMPTY: VerifiedRecheckResult = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
 
 function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise<RecheckRow[]> {
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
-      SELECT v.fee_verified_id, v.canonical_fee_key, v.amount AS verified_amount,
+      SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
              r.fee_name, r.amount, r.frequency, r.outlier_flags, r.conditions, r.source_document_id,
              r.amount_kind, r.rate_percent,
@@ -69,13 +79,18 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
                ORDER BY p.fee_published_id DESC LIMIT 1) AS fee_published_id
         FROM verified_fee_observations v
         JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
-       WHERE v.review_status IN ('verified', 'approved')
-         AND EXISTS (
-           SELECT 1 FROM pipeline_attempts pa
-            WHERE pa.input_fingerprint = 'raw:' || v.fee_raw_id::text
-              AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
-              AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
-              AND pa.detail->>'decision' = 'verified'
+       WHERE (
+           (v.review_status IN ('verified', 'approved') AND EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.input_fingerprint = 'raw:' || v.fee_raw_id::text
+                AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
+                AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+                AND pa.detail->>'decision' = 'verified'
+           ))
+           OR (v.review_status = 'rejected' AND EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text(COALESCE(v.outlier_flags, '[]'::jsonb)) flag
+              WHERE flag LIKE ${`${RECHECK_REJECTED_FLAG_PREFIX}:%`}
+           ))
          )
          AND (${!reselectCohort} OR EXISTS (
            SELECT 1 FROM pipeline_attempts pa
@@ -100,7 +115,7 @@ export async function recheckVerifiedFees(
 ): Promise<VerifiedRecheckResult> {
   const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
   options = { ...options, sameStepTakedown: options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN };
-  const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], takenDown: [] };
+  const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], restored: [], takenDown: [] };
   let rows: RecheckRow[];
   try {
     // The rows the not_in_source re-select verified (#883, the cohort UAT checked) are read first;
@@ -126,6 +141,7 @@ export async function recheckVerifiedFees(
     sourceDocumentId: number | null;
     reason: string;
   }> = [];
+  const passingLive: number[] = [];
   for (const row of rows) {
     const feeVerifiedId = Number(row.fee_verified_id);
     const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
@@ -133,10 +149,28 @@ export async function recheckVerifiedFees(
     const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
     const check = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line);
     const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
+    const wasRejected = row.review_status === "rejected";
     result.checked += 1;
     const reason = check ? `${RECHECK_REJECTED_FLAG_PREFIX}:${check.code}${check.rule ? `:${check.rule}` : ""}` : "";
-    if (!check) result.passed += 1;
-    else if (publishedId == null) {
+    if (wasRejected) {
+      // An earlier recheck version rejected this row; a pass under this version restores it.
+      if (!check) {
+        await db`
+          UPDATE verified_fee_observations
+             SET review_status = 'verified',
+                 outlier_flags = COALESCE((
+                   SELECT jsonb_agg(flag) FROM jsonb_array_elements(COALESCE(outlier_flags, '[]'::jsonb)) flag
+                    WHERE flag #>> '{}' NOT LIKE ${`${RECHECK_REJECTED_FLAG_PREFIX}:%`}
+                 ), '[]'::jsonb)
+           WHERE fee_verified_id = ${feeVerifiedId}
+             AND review_status = 'rejected'
+        `;
+        result.restored.push(feeVerifiedId);
+      }
+    } else if (!check) {
+      result.passed += 1;
+      if (publishedId != null) passingLive.push(publishedId);
+    } else if (publishedId == null) {
       await db`
         UPDATE verified_fee_observations
            SET review_status = 'rejected',
@@ -182,20 +216,28 @@ export async function recheckVerifiedFees(
         code: check?.code ?? null,
         rule: check?.rule ?? null,
         line: line ? line.slice(0, 300) : null,
-        action: !check ? "passed" : publishedId == null ? "rejected" : options.sameStepTakedown ? "taken_down" : "second_look",
+        action: wasRejected
+          ? (check ? "still_rejected" : "restored")
+          : !check ? "passed" : publishedId == null ? "rejected" : options.sameStepTakedown ? "taken_down" : "second_look",
       },
     });
   }
 
-  if (failing.length === 0) return result;
+  if (failing.length === 0 && passingLive.length === 0) return result;
   if (!options.sameStepTakedown) {
-    // The 12-hour path: flag now, roll back only when a run 12 hours on fails the row again.
-    const look = await secondLook(db, { check: DARWIN_RECHECK_CHECK, runId: options.runId, failing, dryRun: false, now: options.now });
+    // The 12-hour path: flag now, roll back only when a run 12 hours on fails the row again; a
+    // live row that passes now has any pending flag from an earlier version cleared.
+    const look = await secondLook(db, { check: DARWIN_RECHECK_CHECK, runId: options.runId, failing, passing: passingLive, dryRun: false, now: options.now });
     result.flagged = look.flagged;
     result.waiting = look.waiting;
+    result.cleared = look.cleared;
     if (look.confirmed.length === 0) return result;
     failing.splice(0, failing.length, ...look.confirmed.map((fee) => failing.find((row) => row.feePublishedId === fee.feePublishedId)!));
+  } else if (passingLive.length > 0) {
+    const look = await secondLook(db, { check: DARWIN_RECHECK_CHECK, runId: options.runId, failing: [], passing: passingLive, dryRun: false, now: options.now });
+    result.cleared = look.cleared;
   }
+  if (failing.length === 0) return result;
   // James, 11:55 UTC 2026-10-09 ("stop waiting 12 hours. go"): with the switch on, a live fee the
   // recheck fails comes down in the same step. It is archived (rolled back with the reason), never
   // deleted; the verified row is rejected with the same flag, and every row keeps its attempt.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { capitalisedName, junkStrippedName, pageCompletedName, publishCutName, thresholdFromPage, cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -554,7 +554,11 @@ describe("v14: a monthly fee's bare name shared at different prices takes its ac
 
   it("renames none of them when one can't find a heading of its own", () => {
     const twin = { ...page[0], normalized_text: page[0].normalized_text.replace("High Yield Checking", "Qualify for more") };
-    expect(planRetidy([premium, highYield], [twin], [premium, highYield]).renames).toEqual([]);
+    // v16: neither takes a heading; each only takes a capital.
+    expect(planRetidy([premium, highYield], [twin], [premium, highYield]).renames.map((rename) => rename.newName)).toEqual([
+      "Waivable monthly fee",
+      "Waivable monthly fee",
+    ]);
     expect(accountHeading("monthly fee", 5, ["Compare Checking Accounts\n$5 monthly fee"])).toBeNull();
     expect(accountHeading("monthly fee", 5, ["Freedom Checking\n$50 monthly fee"])).toBeNull();
   });
@@ -685,5 +689,139 @@ describe("v15: a rename never drops a condition, and v14's trims get theirs back
 
   it("reads U+0372 between letters as the font's hyphen", () => {
     expect(spacedControlName("Non\u0372Sufficient\u0003Funds\u0003(NSF)\u0003Return")).toBe("Non-Sufficient Funds (NSF) Return");
+  });
+});
+
+describe("v16: a name that opens in lower case", () => {
+  it("takes a capital, without a list marker, an article or the row above's unit", () => {
+    expect(capitalisedName("monthly service charge")).toBe("Monthly service charge");
+    expect(capitalisedName("a monthly maintenance fee")).toBe("Monthly maintenance fee");
+    expect(capitalisedName("f. Returned Mail Fee")).toBe("Returned Mail Fee");
+    expect(capitalisedName("ii. Stop Payment Charge")).toBe("Stop Payment Charge");
+    expect(capitalisedName("o A Minimum Balance Fee")).toBe("Minimum Balance Fee");
+    expect(capitalisedName("per item Incoming Wire Transfer")).toBe("Incoming Wire Transfer");
+    expect(capitalisedName("ea Return Statement Charge (wrong address)")).toBe("Return Statement Charge (wrong address)");
+    expect(capitalisedName("monthly service fee (Basic Checking)")).toBe("Monthly service fee (Basic Checking)");
+    expect(isMessyName("monthly service charge")).toBe(true);
+    expect(capitalisedName("H. The standard overdraft fee")).toBe("Standard overdraft fee");
+    expect(capitalisedName("A Minimum Balance fee")).toBe("Minimum Balance fee");
+    expect(capitalisedName("The Overdraft Transfer Service Fee")).toBe("Overdraft Transfer Service Fee");
+    expect(isMessyName("H. The standard overdraft fee")).toBe(true);
+    expect(capitalisedName("A La Carte Services - Bill Pay")).toBeNull();
+    expect(capitalisedName("A low monthly service charge of only")).toBeNull();
+    expect(capitalisedName("A monthly service fee applies")).toBeNull();
+    expect(capitalisedName("A Late Payment Fee in an amount equal to")).toBeNull();
+  });
+
+  it("leaves a lower-case brand, a condition, a sentence or another row's cell", () => {
+    for (const name of [
+      "eCorp Outgoing Wires",
+      "i-Pay Bill Payment",
+      "of all items presented that day would result in an overdraft of",
+      "per month after 6 months of inactivity",
+      "monthly service charge; waived with average daily balance",
+      "monthly service fee reduced",
+      "annually Lost key/box drilling",
+      "monthly Levy",
+      "other fees lAte fee",
+      "ach returned nsf",
+      "check/draft/ACH, ACH origination withdrawals, Bill Payment, Audio",
+      "if below minimum balance",
+      "Monthly service charge",
+    ]) {
+      expect(capitalisedName(name), name).toBeNull();
+    }
+  });
+
+  it("renames the live fee even though only its capital changes", () => {
+    const plain = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "monthly service charge", amount: 10 });
+    expect(planRetidy([plain], []).renames.map((rename) => rename.newName)).toEqual(["Monthly service charge"]);
+  });
+});
+
+describe("v16: a condition publish cut off Knox's name", () => {
+  const cut = { ...fee({ fee_published_id: 107240, canonical_fee_key: "minimum_balance", fee_name: "Minimum Balance Fee", amount: 15 }), raw_fee_name: "Minimum Balance Fee (if Balance is Below $7,500)", retidied: false };
+  const page = [{ source_document_id: Number(cut.source_document_id), normalized_text: "Business Checking Plus | Current Fee\n\nMinimum Balance Fee (if Balance is Below $7,500): | $15\n" }];
+
+  it("comes back where the fee's own page prints it whole", () => {
+    expect(publishCutName(cut)).toEqual({ oldName: "Minimum Balance Fee (if Balance is Below $7,500)", newName: "Minimum Balance Fee", pageCheck: true });
+    expect(planRetidy([cut], page).renames.map((rename) => rename.newName)).toEqual(["Minimum Balance Fee (if Balance is Below $7,500)"]);
+    expect(planRetidy([cut], [{ ...page[0], normalized_text: "Minimum Balance Fee | $15" }]).renames).toEqual([]);
+  });
+
+  it("leaves a fee retidy renamed, a footnote, a price range or the next line's fee", () => {
+    expect(publishCutName({ ...cut, retidied: true })).toBeNull();
+    expect(publishCutName({ ...cut, retidied: undefined })).toBeNull();
+    expect(restoredName("Overdraft Fee7,8", "Overdraft Fee", "overdraft")).toBeNull();
+    expect(restoredName("Cashier’s Check $500.00-$1,000.00", "Cashier’s Check", "cashiers_check")).toBeNull();
+    expect(restoredName("(balance falls below $1,000) $15.00 Copy of Check $3.00 (in house)", "(balance falls below $1,000)", "check_image")).toBeNull();
+    expect(restoredName("Fax Service: If members need to send or receive a fax, we can help", "Fax Service", "document_reproduction")).toBeNull();
+  });
+});
+
+describe("v16: UAT's 933 misses", () => {
+  it("puts back a threshold cut off the end from the fee's own line", () => {
+    const page = [
+      "Capitol Plus Money Market Account\n\nAverage Daily Balance above $2,500 | N/A\n\nAverage Daily Balance below $2,500 | $10.00/month\n\nCapitol Business Plus Checking Account\n\nAverage Daily Balance below $2,500 | $25.00/month",
+    ];
+    expect(thresholdFromPage("Capitol Plus Money Market Account Average Daily Balance below", 10, page)).toBe(
+      "Capitol Plus Money Market Account Average Daily Balance below $2,500",
+    );
+    expect(thresholdFromPage("Capitol Plus Money Market Account Average Daily Balance below", 12, page)).toBeNull();
+    expect(isMessyName("Capitol Plus Money Market Account Average Daily Balance below")).toBe(true);
+  });
+
+  it("finishes a word Knox cut at its length limit, to the end of its clause", () => {
+    const name = "Inactivity Fee - Charged monthly to each savings, checking, and money market account if no activity on any Citadel accou";
+    const page = ["$5.00 Inactivity Fee - Charged monthly to each savings, checking, and money market account if no activity on any Citadel account for one year. Waived if one of the following criteria is met:"];
+    expect(pageCompletedName(name, page)).toBe(`${name}nt for one year`);
+    expect(pageCompletedName(name, ["something else"])).toBeNull();
+  });
+
+  it("reads a font's hyphen left after an earlier pass", () => {
+    expect(spacedControlName("Non\u0372Sufficient Funds (NSF) Return")).toBe("Non-Sufficient Funds (NSF) Return");
+    expect(isMessyName("Non\u0372Sufficient Funds (NSF) Return")).toBe(true);
+  });
+});
+
+describe("v17 junk glyphs", () => {
+  it("cuts a font's leader dots, a dot leader of U+FFFD and a footnote bullet off the end", () => {
+    expect(junkStrippedName("Notary Service for members ċċ")).toBe("Notary Service for members");
+    expect(junkStrippedName("Skip-a-payment .. ċċċ .ċċċ")).toBe("Skip-a-payment");
+    expect(junkStrippedName("Night Depository ċċ.")).toBe("Night Depository");
+    expect(junkStrippedName("Copy of statement �����")).toBe("Copy of statement");
+    expect(junkStrippedName("Replacement Visa Debit Card ●")).toBe("Replacement Visa Debit Card");
+  });
+
+  it("cuts a drawn or symbol-font bullet off the front and drops zero-width spaces", () => {
+    expect(junkStrippedName("♦ Paid Overdraft")).toBe("Paid Overdraft");
+    expect(junkStrippedName(" Stop Payment Charges")).toBe("Stop Payment Charges");
+    expect(junkStrippedName("\u0095 Account Reconciliation")).toBe("Account Reconciliation");
+    expect(junkStrippedName("​Dormant Account Fee")).toBe("Dormant Account Fee");
+    expect(junkStrippedName("Levies​​​")).toBe("Levies");
+    expect(junkStrippedName("● 5 x 10 Box Rent")).toBe("5 x 10 Box Rent");
+  });
+
+  it("leaves a glyph inside a name, which stands for a letter, a figure or a cell break", () => {
+    expect(junkStrippedName("Paid Check/Dra� Photocopy")).toBeNull();
+    expect(junkStrippedName("Outgoing Wire – Domesc including Western Union")).toBeNull();
+    expect(junkStrippedName("ACH Wire Transfers � Foreign")).toBeNull();
+    expect(junkStrippedName("Outgoing Wire Fee:  Foreign")).toBeNull();
+    expect(junkStrippedName("Lost Debit Rewards Card Replacement ��� 1st Free")).toBeNull();
+    expect(junkStrippedName("/year ● Late Payment Fee")).toBeNull();
+    // A U+FFFD before a name may be a "$"; the same font writes its digits as U+0100-U+0109.
+    expect(junkStrippedName("�00/Transaction: Non-Sufficient Funds ���")).toBeNull();
+    expect(junkStrippedName("Inactive Account (after āĂ monthsof inactivity) ċċċ")).toBeNull();
+    expect(junkStrippedName("\u200b4 ATM Transaction (each)")).toBeNull();
+    expect(junkStrippedName("Overdraft Fee")).toBeNull();
+  });
+
+  it("renames a junk-glyph name in the plan, and the name is messy", () => {
+    expect(isMessyName("Notary Service for members ċċ")).toBe(true);
+    const plan = planRetidy(
+      [fee({ canonical_fee_key: "notary_fee", fee_name: "Notary Service for members ċċ", amount: 0 })],
+      [{ source_document_id: 70, normalized_text: "Notary Service for members ċċ $0.00" }],
+    );
+    expect(plan.renames.map((rename) => rename.newName)).toEqual(["Notary Service for members"]);
   });
 });

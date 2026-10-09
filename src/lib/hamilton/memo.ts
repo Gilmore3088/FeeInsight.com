@@ -188,7 +188,7 @@ export async function writeStorylineMemo(
     } catch (error) {
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
       const message = error instanceof Error ? error.message : String(error);
-      return { status: "unavailable", reason: /budget/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
+      return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
     }
     const draft = parseMemo(raw);
     if (!draft) {

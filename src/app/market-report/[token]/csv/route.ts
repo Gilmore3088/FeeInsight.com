@@ -6,6 +6,7 @@
  */
 import { buildReportCsv } from "@/lib/custom-report/analysis";
 import { verifyReportToken } from "@/lib/custom-report/link";
+import { isReportRevoked } from "@/lib/data-store/report-payments";
 import { loadMarketReport } from "@/lib/custom-report/report-data";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   const { token } = await params;
   const verified = verifyReportToken(token);
   if (!verified) return new Response("Not found", { status: 404 });
+  if (await isReportRevoked(verified.institutionId)) return new Response("Not found", { status: 404 });
   const report = await loadMarketReport(verified.institutionId);
   if (!report) return new Response("Not found", { status: 404 });
   const { data, analysis } = report;
