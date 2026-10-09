@@ -29,6 +29,17 @@ describe("competitor coverage in one market", () => {
     });
   });
 
+  it("leaves national online and branchless banks out of the competitors", () => {
+    const live = new Map([[2, { hasOverdraft: true }]]);
+    expect(summarizeMarketCoverage(footprint, 1, live, new Set([2]))).toEqual({
+      competitors: 3,
+      withFees: 0,
+      withOverdraft: 0,
+      depositShare: 0,
+      depositShareOverdraft: 0,
+    });
+  });
+
   it("has no deposit share when only credit unions compete", () => {
     const coverage = summarizeMarketCoverage({ 1: { branches: 1, deposits: 10 }, 9: { branches: 2, deposits: null } }, 1, new Map());
     expect(coverage).toEqual({ competitors: 1, withFees: 0, withOverdraft: 0, depositShare: null, depositShareOverdraft: null });
