@@ -76,6 +76,12 @@ describe("what SHERLOCK reads as a fee item", () => {
     const html = "<h1>Annual Overdraft Fee Survey 2026</h1><p>Contact us</p><li>Pricing benchmark data for credit unions</li><h2>Annual Overdraft Fee Survey 2026</h2><script>fee()</script>";
     expect(competitorLines(html)).toEqual(["Annual Overdraft Fee Survey 2026", "Pricing benchmark data for credit unions"]);
   });
+
+  it("keeps script held in a tag's attributes out of the lines", () => {
+    // From the Bankrate survey page: an Alpine attribute with ">" in it.
+    const html = `<button @click="if (open > 0) { closeNav(); closeSearch(); }" :class="{ 'is-active': isNavOpen }" data-name="search flyout">Menu</button><h1>ATM fees hit record high</h1>`;
+    expect(competitorLines(html)).toEqual(["ATM fees hit record high"]);
+  });
 });
 
 describe("growth-intel step", () => {
