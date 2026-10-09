@@ -257,6 +257,16 @@ const COPY_LED = /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postag
 export const CHECKBOOK_RECONCILIATION =
   /^(?![\s\S]*\b(?:orders?|ordering|reorder\w*|printing|styles?|box(?:es)?)\b)[\s\S]*\b(?:reconcil\w*|balancing|balance (?:the |your |a |customer )?(?:check ?books?|statements?)|research)\b/i;
 
+/**
+ * A "Cross-Border Banking" bundle, package or account (RBC's U.S. Premium Checking "Cross-Border
+ * Banking Bundle annual fee", $99.50 a year or $9.95 a month; TD and BMO use the name too) is an
+ * account, so its fee is the account's maintenance fee, not the card's currency fee. A line naming
+ * a transaction, purchase, conversion, currency, exchange, ATM, wire or a percentage stays the
+ * card's. Knox reads these lines with this too, ahead of its currency fee rule.
+ */
+export const CROSS_BORDER_BUNDLE =
+  /^(?![\s\S]*(?:%|\b(?:transactions?|purchases?|conversions?|currency|exchange|atms?|wires?)\b))[\s\S]*\bcross[- ]?border (?:banking|bundles?|packages?|accounts?)\b/i;
+
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
@@ -309,6 +319,8 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   },
   // Balancing or reconciling a checkbook is reconciliation work, not a check order.
   check_printing: { to: "account_research", name: CHECKBOOK_RECONCILIATION, sqlPattern: "reconcil|balanc|research" },
+  // A cross-border banking bundle's fee is the account's maintenance fee, not a currency fee.
+  card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
   atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
   // A statement mailed back undelivered is returned mail, which account research holds.
@@ -330,7 +342,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 12;
+export const FOLD_RULES_VERSION = 13;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
