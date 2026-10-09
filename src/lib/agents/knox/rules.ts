@@ -3,7 +3,7 @@ import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
-import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
@@ -24,6 +24,7 @@ export const MAX_FEES_PER_DOCUMENT = 75;
 const MAX_HELD_PER_DOCUMENT = 40;
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
 const MAX_SEGMENT_CHARS = 280;
+const MAX_NAME_CHARS = 120;
 const MIN_SEGMENT_CHARS = 8;
 export const MAX_REASONABLE_FEE_AMOUNT = 2_500;
 
@@ -454,7 +455,7 @@ export function joinWrappedProse(lines: string[]): string[] {
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
-  const lines = joinWrappedProse(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()));
+  const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
   for (const rawLine of lines) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
@@ -641,7 +642,7 @@ export function nameFrom(value: string): string {
     return `\u0000${kept.length - 1}\u0000`;
   });
   const stripped = masked.replace(AMOUNT_PATTERN, " ").replace(/\u0000(\d+)\u0000/g, (_, index: string) => kept[Number(index)]);
-  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, 120).trim();
+  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, MAX_NAME_CHARS).trim();
 }
 
 /**
@@ -1021,6 +1022,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (!hint && firstAmount && /^\s*\|/.test(segment) && (cells?.filter(Boolean).length ?? 0) >= 3 && !amountsIn(titleCell).length) {
     hint = classifyFeeText(titleCell);
   }
+  // v62: "Domestic Outgoing (client only) ........ $25.00 per wire" (Northern Trust) names its
+  // fee only together with the noun after the price; the name keeps that noun.
+  const perWire = !hint && firstAmount != null && !priceFirst && usableName(name) &&
+    /^\s*per\s+wire(?:\s+transfer)?\b/i.test(segment.slice(firstAmount.end)) && !/\bwires?\b/i.test(name);
+  if (perWire) hint = classifyFeeText(`${name} wire`);
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
@@ -1135,6 +1141,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  if (perWire && !/\bwires?\b/i.test(feeName)) feeName = `${feeName} wire`;
+  // v62: a name cut at its length limit inside a parenthesis ("... Nonsufficient Funds (includes
+  // but not limited to overdrafts created by check, in-") is named by the words before it.
+  const cutParen = feeName.length >= MAX_NAME_CHARS - 2 && parenBalance(feeName) > 0 ? feeName.slice(0, feeName.lastIndexOf("(")).trim() : "";
+  if (usableName(cutParen)) feeName = cutParen;
   // v38: a threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32")
   // stays in the name with its figure: "Courtesy Pay (over $5)".
   const thresholdCell = cells?.find((cell, index) => index > 0 && THRESHOLD_CELL.test(cell));

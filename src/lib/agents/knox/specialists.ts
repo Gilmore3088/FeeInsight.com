@@ -53,7 +53,10 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v60: a threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and Over)"),
 // a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words (`nameFrom`, `tidyFeeName`).
 // v61: adjusting an ATM deposit or dispute is account research, not a network ATM fee (`ATM_ADJUSTMENT`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 61 } as const;
+// v62: a dot-leader line's name wrapped over lines above it is read whole (`joinWrappedLeaderNames`),
+// "Domestic Outgoing (client only) .... $25.00 per wire" is a wire, and one line read by two
+// specialists is one fee (Northern Trust).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 62 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -96,6 +99,9 @@ function words(value: string): string {
  */
 export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boolean {
   if (a.canonicalHint !== b.canonicalHint || a.amount !== b.amount) return false;
+  // v62: one source line read by two specialists is one fee, whatever each named it
+  // ("Domestic Incoming wire" and "Wire Transfers: Domestic Incoming", Northern Trust).
+  if (a.excerpt.trim() === b.excerpt.trim()) return true;
   const nameA = words(a.feeName);
   const nameB = words(b.feeName);
   if (nameA === nameB || words(a.excerpt).includes(nameB) || words(b.excerpt).includes(nameA)) return true;

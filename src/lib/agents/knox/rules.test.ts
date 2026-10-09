@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
+import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
 import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -1027,5 +1028,53 @@ describe("v60: names keep their threshold and lose a column label", () => {
     expect(
       tidyFeeName("SERVICE FEES | Check Cashing (Less than $500, no other active service) Active = service used at least every 6 months"),
     ).not.toBe("SERVICE FEES");
+  });
+});
+
+describe("v62: Northern Trust's wrapped names and per-wire lines", () => {
+  const read = (text: string) => runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+  const page = [
+    "Returned Unpaid ................................................................ 4.50 per item",
+    "Legal Document Processing (Levies, Garnishments,",
+    "Citations, Subpoenas, Liens, or other Court,",
+    "Regulatory, or Administrative Orders)..................................$115.00",
+    "Overdrafts Paid and Items Paid against Nonsufficient",
+    "Funds (includes but not limited to overdrafts",
+    "created by check, in-person withdrawals",
+    "at a teller or recurring electronic",
+    "debit card payments) ................................... $25.00 per Occurrence",
+    "(maximum of 3 overdraft charges per day)",
+    "Stop Payment Order............................................................ $30.00 per item",
+    "Wire Transfers",
+    "Domestic Incoming .......................................................$15.00 per wire",
+    "International Incoming ................................................$15.00 per wire",
+    "Domestic Outgoing (client only)..............................$25.00 per wire",
+    "International Outgoing (client only) .......................$45.00 per wire",
+  ].join("\n");
+
+  it("reads an overdraft fee whose name wraps over the lines above its price", () => {
+    expect(read(page)).toContainEqual(["Overdrafts Paid and Items Paid against Nonsufficient Funds", 25, "overdraft"]);
+    expect(read(page)).toContainEqual(["Legal Document Processing", 115, "garnishment_levy"]);
+  });
+
+  it("names a wire by the noun after its price, once per line", () => {
+    const wires = read(page).filter((fee) => String(fee[2]).startsWith("wire_"));
+    expect(wires).toEqual([
+      ["Domestic Incoming wire", 15, "wire_domestic_incoming"],
+      ["International Incoming wire", 15, "wire_intl_incoming"],
+      ["Domestic Outgoing (client only) wire", 25, "wire_domestic_outgoing"],
+      ["International Outgoing (client only) wire", 45, "wire_intl_outgoing"],
+    ]);
+  });
+
+  it("never reaches past a priced line, a finished sentence or an unopened tail", () => {
+    expect(joinWrappedLeaderNames(["Stop Payment ..... $30.00", "or recurring debit card payments) ..... $25.00"])).toEqual([
+      "Stop Payment ..... $30.00",
+      "or recurring debit card payments) ..... $25.00",
+    ]);
+    expect(joinWrappedLeaderNames(["Fees are listed below.", "Overdraft (paid", "items) ..... $25.00"])).toEqual([
+      "Fees are listed below.",
+      "Overdraft (paid items) ..... $25.00",
+    ]);
   });
 });
