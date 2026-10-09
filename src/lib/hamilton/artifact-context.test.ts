@@ -79,13 +79,13 @@ describe("Hamilton artifact context resolution", () => {
     ).toEqual({ kind: "report", artifactId: "report-2" });
   });
 
-  it("does not query saved artifacts when explicit URL institution context is present", () => {
+  it("always queries a saved analysis even with conflicting URL institution context", () => {
     expect(
       getHamiltonArtifactContextLookup({
         pathname: "/pro/analyze",
         searchParams: new URLSearchParams("analysis=abc-123&instId=8109"),
       }),
-    ).toBeNull();
+    ).toEqual({ kind: "analysis", artifactId: "abc-123" });
   });
 
   it("allows blank URL institution context to fall back to saved artifact context", () => {

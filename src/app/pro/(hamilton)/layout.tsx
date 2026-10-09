@@ -71,25 +71,27 @@ async function HamiltonLayoutInner({
   const requestSearchParams = new URLSearchParams(queryString);
   const selectedInstId = requestSearchParams.get("instId");
   const selectedIntent = requestSearchParams.get("intent");
+  const artifactLookup = getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
+  const savedAnalysisRequested = artifactLookup?.kind === "analysis";
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
-    lookup: getHamiltonArtifactContextLookup({
-      pathname,
-      searchParams: requestSearchParams,
-    }),
+    lookup: artifactLookup,
   }).catch(() => null);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: selectedInstId,
     artifactInstitutionId,
+    preferArtifact: savedAnalysisRequested,
   });
-  const isArtifactContext = !selectedInstId && Boolean(artifactInstitutionId);
+  const isArtifactContext = savedAnalysisRequested || (!selectedInstId && Boolean(artifactInstitutionId));
   const { institution: selectedInstitution, source: selectedSource, isWorkspaceBank } =
-    await resolveHamiltonInstitutionContext({
+    savedAnalysisRequested && !contextInstitutionId
+      ? { institution: null, source: "none" as const, isWorkspaceBank: false }
+      : await resolveHamiltonInstitutionContext({
       userId: user.id,
       instId: contextInstitutionId,
       intent: selectedIntent,
-      persistUrlSelection: shouldPersistUrlInstitutionSelection(selectedInstId),
-      makeDefault: requestSearchParams.get("setBank") === "1",
+      persistUrlSelection: savedAnalysisRequested ? false : shouldPersistUrlInstitutionSelection(selectedInstId),
+      makeDefault: !savedAnalysisRequested && requestSearchParams.get("setBank") === "1",
       transientSource: isArtifactContext ? "artifact" : undefined,
     });
   const selectedInstitutionId = selectedInstitution?.id.toString() ?? null;
@@ -105,7 +107,7 @@ async function HamiltonLayoutInner({
         makeDefaultHref:
           isWorkspaceBank === false
             ? `${pathname}?${(() => {
-                const next = new URLSearchParams(requestSearchParams);
+                const next = new URLSearchParams(savedAnalysisRequested ? "" : requestSearchParams);
                 next.set("instId", String(selectedInstitution.id));
                 next.set("setBank", "1");
                 return next.toString();
@@ -118,15 +120,15 @@ async function HamiltonLayoutInner({
         selectedFromUrl: selectedSource === "url",
       }
     : {
-        name: user.institution_name,
-        type: user.institution_type,
-        assetTier: user.asset_tier,
-        fedDistrict: user.fed_district ?? null,
-        stateCode: user.state_code ?? null,
+        name: savedAnalysisRequested ? "Saved answer · research subject unavailable" : user.institution_name,
+        type: savedAnalysisRequested ? null : user.institution_type,
+        assetTier: savedAnalysisRequested ? null : user.asset_tier,
+        fedDistrict: savedAnalysisRequested ? null : user.fed_district ?? null,
+        stateCode: savedAnalysisRequested ? null : user.state_code ?? null,
         feePublicationLabel: null,
         publishedFeeCount: null,
         provisionalFeeCount: null,
-        selectedSource: user.institution_name ? ("profile" as const) : ("none" as const),
+        selectedSource: !savedAnalysisRequested && user.institution_name ? ("profile" as const) : ("none" as const),
         selectedFromUrl: false,
       };
   return (

@@ -25,6 +25,9 @@ export function hrefWithInstitutionContext(
   if (path !== "/pro" && !path.startsWith("/pro/")) return href;
 
   const params = new URLSearchParams(query);
+  // Saved answers resolve their own authorized, historical subject on the server.
+  // Never attach the institution currently being browsed to a history link.
+  if (path === "/pro/analyze" && params.get("analysis")?.trim()) return href;
   if (!params.has("instId")) params.set("instId", normalizedInstitutionId);
   const nextQuery = params.toString();
   return `${nextQuery ? `${path}?${nextQuery}` : path}${fragment}`;

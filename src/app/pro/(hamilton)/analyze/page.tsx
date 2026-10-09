@@ -2,7 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
 import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
@@ -18,8 +18,8 @@ export const metadata: Metadata = { title: "Ask Hamilton" };
  * AnalyzePage — Server component that gates and hydrates the Analyze workspace.
  * Auth enforced at the layout level (canAccessPremium), but we also verify here
  * to ensure server-side redirect on direct navigation.
- * Reads optional ?analysis= searchParam to restore a saved analysis on load.
- * Passes userId, institutionId, and initialAnalysis to the client workspace shell.
+ * A saved answer's user-scoped record is authoritative for its research subject.
+ * URL parameters and today's workspace preference may not relabel that answer.
  */
 export default async function AnalyzePage({
   searchParams,
@@ -30,26 +30,38 @@ export default async function AnalyzePage({
   if (!user) redirect("/");
 
   const params = await searchParams;
-  const analysisId = params.analysis;
+  const analysisId = params.analysis?.trim();
   const [initialAnalysisRecord, recent] = await Promise.all([
     analysisId ? loadAnalysisRecord(analysisId) : null,
     // Only the start screen lists them; an answer page doesn't need the read.
     !analysisId && !params.q ? listSavedAnalyses(6) : [],
   ]);
+  // Missing, inaccessible or invalid saved IDs must not silently become a new query.
+  if (analysisId && !initialAnalysisRecord) notFound();
+  const isArtifactContext = Boolean(initialAnalysisRecord);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,
     artifactInstitutionId: initialAnalysisRecord?.institutionId,
+    preferArtifact: isArtifactContext,
   });
-  const isArtifactContext = !params.instId && Boolean(contextInstitutionId);
-  const { institution: selectedInstitution } = await resolveHamiltonInstitutionContext({
-    userId: user.id,
-    instId: contextInstitutionId,
-    intent: params.intent ?? "analyze",
-    persistUrlSelection: shouldPersistUrlInstitutionSelection(params.instId),
-    transientSource: isArtifactContext ? "artifact" : undefined,
-  });
-
+  // A legacy unscoped answer stays unscoped. Calling the resolver with null here
+  // would incorrectly borrow the user's current workspace institution.
+  const resolved = isArtifactContext && !contextInstitutionId
+    ? null
+    : await resolveHamiltonInstitutionContext({
+        userId: user.id,
+        instId: contextInstitutionId,
+        intent: isArtifactContext ? "analyze" : params.intent ?? "analyze",
+        persistUrlSelection: isArtifactContext ? false : shouldPersistUrlInstitutionSelection(params.instId),
+        transientSource: isArtifactContext ? "artifact" : undefined,
+      });
+  const selectedInstitution = resolved?.institution ?? null;
   const institutionId = selectedInstitution?.id.toString() ?? null;
+  const readOnlyReason = isArtifactContext && !selectedInstitution
+    ? contextInstitutionId
+      ? "The institution recorded with this saved answer could not be loaded. Its original content is shown without substituting another institution."
+      : "No institution was recorded with this saved answer. Its original content is shown without assigning today's workspace institution."
+    : !selectedInstitution && resolved?.error ? resolved.error : null;
 
   return (
     <AnalyzeWorkspace
@@ -60,9 +72,10 @@ export default async function AnalyzePage({
       initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
       recent={recent}
       selectedInstitution={selectedInstitution}
-      initialIntent={params.intent ?? null}
-      initialQuestion={params.q ? params.q.slice(0, 500) : null}
-      autoSend={params.send === "1"}
+      initialIntent={isArtifactContext ? null : params.intent ?? null}
+      initialQuestion={!isArtifactContext && params.q ? params.q.slice(0, 500) : null}
+      autoSend={!isArtifactContext && params.send === "1"}
+      readOnlyReason={readOnlyReason}
     />
   );
 }
