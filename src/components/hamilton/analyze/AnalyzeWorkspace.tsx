@@ -14,6 +14,7 @@ import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
+import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
@@ -67,6 +68,8 @@ export function askErrorMessage(error: Error | undefined): string {
     return "Hamilton's AI isn't switched on in this preview copy of the site, so it can't answer here. Questions work on feeinsight.com.";
   }
   if (/Hamilton AI requests for today/.test(text)) return text;
+  // The provider's usage or billing limit (sent by the route as the paused line).
+  if (isHamiltonPausedText(text) || /usage limit|credit balance is too low/i.test(text)) return HAMILTON_PAUSED_MESSAGE;
   if (/Emergency stop|budget|circuit/i.test(text)) {
     return "Hamilton's AI is paused right now while spending is checked, so it can't answer. Everything else on Fee Insight still works.";
   }

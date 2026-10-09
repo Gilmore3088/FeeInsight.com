@@ -62,6 +62,14 @@ describe("Ask Hamilton helpers", () => {
     expect(askErrorMessage(new Error("boom"))).toMatch(/couldn't finish/);
   });
 
+  it("says written answers are paused when the provider's usage limit is reached", async () => {
+    const { askErrorMessage } = await import("./AnalyzeWorkspace");
+    const { HAMILTON_PAUSED_MESSAGE } = await import("@/lib/hamilton/provider-paused");
+    // Streamed error text from the route, and the route's 503 JSON body.
+    expect(askErrorMessage(new Error(HAMILTON_PAUSED_MESSAGE))).toBe(HAMILTON_PAUSED_MESSAGE);
+    expect(askErrorMessage(new Error(JSON.stringify({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" })))).toBe(HAMILTON_PAUSED_MESSAGE);
+  });
+
   it("names the lookups an answer used", async () => {
     const { lookupsUsed } = await import("./AnalyzeWorkspace");
     expect(lookupsUsed([{ type: "text" }, { type: "tool-getPeerFees" }, { type: "tool-search_complaints" }, { type: "tool-getPeerFees" }])).toEqual([
