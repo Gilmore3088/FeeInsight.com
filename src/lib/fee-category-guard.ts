@@ -95,8 +95,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // monthly fee, an ATM card's monthly fee and table or waiver fragments are not it either.
     // v49: a treasury service's monthly charge (ACH or wire module, API service, Positive Pay,
     // cash management, "Monthly Fee (per account)" on BankUnited's treasury schedule) is not it.
+    // v55: a merchant service's monthly charge ("Merchant Capture Monthly Service Charge") or an
+    // early termination fee (ProGrowth's $49.95 "Monthly Service Fee Early Termination Fee",
+    // Merchant Capture) is not it either; a bank named "First Merchants" still is.
     exclude:
-      /(\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -369,7 +372,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v51: a certificate penalty paid in dividends, or a forfeited reward, filed as early closure.
 // v52: price ceilings for copies, counter checks, late payment, notary and lost keys.
 // v53: a business or commercial account's wire price leaves the consumer wire categories.
-export const CATEGORY_GUARD_VERSION = 53;
+// v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
+// a safe deposit box late fee above $250.
+// v55: a merchant service's monthly charge or an early termination fee is not monthly maintenance.
+export const CATEGORY_GUARD_VERSION = 55;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -604,6 +610,8 @@ export function checkFeeCategory(
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
   if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
+  const ownAtmReason = freeAtOwnAtm(canonicalFeeKey, name, context);
+  if (ownAtmReason) return { ok: false, code: "name_unsupported", reason: ownAtmReason };
   const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
   if (ceilingReason) return { ok: false, code: "amount_implausible", reason: ceilingReason };
   return { ok: true };
@@ -622,6 +630,8 @@ const PRICE_CEILINGS: ReadonlyArray<{ key: string; max: number; when?: RegExp }>
   { key: "notary_fee", max: 300 },
   // A lost key with rekeying runs up to about $250; drilling the box open ($250-$500) is not capped.
   { key: "safe_deposit_box", max: 300, when: /^(?!.*drill).*\b(lost|replace\w*|duplicate)\s+keys?\b/i },
+  // v54: a late payment on the box (Central Bank's "$1000", fee 23863, read from "$10.00").
+  { key: "safe_deposit_box", max: 250, when: /^(?!.*drill).*\blate\b/i },
 ];
 
 function aboveCeiling(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
@@ -630,6 +640,23 @@ function aboveCeiling(canonicalFeeKey: string, name: string, context: CategoryGu
   const ceiling = PRICE_CEILINGS.find((entry) => entry.key === canonicalFeeKey && (!entry.when || entry.when.test(name)));
   if (!ceiling || amount <= ceiling.max) return null;
   return `$${amount.toFixed(2)} is above any ${canonicalFeeKey} price ($${ceiling.max} ceiling); a scan may have dropped its decimal point`;
+}
+
+/** Words that place an ATM fee at another bank's or network's machine. */
+const OTHER_NETWORK_CUE =
+  /\b(non|foreign|others?|another|network|surcharg\w*|outside|out[- ]of|not\s+(own|operate)|do(es)?\s+not|don['’]t|any|nationwide|national|shared|co-?op|allpoint|moneypass|cirrus|plus|star|pulse|presto|international|third[- ]party|refund\w*|rebate\w*)\b/i;
+
+/**
+ * v54: a free ATM line that names no other bank or network is the bank's own machine ("MidFirst
+ * ATM $0", "Transactions at Orrstown Bank ATMs | No charge", Regions' "Balance Inquiry $0.00"
+ * under "Regions ATM:") or a card's own fee ("ATM Enrollment | No Charge"), not what a customer
+ * pays at another network's ATM. 41 live rows on Oct 9; a priced line is left alone.
+ */
+function freeAtOwnAtm(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "atm_non_network" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  if (!Number.isFinite(amount) || amount !== 0 || OTHER_NETWORK_CUE.test(name)) return null;
+  return `"${name}" is free and names no other bank's or network's ATM, so it is not the atm_non_network fee`;
 }
 
 const PAIRED_PRICES = /\$\s?(\d[\d,]*(?:\.\d{2})?)\s*\/\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/;

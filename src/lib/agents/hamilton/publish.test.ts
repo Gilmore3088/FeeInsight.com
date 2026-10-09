@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -137,6 +137,65 @@ describe("Hamilton agentic publish", () => {
     expect(publishedFeeName("ATM Balance Inquiry (at non-Wildfire ATM) .........................", "atm_non_network")).toBe("ATM Balance Inquiry (at non-Wildfire ATM)");
     expect(publishedFeeName("paper statement fee is waived if enrolled in eStatements", "paper_statement")).toBe("Paper statement fee");
     expect(publishNameHold("paper statement fee is waived if enrolled in eStatements", "paper_statement", 5)).toBeNull();
+  });
+
+  it("publishes a twin of a rules re-check takedown only when today's rules read it from its own document", async () => {
+    const twin = { ...verifiedFee, twin_recheck: true };
+    const schedule = (text: string) => [{ source_document_id: 77, normalized_text: text }];
+
+    // The twin's own document no longer prints a $35 overdraft fee: the reason its twin came down applies to it.
+    const failing = createDbMock([twin], [], undefined, schedule("Fee Schedule\nOverdraft fee (per item) $30.00\nStop payment fee $30.00"));
+    const failed = await runHamiltonPublish({ runId: 119, db: asPublishDb(failing) });
+    expect(failed.publishedFees).toBe(0);
+    expect(failed.results[0]).toMatchObject({ status: "skipped", reason: expect.stringContaining("Rules re-check") });
+    expect(writes(failing).join("\n")).not.toContain("INSERT INTO published_fee_records");
+    expect(JSON.stringify(failing.mock.calls)).toContain("rules_recheck_unreproduced");
+
+    // No text for the document fails too.
+    const textless = createDbMock([twin], [], undefined, []);
+    expect((await runHamiltonPublish({ runId: 120, db: asPublishDb(textless) })).publishedFees).toBe(0);
+
+    // A twin today's rules read from its own document publishes.
+    const passing = createDbMock([twin], [], undefined, schedule("Fee Schedule\nOverdraft fee (per item) $35.00\nStop payment fee $30.00"));
+    expect((await runHamiltonPublish({ runId: 121, db: asPublishDb(passing) })).publishedFees).toBe(1);
+
+    // A row that is not a twin never needs the re-check.
+    const plain = createDbMock([verifiedFee], [], undefined, []);
+    expect((await runHamiltonPublish({ runId: 122, db: asPublishDb(plain) })).publishedFees).toBe(1);
+  });
+
+  it("skips a $0 benefit read from a product page only once the product-page check is on", async () => {
+    const benefit = {
+      ...verifiedFee,
+      canonical_fee_key: "overdraft",
+      fee_name: "Overdraft Fees",
+      amount: "0.00",
+      outlier_flags: ["agentic_darwin_verified", "free_fee_verified"],
+      free_read: true,
+      document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
+    };
+    const reason = "Read from a product page's benefits, not a fee schedule";
+    expect(publishSkipReason(benefit, 0.85)).not.toBe(reason);
+    expect(publishSkipReason(benefit, 0.85, true)).toBe(reason);
+    expect(publishSkipReason({ ...benefit, document_url: "https://www.pnc.com/content/dam/pnc-com/pdf/personal/fee-schedule.pdf" }, 0.85, true)).not.toBe(reason);
+    expect(publishSkipReason({ ...benefit, free_read: false }, 0.85, true)).not.toBe(reason);
+  });
+
+  it("publishes a product-page $0 benefit as before while the product-page switch is off", async () => {
+    const benefit = {
+      ...verifiedFee,
+      canonical_fee_key: "overdraft",
+      fee_name: "Overdraft Fees",
+      amount: "0.00",
+      outlier_flags: ["agentic_darwin_verified", "free_fee_verified"],
+      free_read: true,
+      document_url: "https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html",
+    };
+    const plain = { ...benefit, free_read: false };
+    const withSwitch = await runHamiltonPublish({ runId: 123, db: asPublishDb(createDbMock([benefit])) });
+    const without = await runHamiltonPublish({ runId: 124, db: asPublishDb(createDbMock([plain])) });
+    expect(withSwitch.results[0].reason).not.toBe("Read from a product page's benefits, not a fee schedule");
+    expect([withSwitch.results[0].status, withSwitch.results[0].reason]).toEqual([without.results[0].status, without.results[0].reason]);
   });
 
   it("never publishes a row read from an article page", async () => {
@@ -627,6 +686,17 @@ describe("Hamilton agentic publish", () => {
       // A guard rejection recorded before the guard re-queue step passed the row does not count.
       expect(query).toContain("pa.detail->>'reason' LIKE 'Category guard%'");
       expect(query).toContain("flag LIKE 'category_guard_requeued:%'");
+    });
+
+    it("selects again a row skipped as identical to a live fee the rules re-check took down", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 505, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("pa.outcome = 'unchanged'");
+      expect(query).toContain("NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint");
+      expect(query).toContain("prev.rolled_back_reason = 'rules_recheck_unreproduced'");
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {

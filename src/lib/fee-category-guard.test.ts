@@ -919,3 +919,40 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
   });
 });
+
+describe("v54: a free line at the bank's own ATM", () => {
+  it("fails a free ATM line that names no other bank or network", () => {
+    for (const name of ["MidFirst ATM", "Transactions at Orrstown Bank ATMs", "Balance Inquiry", "ATM Withdrawals Terrabank owned", "ATM Transfer"]) {
+      const verdict = checkFeeCategory("atm_non_network", name, { amount: "0.00" });
+      expect(verdict.ok, name).toBe(false);
+      expect(verdict.ok ? null : verdict.code).toBe("name_unsupported");
+    }
+  });
+
+  it("keeps a priced line, a free line at another network, and a line with no amount", () => {
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry", { amount: 3 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Non-Regions ATM: Withdrawal", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Foreign ATM Withdrawal", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Free nationwide ATM access", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "ATM Withdrawals (Presto)", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry", { amount: null }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry").ok).toBe(true);
+  });
+});
+
+describe("v54: a safe deposit box late fee ceiling", () => {
+  it("fails Central Bank's $1000 box late fee and keeps a real one", () => {
+    const verdict = checkFeeCategory("safe_deposit_box", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
+    expect(verdict.ok ? null : verdict.code).toBe("amount_implausible");
+    expect(checkFeeCategory("safe_deposit_box", "Safety Deposit Box Late Payment Fee", { amount: 10 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Box Drilling (late rent)", { amount: 400 }).ok).toBe(true);
+  });
+});
+
+describe("v55: merchant services and early termination are not monthly maintenance", () => {
+  it("fails ProGrowth's merchant capture lines and keeps First Merchants' checking fee", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Monthly Service Fee Early Termination Fee").ok).toBe(false);
+    expect(checkFeeCategory("monthly_maintenance", "Merchant Capture Monthly Service Charge").ok).toBe(false);
+    expect(checkFeeCategory("monthly_maintenance", "First Merchants Prosper Checking Monthly Maintenance Fee").ok).toBe(true);
+  });
+});

@@ -90,4 +90,16 @@ describe("Open States client", () => {
     expect(ewa).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
     expect(ewa?.match).toContain("overdraft");
   });
+
+  it("does not read a bounced tax payment penalty as a bank fee (NC HB 1164, tagging v5)", () => {
+    const base = { id: "x", identifier: "HB 1164", openstates_url: "https://openstates.org/x" };
+    expect(parseOpenStatesBill({ ...base, title: "Insufficient Funds for Taxes Penalty Modification." }, "nc")).toBeNull();
+    expect(
+      parseOpenStatesBill({ ...base, title: "Revenue laws", abstracts: [{ abstract: "Lowers the penalty when a state agency receives a payment returned for insufficient funds." }] }, "nc"),
+    ).toBeNull();
+    // A bank fee sentence that also mentions taxes keeps its reading.
+    expect(
+      parseOpenStatesBill({ ...base, title: "Banks may not charge overdraft fees on tax refund deposits." }, "nc"),
+    ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
+  });
 });

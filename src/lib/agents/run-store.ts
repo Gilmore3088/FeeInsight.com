@@ -14,6 +14,7 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
+import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
@@ -24,6 +25,7 @@ import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
+import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
@@ -395,10 +397,10 @@ async function executeAgenticStep(
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
-    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 2 });
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }
@@ -987,6 +989,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
+      const productPage = await retireProductPageFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A live fee whose own name contradicts its category (an ATM fee filed as a card's
       // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
       // a guard change takes effect without anyone starting the repair run by hand.
@@ -1093,6 +1102,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
+      // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
+      const lineupCorrect = await correctStoredLineups(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       // Fees an older re-check restored with no check at all get the restore bar on a second look.
       const restoreRecheck = await recheckUncheckedRestores(tx, {
@@ -1170,6 +1186,7 @@ async function executeAgenticStep(
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
+              productPage.rolledBack.length > 0 ||
               categoryGuardRollbacks > 0 ||
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
@@ -1226,6 +1243,10 @@ async function executeAgenticStep(
         articlePage.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${articlePage.rolledBack.length.toLocaleString()} fee(s) read from an article page, not a fee schedule.`
           : "";
+      const productNote =
+        productPage.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${productPage.rolledBack.length.toLocaleString()} $0 fee(s) read from a product page's benefits, not a fee schedule.`
+          : "";
       const categoryGuardNote =
         categoryGuardRollbacks > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${categoryGuardRollbacks.toLocaleString()} live fee(s) whose name contradicts their category.`
@@ -1271,7 +1292,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1368,6 +1389,13 @@ async function executeAgenticStep(
             waiting: articlePage.waiting,
             rolled_back: articlePage.rolledBack.length,
           },
+          product_page: {
+            enabled: productPage.enabled,
+            product_fees: productPage.productFees,
+            flagged: productPage.flagged,
+            waiting: productPage.waiting,
+            rolled_back: productPage.rolledBack.length,
+          },
           limit_rollbacks: limitRollbacks.length,
           limit_rollback_samples: limitRollbacks.slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
@@ -1426,6 +1454,11 @@ async function executeAgenticStep(
             generic_names: accountNames.genericFees,
             renamed: accountNames.renames.length,
             skipped: accountNames.skipped,
+          },
+          lineup_correct: {
+            documents_checked: lineupCorrect.documentsChecked,
+            rows_checked: lineupCorrect.rowsChecked,
+            rows_corrected: lineupCorrect.corrected.length,
           },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
@@ -2959,7 +2992,8 @@ export async function executeQueuedAgentRuns({
                 AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
             )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page. Then a
+     -- Report runs go first: someone pressed Generate and is watching the page. Then a guard
+     -- catch-up run. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
      -- lane), then a retry of a failed state lane, then a state whose report James is
@@ -2967,6 +3001,9 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
+              -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
+              COALESCE(r.params_json->>'source' = 'hamilton.guard_catch_up', false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'

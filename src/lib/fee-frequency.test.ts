@@ -126,4 +126,11 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(frequencyFromLine("Monthly maintenance fee: $8.00 Per check: $0.20", 8)).toBe("monthly");
     expect(frequencyFromLine("Research | $25.00 ($25.00 minimum)", 25)).toBeNull();
   });
+
+  it("reads 'after 3 in a month' and 'exceeding two per month' as allowances (v7, Darwin's held rows)", () => {
+    expect(settledFrequency("| IRA Savings Excessive Withdrawal | $15 Each after 3 in a month |", 15, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("A $1.00 excess withdrawal fee will be charged for each in-person debit transaction exceeding two per month.", 1, "monthly", "excess_withdrawal")).toBeNull();
+    expect(settledFrequency("Fax | $2.00/Page", 2, null, "account_research")).toBe("per_item");
+    expect(settledFrequency("Monthly Service Fee | $5.00 a month", 5, "monthly", "monthly_maintenance")).toBe("monthly");
+  });
 });

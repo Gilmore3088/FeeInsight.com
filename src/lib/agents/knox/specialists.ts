@@ -11,7 +11,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
-import { settledFrequency } from "@/lib/fee-frequency";
+import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -41,7 +41,14 @@ import { settledFrequency } from "@/lib/fee-frequency";
 // v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
 // v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
 // v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 52 } as const;
+// v53: a fax service is document reproduction, the fold's home for it (`FAX_SERVICE`).
+// v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+// v55: a monthly fee's lineup is never read from a neighbour: the next account's fee line, another
+// account's clause of a one-line footnote, or a fee heading above "Money Market" (`lineup.ts`).
+// v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
+// v57: a long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
+// and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest, Old National).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 57 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -94,6 +101,12 @@ export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boo
 function tracesToSource(text: string, feeName: string, amount: number): boolean {
   const result = checkFeeAgainstSource(text, feeName, amount, ".");
   return result.ok || result.reason === "tiered_fee";
+}
+
+/** The self-check's verdict: whether the fee traces, and the row it traced to. */
+function selfCheck(text: string, feeName: string, amount: number): { traces: boolean; row: string | null } {
+  const result = checkFeeAgainstSource(text, feeName, amount, ".");
+  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
 }
 
 function heldKey(held: HeldFeeCandidate): string {
@@ -155,8 +168,15 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       // v52: the same rule as Hamilton's frequency fill (`settledFrequency`), so a period the line
       // never states is dropped on a per-event fee and a per-item reading never lands on a period
       // category.
-      const frequency = settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
-      const candidate = { ...read, feeName: tidyFeeName(read.feeName), frequency };
+      // v57: a fee whose own row traces reads its frequency from that row, not from a window
+      // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
+      const feeName = tidyFeeName(read.feeName);
+      const checked = selfCheck(text, feeName, read.amount);
+      const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
+      const frequency = rowFrequency
+        ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
+        : settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
+      const candidate = { ...read, feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
@@ -166,7 +186,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       if (namesAWorkedExample(candidate.feeName)) continue;
       // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
       if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
-      if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
+      if (!checked.traces) {
         selfCheckFailed += 1;
         untraced.push({
           shape: "untraced",
