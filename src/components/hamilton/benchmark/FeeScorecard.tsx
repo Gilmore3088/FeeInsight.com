@@ -77,13 +77,17 @@ function Strip({
 export function FeeScorecard({
   rows,
   institutionId,
+  notCompared = [],
 }: {
   rows: readonly ScorecardRow[];
   institutionId: string | null;
+  /** Categories whose peers charge them on more than one basis: shown, but not placed. */
+  notCompared?: readonly string[];
 }) {
+  const unlike = rows.filter((r) => notCompared.includes(r.feeCategory));
   const compared = rows.filter(
     (r): r is ScorecardRow & { band: NonNullable<ScorecardRow["band"]> } =>
-      r.band != null,
+      r.band != null && !notCompared.includes(r.feeCategory),
   );
   if (compared.length === 0) return null;
   const counts = { lower: 0, in_line: 0, higher: 0 } as Record<
@@ -91,7 +95,7 @@ export function FeeScorecard({
     number
   >;
   for (const r of compared) counts[peerStanding(r.current, r.band)] += 1;
-  const thin = rows.length - compared.length;
+  const thin = rows.length - compared.length - unlike.length;
 
   return (
     <section aria-labelledby="fee-scorecard" className="flex flex-col gap-3">
@@ -155,6 +159,9 @@ export function FeeScorecard({
         middle half of what peers charge, higher means above it.
         {thin > 0
           ? ` ${thin} more ${thin === 1 ? "fee has" : "fees have"} too few peers publishing to compare.`
+          : ""}
+        {unlike.length > 0
+          ? ` Not compared: ${unlike.map((r) => `${name(r)} (${money(r.current)})`).join(", ")}. Peers charge ${unlike.length === 1 ? "this fee" : "these fees"} on more than one basis, so one median does not compare like for like.`
           : ""}
       </p>
     </section>
