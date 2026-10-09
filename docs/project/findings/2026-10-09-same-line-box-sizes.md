@@ -41,8 +41,8 @@ Because of that, the same-line duplicate cleanup (PR 902) flagged 103621 as a du
 - **Box rows:** 15 of the 81 box-size rows skipped by check 1 would publish, and all 15 match
   their source line and price: 54131, 56741, 56883, 62572, 102035, 103876, 108818, 113118,
   119627, 119628, 119630, 120059, 120209, 120418, 120438.
-- **Price-first table:** without the printed-without-price rule, Midwest's price-first table
-  (doc 12680) would have published 57120 to 57124 at the next line's prices.
+- **Price-first table:** without the printed-without-price rule, the price-first table in
+  doc 12680 would have published 57120 to 57124 at the next line's prices.
 - **902's 208 flags, random 20 against source:** 19 are true duplicates. 104895 (Loan Refinance vs
   Loan Application) is not.
 - **Flags cleared, 9 in total:**
