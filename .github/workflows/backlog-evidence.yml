@@ -1,8 +1,8 @@
 name: backlog resolution evidence
+# Historical, one-off PR evidence capture. Do not rerun on each PR edit;
+# ongoing inventory evidence is collected by backlog-inventory.yml.
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/backlog-evidence.yml'
+  workflow_dispatch:
 permissions:
   contents: read
   pull-requests: read
