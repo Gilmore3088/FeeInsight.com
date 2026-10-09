@@ -351,15 +351,16 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
  * their page, all checked against their source line.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 13 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 14 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
  * the ones with a threshold publish cut off (102976, 102987/8, 101305, 101842/3, 102654/6,
  * 102568, 102644) and Maple FCU's "Name ..." rows, which v8 had not reached.
  * v10: City National Bank of Florida (76), whose glued cell names Accuracy flagged.
+ * v14: Security Federal (722), and the v13 font names v13's pass had not reached (8535, 5545).
  */
-export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499];
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499, 722, 8535, 5545];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
@@ -561,6 +562,93 @@ export function unligatedName(name: string): string | null {
   return /[\u019f\u014c\u01a9\u019e]/.test(name) ? readLigatures(name) : null;
 }
 
+/**
+ * v14: a monthly fee's account name, when two live fees at an institution share a bare name at
+ * different prices ("waivable monthly fee" at $15 and at $12). Each takes the account heading
+ * printed above its own price ("Premium Checking", "High Yield Checking"), as Knox names such a fee
+ * when it reads the heading ("Freedom Checking Monthly fee"). All of the shared names are renamed
+ * or none: every one must find its own price once on its page and a heading of its own above it.
+ */
+const ACCOUNT_HEADING =
+  /^(?:[\w®™’'&+./-]+\s+){0,5}(?:checking|savings|money market|share draft|club|certificate|account)(?:\s+accounts?)?$/i;
+/** A priced row of another monthly fee: the walk up has left this fee's block. */
+const MONTHLY_FEE_WORDS = /\b(?:service charge|maintenance|monthly fee|monthly service|minimum balance|balance falls? below)\b/i;
+// A page's navigation or marketing line ("Compare Checking Accounts", "Learn More about Loyalty
+// Checking", "Comparison table of interest-bearing checking accounts") is not an account's heading.
+const NOT_ACCOUNT_HEADING =
+  /^(?:our|your|all|personal|business|what|which|find|choose|view|see)\b|\b(?:compare|comparison|table|learn|more|about|benefits?|features|details|apply|open|why|how)\b|\d|\$/i;
+const ACCOUNT_WORD = /\b(?:checking|savings|money market|share draft|club|certificate|account|accounts)\b/i;
+const ACCOUNT_HEADING_LINES = 12;
+const MONEY_ON_LINE = /\$\s?\d/;
+
+function sharedNameKey(name: string): string {
+  return name.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function priceOnLine(line: string, amount: number): boolean {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const figure = whole.replace(/\B(?=(\d{3})+$)/g, ",?");
+  const price = cents === "00" ? `${figure}(?:\\.00)?` : `${figure}\\.${cents}`;
+  return new RegExp(`\\$\\s?${price}(?![\\d.,]*\\d)`).test(line);
+}
+
+/** The account heading printed above this fee's own price, or null when it isn't one clear heading. */
+export function accountHeading(name: string, amount: number, ownTexts: string[]): string | null {
+  const key = sharedNameKey(name);
+  const hits: Array<{ lines: string[]; at: number }> = [];
+  for (const text of ownTexts) {
+    const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+    lines.forEach((line, at) => {
+      if (line.toLowerCase().includes(key) && (priceOnLine(line, amount) || (lines[at + 1] != null && priceOnLine(lines[at + 1], amount)))) hits.push({ lines, at });
+    });
+  }
+  if (hits.length !== 1) return null;
+  const { lines, at } = hits[0];
+  for (let line = at - 1; line >= Math.max(0, at - ACCOUNT_HEADING_LINES); line -= 1) {
+    // Another fee of the same name above it belongs to the block before.
+    if (lines[line].toLowerCase().includes(key)) return null;
+    if (MONEY_ON_LINE.test(lines[line]) && MONTHLY_FEE_WORDS.test(lines[line])) return null;
+    if (/^[A-Z]/.test(lines[line]) && /\S\s+\S/.test(lines[line]) && ACCOUNT_HEADING.test(lines[line]) && !NOT_ACCOUNT_HEADING.test(lines[line])) {
+      return lines[line];
+    }
+  }
+  return null;
+}
+
+function accountHeadedName(fee: LiveFeeRow, texts: InstitutionText[], liveFees: LiveFeeRow[]): string | null {
+  if (!ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) || ACCOUNT_WORD.test(fee.fee_name) || fee.amount == null) return null;
+  const key = sharedNameKey(fee.fee_name);
+  const shared = liveFees.filter(
+    (other) => Number(other.institution_id) === Number(fee.institution_id) && sharedNameKey(other.fee_name) === key && other.amount != null,
+  );
+  if (new Set(shared.map((other) => Number(other.amount).toFixed(2))).size < 2) return null;
+  const headings = shared.map((other) =>
+    accountHeading(
+      other.fee_name,
+      Number(other.amount),
+      texts.filter((text) => other.source_document_id != null && Number(text.source_document_id) === Number(other.source_document_id)).map((text) => text.normalized_text),
+    ),
+  );
+  if (headings.some((heading) => heading == null) || new Set(headings.map((heading) => heading!.toLowerCase())).size !== shared.length) return null;
+  const own = headings[shared.findIndex((other) => Number(other.fee_published_id) === Number(fee.fee_published_id))];
+  return own ? `${own} ${fee.fee_name.replace(/\s+/g, " ").trim()}` : null;
+}
+
+/** v14: live fees whose bare monthly-fee name another live fee at the institution shares at a different price. */
+export function sharedNameFeeIds(fees: LiveFeeRow[]): Set<number> {
+  const amounts = new Map<string, Set<string>>();
+  for (const fee of fees) {
+    if (!ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) || fee.amount == null) continue;
+    const key = `${Number(fee.institution_id)}|${sharedNameKey(fee.fee_name)}`;
+    amounts.set(key, (amounts.get(key) ?? new Set()).add(Number(fee.amount).toFixed(2)));
+  }
+  return new Set(
+    fees
+      .filter((fee) => ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) && (amounts.get(`${Number(fee.institution_id)}|${sharedNameKey(fee.fee_name)}`)?.size ?? 0) > 1)
+      .map((fee) => Number(fee.fee_published_id)),
+  );
+}
+
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
   const head = headName(fee);
   if (!head) return null;
@@ -627,6 +715,8 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
         // v11: the short name a sentence name opens with, unless another live fee at the
         // institution opens with it too (the words cut are what tell the two apart).
         uniqueHeadName(fee, liveFees) ??
+        // v14: a bare monthly-fee name shared at different prices takes its account's name.
+        accountHeadedName(fee, readTexts, liveFees) ??
         spaced;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
@@ -727,7 +817,12 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~ '[[:space:]][a-z]{1,2}$'
                    OR fp.fee_name ~ '[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f]'
                    OR fp.fee_name ~ '[\u019f\u014c\u01a9\u019e]'
-                 ) AS messy
+                 )
+                 -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
+                 OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))
+                      FILTER (WHERE fp.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance') AND fp.amount IS NOT NULL)
+                    < count(DISTINCT (lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')), fp.amount))
+                      FILTER (WHERE fp.canonical_fee_key IN ('monthly_maintenance', 'minimum_balance') AND fp.amount IS NOT NULL) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
              AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
@@ -817,7 +912,8 @@ export async function retidyLiveFeeNames(
   const perInstitution = new Map<number, { messy: number; renamed: number }>();
   for (const institutionId of fingerprints.keys()) {
     const fees = liveFees.filter((fee) => Number(fee.institution_id) === institutionId);
-    const messy = fees.filter((fee) => isMessyName(fee.fee_name));
+    const shared = sharedNameFeeIds(fees);
+    const messy = fees.filter((fee) => isMessyName(fee.fee_name) || shared.has(Number(fee.fee_published_id)));
     const plan = planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees);
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);
