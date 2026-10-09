@@ -462,6 +462,25 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "regulator_guidance"
   },
   {
+    "id": "ca_calaccount_program_proposed",
+    "state_code": "CA",
+    "topic": "basic_account",
+    "name": "Proposed CalAccount Program: zero-fee, zero-penalty public transaction account",
+    "citation": "Cal. AB 1365 (2025-2026 Reg. Sess.), as amended in Assembly Apr. 28, 2025 (would repeal and add Gov. Code Title 21.1, § 100100 et seq.)",
+    "date": "introduced Feb. 21, 2025; last amended in Assembly Apr. 28, 2025; enactment not shown",
+    "effective_date": "unknown",
+    "status": "proposed",
+    "institutions": "other",
+    "coverage_note": "The account would be a state program account offered through a contracted financial services network administrator and at least one participating bank or credit union; it would not limit fees on other accounts.",
+    "applies_to": [],
+    "summary": "A proposed bill would create a state CalAccount program offering a zero-fee, zero-penalty federally insured transaction account through participating banks or credit unions.",
+    "detail": "AB 1365 would replace the CalAccount Blue Ribbon Commission's feasibility study with a CalAccount Program giving every Californian access to a voluntary, zero-fee, zero-penalty, federally insured transaction account and related payment services at no cost to accountholders. Accounts would be provided through a financial services network administrator and participating banks, credit unions or other financial institutions chosen by the commission. The latest version on leginfo is the April 28, 2025 Assembly amendment; the page does not show passage.",
+    "evidence": "Official text fetched from leginfo.legislature.ca.gov: \"This bill would repeal those provisions and would establish the CalAccount Program, which would provide every Californian with access to a voluntary, zero-fee, zero-penalty, federally insured transaction account and related payment services at no cost to accountholders.\"; \"“CalAccount Program” or “program” means the program established pursuant to this title through which an individual may open a no-fee, no-penalty transaction account with an associated debit card.\"; \"“Participating depository financial institution” means a qualifying bank, credit union, or other financial institution\"; \"Version: 04/28/25 - Amended Assembly 02/21/25 - Introduced\"",
+    "url": "https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202520260AB1365",
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "co_no_overdraft_nsf_cap_regulator_statement",
     "state_code": "CO",
     "topic": "overdraft_nsf",
@@ -1697,7 +1716,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "state_code": "MA",
     "topic": "basic_account",
     "name": "\"18-65\" accounts: no fees for depositors 18 or younger or 65 or older",
-    "citation": "Mass. Gen. Laws ch. 167D, § 2 (banks); credit union counterpart in ch. 171 as amended by St. 2020, c. 338; Division of Banks Regulatory Bulletin 2.1-106 (Oct. 7, 2022)",
+    "citation": "Mass. Gen. Laws ch. 167D, § 5 (banks); ch. 171, § 32B (credit unions, added by St. 2020, c. 338); Division of Banks Regulatory Bulletin 2.1-106 (Oct. 7, 2022)",
     "date": "in force, effective date not confirmed",
     "effective_date": "unknown",
     "status": "in_force",
@@ -1710,7 +1729,7 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     ],
     "summary": "A state bank or credit union may not charge accounts of people 65 or older or 18 or younger, except $5 maximum per insufficient-funds transaction.",
     "detail": "A Massachusetts-chartered bank or credit union may not impose any fee, charge or other assessment on the savings or demand deposit account of a person 65 or older or 18 or younger; such an account may not have a minimum balance requirement, a charge for deposits or withdrawals, or a fee for the basic line of checks. Under the Division of Banks guidelines, the charge for a transaction refused or paid despite insufficient funds on such an account may not exceed $5 per transaction.",
-    "evidence": "Bulletin 2.1-106: banks/credit unions \"are prohibited from imposing any fee, charge or other assessment against the savings account or demand deposit account of any persons 65 years of age or older or 18 years of age or younger\"; \"the charge assessed for a transaction refused because of insufficient funds or paid despite insufficient funds shall not exceed $5.00 per such transaction\"; \"No such account shall be subject to: (i) a minimum balance requirement; (ii) a charge for a deposit or withdrawal; or (iii) a fee for the initial order or subsequent refills of the basic line of checks\". Chapter 338 of the Acts of 2020 extended the requirement to credit unions.",
+    "evidence": "Official text of Bulletin 2.1-106 fetched from mass.gov (2026-10-09): a bank \"is prohibited from imposing any fee, charge or other assessment against the savings account or demand deposit account of any persons 65 years of age or older or 18 years of age or younger pursuant to G.L. c. 167D, s. 5\", and a credit union likewise \"pursuant to G.L. c. 171, s. 32B\"; \"the charge to be assessed for a transaction refused because of insufficient funds or paid despite insufficient funds shall not exceed $5.00 per such transaction\"; \"No such account shall be subject to: (i) a minimum balance requirement; (ii) a charge for a deposit or withdrawal; or (iii) a fee for the initial order or subsequent refills of the basic line of checks\". Chapter 338 of the Acts of 2020 extended the requirement to credit unions.",
     "url": "https://www.mass.gov/regulatory-bulletin/21-106-guidelines-for-18-65-accounts-for-banks-and-credit-unions",
     "figures": {
       "min_age_senior": 65,
@@ -1805,6 +1824,32 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "url": "https://www.mass.gov/regulations/209-CMR-50-parity-with-federal-credit-unions-1",
     "verification": "official_excerpt",
     "source_kind": "regulation"
+  },
+  {
+    "id": "ma_basic_banking_program",
+    "state_code": "MA",
+    "topic": "basic_account",
+    "name": "Massachusetts Basic Banking Program low-cost account guidelines",
+    "citation": "Massachusetts Division of Banks, Basic Banking Program guidelines (consumer page 'Savings and checking accounts')",
+    "date": "in force, start date not shown",
+    "effective_date": "unknown",
+    "status": "in_force",
+    "institutions": "state_banks_and_credit_unions",
+    "coverage_note": "A voluntary program: the Division of Banks page says many state-chartered banks and credit unions offer these accounts; it does not say every institution must.",
+    "applies_to": [
+      "monthly_maintenance",
+      "minimum_balance"
+    ],
+    "summary": "Participating state banks and credit unions offer basic checking at no more than $3 monthly and basic savings at no more than $1 monthly.",
+    "detail": "Under the Division of Banks Basic Banking Program guidelines, a basic savings account needs no more than $10 to open, has no monthly fee on balances of $10 or more, and a monthly fee of no more than $1. A basic checking account needs no more than $25 to open, has a monthly fee of no more than $3, gives at least 15 free withdrawals a month including at least 8 checks, and charges no more than $1 per extra withdrawal. Participation is described as offered by many state-chartered banks and credit unions, not required of all.",
+    "evidence": "Official text fetched from www.mass.gov: \"Many state-chartered banks and credit unions offer low-cost savings and checking account alternatives.\"; \"Basic Banking Savings Account Guidelines: Requires no more than $10 to open account. Charges no monthly fee on account balances of $10 or more. Charges a monthly fee of no more than $1.\"; \"Basic Banking Checking Account Guidelines: Requires no more than $25 to open account. Charges a monthly fee of no more than $3. Provides at least 15 free withdrawals, including at least 8 checks per month. Charges no more than $1 for each withdrawal over the allowable number of free withdrawals.\"",
+    "url": "https://www.mass.gov/info-details/savings-and-checking-accounts",
+    "figures": {
+      "basic_checking_max_monthly_fee": 3,
+      "basic_savings_max_monthly_fee": 1
+    },
+    "verification": "official_excerpt",
+    "source_kind": "regulator_guidance"
   },
   {
     "id": "md_dormant_account_charges",
@@ -3456,6 +3501,31 @@ export const STATE_FEE_LAWS_DATA: StateFeeLaw[] = [
     "source_kind": "statute"
   },
   {
+    "id": "ny_s4109_dormancy_five_years_proposed",
+    "state_code": "NY",
+    "topic": "dormancy",
+    "name": "Proposed extension of the abandoned-deposit period from three to five years (S4109)",
+    "citation": "N.Y. S4109 (2025-2026), amending Abandoned Property Law §§ 300, 501, 511 and 700",
+    "date": "introduced Feb. 3, 2025; re-referred to Senate Finance Jan. 7, 2026; not enacted",
+    "effective_date": "unknown",
+    "status": "proposed",
+    "institutions": "all_depository_institutions",
+    "coverage_note": "The bill amends the period for deposits held by a 'banking organization', expressly including credit union shares; the fetched page does not show the term's definition, so whether it reaches national banks was not read.",
+    "applies_to": [
+      "dormant_account"
+    ],
+    "summary": "A pending Senate bill would lengthen the unclaimed period before bank and credit union deposits are treated as abandoned from three to five years.",
+    "detail": "S4109 would change the period after which unclaimed deposits and credit union shares held by a banking organization become abandoned property from three years to five years, with matching changes to the exceptions for account activity and owner contact. The bill sits in the Senate Finance Committee and has not passed either house. It would take effect immediately if enacted.",
+    "evidence": "Official text fetched from www.nysenate.gov: \"Current Bill Status - In Senate Committee Finance Committee\"; \"Jan 07, 2026 referred to finance Feb 03, 2025 referred to finance\"; \"(a) Any amounts due on deposits or any amounts to which a shareholder of a savings and loan association or a credit union is entitled, held or owing by a banking organization, which shall have remained unclaimed for [three] FIVE years by the person or persons appearing to be entitled thereto\"; \"EFFECTIVE DATE: Immediately.\"",
+    "url": "https://www.nysenate.gov/legislation/bills/2025/S4109",
+    "figures": {
+      "current_abandonment_years": 3,
+      "proposed_abandonment_years": 5
+    },
+    "verification": "official_excerpt",
+    "source_kind": "statute"
+  },
+  {
     "id": "oh_unclaimed_dormancy_charge_conditions",
     "state_code": "OH",
     "topic": "dormancy",
@@ -5097,8 +5167,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "returned_item",
         "claim": "AB 1606 (1999-2000, Margett) would have added Fin. Code § 3351 capping a bank's returned-check / returned-deposit-item fee at $15 and requiring basic/no-frills and federal-deposit accounts to pay no more than other accounts.",
-        "where_seen": "https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=199920000AB1606",
-        "why_unconfirmed": "Last version seen was 'Amended in Assembly January 12, 2000'; no evidence it was enacted. Almost certainly died; do NOT treat as law."
+        "where_seen": "https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=199920000AB1606; official page fetched 2026-10-09: https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=199920000AB1606",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Official bill text (version Amended Assembly Jan. 12, 2000) would add Fin. Code § 3351: subd. (b) caps the fee for a returned or dishonored check or returned deposit item at $15; subd. (c) says the fee for accounts receiving U.S. government deposits or basic/no-frills accounts may not exceed the fee for the bank's other accounts. It also required in-order clearing of checks and deposits and barred paying checks against held funds. Applies only to state-chartered banks. 1999-2000 session bill; the page shows no chaptering or enactment, so NO rule drafted. Existing data lists it only as an unconfirmed lead (CA coverage leads_unconfirmed)."
       },
       {
         "topic": "fee_authority",
@@ -5109,14 +5179,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "other",
         "claim": "AB 2795 (Committee on Banking and Finance, 2025-26), 'Financial regulation', chaptered as Ch. 410, Stats. 2026 (approved Sept. 20, 2026); may amend credit union provisions.",
-        "where_seen": "https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=202520260AB2795",
-        "why_unconfirmed": "Contents not read; no evidence it touches credit union fees, § 521, § 530 or § 14053."
-      },
-      {
-        "topic": "basic_account",
-        "claim": "AB 1365 (2025-26) would create a CalAccount Program offering a zero-fee, zero-penalty public transaction account.",
-        "where_seen": "https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202520260AB1365",
-        "why_unconfirmed": "Not a credit union fee rule; floor votes/passage status not checked."
+        "where_seen": "https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=202520260AB2795; official page fetched 2026-10-09: https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=202520260AB2795",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): Confirmed: AB 2795 is Chapter 410, approved by the Governor and filed Sept. 20, 2026. Not supported: it does not touch credit union law. It amends Corp. Code 25608, 31526; Fin. Code 331.5, 2042, 8032, 12214, 17207, 18351, 23016, 50401; adds Fin. Code 302; repeals Fin. Code Division 15.5 (State Assistance Fund for Enterprise); and amends Gov. Code 16430, 53667. Changes concern DFPI licensee fee/assessment notices by electronic service address, NMLS forms, surplus-fund investment ratings and the SAFE fund repeal. Nothing on consumer deposit-account fees, so no rule."
       }
     ],
     "notes": "Web search budget for the session ran out partway through; CA got ~10 searches. Not checked: public-benefit (CCP 704.080) exemptions, bank levy processing fees, Fin. Code fee-authority/parity provisions, any 2025-26 bills. leginfo.legislature.ca.gov is egress-blocked, so all leginfo evidence is from search-result excerpts. CREDIT UNION PASS (Oct 7, 2026, ~24 searches): leginfo and dfpi.ca.gov are egress-blocked, so all evidence is from search-result excerpts. Changes to existing rules: ca_cu_overdraft_nsf_cap -> added Ch. 521 Stats. 2024 and the notice contents from leginfo excerpts; ca_od_nsf_revenue_report -> renamed to say 'reporting', added SB 1415 / Ch. 847 Stats. 2022, effective_date 'unknown' -> '2023' (first report due March 31, 2023 per leginfo bill text), added March 31 publication figure and DFPI's exclusions (national banks, FCUs, out-of-state institutions); ca_instant_decline_nsf_ban -> coverage_note only. Removed the AG Feb. 2024 lead because it is now rule ca_ag_surprise_od_returned_item_warning. No DFPI implementing regulation, bulletin or opinion on § 14053 was found (DFPI only restates the law in monthly bulletins). 10 CCR subchapter 30 (credit union regs, from § 30.1) search returned investment/membership rules only, no member fee, disclosure or dormancy rule. No 2025-26 bill on credit union fees that passed a chamber was found. Credit union dormancy is governed by the Unclaimed Property Law (CCP § 1513, existing rule) for all depository institutions; no separate dormancy rule found in div. 5."
@@ -5149,8 +5213,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "other",
         "claim": "HB25-1090 (Protections Against Deceptive Pricing Practices) requires clear price disclosure and prohibits certain fees; whether it reaches deposit account fees or exempts financial institutions is unknown.",
-        "where_seen": "https://leg.colorado.gov/bills/hb25-1090",
-        "why_unconfirmed": "Did not see bill text or its scope."
+        "where_seen": "https://leg.colorado.gov/bills/hb25-1090; official page fetched 2026-10-09: https://leg.colorado.gov/bills/hb25-1090",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): Confirmed (official legislative summary page, not statute text): HB25-1090 became law, signed Apr. 21, 2025, Session Laws ch. 94, effective 01/01/2026. It requires clear and conspicuous disclosure of the total price and bars misrepresenting pricing information; the only fee prohibition described is on certain landlord fees to tenants. The summary does not mention banks, credit unions or deposit accounts and lists no financial-institution exemption; it says a person complies if governed by and compliant with applicable federal pricing-transparency law for the transaction, and persons governed by preempting federal law are exempt. Whether it reaches deposit fees is not answered by this page (bill text PDF not fetched). No rule drafted."
       },
       {
         "topic": "payee_returned_check",
@@ -5471,20 +5535,14 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "basic_account",
         "claim": "Massachusetts Basic Banking Program: basic checking costs no more than $10 to open, no monthly fee at balances of $10 or more, at most $1/month below $10; basic savings at most $25 to open, at most $3/month, at least 15 free withdrawals (8 checks), at most $1 per extra withdrawal.",
-        "where_seen": "https://www.mass.gov/info-details/savings-and-checking-accounts",
-        "why_unconfirmed": "Described by mass.gov as a program many state-chartered institutions offer; no statute or regulation making it mandatory was found, so it appears voluntary."
+        "where_seen": "https://www.mass.gov/info-details/savings-and-checking-accounts; official page fetched 2026-10-09: https://www.mass.gov/info-details/savings-and-checking-accounts",
+        "why_unconfirmed": "Official text read 2026-10-09 (partly): The numbers are right but the claim swaps the two accounts. Official Division of Banks page: basic SAVINGS = no more than $10 to open, no monthly fee on balances of $10 or more, monthly fee no more than $1, pays interest on balances of $10+. Basic CHECKING = no more than $25 to open, monthly fee no more than $3, at least 15 free withdrawals including at least 8 checks per month, no more than $1 per extra withdrawal. The page describes the program as offered by many state-chartered banks and credit unions (voluntary), and cites no statute. Rule drafted from the corrected text. The part the text does support is rule ma_basic_banking_program."
       },
       {
         "topic": "dormancy",
         "claim": "H.2976 (190th General Court, 2017) would amend ch. 167D § 5 to bar a fee for inactive accounts.",
         "where_seen": "https://malegislature.gov/Bills/190/H2976.Html",
         "why_unconfirmed": "Bill only; no evidence it passed."
-      },
-      {
-        "topic": "other",
-        "claim": "18-65 law for credit unions: exact ch. 171 section number added by St. 2020, c. 338 was not seen.",
-        "where_seen": "https://www.mass.gov/regulatory-bulletin/21-106-guidelines-for-18-65-accounts-for-banks-and-credit-unions",
-        "why_unconfirmed": "Section number not shown in results."
       }
     ],
     "notes": "All official text came through WebSearch excerpts of malegislature.gov and mass.gov; direct fetches were blocked. The $5 NSF cap on 18-65 accounts was seen in the Division of Banks bulletin; whether it is in the statute text itself should be checked. The 18-65 scope (all accounts of qualifying persons vs. a designated account product) should be read in the statute. The DRI cap changes every August; the 2025 figure ($7.14) ran to July 31, 2026 and a 2026 decision was not looked up. The search budget ran out partway through this assignment. Topics not listed as rules or leads were not all searched; absence here is not a finding. CU pass: 209 CMR 50.00 was amended December 19, 2025; content of the amendments not seen."
@@ -5823,8 +5881,8 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
       {
         "topic": "overdraft_nsf",
         "claim": "The 2025 DFS pre-proposal would also require at least 30 days' notice before an increase in NSF or overdraft fees and require fees to be a fixed amount, with the NSF fee not above the overdraft fee.",
-        "where_seen": "https://www.steptoe.com/en/news-publications/nydfs-proposals-target-overdraft-fees.html ; https://www.hklaw.com/en/insights/publications/2025/01/overdraft-free-new-yorks-pre-proposed-outreach-on-bank-fees",
-        "why_unconfirmed": "Seen only in law firm summaries; draft rule text not seen on dfs.ny.gov. Pre-proposal only."
+        "where_seen": "https://www.steptoe.com/en/news-publications/nydfs-proposals-target-overdraft-fees.html ; https://www.hklaw.com/en/insights/publications/2025/01/overdraft-free-new-yorks-pre-proposed-outreach-on-bank-fees; official page fetched 2026-10-09: https://www.steptoe.com/en/news-publications/nydfs-proposals-target-overdraft-fees.html",
+        "why_unconfirmed": "Official text read 2026-10-09 (confirmed): Law firm (Steptoe) client alert of Jan. 27, 2025, NOT an official source; no rule drafted. It says the DFS proposed amendments to 3 NYCRR Parts 32 and 6 require notice 'at least 30 days before NSF or overdraft fee increases' and 'Requires institutions to set fixed amounts for overdraft and NSF fees. NSF fees cannot exceed overdraft fees.' It also lists a first-NSF-charge notice within 10 business days. The existing rule ny_dfs_overdraft_nsf_preproposal_2025 covers the same pre-proposal but not these two points; adding them needs the DFS draft text."
       },
       {
         "topic": "returned_item",
@@ -5855,12 +5913,6 @@ export const STATE_FEE_LAW_COVERAGE_DATA: StateFeeLawCoverage[] = [
         "claim": "2023 S7742/A8266 would require annual overdraft revenue reporting and a ten-day grace period before overdraft fees.",
         "where_seen": "web search summary (nysenate.gov bill pages)",
         "why_unconfirmed": "Search summary claimed it was signed but was unreliable; not confirmed."
-      },
-      {
-        "topic": "dormancy",
-        "claim": "2025 S4109 would extend dormancy periods for many accounts from three to five years.",
-        "where_seen": "https://www.nysenate.gov/legislation/bills/2025/S4109",
-        "why_unconfirmed": "Bill only; passage not checked."
       },
       {
         "topic": "atm",

@@ -1,10 +1,35 @@
-# 2026-10-09: 47 state-law source pages could not be fetched
+# 2026-10-09: 39 state-law source pages could not be fetched
 
 **What happened:** The cloud network cannot reach state legislature or court sites, so the Mac's Remote Control session fetched the 103 distinct URLs behind the 125 unconfirmed state-fee-law leads (fixtures/state-fee-law-sources/manifest.tsv on branch claude/state-law-sources, commit fcc8126). 56 returned 200 and were read into PR 339. The 47 below did not return a readable page, so their leads stay unconfirmed in STATE_FEE_LAW_COVERAGE.
 
 **Cause:** Bot protection on legislature sites (akleg.gov, leginfo.legislature.ca.gov, legislature.mi.gov, nysenate.gov, justia, mass.gov) answered 403. Others (ilga.gov, ndlegis.gov, codes.ohio.gov, rilegislature.gov, njleg) timed out from the Mac's network. The Tennessee URL carries a stray trailing ";" from the research notes, and vda.delaware.gov/?p=76 no longer exists.
 
-**Fix:** None yet. Retry from the Mac with a real browser (Playwright Chromium, headless) for the 403s, a longer timeout for the timeouts, and the corrected Tennessee URL. Where a site keeps refusing, find the same section on another official host (for example the state's own PDF code compilation) before using a secondary source.
+**Retry (commit 622d53b):** the Mac retried all 47 with headless Chromium. 8 loaded (CA-1, CA-2, CA-3, CO-4, MA-1, MA-3, NY-1, NY-2) and were read into PR 339; the CA, MA and NY files replaced error pages the first pass had saved as content. 22 of the 39 that still fail reset the connection from the Mac's network as well, so they need another source (Justia, the state's PDF code compilation, or a cached copy) rather than another retry:
+
+- https://codes.ohio.gov/ohio-revised-code/section-1109.20
+- https://codes.ohio.gov/ohio-revised-code/section-2716.05
+- https://gc.nh.gov/rsa/html/NHTOC/NHTOC-XXXV-384-G.htm
+- https://ilga.gov/documents/legislation/ilcs/documents/073500050K12-1001.htm
+- https://judicial.alabama.gov/docs/library/rules/cv64_A.pdf
+- https://legacy.utcourts.gov/rules/view.php?type=urcp&rule=64d
+- https://legislature.idaho.gov/statutesrules/idstat/title28/t28ch42/sect28-42-308/
+- https://legislature.vermont.gov/statutes/section/08/221/31405
+- https://malegislature.gov/Bills/190/H2976.Html
+- https://ndlegis.gov/cencode/t06c08.pdf
+- https://olis.oregonlegislature.gov/liz/2021R1/Downloads/MeasureDocument/HB2356
+- https://pub.njleg.gov/bills/2016/A5000/4965_I1.HTM
+- https://pub.njleg.gov/bills/9899/A1500/1317_I1.PDF
+- https://pub.njleg.state.nj.us/Bills/2024/A4000/3513_I1.PDF
+- https://statetreasurer.wyo.gov/wp-content/uploads/2020/04/AnnualReportChecklist.pdf
+- https://webserver.rilegislature.gov/BillText12/SenateText12/S2437.htm
+- https://webserver.rilegislature.gov/Statutes/TITLE19/19-9/INDEX.htm
+- https://www.capitol.tn.gov/Bills/114/Fiscal/SB0766.pdf;
+- https://www.ilga.gov/Legislation/BillStatus/FullText?GAID=18&DocNum=4474&DocTypeID=HB&LegId=165196&SessionID=114
+- https://www.ilga.gov/legislation/ilcs/ilcs3.asp?ActID=1189&ChapterID=20
+- https://www.nd.gov/dfi/sites/www/files/documents/State%20Credit%20Union%20Board/Orders/SCUBOrder206052020.pdf
+- https://www.nebraskalegislature.gov/laws/statutes.php?statute=25-1056
+
+**Fix:** None yet for the 39. Retry from the Mac with a real browser (Playwright Chromium, headless) for the 403s, a longer timeout for the timeouts, and the corrected Tennessee URL. Where a site keeps refusing, find the same section on another official host (for example the state's own PDF code compilation) before using a secondary source.
 
 **Lesson:** A plain fetch is enough for about half of state sites. Legislature sites need a browser fetch, and lead URLs should be checked for typos before handing them to the fetcher.
 
