@@ -101,3 +101,46 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/backlog-review.mjs age
+  pdf-evidence:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 987
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '7f752798b3f6bb548f500d07bac3b034128c9211'
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the reviewed branch's locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Retain the existing renderer test's exact output and inputs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/components/hamilton/reports/StoryExhibitPdf.test.tsx')
+          text = p.read_text()
+          needle = '    expect(buffer.subarray(0, 4).toString()).toBe("%PDF");'
+          assert text.count(needle) == 1, 'Pinned test changed; do not guess an insertion point'
+          capture = '''    evidenceFs.mkdirSync("pdf-review-output", { recursive: true });
+              evidenceFs.writeFileSync("pdf-review-output/pr-810-fixture.pdf", buffer);
+              evidenceFs.writeFileSync("pdf-review-output/pr-810-input.json", JSON.stringify({
+                pr: 810, head: "7f752798b3f6bb548f500d07bac3b034128c9211", syntheticFixture: true,
+                analysis, story,
+                duplicateSourceProbe: sourceLine([{ label: "Same label", asOf: "2025-01-01" }, { label: "Same label", asOf: "2026-01-01" }]),
+              }, null, 2));
+          '''
+          p.write_text('import * as evidenceFs from "node:fs";\n' + text.replace(needle, capture + needle))
+          PY
+      - name: Run the original PDF tests with evidence capture only
+        run: ./node_modules/.bin/vitest run src/components/hamilton/reports/StoryExhibitPdf.test.tsx --reporter=verbose
+      - name: Upload synthetic PDF and its exact underlying input
+        uses: actions/upload-artifact@v4
+        with:
+          name: backlog-pr-810-pdf-evidence
+          path: pdf-review-output/
+          if-no-files-found: error
+          retention-days: 90
