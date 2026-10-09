@@ -3854,6 +3854,20 @@ and quarter were already stored, without looking at the periods of the data behi
   so there is no row to count. The next break shows on the admin home page as soon as a third
   run fails with the same error.
 
+## 2026-10-09: A priority bank's run that failed on a fixed break waited a day
+- **What happened.** Checking every failed run since Oct 8 against recovery: the eight state
+  lanes that failed on the 12:06 publish break all reran and published, but Tennessee's
+  largest bank (institution 27, run 2877, a priority "read now" run) failed on the same break
+  and had not run again 13 hours later.
+- **Why.** Recovery's rerun (`wakeLanesAfterRecovery`) covers state lanes only, and a
+  priority run holds its institution for 24 hours whether it completed or failed.
+- **Fix.** A priority run that failed with a reason shared by 3 or more runs in 24 hours,
+  none of them under the current deploy, no longer holds its institution, so it reruns on
+  the next tick after a fixing deploy (`PRIORITY_FIXED_BREAK_RUNS`). A rerun that fails
+  again records the new deploy and holds as before.
+- **Watch.** After deploy, a new `atlas.priority_institution` run for institution 27 starts when
+  the two priority slots reach it, and its publish step completes.
+
 ## 2026-10-08: Bank and credit union numbers share one namespace
 - **What happened.** 314 credit unions in `institution_sources` have the same `cert_number` as
   an FDIC bank (NCUA charter numbers and FDIC certificate numbers are separate series). The
