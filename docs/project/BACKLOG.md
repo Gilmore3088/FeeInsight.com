@@ -1,6 +1,8 @@
 # One queue, one implementation
 
-Owner: James. Control issue: [#984](https://github.com/Gilmore3088/FeeInsight.com/issues/984).
+Owner: James. Coordinator: ChatGPT in the backlog-control thread.
+Control issue: [#984](https://github.com/Gilmore3088/FeeInsight.com/issues/984).
+Implementation: [#987](https://github.com/Gilmore3088/FeeInsight.com/pull/987).
 Decision recorded 2026-10-09 UTC (2026-10-10 in Hong Kong). This is repository
 coordination, not another application agent, product runtime or marketing system.
 
@@ -28,8 +30,9 @@ The control issue is the entry point, not a second Notion board or another sprea
    Push subsequent work to that PR. Do not create a new PR for every iteration.
 
 Priority: correctness and data trust, then usable customer journeys and payments, then
-maintainability. No outreach, prospecting, campaigns or speculative expansion unless
-James explicitly changes that decision. This does not alter production marketing controls.
+maintainability. Outreach AND marketing are on hold. Do not expand this cleanup into
+new features, broad refactoring, prospecting or campaigns. Existing fixes retain their
+owners. This does not itself change any production marketing controls.
 
 ## What the checks do
 
@@ -48,12 +51,17 @@ so squash/rebase merges are not mistaken for automatically unmerged work. No app
 patch equivalence is treated as proof. Missing commits/API errors are not silently safe.
 PRs based on another branch protect that dependency. Ref movement is recorded.
 
-The weekly run is Monday 16:17 UTC. A manual run is also available. Both update only
-the marked report section of #984 and retain evidence as a 90-day Actions artifact.
-The setup PR runs the inventory read-only as a bootstrap; it cannot write the dashboard.
-Scheduled/manual availability begins only after the workflow is approved and merged
-into the default branch. No separate paid service, personal token or AI-model call is needed.
-GitHub Actions runner usage still counts toward the repository's applicable usage limits.
+The full weekly run is Monday 16:17 UTC. A manual run is also available. An hourly
+review at :23 UTC surfaces open PRs at least 12 hours old (or of unknown age). This
+is an owner/coordinator check-in, never permission to overwrite, rebase, close or delete.
+It updates one section of #984 rather than posting repeated comments on every PR.
+Previously protected work remains protected: age never releases it automatically.
+
+Trusted default-branch runs update only marked sections of #984 and retain evidence
+as a 90-day Actions artifact. PR bootstrap runs cannot write the dashboard. Scheduled
+availability begins only after the workflow is approved and merged into the default
+branch; the schedule is not a promise of exact delivery time. No separate paid service,
+personal token or AI-model call is needed. GitHub Actions usage still applies.
 
 ## Retirement states and evidence
 
@@ -61,8 +69,8 @@ GitHub Actions runner usage still counts toward the repository's applicable usag
 |---|---|
 | MERGE | Still needed; current diff reviewed; relevant CI at head; UX/data checks; explicit James approval. |
 | REWORK | Useful but incomplete. Keep the canonical work item and salvage existing work rather than duplicating it. |
-| SUPERSEDED | Cite the current implementation or replacement PR proving this change is obsolete. Close with a receipt. |
-| ARCHIVE / PARK | Record why, exact branch/head, restart condition and preserved work. Close the PR, preserve the branch. |
+| SUPERSEDED | Cite the current implementation or replacement PR proving this change is obsolete. Close with a receipt only after authority/freshness checks. |
+| ARCHIVE / PARK | Record why, exact branch/head, restart condition and preserved work. Preserve the branch. |
 | DELETE candidate | No unique work being discarded, no open head/dependent PR, no protected/current work; exact-SHA review and separate approval. |
 
 Initial cutoff: 2026-10-09 18:04 UTC. Do not shift it during the initial cleanup.
@@ -71,11 +79,17 @@ Branch creation dates are not provided by normal branch listings or Git; an old 
 is not an old branch. Unknown-age branches are protected, and historical PR association
 is evidence of prior use, not proof a ref has never been recreated. Never auto-delete.
 
+The baseline `protected_recent`, `protected_unknown_age`, `protected` and
+`parked_preserve` exclusions persist. Newly observed protection is retained in the
+tracker's protection marker. Release requires the owner AND James to explicitly agree;
+no automatic release mechanism exists. Preserve active owner work even when it ages.
+
 Before any approved deletion: refresh the head and open/dependent PRs, verify the exact
 approved SHA has not moved, save a recovery ref/tag and receipt, then delete only that
-identified branch. Recheck main incorporation at execution time. Preserve unique work,
-red-team, recovery, release and unknown-history branches. A closed PR alone is not a backup
-policy; the first version leaves all branches intact. No deletion executor is included.
+identified branch. Recheck main incorporation at execution time. Skip changed or
+ambiguous items rather than substituting new branches into an approved batch. Preserve
+unique work, red-team, recovery, release and unknown-history branches. A closed PR alone
+is not a backup policy. No deletion executor is included.
 
 ## Receipts from the first cleanup
 
@@ -89,15 +103,22 @@ policy; the first version leaves all branches intact. No deletion executor is in
 Each PR carries its own receipt and source branch. No branch was deleted or merged.
 Remaining initial older PRs: #963 and #939 (reconcile layout overlap), #810 (PDF evidence),
 #811 (quality-metric disclosure). These are not approvals. Newer or newly active work,
-including #972, #973 and #974, is outside the initial cleanup.
+including #972, #973, #974, #985 and #986, is outside the initial cleanup.
 
 ## Non-negotiable release boundary
 
 Green CI is necessary, not authorization. No auto-merge, production merge, direct main
 push, force-push, branch deletion or data change without James's explicit approval for
 that action. This supersedes the previous CLAUDE.md statement permitting fixes to merge
-as soon as CI is green. Closing a demonstrably obsolete or owner-parked PR with preserved
-code is backlog administration, not a product release.
+as soon as CI is green. Earlier administrative PR closures with preserved code were
+backlog administration, not a product release. The latest active-work exclusions still
+apply to every subsequent action.
+
+Keep ready for review, merged, deployed and verified as separate statuses. Require
+actual tests/results and screenshots or generated output where relevant. An incorporated
+branch retirement is repository cleanup, not a newly delivered feature. At session end,
+record owner, existing branch/PR, purpose, decision, evidence, next action and blockers
+in #984. Do not create another tracker or treat a task document as completed work.
 
 At the initial read, GitHub reported main as unprotected. Repository instructions and
 checks are not a server-enforced merge barrier by themselves. After this PR is approved,
@@ -110,12 +131,17 @@ plus explicit recorded approval. Settings were not changed by this implementatio
 ## Operator commands (agents run these; James need not)
 
 ```sh
-node --test .github/scripts/backlog.test.mjs
+node --test .github/scripts/backlog.node-check.mjs .github/scripts/backlog-review.node-check.mjs
 node .github/scripts/backlog.mjs inventory
+node .github/scripts/backlog-review.mjs enrich
 # Full-history checkout plus GH_TOKEN/GITHUB_TOKEN with read access is required.
 # Optional initial review cutoff:
 BACKLOG_CUTOFF=2026-10-09T18:04:00Z node .github/scripts/backlog.mjs inventory
 ```
+
+Node-runner checks intentionally use `.node-check.mjs`, not `.test.mjs`: the latter
+is discovered by application Vitest, which cannot bundle the built-in `node:test`.
+Do not hide an application failure by excluding application tests; run both suites.
 
 No status auto-close bot: inactive work is surfaced, not silently discarded. Successful
 cleanup is 100% accounted-for history, not an artificially small branch count.

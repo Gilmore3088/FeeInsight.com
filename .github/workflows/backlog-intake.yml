@@ -24,8 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test intake logic
-        run: node --test .github/scripts/backlog.test.mjs
+      - name: Test intake logic with the Node runner, separately from application Vitest
+        run: node --test .github/scripts/backlog.node-check.mjs
       - name: Check work ownership and overlapping implementations
         env:
           GH_TOKEN: ${{ github.token }}

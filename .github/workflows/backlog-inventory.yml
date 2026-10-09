@@ -38,8 +38,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test inventory, persistent protection and 12-hour review rules
-        run: node --test .github/scripts/backlog.test.mjs .github/scripts/backlog-review.test.mjs
+      - name: Test inventory, persistent protection and 12-hour review rules with the Node runner
+        run: node --test .github/scripts/backlog.node-check.mjs .github/scripts/backlog-review.node-check.mjs
       - name: Read branches and all PR history
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,8 +95,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test review and preservation rules
-        run: node --test .github/scripts/backlog-review.test.mjs
+      - name: Test review and preservation rules with the Node runner
+        run: node --test .github/scripts/backlog-review.node-check.mjs
       - name: Refresh 12-hour review section; no per-PR comments or destructive actions
         env:
           GH_TOKEN: ${{ github.token }}
