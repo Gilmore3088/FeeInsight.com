@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -557,5 +557,131 @@ describe("v14: a monthly fee's bare name shared at different prices takes its ac
     expect(planRetidy([premium, highYield], [twin], [premium, highYield]).renames).toEqual([]);
     expect(accountHeading("monthly fee", 5, ["Compare Checking Accounts\n$5 monthly fee"])).toBeNull();
     expect(accountHeading("monthly fee", 5, ["Freedom Checking\n$50 monthly fee"])).toBeNull();
+  });
+});
+
+describe("v15: a name that is another line's cell, or only its line's condition", () => {
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("drops another line's leading cell and a box size's footnote number", () => {
+    const glued = fee({ canonical_fee_key: "safe_deposit_box", fee_name: "(after two years of no activity): Safe Deposit Box Lost Key", amount: 25 });
+    const page = text("Dormant Fee (per month) | $ 10.00 | (after 30 days past due)\n(after two years of no activity) | Safe Deposit Box Lost Key | $ 25.00");
+    expect(planRetidy([glued], page).renames[0]?.newName).toBe("Safe Deposit Box Lost Key");
+    expect(neighbourCellName({ fee_name: "3x10” 8", canonical_fee_key: "safe_deposit_box" })).toBe("3x10”");
+    // A glued name whose rest names another fee stays (a wire fee filed as a legal-process fee).
+    expect(neighbourCellName({ fee_name: "(tax levies, garnishment, restraining notices): Wire Transfer Fee", canonical_fee_key: "garnishment_levy" })).toBeNull();
+    expect(isMessyName("(if closed within 45 days of opening)")).toBe(true);
+  });
+
+  it("names a condition-only fee from the cell before it or the line above", () => {
+    const closure = fee({ canonical_fee_key: "early_closure", fee_name: "(if closed within 45 days of opening)", amount: 25 });
+    const dormant = fee({ canonical_fee_key: "dormant_account", fee_name: "(inactive 12 months)", amount: 15 });
+    const page = text("Account Closure Fee\n\n(if closed within 45 days of opening) | $25\n\nIRA Account Closure or Transfer | $25\nDormant Account under $300 (inactive 12 months) | $15.00 per month");
+    expect(planRetidy([closure, dormant], page).renames.map((rename) => rename.newName)).toEqual([
+      "Account Closure Fee (if closed within 45 days of opening)",
+      "Dormant Account under $300 (inactive 12 months)",
+    ]);
+    expect(conditionOnlyName(fee({ canonical_fee_key: "safe_deposit_box", fee_name: "(Key Replacement)", amount: 70 }), ["Safe Deposit Box Drilling Fee Varies\n(Key Replacement) $70.00"])).toBe("Key Replacement");
+  });
+
+  it("leaves a condition-only fee whose page names another fee, for a person", () => {
+    const paper = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "(Monthly Fee. Over 55 Free)", amount: 5 });
+    expect(planRetidy([paper], text("Paper Statement | (Monthly Fee. Over 55 Free) | $5.00")).renames).toEqual([]);
+    const order = fee({ canonical_fee_key: "money_order", fee_name: "(per money order)", amount: 5 });
+    expect(planRetidy([order], text("Money Order Fee\nCustomer | $5.00 (per money order)")).renames).toEqual([]);
+  });
+});
+
+describe("v15: a rename never drops a condition, and v14's trims get theirs back", () => {
+  it("finds the conditions UAT saw v14 cut", () => {
+    expect(dropsCondition("SAVINGS ACCOUNT: Money Orders (each) & counter checks (after 1st one)", "SAVINGS ACCOUNT: Money Orders (each) & counter checks")).toBe(true);
+    expect(dropsCondition("ATM Fee - Cash withdrawal at ATMs we do not own or operate", "ATM Fee")).toBe(true);
+    expect(dropsCondition("Dormant Account (if no customer initiated activity for 24 months on checking and savings accounts) per cycle if balance", "Dormant Account")).toBe(true);
+    expect(dropsCondition("Returned Item Fee (Savings Account) - A return item may be created by check", "Returned Item Fee")).toBe(true);
+    expect(dropsCondition("Dormant account - savings account - per quarter (excludes Student Savings and Christmas Club)", "Dormant account")).toBe(true);
+  });
+
+  it("lets a description, a footnote or a full stop go", () => {
+    expect(dropsCondition("Overdraft Item Fee (Imposed on overdrafts created by checks, in-person withdrawals, or other electronic means)", "Overdraft Item Fee")).toBe(false);
+    expect(dropsCondition("Check Cashing Fee (1)", "Check Cashing Fee")).toBe(false);
+    expect(dropsCondition("Check Cashing Fee1", "Check Cashing Fee")).toBe(false);
+    expect(dropsCondition("service charge.", "service charge")).toBe(false);
+    expect(dropsCondition("Maintenance Fee", "Loyalty Checking Maintenance Fee")).toBe(false);
+  });
+
+  it("puts the old name back, cut to its last whole clause when publish cut it off", () => {
+    expect(restoredName("SAVINGS ACCOUNT: Money Orders (each) & counter checks (after 1st one)", "SAVINGS ACCOUNT: Money Orders (each) & counter checks")).toBe(
+      "SAVINGS ACCOUNT: Money Orders (each) & counter checks (after 1st one)",
+    );
+    expect(
+      restoredName(
+        "Dormant Account Fee - No customer activity for 1 year - This monthly fee will be imposed after your first dormancy notic",
+        "Dormant Account Fee",
+      ),
+    ).toBe("Dormant Account Fee - No customer activity for 1 year");
+    expect(
+      restoredName("Dormant Account (if no customer initiated activity for 24 months on checking and savings accounts) per cycle if balance", "Dormant Account"),
+    ).toBe("Dormant Account (if no customer initiated activity for 24 months on checking and savings accounts)");
+    expect(restoredName("Dormant Account Fee - Checking Accounts. A Checking account is dormant if for one", "Dormant Account Fee")).toBe(
+      "Dormant Account Fee - Checking Accounts",
+    );
+    expect(restoredName("ID TheftSmart Fee (monthly fee, per person enrolled - customer can choose to pay a", "ID TheftSmart Fee")).toBe(
+      "ID TheftSmart Fee (monthly fee, per person enrolled)",
+    );
+    expect(restoredName("Overdraft Item Fee (Imposed on overdrafts created by checks, in-person withdrawals, or other electronic means)", "Overdraft Item Fee")).toBeNull();
+    expect(restoredName("Mobile Deposit: ability to deposit checks 24/7 via your smart phone", "Mobile Deposit")).toBeNull();
+    // An account heading on an account-bound fee names the account it applies to.
+    expect(restoredName("Performance Interest Checking: Inactive fee (per month)", "Inactive fee (per month)", "dormant_account")).toBe(
+      "Performance Interest Checking: Inactive fee (per month)",
+    );
+    expect(restoredName("PERSONAL CHECKING ACCOUNT FEES | Skip-a-Pay", "Skip-a-Pay", "skip_a_pay")).toBeNull();
+    // Another row's cell, a sentence the name was cut from, or a figure publish cut out stays off.
+    expect(restoredName("per item | Stop payment ACH", "Stop payment ACH", "stop_payment")).toBeNull();
+    expect(restoredName("Please note that after 180 days of inactivity, you will be charged a monthly inactivity fee", "Monthly inactivity fee")).toBeNull();
+    expect(restoredName("service charge if minimum balance is or less", "Service charge", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Monthly fee if account balance falls", "Monthly fee", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Service Charge if average balance <", "Service Charge", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Monthly Service Charge If Minimum", "Monthly Service Charge", "monthly_maintenance")).toBeNull();
+    expect(restoredName("Escheat Fee (Per Member) | Escheat Fee", "Escheat Fee", "escheat_fee")).toBeNull();
+    expect(restoredName("Check Cashing Otherwise – Per Check", "Check Cashing", "check_cashing")).toBeNull();
+    expect(restoredName("Premier Checking: Printed Statements", "Printed Statements", "paper_statement")).toBe("Premier Checking: Printed Statements");
+  });
+
+  it("restores a logged v14 trim, and does not trim a condition off again", () => {
+    const atm = fee({ fee_published_id: 47474, canonical_fee_key: "atm_non_network", fee_name: "ATM Fee", amount: 2 });
+    const logged = new Map([[47474, { oldName: "ATM Fee - Cash withdrawal at ATMs we do not own or operate", newName: "ATM Fee" }]]);
+    const plan = planRetidy([atm], [], [atm], logged);
+    expect(plan.renames.map((rename) => [rename.oldName, rename.newName])).toEqual([["ATM Fee", "ATM Fee - Cash withdrawal at ATMs we do not own or operate"]]);
+    const restored = { ...atm, fee_name: "ATM Fee - Cash withdrawal at ATMs we do not own or operate" };
+    const again = planRetidy([restored], [], [restored], new Map([[47474, { oldName: "ATM Fee", newName: restored.fee_name }]]));
+    expect(again.renames).toEqual([]);
+  });
+
+  it("an older window's name must print whole on the fee's own page", () => {
+    const page = "Inactive Account (After 1 year of no activity) $5.00\nPriority Rush Card Fee (up to 3 business days) $35.00";
+    expect(restoreOnPage("Inactive Account (After 1 year of no activity)", [page])).toBe(true);
+    expect(restoreOnPage("Priority Rush Card Fee (up to 3 business)", [page])).toBe(false);
+    expect(restoreOnPage("Priority Rush Card Fee (up to 3", [page])).toBe(false);
+    const inactive = fee({ fee_published_id: 82276, canonical_fee_key: "dormant_account", fee_name: "Inactive Account", amount: 5 });
+    const logged = new Map([[82276, { oldName: "Inactive Account (After 1 year of no activity)", newName: "Inactive Account", pageCheck: true }]]);
+    expect(planRetidy([inactive], [], [inactive], logged).renames).toEqual([]);
+    expect(planRetidy([inactive], [{ source_document_id: 70, normalized_text: page }], [inactive], logged).renames.map((rename) => rename.newName)).toEqual([
+      "Inactive Account (After 1 year of no activity)",
+    ]);
+  });
+
+  it("leaves a condition on a run-on name rather than trimming it", () => {
+    const dormant = fee({
+      fee_published_id: 92155,
+      canonical_fee_key: "dormant_account",
+      fee_name: "Dormant Account Fee - No customer activity for 1 year - This monthly fee will be imposed after your first dormancy notice",
+      amount: 5,
+    });
+    const plan = planRetidy([dormant], [], [dormant]);
+    expect(plan.renames.map((rename) => rename.newName)).not.toContain("Dormant Account Fee");
+  });
+
+  it("reads U+0372 between letters as the font's hyphen", () => {
+    expect(spacedControlName("Non\u0372Sufficient\u0003Funds\u0003(NSF)\u0003Return")).toBe("Non-Sufficient Funds (NSF) Return");
   });
 });

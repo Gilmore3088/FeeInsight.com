@@ -38,6 +38,8 @@ export interface LineupAccount {
   waiverText: string | null;
   waiverSource: LineupFieldSource;
   feeName: string;
+  /** The schedule line the fee was read from, when the row kept one. */
+  sourceLine?: string | null;
 }
 
 export interface LineupSummary {
@@ -94,6 +96,7 @@ export function lineupAccountFromRow(row: LineupCatalogRow): LineupAccount | nul
     waiverText: storedWaiver ?? derivedWaiver,
     waiverSource: storedWaiver ? "stored" : derivedWaiver ? "derived" : null,
     feeName: row.fee_name,
+    sourceLine: excerpt || null,
   };
 }
 
