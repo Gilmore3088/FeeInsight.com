@@ -12,6 +12,7 @@ import {
 } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
+import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import {
   getInstitutionPeerRanking,
   getInstitutionRevenueTrend,
@@ -27,7 +28,7 @@ import { getHamiltonModel } from "@/lib/ai-provider";
 import type { SectionInput } from "@/lib/hamilton/types";
 import {
   buildReportPeerCoveragePreview,
-  buildSelectedInstitutionFeeDeltas,
+  compareSelectedInstitutionFees,
   type ReportPeerCoveragePreview,
 } from "@/lib/hamilton/report-evidence";
 import { buildInsufficientEvidenceReport } from "@/lib/hamilton/report-readiness";
@@ -180,12 +181,13 @@ export async function previewReportPeerCoverage(
   if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
 
   try {
-    const [selectedInstitution, selectedFees, selectedEvidence] = await Promise.all([
+    const [selectedInstitution, selectedFees, selectedEvidence, chargeBases] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
       params.institutionId
         ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null)
         : null,
+      params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
     ]);
 
     if (params.institutionId && !selectedInstitution) {
@@ -210,6 +212,7 @@ export async function previewReportPeerCoverage(
         hasSelectedInstitution: Boolean(selectedInstitution),
         selectedFees,
         indexEntries: peerIndex.entries,
+        chargeBases,
         evidencePolicy: params.evidencePolicy ?? "provisional-first",
         peerBaselineSource: peerIndex.source,
         peerBaselineLabel: peerIndex.label,
@@ -385,6 +388,7 @@ export async function generateReport(
       selectedRevenueTrend,
       selectedPeerRanking,
       selectedEvidence,
+      chargeBases,
     ] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
@@ -393,6 +397,7 @@ export async function generateReport(
       params.institutionId ? getInstitutionRevenueTrend(params.institutionId).catch(() => []) : [],
       params.institutionId ? getInstitutionPeerRanking(params.institutionId).catch(() => null) : null,
       params.institutionId ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null) : null,
+      params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
     ]);
     const peerIndex = await resolveHamiltonPeerIndex({
       userId: user.id,
@@ -429,9 +434,10 @@ export async function generateReport(
       selectedInstitution ? String(selectedInstitution.id) : null,
     );
     const selectedSourceContext = resolveReportSelectedSource(params);
-    const selectedFeeDeltas = buildSelectedInstitutionFeeDeltas({
+    const { deltas: selectedFeeDeltas, notLikeForLike } = compareSelectedInstitutionFees({
       selectedFees: selectedVisibleFees,
       indexEntries: indexData,
+      chargeBases,
       evidencePolicy,
     });
     const pipelineCounts = selectedEvidence?.pipeline_counts ?? null;
@@ -522,6 +528,7 @@ export async function generateReport(
       selectedVisibleFees,
       selectedEvidence,
       selectedFeeDeltas,
+      notLikeForLike,
       peerIndex,
       selectedRevenueTrend,
       selectedPeerRanking,

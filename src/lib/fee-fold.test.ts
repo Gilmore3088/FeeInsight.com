@@ -230,6 +230,18 @@ describe("top-50 fold", () => {
       ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
       ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
       ["other_lending_fee", "Loan Payoff Statement", 20, null],
+      ["card_foreign_txn", "Cross-Border Banking Bundle annual fee", 0, "monthly_maintenance"],
+      ["card_foreign_txn", "Cross-Border Banking Bundle monthly fee", 9.95, "monthly_maintenance"],
+      ["card_foreign_txn", "Cross-Border Fee", 1, null],
+      ["card_foreign_txn", "Cross-border transaction fee", 1, null],
+      ["card_foreign_txn", "Cross-Border Banking 3% of purchase", 3, null],
+      ["atm_non_network", "ATM Adjustment", 5, "account_research"],
+      ["atm_non_network", "ATM adjustment fee", 5, "account_research"],
+      ["atm_non_network", "Special Handling (i.e. ATM adjustment, etc.)", 5, "account_research"],
+      ["atm_non_network", "ATM Limit Adjustment", 5, null],
+      ["atm_non_network", "ATM Transaction Adjustment", 5, "account_research"],
+      ["atm_non_network", "ATM Deposit Correction Adjustment", 5, null],
+      ["atm_non_network", "ATM Balance Inquiry (at non-Wildfire ATM)", 2, null],
     ];
     for (const [key, name, amount, want] of moves) {
       const got = splitLiveCategory(key, name)?.to ?? null;

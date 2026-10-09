@@ -26,7 +26,8 @@ const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
 // v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
-const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond|exceeding)\b[^|$]{0,40}?\b(per|in a|a|each) (month|statement cycle|cycle|year)\b/gi;
+// v9: "each above 6/month" (101933, Oct 9).
+const ALLOWANCE = /\b(free|after|first|more than|over|above|in excess of|beyond|exceeding)\b[^|$]{0,40}?(\b(per|in a|a|each) |\/\s?)(month|statement cycle|cycle|year)\b/gi;
 
 /**
  * v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") makes the
@@ -200,7 +201,8 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   // the returned-deposit fee "daily".
   if (!wording.test(sourceLine)) return MISREAD_PERIOD[stated!]?.test(sourceLine) ?? false;
   const cells = sourceLine.split("|");
-  const priced = cells.map((cell) => feePrices(cell).length > 0);
+  // v9: a cell priced "N/C" or "Free" is another fee's row too ("Monthly service fee ... N/C | ATM ... $1.00").
+  const priced = cells.map((cell) => feePrices(cell).length > 0 || NO_CHARGE.test(cell));
   const own = cells
     .map((cell, index) => (feePrices(cell).some((price) => Math.abs(price - amount) < 0.005) ? index : -1))
     .filter((index) => index >= 0);
@@ -218,6 +220,43 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   return cells.some((cell, index) => !ownCells.has(index) && priced[index] && wording.test(cell));
 }
 const PRICE_START = /\$\s?\.?\d/;
+const NO_CHARGE = /(^|[\s.…])(n\/c|no charge|free)\s*\*?\s*$/i;
+
+/** A safe deposit box named by its size ("3 x 5", "10x10x21", "5 x 10” box"). */
+export const BOX_SIZE_NAME = /^\W*\d{1,2}(?:\.\d)?\s*[x×]\s*\d{1,2}/i;
+const ANNUAL_HEADER_MAX = 40;
+const HEADER_LOOK_BACK = 12;
+/** A cell that starts with a box size, fractions included ("2 ½ x 5", "3x5 ....$40"). */
+const BOX_SIZE_CELL = /^\W*\d{1,2}(?:[.,]\d+)?\s*(?:[½¼¾]|\d\/\d)?\s*[x×]\s*\d/i;
+
+/**
+ * v10: the annual period a box table's column header gives its rows ("Box Size: | Annual Rental:"
+ * over "3 x 5 x 21 | $25", Altra 104006). The fee's own line is found in the document text, and the
+ * lines above it, up to 12, are read for the header: a short cell saying "annual", "per year" or
+ * "yearly" that prints no price and is not followed by a price cell (so "Annual Fee | $10.00" is a
+ * fee, not a header), on a line with no "monthly". Every priced line between the header and the fee
+ * must carry a box size, so a header above another table never reaches the box rows. Only annual is read: a box
+ * rent is charged by the year, and a "per month" cell near a box table is another product's ("$10
+ * per month ... if account balance is less than $100"). Null when the line is not found or no such
+ * header is above it. Pure.
+ */
+export function boxTableAnnualHeader(text: string, sourceLine: string, amount: number): "annual" | null {
+  const lines = text.split(/\r?\n/);
+  const target = sourceLine.replace(/\s+/g, " ").trim();
+  if (!target) return null;
+  const at = lines.findIndex((line) => line.replace(/\s+/g, " ").includes(target));
+  if (at < 0 || !feePrices(lines[at]).some((price) => Math.abs(price - amount) < 0.005)) return null;
+  for (let index = at - 1; index >= Math.max(0, at - HEADER_LOOK_BACK); index -= 1) {
+    const line = lines[index];
+    const cells = line.split("|").map((cell) => cell.trim());
+    const priced = cells.map((cell) => PRICE_START.test(cell));
+    const header = cells.some((cell, cellIndex) =>
+      cell.length > 0 && cell.length <= ANNUAL_HEADER_MAX && !priced[cellIndex] && !priced[cellIndex + 1] && STATED_WORDING.annual.test(cell));
+    if (header) return STATED_WORDING.monthly.test(line) ? null : "annual";
+    if (priced.some(Boolean) && !cells.some((cell) => BOX_SIZE_CELL.test(cell))) return null;
+  }
+  return null;
+}
 
 /**
  * Categories charged per period or per day. A per-item reading of one of these is a

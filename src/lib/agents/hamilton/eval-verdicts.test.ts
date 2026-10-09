@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EVAL_CRITICAL_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
+import { EVAL_CRITICAL_VERDICTS, HAND_CHECKED_VERDICTS, distinctPrices, evalVerdictFeesSql, flagFor, priceInName, retireEvalVerdictFees, ruleFor, verdictFor } from "./eval-verdicts";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -213,11 +213,105 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(flagFor("early_closure", "Accounts closed within 90 days: International Wire")).toBeNull();
   });
 
+  it("flags a hand-checked row for its second look, never takes it down on the first run (City National 76)", async () => {
+    const handRows = [
+      { fee_published_id: 100158, fee_verified_id: 113964, institution_id: 76, source_document_id: 23020, canonical_fee_key: "overdraft", fee_name: "Item Fees and the Paid Item Fee for the check/item in the amount of", amount: "17.00" },
+      // Renamed since the check: left alone.
+      { fee_published_id: 100162, fee_verified_id: 113969, institution_id: 76, source_document_id: 23020, canonical_fee_key: "wire_domestic_incoming", fee_name: "Incoming Wire Transfer", amount: "0.00" },
+    ];
+    const db = createDb(null);
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(handRows));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result).toMatchObject({ handMatched: 1, evalChanged: 1, flagged: 1 });
+    expect(result.rolledBack).toEqual([]);
+    expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("takedown_pending");
+    expect(calls).toContain("not_a_fee:two_column_glue");
+    expect(new Set(HAND_CHECKED_VERDICTS.map((entry) => entry.feePublishedId)).size).toBe(HAND_CHECKED_VERDICTS.length);
+    expect(HAND_CHECKED_VERDICTS.some((entry) => EVAL_CRITICAL_VERDICTS.some((evalRow) => evalRow.feePublishedId === entry.feePublishedId))).toBe(false);
+  });
+
+  it("archives a hand-checked row once its second look confirms it, with the pattern in Knox's lesson", async () => {
+    const handRow = { fee_published_id: 100161, fee_verified_id: 113967, institution_id: 76, source_document_id: 23020, canonical_fee_key: "cashiers_check", fee_name: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: "0.00" };
+    const query = (strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("NOT EXISTS")) return Promise.resolve([]);
+      if (text.includes("FROM pipeline_feedback")) {
+        return Promise.resolve([{ fee_published_id: 100161, kind: "takedown_pending", evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "wrong_amount:two_column_glue" } }]);
+      }
+      if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 100161 }]);
+      return Promise.resolve([]);
+    };
+    const db = vi.fn(query) as unknown as ReturnType<typeof createDb>;
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve([handRow]));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result.rolledBack.map((fee) => [fee.feePublishedId, fee.reason, fee.source])).toEqual([[100161, "wrong_amount:two_column_glue", "hand"]]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain('\\"pattern\\":\\"two_column_glue\\"');
+    expect(calls).toContain("hand check against the bank's schedule");
+    expect(writes(db).some((text) => text.includes("DELETE"))).toBe(false);
+  });
+
+  it("reads a rate fee's floor or cap published as the fee as a wrong amount (UAT 103410)", () => {
+    expect(ruleFor("cash_advance", "Signature Authorization Cash Advance Fee: 4% of transaction amount. Minimum", 4)).toBe("rate_bound");
+    expect(ruleFor("cashiers_check", "Cashiers Check 1% of Check Amt Max", 5)).toBe("rate_bound");
+    expect(ruleFor("check_cashing", "Check Cashing 2% or minimum", 5)).toBe("rate_bound");
+    // A percent with the floor stated after it, or no percent at all, is not this shape.
+    expect(ruleFor("check_cashing", "Check Cashing 2%, minimum $5", 5)).toBeNull();
+    expect(ruleFor("account_research", "Research Fee minimum", 10)).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("(minimum|maximum|min|max)");
+  });
+
+  it("reads a balance-to-avoid label as not a fee at any amount (v7, Oct 9)", () => {
+    expect(ruleFor("monthly_maintenance", "Minimum balance required to avoid service charge -", 50)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "Minimum balance to avoid monthly service fee", 5)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "Average Balance Required to Avoid Monthly Fee", 10)).toBe("balance_threshold");
+    expect(ruleFor("monthly_maintenance", "minimum balance requirement to avoid the monthly maintenance fee. FAT CAT Share accounts can be opened with a", 5)).toBe("balance_threshold");
+    // A $0 waiver keeps its earlier rule.
+    expect(ruleFor("monthly_maintenance", "Minimum Balance to Avoid Monthly Fee", 0)).toBe("waiver_sentence");
+    // A name that goes on to state the fee is the fee's own row.
+    expect(ruleFor("monthly_maintenance", "Minimum balance to avoid imposition of fees - A service charge fee of", 15)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum balance to avoid imposition of fees - A club fee of", 8)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "average collected daily balance required to avoid monthly service charge of", 10)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of", 2.5)).toBeNull();
+    expect(ruleFor("nsf", "Minimum daily balance required to avoid maintenance | Bill Pay Return Item . . . .", 30)).toBeNull();
+    expect(ruleFor("monthly_maintenance", "monthly fee can be avoided by keeping minimum daily balance", 8)).toBeNull();
+    expect(ruleFor("minimum_balance", "Minimum Balance Fee", 10)).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("(minimum|average|min");
+  });
+
   it("changes nothing in a dry run", async () => {
     const db = createDb(null);
     const result = await retireEvalVerdictFees(db, { ...options, dryRun: true });
     expect(result.flags.non_customer_price).toBe(1);
     expect(result.rolledBack).toHaveLength(1);
     expect(writes(db).some((text) => /UPDATE|INSERT INTO/.test(text))).toBe(false);
+  });
+
+  it("judges the name before a logged retidy too, so a rename alone does not clear a wrong row (v6, UAT 864)", async () => {
+    const renamed = [
+      // Hand-checked 100161: the retidy dropped the glued prefix; the $0 is still wrong.
+      { fee_published_id: 100161, fee_verified_id: 113967, institution_id: 76, source_document_id: 23020, canonical_fee_key: "cashiers_check", fee_name: "Cashier\u2019s Checks", original_fee_name: "(APY) are available at any of City National Bank of Florida (CNB) banking: Cashier\u2019s Checks", amount: "0.00" },
+      // A $0 waiver renamed to its fee's name (60387).
+      { fee_published_id: 60387, fee_verified_id: 1, institution_id: 9, source_document_id: 5, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", original_fee_name: "Monthly Service Charge if any of the following qualifications are met", amount: "0.00" },
+      // A rebate renamed to "ATM fee" (13878).
+      { fee_published_id: 13878, fee_verified_id: 2, institution_id: 9, source_document_id: 5, canonical_fee_key: "atm_non_network", fee_name: "ATM fee", original_fee_name: "ATM receipt must be presented for reimbursement of an individual ATM fee of", amount: "5.00" },
+      // A rename of a right row stays live.
+      { fee_published_id: 70200, fee_verified_id: 3, institution_id: 9, source_document_id: 5, canonical_fee_key: "stop_payment", fee_name: "Stop Payment", original_fee_name: "Stop Payment | per item", amount: "30.00" },
+    ];
+    const db = createDb(null);
+    (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(renamed));
+    const result = await retireEvalVerdictFees(db, options);
+    expect(result).toMatchObject({ handMatched: 1, ruleFailing: 2, flagged: 3, evalChanged: 0 });
+    expect(result.rolledBack).toEqual([]);
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("not_a_fee:waiver_sentence");
+    expect(calls).toContain("not_a_fee:rebate");
+    expect(calls).not.toContain("pub:70200");
+    expect(verdictFor({ feePublishedId: 100161, feeName: "Cashier\u2019s Checks", amount: 30, canonicalFeeKey: "cashiers_check", originalFeeName: HAND_CHECKED_VERDICTS[2].feeName })).toBeNull();
+    expect(evalVerdictFeesSql(false)).toContain("pf.check_name = 'knox.name_retidy' AND pf.kind = 'name_retidied'");
+    expect(evalVerdictFeesSql(false)).toContain("OR retidy.old_name IS NOT NULL");
   });
 });

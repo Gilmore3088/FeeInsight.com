@@ -19,9 +19,9 @@ describe("isProductPage", () => {
     expect(isProductPage(null)).toBe(false);
   });
 
-  it("stays off until James answers", () => {
-    expect(productPageTakedownEnabled()).toBe(false);
-    expect(productPageTakedownEnabled(true)).toBe(true);
+  it("is on since James's \"take down the fees\" (Oct 9)", () => {
+    expect(productPageTakedownEnabled()).toBe(true);
+    expect(productPageTakedownEnabled(false)).toBe(false);
   });
 });
 
@@ -47,12 +47,12 @@ const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => 
 const options = { runId: 7, batchId: "agentic-run-7", dryRun: false };
 
 describe("retireProductPageFees", () => {
-  it("changes nothing with the switch as shipped: it only counts", async () => {
-    expect(PRODUCT_PAGE_TAKEDOWN_ON).toBe(false);
-    const db = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() });
+  it("with the switch as shipped, flags a product-page $0 fee and keeps it live until its second look", async () => {
+    expect(PRODUCT_PAGE_TAKEDOWN_ON).toBe(true);
+    const db = createDb(null);
     const result = await retireProductPageFees(db, options);
-    expect(result).toMatchObject({ enabled: false, productFees: 1, flagged: 0, waiting: 0, rolledBack: [] });
-    expect(db).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ enabled: true, productFees: 1, flagged: 1, rolledBack: [] });
+    expect(writes(db).some((text) => text.includes("SET rolled_back_at = NOW()"))).toBe(false);
   });
 
   it("only counts while off: no flag, no takedown", async () => {

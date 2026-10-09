@@ -359,7 +359,9 @@ before features are read (`withoutRequestEcho`, version 2).
 Magellan also ingests published regulator data through deterministic
 `registry-<source>` steps. Each step processes exactly one partition, records it
 in `registry_ingest_partitions`, and keeps lineage (`source_url`, `agent_run_id`).
-Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
+Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`, with one exception:
+`registry-wire-research` (below) is a provider step, listed in `PROVIDER_STEP_KEYS`, so the
+global provider stop and the budget caps apply to it; it is off until `REG_WIRE_SUMMARIES_LIVE=true`.
 
 | Step | Partition | Writes |
 | --- | --- | --- |
@@ -382,6 +384,7 @@ Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`.
 | `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
 | `registry-state-reg-news` | `current` (daily) | `reg_articles` source `state:XX` (each state banking and credit union regulator's press releases: the feed its home page advertises, else its news page read as article links; each agency's mode, count and fee headlines are in the partition detail; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
 | `registry-state-bill-news` | `current` (daily) | `reg_articles` source `news:XX` (Google News RSS coverage of each fee bill in the `state-bills` partition rows, plus fee legislation news for a quarter of the states each day; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
+| `registry-wire-research` | `current` (every 12 hours) | `reg_wire_research` (Regulatory Wire research notes: the newest federal releases, state regulator banking posts and state fee bills without a note, 20 a run (`REG_WIRE_SUMMARIES_PER_RUN`, at most 30); reads each item's own page with a plain fetch (a PDF's text layer through Rosetta's `layoutDocumentText`, first 8 pages; a scan stays unreadable) and asks `claude-haiku-4-5-20251001` (`REG_WIRE_SUMMARY_MODEL`) for a JSON summary from that text only, through `paidModelCall`; a date the text does not state is dropped in code; press is never summarised. Shadow mode until `REG_WIRE_SUMMARIES_LIVE=true`: picks and reads the items and logs them, no model call, nothing stored) |
 | `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.

@@ -94,7 +94,16 @@ export interface AgentRunEventSnapshot {
  * is deterministic and is paused only by the separate pipeline control.
  */
 /** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
-export const PROVIDER_STEP_KEYS: readonly string[] = ["discover-paid", "read-paid", "extract-paid", "verify-paid", "report-render", "marketing-write"];
+export const PROVIDER_STEP_KEYS: readonly string[] = [
+  "discover-paid",
+  "read-paid",
+  "extract-paid",
+  "verify-paid",
+  "report-render",
+  "marketing-write",
+  // Magellan's Regulatory Wire research notes; shadow mode until REG_WIRE_SUMMARIES_LIVE=true.
+  "registry-wire-research",
+];
 
 export function isProviderStep(stepKey: string): boolean {
   return PROVIDER_STEP_KEYS.includes(stepKey);
@@ -110,9 +119,11 @@ export const MAX_STEP_ATTEMPTS = 3;
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
+  "bayes-replay-ledger",
   "briefing-refresh",
   "competitor-alerts",
   "daily-brief",
+  "deming-regression",
   "fee-alert-dispatch",
   "lead-watch",
   "pro-digest",

@@ -19,12 +19,12 @@ import { logReadFailure, type ReadFailure } from "@/lib/admin-read-failure";
 import { RoomHeader, Unreadable } from "../room-hub";
 
 /** Board columns, left to right, in the order a request moves. */
-const LANES: { title: string; note: string; statuses: LeadStatus[] }[] = [
+const LANES: { title: string; note: string; statuses: LeadStatus[]; collapsed?: boolean }[] = [
   { title: "Waiting on us", note: "Owed a reply", statuses: ["new", "needs_reply", "overdue", "email_failed", "in_progress"] },
   { title: "Held", note: "Their market isn't ready", statuses: ["held"] },
   { title: "Quoted", note: "Waiting on their payment", statuses: ["quoted"] },
   { title: "Paid or sent", note: "Answered", statuses: ["paid", "sent", "followed_up"] },
-  { title: "Closed", note: "Done", statuses: ["closed"] },
+  { title: "Closed", note: "Done", statuses: ["closed"], collapsed: true },
 ];
 
 const LANE_LIMIT = 8;
@@ -118,16 +118,12 @@ export default async function CustomersRoomPage() {
         {leads.length === 0 ? (
           <p className="mt-2 text-sm text-gray-500">No leads were read. If you expected some, the leads table may be unreachable.</p>
         ) : null}
-        <div className="mt-2 grid grid-flow-col auto-cols-[minmax(13rem,1fr)] gap-3 overflow-x-auto pb-2">
+        {/* Stacked on a phone, a board from sm up; an empty stage is one short line, closed requests fold behind a count. */}
+        <div className="mt-2 grid grid-cols-1 items-start gap-2 pb-2 sm:auto-cols-[minmax(13rem,1fr)] sm:grid-flow-col sm:grid-cols-none sm:gap-3 sm:overflow-x-auto">
           {LANES.map((lane) => {
             const inLane = requests.filter((lead) => lane.statuses.includes(status(lead)));
-            return (
-              <div key={lane.title} className="rounded-lg bg-black/[0.03] p-2.5 dark:bg-white/[0.03]">
-                <p className="flex items-baseline justify-between px-1 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                  <span>{lane.title}</span>
-                  <span className="font-mono tabular-nums">{inLane.length}</span>
-                </p>
-                <p className="px-1 text-[11px] text-gray-500">{lane.note}</p>
+            const cards = (
+              <>
                 <ul className="mt-2 space-y-2">
                   {inLane.slice(0, LANE_LIMIT).map((lead) => <LeadCard key={lead.id} lead={lead} now={now} />)}
                 </ul>
@@ -136,6 +132,27 @@ export default async function CustomersRoomPage() {
                     {inLane.length - LANE_LIMIT} more in Leads
                   </Link>
                 ) : null}
+              </>
+            );
+            return (
+              <div key={lane.title} className={`rounded-lg bg-black/[0.03] dark:bg-white/[0.03] ${inLane.length === 0 ? "px-2.5 py-1.5" : "p-2.5"}`}>
+                <p className="flex items-baseline justify-between gap-2 px-1 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <span>
+                    {lane.title}
+                    <span className="ml-1.5 font-normal text-[11px] text-gray-500">{lane.note}</span>
+                  </span>
+                  <span className="font-mono tabular-nums">{inLane.length}</span>
+                </p>
+                {inLane.length === 0 ? null : lane.collapsed ? (
+                  <details>
+                    <summary className="mt-1 cursor-pointer px-1 text-xs font-semibold text-[var(--brand-primary)]">
+                      Show {inLane.length} {lane.title.toLowerCase()}
+                    </summary>
+                    {cards}
+                  </details>
+                ) : (
+                  cards
+                )}
               </div>
             );
           })}

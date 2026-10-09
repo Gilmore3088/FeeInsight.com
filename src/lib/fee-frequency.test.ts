@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { borrowedFrequency, frequencyFamily, frequencyFromLine, settledFrequency, wordsAfterPrice } from "./fee-frequency";
+import { borrowedFrequency, boxTableAnnualHeader, frequencyFamily, frequencyFromLine, settledFrequency, wordsAfterPrice } from "./fee-frequency";
 
 describe("frequencyFromLine (live excerpts, Oct 8)", () => {
   it("reads the words right after the fee's own price", () => {
@@ -147,5 +147,52 @@ describe("a rate basis in the fee's own name (v8, whole-record sample 2)", () =>
     expect(frequencyFromLine("Minimum Balance Fee | $5.00 per month", 5)).toBe("monthly");
     expect(settledFrequency("Classic Money Market Account (balance below $1,000) | $3.00/monthly", 3, "monthly", "minimum_balance")).toBe("monthly");
     expect(frequencyFromLine("Copy of Share Draft (Check) Faxed | $6.00 each", 6)).toBe("per_item");
+  });
+});
+
+describe("an allowance written as a count per month (v9, 101933)", () => {
+  it("reads the fee as per item, not the free-fee row's monthly", () => {
+    const line = "Monthly service fee …………………… N/C | ATM transaction (each above 6/month)… $ 1.00 | *Depending on location";
+    expect(frequencyFromLine(line, 1)).toBe("per_item");
+    expect(settledFrequency(line, 1, "monthly", "atm_non_network")).toBe("per_item");
+    expect(frequencyFromLine("Monthly service fee | $5.00", 5)).toBe("monthly");
+  });
+});
+
+describe("boxTableAnnualHeader (v10, live documents Oct 9)", () => {
+  it("reads the annual column header over a box row (Altra 104006)", () => {
+    const text = [
+      "• Foreign Checks in U.S. dollars $1,000 & over | Box Size: | Annual Rental:",
+      "3 x 5 x 21 | $25",
+      "*Inactive Savings Account | 3 x 10 x 21 | $35",
+    ].join("\n");
+    expect(settledFrequency("3 x 5 x 21 | $25", 25, null, "safe_deposit_box")).toBeNull();
+    expect(boxTableAnnualHeader(text, "3 x 5 x 21 | $25", 25)).toBe("annual");
+    expect(boxTableAnnualHeader(text, "3 x 10 x 21 | $35", 35)).toBe("annual");
+  });
+
+  it("reads through glued neighbour columns that still carry box sizes (doc 7866)", () => {
+    const text = [
+      "Size | Annual Fee",
+      "Account Activity Printout . . . $1 | 3x5 . . . . $40",
+      "Account Research/Balancing . . . $25/hr | 5x5 . . . . $55",
+    ].join("\n");
+    expect(boxTableAnnualHeader(text, "Account Research/Balancing . . . $25/hr | 5x5 . . . . $55", 55)).toBe("annual");
+  });
+
+  it("leaves a box table with no period, or a monthly header, blank", () => {
+    expect(boxTableAnnualHeader("Safe Deposit Boxes:\n2 x 5 $20\n3 x 5 $30", "3 x 5 $30", 30)).toBeNull();
+    expect(boxTableAnnualHeader("Box Size | Monthly Rent\n3 x 5 | $5", "3 x 5 | $5", 5)).toBeNull();
+    expect(boxTableAnnualHeader("Box Size | Annual or Monthly Rent\n3 x 5 | $5", "3 x 5 | $5", 5)).toBeNull();
+  });
+
+  it("does not carry another fee's annual name down to a box table (doc 22340)", () => {
+    const text = ["Annual Fee | $10.00", "Termination Fee | $25.00", "Safe Deposit Boxes*", "3 x 5 | $50.00"].join("\n");
+    expect(boxTableAnnualHeader(text, "3 x 5 | $50.00", 50)).toBeNull();
+  });
+
+  it("needs the fee's own price on the line it finds", () => {
+    expect(boxTableAnnualHeader("Box Size | Annual Rent\n3 x 5 | $25", "3 x 5 | $25", 30)).toBeNull();
+    expect(boxTableAnnualHeader("Box Size | Annual Rent\n3 x 5 | $25", "5 x 5 | $40", 40)).toBeNull();
   });
 });

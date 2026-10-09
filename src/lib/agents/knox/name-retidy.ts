@@ -7,6 +7,8 @@ import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { stripFootnoteMarks, usableName } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { classifyFeeText } from "@/lib/agents/knox/rules";
 
 type SqlTag = typeof sql;
 
@@ -21,7 +23,7 @@ type SqlTag = typeof sql;
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
 const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
+  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -125,6 +127,135 @@ export function isCutoffName(name: string): boolean {
   );
 }
 
+/** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */
+const LEADING_DISCOURSE = /^\s*(?:otherwise|additionally|also|however|in addition|furthermore|further)\s*,?\s/i;
+/** v7: the gap a dollar figure left in a name when it was cut out ("Cashier's Checks ( and Over)", "balance is under )"). */
+const STRIPPED_AMOUNT = /\(\s|\s\)/;
+/** v7: a threshold cut off the end of a name ("Classic Money Market Account (balance below"). */
+const TRAILING_CUT = /\((?:[^()]*\s)?(?:below|under|than|over|exceeds?|exceeding|least|above)\s*$/i;
+const AMOUNT_IN_NAME = String.raw`\$\s?\d[\d,]*(?:\.\d{1,2})?(?:\s*[-–]\s*\$\s?\d[\d,]*(?:\.\d{1,2})?)?`;
+
+/**
+ * v7: the name with the dollar figures its schedule line states put back where they were cut
+ * out ("Dormant Account Fee-(No activity for 2 years and the balance is under $100)"), read
+ * from the fee's own stored text. Null when the name has no such gap or the text does not hold
+ * the name with figures in exactly those gaps.
+ */
+export function restoreStrippedAmount(name: string, texts: string[]): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  const cutAtEnd = TRAILING_CUT.test(current);
+  if (!STRIPPED_AMOUNT.test(current) && !cutAtEnd) return null;
+  const tokens = current.split(" ").map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(
+    tokens.join(`(?:\\s*${AMOUNT_IN_NAME}\\s*|\\s+)`) + (cutAtEnd ? `\\s*${AMOUNT_IN_NAME}(?:\\s*\\))?` : ""),
+    "i",
+  );
+  for (const text of texts) {
+    const found = text.replace(/\s+/g, " ").match(pattern)?.[0];
+    if (!found) continue;
+    let restored = found.replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim();
+    if ((restored.match(/\(/g) ?? []).length > (restored.match(/\)/g) ?? []).length) restored = `${restored})`;
+    const figures = (value: string) => (value.match(/\$/g) ?? []).length;
+    return figures(restored) > figures(current) && !STRIPPED_AMOUNT.test(restored) ? restored : null;
+  }
+  return null;
+}
+
+/** v7: a "Name" column label on the front of a name ("Name Stop Payment", Maple FCU). */
+const HEADER_WORD_PREFIX = /^Name:?\s+(?=[A-Z])(?!Changes?\b)/;
+/**
+ * v7: an account or section heading read onto the front of another fee's name ("BUSINESS
+ * CHECKING ACCOUNT FEES | Skip-a-Pay", "Business Freedom Checking: Pinnacle Business Checking:
+ * Safe Deposit Box Rental"). A monthly or balance fee keeps it: there the account is the name.
+ */
+const LEADING_ACCOUNT_HEADINGS = /^(?:[A-Z][\w/&'’ -]{0,60}?\b(?:checking|savings|money market|account fees|fees)\s*[:|]\s*)+(?=[A-Z])/i;
+const ACCOUNT_NAMED_KEYS = new Set(["monthly_maintenance", "minimum_balance"]);
+/**
+ * v7: Hamilton's business_schedule check reads a leading "Business" or "Commercial" on a name with
+ * no "|" or ":" as a business fee. A rename never drops that word from such a name, or a business
+ * price would sit beside the consumer one. A heading glued on with "|" or ":" is still stripped.
+ */
+/** v7: a dot leader, ellipsis run or fill-in line, the twin of Knox's tidy `LEADERS`. */
+const DOT_LEADER = /(?:\.\s?){3,}|…|_{3,}/;
+/** v8: waiver advice read onto a fee's name ("Stop Payment (Check/ACH) Submit request ... to avoid this charge"). */
+const AVOID = /\bavoid/i;
+const AVOID_CELL = /\bavoid/i;
+const AVOID_PARENTHETICAL = /\s*\([^()]*\bavoid[^()]*\)(?:\[\d+\]\(#[^)]*\))?/gi;
+const ADVICE_START =
+  /(?:\.\s+|\s+-\s+|\s+)(?=(?:Save|Submit|Use|Perform|Enroll|PLEASE|Please|Setting|Access|Choose|In order to|To avoid|Avoid)\b)/g;
+
+/**
+ * v8: the fee's name with the advice on how to avoid it cut off: a "|" cell, a parenthetical, or
+ * the sentence from its imperative on ("Card Rush Order Save your card ... to avoid ..." becomes
+ * "Card Rush Order"). Null when nothing names a fee once the advice is gone. Pure.
+ */
+export function withoutWaiverAdvice(name: string): string | null {
+  if (!AVOID.test(name)) return null;
+  let current = name;
+  if (current.includes("|")) {
+    const cells = current.split("|").map((cell) => cell.trim()).filter(Boolean);
+    const kept = cells.filter((cell) => !AVOID_CELL.test(cell));
+    if (kept.length === 1 && kept.length < cells.length) current = kept[0];
+  }
+  current = current.replace(AVOID_PARENTHETICAL, "");
+  if (AVOID.test(current)) {
+    for (const match of current.matchAll(ADVICE_START)) {
+      const rest = current.slice((match.index ?? 0) + match[0].length);
+      if (AVOID.test(rest)) {
+        current = current.slice(0, match.index);
+        break;
+      }
+    }
+  }
+  current = current.replace(/[\s.,;:–-]+$/, "").trim();
+  if (!current || current === name.trim() || AVOID.test(current) || !FEE_NOUN.test(current) || !usableName(current)) return null;
+  if (current.split(/\s+/).length > MAX_WORDS || sentenceShaped(current) || VERB_END.test(current) || /\s(?:to|of|a|the)$/i.test(current)) return null;
+  return current;
+}
+
+// One rules read per document text in a step: a page often holds several advice names.
+const readCache = new Map<string, ReturnType<typeof runFreeSpecialists>["candidates"]>();
+function specialistCandidates(text: string) {
+  let candidates = readCache.get(text);
+  if (!candidates) {
+    if (readCache.size >= 50) readCache.clear();
+    candidates = runFreeSpecialists(text).candidates;
+    readCache.set(text, candidates);
+  }
+  return candidates;
+}
+
+/**
+ * v8: the name Knox's rules read today for the same fee: one candidate in the fee's own text
+ * with the same category and amount whose name gives no advice. Null when none or several. Pure.
+ */
+export function reReadName(fee: Pick<LiveFeeRow, "canonical_fee_key" | "amount">, ownTexts: string[]): string | null {
+  if (fee.amount == null) return null;
+  const amount = Number(fee.amount);
+  const names = new Set<string>();
+  for (const text of ownTexts) {
+    for (const candidate of specialistCandidates(text)) {
+      if (candidate.canonicalHint !== fee.canonical_fee_key || Math.abs(candidate.amount - amount) >= 0.005) continue;
+      if (AVOID.test(candidate.feeName) || !usableName(candidate.feeName)) continue;
+      names.add(candidate.feeName.trim());
+    }
+  }
+  return names.size === 1 ? [...names][0] : null;
+}
+
+/** v8: the advice cut off, else the re-read name; the first that keeps the fee in its category. */
+function adviceFreeName(fee: LiveFeeRow, ownTexts: string[]): string | null {
+  const keepsCategory = (name: string | null) =>
+    name != null && (!checkFeeCategory(fee.canonical_fee_key, fee.fee_name).ok || checkFeeCategory(fee.canonical_fee_key, name).ok);
+  const cut = withoutWaiverAdvice(fee.fee_name);
+  if (keepsCategory(cut)) return cut;
+  const reRead = reReadName(fee, ownTexts);
+  return keepsCategory(reRead) ? reRead : null;
+}
+
+const BUSINESS_NAMED = /^(?:business|commercial)\b/i;
+const SECTION_HEADING_ONLY = /^(?:[\w&'’-]+\s+){0,2}(?:fees|charges|services)$/i;
+
 /** The tidy name a live fee should show, or null to keep its name. */
 export function retidiedFeeName(name: string, canonicalKey: string): string | null {
   const stored = name.trim();
@@ -203,9 +334,32 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * v6: cut-off shapes (`repairCutoffName`): a list bullet "+", a column header glued on either
  * end, a sentence ending at its own price, a condition clause or parenthetical after the name,
  * a dangling "up to" / "per". 1,100 live names carried one of these on 2026-10-09.
+ * v7: Knox v57's tidy (a details or "N/A" cell after the name, a leading "Otherwise,"), and a
+ * dollar figure cut out of the name put back from the fee's own text (`restoreStrippedAmount`).
+ * 352 live names carried one of these or a "to avoid" fragment on 2026-10-09.
+ * v8: waiver advice on the name ("... to avoid this charge") is cut off (`withoutWaiverAdvice`),
+ * or a fragment takes the name Knox v60 reads for the same fee and amount (`reReadName`). 25 of
+ * the 55 live "to avoid" names on 2026-10-09; the rest are $0 labels already pending takedown
+ * or sentence fragments on the punch list.
+ * v9: a threshold Hamilton's publish cut off a name Knox read whole ("Service charge (daily
+ * balance falls below" from "... below $500)", `nameBeforeLeaders` before 2026-10-09) comes back
+ * from Knox's own read of the name, which `restoreStrippedAmount` searches with the fee's text.
+ * v10: heading cells glued onto the name with ":" come off when the schedule prints the fee's
+ * name as its own cell at the same price ("Term of the Certificate of Penalty for funds
+ * withdrawn: ATM/Visa Check Card Replacement Fee", City National Bank of Florida), and a word
+ * cut at its first letters gets the rest of its cell back ("... per each transaction over t")
+ * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
+ * their page, all checked against their source line.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 6 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 12 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
+/**
+ * Institutions the scan visits first after a version change, then the rest in id order. v9:
+ * the ones with a threshold publish cut off (102976, 102987/8, 101305, 101842/3, 102654/6,
+ * 102568, 102644) and Maple FCU's "Name ..." rows, which v8 had not reached.
+ * v10: City National Bank of Florida (76), whose glued cell names Accuracy flagged.
+ */
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
@@ -234,15 +388,172 @@ export interface RetidyPlan {
  * still accept it, and no other live fee of the bank may already carry the new name at the
  * same price and category (the duplicate collapse would close one of them).
  */
-export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
+const CELL_PRICE = /(?:\s*(?:[.…_]\s*){2,}|\s+)\$\s?([\d,]+(?:\.\d{1,2})?)\s*$/u;
+/** A column header read onto a monthly or balance fee's name; an account name stays. */
+const GENERIC_COLUMN = /^(?:products?|services?|items?|descriptions?|fees?|charges?|names?|types?)$/i;
+const CUT_WORD = /\s[a-z]{1,2}$/;
+
+/**
+ * v10: the fee's name as its schedule prints it in a table cell at the fee's price, when the
+ * stored name is that cell with the row's earlier cells glued on by ":" or that cell cut short
+ * mid-word. Null when no cell at the price explains the stored name.
+ */
+export function cellName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" | "amount">, ownTexts: string[]): string | null {
+  const name = fee.fee_name.replace(/\s+/g, " ").trim();
+  const glued = name.includes(": ");
+  const cut = CUT_WORD.test(name);
+  if ((!glued && !cut) || fee.amount == null) return null;
+  for (const text of ownTexts) {
+    for (const line of text.split("\n")) {
+      if (!line.includes("|")) continue;
+      const cells = line.split("|").map((cell) => cell.replace(/\s+/g, " ").trim()).filter(Boolean);
+      for (let index = 0; index < cells.length; index += 1) {
+        const price = cells[index].match(CELL_PRICE);
+        if (!price || Number(price[1].replace(/,/g, "")) !== Number(fee.amount)) continue;
+        const cell = cells[index].slice(0, price.index).replace(/[\s:;,\-‐–—]+$/u, "").replace(/^[^\p{L}\p{N}(]+/u, "").trim();
+        if (cell.length < 3) continue;
+        const headings = cells.slice(0, index).map((heading) => heading.replace(/:$/, "").trim());
+        const joined = [...headings, cell].join(": ").toLowerCase();
+        if (glued && headings.length > 0 && joined === name.toLowerCase()) {
+          // A business heading or an account's name is part of what the fee is.
+          if (headings.some((heading) => /\b(?:business|commercial)\b/i.test(heading))) return null;
+          // A box size names the box only beside its "BOX" heading ("BOX: 10x10” Annual Rental").
+          if (fee.canonical_fee_key === "safe_deposit_box" && !/\b(?:box|safe)/i.test(cell)) return null;
+          // One word ("Replacement") names nothing without its heading.
+          if (!/\S\s+\S/.test(cell)) return null;
+          if (ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) && !headings.every((heading) => GENERIC_COLUMN.test(heading))) return null;
+          // The cell names the fee and no heading does: a heading that names it ("Card Replacement
+          // Fee: (CARD REPLACEMENT)", "Wire transfer - outgoing domestic: FEE AMOUNT") is the name.
+          if (classifyFeeText(cell) !== fee.canonical_fee_key) return null;
+          if (headings.some((heading) => classifyFeeText(heading) === fee.canonical_fee_key)) return null;
+          return cell;
+        }
+        if (cut && cell.length > name.length && cell.toLowerCase().startsWith(name.toLowerCase()) && /^[a-z]/i.test(cell.slice(name.length))) {
+          return cell;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * v11: a sentence name that opens with the fee's own short name and then describes it ("Out-going
+ * Wire (foreign): A wire transfer that you send ...", "Inactive Account Fee (Monthly until account
+ * is brought back active, closed or escheated)"). The opening words are the name when they name
+ * the fee's category on their own and what follows reads as a description, not part of the name.
+ */
+const HEAD_AND_DESCRIPTION = /^([^:(|]{3,60}?)\s*(?::\s+|\(|\s[-–—]\s)(.+)$/u;
+const HEAD_MAX_WORDS = 7;
+const HEAD_NOT_NAME = /^(?:\d|(?:all|any|each|every|the|this|these|those|if|when|for|per|a|an|fee|one)\b)|\bfees[a-z]|[\u200b-\u200d\ufeff]/i;
+const DATED = /\b(?:19|20)\d{2}\b|\beffective\b/i;
+export function headName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key">): string | null {
+  const match = fee.fee_name.replace(/\s+/g, " ").trim().match(HEAD_AND_DESCRIPTION);
+  if (!match) return null;
+  const head = match[1].replace(/[\s:;,\-–—]+$/u, "").trim();
+  const rest = match[2];
+  if (head.split(" ").length > HEAD_MAX_WORDS || !/\S\s+\S/.test(head)) return null;
+  if (!FEE_NOUN.test(head) || NOT_A_NAME.test(head) || sentenceShaped(head) || VERB_END.test(head) || PRONOUN.test(head)) return null;
+  if (classifyFeeText(head) !== fee.canonical_fee_key) return null;
+  // A head that starts a sentence ("All items returned for ..."), carries a date ("... EFFECTIVE
+  // JULY 1, 2016"), or loses a business qualifier written after it is not the fee's name.
+  if (HEAD_NOT_NAME.test(head) || DATED.test(head) || /\b(?:business|commercial)\b/i.test(rest)) return null;
+  // A parenthesis followed by more of the name ("Overdraft Item (OD) Charge") is not a cut point.
+  if (/^[^)]*\)\s*(?:fees?|charges?)\b/i.test(rest)) return null;
+  // A short parenthesis with a figure is part of the name: a box size "(3x4)" or a footnote "(1)".
+  if (/^[^)\s]*\d[^)]{0,12}\)/.test(rest)) return null;
+  // A box size after the head ("Annual Fee: 3" x 5" box") is part of the name.
+  if (/\d\s*["”]?\s*x\s*\d/i.test(rest)) return null;
+  // A short parenthesis inside a longer name ("Inactive account fee for Demand Deposit (Checking)
+  // Accounts, NOW Accounts") means the head is cut mid-name.
+  if (/^[^)]{1,15}\)\s+[A-Z][a-z]*\b/.test(rest)) return null;
+  // A network named on its own ("Texans ATM") does not name the fee.
+  if (/^\S+\s+atms?$/i.test(head)) return null;
+  // What follows describes the fee: a sentence, a condition, or a long qualifier, and it
+  // describes this fee, not another one glued on ("Wire Transfer- Foreign (1) Accounts with no
+  // ... activity ... will be charged").
+  if (rest.split(" ").length < 5) return null;
+  if (!(PRONOUN.test(rest) || CONDITION_CLAUSE.test(rest) || sentenceShaped(rest) || rest.split(" ").length >= 8)) return null;
+  const restKey = classifyFeeText(rest);
+  if (restKey && restKey !== fee.canonical_fee_key) return null;
+  return head;
+}
+
+/** Control characters a name can carry from a PDF font; U+0003 is that font's space. */
+const CONTROL_CHARACTER = /[\x01-\x08\x0b\x0c\x0e-\x1f]/;
+/**
+ * v12: the name with each U+0003 read as the space it stands for, or null. A name with any other
+ * control character is left alone: in the same font U+0013-U+001C are digits, and a figure is
+ * never guessed from a font's encoding.
+ */
+export function spacedControlName(name: string): string | null {
+  if (!name.includes("\u0003")) return null;
+  // The same font draws its hyphen as a combining low line ("Non\u0332Sufficient").
+  const spaced = name.replace(/\u0003/g, " ").replace(/(?<=\w)\u0332(?=\w)/g, "-").replace(/\s+/g, " ").trim();
+  return spaced && !CONTROL_CHARACTER.test(spaced) ? spaced : null;
+}
+
+function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
+  const head = headName(fee);
+  if (!head) return null;
+  const opening = head.toLowerCase();
+  const shared = liveFees.some(
+    (other) =>
+      Number(other.institution_id) === Number(fee.institution_id) &&
+      Number(other.fee_published_id) !== Number(fee.fee_published_id) &&
+      other.fee_name.replace(/\s+/g, " ").trim().toLowerCase().startsWith(opening),
+  );
+  return shared ? null : head;
+}
+
+/** A live fee with the name Knox read for it, before publish shaped it. */
+export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null };
+
+export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
   const skipped: Record<RetidySkip, number> = { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 };
   const renames: RetidyRename[] = [];
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
-  for (const fee of fees) {
-    const newName = retidiedFeeName(fee.fee_name, fee.canonical_fee_key);
-    if (!newName) {
+  for (const stored of fees) {
+    // v12: a PDF font that writes its space as U+0003 ("Copy\u0003of\u0003Check").
+    const spaced = spacedControlName(stored.fee_name);
+    const fee = spaced ? { ...stored, fee_name: spaced } : stored;
+    const headingless = ACCOUNT_NAMED_KEYS.has(fee.canonical_fee_key) ? fee.fee_name : fee.fee_name.replace(LEADING_ACCOUNT_HEADINGS, "");
+    // Knox v60's tidy drops a "Name" column label ("Name Stop Payment").
+    const tidied =
+      headingless === fee.fee_name ? retidiedFeeName(fee.fee_name, fee.canonical_fee_key) : retidiedFeeName(headingless, fee.canonical_fee_key) ?? headingless;
+    // v7: a name whose dollar figure was cut out gets it back from the fee's own document.
+    const ownTexts = texts
+      .filter((text) => fee.source_document_id != null && Number(text.source_document_id) === Number(fee.source_document_id))
+      .map((text) => text.normalized_text);
+    // v8: waiver advice on the name is cut off, or the name Knox reads today replaces a fragment.
+    // A name with advice in it is renamed only to an advice-free name, never tidied around it.
+    // v9: Knox's own read of the name holds a threshold publish cut off.
+    const restoreTexts = fee.raw_fee_name ? [...ownTexts, fee.raw_fee_name] : ownTexts;
+    const advice = AVOID.test(fee.fee_name);
+    const adviceFree = advice ? adviceFreeName(fee, ownTexts) : null;
+    const newName = advice
+      ? adviceFree
+      : restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ??
+        (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ??
+        // v10: the fee's own table cell at its price.
+        cellName(fee, ownTexts) ??
+        tidied ??
+        // v11: the short name a sentence name opens with, unless another live fee at the
+        // institution opens with it too (the words cut are what tell the two apart).
+        uniqueHeadName(fee, liveFees) ??
+        spaced;
+    // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
+    // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
+    // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
+    if (
+      !newName ||
+      (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) ||
+      SECTION_HEADING_ONLY.test(newName) ||
+      (BUSINESS_NAMED.test(fee.fee_name) && !/[|:]/.test(fee.fee_name) && !BUSINESS_NAMED.test(newName)) ||
+      (/^[a-z]/.test(newName) && !/^[a-z]/.test(fee.fee_name))
+    ) {
       skipped.no_better_name += 1;
       continue;
     }
@@ -254,9 +565,10 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
       skipped.same_name_live += 1;
       continue;
     }
-    const before = traceLiveFee(fee, texts);
+    const before = traceLiveFee(stored, texts);
     const after = traceLiveFee({ ...fee, fee_name: newName }, texts);
-    if (before.kind !== "untraceable" && after.kind === "untraceable") {
+    // A v8 name replaces words the bank wrote, so it must trace itself.
+    if ((before.kind !== "untraceable" || adviceFree) && after.kind === "untraceable") {
       skipped.would_not_trace += 1;
       continue;
     }
@@ -267,7 +579,7 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
       sourceDocumentId: fee.source_document_id == null ? null : Number(fee.source_document_id),
       canonicalFeeKey: fee.canonical_fee_key,
       amount: fee.amount == null ? null : Number(fee.amount),
-      oldName: fee.fee_name,
+      oldName: stored.fee_name,
       newName,
     });
   }
@@ -305,7 +617,7 @@ export async function retidyLiveFeeNames(
 ): Promise<RetidyResult> {
   const limit = options.institutionLimit ?? NAME_RETIDY_INSTITUTION_LIMIT;
   let fingerprints: Map<number, string>;
-  let liveFees: LiveFeeRow[];
+  let liveFees: RetidyFeeRow[];
   let texts: Array<InstitutionText & { institution_id: number | string }>;
   try {
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
@@ -329,12 +641,32 @@ export async function retidyLiveFeeNames(
                    OR length(fp.fee_name) - length(replace(fp.fee_name, '(', ''))
                       <> length(fp.fee_name) - length(replace(fp.fee_name, ')', ''))
                    OR fp.fee_name ~ '^[[:space:]]*/'
+                   OR fp.fee_name ~* '^[[:space:]]*(otherwise|additionally|also|however|in addition|furthermore|further)[[:space:]]*,?[[:space:]]'
+                   OR fp.fee_name ~ '\\([[:space:]]|[[:space:]]\\)'
+                   OR fp.fee_name ~ '^Name[[:space:]]+[A-Z]'
+                   OR fp.fee_name ~* '^[A-Z][^:|]{0,60}(checking|savings|money market|fees)[[:space:]]*[:|][[:space:]]*[A-Z]'
+                   OR fp.fee_name ~ '(\\.[[:space:]]?){3,}|…|_{3,}'
+                   OR fp.fee_name ~* 'avoid'
+                   OR fp.fee_name LIKE '%: %'
+                   OR fp.fee_name ~ '[[:space:]][a-z]{1,2}$'
+                   OR strpos(fp.fee_name, chr(3)) > 0
                  ) AS messy
             FROM published_fee_records fp
            WHERE fp.rolled_back_at IS NULL
              AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            GROUP BY fp.institution_id
         ) live
+        -- An institution the retidy saw longest ago goes first, so a version bump carries on
+        -- where the last pass stopped instead of starting again from the lowest id.
+        LEFT JOIN LATERAL (
+          SELECT pa.created_at AS last_retidy_at
+            FROM pipeline_attempts pa
+           WHERE pa.institution_id = live.institution_id
+             AND pa.stage = 'publish'
+             AND pa.strategy = ${NAME_RETIDY_STRATEGY.strategy}
+           ORDER BY pa.created_at DESC
+           LIMIT 1
+        ) seen ON true
        WHERE live.messy
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
@@ -343,15 +675,15 @@ export async function retidyLiveFeeNames(
               AND pa.institution_id = live.institution_id
               AND pa.input_fingerprint = 'v' || ${NAME_RETIDY_STRATEGY.version}::text || ':' || live.max_fee_id::text
          )
-       ORDER BY live.institution_id
+       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, seen.last_retidy_at NULLS FIRST, live.institution_id
        LIMIT ${limit}
     `);
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
     fingerprints = new Map(due.map((row) => [Number(row.institution_id), retidyFingerprint(row.max_fee_id)]));
     const ids = [...fingerprints.keys()];
-    liveFees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
+    liveFees = await inSavepoint(db, (scope) => scope<RetidyFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, fr.fee_name AS raw_fee_name
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -486,7 +818,22 @@ export function isMessyName(name: string): boolean {
     name !== name.trim() ||
     repairNameShape(name) !== name.trim() ||
     // v5: a price's unit left on the front ("/month service charge") or a ")" cut from its "(".
-    /^\s*\//.test(name)
+    /^\s*\//.test(name) ||
+    // v7: a leading "Otherwise,", a gap where a dollar figure was cut out, or a header word in front.
+    LEADING_DISCOURSE.test(name) ||
+    STRIPPED_AMOUNT.test(name) ||
+    TRAILING_CUT.test(name) ||
+    LEADING_ACCOUNT_HEADINGS.test(name) ||
+    HEADER_WORD_PREFIX.test(name) ||
+    // v7: a dot leader or fill-in line left on the end ("ATM Adjustment ......", Wildfire 14754).
+    DOT_LEADER.test(name) ||
+    // v8: advice on how to avoid the fee.
+    AVOID.test(name) ||
+    // v10: heading cells glued on with ":", or a last word cut at its first letters.
+    name.includes(": ") ||
+    CUT_WORD.test(name) ||
+    // v12: a font's U+0003 space.
+    name.includes("\u0003")
   );
 }
 

@@ -1,11 +1,15 @@
 import {
   extractCandidatesFromText,
   MAX_FEES_PER_DOCUMENT,
+  withBoxSizeCellsSplit,
+  withSidewaysBoxTable,
+  withoutBusinessOnlyFees,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
+import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
@@ -48,7 +52,17 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
 // v57: a long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
 // and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest, Old National).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 57 } as const;
+// v59: a "Cross-Border Banking" bundle or package is an account, so its fee is the account's
+// maintenance fee, not the card's currency fee (`CROSS_BORDER_BUNDLE`; RBC, TD, BMO).
+// v60: a threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and Over)"),
+// a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words (`nameFrom`, `tidyFeeName`).
+// v61: adjusting an ATM deposit or dispute is account research, not a network ATM fee (`ATM_ADJUSTMENT`).
+// v62: a dot-leader line's name wrapped over lines above it is read whole (`joinWrappedLeaderNames`),
+// "Domestic Outgoing (client only) .... $25.00 per wire" is a wire, and one line read by two
+// specialists is one fee (Northern Trust).
+// v63: a box size glued after another fee's name starts its own line (doc 20570).
+// v64: a box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 64 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -91,6 +105,9 @@ function words(value: string): string {
  */
 export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boolean {
   if (a.canonicalHint !== b.canonicalHint || a.amount !== b.amount) return false;
+  // v62: one source line read by two specialists is one fee, whatever each named it
+  // ("Domestic Incoming wire" and "Wire Transfers: Domestic Incoming", Northern Trust).
+  if (a.excerpt.trim() === b.excerpt.trim()) return true;
   const nameA = words(a.feeName);
   const nameB = words(b.feeName);
   if (nameA === nameB || words(a.excerpt).includes(nameB) || words(b.excerpt).includes(nameA)) return true;
@@ -133,11 +150,15 @@ function withContextFees(text: string, read: ExtractionRulesResult): ExtractionR
 export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
-  const text = joinLabeledFeeCardText(sourceText);
+  // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
+  // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
+  // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
+  const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
-    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(text) },
+    // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
+    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,
