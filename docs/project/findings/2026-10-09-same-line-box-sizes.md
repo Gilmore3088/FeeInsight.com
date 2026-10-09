@@ -89,3 +89,22 @@ After 920 went live, the cleanup flagged 104667 ("All Money Market Accounts With
 $5). Archiving 104667 would have left the cut-off name live. The cleanup now checks which side is
 unclear: when the newer line's name is clear and the older live line's name is cut off, the newer
 line passes (clearing its flag) and the older one goes through the same flag and 12h second look.
+
+## Glued cells in run 3467, and the stale-copy skip
+
+Run 3467 (10:53:35 UTC) published 55 rows (106290-106344). UAT found three bad names among them.
+Against source:
+- 106318 (Keys FCU, doc 2628) "(balance falls below $1,000)" at $15 under check_image is wrong. A
+  three-column page joined Keys Premier Checking's low balance line to "Copy of Check $3.00". It is
+  now a hand-checked `wrong_category` verdict, so it goes through the 12h look. Publish now holds
+  any name that would show only a parenthetical condition (`condition_only_name`).
+- 106315 "(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)" at $20 and
+  106333 "3x10” 8" at $60 have the right price and category: the source prints "Rental Late Fee
+  (Past Due 30 Days) $20.00 per Year" and "3x10” 8 | $60.00" (8 is a footnote). Only the name is
+  off, so they stay live for a rename rather than coming down. Publish now drops another line's
+  leading "(...):" cell and a box size's footnote number (`withoutNeighbourCell`). Live rows with
+  these shapes (21 leading-cell names, 4 box footnotes on Oct 9) need Knox's logged retidy.
+- 56431 (OnTap, "Below $7,500" $15) was skipped as an older document because the October copy of
+  the page had live lines at $2,500 and $1,000. The October copy still prints the $7,500 line, so
+  that skip was wrong. Publish now treats a balance-named row as current when the newer copy prints
+  its balance and price (`newerCopyPrintsLine`), and check 3 re-decides the 2 rows skipped that way.

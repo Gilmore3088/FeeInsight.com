@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -976,5 +976,27 @@ describe("publishedFeeName", () => {
   it("publishes the tidied name when only the untidied one fails the category guard", () => {
     expect(publishedFeeName("per order | Returned Items", "deposited_item_return")).toBe("Returned Items");
     expect(publishedFeeName("Return Item . . . . .", "deposited_item_return")).toBe("Return Item");
+  });
+});
+
+describe("glued cells at publish (run 3467, 9 Oct)", () => {
+  it("holds a name that would show only a condition", () => {
+    expect(publishNameHold("(balance falls below $1,000) $15.00 Copy of Check $3.00 (in house)", "check_image", 15)?.code).toBe("condition_only_name");
+    expect(publishNameHold("Service charge (daily balance falls below $500)", "minimum_balance", 5)).toBeNull();
+  });
+
+  it("drops another line's leading parenthetical cell and a box size's footnote number", () => {
+    expect(publishedFeeName("(Fee depends on style of check selected): Rental Late Fee (Past Due 30 Days)", "safe_deposit_box")).toBe("Rental Late Fee (Past Due 30 Days)");
+    expect(publishedFeeName("3x10” 8", "safe_deposit_box")).toBe("3x10”");
+    expect(publishedFeeName("17 x 11 3/8", "safe_deposit_box")).toBe("17 x 11 3/8");
+    expect(publishedFeeName("(P3) An Inactivity Fee", "dormant_account")).toBe("(P3) An Inactivity Fee");
+  });
+
+  it("reads a balance line the newer copy still prints as current", () => {
+    const row = { fee_name: "Minimum Balance Fee (if Balance is Below $7,500)", amount: "15.00" };
+    expect(newerCopyPrintsLine(row, "Minimum Balance Fee (if Balance is Below $7,500):\n\n$15\n\nExcessive")).toBe(true);
+    expect(newerCopyPrintsLine(row, "Minimum Balance Fee (if Balance is Below $7,500):\n\n$20\n\n")).toBe(false);
+    expect(newerCopyPrintsLine(row, "Minimum Balance Fee (if Balance is Below $1,000):\n\n$15\n\n")).toBe(false);
+    expect(newerCopyPrintsLine({ fee_name: "Stop Payment", amount: "15.00" }, "Stop Payment $15")).toBe(false);
   });
 });
