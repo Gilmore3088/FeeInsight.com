@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
-import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { reconstructFirstLooks, secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
@@ -57,6 +57,8 @@ type SqlTag = typeof sql;
  */
 export const EVAL_VERDICT_CHECK = "hamilton.eval_verdict";
 export const EVAL_VERDICT_VERSION = 5;
+/** Why v5 cleared v4's price_in_name flags; written on the rule_revised lesson and each reconstructed first look. */
+export const RULE_REVISED_WHY = "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own";
 const EVAL_REASON_PREFIX = "eval_critical";
 const RULE_REASON_PREFIX = "not_a_fee";
 const ROLLBACK_LIMIT = 500;
@@ -308,6 +310,8 @@ export interface EvalVerdictResult {
   waiting: number;
   /** Pending flags cleared because the current rule no longer fails the fee. */
   cleared: number;
+  /** First-look audit rows rebuilt for clears made before the audit trail existed. */
+  reconstructed: number;
   rolledBack: EvalTakedown[];
   /** Live fees flagged, never taken down, by flag. */
   flags: Record<FlagRule, number>;
@@ -360,7 +364,7 @@ export async function retireEvalVerdictFees(
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
   const result: EvalVerdictResult = {
-    evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, cleared: 0, rolledBack: [],
+    evalMatched: 0, evalChanged: 0, ruleFailing: 0, flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
     flags: { non_customer_price: 0, wire_shared_line: 0 }, flagSamples: [], dryRun: options.dryRun,
   };
   let rows: LiveRow[];
@@ -446,6 +450,9 @@ export async function retireEvalVerdictFees(
   // the usual second look. Every row read that no rule fails today passes: a pending flag it
   // holds from an earlier rule is cleared (`takedown_cleared`), never confirmed, so a narrowed
   // rule (v5) lets the fees its predecessor flagged stay live through the normal path.
+  // The first looks the v5 clear rewrote in place (378 rows, 04:21 Oct 9) get their audit row
+  // back, once; later runs find none missing.
+  result.reconstructed = await reconstructFirstLooks(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, clearedWhy: RULE_REVISED_WHY, dryRun: options.dryRun });
   const failingIds = new Set([...evalRows, ...ruleRows].map((fee) => fee.feePublishedId));
   const passing = rows.map((row) => Number(row.fee_published_id)).filter((id) => !failingIds.has(id));
   const look = await secondLook(db, { check: EVAL_VERDICT_CHECK, runId: options.runId, failing: [...evalRows, ...ruleRows], passing, dryRun: options.dryRun });
@@ -470,7 +477,7 @@ export async function retireEvalVerdictFees(
         evidence: {
           version: EVAL_VERDICT_VERSION,
           cleared: look.cleared,
-          why: "A dollar figure in a fee's name is a threshold, floor, cap, balance or range more often than the fee's price; price_in_name now fires only on a price the name presents as the fee's own",
+          why: RULE_REVISED_WHY,
         },
       }]));
     } catch (error) {
