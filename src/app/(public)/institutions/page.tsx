@@ -138,6 +138,11 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
     return `/institutions?${search.toString()}`;
   };
 
+  // The no-result state offers the source form, carrying the name that was searched for.
+  const submitSourceHref = hasQuery
+    ? `/submit-fees?${new URLSearchParams({ institutionName: query.trim() }).toString()}`
+    : "/submit-fees";
+
   // A name search with no state picked: the results go straight under the search box.
   // Below the state map and filters they sat about three phone screens down.
   const resultsFirst = hasQuery && !hasState;
@@ -170,6 +175,18 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
         <div className="fi-reveal fi-reveal-delay-2 py-8 text-center">
           <p className="text-sm text-[#6B6255]">
             No institutions found. Try adjusting your search or filters.
+          </p>
+          <p className="mt-2 text-sm">
+            <Link
+              href={submitSourceHref}
+              className="font-semibold text-[#A93D25] underline-offset-2 hover:underline"
+            >
+              Can&apos;t find the institution? Send its fee schedule
+            </Link>
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-[#6B6255]">
+            A link to the published schedule is enough. Reviewers check it against the source before
+            any fee is published.
           </p>
         </div>
       )}
@@ -216,13 +233,18 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               >
                 Find your bank or credit union.
               </h1>
-              <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#5A5347]">
-                Pick your state, then your bank or credit union, to see its published fees and how
-                they compare.
-              </p>
-              <p className="mt-1 text-sm text-[#6B6255]">
-                Published fees for {stats.institutionsLabel} institutions and growing.
-              </p>
+              {/* With a state picked, the intro and statistics give way so the list sits higher. */}
+              {!hasState && (
+                <>
+                  <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#5A5347]">
+                    Pick your state, then your bank or credit union, to see its published fees and
+                    how they compare.
+                  </p>
+                  <p className="mt-1 text-sm text-[#6B6255]">
+                    Published fees for {stats.institutionsLabel} institutions and growing.
+                  </p>
+                </>
+              )}
               <div className="mt-5 max-w-2xl">
                 <InstitutionSearchBar
                   autoFocus={!hasQuery}
@@ -233,11 +255,13 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 divide-x divide-[#E0D7C9] border-y border-[#E0D7C9] bg-[#FDFBF8]">
-              <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
-              <DirectoryStat label="Published fees" value={stats.observationsLabel} />
-              <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
-            </div>
+            {!hasState && (
+              <div className="grid grid-cols-3 divide-x divide-[#E0D7C9] border-y border-[#E0D7C9] bg-[#FDFBF8]">
+                <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
+                <DirectoryStat label="Published fees" value={stats.observationsLabel} />
+                <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
+              </div>
+            )}
           </div>
         </section>
 

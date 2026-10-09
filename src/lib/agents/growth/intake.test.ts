@@ -38,7 +38,7 @@ describe("intake validation", () => {
   });
 
   it("knows the eight marketing agents", () => {
-    expect([...GROWTH_AGENTS]).toEqual(["carnegie", "draper", "edison", "ernest", "murrow", "nielsen", "norman", "sherlock"]);
+    expect([...GROWTH_AGENTS]).toEqual(["bernays", "carnegie", "draper", "edison", "ernest", "murrow", "nielsen", "norman", "sherlock"]);
   });
 
   it("refuses an unknown agent, an unknown kind and missing text, all at once", () => {
@@ -46,7 +46,7 @@ describe("intake validation", () => {
     expect(parsed.ok).toBe(false);
     if (parsed.ok) return;
     expect(parsed.errors).toHaveLength(4);
-    expect(parsed.errors[0]).toMatch(/^agent must be one of carnegie/);
+    expect(parsed.errors[0]).toMatch(/^agent must be one of bernays, carnegie/);
     expect(parsed.errors[1]).toMatch(/^kind must be one of linkedin_post/);
   });
 
