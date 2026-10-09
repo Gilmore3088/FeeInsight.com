@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Magellan's fee-page classifier never trained
+**What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
+**Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
+**Fix:** the discover step calls `refreshPageClassifier` again and reports `page_classifier` (this PR). It still only records its opinion (shadow).
+**Lesson:** when a feature writes to its own table, check that table's row count after merges that touch its caller; a loader that finds nothing fails silently.
+
 ## 2026-10-09: A hand-found schedule fetched in another state's lane was never read
 Companion fetch takes hand-found schedules in any state's lane (2026-10-08 fix), but every read
 step is scoped to its run's state. First United's (OK) overdraft disclosure was fetched in the NC
