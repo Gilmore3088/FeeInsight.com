@@ -15,7 +15,8 @@ describe("market position observations", () => {
   it("flags a fee in the bottom 15% without telling the bank what to do", () => {
     const [obs] = marketPositionObservations([{ feeCategory: "night_deposit", current: 3, peers, peerLabel: "Texas banks" }]);
     expect(obs.kind).toBe("market_position");
-    expect(obs.headline).toMatch(/^Your .+ is below 10 of 10 peers\.$/);
+    expect(obs.headline).toMatch(/^Your .+ of \$3 is the lowest of 10 peers\.$/);
+    expect(obs.facts.map((f) => f.text).join(" ")).not.toMatch(/percentile/);
     expect(obs.headline.toLowerCase()).not.toMatch(/raise|lower|should|recommend/);
     expect(obs.actions).toContain("model_price");
   });

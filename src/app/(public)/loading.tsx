@@ -1,6 +1,6 @@
 export default function PublicLoading() {
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14">
+    <div className="mx-auto max-w-page px-6 py-14">
       <div className="animate-pulse space-y-6">
         <div className="flex items-center gap-2">
           <div className="h-px w-8 bg-[#E8DFD1]" />

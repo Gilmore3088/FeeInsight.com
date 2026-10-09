@@ -5,7 +5,7 @@ import { CONTACT_EMAIL, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 export function ReportChrome({ preparedFor }: { preparedFor: string }) {
   return (
     <header className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+      <div className="mx-auto flex h-14 max-w-page items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2 text-[#1A1815] no-underline" aria-label={`${SITE_NAME} home`}>
           <svg
             viewBox="0 0 24 24"
@@ -35,7 +35,7 @@ export function ReportChrome({ preparedFor }: { preparedFor: string }) {
 export function ReportChromeFooter() {
   return (
     <footer className="border-t border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-6 py-5 text-[12px] text-[#6B6255]">
+      <div className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-2 px-6 py-5 text-[12px] text-[#6B6255]">
         <span>{SITE_NAME}</span>
         <span>
           <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] underline">

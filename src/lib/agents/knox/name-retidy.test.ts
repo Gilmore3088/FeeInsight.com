@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, isMessyName, planRetidy, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -230,6 +230,12 @@ describe("v7: stored names Knox v57/v60 would read differently", () => {
     expect(isMessyName("Name Change Fee")).toBe(false);
   });
 
+  it("drops a \"Name\" label before an address fee (Maple 102394)", () => {
+    const row = fee({ canonical_fee_key: "account_research", fee_name: "Name Bad Address", amount: 5 });
+    const page = text("Name Bad Address | Fee $5.00");
+    expect(planRetidy([row], page).renames[0]?.newName).toBe("Bad Address");
+  });
+
   it("drops a leading \"Otherwise,\" only when what is left is a name", () => {
     const page = text("Otherwise, a monthly service fee of $6.95.\nOtherwise, the monthly service charge is only $15.00.");
     const named = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "Otherwise, a monthly service fee", amount: 6.95 });
@@ -351,5 +357,155 @@ describe("v10: a fee's own table cell replaces glued heading cells or a cut word
     expect(cellName({ fee_name: "Platinum Checking: Monthly Maintenance Fee", canonical_fee_key: "monthly_maintenance", amount: 25 }, [page])).toBeNull();
     expect(cellName({ fee_name: "Business Checking: Wire Transfer Fee", canonical_fee_key: "wire_domestic_outgoing", amount: 30 }, [page])).toBeNull();
     expect(cellName({ fee_name: "Products: Monthly Maintenance Fee", canonical_fee_key: "monthly_maintenance", amount: 5 }, [page])).toBeNull();
+  });
+});
+
+describe("v11: a sentence name gives way to the short name it opens with", () => {
+  const named = (fee_name: string, canonical_fee_key: string) => headName({ fee_name, canonical_fee_key });
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("keeps the opening name when the rest describes the fee", () => {
+    expect(named("Stop payment order (all items) - Customer must sign and return the stop payment agreement within 14 days", "stop_payment")).toBe(
+      "Stop payment order",
+    );
+    expect(named("Dormant Account Fee: Assessed after two years of no activity on a transaction account", "dormant_account")).toBe("Dormant Account Fee");
+    expect(named("Insufficient funds fee (NSF) — returned item fee charged for insufficient or uncollected funds", "nsf")).toBe("Insufficient funds fee");
+  });
+
+  it("leaves names whose cut words are part of the name", () => {
+    expect(named("Overdraft Item (OD) Charge will apply to each item we pay when your end-of-day overdraft balance", "overdraft")).toBeNull();
+    expect(named("Safe Deposit Box Yearly Rental (3x4) Only available at our County St. New Bedford Branch", "safe_deposit_box")).toBeNull();
+    expect(named("Safe Deposit Box (no new box rentals after Jan. 1, 2023): Annual Fee: 3\" x 5\" box", "safe_deposit_box")).toBeNull();
+    expect(named("Inactive account fee for Demand Deposit (Checking) Accounts, NOW Accounts, Super NOW Accounts, Rewards Checking", "dormant_account")).toBeNull();
+    expect(named("Stop Payment – Your Checks (Continuous range)", "stop_payment")).toBeNull();
+  });
+
+  it("leaves heads that are not names, dated, or lose a business qualifier", () => {
+    expect(named("All items returned for non-sufficient funds (NSF) will be charged a fee per item presented", "nsf")).toBeNull();
+    expect(named("PAPER STATEMENT FEE EFFECTIVE JULY 1, 2016: a fee will be charged for each paper statement mailed", "paper_statement")).toBeNull();
+    expect(named("Excess Transactions - per item over six per month on business savings and money market accounts", "account_research")).toBeNull();
+    expect(named("Texans ATM – an ATM that prominently displays Transaction in US, ATM Withdrawal Service the Texans Credit Union", "atm_non_network")).toBeNull();
+  });
+
+  it("leaves a head when the rest is another fee glued on", () => {
+    expect(
+      named("Wire Transfer- Foreign (1) Accounts with no owner-initiated debits or credits for 11 months will be charged a Fee equal", "wire_intl_outgoing"),
+    ).toBeNull();
+  });
+
+  it("renames only when no other live fee at the institution opens with the same words", () => {
+    const page = text(
+      "Monthly Maintenance Fee (Use your debit card 15 or more times per month and we'll waive the monthly fee.) $5.95\nMonthly Maintenance Fee (for Premier Checking, waived when you keep a balance of $1,500) $10.00",
+    );
+    const basic = fee({
+      canonical_fee_key: "monthly_maintenance",
+      fee_name: "Monthly Maintenance Fee (Use your debit card 15 or more times per month and we'll waive the monthly fee.)",
+      amount: 5.95,
+    });
+    const premier = fee({
+      fee_published_id: 2,
+      canonical_fee_key: "monthly_maintenance",
+      fee_name: "Monthly Maintenance Fee (for Premier Checking, waived when you keep a balance of $1,500)",
+      amount: 10,
+    });
+    expect(planRetidy([basic], page, [basic]).renames.map((rename) => rename.newName)).toEqual(["Monthly Maintenance Fee"]);
+    expect(planRetidy([basic], page, [basic, premier]).renames).toEqual([]);
+  });
+});
+
+describe("v12: a PDF font's U+0003 space becomes a space", () => {
+  const S = "\u0003";
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("renames the name with spaces and still traces it", () => {
+    const row = fee({ canonical_fee_key: "check_image", fee_name: `Copy${S}of${S}Check`, amount: 2 });
+    const page = text(`Copy${S}of${S}Check | $2.00`);
+    const plan = planRetidy([row], page);
+    expect(plan.renames.map((rename) => [rename.oldName, rename.newName])).toEqual([[`Copy${S}of${S}Check`, "Copy of Check"]]);
+    expect(isMessyName(`Dormant${S}Account`)).toBe(true);
+  });
+
+  it("tidies the spaced name like any other", () => {
+    const row = fee({ canonical_fee_key: "card_replacement", fee_name: `Card Replacement Fee:${S}`, amount: 10 });
+    expect(planRetidy([row], text(`Card Replacement Fee:${S} $10.00`)).renames[0]?.newName).toBe("Card Replacement Fee");
+    expect(spacedControlName(`Non\u0332Sufficient${S}Funds${S}(NSF)${S}Return`)).toBe("Non-Sufficient Funds (NSF) Return");
+  });
+
+  it("never guesses a figure from the font's other control characters", () => {
+    expect(spacedControlName("Minimum Balance (under $\u0014\u001300)")).toBeNull();
+    expect(spacedControlName(`Returned Check $\u0015\u0018.00${S}per item`)).toBeNull();
+    expect(spacedControlName("Copy of Check")).toBeNull();
+  });
+});
+
+describe("v13: a shifted font's digits, read back when the document proves its map", () => {
+  const S = "\u0003";
+  // Meridia CU (doc 6826): shifted words next to the same words in clear.
+  const meridia = [
+    "ATM & Standard Debit Card Fees / If you have any | Balance Inquiry (Non-Meridia ATMs) | $1.00",
+    `Non-Sufficient Funds | New Card Fee | $5.00 / HDFK${S}SUHVHQWPHQW | $34.99${S}HD | Other Service Fees`,
+    `Club Savings Account Fees | $FFRXQW${S},QTXLU\\${S} RWKHU${S}WKDQ${S}EDODQFH | $1.00`,
+    "Money Market Account Fees | Certified Check, Official Check or Money Order | $1.00",
+    "Minimum Balance (under $\u0014\u001300) | $7.50/mo | Clearing Check Unacceptable for Processing | $20.00",
+    `Withdrawal Fee | Clearing &DQDGLDQ${S}&KHFN | $\u00180.00 ea`,
+    `(ACH & Share Draft)${S} HDFK${S}SUHVHQWPHQW | Legal Process | $100.00`,
+  ].join("\n");
+  // LFCU (doc 13444): shifted digits, but no shifted word to prove the map.
+  const lfcu = "Courtesy Pay Service | $\u0015\u001c.00\nReturned Deposited Check | $\u0015\u0018.00/item\nStop Payment Order - Check, ACH (per item) | $30.00";
+
+  it("trusts a map only when shifted words read as words printed in clear", () => {
+    expect(fontMapVerified(meridia)).toBe(true);
+    expect(fontMapVerified(lfcu)).toBe(false);
+    expect(fontMapVerified("Stop Payment | $30.00")).toBe(false);
+    expect(fontDecodedName("Minimum Balance (under $\u0014\u001300)")).toBe("Minimum Balance (under $1000)");
+  });
+
+  it("reads 96207's threshold back, and 41496 takes its own cell, under a proven map", () => {
+    const page = [{ source_document_id: 70, normalized_text: meridia }];
+    const minimum = fee({ fee_published_id: 96207, canonical_fee_key: "minimum_balance", fee_name: "Minimum Balance (under $\u0014\u001300)", amount: 7.5 });
+    const legal = fee({ fee_published_id: 41496, canonical_fee_key: "legal_process", fee_name: `(ACH & Share Draft)${S} HDFK${S}SUHVHQWPHQW: Legal Process`, amount: 100 });
+    expect(planRetidy([minimum, legal], page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [96207, "Minimum Balance (under $1000)"],
+      [41496, "Legal Process"],
+    ]);
+  });
+
+  it("leaves a name in place when the document cannot prove the map", () => {
+    const page = [{ source_document_id: 70, normalized_text: lfcu }];
+    const returned = fee({
+      fee_published_id: 19932,
+      canonical_fee_key: "deposited_item_return",
+      fee_name: "Returned Deposited Check $\u0015\u0018.00/item Stop Payment Order - Check, ACH (per item)",
+      amount: 30,
+    });
+    expect(planRetidy([returned], page).renames).toEqual([]);
+  });
+});
+
+describe("v13: a font's ligature letters read back as their pairs", () => {
+  // MSCU (doc 17227) and Members Source (doc 16925) as stored.
+  const mscu = [
+    "ATM TransacƟon (@non-MSCU ATM) . . . . . . . . . . . . . . . . . . . . . $1.00 Temporary Check Fee . . . . . . . $1.00 for a sheet of 4",
+    "Lost Key Replacement (per key) . . . . . . . . $15.00 | Outgoing Wire – DomesƟc . . . . . . . . . . . . $25.00",
+    "Stop Payment . . . . . . . . . $35.00 Loan Refinance OriginaƟon . . . . . . . . . . . . . . . .$25.00",
+    "DraŌ/Check Copy . . . . . . . . . . . . . . . . $5.00",
+  ].join("\n");
+  const page = [{ source_document_id: 70, normalized_text: mscu }];
+
+  it("renames each ligature name and still traces it", () => {
+    const rows = [
+      fee({ fee_published_id: 56918, canonical_fee_key: "atm_non_network", fee_name: "ATM TransacƟon (@non-MSCU ATM)", amount: 1 }),
+      fee({ fee_published_id: 56921, canonical_fee_key: "wire_domestic_outgoing", fee_name: "Outgoing Wire – DomesƟc", amount: 25 }),
+      fee({ fee_published_id: 89910, canonical_fee_key: "other_lending_fee", fee_name: "Loan Refinance OriginaƟon", amount: 25 }),
+      fee({ fee_published_id: 56927, canonical_fee_key: "check_image", fee_name: "DraŌ/Check Copy", amount: 5 }),
+    ];
+    expect(planRetidy(rows, page).renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [56918, "ATM Transaction (@non-MSCU ATM)"],
+      [56921, "Outgoing Wire – Domestic"],
+      [89910, "Loan Refinance Origination"],
+      [56927, "Draft/Check Copy"],
+    ]);
+    expect(isMessyName("Account research/reconciliaƟon")).toBe(true);
+    expect(unligatedName("Outgoing Wire")).toBeNull();
   });
 });

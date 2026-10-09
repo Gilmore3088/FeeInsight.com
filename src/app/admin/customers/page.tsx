@@ -19,12 +19,12 @@ import { logReadFailure, type ReadFailure } from "@/lib/admin-read-failure";
 import { RoomHeader, Unreadable } from "../room-hub";
 
 /** Board columns, left to right, in the order a request moves. */
-const LANES: { title: string; note: string; statuses: LeadStatus[]; collapsed?: boolean }[] = [
-  { title: "Waiting on us", note: "Owed a reply", statuses: ["new", "needs_reply", "overdue", "email_failed", "in_progress"] },
-  { title: "Held", note: "Their market isn't ready", statuses: ["held"] },
-  { title: "Quoted", note: "Waiting on their payment", statuses: ["quoted"] },
-  { title: "Paid or sent", note: "Answered", statuses: ["paid", "sent", "followed_up"] },
-  { title: "Closed", note: "Done", statuses: ["closed"], collapsed: true },
+const LANES: { key: string; title: string; note: string; statuses: LeadStatus[]; collapsed?: boolean }[] = [
+  { key: "waiting", title: "Waiting on us", note: "Owed a reply", statuses: ["new", "needs_reply", "overdue", "email_failed", "in_progress"] },
+  { key: "held", title: "Held", note: "Their market isn't ready", statuses: ["held"] },
+  { key: "quoted", title: "Quoted", note: "Waiting on their payment", statuses: ["quoted"] },
+  { key: "answered", title: "Paid or sent", note: "Answered", statuses: ["paid", "sent", "followed_up"] },
+  { key: "closed", title: "Closed", note: "Done", statuses: ["closed"], collapsed: true },
 ];
 
 const LANE_LIMIT = 8;
@@ -42,7 +42,13 @@ function LeadCard({ lead, now }: { lead: LeadRow; now: Date }) {
         failed || late ? "border-red-300 dark:border-red-800" : "border-black/[0.06] dark:border-white/[0.08]"
       }`}
     >
-      <p className="truncate text-[13px] font-semibold text-gray-900 dark:text-gray-100">{lead.company || lead.name}</p>
+      <Link
+        href={`/admin/leads#lead-status-${lead.id}`}
+        prefetch={false}
+        className="block truncate text-[13px] font-semibold text-gray-900 hover:underline dark:text-gray-100"
+      >
+        {lead.company || lead.name}
+      </Link>
       <p className="truncate text-gray-500">{lead.company ? lead.name : lead.email}</p>
       <p className="mt-1 text-gray-500">
         {LEAD_STATUS_LABELS[status(lead)]}
@@ -53,8 +59,10 @@ function LeadCard({ lead, now }: { lead: LeadRow; now: Date }) {
 }
 
 /** The Customers room: requests as a board by stage, plus who could get a report today. */
-export default async function CustomersRoomPage() {
+export default async function CustomersRoomPage({ searchParams }: { searchParams?: Promise<{ stage?: string }> }) {
   await requireAuth("view");
+  const stageParam = (await searchParams)?.stage;
+  const activeLane = LANES.find((lane) => lane.key === stageParam) ?? null;
   const [leads, markets, proAccounts, planWatch] = await Promise.all([
     getLeads(500),
     getMarketReadiness().catch((error) => {
@@ -85,6 +93,8 @@ export default async function CustomersRoomPage() {
         </Link>
       </RoomHeader>
 
+      <NeedsYou requests={requests} now={now} planWatch={"ref" in planWatch ? null : planWatch} />
+
       <section aria-label="Customer numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
           label="Requests"
@@ -105,7 +115,16 @@ export default async function CustomersRoomPage() {
       </section>
 
       <section aria-label="Requests by stage">
-        <p className="admin-section-title">Requests by stage</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="admin-section-title">Requests by stage</p>
+          {activeLane ? (
+            <Link href="/admin/customers" prefetch={false} className="text-xs font-semibold text-[var(--brand-primary)]">
+              Show every stage
+            </Link>
+          ) : (
+            <p className="text-xs text-gray-500">Tap a stage to see only its requests.</p>
+          )}
+        </div>
         {testRequests > 0 ? (
           <p className="mt-1 text-xs text-gray-500">
             {testRequests} test {testRequests === 1 ? "request is" : "requests are"} left off the board;{" "}
@@ -120,30 +139,37 @@ export default async function CustomersRoomPage() {
         ) : null}
         {/* Stacked on a phone, a board from sm up; an empty stage is one short line, closed requests fold behind a count. */}
         <div className="mt-2 grid grid-cols-1 items-start gap-2 pb-2 sm:auto-cols-[minmax(13rem,1fr)] sm:grid-flow-col sm:grid-cols-none sm:gap-3 sm:overflow-x-auto">
-          {LANES.map((lane) => {
+          {(activeLane ? [activeLane] : LANES).map((lane) => {
             const inLane = requests.filter((lead) => lane.statuses.includes(status(lead)));
+            const limit = activeLane ? inLane.length : LANE_LIMIT;
+            const collapsed = lane.collapsed && !activeLane;
             const cards = (
               <>
                 <ul className="mt-2 space-y-2">
-                  {inLane.slice(0, LANE_LIMIT).map((lead) => <LeadCard key={lead.id} lead={lead} now={now} />)}
+                  {inLane.slice(0, limit).map((lead) => <LeadCard key={lead.id} lead={lead} now={now} />)}
                 </ul>
-                {inLane.length > LANE_LIMIT ? (
-                  <Link href="/admin/leads" prefetch={false} className="mt-2 block px-1 text-xs font-semibold text-[var(--brand-primary)]">
-                    {inLane.length - LANE_LIMIT} more in Leads
+                {inLane.length > limit ? (
+                  <Link href={`/admin/customers?stage=${lane.key}`} prefetch={false} className="mt-2 block px-1 text-xs font-semibold text-[var(--brand-primary)]">
+                    Show all {inLane.length}
                   </Link>
                 ) : null}
               </>
             );
             return (
               <div key={lane.title} className={`rounded-lg bg-black/[0.03] dark:bg-white/[0.03] ${inLane.length === 0 ? "px-2.5 py-1.5" : "p-2.5"}`}>
-                <p className="flex items-baseline justify-between gap-2 px-1 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                <Link
+                  href={activeLane ? "/admin/customers" : `/admin/customers?stage=${lane.key}`}
+                  prefetch={false}
+                  aria-current={activeLane ? "true" : undefined}
+                  className="flex items-baseline justify-between gap-2 rounded px-1 text-xs font-semibold text-gray-600 hover:text-[var(--brand-primary)] dark:text-gray-300"
+                >
                   <span>
                     {lane.title}
                     <span className="ml-1.5 font-normal text-[11px] text-gray-500">{lane.note}</span>
                   </span>
                   <span className="font-mono tabular-nums">{inLane.length}</span>
-                </p>
-                {inLane.length === 0 ? null : lane.collapsed ? (
+                </Link>
+                {inLane.length === 0 ? null : collapsed ? (
                   <details>
                     <summary className="mt-1 cursor-pointer px-1 text-xs font-semibold text-[var(--brand-primary)]">
                       Show {inLane.length} {lane.title.toLowerCase()}
@@ -194,13 +220,7 @@ function PlanWatch({ list: { rows, unread } }: { list: PlanWatchList }) {
         Pro is priced by the bank picked at checkout. These plans have signs they cover a larger one. Nothing changes
         unless you move the plan in Stripe.
       </p>
-      {unread.length > 0 ? (
-        <p role="status" className="mt-2 text-xs text-amber-800 dark:text-amber-300">
-          Stripe could not read {unread.length === 1 ? "one paid plan" : `${unread.length} paid plans`}, so{" "}
-          {unread.length === 1 ? "it was" : "they were"} not checked:{" "}
-          {unread.map((plan) => `${plan.name || `user ${plan.userId}`} (${plan.code})`).join(", ")}.
-        </p>
-      ) : null}
+      {unread.length > 0 ? <SkippedPlans unread={unread} /> : null}
       <ul className="mt-2 space-y-2">
         {rows.map((row) => (
           <li key={row.userId} className="admin-card px-4 py-3 text-sm">
@@ -268,6 +288,69 @@ function ProAccounts({ accounts }: { accounts: ProAccount[] }) {
           </table>
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * Plans whose Stripe customer couldn't be read. "resource_missing" means the live Stripe account has
+ * no customer with that id: almost always a sign-up made with Stripe's test cards, so the person has
+ * Pro access here but no live subscription to check.
+ */
+function SkippedPlans({ unread }: { unread: PlanWatchList["unread"] }) {
+  const missing = unread.filter((plan) => plan.code === "resource_missing");
+  const other = unread.filter((plan) => plan.code !== "resource_missing");
+  const who = (plans: PlanWatchList["unread"]) => plans.map((plan) => plan.email || plan.name || `user ${plan.userId}`).join(", ");
+  return (
+    <div role="status" className="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-300">
+      {missing.length > 0 ? (
+        <p>
+          {missing.length === 1 ? "One account has" : `${missing.length} accounts have`} Pro marked active here, but live Stripe has no
+          customer for {missing.length === 1 ? "it" : "them"}, so there was no price to check: {who(missing)}. These are usually
+          sign-ups made with Stripe test cards. If they are your test accounts, nothing to do; if one is a real customer, look them up in Stripe.
+        </p>
+      ) : null}
+      {other.length > 0 ? (
+        <p>
+          Stripe refused to read {other.length === 1 ? "one plan" : `${other.length} plans`}, so {other.length === 1 ? "it was" : "they were"} not
+          checked: {other.map((plan) => `${plan.email || plan.name || `user ${plan.userId}`} (${plan.code})`).join(", ")}. Reload to try again.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** What needs James today, first: replies owed (overdue and failed emails called out) and plans to check. */
+function NeedsYou({ requests, now, planWatch }: { requests: LeadRow[]; now: Date; planWatch: PlanWatchList | null }) {
+  const waiting = requests.filter((lead) => LANES[0].statuses.includes(status(lead)));
+  const overdue = waiting.filter((lead) =>
+    isLeadOverdue({ source: lead.source, status: lead.status, created_at: lead.created_at_iso }, now),
+  ).length;
+  const failed = waiting.filter((lead) => lead.status === "email_failed").length;
+  const plans = planWatch?.rows.length ?? 0;
+  const items: string[] = [];
+  if (waiting.length > 0) {
+    const extra = [overdue > 0 ? `${overdue} overdue` : null, failed > 0 ? `${failed} with a failed email` : null].filter(Boolean);
+    items.push(`${waiting.length} ${waiting.length === 1 ? "request owes" : "requests owe"} a reply${extra.length ? ` (${extra.join(", ")})` : ""}`);
+  }
+  if (plans > 0) items.push(`${plans} paid ${plans === 1 ? "plan" : "plans"} may be on the wrong price`);
+  return (
+    <section aria-label="Needs you today" className="admin-card px-4 py-3">
+      <p className="text-xs text-gray-500 dark:text-gray-400">Needs you today</p>
+      {items.length === 0 ? (
+        <p className="mt-1 text-base font-semibold text-gray-900 dark:text-gray-100">Nothing. No one is waiting on a reply.</p>
+      ) : (
+        <ul className="mt-1 space-y-0.5 text-base font-semibold text-gray-900 dark:text-gray-100">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      {waiting.length > 0 ? (
+        <Link href="/admin/customers?stage=waiting" prefetch={false} className="mt-1 inline-block text-xs font-semibold text-[var(--brand-primary)]">
+          See who is waiting
+        </Link>
+      ) : null}
     </section>
   );
 }

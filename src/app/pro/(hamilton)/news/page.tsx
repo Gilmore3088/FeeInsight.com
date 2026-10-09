@@ -117,7 +117,7 @@ export default async function NewsPage({
     const win = pageWindow(wire.offset / WIRE_PAGE_SIZE + 1, wire.total);
     const shown = { ...params, page: win.page };
     return (
-      <div className="max-w-4xl">
+      <div>
         <WireHeader params={shown} />
         <div className="mt-5">
           <WireControls
