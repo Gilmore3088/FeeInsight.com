@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { accountHeadingAbove, groundLineup, minBalanceFromExcerpt, productNameFromFeeName, withLineupFromText } from "./lineup";
+import {
+  accountHeadingAbove,
+  groundLineup,
+  minBalanceFromExcerpt,
+  productNameFromFeeName,
+  readableProductName,
+  withLineupFromText,
+} from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
 
 const text = [
@@ -66,6 +73,25 @@ describe("Knox account names for monthly fees (v49)", () => {
     expect(productNameFromFeeName("No Boundaries Checking Account Monthly Maintenance Fee")).toBe("No Boundaries Checking Account");
     expect(productNameFromFeeName("Service charge fee (Checking + Interest Account)")).toBe("Checking + Interest Account");
     expect(productNameFromFeeName("Freedom Checking Monthly Fee")).toBe("Freedom Checking");
+  });
+
+  it("shows a stored name without a heading's tail, footnotes or blanks", () => {
+    expect(readableProductName("Signature Checking Rates")).toBe("Signature Checking");
+    expect(readableProductName("Preferred Money Market Interest Rates")).toBe("Preferred Money Market");
+    expect(readableProductName("Fresh Start Checking 6,11")).toBe("Fresh Start Checking");
+    expect(readableProductName("Gold Checking, _____________________")).toBe("Gold Checking");
+    expect(readableProductName("First Rate Checking")).toBe("First Rate Checking");
+    expect(readableProductName("  Premier   Checking ")).toBe("Premier Checking");
+    expect(readableProductName("ACCOUNT DESCRIPTIONS")).toBeNull();
+    expect(readableProductName("Sweep Transactions Money Market, or Savings")).toBeNull();
+    expect(readableProductName("Market Rate")).toBeNull();
+    expect(readableProductName(null)).toBeNull();
+  });
+
+  it("does not take a heading's tail or a list of account types as the name", () => {
+    expect(accountHeadingAbove("Signature Checking Rates\nMonthly fee | $20.00", "Monthly fee | $20.00")).toBe("Signature Checking");
+    expect(accountHeadingAbove("ACCOUNT DESCRIPTIONS\nMaintenance Fee $10.00", "Maintenance Fee $10.00")).toBeNull();
+    expect(accountHeadingAbove("Sweep Transactions Money Market, or Savings\nMaintenance Fee $3.00", "Maintenance Fee $3.00")).toBeNull();
   });
 
   it("does not name an account from generic or sentence-like words", () => {
