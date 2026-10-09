@@ -112,7 +112,7 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
             ) : (
               <p className="text-[#6B6255]">No published {feeNoun} yet</p>
             )}
-            {shown && (
+            {shown && shown.institutions > 0 && (
               <p className="text-[#6B6255]">
                 {shown.institutions} {shown.institutions === 1 ? "institution" : "institutions"} · click for detail
               </p>
@@ -130,7 +130,9 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
             </button>
           </div>
           <p className="mt-1 text-[13px] text-[#5A5347]">
-            {open.fee != null ? (
+            {open.institutions === 0 ? (
+              <>No bank or credit union reports a branch here in the FDIC deposit data.</>
+            ) : open.fee != null ? (
               <>
                 <b className="tabular-nums text-[#1A1815]">{money(Math.round(open.fee * 100) / 100)}</b> weighted {feeNoun},{" "}
                 {versus(open.fee, price)}.{" "}
@@ -138,7 +140,11 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
             ) : (
               <>No institution here has a published {feeNoun} yet. </>
             )}
-            {open.institutions} {open.institutions === 1 ? "institution" : "institutions"}, {deposits(open.deposits)} in branch deposits.
+            {open.institutions > 0 && (
+              <>
+                {open.institutions} {open.institutions === 1 ? "institution" : "institutions"}, {deposits(open.deposits)} in branch deposits.
+              </>
+            )}
             {open.fee != null && open.deposits > 0 && (
               <> Institutions with a fee on file hold {Math.round((open.covered / open.deposits) * 100)}% of those deposits.</>
             )}
