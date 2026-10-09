@@ -24,7 +24,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.17.4";
+export const WORKSPACE_ENGINE_VERSION = "1.17.5";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -114,6 +114,13 @@ export interface LocalMarketInfo {
   source: SourceRef;
 }
 
+/** The bank's largest local competitors (by market deposits) and their published fees. */
+export interface BriefingLocalMarket {
+  info: LocalMarketInfo;
+  /** The bank first, then competitors largest first. Values are one per institution, as peers are read. */
+  rows: { institutionId: number; name: string; own: boolean; marketDeposits: number | null; values: Record<string, number> }[];
+}
+
 export interface IncomeQuarter {
   quarterEnd: string;
   /** Dollars for that quarter alone (NCUA year-to-date figures already split into quarters). */
@@ -170,6 +177,10 @@ export interface Briefing {
   nationalIncome: MarketIncome | null;
   /** The same, the last eight quarters on file, newest first. */
   nationalIncomeSeries: MarketIncome[];
+  /** Named local competitors beside the bank, fee by fee; null when no local market is on file. */
+  localMarket?: BriefingLocalMarket | null;
+  /** The bank's filed overdraft income line, when it publishes an overdraft fee and files one. */
+  overdraftIncome?: RevenueLine | null;
   /** Fees on the bank's published schedule that Hamilton reviewed. */
   feesReviewed: number;
   /** One row per reviewed fee: the bank's price against its peer band. Unranked; band is null below the peer minimum. */

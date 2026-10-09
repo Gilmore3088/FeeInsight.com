@@ -11,6 +11,7 @@ import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
 import { ThisMonthOverview } from "@/components/hamilton/benchmark/ThisMonthOverview";
 import { FeeScorecard } from "@/components/hamilton/benchmark/FeeScorecard";
+import { LocalCompetitors } from "@/components/hamilton/benchmark/LocalCompetitors";
 import { buildAttentionItems, buildBriefingOverview } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
@@ -38,7 +39,7 @@ const getCachedBriefing = unstable_cache(
     ]);
     return { briefing, mixedBasis: [...mixedBasisCategories(bases)] };
   },
-  ["hamilton-this-month-briefing-v2"],
+  ["hamilton-this-month-briefing-v3"],
   { revalidate: 3600 },
 );
 
@@ -152,6 +153,8 @@ export default async function HamiltonHomePage({
           peerLabel={briefing.peerLabel}
           overview={overview}
           windowDays={COMPETITOR_MOVE_WINDOW_DAYS}
+          overdraftIncome={briefing.overdraftIncome ?? null}
+          overdraftFee={briefing.positions.find((p) => p.feeCategory === "overdraft")?.current ?? null}
         />
       ) : null}
 
@@ -184,6 +187,8 @@ export default async function HamiltonHomePage({
           </LinkButton>
         </div>
       )}
+
+      {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} notCompared={mixedBasis} /> : null}
 
       {/* Every fee against its own peer group, in the engine's order. */}
       {briefing && briefing.positions.length > 0 ? (

@@ -56,6 +56,7 @@ import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type Service
 import {
   WORKSPACE_ENGINE_VERSION,
   type Briefing,
+  type BriefingLocalMarket,
   type EconomicBackdrop,
   type ChangeEvent,
   type Fact,
@@ -423,6 +424,54 @@ async function withPeerMedian(base: WorkspaceBase, financials: InstitutionFinanc
 }
 
 const SOD_SOURCE_LABEL = "FDIC Summary of Deposits, branch deposits by county";
+const BRIEFING_COMPETITORS = 6;
+
+/**
+ * The bank and its largest local competitors that publish any fee it charges, with one value
+ * per institution and fee read the same way as its peers (the national layer already loaded).
+ */
+export function briefingLocalMarket(
+  base: WorkspaceBase,
+  market: LocalMarketMembers | null,
+  limit = BRIEFING_COMPETITORS,
+): BriefingLocalMarket | null {
+  if (!market) return null;
+  const national = base.layers.find((l) => l.scope === "national")?.values;
+  if (!national) return null;
+  const valueOf = new Map<number, Record<string, number>>();
+  for (const category of base.ownValues.keys()) {
+    for (const v of national.get(category) ?? []) {
+      const values = valueOf.get(v.institution_id) ?? {};
+      values[category] = v.amount;
+      valueOf.set(v.institution_id, values);
+    }
+  }
+  const others = market.members.filter((m) => !m.is_subject);
+  const rows = others
+    .filter((m) => valueOf.has(m.institution_id))
+    .slice(0, limit)
+    .map((m) => ({
+      institutionId: m.institution_id,
+      name: m.institution_name,
+      own: false,
+      marketDeposits: m.market_deposits,
+      values: valueOf.get(m.institution_id) as Record<string, number>,
+    }));
+  if (rows.length === 0) return null;
+  return {
+    info: {
+      basis: market.basis,
+      places: market.places,
+      sodYear: market.sod_year,
+      institutions: others.length,
+      source: { label: SOD_SOURCE_LABEL, asOf: String(market.sod_year) },
+    },
+    rows: [
+      { institutionId: base.institutionId, name: base.institutionName, own: true, marketDeposits: null, values: Object.fromEntries(base.ownValues) },
+      ...rows,
+    ],
+  };
+}
 
 /** The local market layer and named competitors for one fee, from the national values already loaded. */
 export function localMarketView(
@@ -463,12 +512,13 @@ export async function getWorkspaceBriefing(
 ): Promise<Briefing | null> {
   const base = await loadBase(institutionId, undefined, options);
   if (!base) return null;
-  const [changes, financialRows, articles, nationalIncomeSeries, studyRows] = await Promise.all([
+  const [changes, financialRows, articles, nationalIncomeSeries, studyRows, market] = await Promise.all([
     loadStateChanges(base.stateCode),
     loadServiceChargeRows(institutionId),
     loadRegArticles(RULE_CHANGE_WINDOW_DAYS, now),
     loadNationalIncomeSeries(),
     loadStudyPlacements(institutionId),
+    getLocalMarketMembers(institutionId).catch(() => null),
   ]);
   const nationalIncome = nationalIncomeSeries[0] ?? null;
   const positions = [...base.ownValues].map(([feeCategory, current]) => {
@@ -503,6 +553,8 @@ export async function getWorkspaceBriefing(
     stateCode: base.stateCode,
     observations,
     institutionFinancials: financials,
+    localMarket: briefingLocalMarket(base, market),
+    overdraftIncome: base.ownValues.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,
     nationalIncome,
     nationalIncomeSeries,
     feesReviewed: base.ownValues.size,

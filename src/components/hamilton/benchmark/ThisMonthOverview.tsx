@@ -1,4 +1,5 @@
 import type { BriefingOverview } from "@/lib/hamilton/briefing-observations";
+import type { RevenueLine } from "@/lib/hamilton/workspace/types";
 import { SERIF } from "@/components/hamilton/memo/memo";
 
 function millions(n: number): string {
@@ -22,6 +23,20 @@ function Tile({ label, value, note }: { label: string; value: string; note: stri
 }
 
 /**
+ * The filed overdraft income line, labeled with its period. For a credit union, whose filing
+ * carries overdraft alone, also what each $1 of the fee came to at that volume: an estimate
+ * that assumes every paid item was charged today's fee.
+ */
+export function overdraftIncomeNote(line: RevenueLine, overdraftFee: number | null): string {
+  const what = line.combinedWith ? "Consumer overdraft and NSF fee income" : "Overdraft fee income";
+  const base = `${what} was ${millions(line.annualIncome)} in the four quarters to ${quarterLabel(line.quarterEnd)}, the latest filed (${line.label.replace(/^.*\((.*)\)$/, "$1")}).`;
+  if (line.combinedWith || !overdraftFee || overdraftFee <= 0) return base;
+  const items = line.annualIncome / overdraftFee;
+  const round = (n: number) => (n >= 10_000 ? Math.round(n / 1000) * 1000 : Math.round(n));
+  return `${base} At your ${overdraftFee % 1 === 0 ? `$${overdraftFee}` : `$${overdraftFee.toFixed(2)}`} fee that is roughly ${round(items).toLocaleString("en-US")} paid items, so each $1 of the fee came to about $${round(items).toLocaleString("en-US")} a year at that volume (an estimate).`;
+}
+
+/**
  * The top of This month: what Hamilton is, then the month in three numbers (where the schedule
  * sits against its peers, fee changes nearby, and fee income). Describes; never says what to do.
  */
@@ -30,11 +45,15 @@ export function ThisMonthOverview({
   peerLabel,
   overview,
   windowDays,
+  overdraftIncome = null,
+  overdraftFee = null,
 }: {
   institutionName: string;
   peerLabel: string;
   overview: BriefingOverview;
   windowDays: number;
+  overdraftIncome?: RevenueLine | null;
+  overdraftFee?: number | null;
 }) {
   const { feesCompared, higher, inLine, lower, peerCount, stateLabel, feesChangedNearby, income } = overview;
   const place = stateLabel ?? "your state";
@@ -75,6 +94,9 @@ export function ThisMonthOverview({
           }
         />
       </div>
+      {overdraftIncome ? (
+        <p className="max-w-3xl text-sm leading-snug text-warm-700">{overdraftIncomeNote(overdraftIncome, overdraftFee)}</p>
+      ) : null}
     </section>
   );
 }
