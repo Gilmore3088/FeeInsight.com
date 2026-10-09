@@ -49,8 +49,9 @@ tier-A comparison (the prospect and at least 5 named local competitors all verif
 the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
 only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
 otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
-no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, and a
-value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
+no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
+nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
+90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
 Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
 weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
 drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local

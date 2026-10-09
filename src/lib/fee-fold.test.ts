@@ -147,6 +147,17 @@ describe("top-50 fold", () => {
     expect(TAXONOMY.has("collection_item")).toBe(true);
   });
 
+  test("a subordination is other lending and a money order copy is a check copy; the rest stay (Oct 8)", () => {
+    const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
+    for (const name of ["Mortgage Subordination", "Subordination Agreement", "Lien Subordination Fee", "HELOC / 2nd Trust Deed Subordination"]) {
+      expect(split("legal_process", name)).toBe("other_lending_fee");
+    }
+    expect(split("legal_process", "SUBORDINATION REQUEST: Outgoing Foreign")).toBeNull();
+    expect(split("legal_process", "Garnishment / Levy")).toBeNull();
+    expect(split("money_order", "Copy of Cleared Cashier's Check/ Money Order (per item)")).toBe("check_image");
+    expect(split("money_order", "Cashier's Check / Money Order")).toBeNull();
+  });
+
   test("foldContext returns the text before the fee's line", () => {
     const text = "ATM Fees Non-Bank ATM ........ Withdrawal $2.00\nBalance Inquiry .......... $1.00";
     expect(foldContext(text, "Balance Inquiry")).toBe("ATM Fees Non-Bank ATM Withdrawal $2.00 ");

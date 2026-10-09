@@ -103,3 +103,33 @@ describe("fees named by page context (v33)", () => {
     expect(contextFees("$38 fee for each item or transaction paid")).toEqual([]);
   });
 });
+
+// Amerant Bank's miscellaneous fee schedule (document 21851), two columns flattened row by row.
+const AMERANT = `Endorsement Guarantee Exchange .......... $15 each
+Incoming4 | 8
+Online Banking (Personal) ........................ No Charge
+Clean ....................................................... $30 per item
+Overdrafts / Non-Sufficient Funds (NSF)10, 12
+Documentary ........................................... $125 per item
+Collections – Foreign3 | Personal .................................................... $10 per item paid
+Outgoing | Daily Maximum.......................................... 5 items paid per day for Personal
+Clean..................................................... $60 per item, plus shipping | accounts
+Documentary......................................... $125 per item, plus shipping | Business.................................................... $35 per item paid or returned
+Incoming 4 | Interest on Overdrawn Balance................. 17.5% daily for Business Accounts`;
+
+describe("a personal row under an overdraft heading (v50)", () => {
+  it("reads Amerant's personal per-item-paid price as its overdraft fee, not the business row", () => {
+    expect(contextFees(AMERANT).map((fee) => [fee.canonicalHint, fee.feeName, fee.amount])).toEqual([
+      ["overdraft", "Overdraft - personal, per item paid", 10],
+    ]);
+  });
+
+  it("passes the shared source check on the schedule it came from", async () => {
+    const { checkFeeAgainstSource } = await import("@/lib/custom-report/source-check");
+    expect(checkFeeAgainstSource(AMERANT, "Overdraft - personal, per item paid", 10, ".", "overdraft").ok).toBe(true);
+  });
+
+  it("leaves a personal row under a heading that names another fee", () => {
+    expect(contextFees("Stop Payments\nPersonal .......... $30 per item paid")).toEqual([]);
+  });
+});

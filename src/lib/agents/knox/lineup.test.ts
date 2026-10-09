@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { groundLineup } from "./lineup";
+import { accountHeadingAbove, groundLineup, productNameFromFeeName, withAccountName } from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
 
 const text = [
@@ -58,5 +58,51 @@ describe("Knox account lineup grounding", () => {
       },
     });
     expect(groundLineup(candidate!.lineup!, segment)).toEqual(candidate!.lineup);
+  });
+});
+
+describe("Knox account names for monthly fees (v49)", () => {
+  it("reads the account from the fee's own name", () => {
+    expect(productNameFromFeeName("No Boundaries Checking Account Monthly Maintenance Fee")).toBe("No Boundaries Checking Account");
+    expect(productNameFromFeeName("Service charge fee (Checking + Interest Account)")).toBe("Checking + Interest Account");
+    expect(productNameFromFeeName("Freedom Checking Monthly Fee")).toBe("Freedom Checking");
+  });
+
+  it("does not name an account from generic or sentence-like words", () => {
+    expect(productNameFromFeeName("Monthly maintenance fee")).toBeNull();
+    expect(productNameFromFeeName("Savings Account Maintenance Fee")).toBeNull();
+    expect(productNameFromFeeName("Personal Checking Monthly Fee")).toBeNull();
+    expect(productNameFromFeeName("in your account to avoid a service charge fee")).toBeNull();
+    expect(productNameFromFeeName("Performance Plus Service Charge")).toBeNull();
+  });
+
+  it("takes the nearest account heading above the fee's line", () => {
+    const page = [
+      "Personal Banking",
+      "Freedom Checking",
+      "No monthly maintenance fee",
+      "NOW Checking",
+      "$500 minimum opening deposit required",
+      "Maintain a minimum daily balance of $1,000 to avoid the $10 monthly service charge",
+    ].join("\n");
+    expect(accountHeadingAbove(page, "Maintain a minimum daily balance of $1,000 to avoid the $10 monthly service charge")).toBe("NOW Checking");
+    expect(accountHeadingAbove("My River Checking Features\n\nNo minimum balance\n\n$8.00 monthly service charge", "$8.00 monthly service charge")).toBe(
+      "My River Checking",
+    );
+    expect(accountHeadingAbove("Checking Accounts\n\nMonthly fee | $5.00", "Monthly fee | $5.00")).toBeNull();
+  });
+
+  it("names only monthly fees that have no account yet, and keeps the other lineup facts", () => {
+    const page = "Exchange Advantage Checking\nOne low monthly maintenance fee of $7.00 each month.";
+    const candidate = {
+      canonicalHint: "monthly_maintenance",
+      feeName: "Monthly maintenance fee of",
+      excerpt: "One low monthly maintenance fee of $7.00 each month.",
+      lineup: { productName: null, minBalanceToAvoid: 500, minOpeningDeposit: null, waiverText: null },
+    };
+    expect(withAccountName(candidate, page).lineup).toEqual({ ...candidate.lineup, productName: "Exchange Advantage Checking" });
+    expect(withAccountName({ ...candidate, canonicalHint: "overdraft" }, page)).toEqual({ ...candidate, canonicalHint: "overdraft" });
+    const named = { ...candidate, lineup: { ...candidate.lineup, productName: "Gold Checking" } };
+    expect(withAccountName(named, page)).toBe(named);
   });
 });
