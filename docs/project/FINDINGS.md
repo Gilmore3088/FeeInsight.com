@@ -13,6 +13,12 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Two reads took 10 to 13 seconds each time they ran
+**What happened:** pg_stat_statements at 00:58 UTC Oct 9 (since Oct 5): Hamilton's business-schedule check averaged 12.5 s over 312 runs (max 22 s), and the national revenue trend averaged 10 s over 322 runs (max 38 s).
+**Cause:** the business-schedule check looked up each business fee's consumer twin with a subquery over a CTE, which rescans the whole CTE (65,000 live fees) per business fee. The revenue trend windowed all 768,000 call report filings since 2010 to return the newest 8 to 20 quarters.
+**Fix:** this PR. The consumer twin is grouped once and joined (0.7 s on prod, same 1,127 rows and 21 matches). The trend reads only the years its quarters fall in, plus four spare quarters (1.8 s on prod, same 20 quarters).
+**Lesson:** a correlated subquery against a CTE is a nested loop over the CTE; group once and join. Bound history reads to the window the caller returns.
+
 ## 2026-10-09: Magellan's fee-page classifier never trained
 **What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
 **Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
