@@ -13,7 +13,12 @@ import {
   recategorizeHeld,
   recheckHeldRows,
   recheckPromotedRows,
+  recheckSupersededRows,
   recheckUntracedRows,
+  supersededConditions,
+  supersededDryReadFlag,
+  supersededRecheckFlag,
+  supersededWouldPromoteFlag,
   tracedRead,
   untracedRecheckFlag,
   versionsChecked,
@@ -268,5 +273,85 @@ describe("untraced held lines re-traced with today's rules (Arvest 78, raw 44909
     expect(tracedRead({ ...untraced, fee_name: "Overdraft fee" }, [
       { feeName: "Overdraft (OD) - Paid Item", amount: 17, canonicalHint: "overdraft", frequency: "per_item", confidence: 0.9, excerpt: "", waivable: false },
     ])).toBeNull();
+  });
+});
+
+describe("lines a re-read retired, read again with today's rules (Northern Trust 25, raw 457013)", () => {
+  const ntText = [
+    "Legal Document Processing (Levies, Garnishments,",
+    "Citations, Subpoenas, Liens, or other Court,",
+    "Regulatory, or Administrative Orders)..................................$115.00",
+    "Overdrafts Paid and Items Paid against Nonsufficient",
+    "Funds (includes but not limited to overdrafts",
+    "created by check, in-person withdrawals",
+    "at a teller or recurring electronic",
+    "debit card payments) ................................... $25.00 per Occurrence",
+    "(maximum of 3 overdraft charges per day)",
+    "Stop Payment Order............................................................ $30.00 per item",
+  ].join("\n");
+  const retired = {
+    fee_raw_id: 457013,
+    amount: "25.00",
+    fee_name: "Overdrafts Paid and Items Paid against Nonsufficient Funds",
+    conditions: 'Knox paid extraction from Rosetta artifact #20257. canonical_hint=overdraft; text_hash=27e2; excerpt="debit card payments) ... $25.00 per Occurrence"',
+    outlier_flags: ["canonical_hint:overdraft", "knox_paid_extraction", "superseded_by_reread"],
+    document_text_id: 20257,
+    text_hash: "1f6e",
+    has_live_twin: false,
+  };
+  const elsewhere = { ...retired, fee_raw_id: 457099, fee_name: "Courier Service", amount: "15.00", conditions: retired.conditions.replace("overdraft", "account_research") };
+
+  function createSupersededDb(rows: unknown[]) {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn(async (strings: unknown, ...values: unknown[]) => {
+      const text = templateText(strings);
+      calls.push({ text, values });
+      if (text.includes("superseded_by_reread") && text.includes("SELECT fr.fee_raw_id")) return rows;
+      if (text.includes("SELECT id, normalized_text")) return [{ id: 20257, normalized_text: ntText }];
+      if (text.includes("RETURNING fr.fee_raw_id")) return [{ fee_raw_id: 457013 }];
+      return [];
+    });
+    return { db, calls };
+  }
+
+  it("sends a retired line back to Darwin when today's rules read the same name, amount and category", async () => {
+    const { db, calls } = createSupersededDb([retired, elsewhere]);
+
+    const result = await recheckSupersededRows(db as never, { institutionId: 25, live: true });
+
+    expect(result).toMatchObject({ checked: 2, promoted: 1, liveTwin: 0, notRead: 1, promotedIds: [457013], live: true });
+    const promote = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr"))!;
+    expect(promote.values).toContain(457013);
+    expect(JSON.stringify(promote.values)).toContain("needs_darwin_verification");
+    expect(JSON.stringify(promote.values)).toContain("text_hash=1f6e;");
+    const marked = calls.find((call) => call.text.includes("WHERE fee_raw_id = ANY"))!;
+    expect(marked.values).toContainEqual([457099]);
+    expect(JSON.stringify(marked.values)).toContain(supersededRecheckFlag());
+  });
+
+  it("keeps a retired line back when the bank already has a live fee of that category at that price", async () => {
+    const { db, calls } = createSupersededDb([{ ...retired, has_live_twin: true }]);
+
+    const result = await recheckSupersededRows(db as never, { institutionId: 25, live: true });
+
+    expect(result).toMatchObject({ checked: 1, promoted: 0, liveTwin: 1 });
+    expect(calls.some((call) => call.text.includes("UPDATE raw_fee_observations fr"))).toBe(false);
+  });
+
+  it("only marks what it would do while the switch is off", async () => {
+    const { db, calls } = createSupersededDb([retired, elsewhere]);
+
+    const result = await recheckSupersededRows(db as never, { institutionId: 25, live: false });
+
+    expect(result).toMatchObject({ checked: 2, promoted: 1, promotedIds: [457013], live: false });
+    expect(calls.some((call) => call.text.includes("UPDATE raw_fee_observations fr"))).toBe(false);
+    const flagged = JSON.stringify(calls.filter((call) => call.text.includes("WHERE fee_raw_id = ANY")).map((call) => call.values));
+    expect(flagged).toContain(supersededDryReadFlag());
+    expect(flagged).toContain(supersededWouldPromoteFlag());
+  });
+
+  it("gives the row the current text's hash so the next re-read keeps it", () => {
+    expect(supersededConditions(retired.conditions, "1f6e", 20257)).toContain("text_hash=1f6e;");
+    expect(supersededConditions(retired.conditions, "1f6e", 20257)).not.toContain("text_hash=27e2;");
   });
 });
