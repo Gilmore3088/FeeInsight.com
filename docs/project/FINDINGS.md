@@ -1,7 +1,8 @@
 # Findings
 
 Problems we hit that were structural or infrastructural: what happened, why, the fix, and the
-lesson for next time. Newest first. Add an entry the moment you find one.
+lesson for next time. Newest first. Closed to new entries after 2026-10-09: each new finding is
+its own file in `findings/` (see `findings/README.md`), so parallel PRs stop colliding here.
 
 Template:
 
