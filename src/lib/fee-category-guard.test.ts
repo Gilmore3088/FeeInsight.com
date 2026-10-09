@@ -847,6 +847,14 @@ describe("checkFeeCategory", () => {
     }
   });
 
+  it("v51: a certificate penalty paid in dividends is not an early closure fee", () => {
+    expect(checkFeeCategory("early_closure", "11. Early Withdrawal Penalty for Jump Start Share certificate - A penalty of seven days dividends will be imposed if the").ok).toBe(false);
+    expect(checkFeeCategory("early_closure", "Forfeiture of Rewards at maturity").ok).toBe(false);
+    expect(checkFeeCategory("early_closure", "Account Forfeiture Fee").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "CD Early Withdrawal Penalty").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "Early closing (account closed within 6 months of opening) Not applicable to CD accounts").ok).toBe(true);
+  });
+
   it("v47 covers Darwin's Oct 8 eval rows", () => {
     const guard = (key: string, name: string, amount: string, excerpt = name) =>
       checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;

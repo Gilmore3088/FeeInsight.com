@@ -97,8 +97,11 @@ deploys:
 - check that the step type now completes (count completed since the deploy), and
 - check that every failed state reran and its step completed.
 
-A run that isn't a state lane does not rerun by itself. Start it again the same way it was
-started (its `run_kind`, `params_json` and `trigger_source`), through its typed agent
+A priority-institution run (`atlas.priority_institution`) that failed on such a break
+reruns by itself too: once the current deploy has not repeated the failure, the failed run
+stops holding its institution for the 24-hour retry window (`PRIORITY_FIXED_BREAK_RUNS`).
+Any other run that isn't a state lane does not rerun by itself. Start it again the same way
+it was started (its `run_kind`, `params_json` and `trigger_source`), through its typed agent
 module or admin action. Never through hand-written SQL that changes data.
 
 ## 6. Tell James
