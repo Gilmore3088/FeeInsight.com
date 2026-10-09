@@ -19,8 +19,8 @@ type SqlTag = typeof sql;
  * a last resort, looked at more than once; never a hand UPDATE). Each row is read once per
  * version, recorded as a `verify.recheck` attempt.
  *
- * v1 (2026-10-09): UAT's 20-row check of the not_in_source re-select (#883) found 14 right;
- * four misses were $0 "free if you meet a condition" readings of $2.50-$6.95 fees, one a
+ * v1 (2026-10-09): UAT's 20-row check of the not_in_source re-select (#883) found 16 right;
+ * three misses were $0 "free if you meet a condition" readings of $2.50-$6.95 fees, one a
  * package list verified into the retired `estatement_fee` type.
  */
 export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 1 } as const;

@@ -43,15 +43,15 @@ takes about twelve verify steps of 100 before new rows lead again.
 ## After the re-select ran (10:42 UTC)
 
 UAT drew 20 of the first 36 rows the re-select verified and checked them by hand against the
-source line: 14 right, below the 18-of-20 bar. The dry read above had checked amount and category
-against the matched line; it had not asked whether a $0 reading was the fee at all. Four misses
+source line: 16 right (first scored 14, re-scored at 10:59), below the 18-of-20 bar. The dry read above had checked amount and category
+against the matched line; it had not asked whether a $0 reading was the fee at all. Three misses
 were $0 readings of lines that price the fee when a condition is not met ("Bill Pay - FREE with
 E-Statements and Debit Card | $6.95 per Month", 217716, live; "Monthly fee for balance of $500 &
 over | FREE" with $5.00 on the next row, 233082, live; "$0 with $100 minimum daily balance OR
 $2.50/month", 230322), one was a package list ("Includes: Bill Pay E-Statement...") verified into
-the retired `estatement_fee` type (251150); two more (250826 $10, 226547 $3) were marked wrong on
-amount, but Accuracy found both amounts on the source one line below the name, so those two were
-right. Hamilton's publish-time rules would have taken the live $0 ones down after the fact;
+the retired `estatement_fee` type (251150). Two more (250826 $10, 226547 $3) were first marked
+wrong on amount; Accuracy found both amounts on the source one line below the name, and UAT
+re-scored them right. Hamilton's publish-time rules would have taken the live $0 ones down after the fact;
 nothing stopped them before verification.
 
 Fix: `postSourceCheck` in `verify.ts` runs after the source check on the matched line and stops a

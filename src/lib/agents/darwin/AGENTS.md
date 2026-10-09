@@ -46,7 +46,7 @@ Darwin owns verification and classification.
   wrapped-name $25 overdraft, raw 457013, among them).
 - `retired_category`, `conditional_zero` and `name_rule` (2026-10-09, `postSourceCheck` in
   `verify.ts`) run after the source check on the line it matched. UAT's hand check of the first
-  36 rows the `not_in_source` re-select verified found 14 of a random 20 right: four were $0
+  36 rows the `not_in_source` re-select verified found 16 of a random 20 right: three were $0
   readings of "free if you meet a condition, else $2.50-$6.95" lines, one a package list verified
   into the retired `estatement_fee` type. The same checks are Hamilton's publish-time rules, so a
   row that would come down after publishing now stops before it is verified.

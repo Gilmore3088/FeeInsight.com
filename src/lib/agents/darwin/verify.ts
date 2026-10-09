@@ -137,8 +137,8 @@ const NONZERO_DOLLAR = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
  * "Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month", "Bill Pay - FREE with
  * E-Statements and Debit Card | $6.95 per Month", "Monthly fee for balance of $500 & over | FREE"
  * (the $5 row is the line below). The customer who misses the condition pays the charge, so
- * $0 is not the fee; the row is held, never verified as free (UAT, 2026-10-09: 4 of 6 wrong rows
- * in a 20-row check of the not_in_source re-select were $0 readings of priced fees). Pure.
+ * $0 is not the fee; the row is held, never verified as free (UAT, 2026-10-09: 3 of the 4 wrong
+ * rows in a 20-row check of the not_in_source re-select were $0 readings of priced fees). Pure.
  */
 export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
   if (amount !== 0) return false;
