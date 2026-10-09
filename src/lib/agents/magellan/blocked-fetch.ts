@@ -96,7 +96,10 @@ export async function selectBlockedLinks(db: SqlTag, limit: number): Promise<Blo
        AND (
          SELECT CASE
                   WHEN plain.outcome = 'http_403' THEN TRUE
-                  WHEN plain.outcome = 'timeout' THEN COALESCE(inst.consecutive_failures, 0) >= ${BLOCKED_TIMEOUT_MIN_FAILURES}
+                  -- A refused connection is the same wall as a timeout: Centennial Bank's
+                  -- schedule ($24.6B) failed with network_error four times from 3 to 7 Oct
+                  -- 2026 and never reached the paid fetch (19 such banks, none with live fees).
+                  WHEN plain.outcome IN ('timeout', 'network_error') THEN COALESCE(inst.consecutive_failures, 0) >= ${BLOCKED_TIMEOUT_MIN_FAILURES}
                   ELSE FALSE
                 END
            FROM pipeline_attempts plain

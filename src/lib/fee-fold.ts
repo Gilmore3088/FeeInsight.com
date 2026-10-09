@@ -241,6 +241,22 @@ const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es
 export const PER_PAGE_COPY =
   /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?=[\s\S]*\bcop(?:y|ies|ied|ying)\b)[\s\S]*(?:\bper (?:page|pg)\b|\/ ?(?:page|pg)\b)/i;
 
+/**
+ * A line led by the copy itself ("Document copies - greater than 1 year - Per item, may also be
+ * subject to research fee", "Microfilm Copy (plus Account Research)"), or a member's own fax
+ * ("Member personal fax request (in state)"): document reproduction, even where research is
+ * named as a further charge. Research priced by the hour or with a minimum stays research.
+ */
+const COPY_LED = /^(?![\s\S]*\b(?:hours?|hrs?|hourly|min(?:imum)?|mininum|postage)\b)(?:(?:[\w-]+ ){0,2}(?:photo ?)?cop(?:y|ies)\b|[\s\S]*\bpersonal fax\b)/i;
+
+/**
+ * Balancing or reconciling a member's checkbook, usually priced by the hour ("Checkbook
+ * Reconciliation (per hour)", "Balance Check Book"): reconciliation work, which account research
+ * holds, not a check order; a line naming a check order, printing or style stays. Knox reads these lines with this too, ahead of its check printing rule.
+ */
+export const CHECKBOOK_RECONCILIATION =
+  /^(?![\s\S]*\b(?:orders?|ordering|reorder\w*|printing|styles?|box(?:es)?)\b)[\s\S]*\b(?:reconcil\w*|balancing|balance (?:the |your |a |customer )?(?:check ?books?|statements?)|research)\b/i;
+
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
@@ -279,7 +295,7 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
   // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
   // A fax or a document copy is document reproduction, not research, and so is a copy charged
-  // by the page during research.
+  // by the page during research, or a line led by the copy (a member's own fax too).
   account_research: {
     to: "ira_termination",
     name: IRA_TRANSFER_OUT,
@@ -287,9 +303,12 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
       { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
       { to: "document_reproduction", name: FAX_OR_COPY },
       { to: "document_reproduction", name: PER_PAGE_COPY },
+      { to: "document_reproduction", name: COPY_LED },
     ],
-    sqlPattern: "\\mira\\M|fax|cop(y|ies)|reproduc",
+    sqlPattern: "\\mira\\M|fax|cop(y|ies|ied)|reproduc",
   },
+  // Balancing or reconciling a checkbook is reconciliation work, not a check order.
+  check_printing: { to: "account_research", name: CHECKBOOK_RECONCILIATION, sqlPattern: "reconcil|balanc|research" },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
   atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
   // A statement mailed back undelivered is returned mail, which account research holds.
@@ -311,7 +330,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 10;
+export const FOLD_RULES_VERSION = 12;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

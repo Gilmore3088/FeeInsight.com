@@ -2,7 +2,7 @@ import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { CHECKBOOK_RECONCILIATION, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
 import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
@@ -245,6 +245,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
   { key: "account_research", pattern: /\bcheck ?book balanc\w*|\bbalanc\w* (?:your |a )?check ?book\b/i },
+  // v56: balancing or reconciling a checkbook is account research, not a check order (`CHECKBOOK_RECONCILIATION`).
+  { key: "account_research", pattern: new RegExp(String.raw`^(?=[\s\S]*\bcheck ?books?\b)[\s\S]*` + CHECKBOOK_RECONCILIATION.source, "i") },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
@@ -798,9 +800,34 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
  */
 const AVOID_FEE_OF = /\bto avoid (?:an?|the)\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
 
+/**
+ * v57: "Go green with eStatements to avoid $3 paper statement fee": the price comes first and
+ * the words after it name the fee the reader avoids.
+ */
+const AVOID_PRICE_FEE = /\bto avoid (?:an?\s+|the\s+)?\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))s?\b/i;
+
+function avoidPriceFirst(segment: string): ExtractedFeeCandidate | null {
+  const match = segment.match(AVOID_PRICE_FEE);
+  if (!match) return null;
+  const words = normalizeSegment(match[2]);
+  const hint = classifyFeeText(words);
+  const amount = Number(match[1]);
+  const feeName = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  if (!hint || !(amount > 0) || !passesDarwinChecks(hint, feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
+  };
+}
+
 export function avoidFeeFromProse(segment: string): ExtractedFeeCandidate | null {
   const match = segment.match(AVOID_FEE_OF);
-  if (!match) return null;
+  if (!match) return avoidPriceFirst(segment);
   const words = normalizeSegment(match[1]);
   const hint = classifyFeeText(words);
   if (hint !== "minimum_balance" && hint !== "monthly_maintenance") return null;
@@ -972,6 +999,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
       (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null) ??
       (rowName && usableName(rowName) ? classifyFeeText(rowName) : null)
     : classifyFeeText(cells ? cells[0] : segment);
+  // v57: a markdown table row is named by its first cell when its details cell names nothing
+  // ("| Stop Payment Order | Initial order or a renewal | $30.00 | per item |", Arvest).
+  const titleCell = cells?.[0]?.replace(/^\|\s*/, "").trim() ?? "";
+  if (!hint && firstAmount && /^\s*\|/.test(segment) && (cells?.filter(Boolean).length ?? 0) >= 3 && !amountsIn(titleCell).length) {
+    hint = classifyFeeText(titleCell);
+  }
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {

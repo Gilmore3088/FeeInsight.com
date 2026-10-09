@@ -11,6 +11,7 @@ import {
   summarizeReportReady,
   reportRulePeers,
   reportRuleCheckFromCoverage,
+  reportRuleCheckFromRows,
   toMarketReadiness,
   type HeadlineCoverageRow,
 } from "./market-readiness";
@@ -125,6 +126,15 @@ describe("report rule from coverage rows", () => {
     expect(check.stateRichCompetitors).toBe(MIN_RICH_COMPETITORS);
     expect(check.peerScope).toBe("state");
     expect(check.passes).toBe(true);
+  });
+
+  it("reads the subject from the rows and is null for an institution with no row", () => {
+    const rows: HeadlineCoverageRow[] = [
+      [1, rich, "CA", "bank", 12],
+      [2, rich, "CA", "bank", 12],
+    ];
+    expect(reportRuleCheckFromRows(1, rows)).toEqual(reportRuleCheckFromCoverage(subject, rows));
+    expect(reportRuleCheckFromRows(99, rows)).toBeNull();
   });
 
   it("gives an institution with no headline fees zero categories", () => {
