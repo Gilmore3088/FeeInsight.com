@@ -6,13 +6,14 @@ const { startAgentRunMock, loadMarketLeaderIdsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(), getSql: vi.fn() }));
-vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
+vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock, currentDeploy: () => "deploy-now" }));
 vi.mock("@/lib/data-store/market-leaders", () => ({ loadMarketLeaderIds: loadMarketLeaderIdsMock }));
 vi.mock("@/lib/agents/darwin/verify", () => ({ DARWIN_VERIFY_MAX_LIMIT: 500 }));
 vi.mock("@/lib/agents/hamilton/publish", () => ({ HAMILTON_PUBLISH_MAX_LIMIT: 500 }));
 
 import {
   PRIORITY_INSTITUTION_REQUESTS,
+  PRIORITY_FIXED_BREAK_RUNS,
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
   priorityInstitutionSteps,
@@ -168,5 +169,20 @@ describe("priority institutions", () => {
 
     expect(result.failed).toEqual([{ institutionId: 1, error: "constraint" }]);
     expect(result.scheduled).toBe(1);
+  });
+
+  it("does not let a run that failed on a since-fixed break hold its institution (2877, Oct 8)", async () => {
+    const { db, calls } = createDb(() => []);
+    await selectPriorityInstitutions(db, { limit: 2, leaderIds: [], deploy: "abc123" });
+    const { text, values } = calls[0];
+    expect(text).toContain("r.status = 'failed'");
+    expect(text).toContain("event.detail->>'deploy' = ?::text");
+    expect(values).toContain("abc123");
+    expect(values).toContain(PRIORITY_FIXED_BREAK_RUNS);
+
+    // Off Vercel there is no deploy to compare, so every failed run still holds.
+    const off = createDb(() => []);
+    await selectPriorityInstitutions(off.db, { limit: 2, leaderIds: [], deploy: null });
+    expect(off.calls[0].values).toContain(null);
   });
 });

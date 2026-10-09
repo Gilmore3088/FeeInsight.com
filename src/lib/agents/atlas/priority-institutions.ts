@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
-import { startAgentRun } from "@/lib/agents/run-store";
+import { currentDeploy, startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunStepDefinition } from "@/lib/agents/types";
 import { DARWIN_VERIFY_MAX_LIMIT } from "@/lib/agents/darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "@/lib/agents/hamilton/publish";
@@ -23,6 +23,14 @@ export const PRIORITY_MAX_ACTIVE = 2;
 export const PRIORITY_RETRY_HOURS = 24;
 /** A large bank or market leader with no live overdraft fee runs again at most this often. */
 export const PRIORITY_GAP_RETRY_DAYS = 7;
+/**
+ * A failure shared by at least this many runs in 24 hours is a break in our code, the
+ * same bar as wakeLanesAfterRecovery. A priority run that failed on such a break, with no
+ * failure of that step and reason since the current deploy went live, is presumed fixed
+ * and does not hold its institution for the retry window: Tennessee's largest bank
+ * (2877) failed on the 12:06 Oct 8 publish break and waited a full day after the 12:36 fix.
+ */
+export const PRIORITY_FIXED_BREAK_RUNS = 3;
 /** $10B in assets; `asset_size` is in thousands. */
 export const PRIORITY_MIN_ASSETS_THOUSANDS = 10_000_000;
 
@@ -167,9 +175,10 @@ export interface PriorityInstitutionRow {
  */
 export async function selectPriorityInstitutions(
   db: SqlTag,
-  options: { limit: number; leaderIds: readonly number[] },
+  options: { limit: number; leaderIds: readonly number[]; deploy?: string | null },
 ): Promise<PriorityInstitutionRow[]> {
   const limit = Math.max(0, Math.floor(options.limit));
+  const deploy = options.deploy === undefined ? currentDeploy() : options.deploy;
   if (limit === 0) return [];
   const requested = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
   const leaders = [...options.leaderIds].map(Number);
@@ -256,6 +265,33 @@ export async function selectPriorityInstitutions(
                 -- A request by name is new work after an overdraft-gap run of the same bank
                 -- (Bluestone FCU's 06:45 gap run held Marketing's 18:44 request for a day).
                 AND (c.tier <> 2 OR r.params_json->>'tier' = 'requested')
+                -- A run that failed on a break since fixed holds nothing: it reruns once
+                -- under the new deploy (a second failure records that deploy and holds).
+                AND NOT (
+                  r.status = 'failed'
+                  AND ${deploy}::text IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1 FROM agent_run_steps step
+                     WHERE step.agent_run_id = r.id
+                       AND step.status = 'failed'
+                       AND step.error_summary IS NOT NULL
+                       AND (
+                         SELECT COUNT(DISTINCT other.agent_run_id) FROM agent_run_steps other
+                          WHERE other.step_key = step.step_key
+                            AND other.error_summary = step.error_summary
+                            AND other.status = 'failed'
+                            AND other.completed_at > NOW() - INTERVAL '24 hours'
+                       ) >= ${PRIORITY_FIXED_BREAK_RUNS}::int
+                       AND NOT EXISTS (
+                         SELECT 1 FROM agent_run_steps other
+                           JOIN agent_run_events event ON event.step_id = other.id AND event.event_type = 'step.failed'
+                          WHERE other.step_key = step.step_key
+                            AND other.error_summary = step.error_summary
+                            AND other.status = 'failed'
+                            AND event.detail->>'deploy' = ${deploy}::text
+                       )
+                  )
+                )
               )
             )
        )
