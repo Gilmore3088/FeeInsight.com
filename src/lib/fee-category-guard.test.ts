@@ -733,7 +733,7 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
     expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
     expect(checkFeeCategory("legal_process", "Legal Process Fee")).toEqual({ ok: true });
-    // Since v47 a subordination is another lending fee.
+    // Since v48 a subordination is another lending fee.
     for (const name of ["Subordination Request", "Mortgage Subordination Fee"]) {
       expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
       expect(refileCategory("legal_process", name), name).toBe("other_lending_fee");
@@ -845,5 +845,23 @@ describe("checkFeeCategory", () => {
     ]) {
       expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
     }
+  });
+
+  it("v47 covers Darwin's Oct 8 eval rows", () => {
+    const guard = (key: string, name: string, amount: string, excerpt = name) =>
+      checkFeeCategory(key, name, { amount, conditions: `Knox deterministic extraction. excerpt="${excerpt}"` }).ok;
+    expect(guard("bill_pay", "Bill Pay Stop/Cancel Payment", "25.00")).toBe(false);
+    expect(guard("bill_pay", "Lifetime Membership Fee", "5.00")).toBe(false);
+    expect(guard("bill_pay", "Bill Pay", "5.00")).toBe(true);
+    expect(guard("money_order", "Money Order Research Fee", "10.00")).toBe(false);
+    expect(guard("money_order", "Cashier’s Check or Money Order Copy", "5.00")).toBe(false);
+    expect(guard("money_order", "Cashier's Check/Money Order", "3.00")).toBe(true);
+    expect(guard("wire_intl_outgoing", "Foreign Wire Research", "15.00")).toBe(false);
+    expect(guard("nsf", "Returned ACH Items (business only)", "6.00")).toBe(false);
+    expect(guard("nsf", "Payee-returned Check Payment Due to Member Error", "0.00")).toBe(false);
+    expect(guard("od_protection_transfer", "Overdraft Protection", "25.00", "Fee Description Overdraft(2)(3)(4) | Fee Amount Free with Overdraft Protection, $25.00 per item")).toBe(false);
+    expect(guard("od_protection_transfer", "Overdraft Protection", "29.00", "Overdraft Protection $29.00 each Overdraft Protection - if opted in $29.00 each item")).toBe(false);
+    expect(guard("od_protection_transfer", "Overdraft Protection Transfer", "25.00", "Overdraft Protection Transfer | $25.00 per item")).toBe(true);
+    expect(guard("od_protection_transfer", "Overdraft Protection", "5.00", "Overdraft Protection | $5.00 per item")).toBe(true);
   });
 });
