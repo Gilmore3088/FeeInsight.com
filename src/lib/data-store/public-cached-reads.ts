@@ -20,9 +20,9 @@ import {
 import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
-import { getMarketReadiness } from "./market-readiness";
+import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
-import { getInstitutionPeerRank } from "./peer-fee-rank";
+import { getInstitutionPeerRankForRule, type InstitutionPeerRank } from "./peer-fee-rank";
 import { getMarketBranchFootprint } from "./branches";
 import { getNationalRateStats } from "./rate-fees";
 
@@ -100,5 +100,18 @@ export const getStateEconomicContextCached = cachedPublicRead(
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
-export const getInstitutionPeerRankCached = cachedPublicRead("institution-peer-rank", getInstitutionPeerRank);
+/**
+ * Every institution's headline coverage, shared by all institution pages. Each page used to
+ * recount the whole catalog for its own report rule check: about a second, 830 times an hour
+ * on Oct 9. It must be read here, outside the per-institution cache: Next bypasses an
+ * unstable_cache nested inside another one, so a coverage cache inside the peer rank's
+ * would read the database on every miss.
+ */
+const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows", getHeadlineCoverageRows);
+const getInstitutionPeerRankForRuleCached = cachedPublicRead("institution-peer-rank-for-rule", getInstitutionPeerRankForRule);
+export async function getInstitutionPeerRankCached(institutionId: number): Promise<InstitutionPeerRank | null> {
+  const rule = reportRuleCheckFromRows(institutionId, await getHeadlineCoverageRowsCached());
+  if (!rule?.passes) return null;
+  return getInstitutionPeerRankForRuleCached(institutionId, rule);
+}
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
