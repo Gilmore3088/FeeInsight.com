@@ -398,7 +398,7 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     expect(byName["Green Mountain Test Bank"].reader).toBe("read.html_dom");
     expect(greenRows.version).toBe(1);
     expect(greenRows.rows[0]).toMatchObject({ cells: ["Service", "Fee"], header: true, origin: "html_table" });
-    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (per item)", "$32.00"], header: false, origin: "html_table" });
+    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (consumer accounts, per item)", "$32.00"], header: false, origin: "html_table" });
     expect(greenRows.rows).toHaveLength(10);
     expect(byName["Otter Creek Test Bank"].reader).toBe("read.ocr_tesseract");
     const attempts = await sql`
