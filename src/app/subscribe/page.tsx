@@ -418,12 +418,12 @@ export default async function SubscribePage({
 
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         {reasonLine && (
-          <p role="status" className="mb-6 rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#1E293B]">
+          <p role="status" className="mb-6 rounded-2xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#1E293B]">
             {reasonLine}
           </p>
         )}
         {inviteMode && (
-          <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
             <p className="mt-1">
               You don&apos;t need to buy a seat to accept it: an institution account includes up to

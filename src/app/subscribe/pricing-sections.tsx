@@ -100,7 +100,7 @@ export function PricingFaq({ summary }: { summary: PublicStatsSummary }) {
       <h2 id="pricing-faq-heading" className="mb-4 text-xl text-[#1E293B] font-semibold tracking-tight" style={DISPLAY}>
         Questions before you start
       </h2>
-      <div className="divide-y divide-[#E2E8F0] rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
+      <div className="divide-y divide-[#E2E8F0] rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC]">
         {faqItems(summary).map((item) => (
           <details key={item.question} className="group px-6 py-4">
             <summary className="cursor-pointer list-none text-sm font-semibold text-[#1E293B] marker:content-none">
