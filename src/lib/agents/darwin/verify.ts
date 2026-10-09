@@ -69,7 +69,7 @@ export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } a
  * Bump it when a source-check fix lands that should reach rejected rows. v1: 2026-10-09, after
  * Knox v62 (#861) taught the check wrapped leader names, per-wire lines and former-fee columns.
  */
-export const DARWIN_SOURCE_CHECK_VERSION = 1;
+export const DARWIN_SOURCE_CHECK_VERSION = 2;
 /**
  * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
  * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency

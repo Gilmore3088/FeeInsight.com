@@ -1,3 +1,4 @@
+import { scopedFeeStatements } from "@/lib/fee-audience";
 import { sql } from "@/lib/data-store/connection";
 import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
@@ -143,6 +144,9 @@ export function recategorizeHeld(row: HeldRow): ExtractedFeeCandidate | null {
   const excerpt = heldExcerpt(row.conditions);
   const amount = Number(row.amount);
   if (!excerpt || row.amount == null || !Number.isFinite(amount)) return null;
+  // A one-row recheck cannot replace one row with two audiences. The full document
+  // reread creates new scoped observations; the ambiguous historical row stays held.
+  if (scopedFeeStatements(excerpt).length > 0) return null;
   const { candidates } = extractFromSegment(excerpt);
   return candidates.find((candidate) => Math.abs(candidate.amount - amount) < 0.005) ?? null;
 }

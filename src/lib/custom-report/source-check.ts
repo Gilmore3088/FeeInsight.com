@@ -13,6 +13,7 @@
  * point to.
  */
 
+import { conflictsWithAudienceStatement, scopedFeeStatements } from "@/lib/fee-audience";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
 export type SourceCheckFailure =
@@ -707,6 +708,17 @@ function chargedOnceOverdrawnDays(row: string, amount: number, nextLine?: string
 }
 
 
+/** A cushion or a dollar total for a day is not a per-item overdraft/NSF price. */
+function policyAmount(row: string, amount: number): boolean {
+  const tokens = moneyTokens(row);
+  return tokens.some((token, index) => {
+    if (Math.abs(token.value - amount) >= 0.005) return false;
+    const before = row.slice(index === 0 ? 0 : tokens[index - 1].end, token.start);
+    return /\boverdraft cushion\b/i.test(before) ||
+      /\b(?:limited|maximum|total|cap)\b[^$]{0,75}\b(?:per|a|each) day\b[^$]{0,15}$/i.test(before);
+  });
+}
+
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
@@ -715,6 +727,16 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  // An explicitly eliminated fee is $0 even when the bank does not print a zero.
+  // Only the exact scoped name/amount pair derived from that completed statement passes.
+  const statements = scopedFeeStatements(text);
+  const scoped = statements.find((fee) =>
+    fee.feeName.toLowerCase() === feeName.toLowerCase() && fee.amount === amount &&
+    (canonicalFeeKey == null || canonicalFeeKey === fee.canonicalHint));
+  if (scoped) return { ok: true, sourceLine: scoped.excerpt };
+  if (statements.length > 0 && (canonicalFeeKey === "nsf" || /\b(?:nsf|non[- ]sufficient funds)\b/i.test(feeName))) {
+    return { ok: false, reason: "amount_not_the_fee" };
+  }
   if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
   // A fee-change notice's earlier column is what the fee was ("Money Orders | $2.00 | $5.00"
   // under "Fee through | Fee as of"): only the newest column is read as the fee now.
@@ -724,7 +746,12 @@ export function checkFeeAgainstSource(
   let first: SourceCheckResult | null = null;
   for (const lines of pages) {
     const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
-    if (asPrice.ok) return asPrice;
+    if (asPrice.ok) {
+      if (conflictsWithAudienceStatement(feeName, amount, asPrice.sourceLine)) {
+        return { ok: false, reason: "amount_not_the_fee" };
+      }
+      return asPrice;
+    }
     first ??= asPrice;
     if (!asCap) continue;
     const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
@@ -778,6 +805,10 @@ function checkAgainstLines(
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     let row = feeRow(lines, i);
+    if (perItem && policyAmount(row, rounded)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
     let amountProblem = dailyCap
       ? statesDailyCap(row, rounded) ? null : "amount_not_the_fee"
       : statesAmount(row, rounded, stems);

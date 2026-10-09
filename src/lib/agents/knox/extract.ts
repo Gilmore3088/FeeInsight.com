@@ -602,6 +602,9 @@ export async function insertCandidate(
   const flags = options.takenDownBy
     ? [TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag(options.takenDownBy), `canonical_hint:${options.candidate.canonicalHint}`]
     : ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
+  // Explicitly eliminated fees are real $0 observations, not missing data. Darwin's
+  // existing zero-fee verification gate still requires this evidence flag.
+  if (options.candidate.amount === 0) flags.push("knox_review:zero");
   if (options.candidate.waivable) flags.push("waivable");
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
