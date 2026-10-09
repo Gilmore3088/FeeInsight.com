@@ -11,7 +11,7 @@
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { formatRatePercent } from "@/lib/percent-fees";
-import { proseFeeName } from "./names";
+import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
@@ -599,13 +599,7 @@ function customerGroup(research: FeeResearch): { label: string; members: { name:
   return null;
 }
 
-/** A competitor's name as a reader says it: no ", National Association"; "Federal Credit Union" as "FCU". */
-export function plainName(name: string): string {
-  return name
-    .replace(/,?\s+(National Association|N\.A\.)$/i, "")
-    .replace(/\s+Federal Credit Union$/i, " FCU")
-    .trim();
-}
+export { plainName };
 
 function names(list: { name: string }[], max = 3): string {
   const shown = list.slice(0, max).map((m) => m.name);

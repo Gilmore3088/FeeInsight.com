@@ -75,7 +75,7 @@ import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
-import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
+import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
 import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
@@ -604,7 +604,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: paid.budgetStopped && paid.processed === 0
           ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
-          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? " (stopped at the budget cap)" : ""}.`,
+          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
         detail: {
           selected: paid.selected,
           processed: paid.processed,
@@ -1196,7 +1196,7 @@ async function executeAgenticStep(
           : "";
       const otherBankNote =
         otherBank.rolledBack.length > 0
-          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website.`
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${otherBank.rolledBack.length.toLocaleString()} fee(s) read from another institution's website or a host that does not name the bank.`
           : "";
       const evalVerdictNote =
         evalVerdicts.rolledBack.length > 0
@@ -1295,6 +1295,9 @@ async function executeAgenticStep(
             names_own_bank: otherBank.namesOwnBank,
             flagged: otherBank.flagged,
             waiting: otherBank.waiting,
+            unconfirmed_host_fees: otherBank.unconfirmedHostFees,
+            unconfirmed_host_flagged: otherBank.unconfirmedHostFlagged,
+            unconfirmed_host_waiting: otherBank.unconfirmedHostWaiting,
             rolled_back: otherBank.rolledBack.length,
             links_cleared: otherBank.linksCleared,
           },
@@ -1783,6 +1786,12 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
       });
       return { status: "completed", summary: summarizeContactFinder(result), detail: { ...result } };
+    }
+    case "growth-contact-picks": {
+      // Ranks every saved contact with today's rules and stores its role, confidence and
+      // primary/backup pick; on its first run this is the backfill for rows saved before the columns.
+      const result = await refreshContactPicks({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeContactPicks(result), detail: { ...result } };
     }
     case "growth-outreach": {
       const followUps = await runOutreachFollowUps({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });

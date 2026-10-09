@@ -23,7 +23,11 @@ export default async function DataPage() {
     <div className="space-y-8">
       <RoomHeader room="data" />
 
-      {freshness ? <DataFeedsPanel freshness={freshness} /> : <Unreadable what="Data feed and report dates" />}
+      {freshness ? (
+        <DataFeedsPanel freshness={freshness} now={new Date().toISOString()} />
+      ) : (
+        <Unreadable what="Data feed and report dates" />
+      )}
 
       <DataOperations />
     </div>

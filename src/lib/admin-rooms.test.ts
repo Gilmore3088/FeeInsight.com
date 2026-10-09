@@ -40,4 +40,15 @@ describe("searchScreens", () => {
     expect(searchScreens("controls")[0]).toEqual({ href: "/admin/controls", label: "Controls", room: "Controls" });
     expect(searchScreens("   ")).toEqual([]);
   });
+
+  it("finds Controls by the words people use for its switches and caps", () => {
+    for (const query of ["safety", "pause", "budget", "stop"]) {
+      expect(searchScreens(query).map((match) => match.href)).toContain("/admin/controls");
+    }
+  });
+
+  it("describes Replay as the read-only trace it is", () => {
+    const replay = ROOMS.flatMap((room) => room.pages).find((page) => page.href === "/admin/agents/replay");
+    expect(replay?.role).toBe("Trace a run");
+  });
 });

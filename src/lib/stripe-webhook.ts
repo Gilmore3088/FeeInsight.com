@@ -3,6 +3,7 @@ import type { sql as sqlClient } from "@/lib/data-store/connection";
 import type { User } from "@/lib/auth";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
+import { getStripe } from "@/lib/stripe";
 
 type Tx = typeof sqlClient;
 export type SubscriptionStatus = User["subscription_status"];
@@ -43,6 +44,22 @@ async function endSubscription(tx: Tx, customerId: string): Promise<void> {
     SET subscription_status = 'canceled', past_due_since = NULL, role = 'viewer'
     WHERE stripe_customer_id = ${customerId} AND role IN ('viewer', 'premium')
   `;
+}
+
+/**
+ * True when the customer still has another active or trialing subscription, so ending one
+ * subscription (James moving a plan by starting a new one and cancelling the old) never
+ * takes Pro away from someone who is still paying. A Stripe error throws, so the webhook
+ * returns 500 and Stripe redelivers rather than ending Pro on a guess.
+ */
+async function hasOtherLiveSubscription(customerId: string, endedId: string | undefined): Promise<boolean> {
+  const listed = await getStripe().subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+  return listed.data.some((s) => s.id !== endedId && (s.status === "active" || s.status === "trialing"));
+}
+
+async function endSubscriptionUnlessAnother(tx: Tx, customerId: string, endedId: string | undefined): Promise<void> {
+  if (await hasOtherLiveSubscription(customerId, endedId)) return;
+  await endSubscription(tx, customerId);
 }
 
 /** A paid institution report request, for the emails sent after commit. */
@@ -200,7 +217,7 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       if (!customerId) return;
       const status = mapStripeStatus(sub.status);
       if (status === "canceled") {
-        await endSubscription(tx, customerId);
+        await endSubscriptionUnlessAnother(tx, customerId, sub.id);
         return;
       }
       // A paid subscription never accepts workspace invitations by email: a seat becomes
@@ -230,7 +247,7 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
       const customerId = customerIdOf(sub.customer);
-      if (customerId) await endSubscription(tx, customerId);
+      if (customerId) await endSubscriptionUnlessAnother(tx, customerId, sub.id);
       return;
     }
 
