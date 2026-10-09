@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ setEmail: vi.fn() }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/lib/analytics", () => ({ trackEvent: vi.fn() }));
-vi.mock("./actions", () => ({ updateProfile: vi.fn(), logoutAction: vi.fn() }));
+vi.mock("./actions", () => ({ updateProfile: vi.fn() }));
 vi.mock("./alert-actions", () => ({ removeInstitutionAlert: vi.fn() }));
 vi.mock("./email-actions", () => ({ setAccountEmail: mocks.setEmail }));
 vi.mock("./email-confirm-actions", () => ({ resendEmailConfirmation: vi.fn() }));
