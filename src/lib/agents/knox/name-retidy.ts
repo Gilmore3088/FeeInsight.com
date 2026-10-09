@@ -790,6 +790,7 @@ const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
  */
 export function restoredName(oldName: string, trimmedName: string, canonicalKey?: string): string | null {
   const name = oldName.replace(/\s+/g, " ").replace(/(?:\s*\.){2,}\s*$/, "").replace(/\s*\.$/, "").trim();
+  if (RESTORE_NOT_A_CONDITION.test(name)) return null;
   const cut = (oldName.length >= RESTORE_CUT_LENGTH && !/[).]\s*$/.test(oldName)) || DANGLING_WORD.test(name);
   let restored = name;
   if (cut || openParens(name) > 0) {
@@ -836,7 +837,14 @@ export function restoreOnPage(restored: string, ownTexts: string[]): boolean {
 /** A dollar figure publish cut out of the old name ("if minimum balance is or less", "falls below during"). */
 const AMOUNT_GAP =
   /\b(?:below|under|than|is|of|exceeds?|drops?|over|least)\s+(?:or|and|during|\))(?:\s|$)|\b(?:falls?|below|under|than)\s+(?:below\s+)?(?:for|in|the|during)\b|\b(?:falls?|below|under|than|less|exceeds?|drops?|least)\s*(?:$|[.,:;)])|:\s*(?:n\/a|none)\b/i;
-const RESTORE_FRAGMENT = /=|\||\botherwise\b|\.\s+[A-Z]|\s(?:has|have|goes|go|if|when|than|balance|average|minimum|maximum)\s*[.)]*$|[<>]\s*[.)]*$/i;
+const RESTORE_FRAGMENT = /=|\||\botherwise\b|\.\s+[A-Z]|\s(?:has|have|goes|go|if|when|than|then|balance|average|minimum|maximum)\s*[.)]*$|[<>]\s*[.)]*$/i;
+/**
+ * What the old name adds is no condition of the fee: a note that the fee is gone ("Mobile Deposit -
+ * per check deposited fee has been removed", 92157, live at $0), or an optional add-on the
+ * category guard takes down (ID-theft programs, accidental death insurance: 70672). UAT 12:04.
+ */
+const RESTORE_NOT_A_CONDITION =
+  /\b(?:has|have)\s+been\s+(?:removed|discontinued|eliminated)\b|\bno longer\b|\bid\s*theft|\bidentity\s+(?:theft|protect|monitor|restor)|\baccidental death\b|\binsurance\b/i;
 const FIGURE_WITHOUT_UNIT = /\b(?:after|over|than|below|under)\s+\d[\d,]*\s*\)?\s*$/i;
 const GLUED_CAPITALS = /\b[A-Za-z]*[a-z][A-Z]{2,}\b|\(\/?(?:br|small|b|i|sup)\)/;
 const RESTORE_HEADING = /^[A-Z][\w®™’'&+./ -]{0,60}?\s*:\s*$/;
