@@ -196,12 +196,23 @@ const PREPAID_BUY_OR_RELOAD =
  */
 const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
 
+/**
+ * Sending a fax or copying a document ("Fax (Outgoing)", "Copy of previous statement"), which
+ * document reproduction holds. Fax as the way a wire, transfer or closing is requested, a
+ * verification or loan payoff sent by fax, a Carfax report, and research priced with copies stay
+ * where they are.
+ */
+const FAX_OR_COPY =
+  /^(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)/i;
+
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
 interface SplitCategory {
   to: string;
   name: RegExp;
+  /** Further rules for the same source key, tried in order when `name` does not match. */
+  also?: ReadonlyArray<{ to: string; name: RegExp }>;
   /** A cheap SQL pre-filter (case-insensitive regex) for the rows the rule might move. */
   sqlPattern: string;
 }
@@ -222,10 +233,22 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   // A night deposit or night drop key is the night depository's, not a safe deposit box's.
   safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
   // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
-  late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent" },
+  // A statement or item copy is document reproduction, not a late payment.
+  late_payment: {
+    to: "safe_deposit_box",
+    name: BOX_RENT,
+    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+    sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
+  },
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
   // excess withdrawal charge stays: excess activity is account servicing wherever it occurs.
-  account_research: { to: "ira_termination", name: IRA_TRANSFER_OUT, sqlPattern: "\\mira\\M" },
+  // A fax or a document copy is document reproduction, not research.
+  account_research: {
+    to: "ira_termination",
+    name: IRA_TRANSFER_OUT,
+    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+    sqlPattern: "\\mira\\M|fax|cop(y|ies)|reproduc",
+  },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
   atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
   // A statement mailed back undelivered is returned mail, which account research holds.
@@ -240,8 +263,10 @@ export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLI
 export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
   if (!key) return null;
   const split = SPLIT_CATEGORIES[key];
-  if (!split || !split.name.test(plain(feeName ?? ""))) return null;
-  return { to: split.to, rule: `${key}#split` };
+  if (!split) return null;
+  const name = plain(feeName ?? "");
+  const hit = [{ to: split.to, name: split.name }, ...(split.also ?? [])].find((rule) => rule.name.test(name));
+  return hit ? { to: hit.to, rule: `${key}#split` } : null;
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
