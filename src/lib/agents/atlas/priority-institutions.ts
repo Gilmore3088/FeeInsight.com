@@ -4,6 +4,7 @@ import { currentDeploy, startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunStepDefinition } from "@/lib/agents/types";
 import { DARWIN_VERIFY_MAX_LIMIT } from "@/lib/agents/darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "@/lib/agents/hamilton/publish";
+import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 
 type SqlTag = typeof sql;
 
@@ -23,6 +24,14 @@ export const PRIORITY_MAX_ACTIVE = 2;
 export const PRIORITY_RETRY_HOURS = 24;
 /** A large bank or market leader with no live overdraft fee runs again at most this often. */
 export const PRIORITY_GAP_RETRY_DAYS = 7;
+/**
+ * A large bank or market leader with no live overdraft fee whose current page Knox's
+ * current rules version has not read runs again after this many hours, inside the 7-day
+ * window: a rules fix otherwise waited for the state's lane (2026-10-09: v57 reads Arvest's
+ * $17 overdraft row, but 34 of the 35 $10B+ banks with no live overdraft fee sat in the
+ * 7-day hold while AR and IN queued behind 8 and 30 starved lanes).
+ */
+export const PRIORITY_RULES_REREAD_HOURS = 6;
 /**
  * A failure shared by at least this many runs in 24 hours is a break in our code, the
  * same bar as wakeLanesAfterRecovery. A priority run that failed on such a break, with no
@@ -47,6 +56,16 @@ const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread 
  * is what counts. An institution leaves the direct path on its own once it has run.
  */
 export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[] = [
+  // $10B+ banks whose current page Knox v57 reads correctly (Arvest's $17 overdraft row, Old
+  // National's monthly fee names), still unread at v57 while AR and IN lanes queue (2026-10-09).
+  ...([
+    [78, "Arvest Bank"],
+    [41, "Old National Bank"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Knox v57 reads this bank's current page; its state lane is queued",
+  })),
   // Marketing's outreach batch (2026-10-08 18:20), first: each has 5+ local competitors with a
   // sourced overdraft fee, and its own current page prints an overdraft line Knox v42 reads.
   ...([
@@ -159,6 +178,8 @@ export interface PriorityInstitutionRow {
   hand_link_id: number | null;
   /** Newest unread document the paid fetch stored (tier paid_fetched only); keys the run the same way. */
   paid_document_id: number | null;
+  /** Knox rules version the bank's current page has not been read by (tier overdraft_gap only); keys the run. */
+  rules_version: number | null;
 }
 
 /**
@@ -170,7 +191,9 @@ export interface PriorityInstitutionRow {
  *     only that state, so Citizens' and Fifth Third's documents (7 Oct 2026) waited for their
  *     own state's lane;
  *  3. an institution on PRIORITY_INSTITUTION_REQUESTS;
- *  4. a $10B+ institution or state market leader with a fee link but no live overdraft fee.
+ *  4. a $10B+ institution or state market leader with a fee link but no live overdraft fee;
+ *     it waits PRIORITY_GAP_RETRY_DAYS between runs, or PRIORITY_RULES_REREAD_HOURS when
+ *     Knox's current rules version has not read its current page.
  * Requests run in list order; otherwise larger institutions first within a tier. An institution with a priority run in flight,
  * or one started inside its retry window, is skipped, unless a hand-found link was added after that run started.
  */
@@ -191,12 +214,32 @@ export async function selectPriorityInstitutions(
       tier: number | string;
       hand_link_id: number | string | null;
       paid_document_id: number | string | null;
+      rules_unread?: boolean | null;
     }>
   >`
     WITH candidates AS (
       SELECT inst.id, inst.institution_name, inst.state_code, inst.asset_size,
              hand_new.hand_link_id, hand_new.hand_found_at,
              paid_new.paid_document_id, paid_new.paid_at,
+             -- A large bank's or leader's current page Knox's current rules version has not read yet.
+             (COALESCE(inst.asset_size, 0) >= ${PRIORITY_MIN_ASSETS_THOUSANDS}::bigint OR inst.id = ANY(${leaders}::bigint[]))
+             AND EXISTS (
+               SELECT 1
+                 FROM agent_source_texts unread_text
+                 JOIN source_documents unread_doc ON unread_doc.id = unread_text.source_document_id
+                WHERE unread_text.institution_id = inst.id
+                  AND unread_text.status = 'completed'
+                  AND unread_text.char_count > 0
+                  AND unread_doc.superseded_by_id IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM pipeline_attempts rules_read
+                     WHERE rules_read.stage = 'extract'
+                       AND rules_read.institution_id = inst.id
+                       AND rules_read.input_fingerprint = unread_text.text_hash
+                       AND rules_read.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
+                       AND rules_read.strategy_version = ${KNOX_RULES_STRATEGY.version}::int
+                  )
+             ) AS rules_unread,
              CASE
                WHEN EXISTS (
                  SELECT 1 FROM institution_additional_sources hand
@@ -268,7 +311,7 @@ export async function selectPriorityInstitutions(
                    AND hand.found_by_strategy = 'discover.operator_schedule'
               ))
     )
-    SELECT c.id, c.institution_name, c.state_code, c.tier, c.hand_link_id, c.paid_document_id
+    SELECT c.id, c.institution_name, c.state_code, c.tier, c.hand_link_id, c.paid_document_id, c.rules_unread
       FROM candidates c
      WHERE c.tier IS NOT NULL
        AND NOT EXISTS (
@@ -286,6 +329,13 @@ export async function selectPriorityInstitutions(
                 -- work, not a retry.
                 AND (c.tier <> 1 OR c.hand_found_at IS NULL OR r.started_at >= c.hand_found_at)
                 AND (c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at)
+                -- A rules version that has not read the bank's current page is new work after
+                -- PRIORITY_RULES_REREAD_HOURS, not the 7-day gap retry.
+                AND (
+                  c.tier <> 3
+                  OR NOT c.rules_unread
+                  OR r.started_at > NOW() - make_interval(hours => ${PRIORITY_RULES_REREAD_HOURS}::int)
+                )
                 -- A request by name is new work after an overdraft-gap run of the same bank
                 -- (Bluestone FCU's 06:45 gap run held Marketing's 18:44 request for a day).
                 AND (c.tier <> 2 OR r.params_json->>'tier' = 'requested')
@@ -332,6 +382,7 @@ export async function selectPriorityInstitutions(
     tier: tiers[Number(row.tier)] ?? "requested",
     hand_link_id: Number(row.tier) === 1 && row.hand_link_id != null ? Number(row.hand_link_id) : null,
     paid_document_id: Number(row.tier) === 4 && row.paid_document_id != null ? Number(row.paid_document_id) : null,
+    rules_version: Number(row.tier) === 3 && row.rules_unread ? KNOX_RULES_STRATEGY.version : null,
   }));
 }
 
@@ -412,7 +463,9 @@ export async function schedulePriorityInstitutionRuns(
             ? `atlas:priority:${pick.id}:hand:${pick.hand_link_id}`
             : pick.paid_document_id != null
               ? `atlas:priority:${pick.id}:paid:${pick.paid_document_id}`
-              : `atlas:priority:${pick.id}:${day}`,
+              : pick.rules_version != null
+                ? `atlas:priority:${pick.id}:knox:${pick.rules_version}`
+                : `atlas:priority:${pick.id}:${day}`,
         steps: priorityInstitutionSteps(pick.id),
         summary: `Direct run for one institution (${TIER_REASON[pick.tier]}).`,
       });
