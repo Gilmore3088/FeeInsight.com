@@ -10,6 +10,7 @@
  * Client-safe: no server imports.
  */
 
+import type { LineupAccount, LineupSummary } from "@/lib/data-store/account-lineup";
 import type { Storyline, StorylineExhibit } from "./storyline-types";
 
 /** A source behind a fact, named so the reader can check it. */
@@ -23,7 +24,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.16.1";
+export const WORKSPACE_ENGINE_VERSION = "1.17.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -250,6 +251,19 @@ export interface FeeStructureSet {
   source: SourceRef;
 }
 
+/**
+ * Monthly maintenance only: each institution's checking and savings lineup (its accounts'
+ * monthly fees, the balance that avoids the fee, a free account), beside the comparison group.
+ */
+export interface AccountLineupSet {
+  groupLabel: string;
+  /** The bank first, then the group members that publish at least one account. */
+  rows: { institutionId: number; name: string; own: boolean; summary: LineupSummary }[];
+  /** The bank's own accounts, lowest monthly fee first. */
+  ownAccounts: LineupAccount[];
+  source: SourceRef;
+}
+
 /** Everything Research shows for one fee. */
 /**
  * A slice of the market the reader names in a question: "$10B and up", "credit unions
@@ -346,6 +360,8 @@ export interface FeeResearch {
   changeEvents?: ChangeEvent[];
   /** How the comparison group structures overdraft and NSF, beyond the price. */
   structure?: FeeStructureSet | null;
+  /** Monthly maintenance only: the bank's account lineup beside the comparison group's. */
+  lineup?: AccountLineupSet | null;
   /**
    * The fee where it is stated as a rate ("1% of the transaction"); only for the fees that
    * may publish as one. Kept apart from every dollar figure above and never pooled with them.

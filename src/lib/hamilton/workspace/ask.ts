@@ -50,7 +50,7 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   wire_domestic_incoming: ["incoming wire"],
   wire_intl_outgoing: ["international wire", "foreign wire"],
   stop_payment: ["stop payment"],
-  card_foreign_txn: ["foreign transaction"],
+  card_foreign_txn: ["foreign transaction", "international atm", "atm abroad"],
   cashiers_check: ["cashier's check", "cashiers check", "official check"],
   paper_statement: ["paper statement"],
 };

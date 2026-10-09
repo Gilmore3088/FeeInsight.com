@@ -2,27 +2,34 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { frequencyFromLine, type FilledFrequency } from "@/lib/fee-frequency";
+import { settledFrequency } from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
 /**
- * A live fee with no frequency whose own schedule line states one (Darwin's eval, Oct 8: 48%
- * of sampled live fees had none, and most of the wrong ones were blanks where the line says
+ * A live fee whose frequency is not the one its own schedule line states (Darwin's eval, Oct 8:
+ * 48% of sampled live fees had none, and most of the wrong ones were blanks where the line says
  * "each", "per item" or "quarterly"). The line is the excerpt Knox read the fee from; the
- * words right after the fee's own price decide (`frequencyFromLine`), and only when they point
- * one way. A stated frequency is never changed.
+ * fee's own row decides (`settledFrequency`), and only when it points one way.
  *
- * Each fill is logged to `pipeline_feedback` (check `hamilton.frequency_fill`, kind
- * `frequency_filled`, evidence `from: null`), so a fill is reversed by setting the row's
- * frequency back to null. The verified row gets the same frequency when it has none, so a
- * republish keeps it.
+ * v2: a stated frequency read from another fee's row on the same line is corrected to what the
+ * fee's own row says, or cleared when its row says nothing ("... per year .. $10.00 | Reverse
+ * Stop Payment .. $20.00" gave the $20 fee "annual"; 25 of 131 stated frequencies in the
+ * seven-state keys were wrong this way).
+ *
+ * Each change is logged to `pipeline_feedback` (check `hamilton.frequency_fill`, kind
+ * `frequency_filled`, `frequency_corrected` or `frequency_cleared`, evidence `from` and `to`),
+ * so it is reversed by setting the row's frequency back to `from`. The verified row gets the
+ * same change when it held the same value, so a republish keeps it.
  */
 export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
-export const FREQUENCY_FILL_VERSION = 1;
+// v3: "ea.", "/page", "/transfer", "/card", "per order" and similar per-item wording.
+export const FREQUENCY_FILL_VERSION = 3;
 export const FREQUENCY_FILL_LIMIT = 2_000;
-/** Postgres pre-filter: an excerpt with any frequency word (`frequencyFromLine` decides). */
-const CANDIDATE_WORDING = String.raw`excerpt=.*(each|per |monthly|annual|quarterly|yearly|a month|a year|/\s?(mo|month|yr|year|item|check|transaction)\y)`;
+/** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
+const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?(mo|month|yr|year|item|check|transaction|ea|each|copy|page|request|transfer|wire|card|occurrence)\y)`;
+/** Postgres pre-filter for a stated frequency: a line holding more than one cell or price. */
+const SHARED_LINE = String.raw`excerpt=.*(\|.*\$|\$.*\$)`;
 
 interface BlankFrequencyRow {
   fee_published_id: number | string;
@@ -32,6 +39,7 @@ interface BlankFrequencyRow {
   source_document_id: number | string | null;
   canonical_fee_key: string;
   amount: number | string | null;
+  frequency: string | null;
   conditions: string | null;
 }
 
@@ -43,7 +51,8 @@ export interface FrequencyFill {
   sourceDocumentId: number | null;
   canonicalFeeKey: string;
   amount: number;
-  frequency: FilledFrequency;
+  from: string | null;
+  frequency: string | null;
   sourceLine: string;
 }
 
@@ -69,17 +78,18 @@ export async function fillBlankFrequencies(
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fr.conditions
+              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions
          FROM published_fee_records fp
          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         WHERE fp.rolled_back_at IS NULL
-          AND fp.frequency IS NULL
           AND fp.amount_kind = 'flat'
           AND fp.amount IS NOT NULL
           AND fr.conditions LIKE '%excerpt=%'
-          -- Only lines with frequency wording are read; the rest can state none.
-          AND fr.conditions ~* '${CANDIDATE_WORDING}'
+          -- A blank is read only on a line with frequency wording; a stated frequency only on a
+          -- line it may have been borrowed across.
+          AND ((fp.frequency IS NULL AND fr.conditions ~* '${CANDIDATE_WORDING}')
+               OR (fp.frequency IS NOT NULL AND fr.conditions ~ '${SHARED_LINE}'))
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
@@ -92,8 +102,10 @@ export async function fillBlankFrequencies(
   for (const row of rows) {
     const amount = Number(row.amount);
     const sourceLine = excerptOf(row.conditions);
-    const frequency = Number.isFinite(amount) ? frequencyFromLine(sourceLine, amount) : null;
-    if (!frequency || !sourceLine) continue;
+    if (!sourceLine || !Number.isFinite(amount)) continue;
+    const stated = row.frequency ?? null;
+    const frequency = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    if (frequency === stated) continue;
     if (result.filled.length >= limit) break;
     result.filled.push({
       feePublishedId: Number(row.fee_published_id),
@@ -103,6 +115,7 @@ export async function fillBlankFrequencies(
       sourceDocumentId: num(row.source_document_id),
       canonicalFeeKey: row.canonical_fee_key,
       amount,
+      from: stated,
       frequency,
       sourceLine: sourceLine.slice(0, 300),
     });
@@ -116,10 +129,11 @@ export async function fillBlankFrequencies(
         const rows = await scope<{ fee_published_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET frequency = v.frequency
-            FROM unnest(${filled.map((fee) => fee.feePublishedId)}::bigint[], ${filled.map((fee) => fee.frequency)}::text[])
-                 AS v(fee_published_id, frequency)
+            FROM unnest(${filled.map((fee) => fee.feePublishedId)}::bigint[], ${filled.map((fee) => fee.from)}::text[],
+                        ${filled.map((fee) => fee.frequency)}::text[])
+                 AS v(fee_published_id, from_frequency, frequency)
            WHERE fp.fee_published_id = v.fee_published_id
-             AND fp.frequency IS NULL
+             AND fp.frequency IS NOT DISTINCT FROM v.from_frequency
           RETURNING fp.fee_published_id
         `;
         const verified = filled.filter((fee) => fee.feeVerifiedId != null);
@@ -127,10 +141,11 @@ export async function fillBlankFrequencies(
           await scope`
             UPDATE verified_fee_observations fv
                SET frequency = v.frequency
-              FROM unnest(${verified.map((fee) => fee.feeVerifiedId!)}::bigint[], ${verified.map((fee) => fee.frequency)}::text[])
-                   AS v(fee_verified_id, frequency)
+              FROM unnest(${verified.map((fee) => fee.feeVerifiedId!)}::bigint[], ${verified.map((fee) => fee.from)}::text[],
+                          ${verified.map((fee) => fee.frequency)}::text[])
+                   AS v(fee_verified_id, from_frequency, frequency)
              WHERE fv.fee_verified_id = v.fee_verified_id
-               AND fv.frequency IS NULL
+               AND fv.frequency IS NOT DISTINCT FROM v.from_frequency
           `;
         }
         return new Set(rows.map((row) => Number(row.fee_published_id)));
@@ -145,7 +160,7 @@ export async function fillBlankFrequencies(
   const lessons: FeedbackRow[] = result.filled.map((fee): FeedbackRow => ({
     aboutStage: "extract",
     signal: "wrong",
-    kind: "frequency_filled",
+    kind: fee.from == null ? "frequency_filled" : fee.frequency == null ? "frequency_cleared" : "frequency_corrected",
     reportedBy: "hamilton",
     checkName: FREQUENCY_FILL_CHECK,
     aboutVersion: FREQUENCY_FILL_VERSION,
@@ -156,9 +171,9 @@ export async function fillBlankFrequencies(
     feePublishedId: fee.feePublishedId,
     canonicalFeeKey: fee.canonicalFeeKey,
     amount: fee.amount,
-    evidence: { from: null, to: fee.frequency, source_line: fee.sourceLine },
+    evidence: { from: fee.from, to: fee.frequency, source_line: fee.sourceLine },
     runId: options.runId,
-    dedupeKey: `${FREQUENCY_FILL_CHECK}:fill:${fee.feePublishedId}`,
+    dedupeKey: fee.from == null ? `${FREQUENCY_FILL_CHECK}:fill:${fee.feePublishedId}` : `${FREQUENCY_FILL_CHECK}:fix:${fee.feePublishedId}:${fee.frequency ?? "none"}`,
   }));
   if (lessons.length > 0) {
     try {

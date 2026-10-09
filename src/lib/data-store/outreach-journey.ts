@@ -87,6 +87,31 @@ export async function listOutreachJourneys(campaign: string, db: SqlTag = sql): 
   }));
 }
 
+/**
+ * One institution's journey between two times: its snapshot page events from the outreach link
+ * (`utm_campaign`) and the outcomes recorded for it. Read by the weekly score.
+ */
+export async function journeyForInstitution(
+  institutionId: number,
+  campaign: string,
+  from: Date,
+  to: Date,
+  db: SqlTag = sql,
+): Promise<{ events: SnapshotEvent[]; outcomes: OutreachOutcome[] }> {
+  const [events, outcomes] = await Promise.all([
+    db`SELECT event FROM snapshot_events
+        WHERE institution_id = ${institutionId} AND utm_campaign = ${campaign}
+          AND created_at >= ${from.toISOString()} AND created_at < ${to.toISOString()}`,
+    db`SELECT outcome FROM outreach_outcomes
+        WHERE institution_id = ${institutionId}
+          AND created_at >= ${from.toISOString()} AND created_at < ${to.toISOString()}`,
+  ]);
+  return {
+    events: events.map((row) => row.event as SnapshotEvent),
+    outcomes: outcomes.map((row) => row.outcome as OutreachOutcome),
+  };
+}
+
 /** The five-stage funnel for the Growth page. */
 export async function outreachFunnel(campaign: string, db: SqlTag = sql) {
   if (!(await journeySchemaReady(db))) return null;

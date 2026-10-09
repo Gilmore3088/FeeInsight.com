@@ -287,11 +287,13 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
   },
   {
-    // personal schedule of fees page.
+    // The bank's own overdraft disclosure on mybank.com (fee per paid item, $5 a day after 4
+    // days, $240 daily cap). The first.bank link given before was First Bank of St. Louis's
+    // schedule, which Hamilton took down as another bank's document (2026-10-08 23:15).
     institutionId: 118,
     institutionName: "First United Bank and Trust Company",
-    url: "https://first.bank/About/Disclosures/Personal-Schedule-of-Fees",
-    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
+    url: "https://mybank.com/wp-content/uploads/opt-in-form.pdf",
+    givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-08 23:30",
   },
   {
     // schedule of service fees, 2025-03-25.

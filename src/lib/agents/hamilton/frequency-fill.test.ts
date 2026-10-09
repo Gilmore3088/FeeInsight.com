@@ -20,7 +20,7 @@ function asDb(db: DbMock): Parameters<typeof fillBlankFrequencies>[0] {
   return db as unknown as Parameters<typeof fillBlankFrequencies>[0];
 }
 
-const row = (id: number, amount: string, excerpt: string) => ({
+const row = (id: number, amount: string, excerpt: string, frequency: string | null = null) => ({
   fee_published_id: id,
   fee_verified_id: id + 1000,
   fee_raw_id: id + 2000,
@@ -28,6 +28,7 @@ const row = (id: number, amount: string, excerpt: string) => ({
   source_document_id: 9,
   canonical_fee_key: "check_image",
   amount,
+  frequency,
   conditions: `Knox deterministic extraction from Rosetta artifact #1. excerpt="${excerpt}"`,
 });
 
@@ -48,8 +49,21 @@ describe("Hamilton frequency fill", () => {
     expect(result.filled.map((fee) => [fee.feePublishedId, fee.frequency])).toEqual([[1, "per_item"]]);
     const sqlText = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
     expect(sqlText).toContain("UPDATE published_fee_records");
-    expect(sqlText).toContain("AND fp.frequency IS NULL");
+    expect(sqlText).toContain("AND fp.frequency IS NOT DISTINCT FROM v.from_frequency");
     expect(sqlText).toContain("INSERT INTO pipeline_feedback");
+  });
+
+  it("corrects or clears a frequency read from another fee's row (v2)", async () => {
+    const db = createDbMock([
+      row(1, "5.00", "(Per month some exclusions apply) | Cashier’s Check (Per item) .......... $5.00", "monthly"),
+      row(2, "20.00", "Missing/Bad Address - per year........ $10.00 | Reverse Stop Payment Request ........ $20.00", "annual"),
+      row(3, "5.00", "Monthly Service Fees | Checking | $5.00", "monthly"),
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([
+      [1, "monthly", "per_item"],
+      [2, "annual", null],
+    ]);
   });
 
   it("writes nothing on a dry run", async () => {

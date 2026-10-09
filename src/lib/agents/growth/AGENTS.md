@@ -17,6 +17,10 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
+| Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
+| Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
+| Price check (EDISON) | in the daily loop below | `growth-tools` | runs `src/lib/price-check.ts` for one state a day, read-only |
+| Daily growth loop | `/api/admin/crew/growth-loop`, daily 00:57 UTC | every step in `loop.ts`, as one `dry_run` run | nothing saved or sent; leaves out `marketing-write` (paid) and `marketing-send` |
 
 ### Prospect contacts (`contacts.ts`)
 
@@ -45,8 +49,9 @@ tier-A comparison (the prospect and at least 5 named local competitors all verif
 the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
 only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
 otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
-no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, and a
-value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
+no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
+nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
+90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
 Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
 weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
 drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
@@ -57,11 +62,14 @@ name the research problem that fits the addressee's role. No draft is made when 
 each draft carries an audit block (the schedule line and link behind every figure, the rows'
 conditions, the peers left out) so James checks each comparison before he sends it himself.
 Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the
-site's mailing address stays blank) and an opt-out line. The same step drafts the plan's one
-day-7 follow-up (`runOutreachFollowUps`) for each first email marked sent at least 7 days ago
-with nothing recorded since: same link, no new figures, once per institution. Contacts are
+site's mailing address stays blank) and an opt-out line. The same step drafts the pilot's two
+follow-ups (`runOutreachFollowUps`): one 6 days after a first email marked sent, and a final one
+13 days after it once the first follow-up is marked sent, each only with nothing recorded since,
+no figures or link, once per institution; then outreach to that institution stops. Contacts are
 re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
-rank are not buyers, and labels printed where a name would be are not names. Each run first
+rank are not buyers, labels and headings printed where a name would be ("Mailing Address") are
+not names, and a name that can't own the personal address beside it (`nameFitsEmail`) is dropped
+with its title. `?dry_run=1` counts the drafts and withdrawals a run would make and writes nothing. A real run drafts only the pilot campaigns James chose in `OUTREACH_CAMPAIGNS` (letters, e.g. `A,B`); while it is unset the run drafts nothing and only withdraws drafts that no longer qualify, including the Monday cron. Each run first
 withdraws unreviewed drafts whose addressee fails that test, that were written under an older
 `OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
@@ -108,13 +116,36 @@ A scheduled Claude Code session files a draft or a PR it opened with
 The `growth-score` step scores each posted item with no score whose post date is at least 7
 days old, over the 7 days after posting: tracked visits from `marketing_touches` (same
 `utm_campaign` and `utm_content` as its link) and leads whose `first_utm_*` match. The score is
-the visit count; leads sit beside it in the step result. Emails (opens and clicks are not read
-into the app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
+the visit count; leads sit beside it in the step result. A sent outreach email (marked posted,
+which records "sent") is scored by its institution's journey in the same 7 days: snapshot events
+from the outreach link and the outcomes James recorded, as the stage's place on the journey (1
+sent to 5 purchase, `score-label.ts`). MailerLite emails (opens and clicks are not read into the
+app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
 
 James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
 Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
+
+### Market brief (`sherlock.ts`)
+
+SHERLOCK reads, once a day, the regulator releases and tracked bills first seen in the last day
+(`reg_articles`, `reg_tracker_items`) whose title is about consumer deposit fees, and pairs each
+with the live catalog's median for that fee in that state or nationally. It also reads five
+competitors' own public pages (`COMPETITOR_PAGES`, robots.txt respected) and compares their
+fee-related lines with the previous run's, kept in that step's event. At most 3 findings a day;
+a finding with fewer than 10 institutions behind it, or cited in the last 14 days, is skipped.
+Findings go to the queue as one SHERLOCK `brief`; a quiet day files nothing.
+
+### Conversion check (`norman.ts`)
+
+NORMAN, each Monday, loads every buying page (`BUYING_PAGES`) and the link in every outreach
+draft not yet sent. A link that doesn't load, or shows our not-found page, is a broken
+destination: no draft should be sent until its link works. It counts the week's funnel from our
+own tables (tracked visits, snapshot opens and report clicks, report requests, quotes, paid; a
+missing table is "not measured") against the week before and the previous brief's "before", and
+names the week's one fix: broken destinations first, else the first step where everyone stops.
+The brief goes to the queue as NORMAN's `brief`; its fix comes as a pull request or preview.
 
 ### Lessons from skip reasons (`lessons.ts`)
 
@@ -122,7 +153,9 @@ Skipping a queue item with a reason at `/admin/customers/content` writes a `pipe
 row: `reported_by` growth, `about_stage` marketing, `about_strategy` the item's agent, signal
 `wrong`, kind `skipped_by_james`, dedupe key `growth.skip:draft:<id>`. Sending it back to review
 marks it `restored`. `recentLessons(db, agent)` returns the standing ones (90 days, newest 10):
-the weekly content steps read MURROW's before drafting and list them in their step result, and a
+the weekly content steps read MURROW's before drafting, leave each skipped subject (a fee and
+metro, or a metro) out of that workflow's drafts while its lesson stands (`skippedSubjects`), and
+list them in their step result, and a
 scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
 
 These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
