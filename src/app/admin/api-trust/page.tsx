@@ -65,11 +65,11 @@ export default async function ApiTrustPage() {
           </div>
           <div className="flex flex-wrap gap-2">
           <Link
-            href="/admin#atlas-safety"
+            href="/admin/controls"
             className="inline-flex items-center justify-center gap-2 rounded-md border border-black/[0.08] px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-white/[0.1] dark:text-gray-200 dark:hover:bg-white/[0.05]"
           >
             <ShieldCheck className="size-4" />
-            Atlas safety
+            Stop switches
           </Link>
           <Link
             href="/admin/api-keys"
