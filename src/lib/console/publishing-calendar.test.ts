@@ -49,7 +49,7 @@ describe("publishing calendar", () => {
     expect(schedule("crew/content")).toBe("37 13 * * 0");
     expect(schedule("crew/marketing")).toBe("7 14 1 * *");
     expect(schedule("crew/growth-score")).toBe("7 13 * * 1");
-    expect(schedule("crew/contacts")).toBe("37 12 * * 1");
+    expect(schedule("crew/contacts")).toBe("37 12 * * *");
     expect(schedule("crew/outreach")).toBe("7 14 * * 1");
     expect(schedule("crew/learning")).toBe("37 14 * * 1");
     expect(schedule("crew/intel")).toBe("17 14 * * *");
@@ -57,13 +57,13 @@ describe("publishing calendar", () => {
     expect(PUBLICATIONS).toHaveLength(12);
   });
 
-  it("lists the weekly growth steps James turned on, Mondays", () => {
+  it("lists the weekly score step on Mondays and the daily contact finder", () => {
     const rows = buildPublishingCalendar([], now);
     const scores = rows.find((row) => row.publication.key === "growth_scores")!;
     expect(scores.publication.freshnessKey).toBe("run:growth.score");
     expect(scores.nextAt).toBe("2026-10-12T13:07:00.000Z");
     const contacts = rows.find((row) => row.publication.key === "prospect_contacts")!;
     expect(contacts.publication.freshnessKey).toBe("run:growth.contacts");
-    expect(contacts.nextAt).toBe("2026-10-12T12:37:00.000Z");
+    expect(contacts.nextAt).toBe("2026-10-06T12:37:00.000Z");
   });
 });

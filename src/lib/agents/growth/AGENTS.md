@@ -14,7 +14,7 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
-| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, daily 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
 | Quote drafts (CARNEGIE) | started when James marks a lead qualified on `/admin/leads` (never cron); also in the daily loop as a dry run | `growth-quote` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
@@ -239,8 +239,10 @@ a user on the property) and `GSC_SITE_URL` (default `sc-domain:feeinsight.com`).
 `search` is `{ measured: false, reason }`; a failed token exchange or query records its error
 message the same way. Neither fails the step, and nothing is estimated.
 
-James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
-Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
+James turned the weekly schedules on (15:33 UTC Oct 8): scores run each Monday from
+`vercel.json`. Prospect contacts moved to daily on Oct 9 so the outreach list can reach 25 to 40
+named buyers a week (about 1 site in 10 publishes a buyer email). Both are free steps; neither
+posts nor sends anything.
 
 ### Market brief (`sherlock.ts`)
 

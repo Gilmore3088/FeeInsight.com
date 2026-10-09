@@ -552,3 +552,11 @@ admin." The queue's screens, actions, badge and data-trust state are gone; old l
 /admin/knox. Its rows stay in agent_messages and knox_overrides (726 of 746 were from the August
 import, and an override could never publish because it needed a recent Darwin accept). Admin-only
 layout changes are fixes that merge on green; public, Pro and Hamilton screens still wait for his review.
+
+**Build the Agentic OS PRD tooling: Deming for quality, Bayes for replay and recovery.** James,
+08:15-08:16 UTC 9 Oct, Agentic OS PRD thread: "we clearly need the extra tooling the prd is asking
+for", then picked the names Deming (quality and evaluation) and Bayes (replay and recovery). Order:
+Deming's test-case store and takedown-to-regression gate, then Bayes's impact manifest and replay
+ledger, then Atlas's truthful status, then the PRD's in-house skills; outside skills are trialled
+one at a time and kept only with a measured benefit. Both start as deterministic Atlas steps with
+no paid model calls. PRD: /mnt/project-files/plans/agentic-os-prd-v1.md.

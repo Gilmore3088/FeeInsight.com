@@ -63,14 +63,8 @@ export function mapStep(value: number): number {
   return MAP_BREAKS.filter((b) => value >= b).length;
 }
 
-/**
- * The state's counties shaded by the overdraft fee at their branches. Counties with no
- * covered branch are hatched. The largest counties by deposits carry their name and fee.
- */
-export function countyFeeMap(stateFips: string, counties: CountyValue[], size: ChartSize = {}): string | null {
-  const w = size.narrow ? NARROW_W : W;
-  const hatchId = `state-map-hatch-${size.narrow ? "n" : "w"}-${stateFips}`;
-  const fontSize = size.narrow ? 13 : 12;
+/** The state's county outlines projected to fit `w` wide, with the drawing height. */
+function stateCounties(stateFips: string, w: number, size: ChartSize) {
   const features = allCounties().filter((f) => f.id.startsWith(stateFips));
   if (features.length === 0) return null;
   const collection: FeatureCollection<Geometry, { name: string }> = { type: "FeatureCollection", features };
@@ -81,7 +75,20 @@ export function countyFeeMap(stateFips: string, counties: CountyValue[], size: C
   const fit = geoPath(projection).bounds(collection);
   const h = size.narrow ? Math.min(460, Math.max(150, fit[1][1] - fit[0][1])) : Math.min(560, Math.max(220, fit[1][1] - fit[0][1]));
   projection.fitExtent([[4, 4], [w - 4, h - 4]], collection);
-  const path = geoPath(projection).digits(1);
+  return { features, h, path: geoPath(projection).digits(1) };
+}
+
+/**
+ * The state's counties shaded by the overdraft fee at their branches. Counties with no
+ * covered branch are hatched. The largest counties by deposits carry their name and fee.
+ */
+export function countyFeeMap(stateFips: string, counties: CountyValue[], size: ChartSize = {}): string | null {
+  const w = size.narrow ? NARROW_W : W;
+  const hatchId = `state-map-hatch-${size.narrow ? "n" : "w"}-${stateFips}`;
+  const fontSize = size.narrow ? 13 : 12;
+  const drawn = stateCounties(stateFips, w, size);
+  if (!drawn) return null;
+  const { features, h, path } = drawn;
   const byFips = new Map(counties.map((c) => [c.fips, c]));
 
   const shapes = features
@@ -120,6 +127,52 @@ export function countyFeeMap(stateFips: string, counties: CountyValue[], size: C
 
   const hatch = `<defs><pattern id="${hatchId}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${CHART.paper}"/><line x1="0" y1="0" x2="0" y2="6" stroke="${CHART.noData}" stroke-width="2.4"/></pattern></defs>`;
   return svgWrap(h, hatch + shapes + labelled, "Overdraft fee by county", w);
+}
+
+// ─── County map against one price ─────────────────────────────────────────────
+
+/** A county within this many dollars of the price counts as about the same. */
+export const PRICE_MAP_SAME = 1;
+/** Beyond this many dollars from the price a county takes the darker shade. */
+export const PRICE_MAP_FAR = 5;
+/** Far lower, lower, about the same, higher, far higher. */
+export const PRICE_MAP_FILLS = ["#2F5A85", "#9DB8D3", "#C4B89F", "#E09276", "#A93D25"] as const;
+export const PRICE_MAP_LEGEND = ["$5+ lower", "Lower", "About the same", "Higher", "$5+ higher"] as const;
+
+/** Which of the five shades a county's fee takes against the price (0 = far lower). */
+export function priceStep(value: number, price: number): number {
+  const d = value - price;
+  if (d < -PRICE_MAP_FAR) return 0;
+  if (d < -PRICE_MAP_SAME) return 1;
+  if (d <= PRICE_MAP_SAME) return 2;
+  if (d <= PRICE_MAP_FAR) return 3;
+  return 4;
+}
+
+/**
+ * The state's counties shaded by how their deposit-weighted fee compares with one price:
+ * blue where the fee is lower, terra where it is higher, sand within $1. Counties with no
+ * covered branch are hatched. Each county's name and fee are in its tooltip.
+ */
+export function countyPriceMap(stateFips: string, counties: CountyValue[], price: number, size: ChartSize = {}): string | null {
+  const w = size.narrow ? NARROW_W : W;
+  const drawn = stateCounties(stateFips, w, size);
+  if (!drawn) return null;
+  const { features, h, path } = drawn;
+  const hatchId = `price-map-hatch-${size.narrow ? "n" : "w"}-${stateFips}`;
+  const byFips = new Map(counties.map((c) => [c.fips, c]));
+  const shapes = features
+    .map((f) => {
+      const c = byFips.get(f.id);
+      const has = c !== undefined && c.value !== null;
+      const fill = has ? PRICE_MAP_FILLS[priceStep(c.value!, price)] : `url(#${hatchId})`;
+      return `<path data-fips="${f.id}" d="${path(f) ?? ""}" fill="${fill}" stroke="${CHART.paper}" stroke-width="0.8"><title>${escapeHtml(
+        `${f.properties.name}: ${has ? fmtMoney(Math.round(c.value! * 100) / 100) : "no verified fee yet"}`,
+      )}</title></path>`;
+    })
+    .join("");
+  const hatch = `<defs><pattern id="${hatchId}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="${CHART.paper}"/><line x1="0" y1="0" x2="0" y2="6" stroke="${CHART.noData}" stroke-width="2.4"/></pattern></defs>`;
+  return svgWrap(h, hatch + shapes, `County fees against ${fmtMoney(price)}`, w);
 }
 
 export function mapLegend(): string {

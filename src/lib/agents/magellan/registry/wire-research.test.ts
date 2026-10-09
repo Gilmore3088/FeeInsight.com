@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/ai-provider-usage", async () => {
@@ -11,10 +13,13 @@ vi.mock("@/lib/ai-provider-usage", async () => {
 
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { isProviderStep } from "@/lib/agents/types";
+import { isUnreadableBody } from "@/lib/regulatory/wire-research";
 import type { RegistryDb } from "./partitions";
 import {
   WIRE_RESEARCH_STEP_KEY,
+  WIRE_PDF_PAGES,
   pickCandidates,
+  readFetchedPage,
   runRegistryWireResearch,
   wireResearchLimit,
   wireSummariesLive,
@@ -166,5 +171,37 @@ describe("pickCandidates", () => {
       ["open_states:ocd-bill/9", "state_bill"],
       ["f1", "federal_release"],
     ]);
+  });
+});
+
+describe("readFetchedPage", () => {
+  const pdfBytes = () => readFileSync(join(__dirname, "..", "..", "rosetta", "test-fixtures", "first-united-opt-in.pdf"));
+
+  it("hands on a regulator PDF's text layer as plain text", async () => {
+    const page = await readFetchedPage(new Response(pdfBytes(), { headers: { "content-type": "application/pdf" } }));
+    expect(page.contentType).toBe("text/plain");
+    expect(page.body).toContain("We will charge you a fee of up to $40 each time");
+    expect(isUnreadableBody(page.body, page.contentType)).toBe(false);
+  });
+
+  it("reads an octet-stream that is a PDF, up to WIRE_PDF_PAGES pages", async () => {
+    const readPdf = vi.fn(async () => "Bulletin text ".repeat(30));
+    const page = await readFetchedPage(new Response(pdfBytes(), { headers: { "content-type": "application/octet-stream" } }), readPdf);
+    expect(readPdf).toHaveBeenCalledWith(expect.any(Uint8Array), WIRE_PDF_PAGES);
+    expect(page.body).toContain("Bulletin text");
+  });
+
+  it("leaves a scan with no text layer, or a non-PDF binary, unreadable", async () => {
+    const scan = await readFetchedPage(new Response(pdfBytes(), { headers: { "content-type": "application/pdf" } }), async () => null);
+    expect(isUnreadableBody(scan.body, scan.contentType)).toBe(true);
+    const readPdf = vi.fn(async () => "never");
+    const zip = await readFetchedPage(new Response("PK\u0003\u0004", { headers: { "content-type": "application/octet-stream" } }), readPdf);
+    expect(readPdf).not.toHaveBeenCalled();
+    expect(isUnreadableBody(zip.body, zip.contentType)).toBe(true);
+  });
+
+  it("keeps HTML as it was", async () => {
+    const page = await readFetchedPage(new Response("<p>Release</p>", { headers: { "content-type": "text/html" } }));
+    expect(page).toEqual({ status: 200, contentType: "text/html", body: "<p>Release</p>" });
   });
 });

@@ -114,7 +114,7 @@ Writers use `recordFeedback` (`feedback.ts`) and check `feedbackSchemaReady` fir
 Dedupe keys in use:
 - `hamilton.takedown:pub:<id>:extract` and `:verify`: a live fee Hamilton took down,
   charged both to the Knox strategy that read it and to the Darwin attempt that approved it.
-- `hamilton.restore:pub:<id>`: that takedown is live again.
+- `hamilton.restore:pub:<id>`: that takedown is live again. A later takedown and restore of the same fee adds `hamilton.restore:pub:<id>:run:<run>`.
 - `darwin.verify:raw:<fee_raw_id>`: a Darwin `category_mismatch` reject, written by the sync below.
 - `darwin.verify:decision:raw:<fee_raw_id>`: every other Darwin decision on a Knox read,
   written by the verify step itself (`darwin/feedback.ts`): an approval is `right` /

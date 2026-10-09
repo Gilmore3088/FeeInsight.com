@@ -119,9 +119,11 @@ export const MAX_STEP_ATTEMPTS = 3;
  * the pipeline control is paused, so the operator keeps hearing from Atlas.
  */
 export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
+  "bayes-replay-ledger",
   "briefing-refresh",
   "competitor-alerts",
   "daily-brief",
+  "deming-regression",
   "fee-alert-dispatch",
   "lead-watch",
   "pro-digest",

@@ -10,6 +10,7 @@ import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
 import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
+import { retireSameLineDuplicates } from "@/lib/agents/hamilton/same-line-duplicates";
 import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
@@ -45,7 +46,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRates, recheckHeldRows, recheckPromotedRows } from "@/lib/agents/knox/held-recheck";
+import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckUntracedRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -75,6 +76,8 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
+import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -711,6 +714,12 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Lines held because the self-check could not trace them get today's self-check too.
+      const untracedRecheck = await recheckUntracedRows(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       // Held percentage fees in categories that publish rates go to Darwin as rate fees.
       const rateRecheck = await recheckHeldRates(tx, {
         dryRun: run.runKind === "dry_run",
@@ -724,9 +733,10 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
+          untraced_recheck: untracedRecheck,
           promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
           batch_review: batchReview,
@@ -970,6 +980,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A fee the same-line re-decide (9 Oct) published beside an older live line of itself.
+      const sameLineDuplicates = await retireSameLineDuplicates(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Another bank's fee: read from a document on another institution's own website.
       const otherBank = await retireOtherBankDocumentFees(tx, {
         runId: run.id,
@@ -1193,6 +1210,8 @@ async function executeAgenticStep(
               limitRollbacks.length > 0 ||
               businessSchedule.rolledBack.length > 0 ||
               businessSchedule.restored > 0 ||
+              sameLineDuplicates.rolledBack.length > 0 ||
+              sameLineDuplicates.restored > 0 ||
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
@@ -1233,6 +1252,10 @@ async function executeAgenticStep(
       const businessNote =
         businessSchedule.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${businessSchedule.rolledBack.length.toLocaleString()} business-schedule fee(s) beside the bank's consumer fee.`
+          : "";
+      const sameLineNote =
+        sameLineDuplicates.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${sameLineDuplicates.rolledBack.length.toLocaleString()} duplicate same-line fee(s).`
           : "";
       const otherBankNote =
         otherBank.rolledBack.length > 0
@@ -1276,7 +1299,10 @@ async function executeAgenticStep(
           : "";
       const recheckNote =
         (recheckRollbacks > 0
-          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document, after a 12-hour second look.`
+          : "") +
+        ((rulesRecheck?.flagged ?? 0) > 0
+          ? ` ${published.dryRun ? "Would flag" : "Flagged"} ${(rulesRecheck?.flagged ?? 0).toLocaleString()} live fee(s) today's Knox rules no longer read for a 12-hour second look (still live).`
           : "") +
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
@@ -1307,7 +1333,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1341,6 +1367,14 @@ async function executeAgenticStep(
             waiting: businessSchedule.waiting,
             rolled_back: businessSchedule.rolledBack.length,
             restored: businessSchedule.restored,
+          },
+          same_line_duplicates: {
+            candidates: sameLineDuplicates.candidates,
+            duplicates: sameLineDuplicates.duplicates,
+            flagged: sameLineDuplicates.flagged,
+            waiting: sameLineDuplicates.waiting,
+            rolled_back: sameLineDuplicates.rolledBack.length,
+            restored: sameLineDuplicates.restored,
           },
           other_bank_document: {
             other_bank_fees: otherBank.otherBankFees,
@@ -1516,6 +1550,8 @@ async function executeAgenticStep(
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
+          rules_recheck_flagged: rulesRecheck?.flagged ?? 0,
+          rules_recheck_waiting: rulesRecheck?.waitingSecondLook ?? 0,
           rules_recheck_restores: recheckRestores,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,
@@ -1871,6 +1907,48 @@ async function executeAgenticStep(
           by_document_type: score?.byDocumentType ?? {},
           by_category: score?.byCategory ?? {},
           dry_run: result.dryRun,
+        },
+      };
+    }
+    case "deming-regression": {
+      const result = await runDemingRegression({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      return {
+        status: "completed",
+        summary: summarizeDemingRegression(result),
+        detail: {
+          version: DEMING_REGRESSION_VERSION,
+          schema_ready: result.schemaReady,
+          dry_run: result.dryRun,
+          promoted: result.promoted,
+          promoted_active: result.promotedActive,
+          promoted_by_severity: result.promotedBySeverity,
+          replayed: result.replayed,
+          caught: result.caught,
+          regressions: result.regressions.length,
+          regression_cases: result.regressions.slice(0, 50),
+          activated: result.activated,
+          retired: result.retired,
+          active_total: result.activeTotal,
+          candidate_total: result.candidateTotal,
+        },
+      };
+    }
+    case "bayes-replay-ledger": {
+      const result = await runBayesLedger({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      return {
+        status: "completed",
+        summary: summarizeBayesLedger(result),
+        detail: {
+          version: BAYES_LEDGER_VERSION,
+          schema_ready: result.schemaReady,
+          dry_run: result.dryRun,
+          closed: result.closed,
+          open: result.open,
+          stuck: result.stuck,
+          not_counted: result.notCounted,
+          failed: result.failed,
+          queued_records: result.queuedRecords,
+          jobs: result.jobs,
         },
       };
     }

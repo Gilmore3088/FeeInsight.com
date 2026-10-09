@@ -29,6 +29,8 @@ type SqlTag = typeof sql;
 export const BUSINESS_SCHEDULE_CHECK = "hamilton.business_schedule";
 export const BUSINESS_SCHEDULE_REASON = "business_schedule";
 export const BUSINESS_SCHEDULE_FLAG = "business_schedule";
+/** A business-only footnote's takedown; it does not come back when the category has no consumer fee. */
+export const BUSINESS_FOOTNOTE_REASON = "business_schedule: business-only footnote";
 export const BUSINESS_SCHEDULE_ROLLBACK_LIMIT = 200;
 
 /**
@@ -42,6 +44,85 @@ export const BUSINESS_SCHEDULE_ROLLBACK_LIMIT = 200;
  */
 const BUSINESS_NAME_SQL = (column: string) =>
   `(${column} ~* '^\\s*(business|commercial)\\M[^|:]*$' AND ${column} !~* '^\\s*business\\s+days?\\M')`;
+
+/** A footnote that limits its fee to business accounts ("Only applicable to business accounts."). */
+const BUSINESS_ONLY_NOTE =
+  /\b(?:only\s+(?:applicable|applies|available|charged)\s+(?:to|on|for)\s+(?:business|commercial)|(?:business|commercial)\s+(?:checking\s+)?accounts?\s+only)\b/i;
+/** The same, in SQL, to find the documents worth reading. */
+const BUSINESS_ONLY_NOTE_SQL =
+  "(only (applicable|applies|available|charged)\\s+(to|on|for)\\s+(business|commercial)|(business|commercial)\\s+(checking\\s+)?accounts?\\s+only)";
+/** A footnote mark: "2", "6a", "*", "**", "†". */
+const NOTE_MARK = String.raw`(?:\d{1,2}[a-z]?|\*{1,3}|†|‡)`;
+const NOTE_LINE = new RegExp(String.raw`^\s*(${NOTE_MARK})\s*([A-Z(].*)$`);
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** One footnote on a page: its mark, where it starts, and whether it limits its fee to business accounts. */
+export interface PageFootnote {
+  mark: string;
+  offset: number;
+  businessOnly: boolean;
+}
+
+/**
+ * Pure: a page's footnotes. A footnote is its mark line and up to two lines after it that are not
+ * another footnote (ConnectOne, doc 23733: "2 Created by check, in-person withdrawal, ATM
+ * withdrawal, or other electronic / means. Only applicable to business accounts."). It limits its
+ * fee to business accounts when it says so and does not also say the fee applies to everyone or
+ * to consumers ("Charges apply to all checking and savings accounts ... Continuous overdraft
+ * charge applies to commercial accounts only", doc 20317), and is not several notes run together
+ * on one line ("1Call us ...; 2Subject to credit approval. 3Overdraft Protection Line of Credit is
+ * only available to business account holders", doc 17748).
+ */
+export function pageFootnotes(text: string): PageFootnote[] {
+  const lines = text.split("\n");
+  const notes: PageFootnote[] = [];
+  let offset = 0;
+  lines.forEach((line, index) => {
+    const lineOffset = offset;
+    offset += line.length + 1;
+    const note = NOTE_LINE.exec(line);
+    if (!note) return;
+    const block = [note[2]];
+    for (const next of lines.slice(index + 1, index + 3)) {
+      if (NOTE_LINE.test(next)) break;
+      block.push(next);
+    }
+    const said = block.join(" ");
+    const at = said.search(BUSINESS_ONLY_NOTE);
+    const businessOnly =
+      at >= 0 &&
+      !/\b(?:not|except|excluding)\b[^.]*$/i.test(said.slice(0, at)) &&
+      !/\b(?:apply|applies|available|charged)\s+to\s+all\b|\b(?:consumer|personal)\s+(?:checking\s+)?accounts?\s+only\b|\bapplies\s+to\s+(?:consumer|personal)\b/i.test(said) &&
+      !/[;.]\s*\d{1,2}\s?[A-Z]/.test(said);
+    notes.push({ mark: note[1].toLowerCase(), offset: lineOffset, businessOnly });
+  });
+  return notes;
+}
+
+/**
+ * Pure: is this fee's line marked with a business-only footnote? The page prints the fee's name
+ * with the mark right after it ("Overdraft - Insufficient Funds / Uncollected2 $40.00", or
+ * "Non-Sufficient Funds Fee5,6,6a"), and the mark's footnote is business-only. One page can number
+ * its footnotes again in each section (doc 9210 has two footnote 4s, one for consumer overdrafts,
+ * one for business transfers), so a mark means the first footnote with that mark after the line.
+ */
+export function footnoteMarksBusiness(text: string, name: string, notes: PageFootnote[] = pageFootnotes(text)): boolean {
+  if (!notes.some((note) => note.businessOnly)) return false;
+  const bare = name.replace(/[\s.…_]+$/, "").trim();
+  if (bare.length < 3) return false;
+  const tagged = new RegExp(String.raw`${escapeRegExp(bare)}(${NOTE_MARK}(?:\s*,\s*${NOTE_MARK})*)(?![0-9A-Za-z]|\.\d)`, "gi");
+  for (const match of text.matchAll(tagged)) {
+    const at = match.index ?? 0;
+    for (const mark of match[1].split(/\s*,\s*/)) {
+      const note = notes.find((candidate) => candidate.mark === mark.toLowerCase() && candidate.offset > at);
+      if (note?.businessOnly) return true;
+    }
+  }
+  return false;
+}
 
 /** True for a document address whose path names a business-only schedule (SQL, host removed). */
 const BUSINESS_DOC_SQL = (column: string) =>
@@ -68,7 +149,8 @@ export interface BusinessScheduleTakedown {
   documentUrl: string;
   canonicalFeeKey: string;
   amount: number | null;
-  consumerFeeId: number;
+  /** Null for a business-only footnote, which comes down with or without a consumer fee beside it. */
+  consumerFeeId: number | null;
   /** False when only the fee's own name says business: the document is a mixed schedule, not a wrong link. */
   businessDocument: boolean;
   reason: string;
@@ -91,6 +173,53 @@ function num(value: number | string | null | undefined): number | null {
 }
 
 /**
+ * Live fees whose line on their page carries a business-only footnote (`footnoteMarksBusiness`):
+ * ConnectOne's "Overdraft - Insufficient Funds / Uncollected2 $40.00" (live 103490, doc 23733), 9 Oct.
+ * Reads only documents whose current text has a business-only phrase (103 of 5,828 on 9 Oct).
+ */
+export async function selectFootnoteBusinessFeeIds(db: SqlTag, institutionId?: number): Promise<number[]> {
+  const rows = await inSavepoint(db, (scope) => scope.unsafe<{ fee_published_id: number | string; fee_name: string; normalized_text: string }[]>(
+    `WITH live AS (
+       SELECT fp.fee_published_id, fr.fee_name, fr.source_document_id
+         FROM published_fee_records fp
+         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        WHERE fp.rolled_back_at IS NULL
+          AND fr.source_document_id IS NOT NULL
+          ${institutionId ? "AND fp.institution_id = $1" : ""}
+     ),
+     documents AS MATERIALIZED (
+       SELECT doc.source_document_id, text.normalized_text
+         FROM (SELECT DISTINCT source_document_id FROM live) doc
+         CROSS JOIN LATERAL (
+           SELECT st.normalized_text
+             FROM agent_source_texts st
+            WHERE st.source_document_id = doc.source_document_id
+              AND st.normalized_text IS NOT NULL
+            ORDER BY st.id DESC
+            LIMIT 1
+         ) text
+        WHERE text.normalized_text ~* '${BUSINESS_ONLY_NOTE_SQL}'
+     )
+     SELECT live.fee_published_id, live.fee_name, documents.normalized_text
+       FROM live
+       JOIN documents ON documents.source_document_id = live.source_document_id`,
+    institutionId ? [institutionId] : [],
+  ));
+  const notesByText = new Map<string, PageFootnote[]>();
+  const ids: number[] = [];
+  for (const row of rows) {
+    let notes = notesByText.get(row.normalized_text);
+    if (!notes) {
+      notes = pageFootnotes(row.normalized_text);
+      notesByText.set(row.normalized_text, notes);
+    }
+    if (footnoteMarksBusiness(row.normalized_text, row.fee_name ?? "", notes)) ids.push(Number(row.fee_published_id));
+  }
+  return ids;
+}
+
+/**
  * Runs the business-schedule check for one publish step. A dry run reports what it would
  * flag, take down and restore, and writes nothing. Never blocks the step it runs in.
  */
@@ -108,6 +237,13 @@ export async function retireBusinessScheduleFees(
     restored: 0,
     dryRun: options.dryRun,
   };
+  let footnoteIds: number[] = [];
+  try {
+    footnoteIds = await selectFootnoteBusinessFeeIds(db, options.institutionId);
+  } catch (error) {
+    console.error("selectFootnoteBusinessFeeIds failed:", error);
+  }
+  const footnoteParam = options.institutionId ? "$2" : "$1";
   let rows: BusinessFeeRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BusinessFeeRow[]>(
@@ -115,7 +251,8 @@ export async function retireBusinessScheduleFees(
          SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
                 sd.document_url, fp.canonical_fee_key, fp.amount,
                 ${BUSINESS_DOC_SQL("sd.document_url")} AS business_document,
-                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")} AS business
+                ${BUSINESS_DOC_SQL("sd.document_url")} OR ${BUSINESS_NAME_SQL("fp.fee_name")}
+                  OR fp.fee_published_id = ANY(${footnoteParam}::bigint[]) AS business
            FROM published_fee_records fp
            JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
            JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -137,7 +274,7 @@ export async function retireBusinessScheduleFees(
          LEFT JOIN consumer c ON c.institution_id = b.institution_id AND c.canonical_fee_key = b.canonical_fee_key
         WHERE b.business
         ORDER BY b.fee_published_id`,
-      options.institutionId ? [options.institutionId] : [],
+      options.institutionId ? [options.institutionId, footnoteIds] : [footnoteIds],
     ));
   } catch (error) {
     console.error("retireBusinessScheduleFees read failed:", error);
@@ -146,9 +283,14 @@ export async function retireBusinessScheduleFees(
   result.businessFees = rows.length;
   const failing: BusinessScheduleTakedown[] = [];
   const passing: number[] = [];
+  const footnoted = new Set(footnoteIds);
   for (const row of rows) {
     const consumerFeeId = num(row.consumer_fee_id);
-    if (consumerFeeId == null) {
+    // The page says the fee is not a consumer's ("Only applicable to business accounts. This fee
+    // is not charged to consumer accounts."), so no consumer page shows it, beside a consumer fee
+    // or not.
+    const footnote = footnoted.has(Number(row.fee_published_id));
+    if (consumerFeeId == null && !footnote) {
       passing.push(Number(row.fee_published_id));
       continue;
     }
@@ -162,7 +304,7 @@ export async function retireBusinessScheduleFees(
       amount: num(row.amount),
       consumerFeeId,
       businessDocument: row.business_document !== false,
-      reason: `${BUSINESS_SCHEDULE_REASON}: consumer fee #${consumerFeeId}`,
+      reason: consumerFeeId == null ? BUSINESS_FOOTNOTE_REASON : `${BUSINESS_SCHEDULE_REASON}: consumer fee #${consumerFeeId}`,
     });
   }
   result.withConsumerFee = failing.length;
@@ -282,6 +424,7 @@ export async function restoreBusinessScheduleTakedowns(
           FROM published_fee_records fp
          WHERE fp.rolled_back_at IS NOT NULL
            AND fp.rolled_back_reason LIKE ${`${BUSINESS_SCHEDULE_REASON}:%`}
+           AND fp.rolled_back_reason <> ${BUSINESS_FOOTNOTE_REASON}
            ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
            AND NOT EXISTS (
              SELECT 1 FROM published_fee_records live

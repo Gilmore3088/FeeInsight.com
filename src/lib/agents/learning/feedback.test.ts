@@ -162,6 +162,22 @@ describe("shared learning store", () => {
     expect(rows[5]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "knox", weight: 0.5 });
   });
 
+  it("logs a second restore of the same fee as its own run-keyed row", async () => {
+    const { db, calls } = mockDb([
+      ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
+      ["hamilton.restore:pub:", [{ fee_published_id: 12213, about_strategy: "extract.rules", institution_id: 6631, source_document_id: 18163, fee_raw_id: 50, fee_verified_id: 4472, canonical_fee_key: "rush_card", amount: "20", prior_restores: "1" }]],
+      ["INSERT INTO pipeline_feedback", [{ id: 1 }]],
+    ]);
+
+    await syncPipelineFeedback(db, { runId: 3380 });
+
+    const restoreRead = calls.find((call) => call.query.includes("hamilton.restore:pub:"));
+    expect(restoreRead?.query).toContain("t.created_at > r.created_at");
+    const insert = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
+    const rows = JSON.parse(String(insert?.values[0]));
+    expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toContain("hamilton.restore:pub:12213:run:3380");
+  });
+
   it("only reads in a dry run", async () => {
     const { db, calls } = mockDb([
       ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
