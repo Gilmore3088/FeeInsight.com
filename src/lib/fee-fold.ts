@@ -255,6 +255,9 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
   // Excess savings or money market activity is account servicing, not a lending fee.
   other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
+  // Fold v9 moved four IRA excess withdrawals here at 02:05 Oct 9, before PR 800 reversed that
+  // call; excess activity is account servicing, IRA savings included.
+  ira_administration: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
