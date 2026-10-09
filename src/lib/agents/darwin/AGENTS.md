@@ -26,6 +26,9 @@ Darwin owns verification and classification.
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
 | `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
+| `retired_category` | after the source check: the category is not one the top-50 fold retired (`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`); Hamilton never publishes a retired type, so Darwin never verifies into one | rejected |
+| `conditional_zero` | after the source check: a $0 fee whose own schedule line (or Knox's excerpt) carries a non-zero price ("FREE with e-statements, else $6.95 per month"); the charge is the fee, so the $0 reading waits for a re-read | needs_review |
+| `name_rule` | after the source check: the name and line pass Hamilton's live-fee name rules (`ruleFor` in `hamilton/eval-verdicts.ts`: rebate, no-fee or waiver sentence, balance threshold, merchant payer, two fees on one line, rate bound, price in name); the rule and why are in the reason text | rejected |
 
 - Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
   as `category_mismatch` or held as `category_lesson_pending` under an older guard are selected
@@ -41,6 +44,20 @@ Darwin owns verification and classification.
   fix to the shared source check reaches the rows it was made for. Before that a `not_in_source`
   rejection was final; 1,126 rows at 499 banks were waiting on fixes already live (Northern Trust's
   wrapped-name $25 overdraft, raw 457013, among them).
+- `retired_category`, `conditional_zero` and `name_rule` (2026-10-09, `postSourceCheck` in
+  `verify.ts`) run after the source check on the line it matched. UAT's hand check of the first
+  36 rows the `not_in_source` re-select verified found 16 of a random 20 right: three were $0
+  readings of "free if you meet a condition, else $2.50-$6.95" lines, one a package list verified
+  into the retired `estatement_fee` type. The same checks are Hamilton's publish-time rules, so a
+  row that would come down after publishing now stops before it is verified.
+- `verify.recheck` (`verified-recheck.ts`, version 1, 2026-10-09) ends every learning verify step
+  by reading up to 200 rows `verify.rules` v3 verified, newest first, once each under
+  `postSourceCheck`. A failing row that is not live is rejected with an `outlier_flags` entry
+  `darwin_recheck:<code>[:<rule>]`; a live one is flagged `takedown_pending` through Hamilton's
+  shared second look (`darwin.verified_recheck`) and is rolled back only when a run 12 hours on
+  fails it again, with the verified row rejected and the public read cache cleared. Each row
+  records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
+  once per recheck version and the pass never starves the batch. Never a hand UPDATE.
 - The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,
   2026-10-07). Version 1 named the URL, so a fee on a bank's current copy of a page was held
   as a duplicate of the same fee on an older copy and never verified. A version 1 duplicate on
@@ -103,7 +120,10 @@ Darwin owns verification and classification.
 - Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
   category review's and the release review's verdicts at answer-key institutions are scored
   against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
-  fixtures) in chunks of 20 decided verdicts. Each chunk is a `verify.verdict_score` attempt
+  fixtures) in chunks of 20 decided verdicts, per review and per prompt version; a version
+  below the newest one seen gets no more verdicts, so its open chunk is closed as a partial
+  chunk (`detail.partial`, read with `decided`; 2026-10-09, after the release review went v11
+  to v17 in a day and no version reached 20). Each chunk is a `verify.verdict_score` attempt
   (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
   outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
   `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent

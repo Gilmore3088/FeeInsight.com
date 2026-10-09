@@ -142,13 +142,14 @@ describe("AI provider usage", () => {
     );
   });
 
-  it("engages the emergency stop when the Anthropic workspace usage limit is reached (2026-10-09)", async () => {
+  it("engages the emergency stop when the key hits its Console usage limit", async () => {
+    // 2026-10-09 08:11 UTC: every call failed this way for an hour while paid steps kept firing.
     const error = new Error(
-      '400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC."}}',
+      "400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.\"}}",
     );
 
     await expect(trackAnthropicRequest(
-      { model: "claude-opus-5-5", agent: "hamilton", operation: "memo" },
+      { model: "claude-haiku-4-5", agent: "darwin", operation: "adjudicate" },
       async () => {
         throw error;
       },
@@ -156,7 +157,7 @@ describe("AI provider usage", () => {
 
     expect(stopMock).toHaveBeenCalledWith(
       "provider-guard",
-      expect.stringContaining("usage limit is reached"),
+      expect.stringContaining("reached your specified api usage limits"),
     );
   });
 

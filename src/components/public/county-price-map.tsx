@@ -82,10 +82,10 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
   const open = selected ? details[selected] : null;
 
   return (
-    <div>
+    <div className="lg:mt-3 lg:grid lg:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)] lg:items-start lg:gap-6">
       <div
         ref={box}
-        className="relative mt-3 cursor-pointer rounded-xl border border-[#E8DFD1]/80 bg-white p-2"
+        className="relative mt-3 cursor-pointer rounded-xl lg:mt-0 border border-[#E8DFD1]/80 bg-white p-2"
         onMouseMove={(e) => {
           const fips = fipsAt(e.target);
           const rect = box.current?.getBoundingClientRect();
@@ -122,7 +122,7 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
       </div>
 
       {open ? (
-        <div className="mt-3 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2] p-4">
+        <div className="mt-3 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2] p-4 lg:mt-0">
           <div className="flex items-baseline justify-between gap-3">
             <p className="text-[15px] font-semibold text-[#1A1815]">{open.name}</p>
             <button type="button" onClick={() => setSelected(null)} className="text-[12px] text-[#A93D25] hover:underline">
@@ -175,7 +175,7 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
           )}
         </div>
       ) : (
-        <p className="mt-2 text-[12px] text-[#6B6255]">Hover a county for its fee. Click or tap it to see the institutions there.</p>
+        <p className="mt-2 text-[12px] text-[#6B6255] lg:mt-0 lg:rounded-xl lg:border lg:border-dashed lg:border-[#E8DFD1] lg:p-4 lg:text-[13px]">Hover a county for its fee. Click or tap it to see the institutions there.</p>
       )}
     </div>
   );

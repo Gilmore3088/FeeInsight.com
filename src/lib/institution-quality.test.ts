@@ -54,6 +54,9 @@ describe("classifyInstitutionQuality", () => {
     expect(classifyAgentFailure("Error code: 400 - credit balance is too low")).toBe(
       "provider_credit",
     );
+    expect(classifyAgentFailure("400 You have reached your specified API usage limits. You will regain access on 2026-11-01.")).toBe(
+      "provider_credit",
+    );
 
     const result = classifyInstitutionQuality({
       source: "fdic",

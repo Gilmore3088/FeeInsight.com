@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
 
 export interface LoadedAnalysisRecord {
   id: string;
@@ -75,33 +76,20 @@ export async function saveAnalysis(params: {
  * List saved analyses for the current user.
  * Used for left rail and in-page refresh after saving.
  */
-export async function listSavedAnalyses(limit = 10): Promise<
-  Array<{
-    id: string;
-    title: string;
-    analysis_focus: string;
-    updated_at: string;
-  }>
-> {
+export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
   const user = await getCurrentUser();
   if (!user) return [];
 
   try {
-    const rows = await sql<
-      Array<{
-        id: string;
-        title: string;
-        analysis_focus: string;
-        updated_at: string;
-      }>
-    >`
-      SELECT id::text, title, analysis_focus, updated_at::text
+    // Read a few extra so repeats of the same answer don't leave the list short.
+    const rows = await sql<SavedAnalysisRow[]>`
+      SELECT id::text, title, prompt, institution_id, updated_at::text
       FROM hamilton_saved_analyses
       WHERE user_id = ${user.id} AND status = 'active'
       ORDER BY updated_at DESC
-      LIMIT ${limit}
+      LIMIT ${limit * 3}
     `;
-    return rows;
+    return recentQuestions(rows, limit);
   } catch {
     return [];
   }

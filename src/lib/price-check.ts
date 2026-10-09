@@ -151,16 +151,18 @@ export function charterChecks(price: number, prices: Pick<StatePrices, "institut
  * first, each with at least `min` source-checked institutions.
  */
 export function marketChecks(price: number, prices: Pick<StatePrices, "institutions" | "stateCode">, min = 3, limit = 8): GroupCheck[] {
-  const byMarket = new Map<string, PricedInstitution[]>();
+  // Keyed case-blind, so a metro name ("Lincoln, NE") and a city typed in capitals
+  // ("LINCOLN, NE") are one market.
+  const byMarket = new Map<string, { label: string; list: PricedInstitution[] }>();
   for (const institution of prices.institutions) {
     if (!institution.cbsaName && !institution.city) continue;
     const label = marketLabel({ cbsaName: institution.cbsaName, city: institution.city, stateCode: prices.stateCode });
-    const list = byMarket.get(label);
-    if (list) list.push(institution);
-    else byMarket.set(label, [institution]);
+    const market = byMarket.get(label.toLowerCase());
+    if (market) market.list.push(institution);
+    else byMarket.set(label.toLowerCase(), { label, list: [institution] });
   }
-  return [...byMarket.entries()]
-    .map(([label, list]) => groupCheck(label, price, list, min))
+  return [...byMarket.values()]
+    .map(({ label, list }) => groupCheck(label, price, list, min))
     .filter((check): check is GroupCheck => check !== null)
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
     .slice(0, limit);

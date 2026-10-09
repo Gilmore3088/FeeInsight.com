@@ -1,0 +1,53 @@
+{
+  "id": "fee-evaluation",
+  "version": 1,
+  "maintainer": "atlas",
+  "owning_agent": "atlas",
+  "inputs": [
+    "scope: institution id, state code, canonical_fee_key or national",
+    "sample size and seed",
+    "optional labelled answer key (with its tuning or holdout set)"
+  ],
+  "outputs": [
+    "accuracy table: right / amount not supported / category not supported / unknown, dollar and rate fees apart",
+    "miss list with severity from deming/severity.ts"
+  ],
+  "data_access": [
+    { "table": "published_fee_catalog", "mode": "read" },
+    { "table": "published_fee_rate_catalog", "mode": "read" },
+    { "table": "agent_source_texts", "mode": "read" },
+    { "table": "institution_sources", "mode": "read" }
+  ],
+  "external_endpoints": [],
+  "provider_inference": false,
+  "budget": "deterministic, no paid calls; one read-only sample query plus stored texts for the sample",
+  "triggering_workflows": [
+    "accuracy question from James or a thread",
+    "before and after a Knox, Darwin or Hamilton rule version bump",
+    "fresh_audit sample (PRD 7.3)"
+  ],
+  "evaluation_suite": [
+    "src/lib/custom-report/source-check-layout.test.ts",
+    "src/lib/agents/hamilton/source-check.test.ts",
+    "src/lib/fee-category-guard.test.ts",
+    "src/lib/agents/darwin/verdict-score.test.ts",
+    "src/lib/percent-fees.test.ts"
+  ],
+  "failure_behavior": "Report the counts it has and mark the rest unknown; give no accuracy percentage when the decided sample is under 30 fees or the database cannot be read.",
+  "approval_requirements": "None to run (read-only). Any fix it points to goes through a normal PR; takedowns stay with Hamilton's second look.",
+  "dependencies": [
+    { "path": "src/lib/custom-report/source-check.ts" },
+    { "path": "src/lib/agents/hamilton/source-check.ts", "version_constant": "SOURCE_CHECK_STRATEGY" },
+    { "path": "src/lib/fee-category-guard.ts", "version_constant": "CATEGORY_GUARD_VERSION" },
+    { "path": "src/lib/agents/darwin/verdict-score.ts", "version_constant": "DARWIN_VERDICT_SCORE_STRATEGY" },
+    { "path": "src/lib/agents/deming/severity.ts" },
+    { "path": "src/lib/percent-fees.ts" }
+  ],
+  "last_validated": "2026-10-09",
+  "abstain_when": [
+    "fewer than 30 sampled fees have stored text",
+    "frequency or payer accuracy is asked and no labelled key covers the fees",
+    "rate and dollar fees would have to be pooled into one number",
+    "the database cannot be read"
+  ]
+}

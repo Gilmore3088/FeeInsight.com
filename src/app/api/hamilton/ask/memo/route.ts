@@ -16,6 +16,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { answerAskMemo, type AskBody } from "@/lib/hamilton/ask-service";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
+import { isProviderLimitError } from "@/lib/ai-provider";
+import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 
 async function handlePOST(request: Request) {
   const user = await getCurrentUser();
@@ -40,6 +42,10 @@ async function handlePOST(request: Request) {
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
     console.error("[hamilton-ask-memo] failed", error);
+    if (isProviderLimitError(error)) {
+      // The storyline already shown stands; only the written memo is paused.
+      return NextResponse.json({ status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE }, { status: 200 });
+    }
     return NextResponse.json({ error: "Hamilton could not write that up just now." }, { status: 500 });
   }
 }
