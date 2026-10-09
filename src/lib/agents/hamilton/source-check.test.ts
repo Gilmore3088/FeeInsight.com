@@ -4,6 +4,8 @@ import {
   SOURCE_CHECK_REASON,
   SOURCE_CHECK_RESTORE_PREFIX,
   markRestoredForSourceCheck,
+  READER_LOSS_RESTORES_ON,
+  readerLostLine,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
   takeDownUntraceableFees,
@@ -43,6 +45,54 @@ function fee(id: number, name: string, amount: string | null, source = "knox", d
 
 const texts = [{ source_document_id: 7, normalized_text: TEXAR }];
 
+// Georgia United FCU (8565): its truth-in-savings PDF re-read on Oct 8 puts every fee name
+// in one run and every price in another, so no line pairs them. Knox read the fees on Oct 5.
+const GUCU_REREAD = [
+  "me Debit OverdraftOverdraftOverdraft ProtectionReturned ItemStop PaymentACH OverdraftDebit Card OverdraftExpedited Card Delivery",
+  "$35.00/Item$35.00/Item$35.00/Item$32.00/Request$35.00/Item$35.00/Item$30.00/Card$5.00 $65.00/Year$85.00/Year",
+].join("\n");
+const READ_AT = "2026-10-05T07:00:00Z";
+const REREAD_AT = "2026-10-08T21:17:52Z";
+
+function knoxFee(id: number, name: string, amount: string, excerpt: string, readAt = READ_AT): LiveFeeRow {
+  return {
+    ...fee(id, name, amount),
+    canonical_fee_key: "stop_payment",
+    raw_created_at: readAt,
+    conditions: `Knox deterministic extraction from Rosetta artifact #60. canonical_hint=stop_payment; text_hash=x; excerpt="${excerpt}"`,
+  };
+}
+
+const gucuTexts = [{ source_document_id: 7, normalized_text: GUCU_REREAD, updated_at: REREAD_AT }];
+const stopPayment = knoxFee(21162, "Stop Payment", "32", "(each submission/resubmission) Stop Payment $32.00/Request EFT");
+
+describe("readerLostLine", () => {
+  it("keeps a fee whose own document was re-read after Knox read it and whose stored line still states it", () => {
+    const verdict = traceLiveFee(stopPayment, gucuTexts);
+    expect(verdict.kind).toBe("untraceable");
+    expect(readerLostLine(stopPayment, gucuTexts, verdict.kind === "untraceable" ? verdict.reason : "")).toBe(true);
+  });
+
+  it("does not when the text Knox read is still the current one", () => {
+    const notRewritten = [{ ...gucuTexts[0], updated_at: "2026-10-01T00:00:00Z" }];
+    expect(readerLostLine(stopPayment, notRewritten, "amount_not_the_fee")).toBe(false);
+    expect(readerLostLine({ ...stopPayment, raw_created_at: null }, gucuTexts, "amount_not_the_fee")).toBe(false);
+  });
+
+  it("does not when the stored line never stated the fee", () => {
+    // Prod row 48249: an overdraft fee whose stored line is the incoming international wire.
+    const wrongLine = knoxFee(48249, "Overdraft or Non-sufficient Funds (NSF) Charges::", "40", "International Incoming | $ 40");
+    expect(readerLostLine(wrongLine, gucuTexts, "amount_not_the_fee")).toBe(false);
+  });
+
+  it("does not for other reasons, $0 rows, rows Knox did not read, or rows with no stored line", () => {
+    expect(readerLostLine(stopPayment, gucuTexts, "amount_is_a_threshold")).toBe(false);
+    expect(readerLostLine({ ...stopPayment, amount: "0" }, gucuTexts, "amount_not_the_fee")).toBe(false);
+    expect(readerLostLine({ ...stopPayment, source: "migration_v10" }, gucuTexts, "amount_not_the_fee")).toBe(false);
+    expect(readerLostLine({ ...stopPayment, conditions: "canonical_hint=stop_payment" }, gucuTexts, "amount_not_the_fee")).toBe(false);
+  });
+});
+
 describe("traceLiveFee", () => {
   it("takes down a balance threshold published as the fee (Texar $50.01)", () => {
     expect(traceLiveFee(fee(1, "Overdraft Protection Items - Negative from", "50.01"), texts).kind).toBe("untraceable");
@@ -78,7 +128,7 @@ describe("takeDownUntraceableFees", () => {
       evidence: { flag_run_id: 4, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "amount_is_a_threshold" },
     },
   ];
-  function createDb(rows: LiveFeeRow[], flags: unknown[] = firstLook) {
+  function createDb(rows: LiveFeeRow[], flags: unknown[] = firstLook, storedTexts: Array<{ source_document_id: number; normalized_text: string }> = texts) {
     const calls: string[] = [];
     const db = vi.fn((strings: TemplateStringsArray) => {
       const query = strings.join("?");
@@ -86,7 +136,7 @@ describe("takeDownUntraceableFees", () => {
       if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
       if (query.includes("FROM pipeline_feedback") && query.includes("dedupe_key = ANY")) return Promise.resolve(flags);
       if (query.includes("MAX(fp.fee_published_id)")) return Promise.resolve([{ institution_id: 42, max_fee_id: 9 }]);
-      if (query.includes("FROM agent_source_texts")) return Promise.resolve(texts.map((text) => ({ ...text, institution_id: 42 })));
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve(storedTexts.map((text) => ({ ...text, institution_id: 42 })));
       if (query.includes("JOIN raw_fee_observations")) return Promise.resolve(rows);
       return Promise.resolve([]);
     });
@@ -162,6 +212,23 @@ describe("takeDownUntraceableFees", () => {
     // The step's state sorts first; it never limits which institutions are due.
     expect(due.split("ORDER BY")[0]).not.toContain("state_code");
     expect(due.split("ORDER BY")[1]).toContain("state_code");
+  });
+
+  it("keeps a live fee a re-read lost the line of, and leaves an earlier takedown down while restores are off", async () => {
+    const { db, calls } = createDb(
+      [{ ...stopPayment, fee_published_id: 1 }, { ...stopPayment, fee_published_id: 2, taken_down: true }],
+      firstLook,
+      gucuTexts,
+    );
+    const result = await takeDownUntraceableFees(db, { runId: 9, batchId: "b", dryRun: false });
+
+    expect(READER_LOSS_RESTORES_ON).toBe(false);
+    expect(result.readerLost).toBe(1);
+    expect(result.takedowns).toEqual([]);
+    expect(result.flagged).toBe(0);
+    expect(result.restored).toBe(0);
+    expect(calls.some((query) => query.includes("SET rolled_back_at = NOW()"))).toBe(false);
+    expect(calls.some((query) => query.includes("SET rolled_back_at = NULL"))).toBe(false);
   });
 
   it("writes nothing on a dry run", async () => {
