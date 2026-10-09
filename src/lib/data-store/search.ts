@@ -88,14 +88,22 @@ function searchQualityCte(scopeSql: string): string {
   WITH scope AS (
     ${scopeSql}
   ),
+  scope_catalog AS MATERIALIZED (
+    -- Read the catalog view once for the scope. The view rebuilds its whole-catalog
+    -- depth check on every reference, so the anti-join below used to recompute the
+    -- entire catalog for each state page; a published row always carries its
+    -- verified row's institution, so the scoped rows answer that check too.
+    SELECT institution_id, fee_verified_id, review_status
+    FROM published_fee_catalog
+    WHERE institution_id IN (SELECT id FROM scope)
+  ),
   catalog_counts AS (
     SELECT
       institution_id,
       COUNT(*) FILTER (WHERE review_status = 'approved')::int AS published_fee_count,
       COUNT(*) FILTER (WHERE review_status <> 'approved' AND review_status <> 'rejected')::int AS catalog_provisional_fee_count,
       COUNT(*) FILTER (WHERE review_status <> 'rejected')::int AS visible_fee_count
-    FROM published_fee_catalog
-    WHERE institution_id IN (SELECT id FROM scope)
+    FROM scope_catalog
     GROUP BY institution_id
   ),
   verified_unpublished_counts AS (
@@ -107,7 +115,7 @@ function searchQualityCte(scopeSql: string): string {
       AND fv.institution_id IN (SELECT id FROM scope)
       AND NOT EXISTS (
         SELECT 1
-        FROM published_fee_catalog pfc
+        FROM scope_catalog pfc
         WHERE pfc.fee_verified_id = fv.fee_verified_id
           AND pfc.review_status <> 'rejected'
       )
