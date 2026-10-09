@@ -191,7 +191,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // of buying one ("Money Order Research Fee" $10; Darwin eval).
   money_order: {
     include: /\S/,
-    exclude: /(research|\bcop(y|ies)\b|declaration of loss|replacement|abandoned|returned|delivery|mailing)/i,
+    exclude: /(research|\b(photo ?)?cop(y|ies)\b|declaration of loss|replacement|abandoned|returned|delivery|mailing)/i,
   },
   ach_origination: { include: /\S/, exclude: /(?!)/ },
   cashiers_check: {
@@ -352,7 +352,8 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // copies and replacements, wire research, business-only and payee-returned NSF rows, and a
 // per-item "Overdraft Protection" fee priced like courtesy pay.
 // v48: subordination leaves legal process for other lending; a money order copy is a check copy.
-export const CATEGORY_GUARD_VERSION = 48;
+// v50: "Photocopy of Money Order" is a check copy too (v49 is Accuracy's).
+export const CATEGORY_GUARD_VERSION = 50;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

@@ -155,6 +155,7 @@ describe("top-50 fold", () => {
     expect(split("legal_process", "SUBORDINATION REQUEST: Outgoing Foreign")).toBeNull();
     expect(split("legal_process", "Garnishment / Levy")).toBeNull();
     expect(split("money_order", "Copy of Cleared Cashier's Check/ Money Order (per item)")).toBe("check_image");
+    expect(split("money_order", "Photocopy of Money Order")).toBe("check_image");
     expect(split("money_order", "Cashier's Check / Money Order")).toBeNull();
   });
 

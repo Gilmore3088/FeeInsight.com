@@ -158,7 +158,7 @@ export const COLLECTION_ITEM =
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
 
 /** A copy of an item, not the item. */
-export const ITEM_COPY = /\bcop(?:y|ies)\b/i;
+export const ITEM_COPY = /\b(?:photo ?)?cop(?:y|ies)\b/i;
 
 interface SplitCategory {
   to: string;
@@ -192,7 +192,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 4;
+export const FOLD_RULES_VERSION = 5;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
