@@ -7,6 +7,7 @@ import {
   type BillStage,
 } from "@/lib/regulatory/open-states";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
+import { flagOn } from "./live-flag";
 
 /**
  * Magellan registry step: read bank and credit union fee bills from Open States into
@@ -50,7 +51,7 @@ const BATCH_IDLE_RETRY_HOURS = 24;
 export const STATE_BILLS_TAGGING_VERSION = 4;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.STATE_BILLS_TRACKER_LIVE === "true";
+  return flagOn(env.STATE_BILLS_TRACKER_LIVE);
 }
 
 export interface RegistryStateBillsResult {
