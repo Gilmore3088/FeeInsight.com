@@ -28,24 +28,17 @@ export interface PublicStats {
 export async function getPublicStats(): Promise<PublicStats> {
   try {
     const validCodes = [...VALID_US_CODES];
-    // The catalog rows are read once and each count runs over them. COUNT(DISTINCT row)
-    // over all four at once sorted 64,000 row values on disk (1.2 s average, Oct 5-9).
     const [row] = await sql<PublicStats[]>`
-      WITH live AS MATERIALIZED (
-        SELECT ef.institution_id, ef.fee_name, ef.amount,
-               COALESCE(ef.frequency, '') AS frequency, COALESCE(ef.variant_type, '') AS variant_type,
-               ef.fee_category, ct.state_code
-          FROM institution_sources ct
-          JOIN published_fee_catalog ef ON ct.id = ef.institution_id
-         WHERE ct.state_code IN ${sql(validCodes)}
-           AND ef.review_status = 'approved'
-      )
       SELECT
-        (SELECT COUNT(*) FROM (SELECT DISTINCT institution_id, fee_name, amount, frequency, variant_type FROM live) o)
-          as total_observations,
-        (SELECT COUNT(DISTINCT institution_id) FROM live) as total_institutions,
-        (SELECT COUNT(DISTINCT fee_category) FROM live) as total_categories,
-        (SELECT COUNT(DISTINCT state_code) FROM live) as total_states`;
+        COUNT(DISTINCT (ef.institution_id, ef.fee_name, ef.amount,
+          COALESCE(ef.frequency, ''), COALESCE(ef.variant_type, ''))) as total_observations,
+        COUNT(DISTINCT ct.id) as total_institutions,
+        COUNT(DISTINCT ef.fee_category) as total_categories,
+        COUNT(DISTINCT ct.state_code) as total_states
+      FROM institution_sources ct
+      JOIN published_fee_catalog ef ON ct.id = ef.institution_id
+      WHERE ct.state_code IN ${sql(validCodes)}
+        AND ef.review_status = 'approved'`;
     return {
       total_observations: Number(row.total_observations),
       total_institutions: Number(row.total_institutions),
@@ -544,10 +537,13 @@ export async function getDataFreshness(): Promise<DataFreshness> {
     SELECT MAX(crawled_at) as last_at FROM source_documents WHERE status = 'success'
   `;
 
-  // One pass over the catalog view for both figures; each used to cost its own (~200 ms).
-  const [fee] = await sql<{ last_at: string | Date | null; cnt: number }[]>`
-    SELECT MAX(created_at) as last_at, COUNT(*) as cnt FROM published_fee_catalog
+  const [fee] = await sql<{ last_at: string | Date | null }[]>`
+    SELECT MAX(created_at) as last_at FROM published_fee_catalog
     WHERE review_status = 'approved'
+  `;
+
+  const [count] = await sql<{ cnt: number }[]>`
+    SELECT COUNT(*) as cnt FROM published_fee_catalog WHERE review_status = 'approved'
   `;
 
   // Normalize Date objects (Postgres) to ISO strings
@@ -560,6 +556,6 @@ export async function getDataFreshness(): Promise<DataFreshness> {
   return {
     last_crawl_at: normDate(crawl?.last_at),
     last_fee_extracted_at: normDate(fee?.last_at),
-    total_observations: Number(fee.cnt),
+    total_observations: Number(count.cnt),
   };
 }
