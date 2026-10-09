@@ -133,7 +133,7 @@ function thisFeeAfterTerm(all: string[], index: number): ExtractedFeeCandidate |
 }
 
 /**
- * v49: a two-column schedule's "Personal ........ $10 per item paid" row under an
+ * v50: a two-column schedule's "Personal ........ $10 per item paid" row under an
  * "Overdrafts / Non-Sufficient Funds (NSF)" heading (Amerant Bank, 2026-10-09). The row names
  * only who pays; the heading names the fee. Flattened columns put each row in a " | " cell, and
  * the heading may carry footnote numbers ("(NSF)10, 12").

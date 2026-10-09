@@ -117,7 +117,7 @@ Clean..................................................... $60 per item, plus sh
 Documentary......................................... $125 per item, plus shipping | Business.................................................... $35 per item paid or returned
 Incoming 4 | Interest on Overdrawn Balance................. 17.5% daily for Business Accounts`;
 
-describe("a personal row under an overdraft heading (v49)", () => {
+describe("a personal row under an overdraft heading (v50)", () => {
   it("reads Amerant's personal per-item-paid price as its overdraft fee, not the business row", () => {
     expect(contextFees(AMERANT).map((fee) => [fee.canonicalHint, fee.feeName, fee.amount])).toEqual([
       ["overdraft", "Overdraft - personal, per item paid", 10],

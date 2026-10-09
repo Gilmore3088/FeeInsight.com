@@ -37,7 +37,9 @@ import { borrowedFrequency, frequencyFamily, frequencyFromLine } from "@/lib/fee
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
 // v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 49 } as const;
+// v49: a monthly fee with no account name takes it from its own name or the heading above it.
+// v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 50 } as const;
 
 export interface SpecialistRun {
   strategy: string;
