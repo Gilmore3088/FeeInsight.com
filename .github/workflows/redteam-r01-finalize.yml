@@ -22,10 +22,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
-      - name: Apply scoped compatible dependency updates
+      - name: Apply scoped compatible security updates, retaining the existing lint policy
         run: |
           npm install --ignore-scripts --no-audit --no-fund --save-exact next@16.4.0 react@19.3.0 react-dom@19.3.0
-          npm install --ignore-scripts --no-audit --no-fund --save-dev --save-exact eslint-config-next@16.4.0
           npm update --ignore-scripts --no-audit --no-fund fast-xml-builder source-map-js fast-xml-parser @aws-sdk/xml-builder baseline-browser-mapping sanitize-html
       - name: Reinstall exact final lockfile without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -51,4 +50,4 @@ jobs:
           git commit -m 'fix(security): patch framework and vulnerable compatible dependencies'
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
-          echo 'Dependency fix committed after high-severity audit, full tests, and build. Lower-severity advisory follow-up is documented.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Dependency fix committed after high-severity audit, full tests, existing lint policy, and build. Lower-severity and linter-upgrade findings remain documented.' >> "$GITHUB_STEP_SUMMARY"
