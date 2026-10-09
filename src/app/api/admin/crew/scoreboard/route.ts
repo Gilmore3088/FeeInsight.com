@@ -16,9 +16,10 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 }
 
 /**
- * Atlas's daily measurement, as a visible two-step run (cron, once a day): score the
- * pipeline against the hand-checked answer key, then snapshot the six scoreboard
- * numbers (which include that score). Deterministic; no model calls.
+ * Atlas's daily measurement, as a visible three-step run (cron, once a day): score the
+ * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
+ * regression cases and replay them, then snapshot the six scoreboard numbers (which include
+ * that score). Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
@@ -35,12 +36,13 @@ async function handleGET(request: NextRequest) {
     idempotencyKey: `atlas:scoreboard:${day}`,
     steps: [
       { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
+      { key: "deming-regression", agent: "atlas", title: "Deming: turn confirmed mistakes into test cases and replay them" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
     ],
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
-    : await executeAgentRun(started.run.id, { maxSteps: 2 });
+    : await executeAgentRun(started.run.id, { maxSteps: 3 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 
