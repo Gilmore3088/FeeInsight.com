@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
+import { nameIsFragment } from "@/lib/agents/darwin/release-review";
 import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
@@ -199,7 +200,39 @@ export function readerLostLine(fee: LiveFeeRow, texts: InstitutionText[], reason
   if (!own || rewrittenAt == null || readAt == null || rewrittenAt <= readAt) return false;
   const excerpt = excerptOf(fee.conditions);
   if (!excerpt) return false;
-  return checkFeeAgainstSource(excerpt, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok;
+  // Knox joins the excerpt's lines with " / ". The name and its price must share one line:
+  // "Notary Service / $10 low balance fee" is the next fee's price, not the notary's.
+  return excerpt
+    .split(/\s+\/\s+/)
+    .some((line) => checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok);
+}
+
+const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
+const RESTORE_NAME_MAX_WORDS = 8;
+
+/**
+ * Pure: is this name fit to put back live? A re-read restore brings back the name Knox
+ * stored, so it must read as a fee name on its own: not a fragment or cut-off, starting with
+ * a capital or a digit, at most 8 words, with no glued column text. UAT's 10-row check of
+ * restores (Oct 9) failed "Mechanical Repair Coverage (MRC) Stop Payments Quoted Rate Check /
+ * ACH / Electronic Check", "Account Research/Reconciliation Fee Subpoena/Levy/Garnishment
+ * Research per Hour Lost" and "services Account Closing (within first 90 days) Does not apply
+ * to Youth Savings accounts" on their names alone.
+ */
+export function restorableName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!/^[A-Z0-9"“]/.test(trimmed) || GLUED_COLUMNS.test(trimmed) || nameIsFragment(trimmed)) return false;
+  // A section heading glued on ("SAFE DEPOSIT BOX FEES x Box"), a perk ("Free Official Checks"
+  // at $7.50) or a unit ("Per Check Safe Deposit Box") is not the fee's own name.
+  if (/^(?:free|per)\b/i.test(trimmed) || /\bFEES\b/.test(trimmed)) return false;
+  // Two capitalised heading words ("SAFE DEPOSIT BOXES Auburn Hills"), a currency label
+  // ("USD Inactive Membership Fee") or a condition cut at its number ("transfer after 2").
+  if (/\b[A-Z]{3,}\s+[A-Z]{3,}\b/.test(trimmed) || /^USD\b/.test(trimmed) || /\b(?:after|over|under|first)\s+\d+$/i.test(trimmed)) return false;
+  const words = trimmed.toLowerCase().split(/\s+/);
+  // A word printed twice ("ATMs Non S&T ATM Transactions ATM Service Fees") is two cells joined.
+  const named = words.filter((word) => /[a-z]{2}/.test(word)).map((word) => word.replace(/s$/, ""));
+  if (new Set(named).size < named.length) return false;
+  return words.length <= RESTORE_NAME_MAX_WORDS;
 }
 
 export interface SourceCheckTakedown {
@@ -377,7 +410,7 @@ export async function takeDownUntraceableFees(
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
     const verdict = traceLiveFee(fee, institutionTexts);
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
-    if (readerLost && !(fee.taken_down && !READER_LOSS_RESTORES_ON)) {
+    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
       result.readerLost += 1;
       counts.checked += 1;

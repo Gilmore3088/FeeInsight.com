@@ -43,3 +43,21 @@ turned on only after UAT passes a 10-row check (9/10 or better), together with
 This is PRD section 6.3 ("never overwrite a previously better extraction solely because a new reader
 ran"). Rosetta still overwrites a text that traced more live fees with one that traces fewer.
 `text-survival.ts` reacts afterwards; nothing compares the two texts before the write.
+
+## Restore checks failed (UAT, Oct 9)
+
+Restores stay off. UAT scored two samples of fees the change would put back: 6/10 at 14:12 and 5/10
+whole-row at 14:20 (7/10 on amount and category). The second sample used the clean-name gate from
+PR 969. The bar is 9/10, and only one re-score was allowed, so restores are parked.
+
+Lesson: Knox's stored line doesn't prove the price belongs to the name, even when both sit in one
+line. In dash and leader-dot lists, the price on a line is often the next item's, printed just
+before that item's label. Three of the round-2 misses were this:
+- 14461: the $5 is non-member check cashing, and notary is free.
+- 28317: key replacement is $15, and the $200 is drilling the box.
+- 59618: NSF is $35, and Overdraft Privilege is $30.
+The other two misses (14690, 88118) had the right price under a wrong name.
+
+A restore needs more than the stored line. It needs a line that sets the name and the price apart as
+one item, or a second reading of the current text. Keeping fees live is narrower: it applies only to
+fees that are still up, and since PR 969 a single ` / `-separated line must pass the shared check.
