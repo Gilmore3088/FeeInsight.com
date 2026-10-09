@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
  * Branch locations: banks from the FDIC Summary of Deposits (institution_branch_deposits,
@@ -59,7 +60,7 @@ function toRow(r: RawBranch): BranchRow {
   return {
     source: r.source,
     institution_id: r.institution_id === null ? null : Number(r.institution_id),
-    institution_name: r.institution_name,
+    institution_name: institutionDisplayName(r.institution_name),
     branch_name: r.branch_name,
     is_main_office: r.is_main_office === true,
     address: r.address,

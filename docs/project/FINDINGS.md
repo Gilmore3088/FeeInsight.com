@@ -1,7 +1,8 @@
 # Findings
 
 Problems we hit that were structural or infrastructural: what happened, why, the fix, and the
-lesson for next time. Newest first. Add an entry the moment you find one.
+lesson for next time. Newest first. Closed to new entries after 2026-10-09: each new finding is
+its own file in `findings/` (see `findings/README.md`), so parallel PRs stop colliding here.
 
 Template:
 
@@ -12,6 +13,12 @@ Template:
 **Fix:** PR or issue, and whether it is merged or applied.
 **Lesson:** what any session should do differently.
 ```
+
+## 2026-10-09: Two reads took 10 to 13 seconds each time they ran
+**What happened:** pg_stat_statements at 00:58 UTC Oct 9 (since Oct 5): Hamilton's business-schedule check averaged 12.5 s over 312 runs (max 22 s), and the national revenue trend averaged 10 s over 322 runs (max 38 s).
+**Cause:** the business-schedule check looked up each business fee's consumer twin with a subquery over a CTE, which rescans the whole CTE (65,000 live fees) per business fee. The revenue trend windowed all 768,000 call report filings since 2010 to return the newest 8 to 20 quarters.
+**Fix:** this PR. The consumer twin is grouped once and joined (0.7 s on prod, same 1,127 rows and 21 matches). The trend reads only the years its quarters fall in, plus four spare quarters (1.8 s on prod, same 20 quarters).
+**Lesson:** a correlated subquery against a CTE is a nested loop over the CTE; group once and join. Bound history reads to the window the caller returns.
 
 ## 2026-10-09: The eval's zero criticals came from archiving by id, not from rules
 - **What happened.** The 211-row complete-record eval re-scored at 00:51 UTC showed 0 critical
@@ -3853,6 +3860,20 @@ and quarter were already stored, without looking at the periods of the data behi
 - **Watch.** Alerts are computed live for the admin home page and the daily brief, not stored,
   so there is no row to count. The next break shows on the admin home page as soon as a third
   run fails with the same error.
+
+## 2026-10-09: A priority bank's run that failed on a fixed break waited a day
+- **What happened.** Checking every failed run since Oct 8 against recovery: the eight state
+  lanes that failed on the 12:06 publish break all reran and published, but Tennessee's
+  largest bank (institution 27, run 2877, a priority "read now" run) failed on the same break
+  and had not run again 13 hours later.
+- **Why.** Recovery's rerun (`wakeLanesAfterRecovery`) covers state lanes only, and a
+  priority run holds its institution for 24 hours whether it completed or failed.
+- **Fix.** A priority run that failed with a reason shared by 3 or more runs in 24 hours,
+  none of them under the current deploy, no longer holds its institution, so it reruns on
+  the next tick after a fixing deploy (`PRIORITY_FIXED_BREAK_RUNS`). A rerun that fails
+  again records the new deploy and holds as before.
+- **Watch.** After deploy, a new `atlas.priority_institution` run for institution 27 starts when
+  the two priority slots reach it, and its publish step completes.
 
 ## 2026-10-08: Bank and credit union numbers share one namespace
 - **What happened.** 314 credit unions in `institution_sources` have the same `cert_number` as
