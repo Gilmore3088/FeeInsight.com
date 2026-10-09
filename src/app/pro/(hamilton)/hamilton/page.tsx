@@ -126,8 +126,9 @@ export default async function HamiltonHomePage({
   const user = await getCurrentUser().catch(() => null);
   const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
   const { briefing, mixedBasis, unavailable } = await loadBriefing(user, selectedInstitutionId);
-  const items = buildAttentionItems(briefing, { mixedBasis: new Set(mixedBasis) });
-  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null) : null;
+  const mixed = new Set(mixedBasis);
+  const items = buildAttentionItems(briefing, { mixedBasis: mixed });
+  const overview = briefing ? buildBriefingOverview(briefing, briefing.stateCode ?? null, mixed) : null;
   const month = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const trail = briefing
     ? provenanceToTrail(briefing.provenance, { method: BRIEFING_METHOD })
@@ -186,7 +187,7 @@ export default async function HamiltonHomePage({
 
       {/* Every fee against its own peer group, in the engine's order. */}
       {briefing && briefing.positions.length > 0 ? (
-        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} />
+        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} notCompared={mixedBasis} />
       ) : null}
 
       <Suspense fallback={<ChangesSkeleton />}>

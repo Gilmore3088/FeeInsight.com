@@ -109,8 +109,12 @@ export interface BriefingOverview {
   income: { latestTtm: number; yoyPct: number | null; quarterEnd: string; source: "fdic" | "ncua" } | null;
 }
 
-export function buildBriefingOverview(briefing: Briefing, stateLabel: string | null): BriefingOverview {
-  const banded = briefing.positions.filter((p) => p.band);
+export function buildBriefingOverview(
+  briefing: Briefing,
+  stateLabel: string | null,
+  mixedBasis: ReadonlySet<string> = new Set(),
+): BriefingOverview {
+  const banded = briefing.positions.filter((p) => p.band && !mixedBasis.has(p.feeCategory));
   const higher = banded.filter((p) => p.current > p.band!.p75).length;
   const lower = banded.filter((p) => p.current < p.band!.p25).length;
   const feesChangedNearby = briefing.observations.filter((o) => o.kind === "competitor_move").length;
