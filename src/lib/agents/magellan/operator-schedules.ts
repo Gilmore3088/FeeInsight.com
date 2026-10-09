@@ -606,6 +606,22 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     url,
     givenBy: "Mac session headless browser check, Magellan batch 1, 2026-10-09 06:46",
   })),
+  {
+    // Durant, Oklahoma's own Service Fee Schedule (rev. 06/24), linked from
+    // firstunitedbank.com/disclosures. Not Oakland, Maryland's mybank.com (595).
+    institutionId: 118,
+    institutionName: "First United Bank and Trust Company",
+    url: "https://www.firstunitedbank.com/_s3/firstunitedbank-com/files/document/FUB%20Fee%20Schedule_6.04.24.pdf?VersionId=duIasYK45iVTdYhlQuolYOpMdyAcPuV1",
+    givenBy: "Mac session headless browser check, 2026-10-09 07:08",
+  },
+  {
+    // firstmid.com resets the connection from the Mac too, so this indexed deposit disclosure is
+    // unverified; a dead link is retired by the fetch like any other.
+    institutionId: 202,
+    institutionName: "First Mid Bank & Trust, National Association",
+    url: "https://www.firstmid.com/wp-content/uploads/DepositDisclosures.pdf",
+    givenBy: "search index, via the Mac session, 2026-10-09 07:08",
+  },
 ];
 
 export interface NoConsumerSchedule {
@@ -678,6 +694,12 @@ export async function addOperatorSchedules(options: {
        -- A copy stored months ago under no current link is not held: ConnectOne's fee page
        -- was last stored in March 2026, so its listed schedule was never added again.
        AND doc.crawled_at > NOW() - make_interval(days => ${HELD_DOCUMENT_DAYS})
+       -- A refused fetch is stored as a document too (Morton, Jovia and SC Federal: HTTP 403,
+       -- no content); only a copy Rosetta read holds the schedule.
+       AND EXISTS (
+         SELECT 1 FROM agent_source_texts txt
+          WHERE txt.source_document_id = doc.id AND txt.status = 'completed'
+       )
     UNION ALL
     SELECT ias.institution_id, ias.url, NULL FROM institution_additional_sources ias WHERE ias.institution_id = ANY(${ids}::bigint[])
   `;
