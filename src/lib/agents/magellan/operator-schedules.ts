@@ -3,6 +3,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 
 import { looksLikePdfUrl } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { otherInstitutionAtHost } from "./other-bank-host";
 
 type SqlTag = typeof sql;
 
@@ -285,16 +286,6 @@ export const OPERATOR_SCHEDULES: readonly OperatorSchedule[] = [
     institutionName: "Busey Bank",
     url: "https://www.busey.com/assets/files/P0lBSs0h/CRA_PublicFile_ConsumerServicesFees.pdf",
     givenBy: "web search for the $10B+ banks with no live overdraft fee, 2026-10-07 06:10",
-  },
-  {
-    // "Account Disclosures and Fee Schedule" on mybank.com: Overdraft Fee $42.00/item, a $5.99
-    // Continuous Overdraft Fee per day, NSF Returned Item Fee no charge. Two links came before:
-    // first.bank was First Bank of St. Louis's schedule (taken down as another bank's document,
-    // 2026-10-08 23:15), and the overdraft opt-in form (stored, read) states only "up to $40".
-    institutionId: 118,
-    institutionName: "First United Bank and Trust Company",
-    url: "https://mybank.com/wp-content/uploads/OAC_Account_Disclosures.pdf",
-    givenBy: "the Mac session's signed-out browser for the $10B+ banks with no live overdraft fee, 2026-10-09 00:57",
   },
   {
     // schedule of service fees, 2025-03-25.
@@ -591,6 +582,10 @@ async function insertHandFoundSchedule(
   schedule: Pick<OperatorSchedule, "institutionId" | "url" | "givenBy">,
   run: { runId: number | null; stepId: number | null },
 ): Promise<boolean> {
+  // A person can be fooled by a same-name bank too: First United of Durant, Oklahoma was given
+  // First United of Oakland, Maryland's mybank.com disclosures (2026-10-09). A page on another
+  // institution's own website is that bank's schedule, as in discovery.
+  if (await otherInstitutionAtHost(db, schedule.institutionId, schedule.url)) return false;
   const reason = `Consumer fee schedule given by ${schedule.givenBy}`;
   const inserted = await db`
     INSERT INTO institution_additional_sources
@@ -649,6 +644,8 @@ export async function addHandFoundLink(options: {
   `;
   if (!institution) return { ok: false, error: "Institution not found" };
   const institutionName = String(institution.institution_name);
+  const other = await otherInstitutionAtHost(db, options.institutionId, url);
+  if (other) return { ok: false, error: `That link is on the website of ${other.institutionName}${other.stateCode ? ` (${other.stateCode})` : ""}, another institution` };
   const added = await insertHandFoundSchedule(
     db,
     { institutionId: options.institutionId, url, givenBy: options.givenBy },
