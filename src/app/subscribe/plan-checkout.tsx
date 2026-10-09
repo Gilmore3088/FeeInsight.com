@@ -41,8 +41,8 @@ interface PlanCheckoutProps {
 }
 
 const BUTTON =
-  "block w-full rounded-lg bg-[#C44B2E] px-4 py-3.5 text-center text-base font-semibold text-white shadow-sm hover:bg-[#A93D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+  "block w-full rounded-lg cursor-pointer bg-[#EA580C] px-4 py-3.5 text-center text-base font-semibold text-black shadow-sm hover:bg-[#F97316] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
 
 /**
  * The price for the chosen institution, one billing toggle (annual first), one button. The
@@ -64,7 +64,7 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
 
   return (
     <div>
-      <div role="radiogroup" aria-label="Billing" className="grid grid-cols-2 gap-1 rounded-lg bg-[#F1ECE4] p-1 text-sm">
+      <div role="radiogroup" aria-label="Billing" className="grid grid-cols-2 gap-1 rounded-lg bg-[#E9EFF8] p-1 text-sm">
         {(["annual", "monthly"] as const).map((option) => (
           <button
             key={option}
@@ -73,7 +73,7 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
             aria-checked={plan === option}
             onClick={() => choose(option)}
             className={`min-h-10 rounded-md px-3 font-medium transition-colors ${
-              plan === option ? "bg-white text-[#1A1815] shadow-sm" : "text-[#5A5347] hover:text-[#1A1815]"
+              plan === option ? "bg-white text-[#1E293B] shadow-sm" : "text-[#475569] hover:text-[#1E293B]"
             }`}
           >
             {option === "annual" ? `Annual · ${annualMonthsFree(tier)} months free` : "Monthly"}
@@ -82,12 +82,12 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
       </div>
 
       <p className="mt-5 flex items-baseline gap-1.5">
-        <span className="text-5xl font-semibold tracking-tight text-[#1A1815] tabular-nums" style={SERIF}>
+        <span className="text-5xl font-semibold tracking-tight text-[#1E293B] tabular-nums" style={DISPLAY}>
           {tierAmountLabel(tier, plan)}
         </span>
-        <span className="text-base text-[#3D3833]">{annual ? "/ year" : "/ month"}</span>
+        <span className="text-base text-[#475569]">{annual ? "/ year" : "/ month"}</span>
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-[#3D3833]">
+      <p className="mt-1 text-sm leading-relaxed text-[#475569]">
         {annual
           ? `${annualPerMonthLabel(tier)} a month · Save ${annualSavingsLabel(tier)}`
           : `Or ${tierAmountLabel(tier, "annual")} a year, save ${annualSavingsLabel(tier)}`}
@@ -115,15 +115,15 @@ export function PlanCheckout({ selection, isLoggedIn, returnTo, registerHref, in
         )}
       </div>
 
-      <p className="mt-3 text-center text-sm text-[#3D3833]">
+      <p className="mt-3 text-center text-sm text-[#475569]">
         {WORKSPACE_SEAT_LIMIT} team members · Secure Stripe checkout
       </p>
-      <p className="mt-3 text-xs leading-relaxed text-[#6B6255]">
+      <p className="mt-3 text-xs leading-relaxed text-[#556377]">
         {annual
           ? "Renews yearly. Cancel renewal anytime. First year refundable within 14 days."
           : "Renews monthly. Cancel renewal anytime."}{" "}
         {destination ? `Then straight back to ${destination}. ` : ""}
-        <Link href="/terms" className="underline underline-offset-2 hover:text-[#1A1815]">
+        <Link href="/terms" className="underline underline-offset-2 hover:text-[#1E293B]">
           Terms
         </Link>
       </p>

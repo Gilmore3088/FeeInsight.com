@@ -8,7 +8,8 @@ import type { MouseEvent, ReactNode } from "react";
  * institution is picked there is no search box, so it scrolls to the card instead. Without
  * JavaScript it is a plain anchor to the card.
  */
-export function PricingJump({ inputId, targetId, className, children }: {
+export function PricingJump({ id, inputId, targetId, className, children }: {
+  id?: string;
   inputId: string;
   targetId: string;
   className: string;
@@ -23,7 +24,7 @@ export function PricingJump({ inputId, targetId, className, children }: {
     if (input instanceof HTMLInputElement) input.focus({ preventScroll: true });
   };
   return (
-    <a href={`#${targetId}`} onClick={jump} className={className}>
+    <a id={id} href={`#${targetId}`} onClick={jump} className={className}>
       {children}
     </a>
   );

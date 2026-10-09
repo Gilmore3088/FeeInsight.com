@@ -149,17 +149,17 @@ export function ShowcaseStage({ panels }: { panels: ReactNode[] }) {
           onClick={() => choose(i)}
           aria-label={`${pillar.title} example`}
           aria-pressed={i === active}
-          className="group flex h-11 w-9 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-[#1A1815]"
+          className="group flex h-11 w-9 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-[#1E293B]"
         >
           <span
             aria-hidden
             className={`block h-2 rounded-full transition-all motion-reduce:transition-none ${
-              i === active ? "w-5 bg-[#1A1815]" : "w-2 bg-[#CFC5B7] group-hover:bg-[#6B6255]"
+              i === active ? "w-5 bg-[#1E293B]" : "w-2 bg-[#CBD5E1] group-hover:bg-[#556377]"
             }`}
           />
         </button>
       ))}
-      <span className="ml-1 text-xs text-[#6B6255]">{PILLARS[active].title}</span>
+      <span className="ml-1 text-xs text-[#556377]">{PILLARS[active].title}</span>
     </div>
     </div>
   );
@@ -168,11 +168,11 @@ export function ShowcaseStage({ panels }: { panels: ReactNode[] }) {
 /** The same list with nothing to open, for when the examples couldn't be read. */
 function StaticPillars() {
   return (
-    <ul className="divide-y divide-[#E3DACC] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
+    <ul className="divide-y divide-[#E2E8F0] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
       {PILLARS.map((pillar) => (
         <li key={pillar.key} className="py-4 first:pt-0 last:pb-0 sm:py-0">
-          <h3 className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</h3>
-          <p className="mt-1 text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+          <h3 className="text-base font-semibold text-[#1E293B] sm:text-lg">{pillar.title}</h3>
+          <p className="mt-1 text-[15px] leading-relaxed text-[#475569] sm:mt-2">
             <span className="sm:hidden">{pillar.short}</span>
             <span className="hidden sm:inline">{pillar.body}</span>
           </p>
@@ -193,7 +193,7 @@ function FillBar({ filling }: { filling: boolean }) {
   const full = !filling || started;
   return (
     <span
-      className="block h-full bg-[#1A1815] ease-linear"
+      className="block h-full bg-[#1E293B] ease-linear"
       style={{
         width: full ? "100%" : "0%",
         transitionProperty: "width",
@@ -221,7 +221,7 @@ export function ShowcasePillars({ interactive = true }: { interactive?: boolean 
     }
   };
   return (
-    <ul className="divide-y divide-[#E3DACC] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
+    <ul className="divide-y divide-[#E2E8F0] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
       {PILLARS.map((pillar, i) => {
         const on = i === active;
         return (
@@ -231,21 +231,21 @@ export function ShowcasePillars({ interactive = true }: { interactive?: boolean 
               onClick={() => open(i)}
               aria-controls={`pro-example-${pillar.key}`}
               aria-pressed={on}
-              className="group block w-full rounded-md py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1A1815] sm:py-0"
+              className="group block w-full rounded-md py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1E293B] sm:py-0"
             >
               <span className="flex items-baseline justify-between gap-3">
-                <span className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</span>
+                <span className="text-base font-semibold text-[#1E293B] sm:text-lg">{pillar.title}</span>
                 <span
-                  className={`text-xs font-medium ${on ? "text-[#1A1815]" : "text-[#6B6255] group-hover:text-[#1A1815]"}`}
+                  className={`text-xs font-medium ${on ? "text-[#1E293B]" : "text-[#556377] group-hover:text-[#1E293B]"}`}
                 >
                   {on ? "Showing above" : "See example"}
                 </span>
               </span>
-              <span className="mt-1 block text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+              <span className="mt-1 block text-[15px] leading-relaxed text-[#475569] sm:mt-2">
                 <span className="sm:hidden">{pillar.short}</span>
                 <span className="hidden sm:inline">{pillar.body}</span>
               </span>
-              <span aria-hidden className="mt-3 block h-0.5 overflow-hidden rounded-full bg-[#E3DACC]">
+              <span aria-hidden className="mt-3 block h-0.5 overflow-hidden rounded-full bg-[#E2E8F0]">
                 {on && <FillBar key={`${turn}-${paused}`} filling={cycling && !paused} />}
               </span>
             </button>

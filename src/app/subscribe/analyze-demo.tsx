@@ -5,7 +5,7 @@ import { formatAmount } from "@/lib/format";
 import { useReducedMotion, useShowcase } from "./showcase";
 import { PreviewFrame } from "./preview-frame";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
 
 /** A Try a price question worked from the live national index (built on the server). */
 export interface AnalyzeScenario {
@@ -77,7 +77,7 @@ function AnalyzeRun({ scenario, animate }: { scenario: AnalyzeScenario; animate:
     <PreviewFrame label="Hamilton · Try a price" aside="Illustration, live figures">
       <div className="space-y-4 px-4 py-4 sm:px-5">
         <div className="flex justify-end">
-          <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-[#1A1815] px-3.5 py-2 text-[15px] text-white">
+          <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-[#1E293B] px-3.5 py-2 text-[15px] text-white">
             {question.slice(0, typed)}
             {!answered && <span aria-hidden className="ml-0.5 inline-block h-4 w-px translate-y-0.5 bg-white" />}
           </p>
@@ -87,38 +87,38 @@ function AnalyzeRun({ scenario, animate }: { scenario: AnalyzeScenario; animate:
           className={`transition-opacity duration-500 motion-reduce:transition-none ${answered ? "opacity-100" : "opacity-0"}`}
           aria-hidden={!answered}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6B6255]">Hamilton</p>
-          <p className="mt-1 text-lg leading-snug text-[#1A1815]" style={SERIF}>
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#556377]">Hamilton</p>
+          <p className="mt-1 text-lg leading-snug text-[#1E293B] font-semibold tracking-tight" style={DISPLAY}>
             {scenarioAnswer(scenario)}
           </p>
           <div className="mt-4">
-            <div aria-hidden className="relative h-2.5 rounded-full bg-[#EDE6DB]">
+            <div aria-hidden className="relative h-2.5 rounded-full bg-[#E2E8F0]">
               {scenario.p25 !== null && scenario.p75 !== null && (
                 <div
-                  className="absolute inset-y-0 rounded-full bg-[#D6CBBB]"
+                  className="absolute inset-y-0 rounded-full bg-[#BFDBFE]"
                   style={{ left: pct(scenario.p25, max), width: `calc(${pct(scenario.p75, max)} - ${pct(scenario.p25, max)})` }}
                 />
               )}
-              <div className="absolute -inset-y-1 w-0.5 rounded bg-[#1A1815]" style={{ left: pct(scenario.median, max) }} />
+              <div className="absolute -inset-y-1 w-0.5 rounded bg-[#1E293B]" style={{ left: pct(scenario.median, max) }} />
               <div
-                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C44B2E] ring-2 ring-white transition-[left] duration-700 ease-out motion-reduce:transition-none"
+                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2563EB] ring-2 ring-white transition-[left] duration-700 ease-out motion-reduce:transition-none"
                 style={{ left: answered ? pct(scenario.price, max) : pct(scenario.median, max) }}
               />
             </div>
-            <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6B6255]">
+            <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#556377]">
               <span>
-                <span aria-hidden className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E] align-middle" />
+                <span aria-hidden className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full bg-[#2563EB] align-middle" />
                 Scenario price
               </span>
               <span>
-                <span aria-hidden className="mr-1.5 inline-block h-3 w-0.5 bg-[#1A1815] align-middle" />
+                <span aria-hidden className="mr-1.5 inline-block h-3 w-0.5 bg-[#1E293B] align-middle" />
                 National median
               </span>
             </p>
           </div>
         </div>
       </div>
-      <p className="mt-auto border-t border-[#EDE6DB] bg-[#FBF9F5] px-4 py-2.5 text-xs leading-relaxed text-[#6B6255] sm:px-5">
+      <p className="mt-auto border-t border-[#E2E8F0]/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-[#556377] sm:px-5">
         A scenario, not a recommendation. In Pro, ask about any fee against your own peers.
       </p>
     </PreviewFrame>
