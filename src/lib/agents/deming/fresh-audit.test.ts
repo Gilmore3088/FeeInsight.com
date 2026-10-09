@@ -59,6 +59,26 @@ describe("scoreFreshAudit", () => {
     expect(score.misses[0]).toMatchObject({ feeId: 7, check: "hamilton.article_page", severity: "critical" });
   });
 
+  // UAT, Oct 9: two of ten "right" rows were not right on the whole record (77845, 88402).
+  it("fails a name with glyph junk or a cut sentence, and a free perk with no zero price on its line", () => {
+    const text = new Map([
+      [1, [{ source_document_id: 10, normalized_text: "Notary Service for members $5.00\nAccount perks: Free Checks, Online Banking\nCashier's Check No charge" }]],
+    ]);
+    const score = scoreFreshAudit(
+      [
+        fee(11, { canonical_fee_key: "notary_fee", fee_name: "Notary Service for members \u010b\u010b", amount: 5 }),
+        fee(12, { canonical_fee_key: "check_printing", fee_name: "Free Checks", amount: 0 }),
+        fee(13, { canonical_fee_key: "cashiers_check", fee_name: "Cashier's Check", amount: 0 }),
+      ],
+      text,
+    );
+    expect(score.misses.map((m) => [m.feeId, m.check, m.reason])).toEqual([
+      [11, "deming.name_quality", "junk_glyphs"],
+      [12, "deming.not_a_fee_line", "perk_not_a_price"],
+    ]);
+    expect(score).toMatchObject({ right: 1, nameMiss: 1, notAFee: 1, sampleIds: [11, 12, 13] });
+  });
+
   it("reports no percentage below the scorable floor", () => {
     expect(scoreFreshAudit([fee(1)], schedule).accuracy).toBeNull();
     const many = Array.from({ length: FRESH_AUDIT_MIN_SCORABLE }, (_, i) => fee(i + 1));
@@ -76,7 +96,7 @@ describe("summarizeFreshAudit", () => {
   it("shows the unknown count beside the percentage", () => {
     const fees = [...Array.from({ length: FRESH_AUDIT_MIN_SCORABLE }, (_, i) => fee(i + 1)), fee(99, { institution_id: 2 })];
     expect(summarizeFreshAudit({ ...base, ...scoreFreshAudit(fees, schedule) })).toBe(
-      "Deming audited 31 live fees (seed 2026-10-09): 30 of 30 right (100.0%), 0 amount not supported, 0 category not supported, 0 not from the bank's own schedule; 1 with no stored text (unknown). Critical misses: 0.",
+      "Deming audited 31 live fees (seed 2026-10-09): 30 of 30 right on amount, category, source, fee line and name (100.0%); 0 amount not supported, 0 category not supported, 0 not from the bank's own schedule, 0 not a fee line, 0 bad name; 1 with no stored text (unknown). Critical misses: 0.",
     );
   });
 });
