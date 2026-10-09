@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -744,6 +744,22 @@ describe("decidePriorFee", () => {
     expect(decidePriorFee(inquiry, [reread])).toEqual({ kind: "identical", prior: reread });
     const elsewhere = live({ fee_published_id: 14756, amount: "5.00", source_document_id: 12, fee_name: "Foreign ATM fee" });
     expect(decidePriorFee(inquiry, [elsewhere])).toEqual({ kind: "identical", prior: elsewhere });
+  });
+
+  it("tells same-priced lines of one document apart only by their names (20-row source spot check, 9 Oct)", () => {
+    const pair = (rowName: string, priorName: string) =>
+      separateLines({ ...row, fee_name: rowName }, live({ source_document_id: 77, fee_name: priorName }));
+    // Separate lines.
+    expect(pair("ACH OD Fee", "Courtesy Pay Fee")).toBe(true);
+    expect(pair("ACH Origination Item — Debit", "ACH Origination Item — Credit ………………")).toBe(true);
+    expect(pair("Check Cashing Fee- Members (Only applies to members who do not have $100 in any combination of accounts or a loan with a", "Check Cashing Fee- Third Party")).toBe(true);
+    expect(pair("Monthly service charge (if daily balance falls below $1,000 minimum)", "Monthly service charge – Prestige Checking")).toBe(true);
+    // One fee, named twice.
+    expect(pair("Check Copies", "Check Copy")).toBe(false);
+    expect(pair("Money Orders", "per Money Order")).toBe(false);
+    expect(pair("Legal | Legal Document Processing", "Legal Process")).toBe(false);
+    expect(pair("Mailed Statement Fee (Business and Public Value $3.00)", "Consumer Additional Mailed Statement Fee")).toBe(false);
+    expect(pair("Overdraft Protection Plans designed to avoid the above fees are available either by linking to another deposit account o", "Overdraft Protection Sweep Fee")).toBe(false);
   });
 
   it("keeps lines from the same document side by side", () => {

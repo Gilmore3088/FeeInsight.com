@@ -767,9 +767,31 @@ const FILLER_WORDS = new Set([
   "month", "monthly", "of", "on", "or", "per", "s", "service", "the", "to", "up", "will", "with", "your", "amp",
 ]);
 
-function lineWords(name: string | null | undefined): Set<string> {
-  return new Set(normalizedFeeName(name).split(" ").filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word)));
+/** One form per word, so "Check Copies" and "Check Copy", "Legal Process" and "Legal Processing" match. */
+function stem(word: string): string {
+  if (word.length > 4 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (word.length > 5 && word.endsWith("ing")) return word.slice(0, -3);
+  if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
 }
+
+function significantWords(name: string | null | undefined): Set<string> {
+  return new Set(
+    normalizedFeeName(name)
+      .split(" ")
+      .filter((word) => word && !/^\d+$/.test(word) && !FILLER_WORDS.has(word))
+      .map(stem),
+  );
+}
+
+/** A line's words, without a parenthetical aside ("(Only applies to members who ...)") when the rest names it. */
+function lineWords(name: string | null | undefined): Set<string> {
+  const outside = significantWords((name ?? "").replace(/\([^)]*\)?/g, " "));
+  return outside.size > 0 ? outside : significantWords(name);
+}
+
+/** More words than a fee line has: a sentence of the page read as the name, which says nothing about which line it is. */
+const MAX_LINE_WORDS = 10;
 
 /**
  * Two lines of one document at the same price whose names share no reading of each other
@@ -783,6 +805,7 @@ export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow):
   if (!sameDocument(prior.source_document_id, row.source_document_id)) return false;
   const rowWords = lineWords(row.fee_name);
   const priorWords = lineWords(prior.fee_name);
+  if (rowWords.size > MAX_LINE_WORDS || priorWords.size > MAX_LINE_WORDS) return false;
   const within = (a: Set<string>, b: Set<string>) => [...a].every((word) => b.has(word));
   return !within(rowWords, priorWords) && !within(priorWords, rowWords);
 }
