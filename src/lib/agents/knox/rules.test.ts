@@ -494,6 +494,17 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
+    ["ATM Adjustment", "account_research"],
+    ["ATM Adjustment Fee $5.00 Network fee may apply", "account_research"],
+    ["Special Handling (i.e. ATM adjustment, etc.)", "account_research"],
+    ["ATM Limit Adjustment", "atm_non_network"],
+    ["ATM Transaction Adjustment", "account_research"],
+    ["ATM Balance Inquiry (at non-Wildfire ATM)", "atm_non_network"],
+  ])("v61 reads %s as %s (ATM adjustment)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
     ["Returned Mail Fee", "account_research"],
     ["Bad Address Fee", "account_research"],
     ["Fax Outgoing", "document_reproduction"],
