@@ -196,6 +196,9 @@ const PREPAID_BUY_OR_RELOAD =
  */
 const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transfers?|debits?|activity)\b/i;
 
+/** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"), a charge on the IRA itself. */
+const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
+
 /**
  * Sending a fax or copying a document ("Fax (Outgoing)", "Copy of previous statement"), which
  * document reproduction holds. Fax as the way a wire, transfer or closing is requested, a
@@ -241,12 +244,15 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
     sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
   },
   // Moving an IRA to another institution closes it here; it is not account research. An IRA's
-  // excess withdrawal charge stays: excess activity is account servicing wherever it occurs.
+  // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
   // A fax or a document copy is document reproduction, not research.
   account_research: {
     to: "ira_termination",
     name: IRA_TRANSFER_OUT,
-    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+    also: [
+      { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
+      { to: "document_reproduction", name: FAX_OR_COPY },
+    ],
     sqlPattern: "\\mira\\M|fax|cop(y|ies)|reproduc",
   },
   // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
@@ -255,9 +261,6 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
   // Excess savings or money market activity is account servicing, not a lending fee.
   other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
-  // Fold v9 moved four IRA excess withdrawals here at 02:05 Oct 9, before PR 800 reversed that
-  // call; excess activity is account servicing, IRA savings included.
-  ira_administration: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
