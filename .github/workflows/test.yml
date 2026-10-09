@@ -5,34 +5,44 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   app-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          node-version: "22"
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Guard retired execution surfaces
-        run: npm run guard:legacy
-      - name: Run focused agentic tests
-        run: npm run test:agentic
-      - name: Typecheck
-        run: npx tsc --noEmit
-      - name: Lint
-        run: npm run lint
-      - name: Run full test suite
-        run: npx vitest run
-      - name: End-to-end pipeline test
-        # One real state-lane run against the production schema in a throwaway database.
-        # The runner's PostgreSQL has SSL on, which the app's connection requires.
+      - name: Validate guards, types, lint, and full test suite once
+        run: npm run validate
+      - name: Verify production build and canonical admin routes
+        run: npm run build
+      - name: End-to-end pipeline against a throwaway database
+        # This is local CI PostgreSQL, never a production secret or database.
+        env:
+          E2E_DATABASE_URL: postgres://postgres:postgres@localhost:5432/e2e
+          PGPASSWORD: postgres
         run: |
+          set -euo pipefail
+          : "${E2E_DATABASE_URL:?An explicit disposable integration database is required}"
           sudo systemctl start postgresql.service
           sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres'"
           sudo -u postgres createdb e2e
-          PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run src/lib/agents/pipeline.e2e.test.ts
+          psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
+          npm run test:pipeline
