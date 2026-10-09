@@ -691,6 +691,12 @@ export async function addOperatorSchedules(options: {
        -- A copy stored months ago under no current link is not held: ConnectOne's fee page
        -- was last stored in March 2026, so its listed schedule was never added again.
        AND doc.crawled_at > NOW() - make_interval(days => ${HELD_DOCUMENT_DAYS})
+       -- A refused fetch is stored as a document too (Morton, Jovia and SC Federal: HTTP 403,
+       -- no content); only a copy Rosetta read holds the schedule.
+       AND EXISTS (
+         SELECT 1 FROM agent_source_texts txt
+          WHERE txt.source_document_id = doc.id AND txt.status = 'completed'
+       )
     UNION ALL
     SELECT ias.institution_id, ias.url, NULL FROM institution_additional_sources ias WHERE ias.institution_id = ANY(${ids}::bigint[])
   `;
