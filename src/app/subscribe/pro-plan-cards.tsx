@@ -1,13 +1,6 @@
 import type { ReactNode } from "react";
 import { TrackLink } from "@/components/track-link";
-import {
-  CONSULTANT_PRICE_NOTE,
-  PRO_TIERS,
-  annualMonthsFree,
-  tierAmountLabel,
-  tierPriceLabel,
-  type ProTier,
-} from "@/lib/pro-tiers";
+import { annualMonthsFree, tierAmountLabel, type ProTier } from "@/lib/pro-tiers";
 import { SubscribeButton } from "./subscribe-button";
 import { PLAN_TEAM_LABEL, type ProPlan } from "./pricing";
 
@@ -21,7 +14,6 @@ export interface ProTierSelection {
 }
 
 interface ProPlanCardsProps {
-  features: string[];
   isLoggedIn: boolean;
   /** The institution picker, or what was picked. */
   chooser: ReactNode;
@@ -34,19 +26,17 @@ interface ProPlanCardsProps {
   autoStartPlan?: ProPlan | null;
 }
 
-const CHECK = "✓";
 const PRIMARY_BUTTON =
   "block w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-[#A93D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 const SECONDARY_BUTTON =
   "block w-full rounded-md border border-[#D5CBBF] px-4 py-2.5 text-center text-sm font-medium text-[#1A1815] hover:border-[#1A1815] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 /**
- * Pro priced by institution size: the three tiers sit under ONE feature list (the tiers
- * differ by price, not features). Once the buyer picks who the plan covers, the two price
- * columns show that tier's monthly and annual price.
+ * Starts Pro: the buyer picks who the plan covers, then the two price columns show that
+ * tier's monthly and annual price with the button to check out. Every price and what Pro
+ * includes are shown above this on the page (pro-overview.tsx).
  */
 export function ProPlanCards({
-  features,
   isLoggedIn,
   chooser,
   selection,
@@ -85,26 +75,13 @@ export function ProPlanCards({
 
   return (
     <div className="rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            Included for everyone on the plan
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-[#5A5347]">
-            {features.map((feature) => (
-              <li key={feature} className="flex items-start gap-2">
-                <span className="mt-0.5 flex-shrink-0 text-[#A93D25]">{CHECK}</span>
-                {feature}
-              </li>
-            ))}
-          </ul>
-          <TierTable highlighted={selection?.tier ?? null} />
-        </div>
-
+      <div className="grid gap-6 md:grid-cols-2">
         <div className="grid content-start gap-4">
           {chooser}
+        </div>
+        <div className="grid content-start gap-4">
           {selection ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="grid gap-4">
               <PriceColumn
                 plan="monthly"
                 eyebrow="Monthly"
@@ -133,39 +110,6 @@ export function ProPlanCards({
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-/** All three tiers, so the price is on the page before anyone picks an institution. */
-function TierTable({ highlighted }: { highlighted: ProTier | null }) {
-  return (
-    <div className="mt-6 overflow-x-auto rounded-lg border border-[#E0D7C9] bg-white">
-      <table className="w-full text-left text-sm">
-        <caption className="sr-only">Pro price by institution size</caption>
-        <thead className="text-[11px] uppercase tracking-[0.12em] text-[#6B6255]">
-          <tr>
-            <th scope="col" className="px-3 py-2 font-bold">Institution size</th>
-            <th scope="col" className="px-3 py-2 font-bold">Monthly</th>
-            <th scope="col" className="px-3 py-2 font-bold">Annual</th>
-          </tr>
-        </thead>
-        <tbody>
-          {PRO_TIERS.map((tier) => (
-            <tr
-              key={tier.key}
-              className={`border-t border-[#E0D7C9] ${tier.key === highlighted ? "bg-[#FBEFEA] font-semibold text-[#1A1815]" : "text-[#5A5347]"}`}
-            >
-              <th scope="row" className="px-3 py-2 font-medium">{tier.assetsLabel}</th>
-              <td className="px-3 py-2 tabular-nums">{tierPriceLabel(tier.key, "monthly")}</td>
-              <td className="px-3 py-2 tabular-nums">{tierPriceLabel(tier.key, "annual")}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="border-t border-[#E0D7C9] px-3 py-2 text-xs text-[#6B6255]">
-        Every tier is {PLAN_TEAM_LABEL}. {CONSULTANT_PRICE_NOTE}
-      </p>
     </div>
   );
 }

@@ -9,33 +9,30 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
-import { subscribeReasonLine } from "@/lib/subscribe-reason";
+import { gatedPageLabel, subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, SITE_NAME } from "@/lib/constants";
 import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
-import { HAMILTON_CANONICAL, PRO_SECTION_TITLE, PRO_SUBHEAD } from "@/app/for-institutions/hamilton-copy";
+import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
 import { ProPlanCards, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
+import { ProIncludes, ProTierCards } from "./pro-overview";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_ANNUAL_RANGE_LABEL, PRO_TIERS, isProTier, proTier, tierForAssets } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets } from "@/lib/pro-tiers";
 import { AdvisoryCard, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
-import {
-  PLAN_TEAM_LABEL,
-  isProPlan,
-  proFeatureList,
-  type ProPlan,
-} from "./pricing";
+import { PLAN_TEAM_LABEL, isProPlan, type ProPlan } from "./pricing";
 
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Fee Insight pricing: free Bank Fee Index lookup, Fee Insight Pro priced by institution size (monthly or annual, for up to 5 people), and the Competitive Fee Position Report.",
+    "Fee Insight Pro pricing and what it includes: $150 to $500 a month by institution size, for up to 5 people. Also the free Bank Fee Index lookup and the Competitive Fee Position Report.",
 };
 
 const WELCOME_PATH = "/account/welcome";
+const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
 
 interface SubscribeSearchParams {
   success?: string;
@@ -81,7 +78,6 @@ export default async function SubscribePage({
   const user = await getCurrentUser();
   const params = await searchParams;
   const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
-  const features = proFeatureList(summary);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
   const checkoutRequested = params.checkout === "1";
@@ -102,7 +98,14 @@ export default async function SubscribePage({
   const reasonLine =
     params.canceled === "1"
       ? "Checkout was canceled. Nothing was charged."
-      : subscribeReasonLine(params.reason === "activating" && user ? "pro_required" : params.reason, SITE_NAME);
+      : subscribeReasonLine(
+          // A Pro page that sent no reason (e.g. the Wire digest) still gets its name said.
+          (params.reason === "activating" && user) || (!params.reason && gatedPageLabel(returnTo))
+            ? "pro_required"
+            : params.reason,
+          SITE_NAME,
+          returnTo,
+        );
   // Only a signed-in, non-premium user with a chosen plan can be handed straight to Stripe.
   const autoStartPlan = isLoggedIn && checkoutRequested ? requestedPlan : null;
   const pendingInvitations =
@@ -188,62 +191,58 @@ export default async function SubscribePage({
           </div>
         )}
 
-        <div className="mb-10 text-center">
-          <h1
-            className="mb-3 text-3xl font-normal tracking-tight text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-          >
-            Simple, transparent pricing
+        <section id="pro" aria-labelledby="pro-title" className="scroll-mt-20">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">{SITE_NAME} Pro</p>
+          <h1 id="pro-title" className="mt-1 text-3xl font-normal tracking-tight text-[#1A1815]" style={SERIF}>
+            See where your fees stand against your market
           </h1>
-          <p className="mx-auto max-w-2xl text-base text-[#5A5347]">
-            Fee lookup and the national reports are free, and an institution report starts at $300.{" "}
-            {SITE_NAME} Pro is {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}, and{" "}
-            {SITE_NAME} Advisory is custom work.
+          <p className="mt-3 max-w-3xl text-base leading-relaxed text-[#1A1815]">{HAMILTON_CANONICAL}</p>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#5A5347]">
+            One plan covers your whole team, {PLAN_TEAM_LABEL}. The price is set by your institution&apos;s
+            size, and you can cancel at the end of any billing period.
           </p>
-        </div>
 
-        <div className="space-y-8">
+          <h2 className="mt-10 mb-4 text-xl text-[#1A1815]" style={SERIF}>
+            What it costs
+          </h2>
+          <ProTierCards highlighted={selection?.otherOrganization ? "consultant" : selection?.tier ?? null} />
+
+          <h2 className="mt-10 mb-4 text-xl text-[#1A1815]" style={SERIF}>
+            What you get on every plan
+          </h2>
+          <ProIncludes />
+          <HamiltonBenchmarkPreview className="mt-8" />
+
+          <h2 id="pro-heading" className="mt-10 mb-4 scroll-mt-20 text-xl text-[#1A1815]" style={SERIF}>
+            Start your plan
+          </h2>
+          <ProPlanCards
+            isLoggedIn={isLoggedIn}
+            chooser={
+              <ProTierChooser
+                chosenLabel={chosenLabel}
+                problem={chooserProblem}
+                bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
+                pickedBand={selection?.tierPicked ? selection.tier : null}
+              />
+            }
+            selection={selection}
+            returnTo={returnTo ?? undefined}
+            registerHrefFor={registerHrefFor}
+            highlightedPlan={requestedPlan}
+            autoStartPlan={selection ? autoStartPlan : null}
+          />
+        </section>
+
+        <section aria-labelledby="other-options-heading" className="mt-14 space-y-8">
+          <h2 id="other-options-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+            Not ready for Pro?
+          </h2>
           <FreeTierCard summary={summary} />
           <ReportCard sampleLive={sampleLive} />
-
-          <section id="pro" aria-labelledby="pro-heading" className="scroll-mt-20">
-            <div className="mb-5">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-                {SITE_NAME} Pro
-              </p>
-              <h2
-                id="pro-heading"
-                className="mt-1 text-xl text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-              >
-                {PRO_SECTION_TITLE}
-              </h2>
-              <p className="mt-2 text-base leading-relaxed text-[#1A1815]">{HAMILTON_CANONICAL}</p>
-              <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">{PRO_SUBHEAD}</p>
-            </div>
-            <HamiltonBenchmarkPreview className="mb-5" />
-            <ProPlanCards
-              features={features}
-              isLoggedIn={isLoggedIn}
-              chooser={
-                <ProTierChooser
-                  chosenLabel={chosenLabel}
-                  problem={chooserProblem}
-                  bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
-                  pickedBand={selection?.tierPicked ? selection.tier : null}
-                />
-              }
-              selection={selection}
-              returnTo={returnTo ?? undefined}
-              registerHrefFor={registerHrefFor}
-              highlightedPlan={requestedPlan}
-              autoStartPlan={selection ? autoStartPlan : null}
-            />
-          </section>
-
           <AdvisoryCard />
           <PricingFaq summary={summary} />
-        </div>
+        </section>
 
         {!isLoggedIn && (
           <p className="mt-8 text-center text-xs text-[#6B6255]">
