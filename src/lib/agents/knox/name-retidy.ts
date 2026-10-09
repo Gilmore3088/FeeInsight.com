@@ -351,7 +351,7 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * (`cellName`). Dry run on 2026-10-09: 42 of the 844 live names whose last cell is printed on
  * their page, all checked against their source line.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 14 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 15 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -649,6 +649,71 @@ export function sharedNameFeeIds(fees: LiveFeeRow[]): Set<number> {
   );
 }
 
+/**
+ * v15: names that are another line's cell, Hamilton publish found on Oct 9 (the twins of publish's
+ * `withoutNeighbourCell` and `CONDITION_ONLY_NAME`, which keep new ones from publishing).
+ * - A neighbouring line's "(...):" cell glued on the front: "(Fee depends on style of check
+ *   selected): Rental Late Fee (Past Due 30 Days)" is "Rental Late Fee (Past Due 30 Days)".
+ * - A box size's footnote number: "3x10” 8" is box 3x10”, footnote 8.
+ * - A name that is only the line's condition, "(if closed within 45 days of opening)": the fee's
+ *   name is the cell before it on the same line, or the line above ("Account Closure Fee"), and
+ *   must name the fee's category on its own. When the page has no such name but the parenthesis
+ *   itself names the category ("$50.00* (Lost Key)"), it is the name without its brackets. Any
+ *   other condition-only name is left for a person: no other rule renames it.
+ */
+const LEADING_PARENTHETICAL_CELL = /^\s*\([^()]*\)\s*:\s*(?=[A-Z])/;
+const BOX_FOOTNOTE = /^(\s*\d+(?:\.\d+)?\s*[xX\u00d7]\s*\d+(?:\.\d+)?\s*["\u201d\u2033])\s*\d{1,2}\s*$/;
+const CONDITION_ONLY_NAME = /^\s*\([^()]*\)\s*$/;
+const NAME_CELL_MAX_WORDS = 8;
+/** A price cell ("$5.00", "$ 25.00 per item"), and a line ending on a price word ("Drilling Fee Varies"). */
+const PRICE_CELL = /^(?:\$\s?\d|\d[\d,.]*\s*(?:$|per\b|each\b))/i;
+const PRICE_WORD_END = /\b(?:varies|free|n\/a|no (?:fee|charge)|none|waived)\s*$/i;
+
+export function neighbourCellName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key">): string | null {
+  const box = fee.fee_name.match(BOX_FOOTNOTE);
+  if (box) return fee.canonical_fee_key === "safe_deposit_box" ? box[1].trim() : null;
+  if (!LEADING_PARENTHETICAL_CELL.test(fee.fee_name)) return null;
+  const rest = fee.fee_name.replace(LEADING_PARENTHETICAL_CELL, "").trim();
+  return rest && classifyFeeText(rest) === fee.canonical_fee_key && checkFeeCategory(fee.canonical_fee_key, rest).ok ? rest : null;
+}
+
+export function conditionOnlyName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_fee_key" | "amount">, ownTexts: string[]): string | null {
+  if (!CONDITION_ONLY_NAME.test(fee.fee_name) || fee.amount == null) return null;
+  const condition = fee.fee_name.replace(/\s+/g, " ").trim();
+  const key = condition.toLowerCase();
+  const amount = Number(fee.amount);
+  const found = new Map<string, string>();
+  for (const text of ownTexts) {
+    const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+    lines.forEach((line, at) => {
+      const index = line.toLowerCase().indexOf(key);
+      if (index < 0 || ![line, lines[at + 1], lines[at + 2]].some((next) => next != null && priceOnLine(next, amount))) return;
+      // The cell before the condition on its line, or the line above when the condition opens its line.
+      const cells = line.slice(0, index).split("|").map((cell) => cell.trim()).filter((cell) => cell && !PRICE_CELL.test(cell));
+      const above = at > 0 && !MONEY_ON_LINE.test(lines[at - 1]) && !PRICE_WORD_END.test(lines[at - 1]) && !lines[at - 1].includes("|") ? lines[at - 1] : null;
+      const cell = (line.slice(0, index).trim() ? cells.at(-1) : above)?.replace(/[\s:;,.\-–—…]+$/u, "").trim();
+      if (cell) found.set(cell.toLowerCase(), cell);
+    });
+  }
+  const [head] = found.size === 1 ? found.values() : [null];
+  if (
+    head &&
+    /^[A-Z]/.test(head) &&
+    head.split(" ").length <= NAME_CELL_MAX_WORDS &&
+    !sentenceShaped(head) &&
+    !PRONOUN.test(head) &&
+    classifyFeeText(head) === fee.canonical_fee_key &&
+    checkFeeCategory(fee.canonical_fee_key, `${head} ${condition}`).ok
+  ) {
+    return `${head} ${condition}`;
+  }
+  const inner = condition.slice(1, -1).trim();
+  // A parenthesis that reads as a condition, a list or a sentence ("Per Presentment of ACH, ...",
+  // "Monthly Fee. Over 55 Free") is not a name, and a name on the page that is another fee's wins.
+  if (found.size > 0 || /^(?:per|including|for|if|when|only|after|before|excluding|fee shown)\b/i.test(inner) || /[,;.]\s/.test(inner)) return null;
+  return classifyFeeText(inner) === fee.canonical_fee_key && checkFeeCategory(fee.canonical_fee_key, inner).ok ? inner : null;
+}
+
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
   const head = headName(fee);
   if (!head) return null;
@@ -705,9 +770,14 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
     const restoreTexts = fee.raw_fee_name ? [...ownTexts, fee.raw_fee_name] : ownTexts;
     const advice = AVOID.test(fee.fee_name);
     const adviceFree = advice ? adviceFreeName(fee, ownTexts) : null;
+    // v15: a name that is another line's cell, or only its line's condition.
+    const cellRepaired = neighbourCellName(fee) ?? conditionOnlyName(fee, ownTexts);
     const newName = advice
       ? adviceFree
-      : restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ??
+      : CONDITION_ONLY_NAME.test(fee.fee_name)
+        ? cellRepaired
+        : cellRepaired ??
+        restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ??
         (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ??
         // v10: the fee's own table cell at its price.
         cellName(fee, ownTexts, { priceInNextCell: controlRead != null }) ??
@@ -817,6 +887,8 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~ '[[:space:]][a-z]{1,2}$'
                    OR fp.fee_name ~ '[\\x01-\\x08\\x0b\\x0c\\x0e-\\x1f]'
                    OR fp.fee_name ~ '[\u019f\u014c\u01a9\u019e]'
+                   OR fp.fee_name ~ '^[[:space:]]*\\([^()]*\\)[[:space:]]*(:|$)'
+                   OR fp.fee_name ~ '^[[:space:]]*[0-9.]+[[:space:]]*[xX×][[:space:]]*[0-9.]+[[:space:]]*["”″][[:space:]]*[0-9]{1,2}[[:space:]]*$'
                  )
                  -- v14: the same test as sharedNameFeeIds, a monthly-fee name shared at different prices.
                  OR count(DISTINCT lower(regexp_replace(btrim(fp.fee_name), '[[:space:]]+', ' ', 'g')))
@@ -1040,7 +1112,11 @@ export function isMessyName(name: string): boolean {
     // v12/v13: a font's U+0003 space or another of its codes.
     CONTROL_CHARACTER.test(name) ||
     // v13: a font's ligature letters.
-    /[\u019f\u014c\u01a9\u019e]/.test(name)
+    /[\u019f\u014c\u01a9\u019e]/.test(name) ||
+    // v15: another line's cell, or only a condition.
+    LEADING_PARENTHETICAL_CELL.test(name) ||
+    BOX_FOOTNOTE.test(name) ||
+    CONDITION_ONLY_NAME.test(name)
   );
 }
 

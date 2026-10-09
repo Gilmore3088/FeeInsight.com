@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -557,5 +557,37 @@ describe("v14: a monthly fee's bare name shared at different prices takes its ac
     expect(planRetidy([premium, highYield], [twin], [premium, highYield]).renames).toEqual([]);
     expect(accountHeading("monthly fee", 5, ["Compare Checking Accounts\n$5 monthly fee"])).toBeNull();
     expect(accountHeading("monthly fee", 5, ["Freedom Checking\n$50 monthly fee"])).toBeNull();
+  });
+});
+
+describe("v15: a name that is another line's cell, or only its line's condition", () => {
+  const text = (normalized_text: string) => [{ source_document_id: 70, normalized_text }];
+
+  it("drops another line's leading cell and a box size's footnote number", () => {
+    const glued = fee({ canonical_fee_key: "safe_deposit_box", fee_name: "(after two years of no activity): Safe Deposit Box Lost Key", amount: 25 });
+    const page = text("Dormant Fee (per month) | $ 10.00 | (after 30 days past due)\n(after two years of no activity) | Safe Deposit Box Lost Key | $ 25.00");
+    expect(planRetidy([glued], page).renames[0]?.newName).toBe("Safe Deposit Box Lost Key");
+    expect(neighbourCellName({ fee_name: "3x10” 8", canonical_fee_key: "safe_deposit_box" })).toBe("3x10”");
+    // A glued name whose rest names another fee stays (a wire fee filed as a legal-process fee).
+    expect(neighbourCellName({ fee_name: "(tax levies, garnishment, restraining notices): Wire Transfer Fee", canonical_fee_key: "garnishment_levy" })).toBeNull();
+    expect(isMessyName("(if closed within 45 days of opening)")).toBe(true);
+  });
+
+  it("names a condition-only fee from the cell before it or the line above", () => {
+    const closure = fee({ canonical_fee_key: "early_closure", fee_name: "(if closed within 45 days of opening)", amount: 25 });
+    const dormant = fee({ canonical_fee_key: "dormant_account", fee_name: "(inactive 12 months)", amount: 15 });
+    const page = text("Account Closure Fee\n\n(if closed within 45 days of opening) | $25\n\nIRA Account Closure or Transfer | $25\nDormant Account under $300 (inactive 12 months) | $15.00 per month");
+    expect(planRetidy([closure, dormant], page).renames.map((rename) => rename.newName)).toEqual([
+      "Account Closure Fee (if closed within 45 days of opening)",
+      "Dormant Account under $300 (inactive 12 months)",
+    ]);
+    expect(conditionOnlyName(fee({ canonical_fee_key: "safe_deposit_box", fee_name: "(Key Replacement)", amount: 70 }), ["Safe Deposit Box Drilling Fee Varies\n(Key Replacement) $70.00"])).toBe("Key Replacement");
+  });
+
+  it("leaves a condition-only fee whose page names another fee, for a person", () => {
+    const paper = fee({ canonical_fee_key: "monthly_maintenance", fee_name: "(Monthly Fee. Over 55 Free)", amount: 5 });
+    expect(planRetidy([paper], text("Paper Statement | (Monthly Fee. Over 55 Free) | $5.00")).renames).toEqual([]);
+    const order = fee({ canonical_fee_key: "money_order", fee_name: "(per money order)", amount: 5 });
+    expect(planRetidy([order], text("Money Order Fee\nCustomer | $5.00 (per money order)")).renames).toEqual([]);
   });
 });
