@@ -1,68 +1,89 @@
 # Fee audience repair: completion ledger
 
-Owner: ChatGPT, at James's explicit request to manage the repair to completion.
+Owner: ChatGPT, at James's explicit request to manage implementation and release through completion.
 PR: #986. Branch: `fix/pinnacle-fee-audience-integrity`.
-Status: IN PROGRESS. Not merged, not released, not a completed production correction.
+Status: IN PROGRESS. Draft, unmerged, unreleased. No production data correction or application rollout has been performed by this repair.
 
-This ledger is a handoff/checkpoint, not proof that the listed gates passed. Update it from current receipts on each continuation; never replace missing evidence with a narrative of success. The detailed 32-record source queue remains in `2026-10-10-pinnacle-audience-repair.md`.
+This ledger records receipts, not assertions of future success. The exact source decisions and 32-row lineage table are in `2026-10-10-pinnacle-audience-repair.md`. Read fresh branch, checks and database preconditions before writing. Preserve unrelated Hamilton reliability work.
 
-## Current continuation: October 10, 2026
+## October 10, 2026 Hong Kong-time continuation: completed branch work
 
-- James renewed authorization to continue implementation and release management. Existing review, provider, automation and tool safety controls remain in force.
-- Re-read PR #986 at head `6e9fd954ab632c71d8cfdf31cc75d0236ab7bc9a`; it is open, draft and unmerged, with base `1b5de13cd5b2e61ff6ca64047222b6c90888d39b`.
-- Actions run `37995582941`: SQL migration job `114040651691` PASSED. Application job `114040651362` FAILED at `findings-file-kill`; its decoded log identifies `fee-audience-completion-ledger.md` as the misnamed file. Subsequent focused tests, typecheck, lint, full suite and E2E were skipped, not passed.
-- Rename this ledger to the required dated filename without relaxing the guard; remove the old filename and update the PR's authoritative pointer. Recheck CI on the resulting head.
-- No production database or application mutation in this continuation so far.
+- Re-read root/agent instructions, CLAUDE.md, current checkpoint, PR, runbook and ledger. Initial head `6e9fd954ab632c71d8cfdf31cc75d0236ab7bc9a`, base `1b5de13cd5b2e61ff6ca64047222b6c90888d39b`. James renewed authorization; no extra permission gate was invented.
+- `95417545be5f8a9a9f3a603a2cdd4bb26d556dd9` and `773d6ae01d17b9385648890484d074154f527e6f`: preserve the completion ledger at this dated path and remove the undated filename that failed the repository guard. PR pointer updated; guard unchanged.
+- `de5c0fc989c4a40f52fe15ccec47be9c772c472f`: alias-safe shared consumer/source SQL boundary; statistics counts use valid priced samples; real zero retained; method version 6 and public-read cache namespace `consumer-audience-v2`. Missing, blank, negative and non-finite prices and invalid institution IDs do not manufacture sample size.
+- `67aabd1b03138f457897e5e67e1e26a715221605`: consumer-eligible benchmark source links and rate comparison scope; common five-institution floor including local export median; labeled all-audience institution rates retained. Added regressions. REMOVED temporary `.github/workflows/fee-audience-review.yml`.
+- `8687c2169d62c6a9aa06e5fefb471a695c805b32`: local competitors use sourced consumer/both and correct overdraft tier; local fee-move cards require a live same-audience consumer successor and non-quarantined predecessor, preserving the original like-for-like and pending-takedown controls. Added regressions.
+- `6d6cc81c4039d8d5c7eba87ebb7607a59ef258c3`: market-study fee boundary and highest overdraft tier; zero remains zero, missing eligible fee data does not erase real branch/deposit membership. Added loader regressions.
+- `4d20e68b416a0aa0395425fee1e85720a7753a51`: competitive report candidates require consumer/source eligibility before their existing source-text check. Kept cap, name-binding, amount/zero and takedown safeguards and geographic membership intact. Added loader regression.
+- `2a97828ecda0e8309918e92b48338b7ea5c1aa1f`: public category summaries/details and guide extremes use consumer/source eligibility. A free tier plus a paid tier is not counted as an institution that charges nothing. Three public price-move readers require a live same-audience pair; audit/snapshot history remains all-audience. Added regression tests; this commit's CI must be checked.
+- Re-read all 32 screening publications and both diagnosed Pinnacle publications from production. Independently attempted every source and recorded exact row decisions, conditions and missing evidence in the runbook. No blanket consumer label or guessed replacement amount.
 
-## Earlier verified receipts, October 10, 2026 Hong Kong time
+## CI receipts
 
-- Live Fee Insight connection works: production `rmhwbbjjctzfaqjyhomu`; preview `zqjwpjujroahhqtncycv`. Use the connection named Fee Insight, not the other Supabase account.
-- Re-read production Pinnacle lineage: publication 97662 -> verified 110743 -> raw 321488; publication 97663 -> verified 110744 -> raw 321489. Both refer to source document 21164 at `https://www.pnfp.com/Overdraft`, with the diagnosed mixed-audience NSF and all-client overdraft excerpts intact. The correction migration's preconditions match these reads.
-- Pinnacle's official program page was re-opened and still explicitly states consumer NSF eliminated ($0), business NSF $30 and overdraft $30 for both, effective August 1, 2022. This is a data-quality correction, not a newly announced bank fee change.
-- Preview migration history contains `20270110000040 fee_audience_integrity` and `20270110000041 pinnacle_audience_correction`. Preview has ZERO institutions, raw observations, publications and catalog rows. Successful schema application is not a production-data rehearsal.
-- The original CI E2E failed with empty Vermont peer levels. Source inspection showed each seeded peer had just one category, while the catalog requires three distinct categories. The fixtures also omitted explicit audience and source-document lineage. Do not weaken catalog depth or accept unknown audiences to make a test pass.
-- Commit `f60f017914d4d2ef5fe331dbb22938ad04b92921` changes the E2E seed to three categories per peer, creates source-document lineage and consumer applicability, and asserts that 27 sourced consumer fee rows from nine institutions are visible before the pipeline starts.
-- For that commit, Actions run `37995139705`: job `114039136578` (`fee-audience-sql`) PASSED. Job `114039135749` (`app-tests`) passed focused agentic tests, TypeScript and lint; full-suite/E2E results were not yet final at that checkpoint. Re-fetch, do not infer success.
-- A separate rollback-only preview acceptance script was blocked by the tool's safety-status check before execution. Do not describe it as passed or circumvent that control. The isolated PostgreSQL CI assertions above are the successful test receipt.
-- All 32 candidate records were re-read from the production catalog. Their actual identities match the existing runbook (Webster, Pinnacle courier, Renasant, Trustmark, etc.). The list is still a review queue, NOT 32 completed corrections.
-- No production database mutation or application deployment was performed in that continuation.
+| Commit | Actions run | SQL job | Application job | Observed result |
+|---|---|---|---|---|
+| `6e9fd954` | 37995582941 | 114040651691 | 114040651362 | SQL passed. App failed dated-filename guard; later tests skipped. Fixed, not waived. |
+| `773d6ae0` | 37996478671 | 114043747108 | 114043747350 | Both passed, including full suite and ordinary E2E. |
+| `67aabd1b` | 37997681802 | 114047778760 | 114047779021 | SQL, focused tests, TS, lint and full suite passed at inspected checkpoint; E2E then in progress. Later 8687 full pass contains this code. |
+| `8687c216` | 37998289976 | 114049796391 | 114049796599 | Both PASSED; guard, focused tests, TypeScript, lint, full suite and ordinary E2E all successful. |
+| `4d20e68b` | 37998793604 | 114051491150 | 114051491068 | Both PASSED; guard, focused tests, TypeScript, lint, full suite and ordinary E2E all successful. |
+| `2a97828e` | Fetch current run | Not yet recorded | Not yet recorded | New code commit, not yet certified at this ledger write. |
 
-## Ordered acceptance gates
+Local source was obtained from the temporary workflow's ordinary GitHub artifact for commit `1181f8bebb75c9a91f77416292a97eb31f05fbc8` (run 37993316807, artifact 11646141114), and compared against later commits. The local environment has no installed project test dependencies or PostgreSQL server. No local full-suite or local SQL success is claimed; the executed validation receipts above are GitHub CI.
 
-### 1. CI and regression integrity
-- [ ] Full current-head CI, including ordinary pipeline E2E, passes.
-- [x] Current repair's SQL migration assertion job passed for f60f0179 and 6e9fd954.
-- [ ] Review the E2E seed diff; simplify the unnecessary no-op `map` around the Maple discovery expected array back to the original literal expectation. Preserve every test assertion.
-- [ ] Remove temporary `.github/workflows/fee-audience-review.yml` before merge.
-- [ ] Validate the final head after all further changes, not an earlier passing commit.
+## Source decision progress — not applied corrections
 
-### 2. Audience coverage and downstream correctness
-- [ ] Evidence-backed classification/backfill for existing observations; unknown stays unknown. A product name, URL path or neighboring row must not silently supply an audience.
-- [ ] Measure category/institution coverage before and after. Report sample sizes and suppress insufficient benchmarks instead of manufacturing coverage.
-- [ ] Audit ALL remaining comparison consumers, not just `STATS_ROW_FILTER` users. Known paths needing review include `src/lib/data-store/fees.ts` (summaries/extremes/instances), `benchmark-export.ts` (source selection), `custom-report-market.ts`, `derived-analytics.ts`, `local-market.ts`, `market-study.ts`, `wire-fee-data.ts`, and state/national peer calculations in `src/lib/agents/state-expert/memory.ts` and `src/lib/agents/darwin/peer-checks.ts`.
-- [ ] Keep operational counts, all-audience institution evidence and consumer benchmark counts distinct; do not blindly replace every catalog query with a consumer filter.
-- [ ] Consumer $0 remains in comparisons and display; business prices and unknown applicability cannot become consumer medians or outreach claims.
+Runbook now contains all 32 exact publication/raw/verified/document IDs with source URLs and row-level decisions. Tally: 21 supported business-scope decisions; three supported category/amount-binding/unit corrections (Webster, Woori, NewBank interim-statement unit); three false-positive audience associations (NewBank paid item and two Lebanon purpose-restricted free services); Montecito's category remains unresolved; four sources remained inaccessible (OceanFirst, Luana, Plains Commerce, Southern Bank of Tennessee).
 
-### 3. Source review and data repair
-- [ ] Resolve every one of the 32 exact runbook screening records with a source-backed correction, justified no-change/false-positive disposition, or explicit quarantine plus identified missing evidence. Preserve restrictions and frequency.
-- [ ] Particular review: Webster currency-order versus money-order; Woori $30MM/$10MM thresholds versus actual wire prices; Renasant and NewBank adjacent-row binding; Southern Bank of Tennessee adjacent $35; Montecito returned-item category; Lebanon 'Credit Union Business Only' service-purpose false positives.
-- [ ] Correct Pinnacle through the real extraction -> verification -> publication flow. No fabricated agent events or direct verified-$0 shortcut.
-- [ ] Preserve historical wrong amounts and correction audit; prevent old observations from republishing.
+PDF text-only versus successful image inspection is explicitly recorded. Webster/Renasant/Montecito parsed-versus-rendered revision discrepancies are NOT represented as matching source versions. These dispositions require properly bound artifacts and current preconditions before any correction. None of the 32 was marked production-fixed by this review.
 
-### 4. Release
-- [ ] Reconcile current main and migration ordering without overwriting unrelated work.
-- [ ] Validate preview migration behavior and relevant application routes against the migrated preview, accurately stating its dataset limitations.
-- [ ] All required checks/reviews pass; PR ready and merged.
-- [ ] Additive, reversible migrations applied through the normal workflow and application deployed through Vercel; record exact receipts. Do not bypass a blocked tool, reviewer gate, automation stop or provider budget.
-- [ ] Invalidate/regenerate affected caches, reports and unsent outreach without sending customer messages or introducing false fee-change alerts.
+## Precise blocker observed; do not misdiagnose as permission/authentication
 
-### 5. Live proof and closure
-- [ ] Live Pinnacle: consumer NSF $0/eliminated, business NSF $30, overdraft $30/both; supporting source and lineage visible.
-- [ ] Published catalogs and live application endpoints agree.
-- [ ] Recheck cannot restore quarantined observations.
-- [ ] Affected consumer comparisons and assets are corrected with valid coverage labels.
-- [ ] Final receipt sent to James; disable the hourly completion task only after all gates genuinely pass.
+The Fee Insight connection successfully returned schema and the exact production records. A later READ-ONLY aggregate coverage/operator-control request was blocked by the tool because it could not determine safety status. It was not retried through another tool, connection or disguised query. James's authorization is already sufficient; this tool refusal is not a request for him to authorize routine work again.
 
-## Continuation behavior
+Consequences: fresh aggregate coverage counts and current operator-control values remain unavailable. The preceding multi-statement SQL response returned only the last schema result; do not infer that earlier count/control results were received. Do not claim controls are enabled, coverage is zero, or safe production rollout was established. A prior rollback-only preview assertion call was also blocked; only the actual CI SQL assertions count as executed.
 
-An hourly continuation task has been created to execute unfinished work, update this ledger and the PR, and report only completed milestones, new blockers requiring James, or verified completion. It must not spam unchanged status or call a green draft PR a completed repair. Use fresh source/schema/check/deployment reads each time. Stop unsafe writes and complete independent work when a required action is blocked.
+## Database state last established
+
+- Use ONLY Fee Insight `link_6ac94ace565081919e3e56f293e260e7`, production `rmhwbbjjctzfaqjyhomu`, existing preview `zqjwpjujroahhqtncycv`.
+- Production had no dedicated audience columns at the successful schema read; migrations 40/41 were not applied there.
+- Pinnacle publication 97662 -> verified 110743 -> raw 321488; 97663 -> verified 110744 -> raw 321489; source document 21164 at https://www.pnfp.com/Overdraft. Both original $30 publications were still present at the exact-row read. Re-read before any future write.
+- Preview migration history previously showed `20270110000040 fee_audience_integrity` and `20270110000041 pinnacle_audience_correction`. Preview had ZERO institutions, raw observations, publications and catalog rows. This is NOT a successful production-data rehearsal.
+- Actual `fee_change_records` columns include `previous_fee_published_id` and `new_fee_published_id`, `previous_amount`, `old_amount`, `new_amount`, `like_for_like`, `fee_category` and `canonical_fee_key`. Do not invent `old_fee_published_id`.
+- No production write, merge, deployment, message send, credential reset, grant change or paid provider activation in this continuation.
+
+## Remaining acceptance gates
+
+### 1. Final-head CI and regression integrity
+- [x] Fix naming guard without weakening it.
+- [x] Full suite, ordinary E2E and SQL assertions passed through 4d20e68b.
+- [x] Remove temporary source-snapshot workflow.
+- [ ] Check 2a97828e and every subsequent final-head CI; fix actual failures.
+- [ ] Review E2E schema warning noise and simplify the unnecessary Maple discovery expectation map back to the literal original assertion. Preserve tests and production safeguards.
+- [ ] Reconcile current main and inspect final diff/reviews; no concurrent-overwrite or unrelated Hamilton changes.
+
+### 2. Evidence-backed coverage and remaining consumer paths
+- [x] Central statistics/filter and counts; benchmark export/source/rate boundary; local-market competitors/moves; market-study; competitive reports; public category readers/move feeds implemented with regressions (latest code CI still required).
+- [ ] Finish `derived-analytics.ts`, state-expert `memory.ts`, Darwin `peer-checks.ts`, all related call sites and stored peer memories. Read nested instructions before editing agent code. Business/unknown observations must not be judged against consumer baselines.
+- [ ] Verify `wire-fee-data.ts` delegated reads and all report/outreach consumers, including runtime claims from old generated assets; no outreach send.
+- [ ] Align remaining minimum-sample consumers such as regulatory-watch local comparisons. Audit guide extreme ranking duplicates/tier semantics separately from audience filtering.
+- [ ] Evidence-backed existing-record classification/backfill, with artifacts and audit. Unknown stays unknown; URL/product-name/neighboring-row guesses are not consumer evidence.
+- [ ] Measure before/after institution/category coverage; show valid sample sizes and insufficient evidence. Do not use zero or stale numbers where the query was blocked.
+
+### 3. Data disposition
+- [x] Every exact screening ID has a row-specific source-review result or explicitly recorded evidence gap.
+- [ ] Apply each justified correction/no-change disposition/quarantine with current source and lineage safeguards, preserving frequency, conditions and history. Review completion is not production remediation.
+- [ ] Correct Pinnacle through the real extraction -> verification -> publication path. No synthetic success events or direct verified-$0 insert.
+- [ ] Prove old Pinnacle observations cannot republish, and preserve the 2022 policy effective date without creating a new bank-change alert.
+
+### 4. Release and live proof
+- [ ] Validate populated preview behavior with real assertions and relevant application routes; distinguish empty preview limitations and respected safety blocks.
+- [ ] All final checks/reviews and migration-order gates pass; then merge and perform additive reversible database/application rollout through normal workflows.
+- [ ] Honor operator stops, provider budgets and safety blocks; no credential exposure or public access grants.
+- [ ] Invalidate/regenerate affected caches, reports and UNSENT outreach safely; send nothing.
+- [ ] Live institution 47 and relevant endpoints show consumer NSF $0 eliminated, business NSF $30 and overdraft $30/both, with proper provenance.
+- [ ] Final verified-completion receipt to James; only then disable the hourly continuation.
+
+## Continuation rules
+
+Use the existing hourly task, not a duplicate. Execute a concrete next unfinished item each run when permitted, keep current receipts in this ledger/PR, and report only material milestones, a genuinely new actionable blocker or verified completion. No repeated permission requests, no fabricated test results, no green-draft-PR completion claim. The current tool safety block does not prevent independent repository work.
