@@ -178,6 +178,13 @@ const BOX_RENT = /\bbox rent|\bsafe(?:ty)? deposit box/i;
 /** An IRA moved out to another institution ("IRA Transfer (outgoing)", "IRA Transfer Closeout"). */
 const IRA_TRANSFER_OUT = /^(?![\s\S]*\bincoming\b)(?=[\s\S]*\bira\b)[\s\S]*\btransfer/i;
 
+/** Buying or reloading a prepaid card ("Reloadable ATM/Debit Card – Reload Fee"), not using one at an ATM. */
+const PREPAID_BUY_OR_RELOAD =
+  /^(?=[\s\S]*\b(?:pre-?paid|reloadable)\b)(?![\s\S]*\b(?:withdrawals?|inquiry|inquiries)\b)[\s\S]*\b(?:purchase|reload)\b/i;
+
+/** A statement mailed back undelivered ("Returned Mailed Statement"). */
+const RETURNED_STATEMENT = /\breturned\b[\s\S]*\b(?:mail|statement)/i;
+
 interface SplitCategory {
   to: string;
   name: RegExp;
@@ -204,6 +211,10 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   late_payment: { to: "safe_deposit_box", name: BOX_RENT, sqlPattern: "box rent|deposit box" },
   // Moving an IRA to another institution closes it here; it is not account research.
   account_research: { to: "ira_termination", name: IRA_TRANSFER_OUT, sqlPattern: "\\mira\\M" },
+  // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
+  atm_non_network: { to: "gift_card_purchase", name: PREPAID_BUY_OR_RELOAD, sqlPattern: "prepaid|reload" },
+  // A statement mailed back undelivered is returned mail, which account research holds.
+  paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -217,7 +228,7 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 7;
+export const FOLD_RULES_VERSION = 8;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
