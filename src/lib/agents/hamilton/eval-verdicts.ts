@@ -284,6 +284,15 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_category", pattern: "section_heading_lost",
     why: "Doc 21565: \"Positive Pay Monthly Maintenance ... $20.00 per month\" under Treasury Management, a business fraud-protection service none of the 50 types covers (the guard keeps Positive Pay out of monthly_maintenance since v49), not an account's monthly fee",
   },
+  // UAT's 13:41 sample (Oct 9). The taxonomy files an escheat processing fee under
+  // dormant_account, but Darwin's dormant envelope stops at $30 (a monthly charge), so the $50
+  // one-time fee cannot be re-filed there and comes down rather than stay a box fee.
+  {
+    feePublishedId: 59791, institution: "Marquette Savings Bank",
+    feeName: "Escheat processing fee", amount: 50, canonicalFeeKey: "safe_deposit_box",
+    verdict: "wrong_category", pattern: "category_miss",
+    why: "Doc 16334: \"Escheat processing fee (plus drilling fee if applicable) | $50.00/account\" sits among account fees after the dormant fee; it is not a safe deposit box fee",
+  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */
