@@ -49,3 +49,11 @@ Two hours after the paid-only change, the pass had read 7 of the 43 paid rows. E
 only the rows of its own state lane or institution, so most runs read none, and Northern Trust (IL)
 waited for the IL lane. The pass now reads paid rows from every bank in each run. There are few of
 them, and each is read once per Knox version.
+
+## Paid-only dry read and switch-on
+By 13:24 UTC all 43 paid rows had been read. One would go to Darwin: Northern Trust's
+"Overdrafts Paid and Items Paid against Nonsufficient Funds" $25 (raw 457013). Text 20257 prints it as
+"$25.00 per Occurrence (maximum of 3 overdraft charges per day)", so it is right (1 of 1). The other
+42 stay retired: 23 already have a live fee of the same category and price, and the free rules did not
+read the remaining 19 the same way. `SUPERSEDED_RECHECK_LIVE` is now on. The row still goes through Darwin
+before Hamilton can publish it.
