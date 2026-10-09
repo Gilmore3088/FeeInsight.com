@@ -122,6 +122,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "briefing-refresh",
   "competitor-alerts",
   "daily-brief",
+  "deming-regression",
   "fee-alert-dispatch",
   "lead-watch",
   "pro-digest",
