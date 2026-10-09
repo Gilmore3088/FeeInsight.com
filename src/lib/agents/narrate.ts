@@ -227,6 +227,10 @@ function narrateFinished(
     }
     case "hamilton-answer-eval":
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "schedule-check": {
+      const missed = n(detail, "missed") + n(detail, "failed");
+      return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
+    }
     case "bayes-replay-ledger": {
       if (detail.schema_ready === false) return "Bayes counted nothing: the replay ledger is not created yet.";
       const stuck = n(detail, "stuck");
@@ -574,6 +578,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-states": "growth",
   "score-answer-key": "atlas",
   "bayes-replay-ledger": "atlas",
+  "schedule-check": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",

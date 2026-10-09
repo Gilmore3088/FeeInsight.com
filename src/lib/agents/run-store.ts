@@ -78,6 +78,7 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
+import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -1937,6 +1938,19 @@ async function executeAgenticStep(
           retired: result.retired,
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
+        },
+      };
+    }
+    case "schedule-check": {
+      const result = await runScheduleCheck({ db: tx });
+      return {
+        status: "completed",
+        summary: summarizeScheduleCheck(result),
+        detail: {
+          version: SCHEDULE_CHECK_VERSION,
+          checked_at: result.checkedAt,
+          ...result.counts,
+          schedules: result.rows,
         },
       };
     }

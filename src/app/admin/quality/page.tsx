@@ -263,12 +263,14 @@ export default async function DataTrustWorkbench({
               )}
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {automation?.enabled ? "Automation enabled" : "Automation stopped"}
+                  {automation === null ? "Automation status unknown" : automation.enabled ? "Automation enabled" : "Automation stopped"}
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
                   {automation?.enabled
                     ? "Source acceptance still requires explicit operator launch before provider work starts."
-                    : automation?.reason ?? "Provider automation is held; accepted sources stay queued for manual or later validation."}
+                    : automation === null
+                      ? "The safety control could not be read, so provider work is held until it can be."
+                      : automation.reason ?? "Provider automation is held; accepted sources stay queued for manual or later validation."}
                 </p>
               </div>
             </div>
