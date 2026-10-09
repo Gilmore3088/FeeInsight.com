@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -360,12 +361,17 @@ export const NAME_RETIDY_KIND = "name_retidied";
  * v10: City National Bank of Florida (76), whose glued cell names Accuracy flagged.
  * v14: Security Federal (722), and the v13 font names v13's pass had not reached (8535, 5545).
  */
-export const NAME_RETIDY_FIRST_INSTITUTIONS = [76, 282, 640, 3604, 3923, 4715, 8465, 5499, 722, 8535, 5545];
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [
+  76, 282, 640, 3604, 3923, 4715, 8465, 5499, 722, 8535, 5545,
+  // v15: UAT's misses v14's pass had not reached: the shared account names (4915, 250, 8299, 1025,
+  // 897) and the U+0003 names at 6283 (60527-60532).
+  4915, 250, 8299, 1025, 897, 6283,
+];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
 
-export type RetidySkip = "no_better_name" | "would_not_trace" | "category_guard" | "same_name_live";
+export type RetidySkip = "no_better_name" | "would_not_trace" | "category_guard" | "same_name_live" | "keeps_condition";
 
 export interface RetidyRename {
   feePublishedId: number;
@@ -500,8 +506,9 @@ const CONTROL_CHARACTER = /[\x01-\x08\x0b\x0c\x0e-\x1f]/;
  */
 export function spacedControlName(name: string): string | null {
   if (!name.includes("\u0003")) return null;
-  // The same font draws its hyphen as a combining low line ("Non\u0332Sufficient").
-  const spaced = name.replace(/\u0003/g, " ").replace(/(?<=\w)\u0332(?=\w)/g, "-").replace(/\s+/g, " ").trim();
+  // The same font draws its hyphen as a combining low line ("Non\u0332Sufficient") or, in
+  // another extract, as U+0372 ("Non\u0372Sufficient").
+  const spaced = name.replace(/\u0003/g, " ").replace(/(?<=\w)[\u0332\u0372](?=\w)/g, "-").replace(/\s+/g, " ").trim();
   return spaced && !CONTROL_CHARACTER.test(spaced) ? spaced : null;
 }
 
@@ -537,7 +544,7 @@ export function fontDecodedName(name: string): string | null {
   if (!/[\x01-\x08\x0b\x0c\x0e-\x1f]/.test(name)) return null;
   const decoded = name
     .replace(SHIFTED_CONTROL, (glyph) => String.fromCharCode(glyph.charCodeAt(0) + FONT_SHIFT))
-    .replace(/(?<=\w)\u0332(?=\w)/g, "-")
+    .replace(/(?<=\w)[\u0332\u0372](?=\w)/g, "-")
     .replace(/\s+/g, " ")
     .trim();
   return decoded || null;
@@ -555,6 +562,7 @@ function fontDecodedText(text: string): string {
  */
 const LIGATURE_PAIRS: Record<string, string> = { "\u019f": "ti", "\u014c": "ft", "\u01a9": "tt", "\u019e": "tf" };
 const LIGATURE = /[\u019f\u014c\u01a9\u019e]/g;
+const LIGATURE_CHARACTER = /[\u019f\u014c\u01a9\u019e]/;
 function readLigatures(text: string): string {
   return text.replace(LIGATURE, (letter) => LIGATURE_PAIRS[letter]);
 }
@@ -714,6 +722,95 @@ export function conditionOnlyName(fee: Pick<LiveFeeRow, "fee_name" | "canonical_
   return classifyFeeText(inner) === fee.canonical_fee_key && checkFeeCategory(fee.canonical_fee_key, inner).ok ? inner : null;
 }
 
+/**
+ * v15: a rename never drops a condition. The words the old name had and the new one lacks are
+ * checked for what limits when or how the fee applies: a figure ("after 1st one", "24 months",
+ * "<$500"), an account it is limited to ("Savings Account", "Value Checking Accounts Only"), a
+ * period or basis ("per quarter", "per hour"), dormancy or a balance, or whose ATM it is ("ATMs
+ * we do not own"). v14's pass reached 98 names and about 72 of its trims cut one of these
+ * ("ATM Fee - Cash withdrawal at ATMs we do not own or operate" became "ATM Fee"). A dropped
+ * footnote number alone ("(1)", "Fee1") is not a condition.
+ */
+const CONDITION_WORD =
+  /^(?:\d[\d,.]*(?:st|nd|rd|th|s)?|first|second|third|one|two|three|four|five|six|twelve|after|only|minimum|mininum|min|maximum|max|excludes?|excluding|except|unless|if|dormant|dormancy|inactive|inactivity|balances?|savings|checking|mma|mmda|share|club|certificates?|per|monthly|quarterly|annually|annual|yearly|daily|multiple|consumers?|business|commercial|[$<>%])$/;
+const CONDITION_PHRASE = /\b(?:do not|don['’]t|not) own\b|\bother (?:banks?|institutions?|financial)\b|\bno (?:customer[- ]initiated )?activity\b/i;
+function nameWords(name: string): string[] {
+  return name.toLowerCase().match(/[a-z0-9’']+|[$<>%]/g) ?? [];
+}
+const ACCOUNT_WORD_CONDITION = /^(?:savings|checking|mma|mmda|share|club|certificates?|business|commercial|consumers?)$/;
+const NAME_SEGMENT = /[()]|\s[-–—]\s|[:;|]\s?/;
+const LEADING_HEADING_CELL = /^(.*?)\s*[:|]\s*$/;
+/** Fees an account heading limits: their heading names which account they apply to. */
+const ACCOUNT_BOUND_KEYS = new Set(["monthly_maintenance", "minimum_balance", "dormant_account", "paper_statement"]);
+export function dropsCondition(oldName: string, newName: string, canonicalKey?: string): boolean {
+  oldName = oldName.replace(/\b24\s*\/\s*7\b/g, " ");
+  const kept = new Set(nameWords(newName));
+  // How to waive or avoid the fee is advice, not a condition (v8 cuts it off on purpose).
+  const advice = new Set(
+    oldName
+      .split(NAME_SEGMENT)
+      .filter((segment) => /\b(?:waiv|avoid)/i.test(segment))
+      .flatMap((segment) => nameWords(segment)),
+  );
+  // An account heading cell read onto the front of another fee's name ("PERSONAL CHECKING
+  // ACCOUNT FEES | Skip-a-Pay") is that section's name, so its account words may go.
+  const at = oldName.toLowerCase().lastIndexOf(newName.trim().toLowerCase());
+  const heading =
+    at > 0 && !(canonicalKey && ACCOUNT_BOUND_KEYS.has(canonicalKey)) && LEADING_HEADING_CELL.test(oldName.slice(0, at)) ? new Set(nameWords(oldName.slice(0, at))) : new Set<string>();
+  const dropped = nameWords(oldName).filter(
+    (word) => !kept.has(word) && !advice.has(word) && !(heading.has(word) && ACCOUNT_WORD_CONDITION.test(word)),
+  );
+  if (dropped.length === 0 || dropped.every((word) => /^\d{1,2}$/.test(word))) return false;
+  return dropped.some((word) => CONDITION_WORD.test(word)) || (CONDITION_PHRASE.test(oldName) && !CONDITION_PHRASE.test(newName));
+}
+
+/**
+ * v15: the names v14's pass trimmed past a condition get it back. Only renames logged from v14's
+ * first write on are put back; earlier versions' trims were checked by UAT when they landed.
+ */
+export const CONDITION_RESTORE_SINCE = "2026-10-09T10:46:00Z";
+const RESTORE_CUT_LENGTH = 110;
+const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
+/**
+ * The old name as it goes back: without a dot leader or a closing full stop, and, when publish
+ * cut it off mid-word ("... after your first dormancy notic"), back to its last whole clause as
+ * long as that clause still holds the condition. Null when nothing of the condition survives.
+ */
+export function restoredName(oldName: string, trimmedName: string, canonicalKey?: string): string | null {
+  const name = oldName.replace(/\s+/g, " ").replace(/(?:\s*\.){2,}\s*$/, "").replace(/\s*\.$/, "").trim();
+  const cut = (oldName.length >= RESTORE_CUT_LENGTH && !/[).]\s*$/.test(oldName)) || DANGLING_WORD.test(name);
+  let restored = name;
+  if (cut || openParens(name) > 0) {
+    const ends = [...name.matchAll(RESTORE_BOUNDARY)].map((match) => match.index! + (match[0].startsWith(")") ? 1 : 0));
+    const end = ends.length > 0 ? ends[ends.length - 1] : -1;
+    const clause = end > 0 ? closedParens(name.slice(0, end).replace(/[\s,;:\-–—]+$/u, "").trim()) : "";
+    restored = clause.length > trimmedName.length && dropsCondition(clause, trimmedName, canonicalKey) ? clause : closedParens(withoutDanglingWords(name));
+  }
+  return restored !== trimmedName && dropsCondition(restored, trimmedName, canonicalKey) ? restored : null;
+}
+
+/** A clause cut off after a joining word ("... is dormant if for one", "... assessed per"). */
+const DANGLING_WORD = /\s(?:of|to|from|for|at|is|are|be|may|will|if|and|or|with|by|a|an|the|per|than|below|above|each|one)$/i;
+function withoutDanglingWords(name: string): string {
+  let current = name;
+  while (DANGLING_WORD.test(current)) current = current.replace(DANGLING_WORD, "").replace(/[\s,;:\-–—]+$/u, "");
+  return current;
+}
+function openParens(name: string): number {
+  return (name.match(/\(/g) ?? []).length - (name.match(/\)/g) ?? []).length;
+}
+/** A parenthesis publish cut off mid-way is closed where the name now ends ("(Monthly fee" -> "(Monthly fee)"). */
+function closedParens(name: string): string {
+  const open = openParens(name);
+  return open > 0 ? `${name}${")".repeat(open)}` : name;
+}
+
+/** The latest logged rename of a live fee: what its name was and what the retidy made it. */
+export interface LoggedRename {
+  oldName: string;
+  newName: string;
+}
+
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
   const head = headName(fee);
   if (!head) return null;
@@ -730,13 +827,41 @@ function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null 
 /** A live fee with the name Knox read for it, before publish shaped it. */
 export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null };
 
-export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
-  const skipped: Record<RetidySkip, number> = { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 };
+export function planRetidy(
+  fees: RetidyFeeRow[],
+  texts: InstitutionText[],
+  liveFees: LiveFeeRow[] = fees,
+  logged: Map<number, LoggedRename> = new Map(),
+): RetidyPlan {
+  const skipped: Record<RetidySkip, number> = { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0, keeps_condition: 0 };
   const renames: RetidyRename[] = [];
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
   for (const stored of fees) {
+    // v15: a name v14 trimmed past its condition gets the condition back from its logged old name.
+    const last = logged.get(Number(stored.fee_published_id));
+    const restored =
+      last && last.newName === stored.fee_name && !CONTROL_CHARACTER.test(last.oldName) && !LIGATURE_CHARACTER.test(last.oldName)
+        ? restoredName(last.oldName, stored.fee_name, stored.canonical_fee_key)
+        : null;
+    if (restored) {
+      if (taken.has(lineKey(stored, restored))) {
+        skipped.same_name_live += 1;
+        continue;
+      }
+      taken.add(lineKey(stored, restored));
+      renames.push({
+        feePublishedId: Number(stored.fee_published_id),
+        institutionId: Number(stored.institution_id),
+        sourceDocumentId: stored.source_document_id == null ? null : Number(stored.source_document_id),
+        canonicalFeeKey: stored.canonical_fee_key,
+        amount: stored.amount == null ? null : Number(stored.amount),
+        oldName: stored.fee_name,
+        newName: restored,
+      });
+      continue;
+    }
     // v12: a PDF font that writes its space as U+0003 ("Copy\u0003of\u0003Check").
     // v13: its digits too, when the fee's own document proves the font's map.
     const storedTexts = texts.filter(
@@ -772,25 +897,37 @@ export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveF
     const adviceFree = advice ? adviceFreeName(fee, ownTexts) : null;
     // v15: a name that is another line's cell, or only its line's condition.
     const cellRepaired = neighbourCellName(fee) ?? conditionOnlyName(fee, ownTexts);
+    // v15: a trim of the name's own words keeps every condition in them, or the name stays.
+    // Names read from the page (a cell, an account heading) and advice cut off are not trims.
+    let keptCondition = false;
+    const keep = (name: string | null): string | null => {
+      if (name == null || !dropsCondition(fee.fee_name, name, fee.canonical_fee_key)) return name;
+      keptCondition = true;
+      return null;
+    };
     const newName = advice
       ? adviceFree
       : CONDITION_ONLY_NAME.test(fee.fee_name)
         ? cellRepaired
         : cellRepaired ??
-        restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ??
+        keep(restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts)) ??
         (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ??
         // v10: the fee's own table cell at its price.
         cellName(fee, ownTexts, { priceInNextCell: controlRead != null }) ??
-        tidied ??
+        keep(tidied) ??
         // v11: the short name a sentence name opens with, unless another live fee at the
         // institution opens with it too (the words cut are what tell the two apart).
-        uniqueHeadName(fee, liveFees) ??
+        keep(uniqueHeadName(fee, liveFees)) ??
         // v14: a bare monthly-fee name shared at different prices takes its account's name.
         accountHeadedName(fee, readTexts, liveFees) ??
         spaced;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
     // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
+    if (!newName && keptCondition) {
+      skipped.keeps_condition += 1;
+      continue;
+    }
     if (
       !newName ||
       (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) ||
@@ -841,7 +978,7 @@ const EMPTY: RetidyResult = {
   institutionsChecked: 0,
   messyFees: 0,
   renames: [],
-  skipped: { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 },
+  skipped: { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0, keeps_condition: 0 },
 };
 
 /** An institution is looked at again when a newer live fee appears or the strategy changes. */
@@ -900,6 +1037,21 @@ export function retidyDueInstitutions(
              AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
            GROUP BY fp.institution_id
         ) live
+        -- v15: an institution with a live name still as v14's pass left it, which may have lost a
+        -- condition (planRetidy decides with dropsCondition), goes first.
+        LEFT JOIN LATERAL (
+          SELECT true AS restore
+            FROM pipeline_feedback pf
+            JOIN published_fee_records rfp ON rfp.fee_published_id = pf.fee_published_id
+           WHERE pf.kind = ${NAME_RETIDY_KIND}
+             AND pf.check_name = ${NAME_RETIDY_STRATEGY.strategy}
+             AND pf.institution_id = live.institution_id
+             AND pf.updated_at >= ${CONDITION_RESTORE_SINCE}::timestamptz
+             AND rfp.rolled_back_at IS NULL
+             AND rfp.fee_name = pf.evidence->>'new_name'
+             AND length(pf.evidence->>'old_name') > length(pf.evidence->>'new_name')
+           LIMIT 1
+        ) restore ON true
         -- An institution the retidy saw longest ago goes first, so a version bump carries on
         -- where the last pass stopped instead of starting again from the lowest id.
         LEFT JOIN LATERAL (
@@ -911,7 +1063,7 @@ export function retidyDueInstitutions(
            ORDER BY pa.created_at DESC
            LIMIT 1
         ) seen ON true
-       WHERE live.messy
+       WHERE (live.messy OR restore.restore IS TRUE)
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.stage = 'publish'
@@ -919,7 +1071,8 @@ export function retidyDueInstitutions(
               AND pa.institution_id = live.institution_id
               AND pa.input_fingerprint = 'v' || ${NAME_RETIDY_STRATEGY.version}::text || ':' || live.max_fee_id::text
          )
-       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, seen.last_retidy_at NULLS FIRST, live.institution_id
+       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, restore.restore IS TRUE DESC,
+                seen.last_retidy_at NULLS FIRST, live.institution_id
        LIMIT ${limit}
   `;
 }
@@ -951,6 +1104,7 @@ export async function retidyLiveFeeNames(
   let fingerprints: Map<number, string>;
   let liveFees: RetidyFeeRow[];
   let texts: Array<InstitutionText & { institution_id: number | string }>;
+  let logged: Map<number, LoggedRename>;
   try {
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
     const due = await inSavepoint(db, (scope) => retidyDueInstitutions(scope, { institutionId: options.institutionId, limit }));
@@ -974,6 +1128,18 @@ export async function retidyLiveFeeNames(
          AND normalized_text IS NOT NULL
        ORDER BY source_document_id, id DESC
     `);
+    // v15: each live fee's latest rename since v14's first write, for the conditions it put back.
+    const renamed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string; old_name: string; new_name: string }[]>`
+      SELECT DISTINCT ON (pf.fee_published_id) pf.fee_published_id, pf.evidence->>'old_name' AS old_name, pf.evidence->>'new_name' AS new_name
+        FROM pipeline_feedback pf
+       WHERE pf.kind = ${NAME_RETIDY_KIND}
+         AND pf.check_name = ${NAME_RETIDY_STRATEGY.strategy}
+         AND pf.institution_id = ANY(${ids}::bigint[])
+         AND pf.updated_at >= ${CONDITION_RESTORE_SINCE}::timestamptz
+         AND pf.evidence ? 'old_name' AND pf.evidence ? 'new_name'
+       ORDER BY pf.fee_published_id, pf.updated_at DESC, pf.id DESC
+    `);
+    logged = new Map(renamed.map((row) => [Number(row.fee_published_id), { oldName: row.old_name, newName: row.new_name }]));
   } catch (error) {
     // A failed tidy must never block publishing.
     console.error("retidyLiveFeeNames select failed:", error);
@@ -985,8 +1151,13 @@ export async function retidyLiveFeeNames(
   for (const institutionId of fingerprints.keys()) {
     const fees = liveFees.filter((fee) => Number(fee.institution_id) === institutionId);
     const shared = sharedNameFeeIds(fees);
-    const messy = fees.filter((fee) => isMessyName(fee.fee_name) || shared.has(Number(fee.fee_published_id)));
-    const plan = planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees);
+    const messy = fees.filter(
+      (fee) =>
+        isMessyName(fee.fee_name) ||
+        shared.has(Number(fee.fee_published_id)) ||
+        logged.get(Number(fee.fee_published_id))?.newName === fee.fee_name,
+    );
+    const plan = planRetidy(messy, texts.filter((text) => Number(text.institution_id) === institutionId), fees, logged);
     result.messyFees += messy.length;
     result.renames.push(...plan.renames);
     for (const [key, count] of Object.entries(plan.skipped)) result.skipped[key as RetidySkip] += count;
@@ -1016,7 +1187,9 @@ export async function retidyLiveFeeNames(
             weight: 0,
             evidence: { old_name: rename.oldName, new_name: rename.newName },
             runId: options.runId,
-            dedupeKey: `${NAME_RETIDY_STRATEGY.strategy}:pub:${rename.feePublishedId}`,
+            // v15: one row per rename, keyed on the name it replaced, so a second rename of the
+            // same fee no longer overwrites the first one's old name.
+            dedupeKey: `${NAME_RETIDY_STRATEGY.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
           })),
         );
         await scope`
