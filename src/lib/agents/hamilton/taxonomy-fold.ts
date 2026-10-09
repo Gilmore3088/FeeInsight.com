@@ -107,7 +107,7 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
     const name = row.fee_name ?? "";
     const documentId = row.source_document_id == null ? null : Number(row.source_document_id);
     const text = documentId == null ? null : texts.get(documentId) ?? null;
-    const context = needsContext(row.canonical_fee_key, name) ? foldContext(text, name) : null;
+    const context = needsContext(row.canonical_fee_key, name) ? foldContext(text, name, amountOf(row.amount)) : null;
     const split = splitLiveCategory(row.canonical_fee_key, name);
     const fold = foldRetiredCategory(row.canonical_fee_key, name, context) ?? split;
     if (!fold) continue;

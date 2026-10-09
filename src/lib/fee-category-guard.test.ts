@@ -919,3 +919,23 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
   });
 });
+
+describe("v54: a free line at the bank's own ATM", () => {
+  it("fails a free ATM line that names no other bank or network", () => {
+    for (const name of ["MidFirst ATM", "Transactions at Orrstown Bank ATMs", "Balance Inquiry", "ATM Withdrawals Terrabank owned", "ATM Transfer"]) {
+      const verdict = checkFeeCategory("atm_non_network", name, { amount: "0.00" });
+      expect(verdict.ok, name).toBe(false);
+      expect(verdict.ok ? null : verdict.code).toBe("name_unsupported");
+    }
+  });
+
+  it("keeps a priced line, a free line at another network, and a line with no amount", () => {
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry", { amount: 3 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Non-Regions ATM: Withdrawal", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Foreign ATM Withdrawal", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Free nationwide ATM access", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "ATM Withdrawals (Presto)", { amount: 0 }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry", { amount: null }).ok).toBe(true);
+    expect(checkFeeCategory("atm_non_network", "Balance Inquiry").ok).toBe(true);
+  });
+});

@@ -17,6 +17,8 @@ interface FoldRule {
   name?: RegExp;
   /** Tested against the schedule text just before the fee's line, when it is known. */
   context?: RegExp;
+  /** Like `context`, for a test a pattern cannot state. */
+  contextTest?: (before: string) => boolean;
 }
 
 interface RetiredCategory {
@@ -31,6 +33,21 @@ interface RetiredCategory {
 /** An ATM or a shared ATM network, named on the line or in the section heading above it. */
 const ATM_CUE =
   /\b(?:atms?(?!\s*deposit)|automated teller|machines?|terminals?|cajero|allpoint|shazam|co-?op network|moneypass|cirrus|network atm|atm network|(?:debit|check|atm) cards?)\b|\bnon[- ][\w'’ -]{1,30}\b(?:atms?|machines?)\b|\bforeign atm|\bother (?:banks?|institutions?)['’]? (?:atms?|machines?)/i;
+/** A word before "ATM:" that makes it another bank's or network's machine. */
+const OTHER_ATM_WORD = /^(?:non\b|non-|foreign|other|out-of|outside|shared|network|surcharge|international|domestic|all\b|any\b)/i;
+
+/**
+ * True when the nearest ATM heading above a fee is the bank's own machine: "Regions ATM:" over
+ * "Balance Inquiry $0.00" (Regions, institution 27, Oct 9), "Our ATM:", "Proprietary ATM:". A
+ * fee there is not what a customer pays at another network's ATM. "Non-Regions ATM:", "Foreign
+ * ATM:" and a heading with no word before it ("ATM Fees") are not.
+ */
+export function ownAtmSection(before: string): boolean {
+  const headings = [...before.matchAll(/(\S+)\s+(?:atms?|machines?)\s*:/gi)];
+  const word = headings.at(-1)?.[1]?.replace(/^[^\w]+/, "");
+  if (!word || OTHER_ATM_WORD.test(word)) return false;
+  return /^(?:our|proprietary|in-network)$/i.test(word) || /^[A-Z][\w&'.]*$/.test(word);
+}
 /** A person, a phone line or a channel other than an ATM. */
 const ASSISTED_CUE =
   /\b(?:tele?phone|phone|calls?|call center|representative|staff|employee|teller|member service|service center|assisted|audio|night owl|online|internet|web|mail|printout|in[- ]person|by person|shared branch|non[- ]?automated|manual)\b/i;
@@ -44,6 +61,8 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
       { to: null, name: /^(?![\s\S]*(?:\binquir|\binq\b|\bbalance check|\bsolicitud de balance))/i },
       { to: "atm_non_network", name: ATM_CUE },
       { to: null, name: ASSISTED_CUE },
+      // A bare "Balance Inquiry" under the bank's own ATM heading has no home.
+      { to: null, contextTest: ownAtmSection },
       // A bare "Balance Inquiry" under an ATM heading ("Foreign ATM Transactional Fees").
       { to: "atm_non_network", context: ATM_CUE },
     ],
@@ -276,13 +295,30 @@ export const FOLD_CONTEXT_CHARS = 200;
  * The schedule text just before a fee's line (its section heading, in a table the row's
  * neighbours), or null when the name is not found in the text. Pure.
  */
-export function foldContext(text: string | null | undefined, feeName: string | null | undefined): string | null {
+export function foldContext(
+  text: string | null | undefined,
+  feeName: string | null | undefined,
+  amount?: number | null,
+): string | null {
   if (!text || !feeName) return null;
   const body = plain(text);
   const name = plain(feeName);
   if (name.length < 4) return null;
-  const at = body.toLowerCase().indexOf(name.toLowerCase());
+  const lower = body.toLowerCase();
+  const needle = name.toLowerCase();
+  let at = lower.indexOf(needle);
   if (at < 0) return null;
+  // A name the schedule prints twice ("Regions ATM: ... Balance Inquiry $0.00", "Non-Regions
+  // ATM: ... Balance Inquiry $3.00") takes the section of the copy priced at the fee's amount.
+  if (amount != null && Number.isFinite(amount)) {
+    for (let next = at; next >= 0; next = lower.indexOf(needle, next + 1)) {
+      const price = body.slice(next + needle.length, next + needle.length + 60).match(/\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/);
+      if (price && Math.abs(Number(price[1].replace(/,/g, "")) - amount) < 0.005) {
+        at = next;
+        break;
+      }
+    }
+  }
   return body.slice(Math.max(0, at - FOLD_CONTEXT_CHARS), at);
 }
 
@@ -310,6 +346,7 @@ export function foldRetiredCategory(
   for (const [index, rule] of retired.rules.entries()) {
     if (rule.name && !rule.name.test(name)) continue;
     if (rule.context && !(before && rule.context.test(before))) continue;
+    if (rule.contextTest && !(before && rule.contextTest(before))) continue;
     return { to: rule.to, rule: `${key}#${index}` };
   }
   return { to: retired.otherwise, rule: `${key}#otherwise` };

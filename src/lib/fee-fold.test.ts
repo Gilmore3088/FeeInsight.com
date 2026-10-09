@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
 import { passesDarwinChecks } from "./agents/knox/layout";
-import { foldContext, foldRetiredCategory, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
+import { foldContext, foldRetiredCategory, ownAtmSection, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
@@ -214,5 +214,32 @@ describe("top-50 fold", () => {
     expect(foldContext(text, "Balance Inquiry")).toBe("ATM Fees Non-Bank ATM Withdrawal $2.00 ");
     expect(foldContext(text, "Wire")).toBeNull();
     expect(foldContext(null, "Balance Inquiry")).toBeNull();
+  });
+});
+
+describe("own-ATM balance inquiry (Regions, Oct 9)", () => {
+  const text = [
+    "All fees are per item unless otherwise indicated.",
+    "Regions ATM:",
+    "Withdrawal . . . . . . . . . . . . . . . . . .$0.00",
+    "Balance Inquiry . . . . . . . . . . . . . . .$0.00",
+    "Transfer . . . . . . . . . . . . . . . . . . .$0.00",
+    "Mini Statements (available at select ATMs) . . . .$2.00",
+    "Non-Regions ATM:",
+    "Withdrawal . . . . . . . . . . . . . . . . . .$3.00",
+    "(Applies to all withdrawal requests, approved or declined)",
+    "Balance Inquiry . . . . . . . . . . . . . . .$3.00",
+  ].join("\n");
+
+  it("files an inquiry under another bank's ATM heading as a non-network ATM fee", () => {
+    expect(foldRetiredCategory("balance_inquiry", "Balance Inquiry", foldContext(text, "Balance Inquiry", 3))?.to).toBe("atm_non_network");
+  });
+
+  it("gives an inquiry at the bank's own ATM no home", () => {
+    expect(foldRetiredCategory("balance_inquiry", "Balance Inquiry", foldContext(text, "Balance Inquiry", 0))?.to).toBeNull();
+    expect(ownAtmSection("Our ATM: Withdrawal $0.00")).toBe(true);
+    expect(ownAtmSection("Foreign ATM: Withdrawal $2.00")).toBe(false);
+    expect(ownAtmSection("ATM Fees Withdrawal $2.00")).toBe(false);
+    expect(ownAtmSection("Non-Regions ATM: Withdrawal $3.00")).toBe(false);
   });
 });
