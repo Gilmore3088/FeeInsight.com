@@ -66,6 +66,18 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
     institutionName,
     reason: "Knox v57 reads this bank's current page; its state lane is queued",
   })),
+  // $10B+ banks Knox v62 reads differently: Northern Trust's wrapped $25 overdraft line, and the
+  // 15 wrong live rows at Citizens Business Bank and ConnectOne (former-price column, business-only
+  // footnote) that the rules re-check takes down once their run reads v62 (2026-10-09).
+  ...([
+    [25, "The Northern Trust Company"],
+    [124, "Citizens Business Bank, National Association"],
+    [135, "ConnectOne Bank"],
+  ] as const).map(([institutionId, institutionName]) => ({
+    institutionId,
+    institutionName,
+    reason: "Knox v62 reads this bank's current page; its state lane is queued",
+  })),
   // Marketing's outreach batch (2026-10-08 18:20), first: each has 5+ local competitors with a
   // sourced overdraft fee, and its own current page prints an overdraft line Knox v42 reads.
   ...([
@@ -178,7 +190,7 @@ export interface PriorityInstitutionRow {
   hand_link_id: number | null;
   /** Newest unread document the paid fetch stored (tier paid_fetched only); keys the run the same way. */
   paid_document_id: number | null;
-  /** Knox rules version the bank's current page has not been read by (tier overdraft_gap only); keys the run. */
+  /** Knox rules version the bank's current page has not been read by (tiers overdraft_gap and requested); keys the run. */
   rules_version: number | null;
 }
 
@@ -332,8 +344,10 @@ export async function selectPriorityInstitutions(
                 -- A rules version that has not read the bank's current page is new work after
                 -- PRIORITY_RULES_REREAD_HOURS, not the 7-day gap retry; once per version, since a
                 -- page that version's run still left unread would otherwise come back every tick.
+                -- The same holds for a request by name (Arvest and Old National waited a day on
+                -- their request runs from before Knox v57, 9 Oct).
                 AND (
-                  c.tier <> 3
+                  c.tier NOT IN (2, 3)
                   OR NOT c.rules_unread
                   OR r.started_at > NOW() - make_interval(hours => ${PRIORITY_RULES_REREAD_HOURS}::int)
                   OR r.idempotency_key = ${"atlas:priority:"}::text || c.id::text || ${`:knox:${KNOX_RULES_STRATEGY.version}`}::text
@@ -371,7 +385,9 @@ export async function selectPriorityInstitutions(
               )
             )
        )
-     ORDER BY CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END ASC,
+     -- A request whose current page this Knox version has not read goes before paid-fetched
+     -- pages, which otherwise kept the two direct-run places full all morning (9 Oct).
+     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 2 AND c.rules_unread THEN 2 WHEN c.tier = 4 THEN 3 WHEN c.tier = 2 THEN 4 ELSE 5 END ASC,
               CASE WHEN c.tier = 2 THEN array_position(${requested}::bigint[], c.id::bigint) END ASC NULLS LAST,
               COALESCE(c.asset_size, 0) DESC, c.id ASC
      LIMIT ${limit}::int
@@ -384,7 +400,7 @@ export async function selectPriorityInstitutions(
     tier: tiers[Number(row.tier)] ?? "requested",
     hand_link_id: Number(row.tier) === 1 && row.hand_link_id != null ? Number(row.hand_link_id) : null,
     paid_document_id: Number(row.tier) === 4 && row.paid_document_id != null ? Number(row.paid_document_id) : null,
-    rules_version: Number(row.tier) === 3 && row.rules_unread ? KNOX_RULES_STRATEGY.version : null,
+    rules_version: (Number(row.tier) === 3 || Number(row.tier) === 2) && row.rules_unread ? KNOX_RULES_STRATEGY.version : null,
   }));
 }
 

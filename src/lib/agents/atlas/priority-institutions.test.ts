@@ -46,12 +46,12 @@ describe("priority institutions", () => {
     }));
   });
 
-  it("lists each requested institution once, the v57 re-reads, Marketing's outreach batch, then the Tennessee report's largest banks first", () => {
+  it("lists each requested institution once, the v57 and v62 re-reads, Marketing's outreach batch, then the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 2)).toEqual([78, 41]);
-    expect(ids.slice(2, 16)).toEqual([1223, 767, 4715, 8085, 4522, 3331, 4779, 850, 400, 599, 348, 424, 7034, 5579]);
-    expect(ids.slice(16, 26)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
+    expect(ids.slice(0, 5)).toEqual([78, 41, 25, 124, 135]);
+    expect(ids.slice(5, 19)).toEqual([1223, 767, 4715, 8085, 4522, 3331, 4779, 850, 400, 599, 348, 424, 7034, 5579]);
+    expect(ids.slice(19, 29)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
     expect(ids).toContain(8109);
   });
 
@@ -100,7 +100,7 @@ describe("priority institutions", () => {
     const select = calls.find((call) => call.text.includes("WITH candidates"))!.text;
     expect(select).toContain("paid.strategy LIKE 'fetch.paid_web_fetch%'");
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
-    expect(select).toContain("CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END");
+    expect(select).toContain("CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 2 AND c.rules_unread THEN 2 WHEN c.tier = 4 THEN 3 WHEN c.tier = 2 THEN 4 ELSE 5 END");
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
     // A hand-found schedule fetched in another state's lane is unread work too (First United, 8 Oct).
     expect(select).toContain("JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id");
@@ -133,6 +133,23 @@ describe("priority institutions", () => {
     expect(values).toContain(KNOX_RULES_STRATEGY.strategy);
     expect(values).toContain(KNOX_RULES_STRATEGY.version);
     expect(values).toContain(PRIORITY_RULES_REREAD_HOURS);
+  });
+
+  it("reruns a request whose page this Knox version has not read, ahead of paid pages", async () => {
+    const { db, calls } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [{ id: 41, institution_name: "Old National Bank", state_code: "IN", tier: 2, hand_link_id: null, paid_document_id: null, rules_unread: true }];
+    });
+
+    const result = await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-09T07:50:00Z") });
+
+    expect(result.runs).toEqual([{ institutionId: 41, runId: 1041, tier: "requested" }]);
+    expect(startAgentRunMock.mock.calls[0][0]).toMatchObject({
+      idempotencyKey: `atlas:priority:41:knox:${KNOX_RULES_STRATEGY.version}`,
+      params: { institution_id: 41, tier: "requested" },
+    });
+    const { text } = calls.find((call) => call.text.includes("WITH candidates"))!;
+    expect(text).toContain("c.tier NOT IN (2, 3)");
   });
 
   it("keys an overdraft-gap run its current rules already read by the day", async () => {

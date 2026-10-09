@@ -4,13 +4,18 @@ import {
   BILL_STEPS,
   WIRE_KINDS,
   billProgress,
+  formatWireDate,
   wireHref,
   type PageWindow,
   type WireKind,
   type WireParams,
 } from "@/lib/regulatory/wire";
+import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import type { FeeDataStrip } from "@/lib/regulatory/wire-fee-links";
+import { billTimeline, researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
 import { STATE_NAMES } from "@/lib/us-states";
-import { WireDate, WirePager, WireSummary } from "./wire-controls";
+import { ResearchPanel } from "./research-panel";
+import { FeeChips, WireDate, WirePager, WireSummary } from "./wire-controls";
 
 /**
  * The Regulatory Wire's States view: one chronological feed for the chosen jurisdiction,
@@ -33,9 +38,24 @@ function plural(n: number, [one, many]: [string, string]): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
 
-/** The jurisdiction select, rendered inside the shared control bar's GET form. */
-export function JurisdictionField({ states, active }: { states: string[]; active: string | undefined }) {
+/**
+ * The jurisdiction select, rendered inside the shared control bar's GET form. A reader who
+ * watches states gets "My states" first, and "All states" is then sent as `state=all` so it
+ * is not mistaken for no choice (which opens on My states).
+ */
+export function JurisdictionField({
+  states,
+  active,
+  watched = [],
+  mine = false,
+}: {
+  states: string[];
+  active: string | undefined;
+  watched?: string[];
+  mine?: boolean;
+}) {
   const options = active && !states.includes(active) ? [...states, active].sort() : states;
+  const allValue = watched.length > 0 ? "all" : "";
   return (
     <span className="flex w-full items-center gap-2 sm:w-auto">
       <label htmlFor="wire-state" className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-warm-600">
@@ -44,10 +64,11 @@ export function JurisdictionField({ states, active }: { states: string[]; active
       <select
         id="wire-state"
         name="state"
-        defaultValue={active ?? ""}
+        defaultValue={mine && watched.length > 0 ? "mine" : active ?? allValue}
         className="min-w-0 flex-1 rounded-lg border border-warm-200 bg-white px-2.5 py-1.5 text-[13px] font-medium text-warm-900 sm:w-44 sm:flex-none"
       >
-        <option value="">All states</option>
+        {watched.length > 0 ? <option value="mine">My states ({watched.length})</option> : null}
+        <option value={allValue}>All states</option>
         {options.map((code) => (
           <option key={code} value={code}>
             {stateName(code)}
@@ -106,7 +127,37 @@ export function BillStepper({ stage }: { stage: string | null }) {
   );
 }
 
-function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; showState: boolean }) {
+/** The key a state item's fee-data strip is stored under on the page (every item has one). */
+export function stateStripKey(item: StateWireItem): string {
+  if (item.kind === "bill") return `bill:${item.state_code}:${item.identifier ?? item.title}`;
+  return `link:${item.link}`;
+}
+
+/** The key a state item's note and related items are stored under; null for older rows. */
+export function stateItemKey(item: StateWireItem): string | null {
+  if (item.kind === "bill") return item.tracker_id ?? null;
+  return item.guid ?? null;
+}
+
+function ItemRow({
+  item,
+  now,
+  showState,
+  note,
+  related,
+  feeData,
+  open = false,
+  exampleFees = false,
+}: {
+  item: StateWireItem;
+  now: Date;
+  showState: boolean;
+  note: ResearchNote | null;
+  related: RelatedItem[];
+  feeData: FeeDataStrip | null;
+  open?: boolean;
+  exampleFees?: boolean;
+}) {
   const rail =
     item.kind === "bill"
       ? "border-solid border-[#C44B2E]"
@@ -116,6 +167,7 @@ function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; sho
   const title =
     item.kind === "bill" ? item.title : item.kind === "regulator" ? item.title : item.headline;
   const href = item.kind === "bill" ? item.url : item.link;
+  const fees = feeTypesOf(title);
   const body = (
     <>
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
@@ -124,7 +176,9 @@ function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; sho
         {item.kind === "bill" && item.identifier ? (
           <span className="font-semibold text-warm-700 [font-variant-numeric:tabular-nums]">{item.identifier}</span>
         ) : null}
-        {item.kind === "regulator" && item.fee_related ? (
+        {fees.length > 0 ? (
+          <span className="font-semibold text-[#A93D25]">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
+        ) : item.kind === "regulator" && item.fee_related ? (
           <span className="font-semibold uppercase tracking-wider text-[#A93D25]">Fees</span>
         ) : null}
       </p>
@@ -163,12 +217,24 @@ function ItemRow({ item, now, showState }: { item: StateWireItem; now: Date; sho
       {/* Official items get a solid rule, press a dashed one. */}
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-0 border-l-[3px] ${rail}`} />
       {href && /^https?:\/\//i.test(href) ? (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="group block px-4 py-3.5 no-underline transition-colors hover:bg-warm-100/80">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="group block px-4 pb-3 pt-3.5 no-underline transition-colors hover:bg-warm-100/80">
           {body}
         </a>
       ) : (
-        <div className="px-4 py-3.5">{body}</div>
+        <div className="px-4 pb-3 pt-3.5">{body}</div>
       )}
+      <div className="px-4">
+        <ResearchPanel
+          note={item.kind === "press" ? null : note}
+          related={related}
+          press={item.kind === "press"}
+          timeline={item.kind === "bill" ? billTimeline({ introducedOn: item.introduced_on, stage: item.stage, stageOn: item.stage_on }) : undefined}
+          now={now}
+          feeData={feeData}
+          exampleFees={exampleFees}
+          open={open}
+        />
+      </div>
     </li>
   );
 }
@@ -183,20 +249,121 @@ function emptyMessage(params: WireParams, where: string, phrase: string): string
   return `Nothing is stored for ${where} ${phrase}${searched}: no fee bills, regulator posts or press stories. ${news} ${bills}`;
 }
 
+/** The reader's watched states, for My states and the Watch toggle. */
+export interface WireWatch {
+  /** Watched state codes, alphabetical. */
+  states: string[];
+  /** Items per watched state dated after the reader's last visit; absent before a first visit. */
+  newByState?: Record<string, number>;
+  /** When the reader last opened My states (ISO), for the "new since" line. */
+  lastViewedAt?: string | null;
+  /** The form action behind "Watch this state" (watch-actions.ts). */
+  action: (formData: FormData) => void | Promise<void>;
+  /** Most states one reader can watch. */
+  max: number;
+}
+
+function WatchToggle({ state, watch }: { state: string; watch: WireWatch }) {
+  const watching = watch.states.includes(state);
+  const full = !watching && watch.states.length >= watch.max;
+  return (
+    <form action={watch.action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="state" value={state} />
+      <input type="hidden" name="watch" value={watching ? "0" : "1"} />
+      <button
+        type="submit"
+        disabled={full}
+        aria-pressed={watching}
+        className={`rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
+          watching
+            ? "border-[#C44B2E] bg-[#C44B2E] text-white hover:bg-[#A93D25]"
+            : "border-warm-300 bg-white text-warm-900 hover:border-[#C44B2E] hover:text-[#A93D25]"
+        }`}
+      >
+        {watching ? "★ Watching this state" : "☆ Watch this state"}
+      </button>
+      <span className="text-[11px] text-warm-600">
+        {watching
+          ? "In My states and your weekly Wire digest. Click to stop watching."
+          : full
+            ? `You watch ${watch.max} states, the most allowed.`
+            : "Adds it to My states and your weekly Wire digest."}
+      </span>
+    </form>
+  );
+}
+
+function MyStatesBar({ params, watch, now }: { params: WireParams; watch: WireWatch; now: Date }) {
+  const last = watch.lastViewedAt ? formatWireDate(watch.lastViewedAt, now)?.absolute ?? null : null;
+  return (
+    <div className="mt-2.5 rounded-lg border border-warm-200 bg-white/70 px-3 py-2">
+      <ul className="flex flex-wrap gap-1.5">
+        {watch.states.map((code) => {
+          const fresh = watch.newByState?.[code] ?? 0;
+          return (
+            <li key={code}>
+              <Link
+                href={wireHref(params, { state: code, mine: false, page: 1 })}
+                className="inline-flex items-center gap-1.5 rounded-full border border-warm-200 bg-white px-2.5 py-1 text-[12px] font-medium text-warm-900 no-underline hover:border-[#C44B2E]"
+              >
+                {stateName(code)}
+                {fresh > 0 ? (
+                  <span className="rounded-full bg-[#C44B2E] px-1.5 text-[10px] font-bold text-white [font-variant-numeric:tabular-nums]">
+                    {fresh} new
+                  </span>
+                ) : null}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-warm-600">
+        <span>
+          {last
+            ? `"New" counts items dated after your last visit to My states (${last}).`
+            : "New-item counts start from this visit."}
+        </span>
+        <Link href="/pro/news/digest" className="font-semibold text-[#A93D25] no-underline hover:underline">
+          This week&apos;s Wire digest →
+        </Link>
+      </p>
+    </div>
+  );
+}
+
 export function StateWire({
   params,
   wire,
   win,
   phrase,
   now,
+  notes,
+  related,
+  feeData,
+  watch,
+  openPanels = [],
+  exampleFees = false,
 }: {
   params: WireParams;
   wire: Pick<StateWirePage, "items" | "counts" | "failed" | "capped">;
   win: PageWindow;
   phrase: string;
   now: Date;
+  /** Research notes keyed by researchKey(kind, id). */
+  notes?: Map<string, ResearchNote>;
+  /** Related bills or press, keyed by stateItemKey. */
+  related?: Map<string, RelatedItem[]>;
+  /** "In the fee data" strips, keyed by stateStripKey. */
+  feeData?: Map<string, FeeDataStrip>;
+  /** The reader's watched states; absent when they cannot be read. */
+  watch?: WireWatch;
+  /** Preview only: strip keys whose panel renders open. */
+  openPanels?: string[];
+  /** Preview only: fee figures labelled EXAMPLE. */
+  exampleFees?: boolean;
 }) {
-  const where = params.state ? stateName(params.state) : "any state";
+  const mine = Boolean(params.mine && watch && watch.states.length > 0);
+  const where = params.state ? stateName(params.state) : mine ? "your watched states" : "any state";
   const noun = params.kind === "bills" ? "fee bills" : params.kind === "regulators" ? "regulator posts" : params.kind === "press" ? "press stories" : "items";
   const count = (k: WireKind) => {
     const n = wire.counts[k];
@@ -207,11 +374,23 @@ export function StateWire({
   return (
     <div className="mt-5">
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:justify-between">
-        <h2 className="text-[1.375rem] leading-tight text-warm-900">{params.state ? stateName(params.state) : "All states"}</h2>
+        <h2 className="text-[1.375rem] leading-tight text-warm-900">{params.state ? stateName(params.state) : mine ? "My states" : "All states"}</h2>
         <p className="text-[12px] text-warm-600 [font-variant-numeric:tabular-nums]">
           {count("bills")} · {count("regulators")} · {count("press")} <span className="whitespace-nowrap">{phrase}</span>
         </p>
       </div>
+
+      {params.state && watch ? (
+        <div className="mt-2">
+          <WatchToggle state={params.state} watch={watch} />
+        </div>
+      ) : null}
+      {mine && watch ? <MyStatesBar params={params} watch={watch} now={now} /> : null}
+      {!params.state && !mine && watch && watch.states.length === 0 ? (
+        <p className="mt-1.5 text-[11px] text-warm-600">
+          Pick a state and choose <span className="font-semibold text-warm-700">Watch this state</span> to collect it under My states.
+        </p>
+      ) : null}
 
       <nav aria-label="Kind" className="mt-3 flex gap-1 overflow-x-auto border-b border-warm-200 text-[12px]">
         {WIRE_KINDS.map((k) => {
@@ -232,6 +411,7 @@ export function StateWire({
       </nav>
 
       <WireSummary params={params} win={win} noun={noun} phrase={phrase} />
+      <FeeChips params={params} />
 
       {wire.failed.length > 0 ? (
         <p role="status" className="mt-2 rounded-lg border border-warm-300 bg-warm-150 px-3 py-2 text-[12px] text-warm-700">
@@ -246,14 +426,23 @@ export function StateWire({
           </div>
         ) : (
           <ol className="divide-y divide-warm-200/60 overflow-hidden rounded-xl border border-warm-200 bg-white/70">
-            {wire.items.map((item) => (
-              <ItemRow
-                key={`${item.kind}:${item.kind === "bill" ? `${item.state_code}-${item.identifier ?? item.title}` : item.link}`}
-                item={item}
-                now={now}
-                showState={!params.state}
-              />
-            ))}
+            {wire.items.map((item) => {
+              const key = stateItemKey(item);
+              const note = key ? notes?.get(researchKey(item.kind === "bill" ? "tracker" : "article", key)) ?? null : null;
+              return (
+                <ItemRow
+                  key={`${item.kind}:${item.kind === "bill" ? `${item.state_code}-${item.identifier ?? item.title}` : item.link}`}
+                  item={item}
+                  now={now}
+                  showState={!params.state}
+                  note={note}
+                  related={key ? related?.get(key) ?? [] : []}
+                  feeData={feeData?.get(stateStripKey(item)) ?? null}
+                  open={openPanels.includes(stateStripKey(item))}
+                  exampleFees={exampleFees}
+                />
+              );
+            })}
           </ol>
         )}
       </div>
@@ -263,7 +452,9 @@ export function StateWire({
         <strong className="font-semibold text-warm-700">Bill</strong> and <strong className="font-semibold text-warm-700">Regulator</strong> items are
         official: a bill in the state legislature (from Open States) or a post by the state&apos;s banking or credit union
         regulator. <strong className="font-semibold text-warm-700">Press</strong> items are news coverage, named by outlet, and are
-        not the regulator&apos;s word. Dates are the publication day or, for bills, the latest action (UTC).
+        not the regulator&apos;s word. Dates are the publication day or, for bills, the latest action (UTC). Research
+        panels hold an AI summary of an official item&apos;s own text where one has been written, labelled as such;
+        press stories are never summarised. A story is linked to a bill when its headline names the bill.
       </p>
     </div>
   );

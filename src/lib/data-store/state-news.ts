@@ -1,5 +1,7 @@
 import { emptyHeadlineLabel, isFeeHeadline, readableHeadline, splitPublisher } from "@/lib/regulatory/state-news";
 import { likePattern, type WireKind } from "@/lib/regulatory/wire";
+import { hasFeeType, type FeeType } from "@/lib/regulatory/wire-fee-types";
+import { trackerItemId } from "@/lib/regulatory/wire-research";
 import { sql } from "./connection";
 
 /**
@@ -12,6 +14,8 @@ import { sql } from "./connection";
  */
 
 export interface StateRegulatorPost {
+  /** reg_articles.guid, the key of the item's research note; absent on older readers. */
+  guid?: string;
   state_code: string;
   title: string;
   link: string;
@@ -21,6 +25,8 @@ export interface StateRegulatorPost {
 }
 
 export interface StatePressStory {
+  /** reg_articles.guid; absent on older readers. */
+  guid?: string;
   state_code: string;
   headline: string;
   /** The outlet, from Google News' "Headline - Publisher" title. */
@@ -30,6 +36,8 @@ export interface StatePressStory {
 }
 
 export interface StateFeeBill {
+  /** reg_tracker_items "source:external_id", the key of the bill's research note; absent on older readers. */
+  tracker_id?: string;
   state_code: string;
   identifier: string | null;
   title: string;
@@ -64,6 +72,7 @@ export interface StateNewsOptions {
 }
 
 interface ArticleRow {
+  guid?: string;
   source: string;
   title: string;
   link: string;
@@ -71,6 +80,8 @@ interface ArticleRow {
 }
 
 export interface BillRow {
+  source?: string;
+  external_id?: string;
   jurisdiction: string;
   identifier: string | null;
   title: string;
@@ -120,6 +131,7 @@ export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
     .map((r) => {
       const label = emptyHeadlineLabel(r.title);
       return {
+        guid: r.guid,
         state_code: stateOf(r.source),
         title: label ?? readableHeadline(r.title),
         link: r.link,
@@ -142,6 +154,7 @@ export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
       return true;
     })
     .map((p) => ({
+      ...(p.guid ? { guid: p.guid } : {}),
       state_code: p.state_code,
       title: p.title,
       link: p.link,
@@ -153,12 +166,20 @@ export function toRegulatorPosts(rows: ArticleRow[]): StateRegulatorPost[] {
 export function toPressStories(rows: ArticleRow[]): StatePressStory[] {
   return rows.map((r) => {
     const { headline, publisher } = splitPublisher(r.title);
-    return { state_code: stateOf(r.source), headline: readableHeadline(headline), publisher, link: r.link, published_at: isoDay(r.published_at) };
+    return {
+      ...(r.guid ? { guid: r.guid } : {}),
+      state_code: stateOf(r.source),
+      headline: readableHeadline(headline),
+      publisher,
+      link: r.link,
+      published_at: isoDay(r.published_at),
+    };
   });
 }
 
 export function toFeeBills(rows: BillRow[]): StateFeeBill[] {
   return rows.map((r) => ({
+    ...(r.source && r.external_id ? { tracker_id: trackerItemId(r.source, r.external_id) } : {}),
     state_code: String(r.jurisdiction).toUpperCase(),
     identifier: r.identifier ?? null,
     title: readableHeadline(r.title),
@@ -266,17 +287,28 @@ export interface StateWirePage {
   failed: WireKind[];
   /** Parts that reached STATE_WIRE_READ_CAP: their counts are at least the number shown. */
   capped: WireKind[];
+  /** With `newSince`: items per state dated after the reader's last visit. */
+  newByState?: Record<string, number>;
 }
 
 export interface StateWireOptions {
   stateCode?: string | null;
+  /** Several states at once (the reader's My states); used when stateCode is not set. */
+  stateCodes?: string[] | null;
   kind?: WireKind | null;
   /** ISO timestamp or day; bills use their latest action date (or introduction date). */
   since?: string | null;
   /** Case-insensitive title search; a bill's number matches too. */
   q?: string | null;
+  /** Fee-type tag from the headline (wire-fee-types); absent means every item. */
+  fee?: FeeType | null;
   limit?: number;
   offset?: number;
+  /**
+   * Per state, the reader's last visit (ISO). When given, the page counts each state's items
+   * dated after it (all kinds, after the search and fee filters) in `newByState`.
+   */
+  newSince?: Record<string, string | null> | null;
 }
 
 export interface StateWireParts {
@@ -326,18 +358,66 @@ export function mergeStateWire(
   return { items: all.slice(offset, offset + limit), total, offset, counts };
 }
 
+/** Keeps the items whose headline carries this fee type; every item when none is chosen. */
+export function filterStateWireByFee(parts: StateWireParts, fee: FeeType | null): StateWireParts {
+  if (!fee) return parts;
+  return {
+    bills: parts.bills.filter((b) => hasFeeType(b.title, fee)),
+    regulators: parts.regulators.filter((p) => hasFeeType(p.title, fee)),
+    press: parts.press.filter((s) => hasFeeType(s.headline, fee)),
+  };
+}
+
+/**
+ * Items per state dated after the reader's last visit to that state. A bill counts by its
+ * latest action day (or introduction), a post or story by its publication time; a bare day
+ * is midnight UTC, so an action on the day of the visit is not counted. A state never
+ * visited (null) counts nothing: everything would be "new".
+ */
+export function countNewByState(parts: StateWireParts, since: Record<string, string | null>): Record<string, number> {
+  const out: Record<string, number> = {};
+  const cutoff = new Map<string, number>();
+  for (const [code, when] of Object.entries(since)) {
+    out[code] = 0;
+    const t = when ? new Date(when).getTime() : NaN;
+    if (Number.isFinite(t)) cutoff.set(code, t);
+  }
+  const at = (value: string | null) => {
+    if (!value) return NaN;
+    return new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value).getTime();
+  };
+  const add = (state: string, date: string | null) => {
+    const code = state.toUpperCase();
+    const limit = cutoff.get(code);
+    if (limit === undefined) return;
+    if (at(date) > limit) out[code] = (out[code] ?? 0) + 1;
+  };
+  for (const b of parts.bills) add(b.state_code, b.stage_on ?? b.introduced_on);
+  for (const p of parts.regulators) add(p.state_code, p.published_at);
+  for (const s of parts.press) add(s.state_code, s.published_at);
+  return out;
+}
+
 export interface WireBillRow extends BillRow {
   published_on: string | Date | null;
 }
 
+/** The states a wire read covers: one, several (My states), or every state (null). */
+export function wireStates(options: Pick<StateWireOptions, "stateCode" | "stateCodes">): string[] | null {
+  if (options.stateCode) return [options.stateCode.toUpperCase()];
+  if (options.stateCodes && options.stateCodes.length > 0) return [...new Set(options.stateCodes.map((c) => c.toUpperCase()))].sort();
+  return null;
+}
+
 async function readWireArticles(prefix: "state" | "news", options: StateWireOptions, cap: number): Promise<ArticleRow[]> {
-  const pattern = options.stateCode ? `${prefix}:${options.stateCode.toUpperCase()}` : `${prefix}:%`;
+  const states = wireStates(options);
+  const patterns = states ? states.map((code) => `${prefix}:${code}`) : [`${prefix}:%`];
   const since = options.since ?? null;
   const q = likePattern(options.q);
   return (await sql`
-    SELECT source, title, link, published_at
+    SELECT guid, source, title, link, published_at
       FROM reg_articles
-     WHERE source LIKE ${pattern}
+     WHERE source LIKE ANY(${patterns}::text[])
        AND (${since}::text IS NULL OR published_at >= ${since})
        AND (${q}::text IS NULL OR title ILIKE ${q})
      ORDER BY published_at DESC NULLS LAST, created_at DESC
@@ -346,15 +426,15 @@ async function readWireArticles(prefix: "state" | "news", options: StateWireOpti
 }
 
 async function readWireBills(options: StateWireOptions, cap: number): Promise<WireBillRow[]> {
-  const state = options.stateCode ? options.stateCode.toUpperCase() : null;
+  const states = wireStates(options) ?? [];
   const since = options.since ?? null;
   const q = likePattern(options.q);
   return (await sql`
-    SELECT jurisdiction, identifier, title, stage, stage_on, url, published_on
+    SELECT source, external_id, jurisdiction, identifier, title, stage, stage_on, url, published_on
       FROM reg_tracker_items
      WHERE source = 'open_states'
        AND cardinality(topics) > 0
-       AND (${state}::text IS NULL OR jurisdiction = ${state})
+       AND (cardinality(${states}::text[]) = 0 OR jurisdiction = ANY(${states}::text[]))
        AND (${since}::date IS NULL OR COALESCE(stage_on, published_on) >= ${since}::date)
        AND (${q}::text IS NULL OR title ILIKE ${q} OR identifier ILIKE ${q})
      ORDER BY COALESCE(stage_on, published_on) DESC NULLS LAST
@@ -395,11 +475,20 @@ export async function getStateWire(options: StateWireOptions = {}): Promise<Stat
     part("press", () => readWireArticles("news", options, cap)),
     part("bills", () => readWireBills(options, cap)),
   ]);
-  const page = mergeStateWire(
+  const parts = filterStateWireByFee(
     { regulators: toRegulatorPosts(posts), press: toPressStories(press), bills: toWireBills(bills) },
+    options.fee ?? null,
+  );
+  const page = mergeStateWire(
+    parts,
     { kind: options.kind, limit: options.limit, offset: options.offset },
   );
   const order: WireKind[] = ["bills", "regulators", "press"];
   const inOrder = (list: WireKind[]) => order.filter((k) => list.includes(k));
-  return { ...page, failed: inOrder(failed), capped: inOrder(capped) };
+  return {
+    ...page,
+    failed: inOrder(failed),
+    capped: inOrder(capped),
+    ...(options.newSince ? { newByState: countNewByState(parts, options.newSince) } : {}),
+  };
 }

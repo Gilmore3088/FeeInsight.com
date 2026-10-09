@@ -23,6 +23,15 @@ describe("federal release filter", () => {
     expect(params).toEqual(["%50\\%'; DROP TABLE reg\\_articles; --%"]);
   });
 
+  it("filters by fee type with bound regex patterns, excluding specific types for other fees", () => {
+    const overdraft = buildArticleFilter({ fee: "overdraft" });
+    expect(overdraft.where).toBe(`WHERE ${FEDERAL_RELEASES_ONLY} AND title ~* $1`);
+    expect(overdraft.params[0]).toContain("overdraft");
+    const other = buildArticleFilter({ q: "bank", fee: "other" });
+    expect(other.where).toBe(`WHERE ${FEDERAL_RELEASES_ONLY} AND title ILIKE $1 AND title ~* $2 AND title !~* $3`);
+    expect(other.params).toHaveLength(3);
+  });
+
   it("ignores a blank search", () => {
     expect(buildArticleFilter({ q: "   " }).params).toEqual([]);
   });

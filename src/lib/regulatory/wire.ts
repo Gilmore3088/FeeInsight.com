@@ -4,6 +4,8 @@
  * reader's window and search. Pure: no database, no React, safe to unit test.
  */
 
+import { parseFeeType, type FeeType } from "./wire-fee-types";
+
 export const WIRE_PAGE_SIZE = 25;
 export const WIRE_QUERY_MAX = 120;
 
@@ -42,6 +44,15 @@ export interface WireParams {
   /** States view: two-letter state code and kind. */
   state?: string;
   kind?: WireKind;
+  /** States view: the reader's watched states ("state=mine"). */
+  mine?: boolean;
+  /**
+   * States view: every state, chosen on purpose ("state=all"). Kept in links so a reader who
+   * watches states and picked All states is not sent back to My states.
+   */
+  allStates?: boolean;
+  /** Both views: fee-type tag from the headline (wire-fee-types). */
+  fee?: FeeType;
 }
 
 type RawParams = Record<string, string | string[] | undefined>;
@@ -71,6 +82,8 @@ export function parseKind(value: string | undefined): WireKind | undefined {
 export function parseWireParams(raw: RawParams, isState: (code: string) => boolean): WireParams {
   const view: WireView = one(raw.view) === "states" ? "states" : "federal";
   const stateCode = (one(raw.state) ?? "").toUpperCase();
+  const mine = stateCode === "MINE";
+  const allStates = stateCode === "ALL";
   return {
     view,
     range: parseRange(one(raw.range)),
@@ -80,7 +93,20 @@ export function parseWireParams(raw: RawParams, isState: (code: string) => boole
     topic: one(raw.topic) || undefined,
     state: stateCode && isState(stateCode) ? stateCode : undefined,
     kind: parseKind(one(raw.kind)),
+    fee: parseFeeType(one(raw.fee)),
+    ...(mine ? { mine: true } : {}),
+    ...(allStates ? { allStates: true } : {}),
   };
+}
+
+/**
+ * Whether the States view opens on My states: asked for ("state=mine"), or the reader
+ * watches states and the link named no jurisdiction at all.
+ */
+export function opensOnMyStates(params: WireParams, watchedCount: number): boolean {
+  if (params.view !== "states" || watchedCount === 0) return false;
+  if (params.mine) return true;
+  return !params.state && !params.allStates;
 }
 
 /** The window's start as an ISO timestamp, or null for "all". "Today" is since midnight UTC. */
@@ -191,11 +217,14 @@ export function wireHref(current: WireParams, change: Partial<WireParams> = {}):
   if (p.view === "states") {
     search.set("view", "states");
     if (p.state) search.set("state", p.state);
+    else if (p.mine) search.set("state", "mine");
+    else if (p.allStates) search.set("state", "all");
     if (p.kind) search.set("kind", p.kind);
   } else {
     if (p.source) search.set("source", p.source);
     if (p.topic) search.set("topic", p.topic);
   }
+  if (p.fee) search.set("fee", p.fee);
   if (p.q) search.set("q", p.q);
   if (p.range !== DEFAULT_WIRE_RANGE) search.set("range", p.range);
   if (p.page > 1) search.set("page", String(p.page));

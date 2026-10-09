@@ -4,6 +4,7 @@ import {
   billProgress,
   formatWireDate,
   likePattern,
+  opensOnMyStates,
   pageWindow,
   parseWireParams,
   rangePhrase,
@@ -44,6 +45,11 @@ describe("wire params", () => {
     // Switching to Federal keeps the range and search, not the state.
     expect(wireHref(params, { view: "federal", page: 1 })).toBe("/pro/news?q=overdraft&range=month");
     expect(wireHref(parseWireParams({}, isState))).toBe("/pro/news");
+    // The fee-type chip is shared by both views and survives a view switch.
+    const fee = parseWireParams({ fee: "overdraft", q: "cap" }, isState);
+    expect(fee.fee).toBe("overdraft");
+    expect(wireHref(fee, { view: "states", page: 1 })).toBe("/pro/news?view=states&fee=overdraft&q=cap");
+    expect(parseWireParams({ fee: "lattes" }, isState).fee).toBeUndefined();
   });
 });
 
@@ -102,5 +108,29 @@ describe("bill stage stepper", () => {
     expect(billProgress("failed")).toEqual({ reached: 1, end: "failed", label: "Failed" });
     expect(billProgress(null)).toEqual({ reached: 0, end: null, label: "Stage not recorded" });
     expect(billProgress("pending_signature")).toMatchObject({ reached: 0, label: "pending signature" });
+  });
+});
+
+describe("My states", () => {
+  const isState = (code: string) => code === "CA" || code === "TX";
+
+  it("reads state=mine and state=all, and keeps them in links", () => {
+    const mine = parseWireParams({ view: "states", state: "mine" }, isState);
+    expect(mine).toMatchObject({ mine: true, state: undefined });
+    expect(wireHref(mine, { kind: "bills", page: 1 })).toBe("/pro/news?view=states&state=mine&kind=bills");
+    const all = parseWireParams({ view: "states", state: "all" }, isState);
+    expect(all).toMatchObject({ allStates: true, state: undefined });
+    expect(wireHref(all)).toBe("/pro/news?view=states&state=all");
+    // A chosen state wins over My states.
+    expect(wireHref(mine, { state: "CA", mine: false })).toBe("/pro/news?view=states&state=CA");
+  });
+
+  it("opens on My states only for a reader who watches states and named no jurisdiction", () => {
+    const bare = parseWireParams({ view: "states" }, isState);
+    expect(opensOnMyStates(bare, 2)).toBe(true);
+    expect(opensOnMyStates(bare, 0)).toBe(false);
+    expect(opensOnMyStates(parseWireParams({ view: "states", state: "all" }, isState), 2)).toBe(false);
+    expect(opensOnMyStates(parseWireParams({ view: "states", state: "TX" }, isState), 2)).toBe(false);
+    expect(opensOnMyStates(parseWireParams({}, isState), 2)).toBe(false);
   });
 });
