@@ -13,13 +13,15 @@ interface ProTierChooserProps {
   bandChoices?: { key: string; label: string }[] | null;
   /** The band already picked (?band=), highlighted among the choices. */
   pickedBand?: string | null;
+  /** Where the buyer came from ("Regulatory Wire", or "direct"), sent with each funnel event. */
+  entry: string;
 }
 
 /**
  * Picks who the plan covers. The choice lives in the URL (?inst= or ?org=other) so it
  * survives sign-up and the server can price it; checkout re-checks the tier itself.
  */
-export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null, pickedBand = null }: ProTierChooserProps) {
+export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null, pickedBand = null, entry }: ProTierChooserProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -95,14 +97,14 @@ export function ProTierChooser({ chosenLabel, problem = null, bandChoices = null
         inputStyle={{}}
         onSelect={(result) => {
           if (!result) return;
-          trackEvent("pricing_tier_selected", { kind: "institution" });
+          trackEvent("pricing_tier_selected", { kind: "institution", entry });
           go((params) => params.set("inst", String(result.id)));
         }}
       />
       <button
         type="button"
         onClick={() => {
-          trackEvent("pricing_tier_selected", { kind: "other_organization" });
+          trackEvent("pricing_tier_selected", { kind: "other_organization", entry });
           go((params) => params.set("org", "other"));
         }}
         className="mt-1 inline-flex min-h-11 items-center text-left text-sm text-[#3D3833] underline underline-offset-2 hover:text-[#1A1815]"

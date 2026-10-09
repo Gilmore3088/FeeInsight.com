@@ -19,6 +19,9 @@ interface SubscribeButtonProps {
   returnTo?: string;
   /** Start checkout as soon as the button mounts (post-signup hand-off). */
   autoStart?: boolean;
+  /** For the checkout_start event: the price tier and where the buyer came from. */
+  tier?: ProTier;
+  entry?: string;
 }
 
 const DEFAULT_CLASS =
@@ -33,6 +36,8 @@ export function SubscribeButton({
   className,
   returnTo,
   autoStart = false,
+  tier,
+  entry,
 }: SubscribeButtonProps) {
   const router = useRouter();
   // When auto-starting, render as pending from the first paint.
@@ -43,7 +48,7 @@ export function SubscribeButton({
   const startCheckout = useCallback(async () => {
     // A signed-out visitor's click was already counted on the register link; the
     // post-signup auto-start continues that same checkout.
-    if (!autoStart) trackEvent("checkout_start", { plan, signed_in: true });
+    if (!autoStart) trackEvent("checkout_start", { plan, signed_in: true, ...(tier ? { tier } : {}), ...(entry ? { entry } : {}) });
     setPending(true);
     setError(null);
     try {
@@ -68,7 +73,7 @@ export function SubscribeButton({
       setError("Could not open checkout. Please try again in a moment.");
       setPending(false);
     }
-  }, [plan, institutionId, otherOrganization, pickedTier, returnTo, router, autoStart]);
+  }, [plan, institutionId, otherOrganization, pickedTier, returnTo, router, autoStart, tier, entry]);
 
   useEffect(() => {
     if (!autoStart || autoStarted.current) return;

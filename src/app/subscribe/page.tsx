@@ -16,15 +16,21 @@ import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/li
 import { HamiltonBenchmarkPreview } from "@/app/for-institutions/hamilton-benchmark-preview";
 import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { EverythingInPro, ProBenefits, WirePreview, type WirePreviewItem } from "./pro-overview";
+import { EverythingInPro, ProBenefits, WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
 import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
+import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
+import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
+import { buildFeeDataStrips, categoriesForFeeTypes } from "@/lib/regulatory/wire-fee-links";
+import { feeTypesOf } from "@/lib/regulatory/wire-fee-types";
+import { STATE_NAMES } from "@/lib/us-states";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
 import { AdvisoryLine, FreeTierCard, PricingFaq, ReportCard } from "./pricing-sections";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
-import { PLAN_TEAM_LABEL, REPORT_PRICE_LABEL, isProPlan, type ProPlan } from "./pricing";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
+import { REPORT_PRICE_LABEL, isProPlan, type ProPlan } from "./pricing";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -54,19 +60,59 @@ interface SubscribeSearchParams {
   canceled?: string;
 }
 
+interface WirePreviewData {
+  lead: WirePreviewLead | null;
+  items: WirePreviewItem[];
+}
+
 /**
- * The newest federal releases for the Wire preview, fee and rulemaking topics first. The page
- * still renders, with the benchmark preview, if the feed can't be read.
+ * The Wire preview's items, all read from the Wire's own tables. The lead is the newest state
+ * fee bill with figures in the fee data (the Wire's "In the fee data" strip), else the newest
+ * federal release; two more federal headlines follow, fee and rulemaking topics first. A read
+ * that fails leaves its part out, and the page falls back to the benchmark preview.
  */
-async function latestWireItems(): Promise<WirePreviewItem[]> {
-  const articles = await getArticles({ limit: 12 }).catch(() => []);
+async function wirePreviewData(): Promise<WirePreviewData> {
+  const [articles, bills] = await Promise.all([
+    getArticles({ limit: 12 }).catch(() => []),
+    getStateNews({ limit: 8 })
+      .then((news) => news.bills)
+      .catch(() => []),
+  ]);
   const ranked = [...articles.filter((a) => a.topic !== "general"), ...articles.filter((a) => a.topic === "general")];
-  return ranked.slice(0, 4).map((article) => ({
+  const releases: WirePreviewItem[] = ranked.map((article) => ({
     source: article.source,
     title: article.title,
-    topic: article.topic && article.topic !== "general" ? (TOPIC_LABELS[article.topic] ?? null) : null,
+    detail: article.topic && article.topic !== "general" ? (TOPIC_LABELS[article.topic] ?? null) : null,
     date: article.published_at,
+    url: article.link || null,
   }));
+
+  const bill = bills.find((b) => categoriesForFeeTypes(feeTypesOf(b.title)).length > 0) ?? null;
+  if (bill) {
+    const key = `${bill.state_code}:${bill.identifier ?? bill.title}`;
+    const indexes = await getWireFeeIndexes({ states: [bill.state_code], national: false }).catch(() => null);
+    const strip = indexes
+      ? buildFeeDataStrips([{ key, title: bill.title, stateCode: bill.state_code }], indexes).get(key) ?? null
+      : null;
+    if (strip) {
+      const state = STATE_NAMES[bill.state_code] ?? bill.state_code;
+      const stage = bill.stage ? (STATE_BILL_STAGE_LABELS[bill.stage] ?? null) : null;
+      return {
+        lead: {
+          source: bill.identifier ? `${state} · ${bill.identifier}` : `${state} bill`,
+          title: bill.title,
+          detail: stage,
+          date: bill.stage_on,
+          url: bill.url,
+          place: strip.place,
+          figures: strip.figures.map((figure) => ({ label: figure.label, text: figure.text })),
+        },
+        items: releases.slice(0, 2),
+      };
+    }
+  }
+  if (releases.length === 0) return { lead: null, items: [] };
+  return { lead: { ...releases[0], place: null, figures: [] }, items: releases.slice(1, 3) };
 }
 
 function buildSubscribeReturnPath(options: {
@@ -93,10 +139,10 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const [summary, sampleLive, wireItems] = await Promise.all([
+  const [summary, sampleLive, wire] = await Promise.all([
     getPublicStatsSummary(),
     sampleReportAvailable(),
-    latestWireItems(),
+    wirePreviewData(),
   ]);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
@@ -180,7 +226,9 @@ export default async function SubscribePage({
   )}`;
 
   // A Wire visitor sees the Wire; everyone else sees the benchmark from the sample report.
-  const wirePreview = wireItems.length > 0 ? <WirePreview items={wireItems} /> : null;
+  const wirePreview = wire.lead ? <WirePreview lead={wire.lead} items={wire.items} /> : null;
+  // Sent with every funnel event so conversion can be read by entry point (James, 9 Oct 2026).
+  const entryPoint = entry.page ?? "direct";
   const preview =
     entry.pillar === "wire" || !SAMPLE_REPORT_LIVE ? (wirePreview ?? <HamiltonBenchmarkPreview />) : <HamiltonBenchmarkPreview />;
 
@@ -220,7 +268,7 @@ export default async function SubscribePage({
         )}
 
         <section id="pro" aria-labelledby="pro-title" className="grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-14">
-          {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page }} />}
+          {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           <div className="lg:col-start-1 lg:row-start-1">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
               {gated ? `One step away from ${entry.page}` : `${SITE_NAME} Pro`}
@@ -233,17 +281,21 @@ export default async function SubscribePage({
               {entry.headline}
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
-              Regulatory intelligence and competitive fee research for banks and credit unions, in Hamilton, the{" "}
-              {SITE_NAME} Pro workspace.
+              {gated
+                ? `Follow regulatory developments, benchmark published fees, and turn research into decisions with ${SITE_NAME} Pro.`
+                : `Regulatory intelligence and competitive fee research for banks and credit unions, in Hamilton, the ${SITE_NAME} Pro workspace.`}
             </p>
-            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-3 lg:hidden">
+            <div className="mt-6 lg:hidden">
+              <p className="text-sm text-[#3D3833]">
+                <span className="font-semibold text-[#1A1815]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
+                {WORKSPACE_SEAT_LIMIT} people
+              </p>
               <a
                 href="#pro-heading"
-                className="rounded-lg bg-[#C44B2E] px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-[#A93D25]"
+                className="mt-3 block rounded-lg bg-[#C44B2E] px-5 py-3.5 text-center text-base font-semibold text-white shadow-sm hover:bg-[#A93D25]"
               >
-                Find your institution
+                Find your institution &amp; see pricing
               </a>
-              <span className="text-sm text-[#3D3833]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} {PLAN_TEAM_LABEL}</span>
             </div>
             <div className="mt-8">{preview}</div>
           </div>
@@ -257,6 +309,7 @@ export default async function SubscribePage({
                   problem={chooserProblem}
                   bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
                   pickedBand={selection?.tierPicked ? selection.tier : null}
+                  entry={entryPoint}
                 />
               }
               selection={selection}
@@ -265,6 +318,7 @@ export default async function SubscribePage({
               registerHrefFor={registerHrefFor}
               initialPlan={requestedPlan}
               autoStartPlan={selection ? autoStartPlan : null}
+              entry={entryPoint}
             />
             {!isLoggedIn && (
               <p className="mt-4 text-center text-sm text-[#3D3833]">

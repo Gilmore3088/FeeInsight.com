@@ -26,6 +26,8 @@ interface PurchaseCardProps {
   initialPlan: ProPlan | null;
   /** When set (post-signup hand-off), the matching plan starts checkout on mount. */
   autoStartPlan?: ProPlan | null;
+  /** Where the buyer came from ("Regulatory Wire", or "direct"), sent with each funnel event. */
+  entry: string;
 }
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
@@ -43,6 +45,7 @@ export function PurchaseCard({
   registerHrefFor,
   initialPlan,
   autoStartPlan = null,
+  entry,
 }: PurchaseCardProps) {
   return (
     <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(26,24,21,0.06),0_12px_32px_-12px_rgba(26,24,21,0.18)] ring-1 ring-[#E8E1D6] sm:p-7">
@@ -70,6 +73,7 @@ export function PurchaseCard({
             registerHref={{ annual: registerHrefFor("annual"), monthly: registerHrefFor("monthly") }}
             initialPlan={initialPlan}
             autoStartPlan={autoStartPlan}
+            entry={entry}
           />
           <p className="mt-4 text-sm leading-relaxed text-[#3D3833]">
             {selection.otherOrganization ? `${CONSULTANT_PRICE_NOTE} ` : ""}
