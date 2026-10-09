@@ -8,7 +8,8 @@
  * failures named, then withheld; it is never shown unchecked.
  */
 
-import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey } from "@/lib/ai-provider";
+import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
+import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { checkNarrativeFigures, extractFigures } from "./figure-check";
 import { HAMILTON_VOICE } from "./voice";
@@ -185,6 +186,7 @@ export async function writeStorylineMemo(
     try {
       raw = await client.create({ system, user, model });
     } catch (error) {
+      if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
       const message = error instanceof Error ? error.message : String(error);
       return { status: "unavailable", reason: /budget/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
     }

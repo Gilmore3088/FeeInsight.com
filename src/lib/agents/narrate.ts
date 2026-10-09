@@ -278,6 +278,11 @@ function narrateFinished(
       if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
       return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
     }
+    case "growth-withdraw": {
+      const withdrawn = n(detail, "withdrawn");
+      if (!withdrawn) return "Withdrew no first emails; every unreviewed draft still qualifies.";
+      return `Withdrew ${count(withdrawn, "unreviewed first email")} that no longer qualified.`;
+    }
     case "growth-learning": {
       if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
       if (detail.alreadyFiled === true) return `Found the week of ${String(detail.week)}'s report already in the queue.`;
@@ -556,6 +561,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-contacts": "growth",
   "growth-contact-picks": "growth",
   "growth-outreach": "growth",
+  "growth-withdraw": "growth",
   "growth-learning": "growth",
   "growth-quote": "growth",
   "growth-plan": "growth",

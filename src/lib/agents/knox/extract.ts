@@ -612,8 +612,8 @@ export async function insertCandidate(
   // monthly maintenance fee carries them.
   const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
   // The dedupe index is (document, fee name, amount), so a line an older version held
-  // as unclassified would block this fee forever. A held row with no category takes the
-  // category instead; any other existing row stays as it is.
+  // as unclassified or untraced would block this fee forever. Such a held row takes the
+  // traced read instead; any other existing row stays as it is.
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -662,11 +662,12 @@ export async function insertCandidate(
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
-      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
+      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:untraced')
                       || EXCLUDED.outlier_flags
                       || '["knox_promoted_from_held"]'::jsonb
      WHERE fr.source = 'knox'
-       AND fr.outlier_flags ? 'knox_review:unclassified'
+       -- A line held because the self-check could not trace it, now read and traced, is that fee.
+       AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:untraced')
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
     RETURNING fee_raw_id
   `;
