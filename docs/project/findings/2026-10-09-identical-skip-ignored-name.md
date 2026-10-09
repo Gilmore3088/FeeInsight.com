@@ -28,5 +28,24 @@ same price, the first one published hid the second.
   - a footnote digit glued on ("Inactive Checking3").
 - The bar for applying the check to every row, and to the backlog (about 400 rows), is 18 of 20.
 
+**Follow-up (same day): the page-text check.** Every miss was one fee read twice, so the word rule alone
+could not tell them apart. The check now also reads the document's current text (`agent_source_texts`):
+- `linesApartOnPage`: both names must appear in the page's words, in places that do not overlap, and the
+  price must follow each name within six words with no "of" between. A footnote sentence ("charge of
+  $25.00"), a name inside the other line ("Inactive Checking3") or a name missing from the current copy
+  stays identical.
+- A name starting lower-case ("per mailed statement") is the rest of a line and is never set apart.
+- The `SAME_LINE_RESELECT_IDS` gate is gone. Every row that was skipped as identical against a same-document
+  line under another name, and has no `same_line_check` attempt yet, is decided once more (about 2,092 rows).
+- Read-only estimate before merge: 434 of those pass the page check and 272 pass the page check and the
+  word rule together. A row publishes only if every live line at its price is set apart, so at most 272
+  publish. The rest stay identical.
+- Source spot checks:
+  - 19/20 on a fourth fresh sample (page check alone). The one miss was "per mailed statement", which the
+    lower-case rule now excludes.
+  - 20/20 on a fifth fresh sample of the final rule: every pair is two printed lines at the same price.
+    One of the 20 (verified 98375, "ACH/EFT FEES: Subordination of Mortgage") carries a glued column heading
+    in its name. That is a naming problem for the retidy, not a wrong publish decision. Strictly, that makes 19/20.
+
 **Lesson:** a dedupe key needs the fee's identity, not just its value. Price and category alone collapse
 distinct lines.

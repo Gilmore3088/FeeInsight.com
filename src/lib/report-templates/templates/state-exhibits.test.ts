@@ -3,6 +3,7 @@ import type { IndicatorSeries, StateEconomicContext } from "@/lib/data-store/eco
 import type { StateVisualsData } from "@/lib/data-store/state-visuals";
 import { renderStateFeeIndexReport } from "./state-fee-index";
 import { ladderRows, niceTicks, yearOverYear, type StateReportVisuals } from "./state-exhibits";
+import { countyPriceMap, PRICE_MAP_FILLS, priceStep } from "../base/state-charts";
 import { FIXTURE_EMPTY_STATE_REPORT, FIXTURE_STATE_REPORT } from "./__fixtures__/state-report.fixture";
 
 const TN = { ...FIXTURE_STATE_REPORT, stateCode: "TN", stateName: "Tennessee" };
@@ -114,5 +115,27 @@ describe("helpers", () => {
   it("covers the range with round ticks starting at or below zero", () => {
     expect(niceTicks(0, 7.9)).toEqual([0, 2, 4, 6, 8]);
     expect(niceTicks(-1.2, 8.4)).toEqual([-2, 0, 2, 4, 6, 8, 10]);
+  });
+});
+
+describe("county map against a price", () => {
+  it("bands each county by how far its fee sits from the price", () => {
+    expect([20, 27, 30, 31, 33, 36, 40].map((v) => priceStep(v, 30))).toEqual([0, 1, 2, 2, 3, 4, 4]);
+  });
+
+  it("shades covered counties and hatches the rest", () => {
+    const svg = countyPriceMap("47", [
+      { fips: "47037", value: 34, deposits: 50e9, covered_deposits: 40e9 },
+      { fips: "47157", value: 22, deposits: 30e9, covered_deposits: 20e9 },
+    ], 30);
+    expect(svg).not.toBeNull();
+    expect(svg).toContain(`fill="${PRICE_MAP_FILLS[3]}"`);
+    expect(svg).toContain(`fill="${PRICE_MAP_FILLS[0]}"`);
+    expect(svg).toContain("url(#price-map-hatch-w-47)");
+    expect(svg).toContain("Davidson: $34");
+  });
+
+  it("draws nothing for a state with no county outlines", () => {
+    expect(countyPriceMap("99", [], 30)).toBeNull();
   });
 });

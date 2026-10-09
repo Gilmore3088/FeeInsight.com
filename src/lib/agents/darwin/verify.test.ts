@@ -1,7 +1,7 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DARWIN_BATCH_KEY_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { DARWIN_BATCH_KEY_VERSION, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -18,6 +18,13 @@ const SCHEDULE_TEXT = ["Overdraft fee $35.00", "Courtesy overdraft fee $5.00", "
 const SOURCE_TEXTS = [
   { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
   { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
+  {
+    source_document_id: 58,
+    normalized_text: [
+      "Money Market Savings Account (below $2,500) | $15/mo. | Dormant Fee | $5/mo.",
+      "Interest Checking (below $1,500) | $15/mo. | Levies and Writs per document $75",
+    ].join("\n"),
+  },
 ];
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
@@ -152,6 +159,34 @@ describe("Darwin agentic verification", () => {
     });
     const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+  });
+
+  it("holds a row whose name carries a category lesson the guard has not learned yet", async () => {
+    // Raw 246460 (2026-10-09): "Bond return items" $35 filed nsf passed the v57 guard; a returned
+    // bond is a returned deposited item. Darwin holds it rather than re-filing it or verifying it.
+    const db = createDbMock([
+      {
+        ...rawFee,
+        fee_name: "Bond return items",
+        outlier_flags: ["canonical_hint:nsf"],
+        conditions: "canonical_hint=nsf",
+      },
+    ]);
+
+    const result = await runDarwinVerify({ runId: 109, db: asVerifyDb(db) });
+
+    expect(result.verifiedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      status: "skipped",
+      decision: "needs_review",
+      reasonCode: "category_lesson_pending",
+      canonicalFeeKey: "nsf",
+    });
+    const insertSql = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(insertSql).not.toContain("INSERT INTO verified_fee_observations");
+    expect(pendingCategoryLesson("nsf", "Bond/Coupon Returned Item Fee")).toMatchObject({ shouldBe: "deposited_item_return" });
+    expect(pendingCategoryLesson("nsf", "NSF returned item fee")).toBeNull();
+    expect(pendingCategoryLesson("deposited_item_return", "Bond return items")).toBeNull();
   });
 
   it("rejects a fee its own stored schedule does not state", async () => {
@@ -331,6 +366,25 @@ describe("Darwin agentic verification", () => {
     expect(result.results[1]).toMatchObject({ decision: "duplicate" });
   });
 
+  it("verifies two products' fees with one price on one document as two fees (batch key v3, SCCU 8109)", async () => {
+    const moneyMarket = {
+      ...rawFee, fee_name: "Money Market Savings Account (below $2,500)", amount: "15.00", frequency: "monthly", source_document_id: 58,
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:minimum_balance"],
+      conditions: "canonical_hint=minimum_balance; excerpt=\"Money Market Savings Account (below $2,500) | $15/mo. | Dormant Fee | $5/mo.\"",
+    };
+    const interestChecking = {
+      ...moneyMarket, fee_raw_id: 802, fee_name: "Interest Checking (below $1,500)",
+      conditions: "canonical_hint=minimum_balance; excerpt=\"Interest Checking (below $1,500) | $15/mo. | Levies and Writs per document $75\"",
+    };
+    const db = createDbMock([moneyMarket, interestChecking, { ...interestChecking, fee_raw_id: 803 }]);
+
+    const result = await runDarwinVerify({ runId: 109, db: asVerifyDb(db) });
+
+    // The same line read twice (raw 803) is still one fee.
+    expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 1, reasonCounts: { duplicate_in_batch: 1 } });
+    expect(DARWIN_BATCH_KEY_VERSION).toBe(3);
+  });
+
   it("verifies the same fee once on each stored copy of a page", async () => {
     // An older and a newer copy of the same URL are different documents: the fee on the
     // bank's current copy is not a duplicate of the one on the older copy.
@@ -417,8 +471,18 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'category_mismatch'[\s\S]*category_guard_version/);
+      expect(query).toMatch(/reason_code' IN \('category_mismatch', 'category_lesson_pending'\)[\s\S]*category_guard_version/);
       expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
+    });
+
+    it("re-reads not_in_source rejections once after the source check changes", async () => {
+      const db = learningDb([]);
+
+      await runDarwinVerify({ runId: 405, db: asVerifyDb(db) });
+
+      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toMatch(/reason_code' = 'not_in_source'[\s\S]*COALESCE\(\(pa\.detail->>'source_check_version'\)::int, 0\) </);
+      expect(params).toEqual(expect.arrayContaining([DARWIN_SOURCE_CHECK_VERSION]));
     });
 
     it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {
@@ -427,7 +491,7 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id/);
+      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id[\s\S]*twin_raw.conditions from 'excerpt=/);
       expect(params).toEqual(expect.arrayContaining([DARWIN_BATCH_KEY_VERSION]));
     });
 
