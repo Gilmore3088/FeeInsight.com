@@ -26,12 +26,13 @@ describe("writtenAnswerResponse", () => {
     "| Overdraft fee | $35 |",
   ].join("\n");
 
-  it("parses the sections and traces figures to the tool outputs", () => {
+  it("parses the sections without treating numerical matches as verified claims", () => {
     const response = writtenAnswerResponse(text, [{ fee: 35, peer_median: 29 }]);
     expect(response.hamiltonView).toContain("$35");
     expect(response.whatThisMeans).toBe("You charge more than most peers.");
     expect(response.title.length).toBeGreaterThan(0);
-    expect(response.confidence.level).toBe("high");
+    expect(response.confidence.level).toBe("medium");
+    expect(response.confidence.basis.join(" ")).toContain("Numerical consistency only");
   });
 
   it("marks confidence low when a figure is not in the data", () => {
