@@ -3810,3 +3810,21 @@ and quarter were already stored, without looking at the periods of the data behi
   document).
 - **Watch.** 88942, 88945, 88950, 88951 and 88952 are `takedown_pending` after the next source
   check pass on 8130, and change records 1060-1064 drop out of change lists.
+
+
+## 2026-10-09: A two-column notice drawn letter by letter was read across its columns
+- **What happened.** First United (118) had a raw fee named "additional" at $5 (fee_raw_id
+  431341). Its overdraft notice is set in two columns, and the page was read across them, so
+  "we will charge an additional $5.00 per day" lost its sentence.
+- **Why.** `proseColumns` allowed a gutter as many covering text items as 3% of the page's
+  items. This PDF draws each letter as its own item (2,243 on one page), so the allowance (53)
+  was larger than any column's line count, and no strip of the page counted as covered. No
+  gutter was ever found.
+- **Fix.** Gutter coverage counts lines, not items, and a gutter may be crossed by up to 10% of
+  the page's lines (a title, a form below the columns). `PDF_LAYOUT_VERSION` is now 3. The
+  fixture `src/lib/agents/rosetta/test-fixtures/first-united-opt-in.pdf` is read column by column
+  in `pdf-layout.test.ts`.
+- **Watch.** Texts already read across their columns are read again only when they hold
+  `INTERLEAVED_PROSE_CELLS` cell breaks or more. The First United notice holds fewer, so its old
+  text stays until the bank's bytes change. Its full schedule (OAC_Account_Disclosures.pdf) is now
+  the hand-found source.
