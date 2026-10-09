@@ -3435,6 +3435,10 @@ compared, so each reader re-guessed the pair by amount. Migration `2027011000003
 `pairFeeChangeRecords` (`hamilton/change-pairing.ts`) fills older records in the publish step with the
 same page rule plus `listsBothPrices`. Every reader now requires `like_for_like IS TRUE`. A new reader
 of `fee_change_records` must do the same.
+**Follow-up (9 Oct, 01:20 UTC):** a misread price waiting on its 12-hour second look stayed in
+`published_fee_catalog` beside its corrected re-read, so Jeanne D'Arc FCU showed money orders at $2 and
+$5. Migration `20270110000032` makes both catalog views leave out a `takedown_pending` row once a
+newer live row for the same institution and fee has no pending flag (154 of 65,145 live rows on 9 Oct).
 
 ## 2026-10-08: Paid search answers dropped because the bank's site refused our check
 
