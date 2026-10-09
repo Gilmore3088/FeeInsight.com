@@ -92,6 +92,10 @@ describe("Knox account names for monthly fees (v49)", () => {
     expect(readableProductName("Balance Account")).toBeNull();
     expect(readableProductName("An interest-bearing account with premium")).toBeNull();
     expect(readableProductName("Round-up savings option on card purchases")).toBeNull();
+    expect(readableProductName("Details: Popular Prestige Checking")).toBe("Popular Prestige Checking");
+    expect(readableProductName("Features of Interest Checking")).toBe("Interest Checking");
+    expect(readableProductName("Premier Checking Maintenance")).toBe("Premier Checking");
+    expect(readableProductName("Early (Share) Savings Account Closing")).toBeNull();
   });
 
   it("shows a waiver only when it names a condition", () => {
@@ -105,6 +109,15 @@ describe("Knox account names for monthly fees (v49)", () => {
     expect(readableWaiver(null)).toBeNull();
     // UAT 2026-10-09: a cut-off waiver (4886) and an interest tier read as a waiver (2220).
     expect(readableWaiver("if age")).toBeNull();
+    // 03:45 spot-check of published rows: the fee's own amount or a bare word is no condition.
+    expect(readableWaiver("avoid the $25.00 monthly maintenance fee")).toBeNull();
+    expect(readableWaiver("avoid monthly service charge of $10.00")).toBeNull();
+    expect(readableWaiver("avoid imposition of fees - A service charge fee of $2.00 will be imposed every s")).toBeNull();
+    expect(readableWaiver("waived with minimum")).toBeNull();
+    expect(readableWaiver("waived if $25,000 minimum balance is met")).toBe("waived if $25,000 minimum balance is met");
+    expect(readableWaiver("$8 Monthly Maintenance Fee waived when a $200 average monthly ledger balance is")).toBe(
+      "$8 Monthly Maintenance Fee waived when a $200 average monthly ledger balance is",
+    );
     expect(readableWaiver("$25,000 minimum balance requirement to earn interest with tiers")).toBeNull();
   });
 
