@@ -192,9 +192,11 @@ export interface MarketGap {
  * Banks with no live fees, ranked by how much competitor coverage their fees would add across
  * every bank's local market (counties from the FDIC Summary of Deposits). Credit unions have no
  * deposits by branch, so they can't be ranked this way and are left out; so are banks Magellan
- * has set aside (inactive, or a profile marked offline or manual_review).
+ * has set aside (inactive, a profile marked offline or manual_review, or `exclude`: Magellan's
+ * NO_CONSUMER_SCHEDULE_IDS, banks with no consumer fee schedule to find).
  */
-export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<MarketGap[]> {
+export async function getMarketGaps(db: SqlTag = sql, limit = 100, exclude: Iterable<number> = []): Promise<MarketGap[]> {
+  const excluded = [...exclude].map(Number).filter(Number.isInteger);
   const rows = await db<Array<{ institution_id: number | string; markets: number | string; gain: number | string }>>`
     -- market gaps: banks with no live fees, by the competitor coverage they would add
     WITH yr AS (SELECT max(year) AS year FROM institution_branch_deposits),
@@ -233,7 +235,8 @@ export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<Mark
       FROM pair p JOIN buyer bu ON bu.institution_id = p.buyer_id
      -- Skip banks Magellan has set aside: inactive, or marked offline or for manual review
      -- (no consumer fee schedule to find, e.g. trust and wholesale banks).
-     WHERE NOT EXISTS (
+     WHERE NOT (p.gap_id = ANY(${excluded}::bigint[]))
+       AND NOT EXISTS (
        SELECT 1 FROM institution_sources inst
          LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
         WHERE inst.id = p.gap_id
@@ -249,8 +252,12 @@ export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<Mark
 }
 
 /** The top market gaps' ids, for Magellan's discovery to search beside the market leaders. */
-export async function loadMarketGapIds(db: SqlTag = sql, limit = MARKET_GAP_PRIORITY): Promise<number[]> {
-  return (await getMarketGaps(db, limit)).map((gap) => gap.institutionId);
+export async function loadMarketGapIds(
+  db: SqlTag = sql,
+  limit = MARKET_GAP_PRIORITY,
+  exclude: Iterable<number> = [],
+): Promise<number[]> {
+  return (await getMarketGaps(db, limit, exclude)).map((gap) => gap.institutionId);
 }
 
 export const MARKET_GAP_PRIORITY = 100;
