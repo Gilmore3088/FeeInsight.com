@@ -24,6 +24,7 @@ import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
 import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
+import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
@@ -395,10 +396,10 @@ async function executeAgenticStep(
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
-    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 2 });
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }
@@ -1093,6 +1094,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
+      // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
+      const lineupCorrect = await correctStoredLineups(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
       // Fees an older re-check restored with no check at all get the restore bar on a second look.
       const restoreRecheck = await recheckUncheckedRestores(tx, {
@@ -1426,6 +1434,11 @@ async function executeAgenticStep(
             generic_names: accountNames.genericFees,
             renamed: accountNames.renames.length,
             skipped: accountNames.skipped,
+          },
+          lineup_correct: {
+            documents_checked: lineupCorrect.documentsChecked,
+            rows_checked: lineupCorrect.rowsChecked,
+            rows_corrected: lineupCorrect.corrected.length,
           },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,

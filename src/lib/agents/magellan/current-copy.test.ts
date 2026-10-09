@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { markCurrentCopy, restoreReadableCopies, SAME_PAGE_SUPERSEDE_LIVE, supersedeSamePageCopies } from "./current-copy";
+import { markCurrentCopy, restoreReadableCopies, SAME_PAGE_SUPERSEDE_LIVE, supersedeMovedHandFoundCopies, supersedeSamePageCopies } from "./current-copy";
 
 type Db = Parameters<typeof markCurrentCopy>[0];
 
@@ -112,5 +112,48 @@ describe("same page under two spellings", () => {
     const db = pairDb([]);
     await expect(supersedeSamePageCopies(db as unknown as Db, { runId: 7, live: true })).resolves.toEqual({ live: true, copies: 0, pairs: [] });
     expect(statements(db).some((text) => text.includes("agent_run_events"))).toBe(false);
+  });
+});
+
+describe("hand-found schedule moved to a new address", () => {
+  function movedDb(pairs: Array<{ older_id: number; current_id: number }>) {
+    return vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      void values;
+      const text = strings.join("?");
+      if (text.includes("information_schema.columns")) return [{ ready: true }];
+      if (text.includes("moved hand-found copies")) return pairs;
+      return [];
+    });
+  }
+  const statements = (db: ReturnType<typeof movedDb>) => db.mock.calls.map((call) => (call[0] as unknown as string[]).join("?"));
+  const regions = { institutionId: 27, url: "https://www.regions.com/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf" };
+
+  it("points the old link's copy at the new link's copy (Regions 21132 -> 23188), and never deletes", async () => {
+    const db = movedDb([{ older_id: 21132, current_id: 23188 }]);
+    const result = await supersedeMovedHandFoundCopies(db as unknown as Db, { runId: 7, strategy: "discover.operator_schedule", links: [regions] });
+    expect(result).toEqual({ copies: 1, pairs: [{ olderDocumentId: 21132, currentDocumentId: 23188 }] });
+    const select = statements(db).find((text) => text.includes("moved hand-found copies"))!;
+    expect(select).toContain("old_link.found_by_strategy = ?");
+    expect(select).toContain("= newest.host");
+    expect(select).toContain("= newest.leaf");
+    expect(select).toContain("readable.status = 'completed'");
+    const update = statements(db).find((text) => text.includes("UPDATE source_documents"))!;
+    expect(update).toContain("SET superseded_by_id = pair.current_id");
+    expect(update).toContain("older.superseded_by_id IS NULL");
+    expect(statements(db).some((text) => text.includes("magellan.moved_hand_found_copies"))).toBe(true);
+    expect(statements(db).join(" ")).not.toMatch(/DELETE/i);
+  });
+
+  it("does nothing when no hand-found link moved, or for another institution", async () => {
+    const db = movedDb([]);
+    await expect(
+      supersedeMovedHandFoundCopies(db as unknown as Db, { runId: 7, strategy: "discover.operator_schedule", links: [regions] }),
+    ).resolves.toEqual({ copies: 0, pairs: [] });
+    expect(statements(db).some((text) => text.includes("UPDATE source_documents"))).toBe(false);
+    const other = movedDb([{ older_id: 1, current_id: 2 }]);
+    await expect(
+      supersedeMovedHandFoundCopies(other as unknown as Db, { runId: 7, strategy: "discover.operator_schedule", links: [regions], institutionId: 41 }),
+    ).resolves.toEqual({ copies: 0, pairs: [] });
+    expect(other).not.toHaveBeenCalled();
   });
 });
