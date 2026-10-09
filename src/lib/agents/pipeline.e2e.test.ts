@@ -20,7 +20,7 @@ const FEE_TABLE = `
   <p>Effective January 1, 2026</p>
   <table>
     <tr><th>Service</th><th>Fee</th></tr>
-    <tr><td>Overdraft fee (per item)</td><td>$32.00</td></tr>
+    <tr><td>Overdraft fee (consumer accounts, per item)</td><td>$32.00</td></tr>
     <tr><td>Non-sufficient funds (NSF) fee</td><td>$30.00</td></tr>
     <tr><td>Monthly maintenance fee</td><td>$12.00</td></tr>
     <tr><td>Stop payment</td><td>$35.00</td></tr>

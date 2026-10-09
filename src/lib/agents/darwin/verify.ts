@@ -1,4 +1,4 @@
-import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -1021,16 +1021,20 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      const stateCode = row.state_code ?? options.stateCode;
-      const levels = await peers.forState(stateCode);
-      peer = peerCheck(
-        levels,
-        canonicalFeeKey,
-        institutionTier(row.asset_size_tier, row.asset_size),
-        base.amount,
-        await peers.widerLevels(),
-        districtOfState(stateCode),
-      );
+      // A consumer baseline cannot hold a business or unknown-audience fee.
+      // Second-source evidence is separate and still runs for those rows.
+      if (isConsumerFee(row.fee_audience)) {
+        const stateCode = row.state_code ?? options.stateCode;
+        const levels = await peers.forState(stateCode);
+        peer = peerCheck(
+          levels,
+          canonicalFeeKey,
+          institutionTier(row.asset_size_tier, row.asset_size),
+          base.amount,
+          await peers.widerLevels(),
+          districtOfState(stateCode),
+        );
+      }
       secondSource = secondSourceCheck(
         {
           feeRawId: base.feeRawId,

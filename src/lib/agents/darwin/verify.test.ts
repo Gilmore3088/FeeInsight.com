@@ -621,7 +621,7 @@ describe("Darwin agentic verification", () => {
     });
 
     describe("pass 2", () => {
-      const vtFee = { ...rawFee, state_code: "VT", asset_size_tier: null, asset_size: 600000, source_document_id: 55 };
+      const vtFee = { ...rawFee, fee_audience: "consumer", state_code: "VT", asset_size_tier: null, asset_size: 600000, source_document_id: 55 };
       const overdraftPeers = [
         { canonical_fee_key: "overdraft", tier: "community_mid", p25: "30", median: "32", p75: "34", institutions: 9 },
         { canonical_fee_key: "overdraft", tier: "all", p25: "30", median: "32", p75: "34", institutions: 9 },
@@ -660,6 +660,14 @@ describe("Darwin agentic verification", () => {
         const peer = strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy);
         expect(peer).toHaveLength(1);
         expect(peer[0]).toEqual(expect.arrayContaining(["verify", "raw:801", "evidence_mismatch"]));
+      });
+
+      it.each(["business", "unknown"] as const)("does not hold %s fee against consumer-only state peers", async (fee_audience) => {
+        const db = passTwoDb([{ ...vtFee, fee_audience, amount: "5.00" }]);
+        const result = await runDarwinVerify({ runId: 507, stateCode: "VT", db: asVerifyDb(db) });
+        expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0 });
+        expect(result.results[0].peerCheck).toBeNull();
+        expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)).toHaveLength(0);
       });
 
       it("verifies a fee inside its peer range and logs the peer check as passed", async () => {

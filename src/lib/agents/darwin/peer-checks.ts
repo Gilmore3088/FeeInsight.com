@@ -33,8 +33,8 @@ type SqlTag = typeof sql;
  *   the schedule, or a sister document) has the same fee at the same amount, the
  *   agreement is recorded as confidence evidence on the verified row.
  */
-// v2: district and national fallback, with the scope recorded.
-export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 2 } as const;
+// v3: consumer/both-only source-grounded peer population; unknown/business inputs skip checks.
+export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 3 } as const;
 export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 1 } as const;
 
 /** Flag on a verified row whose amount another stored document confirms. */
