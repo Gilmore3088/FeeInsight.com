@@ -65,7 +65,8 @@ const OVERDRAFT_AND_RETURNED = new RegExp(
   "i",
 );
 
-const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|return";
+// v47: "Foreign Wire Research" is account research, not a wire (Darwin eval, Oct 8).
+const WIRE_CORRECTIONS = "trace|reversal|recall|amend|investigat|research|return";
 // "Int'l Wire Fee Out" is an international wire; one price for "Domestic & Int'l" stays domestic.
 const INTL_ABBREV = String.raw`^(?!.*\bdomestic\b).*\bint['’]l\b`;
 /** Express, priority or two-day delivery of a card: the rush card fee, not the plain replacement. */
@@ -125,8 +126,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   nsf: {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item)/i,
+    // v47: a business-only ACH return and a payment the payee sent back ("Payee-returned Check
+    // Payment Due to Member Error") are not the member's NSF fee (Darwin eval, Oct 8).
     exclude:
-      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|\b\d+ ?x ?\d+\b|\bmerchants?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
+      /(deposit|\bcap\b|daily max|maximum|\bpaid\b|\(\s*honou?red\s*\)|de minimis|after \d+ consecutive|\bsustained\b|\bcontinuous\b|others|re-?present|credit card|loan|transfer|cover|3rd party|third[- ]party|foreign|drawn on (an ?)?other|other inst|self[- ]to[- ]self|returned payment|payment returned|nsf payment|visa payment|re-?activation|card capture|converted|cancell?ation|returned ach origination|return ach origination|ach origination nsf|nsf ach origination|debit origination|reg d limit|\(reg d\)|sent for collection|presented multiple times|in the amount of|\bbox\b|check printing|statement cop(y|ies)|photo ?cop(y|ies)|\bcopy fee|\bcop(y|ies) of\b|written to you|re-?route|business only|payee[- ]returned|\b\d+ ?x ?\d+\b|\bmerchants?\b)/i, // v33: "03 x 10" is a worked sum; v39: a merchant presenting a member's NSF check is not the member's NSF fee
     // v35: "NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25 (First State Bank
     // of Rosemount) is the per-item fee; its note states the daily cap.
     capInNotes: {
@@ -181,7 +184,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
       /(release|(cancel\w*|remov(e|al|ing))\s+(of\s+)?(a\s+|the\s+)?stop|stop\s+payments?\s+(fee\s+)?\(?removal|revoc|line of credit|heloc|loan|cashier|official)/i,
   },
   // v43: guarded so Hamilton reads them for names cut from another fee's note (noteTailOfAnotherFee).
-  bill_pay: { include: /\S/, exclude: /\breload fee\b/i },
+  // v47: a bill payment's stop or cancel is the stop payment fee, and a membership fee is not
+  // bill pay ("Bill Pay Stop/Cancel Payment" $25, "Lifetime Membership Fee" $5; Darwin eval).
+  bill_pay: { include: /\S/, exclude: /(\breload fee\b|\bstop\b|cancel(l?ed)? payment|membership closure|lifetime membership)/i },
+  // v47: researching, copying, replacing, mailing or reporting lost a money order is not the price
+  // of buying one ("Money Order Research Fee" $10; Darwin eval).
+  money_order: {
+    include: /\S/,
+    exclude: /(research|\bcop(y|ies)\b|declaration of loss|replacement|abandoned|returned|delivery|mailing)/i,
+  },
   ach_origination: { include: /\S/, exclude: /(?!)/ },
   cashiers_check: {
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check)/i,
@@ -336,7 +347,10 @@ export const GUARDED_CATEGORIES: readonly string[] = Object.keys(CATEGORY_GUARD_
 // ATM & Card (Top 50, PR 701).
 // v46: a spaced paired wire label ("Wire Out / Wire Out Foreign"), and a wire, card shipment or
 // reinstatement fee filed as early closure under a "closed within 90 days" heading.
-export const CATEGORY_GUARD_VERSION = 46;
+// v47: Darwin's Oct 8 eval rows: bill pay stops and membership fees, money order research,
+// copies and replacements, wire research, business-only and payee-returned NSF rows, and a
+// per-item "Overdraft Protection" fee priced like courtesy pay.
+export const CATEGORY_GUARD_VERSION = 47;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -464,6 +478,21 @@ function cheapOverdraftProtection(canonicalFeeKey: string, name: string, context
 }
 
 /**
+ * v47: an "Overdraft Protection" fee charged per item at an overdraft fee's price ("Free with
+ * Overdraft Protection, $25.00 per item", "Overdraft Protection - if opted in $29.00 each item")
+ * is courtesy pay, the overdraft fee, when its row names no transfer (Darwin eval, Oct 8).
+ */
+const PER_ITEM_OVERDRAFT_MIN = 20;
+function perItemOverdraftProtection(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {
+  if (canonicalFeeKey !== "od_protection_transfer" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1] ?? "";
+  if (!Number.isFinite(amount) || amount < PER_ITEM_OVERDRAFT_MIN || /transfer|sweep|advance|from (your )?(savings|share|line|credit)/i.test(`${name} ${excerpt}`)) return null;
+  if (!/\$\s?\d+(\.\d\d)?\s*(?:(?:per|each|\/)\s*item\b|each\b)/i.test(excerpt)) return null;
+  return `"${name}" at $${amount.toFixed(2)} per item is the overdraft (courtesy pay) fee, not a transfer's fee`;
+}
+
+/**
  * A plain "Returned Check Fee" filed as NSF, on a schedule whose NSF or insufficient-funds fee is
  * a separate, higher price, is the return deposited item (RDI) fee: Dean Co-operative Bank's
  * "Returned Check Fee $7" beside "Insufficient Funds Fee (Paid or Returned) $35.00" (v22, Oct 8).
@@ -544,6 +573,8 @@ export function checkFeeCategory(
   if (scheduleReason) return { ok: false, code: "schedule_contradicts", reason: scheduleReason };
   const protectionReason = cheapOverdraftProtection(canonicalFeeKey, name, context);
   if (protectionReason) return { ok: false, code: "name_contradicts", reason: protectionReason };
+  const courtesyReason = perItemOverdraftProtection(canonicalFeeKey, name, context);
+  if (courtesyReason) return { ok: false, code: "name_contradicts", reason: courtesyReason };
   const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
