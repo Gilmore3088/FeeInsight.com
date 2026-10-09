@@ -651,11 +651,19 @@ export function normalizedFeeName(name: string | null | undefined): string {
 /**
  * A dot leader run or a price glued onto the name ("ATM Balance Inquiry (at non-Wildfire ATM)
  * .........", "Courtesy Pay (Paid Overdraft) Fee…..….$35.005 | 3x10"): the name ends where they
- * start, when what is left still names something.
+ * start, when what is left still names something. A price inside an open parenthesis is the
+ * name's own threshold ("Service charge (daily balance falls below $500)") and stays: cutting
+ * it published "(daily balance falls below" on 2026-10-09.
  */
-const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/;
+const LEADER_OR_PRICE = /(?:[.…]\s*){2,}|\s+\$\s?\d/g;
+function insideParenthesis(text: string): boolean {
+  return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
+}
 export function nameBeforeLeaders(name: string): string {
-  const cut = name.split(LEADER_OR_PRICE)[0].replace(/[\s:;,.\-–—|]+$/u, "").trim();
+  const stop = [...name.matchAll(LEADER_OR_PRICE)].find(
+    (match) => !match[0].includes("$") || !insideParenthesis(name.slice(0, match.index)),
+  );
+  const cut = name.slice(0, stop?.index ?? name.length).replace(/[\s:;,.\-–—|]+$/u, "").trim();
   return cut.length >= 3 && /[a-z]/i.test(cut) ? cut : name.trim();
 }
 

@@ -340,9 +340,18 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * or a fragment takes the name Knox v60 reads for the same fee and amount (`reReadName`). 25 of
  * the 55 live "to avoid" names on 2026-10-09; the rest are $0 labels already pending takedown
  * or sentence fragments on the punch list.
+ * v9: a threshold Hamilton's publish cut off a name Knox read whole ("Service charge (daily
+ * balance falls below" from "... below $500)", `nameBeforeLeaders` before 2026-10-09) comes back
+ * from Knox's own read of the name, which `restoreStrippedAmount` searches with the fee's text.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 8 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 9 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
+/**
+ * Institutions the scan visits first after a version change, then the rest in id order. v9:
+ * the ones with a threshold publish cut off (102976, 102987/8, 101305, 101842/3, 102654/6,
+ * 102568, 102644) and Maple FCU's "Name ..." rows, which v8 had not reached.
+ */
+export const NAME_RETIDY_FIRST_INSTITUTIONS = [282, 640, 3604, 3923, 4715, 8465, 5499];
 /** Institutions per publish step: about 760 hold a messy live name, so a few hours clears them. */
 // 100 since Oct 9: 1,347 institutions were due under v6 at 40 a step, Ambler Savings (1670) 263rd.
 export const NAME_RETIDY_INSTITUTION_LIMIT = 100;
@@ -371,7 +380,10 @@ export interface RetidyPlan {
  * still accept it, and no other live fee of the bank may already carry the new name at the
  * same price and category (the duplicate collapse would close one of them).
  */
-export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
+/** A live fee with the name Knox read for it, before publish shaped it. */
+export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null };
+
+export function planRetidy(fees: RetidyFeeRow[], texts: InstitutionText[], liveFees: LiveFeeRow[] = fees): RetidyPlan {
   const skipped: Record<RetidySkip, number> = { no_better_name: 0, would_not_trace: 0, category_guard: 0, same_name_live: 0 };
   const renames: RetidyRename[] = [];
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
@@ -388,11 +400,13 @@ export function planRetidy(fees: LiveFeeRow[], texts: InstitutionText[], liveFee
       .map((text) => text.normalized_text);
     // v8: waiver advice on the name is cut off, or the name Knox reads today replaces a fragment.
     // A name with advice in it is renamed only to an advice-free name, never tidied around it.
+    // v9: Knox's own read of the name holds a threshold publish cut off.
+    const restoreTexts = fee.raw_fee_name ? [...ownTexts, fee.raw_fee_name] : ownTexts;
     const advice = AVOID.test(fee.fee_name);
     const adviceFree = advice ? adviceFreeName(fee, ownTexts) : null;
     const newName = advice
       ? adviceFree
-      : restoreStrippedAmount(tidied ?? fee.fee_name, ownTexts) ?? (tidied ? restoreStrippedAmount(fee.fee_name, ownTexts) : null) ?? tidied;
+      : restoreStrippedAmount(tidied ?? fee.fee_name, restoreTexts) ?? (tidied ? restoreStrippedAmount(fee.fee_name, restoreTexts) : null) ?? tidied;
     // v7: a joined sentence that is still a sentence once its "Otherwise," goes ("Monthly service
     // charge is only"), or a name cut down to its section heading ("SERVICE FEES"), is no better.
     // A name that starts mid-sentence ("replacement, and drilling. Min Fee") is no better either.
@@ -466,7 +480,7 @@ export async function retidyLiveFeeNames(
 ): Promise<RetidyResult> {
   const limit = options.institutionLimit ?? NAME_RETIDY_INSTITUTION_LIMIT;
   let fingerprints: Map<number, string>;
-  let liveFees: LiveFeeRow[];
+  let liveFees: RetidyFeeRow[];
   let texts: Array<InstitutionText & { institution_id: number | string }>;
   try {
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return { ...EMPTY, dryRun: options.dryRun };
@@ -510,15 +524,15 @@ export async function retidyLiveFeeNames(
               AND pa.institution_id = live.institution_id
               AND pa.input_fingerprint = 'v' || ${NAME_RETIDY_STRATEGY.version}::text || ':' || live.max_fee_id::text
          )
-       ORDER BY live.institution_id
+       ORDER BY live.institution_id = ANY(${NAME_RETIDY_FIRST_INSTITUTIONS}::bigint[]) DESC, live.institution_id
        LIMIT ${limit}
     `);
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
     fingerprints = new Map(due.map((row) => [Number(row.institution_id), retidyFingerprint(row.max_fee_id)]));
     const ids = [...fingerprints.keys()];
-    liveFees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
+    liveFees = await inSavepoint(db, (scope) => scope<RetidyFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, fr.fee_name AS raw_fee_name
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
