@@ -38,7 +38,10 @@ sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 
 Each contact has a confidence (`contactConfidence`): high for a named person with a title in a
 buying role, medium for a person's own address with a name or title, low for anything else or a
 shared mailbox. `rankContacts` orders an institution's contacts (confidence, then marketing,
-retail, executive, finance). `pickContacts` marks the first decision-maker in that order
+retail, executive, finance), with a market or regional president (`isLocalPresident`: "Market
+President - Metro Market", "President - Western Region") after every other contact, so a
+marketing, product, deposit or retail title wins when one exists; a market president stays the
+fallback when none does. `pickContacts` marks the first decision-maker in that order
 (`isDecisionMaker`, the rule outreach uses) as the institution's primary buyer contact and the
 second as backup; an institution with no decision-maker has neither.
 
