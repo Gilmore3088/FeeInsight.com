@@ -81,16 +81,21 @@ function providerErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isProviderCreditError(error: unknown): boolean {
+function providerCreditErrorMarker(error: unknown): string | null {
   const message = providerErrorMessage(error).toLowerCase();
-  return PROVIDER_CREDIT_ERROR_MARKERS.some((marker) => message.includes(marker));
+  return PROVIDER_CREDIT_ERROR_MARKERS.find((marker) => message.includes(marker)) ?? null;
 }
 
-async function engageProviderCreditStop(context: ProviderCallContext): Promise<void> {
+function isProviderCreditError(error: unknown): boolean {
+  return providerCreditErrorMarker(error) != null;
+}
+
+async function engageProviderCreditStop(context: ProviderCallContext, error: unknown): Promise<void> {
   try {
+    const marker = providerCreditErrorMarker(error) ?? "billing refused the call";
     await engageEmergencyStop(
       "provider-guard",
-      `Anthropic API credit balance is too low; automation paused after ${context.agent} ${context.operation}`,
+      `Anthropic API ${marker}; automation paused after ${context.agent} ${context.operation}`,
     );
   } catch (stopError) {
     console.error("Failed to engage emergency stop after provider credit error", stopError);
@@ -105,7 +110,7 @@ async function maybeEngageProviderCreditStop(
   if (status !== "failed") return;
   if (context.provider !== "anthropic") return;
   if (!error || !isProviderCreditError(error)) return;
-  await engageProviderCreditStop(context);
+  await engageProviderCreditStop(context, error);
 }
 
 async function recordProviderRouteAudit(
@@ -157,7 +162,7 @@ async function assertProviderCircuitHealthy(context: ProviderCallContext): Promi
   const seenAt = failure.createdAt;
   const failedAgent = failure.agentName;
   const failedOperation = failure.operation;
-  await engageProviderCreditStop(context);
+  await engageProviderCreditStop(context, `credit balance is too low or usage limit reached (${failedAgent} ${failedOperation} at ${seenAt}, still open)`);
   throw new ProviderCircuitOpenError(
     `Provider circuit is open: latest Anthropic credit-balance failure was ${seenAt} on ${failedAgent}.${failedOperation}. Fix provider billing or move this route off Anthropic before retrying.`,
   );

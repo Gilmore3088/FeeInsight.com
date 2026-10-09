@@ -24,7 +24,8 @@ import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/repor
 import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
-import { getHamiltonModel } from "@/lib/ai-provider";
+import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
+import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import type { SectionInput } from "@/lib/hamilton/types";
 import {
   buildReportPeerCoveragePreview,
@@ -727,13 +728,21 @@ export async function generateReport(
     // One retry per section, so a provider hiccup never discards (and re-bills) the
     // sections that worked.
     const verifiedSections: VerifiedSectionOutput[] = [];
+    // A usage or billing limit at the provider: no retry, and the reader is told it is paused.
+    let providerPaused = false;
     const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
       try {
         return await generateVerifiedSection(input);
-      } catch {
+      } catch (firstError) {
+        if (isProviderLimitError(firstError)) {
+          providerPaused = true;
+          await recordReportOutcome("failed", `Section "${input.title}" refused: provider usage limit.`, verifiedSections);
+          return null;
+        }
         try {
           return await generateVerifiedSection(input);
-        } catch {
+        } catch (retryError) {
+          providerPaused = isProviderLimitError(retryError);
           await recordReportOutcome("failed", `Section "${input.title}" failed after a retry.`, verifiedSections);
           return null;
         }
@@ -741,7 +750,9 @@ export async function generateReport(
     };
     const sectionFailed = (input: SectionInput): GenerateReportResult => ({
       success: false,
-      error: `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
+      error: providerPaused
+        ? HAMILTON_PAUSED_MESSAGE
+        : `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
     });
 
     // The answer page comes first; the other two sections explain and stress-test
@@ -918,6 +929,7 @@ export async function generateReport(
     await recordReportOutcome("completed", `Report saved (${reportId}).`, verifiedSections, { report_id: reportId });
     return { success: true, reportId, report, artifactMetadata };
   } catch (err) {
+    if (isProviderLimitError(err)) return { success: false, error: HAMILTON_PAUSED_MESSAGE };
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: `Report generation failed: ${message}` };
   }
