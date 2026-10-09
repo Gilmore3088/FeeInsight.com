@@ -34,6 +34,9 @@ the rare one the rule was written for.
   transaction) or a closed parenthetical right before it (dots, a colon or a dash between are a
   printed leader), no floor/cap word qualifying that noun ("minimum charge $10"), and no
   threshold or range word after the price ("$500 or less", "$25.00 minimum", "$10 - $500").
+  A glued line also counts: the next item's capitalised fee name follows the price and no
+  threshold word precedes it ("Courtesy Pay per debit as applicable $29.00 Inactivity Fee").
+  Against ADMIN's expected set from run 3232, all seven real catches fire and 49164 does not.
   The publish hold uses the same function, so it narrows with it.
 - `retireEvalVerdictFees` now re-reads every live fee holding a pending flag from this check
   and passes every row no rule fails today to the second look as `passing`, which writes

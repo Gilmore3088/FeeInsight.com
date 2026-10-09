@@ -166,6 +166,10 @@ const PRICE_LEAD = /\b(fee|fees|charge|charges|cost|price|each|item|copy|page|tr
 /** A word before the fee noun that makes the price a floor, a cap or another price, not the fee ("minimum charge $10"). */
 const PRICE_LEAD_QUALIFIER = /\b(minimum|min|maximum|max|limit|additional|extra|plus|rush|late|discount|per)\.?$/i;
 /** Words after the price that make it a threshold, a cap or a range ("$500 or less", "$10 - $500", "$25.00 minimum"). */
+/** Words in the three before the price that make it a threshold or a range, whatever follows. */
+const PRICE_THRESHOLD_WORDS = /\b(over|under|below|above|than|minimum|min|max|maximum|limit|balance|balances|of|from|between|to|if|with|for|or|up|exceeding|least)\b|[=+<>≥≤]/i;
+/** The next item of a schedule glued onto the line after the price: a capitalised fee name ("$29.00 Inactivity Fee"). */
+const GLUED_FEE_AFTER_PRICE = /^(?:[A-Z][\w'’-]*\s+){0,3}(?:Fee|Fees|Charge|Charges)\b/;
 const PRICE_TAIL_QUALIFIER = /^(?:minimum|min\b|min\.|maximum|max\b|max\.|limit|discount|deductible|increments?|or\s+(?:more|less|greater|under|over|above|below)|and\s+(?:under|over|above|up|below|less|more)|[+\-–—]|to\s+\$|through\b|up\s+to\b)/i;
 
 /**
@@ -178,7 +182,8 @@ const PRICE_TAIL_QUALIFIER = /^(?:minimum|min\b|min\.|maximum|max\b|max\.|limit|
  * counts only when the name presents it as the fee's price: the name carries one price, a fee
  * noun or a closed parenthetical sits right before it (dots, a colon or a dash between are a
  * printed leader), no floor/cap word qualifies that noun, and no threshold or range word
- * follows the price. Pure.
+ * follows the price. A glued line, where the next item's capitalised fee name follows the price
+ * and no threshold word precedes it, counts too. Pure.
  */
 export function priceInName(feeName: string | null | undefined): number | null {
   if (!feeName) return null;
@@ -186,14 +191,18 @@ export function priceInName(feeName: string | null | undefined): number | null {
   if (matches.length !== 1) return null;
   const [match] = matches;
   const before = feeName.slice(0, match.index).replace(PRICE_LEADER, "").replace(/\s+of$/i, "");
-  const lead = PRICE_LEAD.exec(before);
-  if (!lead) return null;
-  if (lead[1]) {
-    const qualifier = before.slice(0, lead.index).trim();
-    if (PRICE_LEAD_QUALIFIER.test(qualifier)) return null;
-  }
   const after = feeName.slice(match.index + match[0].length).trimStart();
   if (PRICE_TAIL_QUALIFIER.test(after)) return null;
+  const lead = PRICE_LEAD.exec(before);
+  if (lead) {
+    if (lead[1] && PRICE_LEAD_QUALIFIER.test(before.slice(0, lead.index).trim())) return null;
+  } else {
+    // A glued line: the price ends this fee's text and the next item's name follows it
+    // ("Courtesy Pay per debit as applicable $29.00 Inactivity Fee", run 3232 row 58437), with
+    // no threshold word in the three words before the price ("overdrawn more than $5.00 Fees").
+    const leadWords = before.split(/\s+/).slice(-3).join(" ");
+    if (!GLUED_FEE_AFTER_PRICE.test(after) || PRICE_THRESHOLD_WORDS.test(leadWords)) return null;
+  }
   const value = Number(match[1].replace(/,/g, ""));
   return Number.isFinite(value) ? value : null;
 }

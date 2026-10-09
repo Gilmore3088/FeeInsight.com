@@ -81,6 +81,12 @@ describe("eval verdicts (Oct 8 complete-record eval)", () => {
     expect(ruleFor("overdraft", "Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", 50)).toBe("price_in_name");
     expect(ruleFor("stop_payment", "Stop Payment (per item) $30.00 Lost Key", 25)).toBe("price_in_name");
     expect(ruleFor("check_copy", "Check Copy Fee $2.00 per copy Pay Card Savings", 1)).toBe("price_in_name");
+    // ADMIN's expected set from run 3232: glued two-item lines carrying the next item's price.
+    expect(ruleFor("overdraft", "Courtesy Pay per debit as applicable $29.00 Inactivity Fee (first charged to checking then savings)", 10)).toBe("price_in_name");
+    expect(ruleFor("wire_domestic_outgoing", "Wire Out (domestic) $25.00 5X10 Box Annually", 55)).toBe("price_in_name");
+    expect(ruleFor("counter_check", "Counter Checks (per page) $0.50 Signature Validation Program (SVP)", 5)).toBe("price_in_name");
+    expect(ruleFor("overdraft", "Overdraft (OD) or Non-sufficient Funds (NSF) item - account overdrawn more than $5.00 Fees for", 30)).toBeNull();
+    expect(ruleFor("check_cashing", "Check Cashing / Non-Customer / On Us Only ≥$10.000", 100)).toBeNull();
     // The same price in the name is only glue; no price in the name says nothing.
     expect(ruleFor("overdraft", "Courtesy Pay Fee…..$35.005", 35)).toBeNull();
     expect(ruleFor("overdraft", "Courtesy Pay Fee", 50)).toBeNull();
