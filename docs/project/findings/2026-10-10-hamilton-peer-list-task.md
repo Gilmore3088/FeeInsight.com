@@ -9,9 +9,12 @@ Branch: `fix/hamilton-peer-lists`, stacked on draft #985's
 The existing segment path asks about one fee; a segment without a named fee can
 be defaulted to overdraft. The separate local-market response contains branches,
 deposits and fees, but no dated total-asset field. Neither is a reliable contract
-for 'List ten similarly sized credit unions'. Registry/segment sizes use thousands;
-`institution_financial_records.total_assets` is already whole dollars. Multiplying
-that field again would be wrong. The new path consistently uses dated dollar assets.
+for 'List ten similarly sized credit unions'. The initial draft relied on a stale comment in `financial.ts` describing dollars.
+Following the current canonical writers found that FDIC preserves reported ASSET
+in thousands and NCUA explicitly divides ACCT_010 by 1,000 before insertion.
+The corrected queries multiply stored thousands once, before applying dollar
+filters and presenting dated dollar assets. This corrects the initial draft; it
+is not a production-row audit or a backfill of potentially historical records.
 
 ## Delivered scope
 
@@ -100,3 +103,27 @@ review; no entire H02 task/initiative release checkbox is accepted from code alo
 No migrations, fee edits, private-data grants, new schedules or paid provider calls.
 The only workflow change adds isolated SQL verification to the existing test step.
 Keep the PR draft and do not merge its parent branch or deploy automatically.
+
+## Follow-up: verified unit contract and initial CI failure
+
+The first pushed head `741565a5fffb523d4e05627c0c0650afe52cbf82` was **not green**.
+Run 38003940013 failed in the peer-list error/retry UI case; the isolated database
+step did not run. Log reads identified a missing `Card` reference, but the fetched
+exact committed PeerListView blob (4b2b51339b5e60debb16cfed4c5de02347dcfbc0)
+and the wrapper contain no such reference. The reported locations were inconsistent
+across retrieved logs. No unrelated `Card` import was added to conceal that mismatch.
+A focused UI step now emits the actual checkout/file hashes and runs the same test
+file before the full suite, to make the tested source and result inspectable.
+A later passing run must not be described as proof of the original failure's cause.
+
+Separately, static ingestion tracing found the real asset-unit bug above. Both
+subject and candidate queries now normalize stored thousands with `* 1000` before
+filtering. SQL fixtures now mirror importer storage units, with explicit assertions
+for both FDIC and NCUA dollar results. Mapping tests use already-converted SQL
+output and require the one-time conversion in both generated statements. The UI
+notes preserve source precision rather than implying exact single-dollar data.
+Current ingestion-contract references: regulatory/fdic.ts (parseFdicFinancial),
+regulatory/ncua.ts (parseFile/thousands), and both canonical registry writers.
+The stale financial.ts comment is not used as authority. No schema, live records,
+provider calls or published fees were modified. Current-head CI and the eight SQL
+tests still require their own result; local mocked assertions alone are insufficient.

@@ -8,7 +8,7 @@ const criteria: PeerListCriteria = { basis: "explicit_filters", charterType: "cr
 beforeEach(() => mocks.sql.mockReset().mockResolvedValue([row]));
 
 describe("dated asset read model", () => {
-  it("keeps financial dollars unchanged instead of multiplying by 1,000", () => { expect(peerSubjectFromRow(row).totalAssetsUsd).toBe(1_500_000_000); });
+  it("does not multiply already-converted SQL output a second time", () => { expect(peerSubjectFromRow(row).totalAssetsUsd).toBe(1_500_000_000); });
   it("does not substitute deposits for absent assets", () => { expect(peerSubjectFromRow({ ...row, total_assets_usd: null, total_deposits: 9_000_000_000 }).totalAssetsUsd).toBeNull(); });
   it("keeps a zero value separate from null", () => { expect(peerSubjectFromRow({ ...row, total_assets_usd: 0 }).totalAssetsUsd).toBe(0); });
   it("normalizes Date objects without replacing the reporting period with retrieval time", () => { expect(peerSubjectFromRow({ ...row, asset_report_date: new Date("2026-03-31T00:00:00Z") }).reportDate).toBe("2026-03-31"); });
@@ -18,7 +18,7 @@ describe("dated asset read model", () => {
     expect(peerAssetSourceUrl("https://api.fdic.gov/banks/financials", "fdic")).toBe("https://api.fdic.gov/banks/financials");
     for (const url of ["javascript:alert(1)", "https://fdic.gov.attacker.test/a", "https://user:secret@fdic.gov/a", "http://fdic.gov/a", "https://ncua.gov/a"]) expect(peerAssetSourceUrl(url, "fdic")).toBeNull();
   });
-  it("uses the subject's own financial record and preserves its record ID", async () => { const found = await getPeerListSubject(202, "2026-10-10"); expect(found?.recordId).toBe(33); expect(mocks.sql.mock.calls[0].slice(1)).toEqual(["2026-10-10", 202]); });
+  it("uses the subject's own financial record and preserves its record ID", async () => { const found = await getPeerListSubject(202, "2026-10-10"); expect(found?.recordId).toBe(33); expect(mocks.sql.mock.calls[0].slice(1)).toEqual(["2026-10-10", 202]); expect(mocks.sql.mock.calls[0][0].join("?")).toContain("(f.total_assets::numeric * 1000) AS total_assets_usd"); });
   it("does not replace a missing subject with an arbitrary first institution", async () => { mocks.sql.mockResolvedValue([]); expect(await getPeerListSubject(202, "2026-10-10")).toBeNull(); });
   it("returns peers even when their published fee data is absent", async () => { const result = await getPeerListRows(101, criteria, "2026-10-10"); expect(result.rows).toHaveLength(1); expect(result.rows[0].feeCoverage).toBe("not_found"); expect(result.totalMatches).toBe(1); });
   it("keeps the total match count distinct from the requested page length", async () => { mocks.sql.mockResolvedValue([{ ...row, total_matches: 250 }]); const result = await getPeerListRows(101, criteria, "2026-10-10"); expect(result.rows).toHaveLength(1); expect(result.totalMatches).toBe(250); });
@@ -29,6 +29,7 @@ describe("dated asset read model", () => {
     const text = mocks.sql.mock.calls[0][0].join("?");
     expect(text.indexOf("ORDER BY report_date DESC") < text.indexOf("eligible AS")).toBe(true);
     expect(text.indexOf("LIMIT ?") < text.indexOf("EXISTS (SELECT 1 FROM published_fee_catalog")).toBe(true);
+    expect(text).toContain("(f.total_assets::numeric * 1000) AS total_assets_usd");
     expect(text).toContain("COUNT(*) OVER ()"); expect(text).toContain("'credit_union' THEN 'ncua' ELSE 'fdic'");
     expect(text).toContain("published_fee_rate_catalog");
     expect(text).not.toContain("total_deposits");

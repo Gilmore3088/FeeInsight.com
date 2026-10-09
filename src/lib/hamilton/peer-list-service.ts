@@ -62,7 +62,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody): Promis
         if (!planned.criteria) return message("needs_criteria", planned.problem ?? "Specify peer criteria.");
         const criteria = planned.criteria;
         const found = await getPeerListRows(subject.institutionId, criteria, asOf);
-        const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ."];
+        const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
         if (criteria.requestedCount === null || (criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view is limited to ${criteria.limit} rows. Narrow the criteria to inspect a smaller group.`);
         if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(`Only ${found.totalMatches} institutions meet these criteria; the filters were not widened to reach ${criteria.requestedCount}.`);
         const older = found.rows.filter(row => row.reportDate && now.getTime() - new Date(`${row.reportDate}T00:00:00Z`).getTime() > 365 * 86400000).length;

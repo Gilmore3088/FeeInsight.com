@@ -38,17 +38,18 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
       (208, 'Twenty CU', 'credit_union', 'Miami', 'FL', 'regional', 6),
       (209, 'Twenty Five CU', 'credit_union', 'Miami', 'FL', 'regional', 6),
       (210, 'Hundred CU', 'credit_union', 'Atlanta', 'GA', 'large_regional', 6)`;
+    // Same storage units as the current canonical importers: USD thousands.
     await db`INSERT INTO institution_financial_records (id, institution_id, total_assets, report_date, source, source_url, fetched_at) VALUES
-      (1,101,10000000000,'2026-06-30','ncua','https://ncua.gov/data','2026-08-01'),
-      (2,202,8000000000,'2026-06-30','ncua','https://ncua.gov/data','2026-08-01'),
-      (3,203,12000000000,'2026-03-31','ncua','https://ncua.gov/data','2026-05-01'),
+      (1,101,10000000,'2026-06-30','ncua','https://ncua.gov/data','2026-08-01'),
+      (2,202,8000000,'2026-06-30','ncua','https://ncua.gov/data','2026-08-01'),
+      (3,203,12000000,'2026-03-31','ncua','https://ncua.gov/data','2026-05-01'),
       (4,204,NULL,'2026-06-30','ncua','https://ncua.gov/data','2026-08-01'),
-      (5,205,20000000000,'2026-06-30','fdic','https://api.fdic.gov/data','2026-08-01'),
-      (6,206,2000000000,'2026-06-30','ncua',NULL,'2026-08-01'),
-      (7,207,5000000000,'2026-06-30','ncua',NULL,'2026-08-01'),
-      (8,208,20000000000,'2026-06-30','ncua',NULL,'2026-08-01'),
-      (9,209,25000000000,'2026-06-30','ncua',NULL,'2026-08-01'),
-      (10,210,100000000000,'2026-06-30','ncua',NULL,'2026-08-01')`;
+      (5,205,20000000,'2026-06-30','fdic','https://api.fdic.gov/data','2026-08-01'),
+      (6,206,2000000,'2026-06-30','ncua',NULL,'2026-08-01'),
+      (7,207,5000000,'2026-06-30','ncua',NULL,'2026-08-01'),
+      (8,208,20000000,'2026-06-30','ncua',NULL,'2026-08-01'),
+      (9,209,25000000,'2026-06-30','ncua',NULL,'2026-08-01'),
+      (10,210,100000000,'2026-06-30','ncua',NULL,'2026-08-01')`;
   });
   it("executes the actual query and ranks proportionally closest assets, excluding the subject", async () => {
     const found = await query(criteria("List ten peers"));
@@ -66,15 +67,15 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
   });
   it("selects the latest eligible filing for the correct regulator, not an old or future value", async () => {
     await db`INSERT INTO institution_financial_records (id,institution_id,total_assets,report_date,source,fetched_at) VALUES
-      (21,202,100000000000,'2025-12-31','ncua','2026-01-01'),
-      (22,202,90000000000,'2027-03-31','ncua','2027-04-01'),
-      (23,202,999000000000,'2026-09-30','fdic','2026-10-01')`;
+      (21,202,100000000,'2025-12-31','ncua','2026-01-01'),
+      (22,202,90000000,'2027-03-31','ncua','2027-04-01'),
+      (23,202,999000000,'2026-09-30','fdic','2026-10-01')`;
     const found = await query(criteria("List ten peers"));
     expect(found.rows.find(r => r.institutionId === 202)?.totalAssetsUsd).toBe(8_000_000_000);
     expect(found.rows.find(r => r.institutionId === 202)?.reportDate).toBe("2026-06-30");
   });
   it("does not fill a missing latest asset value from an older record", async () => {
-    await db`INSERT INTO institution_financial_records (id,institution_id,total_assets,report_date,source,fetched_at) VALUES (24,204,8000000000,'2025-12-31','ncua','2026-01-01')`;
+    await db`INSERT INTO institution_financial_records (id,institution_id,total_assets,report_date,source,fetched_at) VALUES (24,204,8000000,'2025-12-31','ncua','2026-01-01')`;
     const c = { ...criteria("List ten peers"), basis: "saved_peer_set" as const, institutionIds: [202,204], minAssets: null, maxAssets: null, requiresAssets: false, sort: "name" as const, referenceAssetsUsd: null };
     const found = await query(c);
     expect(found.totalMatches).toBe(2); expect(found.rows.find(r => r.institutionId === 204)?.totalAssetsUsd).toBeNull();
@@ -90,10 +91,13 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
     const florida = await query(criteria("List banks in Florida"));
     expect(florida.rows.map(r => r.institutionId)).toEqual([205]);
     expect(florida.rows[0].source).toBe("fdic");
+    expect(florida.rows[0].totalAssetsUsd).toBe(20_000_000_000);
   });
-  it("executes the subject read in the same whole-dollar contract", async () => {
+  it("converts stored thousands once for subject and list dollar contracts", async () => {
     const found = await getPeerListSubject(101, "2026-10-10", db as unknown as NonNullable<Parameters<typeof getPeerListSubject>[2]>);
     expect(found?.totalAssetsUsd).toBe(10_000_000_000); expect(found?.reportDate).toBe("2026-06-30");
+    const raw = await db`SELECT total_assets FROM institution_financial_records WHERE institution_id = 101`;
+    expect(Number(raw[0].total_assets)).toBe(10_000_000);
   });
   it("keeps empty results honest rather than dropping constraints", async () => {
     const found = await query(criteria("List banks in California"));

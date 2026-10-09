@@ -1,7 +1,13 @@
 import { sql } from "./connection";
 import type { AssetEvidence, PeerListCriteria, PeerListRow, PeerListSubject } from "@/lib/hamilton/peer-list";
 
-/** Registry tiers use a different unit vocabulary. These reads use dated whole-USD financials only. */
+/**
+ * Canonical FDIC/NCUA ingestion stores monetary fields in USD thousands:
+ * regulatory/fdic.ts preserves ASSET; regulatory/ncua.ts divides ACCT_010 by 1,000.
+ * Convert once in both SELECTs, before dollar criteria and presentation. The
+ * existing financial.ts whole-dollar comment does not match these writers.
+ * Never guess scale from an institution's asset magnitude.
+ */
 function amount(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
@@ -44,7 +50,7 @@ export function peerSubjectFromRow(row: Record<string, unknown>): PeerListSubjec
 export async function getPeerListSubject(institutionId: number, asOf: string, db: typeof sql = sql): Promise<PeerListSubject | null> {
   const rows = await db`
     SELECT inst.id AS institution_id, inst.institution_name, inst.charter_type, inst.city, inst.state_code,
-           f.id AS financial_record_id, f.total_assets AS total_assets_usd,
+           f.id AS financial_record_id, (f.total_assets::numeric * 1000) AS total_assets_usd,
            f.report_date AS asset_report_date, f.source AS asset_source, f.source_url AS asset_source_url
       FROM institution_sources inst
       LEFT JOIN LATERAL (
@@ -65,7 +71,7 @@ export async function getPeerListRows(subjectId: number, c: PeerListCriteria, as
   const rows = await db`
     WITH candidates AS (
       SELECT inst.id AS institution_id, inst.institution_name, inst.charter_type, inst.city, inst.state_code,
-             f.id AS financial_record_id, f.total_assets AS total_assets_usd,
+             f.id AS financial_record_id, (f.total_assets::numeric * 1000) AS total_assets_usd,
              f.report_date AS asset_report_date, f.source AS asset_source, f.source_url AS asset_source_url
         FROM institution_sources inst
         LEFT JOIN LATERAL (
