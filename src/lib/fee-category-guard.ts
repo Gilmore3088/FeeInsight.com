@@ -369,7 +369,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v51: a certificate penalty paid in dividends, or a forfeited reward, filed as early closure.
 // v52: price ceilings for copies, counter checks, late payment, notary and lost keys.
 // v53: a business or commercial account's wire price leaves the consumer wire categories.
-// v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee.
+// v54: a free ATM line naming no other bank or network is the bank's own machine, not a non-network fee;
+// a safe deposit box late fee above $250.
 export const CATEGORY_GUARD_VERSION = 54;
 
 /**
@@ -625,6 +626,8 @@ const PRICE_CEILINGS: ReadonlyArray<{ key: string; max: number; when?: RegExp }>
   { key: "notary_fee", max: 300 },
   // A lost key with rekeying runs up to about $250; drilling the box open ($250-$500) is not capped.
   { key: "safe_deposit_box", max: 300, when: /^(?!.*drill).*\b(lost|replace\w*|duplicate)\s+keys?\b/i },
+  // v54: a late payment on the box (Central Bank's "$1000", fee 23863, read from "$10.00").
+  { key: "safe_deposit_box", max: 250, when: /^(?!.*drill).*\blate\b/i },
 ];
 
 function aboveCeiling(canonicalFeeKey: string, name: string, context: CategoryGuardContext | undefined): string | null {

@@ -939,3 +939,12 @@ describe("v54: a free line at the bank's own ATM", () => {
     expect(checkFeeCategory("atm_non_network", "Balance Inquiry").ok).toBe(true);
   });
 });
+
+describe("v54: a safe deposit box late fee ceiling", () => {
+  it("fails Central Bank's $1000 box late fee and keeps a real one", () => {
+    const verdict = checkFeeCategory("safe_deposit_box", "Safety Deposit Box Late Payment Fee", { amount: "1000.00" });
+    expect(verdict.ok ? null : verdict.code).toBe("amount_implausible");
+    expect(checkFeeCategory("safe_deposit_box", "Safety Deposit Box Late Payment Fee", { amount: 10 }).ok).toBe(true);
+    expect(checkFeeCategory("safe_deposit_box", "Box Drilling (late rent)", { amount: 400 }).ok).toBe(true);
+  });
+});
