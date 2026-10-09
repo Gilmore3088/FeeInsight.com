@@ -130,10 +130,10 @@ export const PUBLICATIONS: Publication[] = [
     key: "prospect_contacts",
     name: "Prospect contacts",
     audience: "You",
-    cadence: "Weekly, Mondays (up to 60 prospect websites)",
+    cadence: "Daily (up to 60 prospect websites)",
     href: "/admin/growth?view=team",
     freshnessKey: "run:growth.contacts",
-    next: nextWeekly(1, 12, 37),
+    next: nextDaily(12, 37),
   },
   {
     // CARNEGIE's first-email drafts. James audits each one and sends it himself; nothing sends.
