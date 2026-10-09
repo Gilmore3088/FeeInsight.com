@@ -223,9 +223,21 @@ export function nameFitsEmail(name: string | null, email: string): boolean {
 /**
  * A saved contact read with today's rules: its name and title checked again and its role
  * re-read from the title, so rows saved before a rule changed are judged the same way. A
- * name that can't own the contact's personal address drops, with its title.
+ * name that can't own the contact's personal address drops, with its title. A "Contact <name>,
+ * <title>" sentence printed where a title would be is split into the two.
  */
-export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind; email?: string }>(contact: T): T {
+/** "Contact Nicole Andrushko, VP of Marketing, at": a sentence that names the person and their title. */
+const CONTACT_SENTENCE = /^\s*[Cc]ontact\s+([A-Z][\w.'-]+(?:\s+[A-Z][\w.'-]+){1,2}),\s*(.+?)(?:,?\s+at)?\s*[.:,]?\s*$/;
+
+/** The name and title out of a "Contact <name>, <title>, at" line, or null for any other line. */
+export function splitContactSentence(line: string | null): { name: string; title: string } | null {
+  const match = line ? CONTACT_SENTENCE.exec(line) : null;
+  return match ? { name: match[1], title: match[2] } : null;
+}
+
+export function normalizeContact<T extends { name: string | null; title: string | null; role: ContactRole; kind: ContactKind; email?: string }>(input: T): T {
+  const sentence = input.name ? null : splitContactSentence(input.title);
+  const contact = sentence ? { ...input, name: sentence.name, title: sentence.title } : input;
   const name = cleanContactName(contact.name);
   const owned = contact.email === undefined || nameFitsEmail(name, contact.email);
   const title = owned ? cleanContactTitle(contact.title) : null;
