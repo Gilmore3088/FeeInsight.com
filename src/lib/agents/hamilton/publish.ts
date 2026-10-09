@@ -21,6 +21,7 @@ import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { confirmFeeChange } from "@/lib/report-assemblers/monthly-pulse";
+import { mayBeSameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import { isArticlePage } from "@/lib/agents/hamilton/article-page";
 import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/lib/agents/hamilton/product-page";
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
@@ -631,6 +632,16 @@ function documentStream(value: string | null | undefined): string {
 }
 
 /** Both rows were read from the same page (two copies of it count as one). */
+/**
+ * The change log's like-for-like flag when the change is recorded: true on the same page, false
+ * across audiences (business against consumer), and left for the pairing pass (null) when the
+ * same audience's schedule moved to another page, since only the two texts' effective dates
+ * can say whether it is a newer edition (schedule-edition.ts).
+ */
+function likeForLikeAtRecord(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean | null {
+  return mayBeSameSchedule(prior.document_url ?? prior.source_url, row.document_url ?? row.source_url);
+}
+
 function samePage(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
   const rowPage = feePageKey(row.document_url ?? row.source_url);
   const priorPage = feePageKey(prior.document_url ?? prior.source_url);
@@ -941,7 +952,7 @@ async function supersedePriorFee(
         NOW(),
         ${priorId},
         ${options.feePublishedId},
-        ${samePage(options.row, options.prior)}
+        ${likeForLikeAtRecord(options.row, options.prior)}
       )
     `;
     return true;
