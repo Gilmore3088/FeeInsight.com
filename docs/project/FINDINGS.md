@@ -13,6 +13,26 @@ Template:
 **Lesson:** what any session should do differently.
 ```
 
+## 2026-10-09: Guard-rejected rows that were never published had no way back
+- **What happened.** Darwin's returned-check re-file (PR 677) moved 116 verified rows from nsf to
+  deposited_item_return. Publish rejected four of them (40440, 48556, 56589, 63877) because their
+  raw names carry a neighbouring cell, heading or dot leaders ("per order | Returned Items",
+  "Return Item . . . ."); they sat at review_status rejected with `category_guard:name_unsupported`.
+  PR 753 made publish accept such a row under its tidied name, but nothing re-read the rejected rows:
+  the guard's restore path (`restorePassingTakedowns`) brings back only fees that were live once,
+  under the category they were live in. On prod 180 rows at 111 institutions were in this state.
+- **Why.** `rejectVerifiedFeeForCategory` is a one-way door at publish time; a guard or tidy fix
+  changes what publish accepts, but the rows it already turned away are never selected again.
+- **Fix.** `src/lib/agents/hamilton/guard-requeue.ts`, run in every publish step: rejected rows with
+  a `category_guard:%` flag and no published copy under their current category are re-checked once
+  per guard version with publish's own name (`publishedFeeName`); a pass sets the row back to
+  verified with `category_guard_requeued:g<version>`, a fail adds `category_guard_recheck_failed:g<version>`.
+  Each row is a `publish.guard_requeue` attempt. The row then goes through every normal publish rule,
+  including "Identical fee already published": 10 of PR 677's 20 gaps were banks that already had
+  the same deposited_item_return fee live, so a re-file is not always a new live row.
+- **Watch.** Step detail `guard_requeue` on the next publish steps; the four ids live as
+  deposited_item_return under their tidied names.
+
 ## 2026-10-09: Magellan's fee-page classifier never trained
 **What happened:** `magellan_page_classifier` held 0 rows at 00:45 UTC Oct 9, and no discover step in the last 3 days reported a `page_classifier` detail (946 steps), while the outcome ledger held 2,804 labelled fee pages and 2,298 labelled non-fee pages with text.
 **Cause:** PR 247 (Hamilton bank uploads) dropped the `refreshPageClassifier` call from the discover step in `run-store.ts`. The loader stayed, so discovery kept asking for a model that was never written.
