@@ -17,7 +17,8 @@ type SqlTag = typeof sql;
  * per changed field holds the old and new values, the UPDATE only lands while the field still
  * holds the old value, and no row is ever deleted.
  */
-export const LINEUP_CORRECT_STRATEGY = { strategy: "knox.lineup_correct", version: 1 } as const;
+// v2 (9 Oct): names read from a "Learn more about ..." link or a lower-case tagline are corrected; every copy is looked at again.
+export const LINEUP_CORRECT_STRATEGY = { strategy: "knox.lineup_correct", version: 2 } as const;
 export const LINEUP_CORRECT_KIND = "lineup_corrected";
 /** Documents per publish step: 779 current copies held a stored lineup value on 2026-10-09. */
 export const LINEUP_CORRECT_DOCUMENT_LIMIT = 200;
