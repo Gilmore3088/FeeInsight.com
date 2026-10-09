@@ -629,6 +629,17 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("flag LIKE 'category_guard_requeued:%'");
     });
 
+    it("selects again a row skipped as identical to a live fee the rules re-check took down", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 505, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain("pa.outcome = 'unchanged'");
+      expect(query).toContain("NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint");
+      expect(query).toContain("prev.rolled_back_reason = 'rules_recheck_unreproduced'");
+    });
+
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
       const db = learningDb([verifiedFee], [], [{ ...verifiedFee, depth_source: "pending" }]);
 

@@ -352,6 +352,18 @@ async function selectVerifiedFees(
                    WHERE flag LIKE 'category_guard_requeued:%'
                 )
               )
+              -- A row skipped as identical to a live fee the rules re-check later took down
+              -- (that judged one document's read, not the fee) is selected again: AllSouth's
+              -- second copy of its $10 early closure fee (verified 13856) sat unpublished after
+              -- 16807 came down on Oct 5, and the bank showed no early closure fee.
+              AND NOT (
+                pa.outcome = 'unchanged'
+                AND EXISTS (
+                  SELECT 1 FROM published_fee_records prev
+                   WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
+                )
+              )
          )`);
   }
   return db.unsafe<VerifiedFeeRow[]>(
