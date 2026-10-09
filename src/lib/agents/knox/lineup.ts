@@ -92,17 +92,19 @@ const GENERIC_ACCOUNT_WORDS = new Set([
 const FEE_NAME_TAIL =
   /\s*[-–:]?\s*(?:low balance\s+)?(?:monthly\s+)?(?:maintenance\s+|service\s+|account\s+)*(?:fee|charge|service charge|maintenance)s?(?:\s+of)?\s*$/i;
 const HEADING_TAIL =
-  /\s+(?:features|benefits|details|account details|overview|highlights|(?:interest\s+)?rates|descriptions?|disclosures?|terms|information|summary)\s*$/i;
+  /\s+(?:features|benefits|details|account details|overview|highlights|(?:interest\s+)?rates|descriptions?|disclosures?|terms|information|summary|maintenance)\s*$/i;
+/** A fee's own heading, not an account ("Early (Share) Savings Account Closing"). */
+const FEE_HEADING_END = /\b(?:closing|closed|closure|dormant|inactive|inactivity|overdraft|transfer|withdrawals?)\s*$/i;
 const SENTENCE_WORDS = /\b(?:is|are|you|your|we|our|will|may|must|when|if|or|per|this|that)\b/i;
 const HEADING_LOOKBACK_LINES = 12;
-/** "Open an Advantage Checking Account" is a call to action around the name. */
-const OPEN_AN = /^open\s+(?:an?\s+|your\s+)?/i;
+/** Words around the name: "Open an Advantage Checking Account", "Details: Popular Prestige Checking". */
+const LEAD_IN = /^(?:open\s+(?:an?\s+|your\s+)?|(?:features|details|benefits|highlights)\s*(?:of\s+|:\s*))/i;
 const ARTICLE_START = /^(?:an?|the)\s/i;
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
-  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(OPEN_AN, "");
-  if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS) return null;
+  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "").replace(LEAD_IN, "");
+  if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS || FEE_HEADING_END.test(name)) return null;
   if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_]/.test(name) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
   if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name)) return null;
@@ -121,8 +123,9 @@ export function readableProductName(value: string | null | undefined): string | 
     .replace(/[\s\d,_*†‡]+$/, "")
     .replace(HEADING_TAIL, "")
     .replace(/[\s\-–:|,.]+$/, "")
-    .replace(OPEN_AN, "");
+    .replace(LEAD_IN, "");
   if (name.length < 3 || /[,_]|\bor\b/i.test(name) || !/^[A-Z0-9]/.test(name) || ARTICLE_START.test(name)) return null;
+  if (FEE_HEADING_END.test(name)) return null;
   const words = name.split(" ");
   // A product name is title-cased; a run of lower-case words is a description of it.
   const lowerCase = words.filter((word) => /^[a-z]/.test(word) && !/^(?:and|of|for|plus|with)$/.test(word));
@@ -139,7 +142,10 @@ export const INTEREST_TIER =
 
 /** A waiver says how to avoid the fee: a balance, deposit, age, activity or relationship. */
 const WAIVER_CONDITION =
-  /\b(?:balance|deposits?|e-?statements?|paperless|ages?|years?|younger|older|students?|seniors?|minors?|members?|transactions?|purchases?|debit card|enroll(?:ed|ment)?|relationship|min(?:imum)?|average|combined|direct)\b|\$\s?\d/i;
+  /\b(?:balance|deposits?|e-?statements?|paperless|ages?|years?|younger|older|students?|seniors?|minors?|members?|transactions?|purchases?|debit card|enroll(?:ed|ment)?|relationship|direct)\b|\$\s?\d/i;
+/** The fee's own amount: "$25.00 monthly maintenance fee", "service charge of $10.00". */
+const FEE_AMOUNT =
+  /\$\s?\d[\d,.]*\s+(?:monthly\s+)?(?:maintenance\s+|service\s+)?(?:fee|charge|service)|(?:fee|charge)s?\s+of\s+\$\s?\d[\d,.]*/gi;
 
 /**
  * A waiver as a reader should see it: leader dots trimmed, and null when it names no
@@ -149,7 +155,7 @@ export function readableWaiver(value: string | null | undefined): string | null 
   if (!value) return null;
   const text = squash(value.replace(/\s*\.{3,}.*$/, "")).replace(/[\s.;,)]+$/, "");
   // The fee's own amount is not a condition ("waive the $10 monthly fee").
-  const conditions = text.replace(/\$\s?\d[\d,.]*\s+(?:monthly\s+)?(?:fee|charge|service)/gi, "");
+  const conditions = text.replace(FEE_AMOUNT, "");
   return text.length >= 8 && WAIVER_CONDITION.test(conditions) && !INTEREST_TIER.test(text) ? text : null;
 }
 
