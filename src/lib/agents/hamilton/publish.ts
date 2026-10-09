@@ -83,6 +83,8 @@ export interface VerifiedFeeRow extends RateFields {
   institution_name?: string | null;
   /** True when this row was skipped as identical to a live fee the rules re-check took down. */
   twin_recheck?: boolean | null;
+  /** Skipped as identical before the same-line check (9 Oct) and decided once more. */
+  same_line_reselect?: boolean | null;
   /** True when Knox's free-fee reader read this row (product-page.ts). */
   free_read?: boolean | null;
 }
@@ -432,6 +434,13 @@ async function selectVerifiedFees(
                   AND twin_pa.outcome = 'unchanged'
                   AND twin.rolled_back_reason = '${RULES_RECHECK_REASON}'
              ) AS twin_recheck,
+             EXISTS (
+               SELECT 1
+                 FROM pipeline_attempts sl_pa
+                WHERE sl_pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
+                  AND sl_pa.outcome = 'unchanged'
+                  AND sl_pa.detail->>'same_line_check' IS NULL
+             ) AS same_line_reselect,
              COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
@@ -591,7 +600,9 @@ export async function insertPublishedFee(
 async function selectLivePublishedFees(
   db: SqlTag,
   row: VerifiedFeeRow,
+  options: { anyVariant?: boolean } = {},
 ): Promise<PriorPublishedFeeRow[]> {
+  const anyVariant = options.anyVariant === true;
   try {
     return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fp.fee_published_id,
@@ -611,8 +622,8 @@ async function selectLivePublishedFees(
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fp.institution_id = ${Number(row.institution_id)}
          AND fp.canonical_fee_key = ${row.canonical_fee_key}
-         AND COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, '')
-         AND COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, '')
+         AND (${anyVariant} OR COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, ''))
+         AND (${anyVariant} OR COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, ''))
          AND fp.rolled_back_at IS NULL
        ORDER BY fp.published_at DESC, fp.fee_published_id DESC
     `);
@@ -1507,6 +1518,17 @@ export async function runHamiltonPublish(
       const live = await selectLivePublishedFees(db, row);
       const apart = await linesApartFrom(db, row, live);
       decision = decidePriorFee(row, live, (prior) => apart.has(prior));
+      // A row decided once more after the same-line check may since have had its frequency or
+      // variant re-read ("per_item" to none), so the live line it was identical to no longer
+      // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
+      // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
+      // check reads every live line of the category.
+      if (row.same_line_reselect && decision.kind !== "identical") {
+        const wide = await selectLivePublishedFees(db, row, { anyVariant: true });
+        const wideApart = await linesApartFrom(db, row, wide);
+        const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
+        if (wideDecision.kind === "identical") decision = wideDecision;
+      }
     }
     if (
       decision?.kind === "supersede" &&

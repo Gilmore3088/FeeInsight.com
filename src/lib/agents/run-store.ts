@@ -1285,7 +1285,10 @@ async function executeAgenticStep(
           : "";
       const recheckNote =
         (recheckRollbacks > 0
-          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document.`
+          ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${recheckRollbacks.toLocaleString()} live fee(s) today's Knox rules no longer read from their document, after a 12-hour second look.`
+          : "") +
+        ((rulesRecheck?.flagged ?? 0) > 0
+          ? ` ${published.dryRun ? "Would flag" : "Flagged"} ${(rulesRecheck?.flagged ?? 0).toLocaleString()} live fee(s) today's Knox rules no longer read for a 12-hour second look (still live).`
           : "") +
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
@@ -1525,6 +1528,8 @@ async function executeAgenticStep(
           rules_recheck_documents: rulesRecheck?.documentsChecked ?? 0,
           rules_recheck_fees: rulesRecheck?.liveFeesChecked ?? 0,
           rules_recheck_rollbacks: recheckRollbacks,
+          rules_recheck_flagged: rulesRecheck?.flagged ?? 0,
+          rules_recheck_waiting: rulesRecheck?.waitingSecondLook ?? 0,
           rules_recheck_restores: recheckRestores,
           rules_recheck_samples: (rulesRecheck?.rollbacks ?? []).slice(0, 10).map((rollback) => ({
             fee_published_id: rollback.feePublishedId,

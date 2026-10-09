@@ -154,7 +154,7 @@ export function NewsFeed({
   const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="mt-2 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_240px]">
+    <div className="mt-2 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_240px] 2xl:gap-8">
       <div className="min-w-0">
         <Glance
           items={[
@@ -316,11 +316,12 @@ export function NewsFeed({
           </p>
         </div>
 
-        <div className="rounded-xl border border-warm-200 bg-warm-100/50 px-4 py-3.5">
-          <h2 className={`${LABEL} mb-2`} style={SANS}>
-            About
-          </h2>
-          <p className="text-[11px] leading-relaxed text-warm-600">
+        <details className="group rounded-xl border border-warm-200 bg-warm-100/50 px-4 py-3">
+          <summary className={`${LABEL} cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden`} style={SANS}>
+            How the Wire is sourced <span className="group-open:hidden">▸</span>
+            <span className="hidden group-open:inline">▾</span>
+          </summary>
+          <p className="mt-2 text-[11px] leading-relaxed text-warm-600">
             The rulemaking tracker reads proposed and final rules from the Federal Register, with
             their comment deadlines and effective dates. Agency releases are the official press
             releases of the Federal Reserve, FDIC, OCC and CFPB, from their RSS feeds; their
@@ -330,7 +331,7 @@ export function NewsFeed({
             docket, rule or institution name.{" "}
             {canRefreshFeeds ? "Click Refresh to pull the latest updates." : "New releases are read once a day."}
           </p>
-        </div>
+        </details>
       </aside>
     </div>
   );
