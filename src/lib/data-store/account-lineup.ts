@@ -1,9 +1,8 @@
 import { getSql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
-import { productNameFromFeeName } from "@/lib/agents/knox/lineup";
-import { AMOUNT_PATTERN, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
+import { minBalanceFromExcerpt, productNameFromFeeName, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
 
-export { productNameFromFeeName };
+export { minBalanceFromExcerpt, productNameFromFeeName, waiverFromExcerpt };
 
 /**
  * Account lineup: each checking or savings account a bank publishes, with its monthly fee,
@@ -68,27 +67,6 @@ const toNumber = (value: number | string | null | undefined): number | null => {
 export function catalogExcerpt(conditions: string | null): string | null {
   const match = conditions?.match(/excerpt="((?:[^"\\]|\\.)*)"/);
   return match ? match[1].replace(/\\"/g, "\"").trim() || null : null;
-}
-
-/** "if balance falls below $1,000" -> 1000. Also "minimum daily balance of $20,000 ... to avoid". */
-export function minBalanceFromExcerpt(excerpt: string): number | null {
-  const clause =
-    excerpt.match(BALANCE_BELOW_CLAUSE)?.[0] ??
-    excerpt.match(/\bminimum\s+(?:(?:daily|average|monthly|collected|ledger)\s+){0,3}balance\s+of\s+\$\s?[\d,]+(?:\.\d{2})?(?=[^|]{0,60}\bavoid)/i)?.[0];
-  if (!clause) return null;
-  const figure = [...clause.matchAll(AMOUNT_PATTERN)].at(-1)?.[1];
-  const value = figure ? Number(figure.replace(/,/g, "")) : NaN;
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-const WAIVER_START = /\b(?:waived?|avoid(?:ed)?|unless|none with|no (?:monthly )?(?:fee|charge) (?:with|if|when))\b/i;
-
-/** The words in the row's own cell that say how the fee is waived ("waived if a Direct Deposit ..."). */
-export function waiverFromExcerpt(excerpt: string): string | null {
-  const start = excerpt.search(WAIVER_START);
-  if (start < 0) return null;
-  const text = excerpt.slice(start).split("|")[0].replace(/[\s.;,)]+$/, "").trim();
-  return text.length >= 8 ? text.slice(0, 160) : null;
 }
 
 /** One catalog row as a lineup account, stored fields first, derived fields where empty. */
