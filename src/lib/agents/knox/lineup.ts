@@ -213,7 +213,7 @@ function openingDepositIn(line: string): number | null {
 
 /**
  * v49: a monthly fee with no account name takes it from its own name or the heading above it.
- * v50: the balance that avoids the fee, the waiver and the opening deposit are read the same
+ * v51: the balance that avoids the fee, the waiver and the opening deposit are read the same
  * way: the fee's own line first, then the account's lines around it (never past its heading or
  * into the next account's). A balance or waiver read from a nearby line needs the line to talk
  * about the fee ("avoid the monthly fee", "service charge waived"). Every value is grounded

@@ -76,11 +76,11 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
  */
 export const KNOX_STALE_READ_BELOW_VERSION = 26;
 /**
- * A current copy with a monthly fee row that has no account name, last read below this
- * version, is read again once so v49 can name the account (2026-10-09: 8,928 such rows on
- * 3,223 current copies). Free: rules only.
+ * A current copy with a monthly fee row missing its account name, or both the balance that
+ * avoids it and its waiver, last read below this version, is read again once so v49-v51 can
+ * fill them (2026-10-09: 8,928 rows on 3,223 current copies had no account name). Free: rules only.
  */
-export const KNOX_ACCOUNT_NAME_READ_BELOW_VERSION = 49;
+export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
@@ -328,15 +328,15 @@ async function selectTextArtifacts(
                   AND recent.strategy_version >= ${staleParam}
              )
            )`;
-      // A current copy whose monthly fee rows have no account name is read again once.
-      const namedParam = `$${params.push(KNOX_ACCOUNT_NAME_READ_BELOW_VERSION)}`;
+      // A current copy whose monthly fee rows lack lineup facts is read again once.
+      const namedParam = `$${params.push(KNOX_LINEUP_READ_BELOW_VERSION)}`;
       thinTextReextract += `
            OR (
              EXISTS (
                SELECT 1 FROM raw_fee_observations unnamed
                 WHERE unnamed.source = 'knox'
                   AND unnamed.source_document_id = adt.source_document_id
-                  AND unnamed.product_name IS NULL
+                  AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL))
                   AND unnamed.conditions LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
              )
              AND NOT EXISTS (

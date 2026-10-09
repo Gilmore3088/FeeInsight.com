@@ -107,7 +107,7 @@ describe("Knox account names for monthly fees (v49)", () => {
   });
 });
 
-describe("Knox lineup facts around a monthly fee (v50)", () => {
+describe("Knox lineup facts around a monthly fee (v51)", () => {
   const candidate = (excerpt: string, feeName = "Monthly service charge") => ({
     canonicalHint: "monthly_maintenance",
     feeName,
