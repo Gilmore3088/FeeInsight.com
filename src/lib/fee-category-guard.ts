@@ -102,8 +102,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // Merchant Capture) is not it either; a bank named "First Merchants" still is.
     // v58: "... the balance requirement to avoid the monthly service charge is met. Otherwise, a fee
     // of" prices what the sentence waives, here a non-network ATM withdrawal (Westamerica 96164).
+    // v59: an optional add-on's monthly charge is not the account's fee: identity-theft programs
+    // (Harvest's "ID TheftSmart Fee" $2, 29713, 86782), accidental death insurance (70672, 85526)
+    // and a perks package (88787). An account that comes with the insurance stays (55988).
     exclude:
-      /(otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -386,7 +389,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v57: a cross-border banking bundle's annual fee is monthly maintenance (RBC; v56 is Accuracy's).
 // v58: a returned bond or coupon filed as NSF is a returned deposited item (Darwin 883; raw 246460,
 // 277863); a waiver sentence's "Otherwise, a fee of" is not monthly maintenance (96164).
-export const CATEGORY_GUARD_VERSION = 58;
+// v59: an optional identity-theft, insurance or perks-package add-on is not monthly maintenance (47183).
+export const CATEGORY_GUARD_VERSION = 59;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
