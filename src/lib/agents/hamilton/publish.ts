@@ -1179,6 +1179,16 @@ const OLDER_DOCUMENT_REASON = "Older document than the live price";
 const TWIN_RECHECK_REASON = "Rules re-check: today's rules do not read this fee from its own document";
 
 /**
+ * A name that starts mid-sentence or runs across a sentence break ("withdrawals or other means.
+ * The NSF fee"). Pure. Used for twins of rules re-check takedowns only; live names are Data
+ * inventory's name-noise rules.
+ */
+export function sentenceFragmentName(name: string): boolean {
+  const trimmed = name.trim();
+  return /^[a-z]/.test(trimmed) || /[a-z]{2}\.\s+[A-Z]/.test(trimmed);
+}
+
+/**
  * Twins of rules re-check takedowns (`twin_recheck`) that today's rules do not read from any
  * completed text of their own document, by verified id. A twin with no document or no text
  * fails too: the check that took its twin down cannot pass it.
@@ -1312,7 +1322,12 @@ export async function runHamiltonPublish(
     }
     // A twin of a rules re-check takedown publishes only if today's rules read it from its own
     // document, the same test that took its twin down.
-    const twinFails = category.ok && !nameHold && twinUnreproduced.has(Number(row.fee_verified_id));
+    // Its name must read as a fee line too: a twin was often read by an older reader, and
+    // "withdrawals or other means. The NSF fee" (101941) went live on Oct 9.
+    const twinFails = category.ok && !nameHold && (
+      twinUnreproduced.has(Number(row.fee_verified_id)) ||
+      (Boolean(row.twin_recheck) && sentenceFragmentName(publishedFeeName(row.fee_name, row.canonical_fee_key)))
+    );
     if (twinFails && !dryRun) {
       await rejectVerifiedFee(db, Number(row.fee_verified_id), RULES_RECHECK_REASON);
     }

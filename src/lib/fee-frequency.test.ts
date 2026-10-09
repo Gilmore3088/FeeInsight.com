@@ -149,3 +149,12 @@ describe("a rate basis in the fee's own name (v8, whole-record sample 2)", () =>
     expect(frequencyFromLine("Copy of Share Draft (Check) Faxed | $6.00 each", 6)).toBe("per_item");
   });
 });
+
+describe("an allowance written as a count per month (v9, 101933)", () => {
+  it("reads the fee as per item, not the free-fee row's monthly", () => {
+    const line = "Monthly service fee …………………… N/C | ATM transaction (each above 6/month)… $ 1.00 | *Depending on location";
+    expect(frequencyFromLine(line, 1)).toBe("per_item");
+    expect(settledFrequency(line, 1, "monthly", "atm_non_network")).toBe("per_item");
+    expect(frequencyFromLine("Monthly service fee | $5.00", 5)).toBe("monthly");
+  });
+});

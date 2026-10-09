@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, listsBothPrices, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -196,6 +196,17 @@ describe("Hamilton agentic publish", () => {
     const without = await runHamiltonPublish({ runId: 124, db: asPublishDb(createDbMock([plain])) });
     expect(withSwitch.results[0].reason).not.toBe("Read from a product page's benefits, not a fee schedule");
     expect([withSwitch.results[0].status, withSwitch.results[0].reason]).toEqual([without.results[0].status, without.results[0].reason]);
+  });
+
+  it("holds a twin whose name is a sentence fragment even when its own document reproduces it (101941)", async () => {
+    const twin = { ...verifiedFee, canonical_fee_key: "nsf", fee_name: "withdrawals or other means. The NSF fee", amount: "29.00", twin_recheck: true };
+    const text = [{ source_document_id: 77, normalized_text: "Fee Schedule\nNSF fee (per item) $29.00\nStop payment fee $30.00" }];
+    const db = createDbMock([twin], [], undefined, text);
+    const result = await runHamiltonPublish({ runId: 125, db: asPublishDb(db) });
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0].reason).toContain("Rules re-check");
+    expect(sentenceFragmentName("Non-Sufficient Fund (NSF) fee")).toBe(false);
+    expect(sentenceFragmentName("PERSONAL CHECKING: Monthly Cycle Service Charge")).toBe(false);
   });
 
   it("never publishes a row read from an article page", async () => {
