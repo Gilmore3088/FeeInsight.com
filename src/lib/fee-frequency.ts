@@ -26,7 +26,8 @@ const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
 // v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
-const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond|exceeding)\b[^|$]{0,40}?\b(per|in a|a|each) (month|statement cycle|cycle|year)\b/gi;
+// v9: "each above 6/month" (101933, Oct 9).
+const ALLOWANCE = /\b(free|after|first|more than|over|above|in excess of|beyond|exceeding)\b[^|$]{0,40}?(\b(per|in a|a|each) |\/\s?)(month|statement cycle|cycle|year)\b/gi;
 
 /**
  * v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") makes the
@@ -200,7 +201,8 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   // the returned-deposit fee "daily".
   if (!wording.test(sourceLine)) return MISREAD_PERIOD[stated!]?.test(sourceLine) ?? false;
   const cells = sourceLine.split("|");
-  const priced = cells.map((cell) => feePrices(cell).length > 0);
+  // v9: a cell priced "N/C" or "Free" is another fee's row too ("Monthly service fee ... N/C | ATM ... $1.00").
+  const priced = cells.map((cell) => feePrices(cell).length > 0 || NO_CHARGE.test(cell));
   const own = cells
     .map((cell, index) => (feePrices(cell).some((price) => Math.abs(price - amount) < 0.005) ? index : -1))
     .filter((index) => index >= 0);
@@ -218,6 +220,7 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   return cells.some((cell, index) => !ownCells.has(index) && priced[index] && wording.test(cell));
 }
 const PRICE_START = /\$\s?\.?\d/;
+const NO_CHARGE = /(^|[\s.…])(n\/c|no charge|free)\s*\*?\s*$/i;
 
 /**
  * Categories charged per period or per day. A per-item reading of one of these is a
