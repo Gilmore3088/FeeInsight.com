@@ -8,6 +8,7 @@ import {
 } from "@/lib/data-store/hit-list";
 import { getTopTenCoverage, type TopTenCoverage } from "@/lib/data-store/top-ten-coverage";
 import { COVERED_SHARE, getMarketGaps, getNationalCompetitorCoverage, type MarketGap } from "@/lib/data-store/competitor-coverage";
+import { NO_CONSUMER_SCHEDULE_IDS } from "@/lib/agents/magellan/operator-schedules";
 import { HitListLinkForm } from "./link-form";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export default async function HitListPage({
   const view: PageView = params.view === "no_overdraft" || params.view === "top10" || params.view === "gaps" ? params.view : "no_fees";
   const state = params.state && /^[A-Za-z]{2}$/.test(params.state) ? params.state.toUpperCase() : null;
   const coverage: TopTenCoverage | null = view === "top10" ? await getTopTenCoverage().catch(() => null) : null;
-  const gaps: MarketGap[] | null = view === "gaps" ? await getMarketGaps(undefined, 100).catch(() => null) : null;
+  const gaps: MarketGap[] | null = view === "gaps" ? await getMarketGaps(undefined, 100, NO_CONSUMER_SCHEDULE_IDS).catch(() => null) : null;
   const gapBy = new Map((gaps ?? []).map((gap) => [gap.institutionId, gap]));
   const markets = view === "no_fees" ? await getNationalCompetitorCoverage().catch(() => null) : null;
   const list =

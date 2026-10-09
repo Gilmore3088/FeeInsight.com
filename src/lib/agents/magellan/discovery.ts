@@ -1631,7 +1631,7 @@ export async function runMagellanDiscovery(
     [
       ...new Set([
         ...(await loadMarketLeaderIds(db, { stateCode: options.stateCode ?? null }).catch(() => [])),
-        ...(await loadMarketGapIds(db).catch(() => [])).filter((id) => !NO_CONSUMER_SCHEDULE_IDS.has(id)),
+        ...(await loadMarketGapIds(db, undefined, NO_CONSUMER_SCHEDULE_IDS).catch(() => [])),
       ]),
     ];
   const found = await selectCandidates(db, limit, options.stateCode, learning, leaderIds);
