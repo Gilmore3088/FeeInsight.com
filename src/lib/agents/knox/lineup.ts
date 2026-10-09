@@ -87,24 +87,42 @@ const GENERIC_ACCOUNT_WORDS = new Set([
   "consumer", "our", "your", "compare", "open", "banking", "deposit", "deposits", "products", "product", "other",
   "features", "feature", "benefits", "details", "schedule", "rates", "rate", "information", "options", "types",
   "commercial", "individual", "joint", "with", "to", "&", "+", "-", "–",
+  "description", "descriptions", "disclosure", "disclosures", "terms", "summary", "comparison",
 ]);
 const FEE_NAME_TAIL =
   /\s*[-–:]?\s*(?:low balance\s+)?(?:monthly\s+)?(?:maintenance\s+|service\s+|account\s+)*(?:fee|charge|service charge|maintenance)s?(?:\s+of)?\s*$/i;
-const HEADING_TAIL = /\s+(?:features|benefits|details|account details|overview|highlights)\s*$/i;
-const SENTENCE_WORDS = /\b(?:is|are|you|your|we|our|will|may|must|when|if|per|this|that)\b/i;
+const HEADING_TAIL =
+  /\s+(?:features|benefits|details|account details|overview|highlights|(?:interest\s+)?rates|descriptions?|disclosures?|terms|information|summary)\s*$/i;
+const SENTENCE_WORDS = /\b(?:is|are|you|your|we|our|will|may|must|when|if|or|per|this|that)\b/i;
 const HEADING_LOOKBACK_LINES = 12;
 
 /** A name that says which account: an account word plus a word of its own, 2 to 6 words. */
 function distinctAccountName(value: string): string | null {
-  const name = squash(value).replace(/[\s\-–:|,.]+$/, "");
+  const name = squash(value).replace(/[\s\-–:|,.]+$/, "").replace(HEADING_TAIL, "");
   if (name.length < 4 || name.length > MAX_PRODUCT_NAME_CHARS) return null;
-  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?]/.test(name) || SENTENCE_WORDS.test(name)) return null;
+  if (!/^[A-Z0-9]/.test(name) || /\$|\d{2,}|[;.!?,_]/.test(name) || SENTENCE_WORDS.test(name)) return null;
   const words = name.split(" ");
   if (words.length < 2 || words.length > 6 || !ACCOUNT_WORD.test(name)) return null;
   return words.some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
 }
 
-/** "Freedom Checking Monthly Fee" -> "Freedom Checking"; "Service charge (Checking + Interest Account)" -> the parenthetical. */
+/**
+ * A stored product name as a reader should see it. Names stored before the v49 rules can
+ * carry a heading's tail ("Signature Checking Rates"), footnote marks ("Fresh Start Checking
+ * 6,11"), a blank to fill in, or a list of account types ("Money Market, or Savings").
+ * Trims the tail and marks; null when what is left does not name one account.
+ */
+export function readableProductName(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const name = squash(value)
+    .replace(/[\s\d,_*†‡]+$/, "")
+    .replace(HEADING_TAIL, "")
+    .replace(/[\s\-–:|,.]+$/, "");
+  if (name.length < 3 || /[,_]|\bor\b/i.test(name) || !/[a-z]/i.test(name)) return null;
+  return name.split(" ").some((word) => !GENERIC_ACCOUNT_WORDS.has(word.toLowerCase())) ? name : null;
+}
+
+/** "Freedom Checking Monthly Fee" -> "Freedom Checking";"Service charge (Checking + Interest Account)" -> the parenthetical. */
 export function productNameFromFeeName(feeName: string): string | null {
   const parenthetical = feeName.match(/\(([^()]{4,80})\)/)?.[1];
   if (parenthetical) {
