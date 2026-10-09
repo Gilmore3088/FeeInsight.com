@@ -43,7 +43,7 @@ export default async function ForInstitutionsPage() {
       <ConsumerNav />
       <main id="main-content">
         <section className="bg-warm-900 relative overflow-hidden">
-          <div className="mx-auto max-w-6xl px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
+          <div className="mx-auto max-w-page px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
             <div className="max-w-2xl">
               <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D16A52]">
                 For banks and credit unions
@@ -142,7 +142,7 @@ const AUDIENCES = [
 function AudienceSection() {
   return (
     <section className="bg-warm-100 border-b border-warm-200">
-      <div className="mx-auto max-w-6xl px-6 py-14">
+      <div className="mx-auto max-w-page px-6 py-14">
         <h2
           className="text-center text-[28px] text-warm-900"
           style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
@@ -166,7 +166,7 @@ function AudienceSection() {
 function AdvisorySection() {
   return (
     <section className="bg-white border-b border-warm-200">
-      <div className="mx-auto max-w-6xl px-6 py-14">
+      <div className="mx-auto max-w-page px-6 py-14">
         <div className="max-w-3xl">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
             {SITE_NAME} Advisory
@@ -209,7 +209,7 @@ function AdvisorySection() {
 function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
   return (
     <section className="bg-warm-900">
-      <div className="mx-auto max-w-6xl px-6 py-14 text-center">
+      <div className="mx-auto max-w-page px-6 py-14 text-center">
         <h2
           className="text-[28px] text-warm-150"
           style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}

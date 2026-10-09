@@ -253,6 +253,150 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
   };
 }
 
+/**
+ * Live fees Knox filed under the wrong one of the 50 because it read a neighbouring cell as the
+ * name (Data inventory's retidy v15 left them for review, Oct 9). Each is re-filed in place under
+ * the page's own name for that line, with the old name and category logged; none is taken down.
+ * Every name and price below traces to the stored schedule (`checkFeeAgainstSource`, 10/10).
+ */
+export interface HandRefile {
+  feePublishedId: number;
+  from: string;
+  amount: number;
+  to: string;
+  name: string;
+  why: string;
+}
+
+export const HAND_REFILES: readonly HandRefile[] = [
+  { feePublishedId: 40729, from: "garnishment_levy", amount: 38, to: "wire_intl_incoming", name: "International Outgoing/Incoming",
+    why: "inst 3210, doc 1009: Wire Transfer lines end \"International Outgoing/Incoming ... $38.00\"" },
+  { feePublishedId: 46537, from: "early_closure", amount: 15, to: "wire_domestic_incoming", name: "Wire Transfer Domestic (Incoming)",
+    why: "inst 7676, doc 16437: \"Wire Transfer / Domestic (Incoming) | $15.00\"" },
+  { feePublishedId: 46538, from: "early_closure", amount: 25, to: "wire_domestic_outgoing", name: "Wire Transfer Domestic (Outgoing)",
+    why: "inst 7676, doc 16437: \"Domestic (Outgoing) | $25.00\" under Wire Transfer" },
+  { feePublishedId: 54418, from: "bill_pay", amount: 30, to: "nsf", name: "NSF/Returned Item Fee",
+    why: "inst 7280, doc 6912: \"NSF/Returned Item Fee | (Per Presentment ...) | $30.00\"" },
+  { feePublishedId: 54427, from: "monthly_maintenance", amount: 5, to: "paper_statement", name: "Paper Statement",
+    why: "inst 7280, doc 6912: \"Paper Statement | (Monthly Fee. Over 55 Free) | $5.00\"" },
+  { feePublishedId: 76451, from: "monthly_maintenance", amount: 5, to: "minimum_balance", name: "Base Share balance below $25.00 (Monthly Fee)",
+    why: "inst 7318, doc 23139: \"Base Share balance below $25.00 (Monthly Fee) | $5.00\"" },
+  { feePublishedId: 92253, from: "account_research", amount: 5, to: "check_image",
+    name: "Copy of historical check clearing, official check or money order, per item (max 4 checks, 5+ Account research fee, min 1 hour)",
+    why: "inst 7622, doc 2468: \"Copy of historical check clearing, official check or money order, per item ... $5.00\"" },
+  { feePublishedId: 98520, from: "garnishment_levy", amount: 20, to: "wire_domestic_outgoing", name: "Wire Transfer Fee",
+    why: "inst 5075, doc 12163: \"Wire Transfer Fee | $20.00\" (international and incoming are separate lines)" },
+  { feePublishedId: 98696, from: "bill_pay", amount: 10, to: "cashiers_check", name: "Cashier's Check Member Fee",
+    why: "inst 8138, doc 12676: \"Cashier's Check (set up in Bill Pay only) / Member Fee | $10.00 per check\"" },
+  { feePublishedId: 104858, from: "account_research", amount: 10, to: "monthly_maintenance", name: "Cashback Checking Plus Account Monthly service charge",
+    why: "inst 7025, doc 2148: \"Cashback Checking Plus Account | $10.00 /month\"" },
+];
+
+interface HandRow {
+  fee_published_id: number | string;
+  fee_verified_id: number | string;
+  institution_id: number | string;
+  source_document_id: number | string | null;
+  canonical_fee_key: string;
+  fee_name: string | null;
+  amount: number | string | null;
+}
+
+export interface HandMove {
+  refile: HandRefile;
+  feeVerifiedId: number;
+  institutionId: number;
+  sourceDocumentId: number | null;
+  oldName: string;
+}
+
+/**
+ * The hand re-files that still apply: the fee is live, still under its old category at its
+ * listed price, and the new category accepts the new name. Pure.
+ */
+export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] = HAND_REFILES): HandMove[] {
+  const moves: HandMove[] = [];
+  for (const row of rows) {
+    const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
+    const amount = amountOf(row.amount);
+    if (!refile || row.canonical_fee_key !== refile.from || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
+    if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
+    moves.push({
+      refile,
+      feeVerifiedId: Number(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+      oldName: row.fee_name ?? "",
+    });
+  }
+  return moves;
+}
+
+async function selectHandRows(db: SqlTag, institutionId?: number): Promise<HandRow[]> {
+  return db<HandRow[]>`
+    SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.source_document_id,
+           fp.canonical_fee_key, fp.fee_name, fp.amount
+      FROM published_fee_records fp
+      LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+     WHERE fp.fee_published_id = ANY(${HAND_REFILES.map((refile) => refile.feePublishedId)}::bigint[])
+       AND fp.rolled_back_at IS NULL
+       AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
+  `;
+}
+
+async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Promise<number> {
+  if (moves.length === 0) return 0;
+  const updated = await db<{ fee_published_id: number | string }[]>`
+    UPDATE published_fee_records fp
+       SET canonical_fee_key = v.to_key, fee_name = v.new_name
+      FROM unnest(${moves.map((move) => move.refile.feePublishedId)}::bigint[], ${moves.map((move) => move.refile.from)}::text[],
+                  ${moves.map((move) => move.refile.to)}::text[], ${moves.map((move) => move.refile.name)}::text[])
+           AS v(fee_published_id, from_key, to_key, new_name)
+     WHERE fp.fee_published_id = v.fee_published_id
+       AND fp.canonical_fee_key = v.from_key
+       AND fp.rolled_back_at IS NULL
+    RETURNING fp.fee_published_id
+  `;
+  const done = new Set(updated.map((row) => Number(row.fee_published_id)));
+  const applied = moves.filter((move) => done.has(move.refile.feePublishedId));
+  if (applied.length === 0) return 0;
+  await db`
+    UPDATE verified_fee_observations fv
+       SET canonical_fee_key = v.to_key
+      FROM unnest(${applied.map((move) => move.feeVerifiedId)}::bigint[], ${applied.map((move) => move.refile.from)}::text[],
+                  ${applied.map((move) => move.refile.to)}::text[]) AS v(fee_verified_id, from_key, to_key)
+     WHERE fv.fee_verified_id = v.fee_verified_id
+       AND fv.canonical_fee_key = v.from_key
+  `;
+  if (await feedbackSchemaReady(db)) await recordFeedback(db, applied.map((move) => handFeedback(move, runId)));
+  return applied.length;
+}
+
+function handFeedback(move: HandMove, runId: number): FeedbackRow {
+  const { refile } = move;
+  return {
+    aboutStage: "publish",
+    aboutStrategy: TAXONOMY_FOLD_CHECK,
+    aboutVersion: FOLD_RULES_VERSION,
+    // Knox read a neighbouring cell as the name: a wrong read, logged with the page's own line.
+    signal: "wrong",
+    kind: TAXONOMY_FOLD_KIND,
+    reportedBy: "hamilton",
+    checkName: TAXONOMY_FOLD_CHECK,
+    institutionId: move.institutionId,
+    sourceDocumentId: move.sourceDocumentId,
+    feeVerifiedId: move.feeVerifiedId,
+    feePublishedId: refile.feePublishedId,
+    canonicalFeeKey: refile.to,
+    amount: refile.amount,
+    weight: 0,
+    evidence: { from: refile.from, to: refile.to, rule: "hand_refile", old_name: move.oldName, new_name: refile.name, why: refile.why },
+    runId,
+    dedupeKey: `${TAXONOMY_FOLD_CHECK}:hand:pub:${refile.feePublishedId}`,
+  };
+}
+
 async function rollBackNoHome(db: SqlTag, batchId: string, fees: FoldNoHome[]): Promise<number> {
   let rolledBack = 0;
   for (let start = 0; start < fees.length; start += WRITE_CHUNK) {
@@ -288,6 +432,8 @@ export interface TaxonomyFoldResult {
   noHomeHeld: number;
   unplacedVerified: number;
   feedbackRows: number;
+  /** Live fees re-filed by hand (`HAND_REFILES`); a dry run counts those it would move. */
+  handRefiled: number;
   dryRun: boolean;
   rulesVersion: number;
   /** A sample of the takedowns, for the step's detail. */
@@ -299,7 +445,7 @@ export async function foldRetiredCategories(
   db: SqlTag,
   options: { runId: number; dryRun: boolean; institutionId?: number },
 ): Promise<TaxonomyFoldResult> {
-  const empty: TaxonomyFoldResult = {
+  const base: TaxonomyFoldResult = {
     scanned: 0,
     moved: 0,
     movedLive: 0,
@@ -310,10 +456,22 @@ export async function foldRetiredCategories(
     noHomeHeld: 0,
     unplacedVerified: 0,
     feedbackRows: 0,
+    handRefiled: 0,
     dryRun: options.dryRun,
     rulesVersion: FOLD_RULES_VERSION,
     noHomeSample: [],
   };
+  let handMoves: HandMove[] = [];
+  try {
+    handMoves = planHandRefiles(await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId)));
+  } catch (error) {
+    console.error("taxonomy fold hand re-file read failed:", error);
+  }
+  if (options.dryRun) base.handRefiled = handMoves.length;
+  else if (handMoves.length > 0) {
+    base.handRefiled = await inSavepoint(db, (scope) => applyHandMoves(scope, handMoves, options.runId));
+    if (base.handRefiled > 0) invalidatePublicReadCache();
+  }
   let rows: FoldRow[];
   let texts: Map<number, string>;
   try {
@@ -328,9 +486,9 @@ export async function foldRetiredCategories(
     texts = await inSavepoint(db, (scope) => loadTexts(scope, documents));
   } catch (error) {
     console.error("taxonomy fold read failed:", error);
-    return empty;
+    return base;
   }
-  if (rows.length === 0) return empty;
+  if (rows.length === 0) return base;
 
   const plan = planFold(rows, texts);
   const byRoute: Record<string, number> = {};
@@ -344,7 +502,7 @@ export async function foldRetiredCategories(
     dryRun: options.dryRun,
   });
   const result: TaxonomyFoldResult = {
-    ...empty,
+    ...base,
     scanned: rows.length,
     moved: plan.moves.length,
     movedLive: plan.moves.filter((move) => move.feePublishedId != null).length,

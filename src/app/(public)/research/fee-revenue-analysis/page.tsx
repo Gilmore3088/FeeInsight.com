@@ -51,7 +51,7 @@ export default async function FeeRevenueAnalysisPage() {
     : 0;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14">
+    <div className="mx-auto max-w-page px-6 py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },

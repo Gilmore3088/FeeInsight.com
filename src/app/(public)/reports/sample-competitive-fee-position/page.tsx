@@ -113,7 +113,7 @@ export default async function SampleReportPage() {
   const revenue = await getRevenueContextCached(report.data.subject.institution_id).catch(() => null);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 pb-24 pt-14">
+    <div className="mx-auto max-w-page px-6 pb-24 pt-14">
       <TrackView event="sample_report_view" eventProps={{ institution_id: report.data.subject.institution_id }} />
       <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-[#6B6255]">
         <Link href="/reports" className="transition-colors hover:text-[#1A1815]">
