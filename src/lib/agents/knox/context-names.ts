@@ -132,12 +132,47 @@ function thisFeeAfterTerm(all: string[], index: number): ExtractedFeeCandidate |
   return null;
 }
 
+/**
+ * v49: a two-column schedule's "Personal ........ $10 per item paid" row under an
+ * "Overdrafts / Non-Sufficient Funds (NSF)" heading (Amerant Bank, 2026-10-09). The row names
+ * only who pays; the heading names the fee. Flattened columns put each row in a " | " cell, and
+ * the heading may carry footnote numbers ("(NSF)10, 12").
+ */
+const AUDIENCE_ROW = new RegExp(
+  String.raw`^\W*(personal|consumer)\s*\.{2,}\s*${AMOUNT}\s+per\s+(item|transaction)\s+(paid|returned)\b(?!\s+or\b)`,
+  "i",
+);
+const TRAILING_FOOTNOTES = /(\D)\d{1,2}(?:\s*,\s*\d{1,2})*\s*$/;
+
+function cells(line: string): string[] {
+  return line.split(/\s+\|\s+/).map((cell) => cell.trim()).filter(Boolean);
+}
+
+function audienceRowUnderHeading(all: string[], index: number): ExtractedFeeCandidate | null {
+  const row = cells(all[index]).map((cell) => cell.match(AUDIENCE_ROW)).find(Boolean);
+  if (!row) return null;
+  for (let above = index - 1; above >= Math.max(0, index - HEADING_LOOKBACK); above -= 1) {
+    for (const cell of cells(all[above])) {
+      const heading = cell.replace(TRAILING_FOOTNOTES, "$1").trim();
+      if (!isHeading(heading)) continue;
+      const hint = classifyFeeText(heading);
+      if (!hint) continue;
+      if (!OVERDRAFT_FAMILY.has(hint)) return null;
+      const subject = row[4].toLowerCase() === "paid" ? "Overdraft" : "NSF";
+      const feeName = `${subject} - ${row[1].toLowerCase()}, per ${row[3].toLowerCase()} ${row[4].toLowerCase()}`;
+      const named = classifyFeeText(feeName);
+      return named && OVERDRAFT_FAMILY.has(named) ? candidate(feeName, amountOf(row[2]), named, all[index]) : null;
+    }
+  }
+  return null;
+}
+
 export function contextFees(text: string): ExtractedFeeCandidate[] {
   const all = lines(text);
   const found: ExtractedFeeCandidate[] = [];
   all.forEach((line, index) => {
     if (!line.includes("$") || NO_LONGER_CHARGED.test(line)) return;
-    const fee = perItemUnderHeading(all, index) ?? thisFeeAfterTerm(all, index);
+    const fee = perItemUnderHeading(all, index) ?? thisFeeAfterTerm(all, index) ?? audienceRowUnderHeading(all, index);
     if (fee) found.push(fee);
   });
   return found;
