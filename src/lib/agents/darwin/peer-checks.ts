@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import {
@@ -143,13 +144,15 @@ export async function computeWiderPeerLevels(db: SqlTag): Promise<WiderPeerLevel
                c.canonical_fee_key,
                d.district,
                ${assetTierSql("inst")} AS tier,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY c.amount) AS amount
+               CASE WHEN c.canonical_fee_key = 'overdraft' THEN MAX(c.amount)
+                    ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
           FROM published_fee_catalog c
           JOIN institution_sources inst ON inst.id = c.institution_id
           LEFT JOIN districts d ON d.state_code = upper(btrim(inst.state_code))
          WHERE COALESCE(inst.status, 'active') = 'active'
            AND c.amount IS NOT NULL
            AND c.amount >= 0
+           AND ${statsRowFilter("c")}
          GROUP BY 1, 2, 3, 4
       )
       SELECT CASE WHEN GROUPING(district) = 1 THEN NULL ELSE district END AS district,
