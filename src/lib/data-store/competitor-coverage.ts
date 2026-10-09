@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { BRANCHLESS_MAX_OFFICES, BRANCHLESS_MIN_DEPOSITS, BRANCHLESS_ONE_OFFICE_SHARE } from "./branchless-banks";
 
 type SqlTag = typeof sql;
 
@@ -22,11 +23,15 @@ export interface LiveFeeFacts {
   hasOverdraft: boolean;
 }
 
-/** Pure: coverage of one market from its footprint (every institution with branches there). */
+/**
+ * Pure: coverage of one market from its footprint (every institution with branches there),
+ * leaving out the buyer and `exclude` (national online and branchless banks).
+ */
 export function summarizeMarketCoverage(
   byInstitution: Record<number, { branches: number; deposits: number | null }>,
   selfId: number,
   live: Map<number, LiveFeeFacts>,
+  exclude: Set<number> = new Set(),
 ): MarketCoverage {
   let competitors = 0;
   let withFees = 0;
@@ -36,7 +41,7 @@ export function summarizeMarketCoverage(
   let overdraftDeposits = 0;
   for (const [key, spot] of Object.entries(byInstitution)) {
     const id = Number(key);
-    if (id === selfId) continue;
+    if (id === selfId || exclude.has(id)) continue;
     competitors += 1;
     const facts = live.get(id);
     const held = spot.deposits ?? 0;
@@ -71,6 +76,21 @@ export async function getLiveFeeFacts(ids: number[], db: SqlTag = sql): Promise<
   return new Map(rows.map((row) => [Number(row.institution_id), { hasOverdraft: Boolean(row.has_overdraft) }]));
 }
 
+/** Which of these institutions are national online or branchless banks (branchless-banks.ts). */
+export async function getBranchlessIds(ids: number[], db: SqlTag = sql): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = await db<Array<{ institution_id: number | string }>>`
+    SELECT b.institution_id
+      FROM institution_branch_deposits b
+     WHERE b.year = (SELECT MAX(year) FROM institution_branch_deposits)
+       AND b.institution_id = ANY(${ids}::bigint[])
+     GROUP BY b.institution_id
+    HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS}
+       AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits)
+  `;
+  return new Set(rows.map((row) => Number(row.institution_id)));
+}
+
 export interface NationalCompetitorCoverage {
   sodYear: number;
   /** Banks in the Summary of Deposits that have at least one competitor in their branch counties. */
@@ -102,10 +122,20 @@ export async function getNationalCompetitorCoverage(db: SqlTag = sql): Promise<N
   >`
     -- competitor coverage across every bank's branch counties
     WITH yr AS (SELECT max(year) AS year FROM institution_branch_deposits),
+    -- National online and branchless banks are no one's local competitor (branchless-banks.ts).
+    branchless AS (
+      SELECT b.institution_id
+        FROM institution_branch_deposits b, yr
+       WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+       GROUP BY b.institution_id
+      HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS}
+         AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits)
+    ),
     sod AS (
       SELECT b.institution_id, b.county_fips, sum(COALESCE(b.deposits, 0))::numeric AS dep
         FROM institution_branch_deposits b, yr
        WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+         AND b.institution_id NOT IN (SELECT institution_id FROM branchless)
        GROUP BY 1, 2
     ),
     live AS (
@@ -167,10 +197,20 @@ export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<Mark
   const rows = await db<Array<{ institution_id: number | string; markets: number | string; gain: number | string }>>`
     -- market gaps: banks with no live fees, by the competitor coverage they would add
     WITH yr AS (SELECT max(year) AS year FROM institution_branch_deposits),
+    -- National online and branchless banks are no one's local competitor (branchless-banks.ts).
+    branchless AS (
+      SELECT b.institution_id
+        FROM institution_branch_deposits b, yr
+       WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+       GROUP BY b.institution_id
+      HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS}
+         AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits)
+    ),
     sod AS (
       SELECT b.institution_id, b.county_fips, sum(COALESCE(b.deposits, 0))::numeric AS dep
         FROM institution_branch_deposits b, yr
        WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+         AND b.institution_id NOT IN (SELECT institution_id FROM branchless)
        GROUP BY 1, 2
     ),
     live AS (SELECT DISTINCT institution_id FROM published_fee_catalog),
