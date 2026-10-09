@@ -27,6 +27,9 @@ import { OUTREACH_CAMPAIGN, OUTREACH_WORKFLOW } from "./outreach";
 type SqlTag = typeof sql;
 
 export const LEARNING_WORKFLOW = "learning";
+
+/** The GTM plan's month-one floor, the one dated target the code holds (DRAPER's Monday plan reads it too). */
+export const MONTH_ONE_FLOOR = { qualified: 5, proposals: 2, by: "2026-11-06", byLabel: "Nov 6" } as const;
 const DAY_MS = 86_400_000;
 
 export interface LearningOutcome {
@@ -213,7 +216,9 @@ export function buildLearningReport(input: LearningInput): { title: string; body
   const funnel = journeyFunnel([...stages.values()].map((value) => journeyStage(value.events, value.outcomes)));
   lines.push(`- Journey: ${funnel.map((stage) => `${stage.label} ${stage.count}`).join(", ")}.`);
   lines.push("");
-  lines.push("Month-one floor (GTM plan): 5 qualified conversations and 2 purchase discussions by Nov 6.");
+  lines.push(
+    `Month-one floor (GTM plan): ${MONTH_ONE_FLOOR.qualified} qualified conversations and ${MONTH_ONE_FLOOR.proposals} purchase discussions by ${MONTH_ONE_FLOOR.byLabel}.`,
+  );
   lines.push(`So far: ${metrics.qualified + metrics.qualifiedInbound} qualified, ${metrics.reachedProposal} at a proposal or later.`);
 
   return { title, body: lines.join("\n"), metrics };
