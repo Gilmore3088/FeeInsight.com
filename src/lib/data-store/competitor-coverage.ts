@@ -146,3 +146,60 @@ export async function getNationalCompetitorCoverage(db: SqlTag = sql): Promise<N
     buyersCoveredOverdraft: Number(row.buyers_covered_overdraft),
   };
 }
+
+export interface MarketGap {
+  institutionId: number;
+  /** Banks whose branch counties this institution has branches in. */
+  markets: number;
+  /**
+   * Coverage it would add once its fees are live: its deposit share of each of those banks'
+   * competitor deposits, summed (1.0 = one whole market's worth).
+   */
+  gain: number;
+}
+
+/**
+ * Banks with no live fees, ranked by how much competitor coverage their fees would add across
+ * every bank's local market (counties from the FDIC Summary of Deposits). Credit unions have no
+ * deposits by branch, so they can't be ranked this way and are left out.
+ */
+export async function getMarketGaps(db: SqlTag = sql, limit = 100): Promise<MarketGap[]> {
+  const rows = await db<Array<{ institution_id: number | string; markets: number | string; gain: number | string }>>`
+    -- market gaps: banks with no live fees, by the competitor coverage they would add
+    WITH yr AS (SELECT max(year) AS year FROM institution_branch_deposits),
+    sod AS (
+      SELECT b.institution_id, b.county_fips, sum(COALESCE(b.deposits, 0))::numeric AS dep
+        FROM institution_branch_deposits b, yr
+       WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+       GROUP BY 1, 2
+    ),
+    live AS (SELECT DISTINCT institution_id FROM published_fee_catalog),
+    county AS (SELECT county_fips, sum(dep) AS total FROM sod GROUP BY county_fips),
+    buyer AS (
+      SELECT b.institution_id, sum(c.total - b.dep) AS comp
+        FROM sod b JOIN county c USING (county_fips)
+       GROUP BY b.institution_id
+      HAVING sum(c.total - b.dep) > 0
+    ),
+    pair AS (
+      SELECT g.institution_id AS gap_id, b.institution_id AS buyer_id, sum(g.dep) AS dep
+        FROM sod g
+        JOIN sod b ON b.county_fips = g.county_fips AND b.institution_id <> g.institution_id
+       WHERE NOT EXISTS (SELECT 1 FROM live WHERE live.institution_id = g.institution_id)
+       GROUP BY 1, 2
+    )
+    SELECT p.gap_id AS institution_id, count(*) AS markets, sum(p.dep / bu.comp) AS gain
+      FROM pair p JOIN buyer bu ON bu.institution_id = p.buyer_id
+     GROUP BY p.gap_id
+     ORDER BY gain DESC, p.gap_id ASC
+     LIMIT ${Math.min(Math.max(Math.floor(limit), 1), 1000)}::int
+  `;
+  return rows.map((row) => ({ institutionId: Number(row.institution_id), markets: Number(row.markets), gain: Number(row.gain) }));
+}
+
+/** The top market gaps' ids, for Magellan's discovery to search beside the market leaders. */
+export async function loadMarketGapIds(db: SqlTag = sql, limit = MARKET_GAP_PRIORITY): Promise<number[]> {
+  return (await getMarketGaps(db, limit)).map((gap) => gap.institutionId);
+}
+
+export const MARKET_GAP_PRIORITY = 100;
