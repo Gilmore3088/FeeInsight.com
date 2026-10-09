@@ -63,6 +63,11 @@ describe("state detail", () => {
       { label: "Waco, TX", count: 2, median: 35, lower: 0, same: 1, higher: 1 },
     ]);
   });
+
+  it("counts a metro and the same city written in capitals as one market", () => {
+    const state = priced([30, 30, 35, 25, 35], (i) => (i < 3 ? { cbsaName: "Waco, TX", city: "Waco" } : { city: "WACO" }));
+    expect(marketChecks(30, state, 2)).toEqual([{ label: "Waco, TX", count: 5, median: 30, lower: 1, same: 2, higher: 2 }]);
+  });
 });
 
 describe("loading a state's figures", () => {

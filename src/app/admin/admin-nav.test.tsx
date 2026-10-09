@@ -51,14 +51,14 @@ describe("AdminNav", () => {
   it("folds less-used screens under More, opened when you are on one", () => {
     navigationState.pathname = "/admin/agents";
     const { unmount } = render(<AdminNav />);
-    const closed = screen.getByText("More (7)").closest("details");
+    const closed = screen.getByText("More (8)").closest("details");
     expect(closed).not.toHaveAttribute("open");
     expect(within(closed!).getByRole("link", { name: /Scoreboard/ })).toBeInTheDocument();
     unmount();
 
     navigationState.pathname = "/admin/states";
     render(<AdminNav />);
-    expect(screen.getByText("More (7)").closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("More (8)").closest("details")).toHaveAttribute("open");
   });
 
   it("follows you into another room", () => {

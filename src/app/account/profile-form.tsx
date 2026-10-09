@@ -91,6 +91,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
       <AccountCard
         id="profile"
         title="Your organization"
+        compact
         action={
           <button
             onClick={() => setEditing(true)}
@@ -122,7 +123,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
   }
 
   return (
-    <AccountCard id="profile" title="Your organization">
+    <AccountCard id="profile" title="Your organization" compact>
     <form onSubmit={handleSubmit}>
       <div className="space-y-3">
         <div>

@@ -15,7 +15,7 @@ export async function ReportOfferSection() {
   const sample = await loadSampleReport().catch(() => null);
   return (
     <section aria-label="Fee reports" className="border-b border-warm-200 bg-white">
-      <div className="mx-auto max-w-6xl px-6 py-14">
+      <div className="mx-auto max-w-page px-6 py-14">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">

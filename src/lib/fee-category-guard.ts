@@ -102,8 +102,13 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // Merchant Capture) is not it either; a bank named "First Merchants" still is.
     // v58: "... the balance requirement to avoid the monthly service charge is met. Otherwise, a fee
     // of" prices what the sentence waives, here a non-network ATM withdrawal (Westamerica 96164).
+    // v59: an optional add-on's monthly charge is not the account's fee: identity-theft programs
+    // (Harvest's "ID TheftSmart Fee" $2, 29713, 86782), accidental death insurance (70672, 85526)
+    // and a perks package (88787). An account that comes with the insurance stays (55988).
+    // v60: a sweep service's monthly charge (Security Federal's "Sweep maintenance charge (per
+    // month)" $38.95, a ZBA or sweep transfer, a business sweep checking account) is not it either.
     exclude:
-      /(otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -350,8 +355,16 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/i,
   },
   night_deposit: {
-    include: /(night|depository|after[- ]hours|drop box)/i,
+    // v60: a lost or replaced night deposit bag or its key ("Replacement Key for Bag", "Bag
+    // Replacement/Lost Key" under Night Depository Services) is the night deposit fee too.
+    include: /(night|depository|after[- ]hours|drop box|\bbags?\b.{0,20}\b(lost|replac\w*)|\b(lost|replac\w*)\b.{0,20}\bbags?\b)/i,
     exclude: /^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)/i,
+  },
+  // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
+  // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
+  safe_deposit_box: {
+    include: /\S/,
+    exclude: /(\bbags?\b|zipper|pouch|depository|night deposit|drop box)/i,
   },
 };
 
@@ -386,7 +399,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v57: a cross-border banking bundle's annual fee is monthly maintenance (RBC; v56 is Accuracy's).
 // v58: a returned bond or coupon filed as NSF is a returned deposited item (Darwin 883; raw 246460,
 // 277863); a waiver sentence's "Otherwise, a fee of" is not monthly maintenance (96164).
-export const CATEGORY_GUARD_VERSION = 58;
+// v59: an optional identity-theft, insurance or perks-package add-on is not monthly maintenance (47183).
+// v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee; a lost or
+// replaced bag or bag key is the night deposit fee (104666, 32631, 37193, 94606); a sweep
+// service's monthly charge is not monthly maintenance (95769).
+export const CATEGORY_GUARD_VERSION = 60;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -431,6 +448,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "overdraft", when: /(paid nsf|paid (?:[\w&]+ ){1,3}nsf items?|nsf[- ]paid|items? paid|\(\s*paid\s*\)|paid (?:non[-\s]?|in)sufficient|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/i },
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
   { from: "nsf", to: "deposited_item_return", when: /(deposit|written to you|\bbonds?\b|\bcoupons?\b)/i },
+  { from: "safe_deposit_box", to: "night_deposit", when: /(\bbags?\b|depository|night deposit)/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b)/i, unless: /domestic/i },
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
   // v41: a charge-off processing fee sits with the other charge-off fees under account research.
