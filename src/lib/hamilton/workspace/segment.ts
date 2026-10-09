@@ -9,7 +9,7 @@
 
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
-import { proseFeeName } from "./names";
+import { plainName, proseFeeName } from "./names";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import type { AskSegment, Exhibit, Fact, SegmentMember, SegmentResearch, SourceRef } from "./types";
 
@@ -255,7 +255,8 @@ export function segmentHeadline(seg: SegmentResearch, feeCategory: string, curre
     return `Only ${count(n)} of ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee, too few for a median.`;
   }
   if (current !== null && seg.ownPosition !== null) {
-    return `Your ${money(current)} ${name} fee is at the ${ordinal(seg.ownPosition)} percentile of ${count(n)} ${shortSegmentLabel(seg.segment)} (median ${money(seg.band.median)}).`;
+    const where = seg.ownPosition <= 0 ? "at the bottom" : seg.ownPosition >= 100 ? "at the top" : `at the ${ordinal(seg.ownPosition)} percentile`;
+    return `Your ${money(current)} ${name} fee is ${where} of ${count(n)} ${shortSegmentLabel(seg.segment)} (median ${money(seg.band.median)}).`;
   }
   return `${count(n)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee; median ${money(seg.band.median)}, middle half ${money(seg.band.p25)} to ${money(seg.band.p75)}.`;
 }
@@ -268,7 +269,7 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
   const out: Fact[] = [];
   const n = seg.members.length;
   out.push({
-    text: `${count(n)} of the ${count(seg.institutionsInSegment)} ${seg.segment.label} publish ${article(name)} ${name} fee in the index.`,
+    text: `${count(n)} of the ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee in the index.`,
     source,
     sampleSize: n,
   });
@@ -292,7 +293,7 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
   const largest = seg.members.slice(0, 3);
   if (largest.length > 0) {
     out.push({
-      text: `By assets, the largest that publish are ${largest.map((m) => `${m.institutionName} (${money(m.amount)})`).join(", ")}.`,
+      text: `The largest by assets: ${largest.map((m) => `${plainName(m.institutionName)} (${money(m.amount)})`).join(", ")}.`,
       source,
     });
   }

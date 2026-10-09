@@ -75,7 +75,7 @@ import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
-import { runContactFinder, summarizeContactFinder } from "@/lib/agents/growth/contacts";
+import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
 import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runMarketIntel, summarizeMarketIntel } from "@/lib/agents/growth/sherlock";
@@ -1786,6 +1786,12 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
       });
       return { status: "completed", summary: summarizeContactFinder(result), detail: { ...result } };
+    }
+    case "growth-contact-picks": {
+      // Ranks every saved contact with today's rules and stores its role, confidence and
+      // primary/backup pick; on its first run this is the backfill for rows saved before the columns.
+      const result = await refreshContactPicks({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeContactPicks(result), detail: { ...result } };
     }
     case "growth-outreach": {
       const followUps = await runOutreachFollowUps({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
