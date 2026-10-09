@@ -446,10 +446,10 @@ export default async function SubscribePage({
           </div>
         )}
 
-        <section id="pro" aria-labelledby="pro-title" className="grid gap-8 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-10">
+        <section id="pro" aria-labelledby="pro-title" className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-10">
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           {/* The headline spans both columns; the example and the card start on one line below it. */}
-          <div className="lg:col-span-2 lg:row-start-1">
+          <div className="min-w-0 lg:col-span-2 lg:row-start-1">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{entry.context}</p>
             <h1
               id="pro-title"
@@ -476,11 +476,11 @@ export default async function SubscribePage({
             </div>
           </div>
 
-          {showcase && <div className="lg:col-start-1 lg:row-start-2">{showcase}</div>}
+          {showcase && <div className="min-w-0 lg:col-start-1 lg:row-start-2">{showcase}</div>}
 
           {/* Same size as the example beside it (James, 9 Oct 2026): both stretch to the row, each
               with one 44px line under it (the example dots; the sign-in line). */}
-          <div className="flex flex-col lg:col-start-2 lg:row-start-2">
+          <div className="flex min-w-0 flex-col lg:col-start-2 lg:row-start-2">
             <div className="flex-1">
             <PurchaseCard
               isLoggedIn={isLoggedIn}
@@ -536,7 +536,7 @@ export default async function SubscribePage({
         {wirePreview && (
           <section
             aria-labelledby="wire-heading"
-            className="mt-12 grid gap-8 sm:mt-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
+            className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
           >
             <div>
               <h2 id="wire-heading" className="mt-2 text-2xl text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
