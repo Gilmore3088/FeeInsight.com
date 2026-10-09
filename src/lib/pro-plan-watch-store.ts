@@ -6,6 +6,7 @@ import {
   getWatchInstitutions,
 } from "@/lib/data-store/pro-accounts";
 import { planWatchReasons, type WatchInstitution } from "@/lib/pro-plan-watch";
+import { errorCode } from "@/lib/admin-read-failure";
 
 export interface PlanWatchRow {
   userId: number;
@@ -15,19 +16,46 @@ export interface PlanWatchRow {
   reasons: string[];
 }
 
+/** A paid plan whose Stripe subscription could not be read, with Stripe's error code. */
+export interface PlanWatchUnread {
+  userId: number;
+  name: string;
+  code: string;
+}
+
+export interface PlanWatchList {
+  rows: PlanWatchRow[];
+  /** Plans skipped because Stripe refused the read (e.g. a customer id the configured key doesn't know). */
+  unread: PlanWatchUnread[];
+}
+
 /**
  * Paid Pro plans worth a second look (see pro-plan-watch.ts). The paid tier and bank come from
  * the Stripe subscription's metadata, which checkout sets from the bank the buyer picked.
- * Read-only: it never changes a price.
+ * Read-only: it never changes a price. A plan Stripe can't read is listed in `unread` instead of
+ * failing every other plan's check.
  */
-export async function getPlanWatchList(): Promise<PlanWatchRow[]> {
+export async function getPlanWatchList(): Promise<PlanWatchList> {
   const users = await getPaidProUsers();
-  if (users.length === 0) return [];
-  const stripe = getStripe();
+  if (users.length === 0) return { rows: [], unread: [] };
+  let stripe: ReturnType<typeof getStripe>;
+  try {
+    stripe = getStripe();
+  } catch (error) {
+    throw Object.assign(new Error("Stripe is not configured", { cause: error }), { code: "stripe_not_configured" });
+  }
 
-  const plans = await Promise.all(
+  const unread: PlanWatchUnread[] = [];
+  const read = await Promise.all(
     users.map(async (user) => {
-      const subscriptions = await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: "active", limit: 1 });
+      let subscriptions;
+      try {
+        subscriptions = await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: "active", limit: 1 });
+      } catch (error) {
+        console.error(`Plan watch: Stripe subscription read failed for user ${user.id}`, error);
+        unread.push({ userId: user.id, name: user.name, code: errorCode(error) });
+        return null;
+      }
       const metadata = subscriptions.data[0]?.metadata ?? {};
       const tier = isProTier(metadata.pro_tier) ? metadata.pro_tier : null;
       const institutionId = Number(metadata.institution_id);
@@ -40,8 +68,9 @@ export async function getPlanWatchList(): Promise<PlanWatchRow[]> {
       };
     }),
   );
+  const plans = read.flatMap((plan) => (plan ? [plan] : []));
 
-  const requests = await getProRequestInstitutions(users.map((user) => user.id));
+  const requests = await getProRequestInstitutions(plans.map((plan) => plan.user.id));
   const institutions = await getWatchInstitutions([
     ...plans.flatMap((plan) => (plan.institutionId ? [plan.institutionId] : [])),
     ...[...requests.values()].flat(),
@@ -51,7 +80,7 @@ export async function getPlanWatchList(): Promise<PlanWatchRow[]> {
     return found ? [found] : [];
   };
 
-  return plans.flatMap((plan) => {
+  const rows = plans.flatMap((plan) => {
     const paidInstitution = plan.institutionId ? institutions.get(plan.institutionId) ?? null : null;
     const reasons = planWatchReasons({
       email: plan.user.email,
@@ -72,4 +101,5 @@ export async function getPlanWatchList(): Promise<PlanWatchRow[]> {
       },
     ];
   });
+  return { rows, unread };
 }

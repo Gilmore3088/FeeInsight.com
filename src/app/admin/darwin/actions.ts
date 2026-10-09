@@ -4,17 +4,29 @@ import { requireAuth } from "@/lib/auth";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { startAgentRun } from "@/lib/agents/run-store";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
+import { getAgentSpendToday } from "@/lib/data-store/console-spend";
+import { getDarwinLedgerStatus } from "@/lib/data-store/darwin-status";
 import type { DarwinStatus } from "./types";
 
 export async function fetchDarwinStatus(): Promise<DarwinStatus> {
   await requireAuth("operate");
   const backend = getExecutionBackendStatus();
+  const [ledger, spend] = await Promise.all([
+    getDarwinLedgerStatus().catch((error) => {
+      console.error("Darwin ledger status failed", error);
+      return null;
+    }),
+    getAgentSpendToday("darwin"),
+  ]);
   return {
-    pending: 0,
-    today_promoted: 0,
-    today_cost_usd: 0,
+    pending: ledger?.unverified ?? null,
+    today_promoted: ledger?.verifiedToday ?? null,
+    today_cost_usd: spend?.todayUsd ?? null,
     circuit: { halted: !backend.enabled, reason: backend.enabled ? null : backend.detail },
-    recent_run_avg_tokens_per_row: null,
+    last_step: ledger?.lastStep
+      ? { run_id: ledger.lastStep.runId, status: ledger.lastStep.status, at: ledger.lastStep.at }
+      : null,
+    as_of: ledger?.readAt ?? spend?.readAt ?? null,
   };
 }
 

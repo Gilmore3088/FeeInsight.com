@@ -6,6 +6,7 @@ import {
   runStateLaneFormAction,
   type StateLaneRunActionState,
 } from "./actions";
+import { formatAdminTime } from "@/lib/admin-time";
 
 const INITIAL_STATE: StateLaneRunActionState | null = null;
 
@@ -22,7 +23,7 @@ function startedLabel(startedAt: string | null): string {
   if (!startedAt) return "";
   const date = new Date(startedAt);
   if (Number.isNaN(date.getTime())) return "";
-  return ` since ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC`;
+  return ` since ${formatAdminTime(startedAt)}`;
 }
 
 export function StateLaneRunControl({

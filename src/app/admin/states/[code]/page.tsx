@@ -4,6 +4,7 @@ import Link from "next/link";
 import { hasPermission, requireAuth } from "@/lib/auth";
 import { getAutomationControl } from "@/lib/automation-control";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
+import { formatAdminDateTime } from "@/lib/admin-time";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import {
   getStateInstitutions,
@@ -53,13 +54,8 @@ function formatNumber(n: number): string {
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return "Never";
-  return new Date(value).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  // One admin formatter, so every lane time carries its zone (Pacific) label.
+  return value ? formatAdminDateTime(value) : "Never";
 }
 
 function formatIssueCode(value: string): string {

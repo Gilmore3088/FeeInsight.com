@@ -39,8 +39,9 @@ import { settledFrequency } from "@/lib/fee-frequency";
 // v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
 // v49: a monthly fee with no account name takes it from its own name or the heading above it.
 // v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
-// v51: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 51 } as const;
+// v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
+// v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 52 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -151,7 +152,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       // from another fee's row is dropped ("... per year .. $10.00 | Reverse Stop Payment
       // .. $20.00" gave the $20 fee "annual"); 25 of 131 stated frequencies in the seven-state
       // keys were wrong this way.
-      // v51: the same rule as Hamilton's frequency fill (`settledFrequency`), so a period the line
+      // v52: the same rule as Hamilton's frequency fill (`settledFrequency`), so a period the line
       // never states is dropped on a per-event fee and a per-item reading never lands on a period
       // category.
       const frequency = settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
