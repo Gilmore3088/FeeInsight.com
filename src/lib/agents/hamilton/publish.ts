@@ -32,13 +32,6 @@ type SqlTag = typeof sql;
 
 /** The publisher recorded in the attempt log; bump the version when the rules change. */
 export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
-/**
- * The verified rows the same-line check (`separateLines`) applies to, each decided once more if
- * it was skipped as identical before. Only 8019 (UAT, 9 Oct): source spot checks of 20 rows the
- * check would separate found 13, then 10 and 14 (after tightening) real separate lines, below the
- * 18 of 20 it must reach before it applies to every row.
- */
-export const SAME_LINE_RESELECT_IDS: number[] = [8019];
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
@@ -308,7 +301,7 @@ async function selectVerifiedFees(
   institutionId?: number,
   stateCode?: string,
 ): Promise<VerifiedFeeRow[]> {
-  const params: Array<number | string | number[]> = [limit];
+  const params: Array<number | string> = [limit];
   const filters: string[] = [];
   if (minInstitutionFees > 1) {
     // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
@@ -352,7 +345,6 @@ async function selectVerifiedFees(
     const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
     const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
     const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
-    const reselectParam = `$${params.push(SAME_LINE_RESELECT_IDS)}`;
     filters.push(`AND NOT EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -383,15 +375,23 @@ async function selectVerifiedFees(
                      AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
                 )
               )
-              -- Rows skipped as identical before the same-line check (\`separateLines\`, 9 Oct) that
-              -- were separate lines of their document are decided once more, listed ids only
-              -- (\`SAME_LINE_RESELECT_IDS\`): Wildfire's $5 ATM balance inquiry (verified 8019) sat
-              -- behind its $5 "ATM Adjustment" (14754). The backlog waits for a source spot check.
-              -- The new decision carries same_line_check, so it is final.
+              -- A row skipped as identical before the same-line check (9 Oct) to a live line of its
+              -- own document under another name is decided once more: Wildfire's $5 ATM balance
+              -- inquiry (verified 8019) sat behind its $5 "ATM Adjustment" (14754). The new decision
+              -- carries same_line_check, so it is final.
               AND NOT (
                 pa.outcome = 'unchanged'
                 AND pa.detail->>'same_line_check' IS NULL
-                AND fv.fee_verified_id = ANY(${reselectParam}::bigint[])
+                AND EXISTS (
+                  SELECT 1 FROM published_fee_records prev
+                    JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
+                    JOIN raw_fee_observations prev_fr ON prev_fr.fee_raw_id = prev_fv.fee_raw_id
+                   WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND prev.rolled_back_at IS NULL
+                     AND prev_fr.source_document_id = fr.source_document_id
+                     AND lower(regexp_replace(prev.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+                         <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+                )
               )
          )`);
   }
@@ -753,12 +753,16 @@ export type PriorFeeDecision =
  * FCU cashier's check $8 vs $5, Opportunity Bank international wire $75 vs $100). Only a
  * newer copy of the same page (`feePageKey`) replaces or outdates a line.
  */
-export function decidePriorFee(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): PriorFeeDecision {
+export function decidePriorFee(
+  row: VerifiedFeeRow,
+  live: PriorPublishedFeeRow[],
+  apart: (prior: PriorPublishedFeeRow) => boolean = () => false,
+): PriorFeeDecision {
   if (live.length === 0) return { kind: "new" };
   // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
+  // A live line at the same price that is another line of the page (\`apart\`) is not this fee.
   const value = feeValue(row);
-  const sameLineCheck = SAME_LINE_RESELECT_IDS.includes(Number(row.fee_verified_id));
-  const identical = live.find((prior) => feeValue(prior) === value && !(sameLineCheck && separateLines(row, prior)));
+  const identical = live.find((prior) => feeValue(prior) === value && !apart(prior));
   if (identical) return { kind: "identical", prior: identical };
   const rowTime = documentTime(row.document_crawled_at);
   const stream = documentStream(row.document_stream);
@@ -811,7 +815,8 @@ const SENTENCE_WORD = /^(?:the|there|is|are|may|you|our|we|this|that|if)$/;
 const MAX_LINE_WORDS = 10;
 function unclearName(name: string | null | undefined): boolean {
   const text = (name ?? "").trim();
-  if (!/^[A-Za-z]/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
+  // A name starting lower-case is the rest of a line ("per mailed statement"), not its start.
+  if (!/^[A-Z]/.test(text) || /www\.|https?:|\d{3}-\d{3,4}/i.test(text)) return true;
   return text.toLowerCase().split(/[^a-z]+/).filter((word) => SENTENCE_WORD.test(word)).length >= 2;
 }
 
@@ -840,6 +845,70 @@ export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow):
   if (rowWords.size > MAX_LINE_WORDS || priorWords.size > MAX_LINE_WORDS) return false;
   const within = (a: Set<string>, b: Set<string>) => [...a].every((word) => b.has(word));
   return !within(rowWords, priorWords) && !within(priorWords, rowWords);
+}
+
+/** Text as words: lower case, every run of other characters one space, padded with spaces. */
+function pageWords(text: string): string {
+  return ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+}
+
+/**
+ * Pure: does the page print both names as their own lines at this price? Each name must be found
+ * in the page's words, the two places must not overlap, and the price must follow each within six
+ * words, with no "of" between ("A nonsufficient funds (NSF) charge of $25.00" is a sentence about
+ * the table line, not a second line). A name not on the current copy, or inside the other line
+ * ("Inactive Checking" in "Inactive Checking3"), is a read of the same line.
+ */
+export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
+  const value = amount == null ? NaN : Number(amount);
+  if (!Number.isFinite(value) || value < 0) return false;
+  const cents = Math.round(value * 100);
+  const whole = Math.floor(cents / 100);
+  const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
+  const follows = new RegExp(`^ (?:(?!of )[a-z]+ ){0,6}${price} `);
+  const page = pageWords(text);
+  const place = (name: string) => {
+    const words = pageWords(name).trim();
+    const at = words ? page.indexOf(` ${words} `) : -1;
+    return at < 0 ? null : { start: at, end: at + words.length + 1 };
+  };
+  const a = place(rowName);
+  const b = place(priorName);
+  if (!a || !b || !(a.end <= b.start || b.end <= a.start)) return false;
+  return follows.test(page.slice(a.end)) && follows.test(page.slice(b.end));
+}
+
+/** The current read of a document (\`agent_source_texts\`), for the same-line check. */
+async function selectDocumentText(db: SqlTag, documentId: number | string | null | undefined): Promise<string | null> {
+  if (documentId == null) return null;
+  try {
+    const [row] = await inSavepoint(db, (scope) => scope<{ normalized_text: string | null }[]>`
+      SELECT normalized_text FROM agent_source_texts
+       WHERE source_document_id = ${Number(documentId)} AND normalized_text IS NOT NULL
+       ORDER BY id DESC
+       LIMIT 1
+    `);
+    return row?.normalized_text ?? null;
+  } catch (error) {
+    console.error("selectDocumentText failed:", error);
+    return null;
+  }
+}
+
+/**
+ * The live rows that are another line of this row's page at the same price: names that share no
+ * reading (\`separateLines\`) printed apart on the page, each with the price (\`linesApartOnPage\`).
+ * Source spot checks of 20 such rows, 9 Oct: words alone 13, 10 and 14 of 20; with the page check
+ * see docs/project/findings/2026-10-09-identical-skip-ignored-name.md.
+ */
+async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
+  if (isPercentFee(row)) return new Set();
+  const value = feeValue(row);
+  const candidates = live.filter((prior) => feeValue(prior) === value && separateLines(row, prior));
+  if (candidates.length === 0) return new Set();
+  const text = await selectDocumentText(db, row.source_document_id);
+  if (!text) return new Set();
+  return new Set(candidates.filter((prior) => linesApartOnPage(text, row.fee_name ?? "", prior.fee_name ?? "", row.amount)));
 }
 
 /** A fee's comparable value: its rate for a percentage fee, else its amount. */
@@ -1433,7 +1502,12 @@ export async function runHamiltonPublish(
       : `Category guard (${category.code}): ${category.reason}`;
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
-    let decision = skipReason ? null : decidePriorFee(row, await selectLivePublishedFees(db, row));
+    let decision: PriorFeeDecision | null = null;
+    if (!skipReason) {
+      const live = await selectLivePublishedFees(db, row);
+      const apart = await linesApartFrom(db, row, live);
+      decision = decidePriorFee(row, live, (prior) => apart.has(prior));
+    }
     if (
       decision?.kind === "supersede" &&
       listsBothPrices(await selectListedFeeLines(db, [row.source_document_id, decision.prior.source_document_id]), row, decision.prior)

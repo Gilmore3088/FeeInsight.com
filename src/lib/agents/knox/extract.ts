@@ -225,6 +225,20 @@ async function selectTextArtifacts(
   stateCode?: string,
   priorityIds: readonly number[] = [],
 ): Promise<TextArtifactRow[]> {
+  const { query, params } = textArtifactQuery(limit, learning, currentCopy, institutionId, stateCode, priorityIds);
+  return db.unsafe<TextArtifactRow[]>(query, params);
+}
+
+/** The due-text query Knox reads from, shared with Bayes's replay ledger (`countKnoxRereadsDue`). */
+function textArtifactQuery(
+  limit: number,
+  learning: boolean,
+  currentCopy: boolean,
+  institutionId?: number,
+  stateCode?: string,
+  priorityIds: readonly number[] = [],
+  forCount = false,
+): { query: string; params: Array<number | string> } {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
   if (institutionId) {
@@ -397,8 +411,7 @@ async function selectTextArtifacts(
               AND pa.strategy_version = ${versionParam}
          )`);
   }
-  return db.unsafe<TextArtifactRow[]>(
-    `
+  const query = `
       SELECT adt.id AS document_text_id,
              adt.source_document_id,
              adt.institution_id,
@@ -447,11 +460,45 @@ async function selectTextArtifacts(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC
+       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
        LIMIT $1
+    `;
+  return { query, params };
+}
+
+export interface KnoxRereadsDue {
+  /** Current copies a past rules version read that Knox's own selection would read again now. */
+  due: number;
+}
+
+/**
+ * Bayes's count of Knox's replay queue: every current copy an older rules version read that the
+ * global extract step's own selection (thin text, $10B+ bank, missing fees, older copy still
+ * live, stale or unnamed read, priority bank) would pick up. Read-only.
+ */
+export async function countKnoxRereadsDue(db: SqlTag): Promise<KnoxRereadsDue> {
+  const currentCopy = await currentCopySchemaReady(db);
+  const priorityIds = currentCopy
+    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: null }).catch(() => []))])]
+    : [];
+  const { query, params } = textArtifactQuery(1_000_000, true, currentCopy, undefined, undefined, priorityIds, true);
+  const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
+  const [row] = await db.unsafe<Array<{ due: number | string }>>(
+    `
+      SELECT COUNT(*) AS due
+        FROM (${query}) due_text
+        JOIN source_documents doc ON doc.id = due_text.source_document_id AND doc.superseded_by_id IS NULL
+       WHERE EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.stage = 'extract'
+            AND pa.institution_id = due_text.institution_id
+            AND pa.input_fingerprint = due_text.text_hash
+            AND pa.strategy = ${strategyParam}
+       )
     `,
     params,
   );
+  return { due: Number(row?.due ?? 0) };
 }
 
 /**
