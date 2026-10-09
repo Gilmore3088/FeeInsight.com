@@ -46,7 +46,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckUntracedRows } from "@/lib/agents/knox/held-recheck";
+import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -78,12 +78,13 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
+import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
 import { DEFAULT_DRAFT_AGENT } from "@/lib/data-store/content-drafts";
 import { refreshContactPicks, runContactFinder, summarizeContactFinder, summarizeContactPicks } from "@/lib/agents/growth/contacts";
-import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach } from "@/lib/agents/growth/outreach";
+import { outreachCampaignsFromEnv, runOutreachDrafts, runOutreachFollowUps, summarizeOutreach, withdrawNonBuyerDrafts } from "@/lib/agents/growth/outreach";
 import { runLearningReport, summarizeLearning } from "@/lib/agents/growth/learning";
 import { runQuoteDrafts, summarizeQuoteDrafts } from "@/lib/agents/growth/quote";
 import { runMondayPlan, runProposals, summarizeMondayPlan, summarizeProposals } from "@/lib/agents/growth/draper";
@@ -720,6 +721,12 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Lines a re-read retired that the current text still prints the same way go back to Darwin.
+      const supersededRecheck = await recheckSupersededRows(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+      });
       // Held percentage fees in categories that publish rates go to Darwin as rate fees.
       const rateRecheck = await recheckHeldRates(tx, {
         dryRun: run.runKind === "dry_run",
@@ -733,10 +740,11 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           untraced_recheck: untracedRecheck,
+          superseded_recheck: supersededRecheck,
           promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
           batch_review: batchReview,
@@ -1933,6 +1941,19 @@ async function executeAgenticStep(
         },
       };
     }
+    case "schedule-check": {
+      const result = await runScheduleCheck({ db: tx });
+      return {
+        status: "completed",
+        summary: summarizeScheduleCheck(result),
+        detail: {
+          version: SCHEDULE_CHECK_VERSION,
+          checked_at: result.checkedAt,
+          ...result.counts,
+          schedules: result.rows,
+        },
+      };
+    }
     case "bayes-replay-ledger": {
       const result = await runBayesLedger({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
       return {
@@ -2012,6 +2033,16 @@ async function executeAgenticStep(
         ? ` Follow-ups (day 6 and final day 13): ${followUps.due} due, would draft ${followUps.due}.`
         : ` Follow-ups (day 6 and final day 13): ${followUps.due} due, ${followUps.drafted} drafted.`;
       return { status: "completed", summary: summarizeOutreach(result) + followUpLine, detail: { ...result, followUps } };
+    }
+    case "growth-withdraw": {
+      // Started by the agent tick (growth/withdraw.ts) when unreviewed first emails no longer
+      // qualify; the same withdrawal a real outreach run makes first. Free, no model calls.
+      const dryRun = run.runKind === "dry_run";
+      const withdrawn = await withdrawNonBuyerDrafts(tx, dryRun);
+      const summary = dryRun
+        ? `Would withdraw ${withdrawn} unreviewed first email${withdrawn === 1 ? "" : "s"} that no longer qualif${withdrawn === 1 ? "ies" : "y"}.`
+        : `Withdrew ${withdrawn} unreviewed first email${withdrawn === 1 ? "" : "s"} that no longer qualif${withdrawn === 1 ? "ies" : "y"} (older format or wording, not a decision-maker, or a quoted fee no longer live).`;
+      return { status: "completed", summary, detail: { dryRun, withdrawn } };
     }
     case "growth-quote": {
       // Free: a quote email per qualified lead, drafted into the queue; nothing sends.
@@ -2789,6 +2820,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   extract: 40_000,
   publish: 30_000,
   classify: 25_000,
+  // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
+  "growth-withdraw": 30_000,
 };
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
@@ -3106,7 +3139,9 @@ export async function executeQueuedAgentRuns({
      ORDER BY (r.run_kind = 'report') DESC,
               -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
               -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
-              COALESCE(r.params_json->>'source' = 'hamilton.guard_catch_up', false) DESC,
+              -- Growth's stale-outreach withdrawal (growth/withdraw.ts) is one short step, at most
+              -- once a day, and ranks with it so the tick that queues it also runs it.
+              COALESCE(r.params_json->>'source' IN ('hamilton.guard_catch_up', 'growth.outreach_withdraw'), false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'

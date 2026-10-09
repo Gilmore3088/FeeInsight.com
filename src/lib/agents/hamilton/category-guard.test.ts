@@ -125,6 +125,15 @@ describe("Hamilton category guard repair", () => {
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
   });
 
+  it("brings a night deposit bag key back as a night deposit fee, and leaves bag supplies down (guard v60)", () => {
+    const row = { conditions: null, document_nsf_amount: null };
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Depository Replacement Key", amount: "5.00" })).toBe("night_deposit");
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Replacement Key for Bag", amount: "5.00" })).toBe("night_deposit");
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Bag Replacement/Lost Key", amount: "15.00" })).toBe("night_deposit");
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle", amount: "15.00" })).toBeNull();
+    expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Zipper with Lock (9\" X 16”)", amount: "20.00" })).toBeNull();
+  });
+
   it("brings a returned bond or coupon back as a returned deposited item, and only those (guard v58)", () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "nsf", fee_name: "Bond/Coupon Returned Item Fee", amount: "45.00" })).toBe("deposited_item_return");

@@ -195,7 +195,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
-      <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
+      <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-9">
         {focus && (
           <div className="fi-reveal mb-6 rounded-xl border border-[#C44B2E]/20 bg-white px-5 py-4">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A93D25]/80">

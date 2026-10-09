@@ -5,11 +5,10 @@ import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 import { AuditPanel } from "@/components/hamilton/memo/memo";
 
 const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
-const COUNT_WORDS = ["", "one thing", "two things", "three things"];
 
 /**
- * The top of This month: overdraft first, then what the engine found unusual (a fee far from its
- * peers, competitors' changes, a move in service charge income), each with a way into My fees and
+ * What stands out this month, at most three: a fee far from its peers (overdraft first when it is
+ * one), competitors' changes, a move in service charge income, each with a way into My fees and
  * Try a price. It never says what to do about them.
  */
 export function WorthYourAttention({
@@ -21,11 +20,10 @@ export function WorthYourAttention({
   institutionId: string | null;
   trail: AuditTrail;
 }) {
-  const count = COUNT_WORDS[observations.length] ?? `${observations.length} things`;
   return (
     <section className="rounded-lg border border-warm-300 bg-warm-50 p-6 text-warm-800">
       <h2 className="text-2xl text-warm-900 sm:text-3xl" style={SERIF}>
-        I found {count} worth your attention
+        What stands out this month
       </h2>
       <ol className="mt-5 flex flex-col">
         {observations.map((o, i) => (
@@ -56,7 +54,7 @@ export function WorthYourAttention({
               {o.facts.map((f) => (
                 <p key={f}>{f}</p>
               ))}
-              {o.note ? <p className="text-terra-text">{o.note}</p> : null}
+              {o.note ? <p className="text-warm-600">{o.note}</p> : null}
             </div>
           </li>
         ))}

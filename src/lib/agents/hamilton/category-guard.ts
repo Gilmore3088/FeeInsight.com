@@ -312,6 +312,8 @@ export function restoreTarget(
 const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   ["card_replacement>rush_card", /[\s\S]/],
   ["nsf>deposited_item_return", /\b(bonds?|coupons?)\b/i],
+  // v60: a night deposit bag key or replacement bag filed as a safe deposit box (3/3 on source, Oct 9).
+  ["safe_deposit_box>night_deposit", /[\s\S]/],
 ]);
 
 /**

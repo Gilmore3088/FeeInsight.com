@@ -117,6 +117,20 @@ describe("Hamilton rules re-check", () => {
     expect(writes).toContain("hamilton.rules_recheck");
   });
 
+  it("re-checks the documents whose last re-check is oldest first, so a Knox bump cannot starve a lane's later documents", async () => {
+    const db = createDbMock([], texts);
+
+    await rollBackUnreproducedFees(asDb(db), { runId: 302, batchId: "agentic-run-302", dryRun: true, stateCode: "WA" });
+
+    const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(query).toContain("ORDER BY pending.second_look_due DESC, last_check.checked_at NULLS FIRST, pending.source_document_id");
+    expect(query).not.toContain("ORDER BY live.source_document_id");
+    // The last re-check counts under any Knox version, never only the current signature.
+    const lateral = query.slice(query.indexOf("LEFT JOIN LATERAL"), query.indexOf("last_check ON TRUE"));
+    expect(lateral).toContain("pa.strategy = $2");
+    expect(lateral).not.toContain("$4");
+  });
+
   it("keeps a fee Knox's learning reader re-filed when today's rules read it under the rejected category", async () => {
     // Today's rules read "Copy of Draft (Check)" as check_image; a lesson filed it as document_reproduction.
     const refiled = { ...live(2, "document_reproduction", "Copy of Draft (Check)", "3.00"), lesson_flag: "knox_lesson:check_image->document_reproduction" };
@@ -248,12 +262,21 @@ describe("Hamilton rules re-check", () => {
     expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 0, restored: 1, missing_fees: 1 });
   });
 
+  it("never restores a takedown into a category outside the top 50 (9 Oct)", async () => {
+    const estatementTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: "E-Statement Fee | $2.00" }];
+    const db = createDbMock([live(2, "estatement_fee", "E-Statement Fee", "2.00", "abc", true)], estatementTexts);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", takedownLive: true, dryRun: true });
+
+    expect(result.restores).toEqual([]);
+  });
+
   it("restores a disputed takedown only when it meets the restore bar, and logs why", async () => {
     const barText = "Stop Payment | $30.00\nReload Travel Money Card | $5.00 | Per Card\nCourier Pickup Service | $12.00";
     const barTexts = [{ source_document_id: 9, text_hash: "abc", normalized_text: barText }];
     const categoryModel = trainCategoryModel([
-      { name: "Reload money card", categoryKey: "prepaid_card_reload", count: 30 },
-      { name: "Card reload", categoryKey: "prepaid_card_reload", count: 30 },
+      { name: "Reload money card", categoryKey: "gift_card_purchase", count: 30 },
+      { name: "Card reload", categoryKey: "gift_card_purchase", count: 30 },
       { name: "Courier service", categoryKey: "courier", count: 30 },
       { name: "Stop payment", categoryKey: "stop_payment", count: 50 },
     ]);
@@ -261,9 +284,9 @@ describe("Hamilton rules re-check", () => {
       [
         live(1, "stop_payment", "Stop Payment", "30.00"),
         // Today's rules do not read it, but it traces, its row is its own and the model agrees.
-        live(2, "prepaid_card_reload", "Reload Travel Money Card", "5.00", "abc", true),
+        live(2, "gift_card_purchase", "Reload Travel Money Card", "5.00", "abc", true),
         // The model files a courier pickup elsewhere: it stays down.
-        live(3, "prepaid_card_reload", "Courier Pickup Service", "12.00", "abc", true),
+        live(3, "gift_card_purchase", "Courier Pickup Service", "12.00", "abc", true),
       ],
       barTexts,
     );

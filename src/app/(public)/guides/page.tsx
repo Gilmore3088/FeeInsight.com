@@ -208,7 +208,7 @@ export default async function GuidesIndexPage() {
   const more = consumerGuides.filter((g) => !g.featured);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-16">
+    <div className="mx-auto max-w-page px-6 py-16">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },

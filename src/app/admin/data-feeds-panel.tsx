@@ -17,7 +17,61 @@ const FEED_LABELS: Record<string, string> = {
   "state-reg-news": "State regulator news",
   "state-bill-news": "News on state fee bills",
   enforcement: "OCC and Fed enforcement actions",
+  "census-acs": "Census income and population (ACS)",
+  "irs-zip-income": "IRS income by ZIP code",
+  "fomc-minutes": "FOMC minutes",
+  "fed-publications": "Fed publications",
+  "federal-bills": "Federal bills in Congress",
+  "federal-register": "Federal Register rules",
+  "wire-research": "Wire research notes",
+  "ffiec-overdraft": "FFIEC overdraft and fee revenue",
+  "ncua-branches": "NCUA branch list",
+  "ncua-branch-geocode": "NCUA branch locations",
+  "state-bills": "State fee bills",
+  "state-enforcement": "State enforcement actions",
 };
+
+/** The Data room's sections, top to bottom; a feed not listed here lands in Other. */
+export const FEED_GROUPS = [
+  { key: "national", title: "National: banks and credit unions", note: "FDIC, NCUA, FFIEC and SEC" },
+  { key: "oversight", title: "National: rules, regulators and news", note: "Congress, Federal Register, enforcement, CFPB" },
+  { key: "economy", title: "Economy and markets", note: "FRED, Fed, Census and IRS" },
+  { key: "state", title: "State", note: "fee bills, enforcement, regulators and news" },
+  { key: "other", title: "Other", note: "feeds not yet sorted into a section" },
+] as const;
+
+const FEED_GROUP_OF: Record<string, (typeof FEED_GROUPS)[number]["key"]> = {
+  "fdic-universe": "national",
+  "fdic-financials": "national",
+  "ncua-financials": "national",
+  "fdic-sod": "national",
+  "sec-links": "national",
+  "sec-filings": "national",
+  "ffiec-overdraft": "national",
+  "ncua-branches": "national",
+  "ncua-branch-geocode": "national",
+  "federal-bills": "oversight",
+  "federal-register": "oversight",
+  "wire-research": "oversight",
+  "reg-news": "oversight",
+  enforcement: "oversight",
+  cfpb: "oversight",
+  fred: "economy",
+  "beige-book": "economy",
+  "fomc-minutes": "economy",
+  "fed-publications": "economy",
+  "census-acs": "economy",
+  "irs-zip-income": "economy",
+  "state-regulators": "state",
+  "state-reg-news": "state",
+  "state-bills": "state",
+  "state-enforcement": "state",
+  "state-bill-news": "state",
+};
+
+export function feedGroup(source: string): (typeof FEED_GROUPS)[number]["key"] {
+  return FEED_GROUP_OF[source] ?? "other";
+}
 
 const CALL_REPORT_LABELS: Record<string, string> = {
   fdic: "FDIC call report figures",
@@ -109,69 +163,89 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
           Registry details
         </Link>
       </div>
-      <div className="overflow-x-auto">
-        <table className={table}>
-          <thead>
-            <tr className={headRow}>
-              <th className={head}>Feed</th>
-              <th className={head}>Newest period</th>
-              <th className={head}>Last pulled</th>
-              <th className={head}>Waiting or failed</th>
-            </tr>
-          </thead>
-          <tbody className={body}>
-            {feeds.map((feed) => {
-              const figures = figuresFor(feed.source);
-              return (
-                <tr key={feed.source} className={row}>
-                  <td className={titleCell}>{FEED_LABELS[feed.source] ?? feed.source}</td>
-                  <td className={`${cell} tabular-nums`}>
-                    <PhoneLabel>Newest period</PhoneLabel>
-                    {feed.latestPeriod ?? "None loaded"}
-                    {figures?.latestPeriod ? (
-                      <span className={`block text-xs ${figures.behind ? warn : "admin-meta"}`}>
-                        Figures through {figures.latestPeriod}
-                        {figures.behind ? " (behind other sources)" : ""}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className={`${cell} tabular-nums`}>
-                    <PhoneLabel>Last pulled</PhoneLabel>
-                    {when(feed.lastSuccessAt)} <span className="admin-meta">({ago(feed.lastSuccessAt, readAt)})</span>
-                  </td>
-                  <td className={cell}>
-                    <PhoneLabel>Waiting or failed</PhoneLabel>
-                    {feed.failed > 0 ? (
-                      <span className={warn} title={feed.lastError ?? undefined}>
-                        {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
-                      </span>
-                    ) : feed.scheduled > 0 ? (
-                      `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`
-                    ) : (
-                      "None"
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {unmatched.map((source) => (
-              <tr key={`call-${source.source}`} className={row}>
-                <td className={titleCell}>{CALL_REPORT_LABELS[source.source] ?? `${source.source} call report figures`}</td>
-                <td className={`${cell} tabular-nums ${source.behind ? warn : ""}`}>
-                  <PhoneLabel>Newest period</PhoneLabel>
-                  {source.latestPeriod ? `Quarter ending ${source.latestPeriod}` : "None loaded"}
-                  {source.behind ? " (behind other sources)" : ""}
-                </td>
-                <td className={`${cell} tabular-nums`}>
-                  <PhoneLabel>Last pulled</PhoneLabel>
-                  {when(source.lastFetchedAt)} <span className="admin-meta">({ago(source.lastFetchedAt, readAt)})</span>
-                </td>
-                <td className={cell}>No registry feed loads this source, so it has no ledger status</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {FEED_GROUPS.map((group) => {
+        const groupFeeds = feeds.filter((feed) => feedGroup(feed.source) === group.key);
+        const groupCalls = group.key === "national" ? unmatched : [];
+        if (groupFeeds.length === 0 && groupCalls.length === 0) return null;
+        const failed = groupFeeds.filter((feed) => feed.failed > 0).length;
+        return (
+          <details key={group.key} open className="group rounded-lg border border-black/[0.06] dark:border-white/[0.08]">
+            <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2 px-3 py-2">
+              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {group.title}
+                <span className="admin-meta ml-2 font-normal">{group.note}</span>
+              </span>
+              <span className={`text-xs ${failed > 0 ? warn : "admin-meta"}`}>
+                {groupFeeds.length + groupCalls.length} {groupFeeds.length + groupCalls.length === 1 ? "feed" : "feeds"}
+                {failed > 0 ? ` · ${failed} failing` : ""}
+              </span>
+            </summary>
+            <div className="overflow-x-auto px-1 pb-2">
+              <table className={table}>
+                <thead>
+                  <tr className={headRow}>
+                    <th className={head}>Feed</th>
+                    <th className={head}>Newest period</th>
+                    <th className={head}>Last pulled</th>
+                    <th className={head}>Waiting or failed</th>
+                  </tr>
+                </thead>
+                <tbody className={body}>
+                  {groupFeeds.map((feed) => {
+                    const figures = figuresFor(feed.source);
+                    return (
+                      <tr key={feed.source} className={row}>
+                        <td className={titleCell}>{FEED_LABELS[feed.source] ?? feed.source}</td>
+                        <td className={`${cell} tabular-nums`}>
+                          <PhoneLabel>Newest period</PhoneLabel>
+                          {feed.latestPeriod ?? "None loaded"}
+                          {figures?.latestPeriod ? (
+                            <span className={`block text-xs ${figures.behind ? warn : "admin-meta"}`}>
+                              Figures through {figures.latestPeriod}
+                              {figures.behind ? " (behind other sources)" : ""}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className={`${cell} tabular-nums`}>
+                          <PhoneLabel>Last pulled</PhoneLabel>
+                          {when(feed.lastSuccessAt)} <span className="admin-meta">({ago(feed.lastSuccessAt, readAt)})</span>
+                        </td>
+                        <td className={cell}>
+                          <PhoneLabel>Waiting or failed</PhoneLabel>
+                          {feed.failed > 0 ? (
+                            <span className={warn} title={feed.lastError ?? undefined}>
+                              {feed.failed} failed{feed.lastError ? `: ${feed.lastError.slice(0, 120)}` : ""}
+                            </span>
+                          ) : feed.scheduled > 0 ? (
+                            `${feed.scheduled} waiting${feed.nextAttemptAt ? `, next ${when(feed.nextAttemptAt)}` : ""}`
+                          ) : (
+                            "None"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {groupCalls.map((source) => (
+                    <tr key={`call-${source.source}`} className={row}>
+                      <td className={titleCell}>{CALL_REPORT_LABELS[source.source] ?? `${source.source} call report figures`}</td>
+                      <td className={`${cell} tabular-nums ${source.behind ? warn : ""}`}>
+                        <PhoneLabel>Newest period</PhoneLabel>
+                        {source.latestPeriod ? `Quarter ending ${source.latestPeriod}` : "None loaded"}
+                        {source.behind ? " (behind other sources)" : ""}
+                      </td>
+                      <td className={`${cell} tabular-nums`}>
+                        <PhoneLabel>Last pulled</PhoneLabel>
+                        {when(source.lastFetchedAt)} <span className="admin-meta">({ago(source.lastFetchedAt, readAt)})</span>
+                      </td>
+                      <td className={cell}>No registry feed loads this source, so it has no ledger status</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        );
+      })}
 
       <p className="admin-section-title">Reports going out</p>
       <div className="overflow-x-auto">
