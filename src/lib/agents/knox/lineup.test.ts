@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   accountHeadingAbove,
   groundLineup,
+  lineupCorrections,
   minBalanceFromExcerpt,
   productNameFromFeeName,
   readableProductName,
   readableWaiver,
+  waiverForDisplay,
   withLineupFromText,
 } from "./lineup";
 import { amountsIn, maintenanceFromAccountRow } from "./rules";
@@ -121,6 +123,21 @@ describe("Knox account names for monthly fees (v49)", () => {
     expect(readableWaiver("$25,000 minimum balance requirement to earn interest with tiers")).toBeNull();
   });
 
+  it("shows waivers without footnote marks or control characters (UAT, PR 820)", () => {
+    expect(waiverForDisplay("avoided by setting up a recurring monthly direct deposit of $2507")).toBe(
+      "avoided by setting up a recurring monthly direct deposit of $250",
+    );
+    expect(
+      waiverForDisplay("avoided by maintaining $1,000 in average monthly balances6 or setting up a recurring monthly direct deposit of $7507"),
+    ).toBe("avoided by maintaining $1,000 in average monthly balances or setting up a recurring monthly direct deposit of $750");
+    expect(waiverForDisplay("waived with a $1500 average balance")).toBe("waived with a $1500 average balance");
+    expect(waiverForDisplay("avoid imposition of fees\u0003- A service charge fee of $10.00\u0003will be imposed every statement cycle if the\u0003balance in the account falls below $1,000.00 any day\u0003 of the cycle.\u0003")).toBe(
+      "avoid imposition of fees - A service charge fee of $10.00 will be imposed every statement cycle if the balance in the account falls below $1,000.00 any day of the cycle",
+    );
+    expect(waiverForDisplay("If min. balance not maintained")).toBeNull();
+    expect(waiverForDisplay("if cumulative balance in all accounts is less than $1,000.")).toBeNull();
+  });
+
   it("never takes a balance that earns interest as the balance that avoids the fee", () => {
     expect(minBalanceFromExcerpt("$25,000 minimum balance requirement to earn interest with tiers")).toBeNull();
     const candidate = {
@@ -229,9 +246,104 @@ describe("Knox lineup facts around a monthly fee (v51)", () => {
     });
   });
 
+  it("never takes a balance from the next account's fee line (5886 Basic Checking)", () => {
+    const page = [
+      "Basic Checking",
+      "$5.95 monthly maintenance fee (Use your debit card 15 or more times per month and we’ll waive the monthly fee.)",
+      "$10.00 monthly maintenance fee (Maintain a daily balance of $500 or more and we’ll waive the monthly fee.)",
+    ].join("\n");
+    const read = withLineupFromText(
+      candidate("$5.95 monthly maintenance fee (Use your debit card 15 or more times per month and we’ll waive the monthly fee.)"),
+      page,
+    ).lineup;
+    expect(read?.minBalanceToAvoid ?? null).toBeNull();
+  });
+
+  it("reads only the fee's own clause of a footnote that lists every account (231)", () => {
+    const line =
+      "2 Student Checking: No monthly fees if the primary account holder is 22 years of age or less; $5.00 monthly fee when the primary account holder reaches 23 years of age.; Freedom Checking: At least one direct deposit credited on a monthly basis is required to avoid a maintenance service charge fee.; Freedom Elite Checking: Maintain a minimum daily balance of $25,000 to avoid the monthly service charge of $25.00.";
+    const read = withLineupFromText(
+      candidate("$5.00 monthly fee when the primary account holder reaches 23 years of age.; Freedom Checking: At least one direct deposit"),
+      `Footnotes\n${line}`,
+    ).lineup;
+    expect(read?.minBalanceToAvoid ?? null).toBeNull();
+  });
+
   it("reads a balance condition on the fee's own line", () => {
     expect(minBalanceFromExcerpt("Performance Plus | $10.00 per month if average daily balance is below $1,000")).toBe(1000);
     expect(minBalanceFromExcerpt("Monthly Fee / $10")).toBeNull();
     expect(minBalanceFromExcerpt("Avoid the monthly fee with a minimum daily balance of 2,500 or $500 in monthly direct deposits")).toBeNull();
+  });
+});
+
+describe("lineupCorrections (v55)", () => {
+  // AllSouth FCU (5886), source document 19564, as stored on 2026-10-09.
+  const allSouth = [
+    "Checking Accounts",
+    "Association Checking",
+    "$10.00 monthly maintenance fee (Maintain a daily balance of $500 or more and we’ll waive the monthly fee.)",
+    "Basic Checking",
+    "$5.95 monthly maintenance fee (Use your debit card 15 or more times per month and we’ll waive the monthly fee.)",
+    "Business Checking",
+    "$10.00 monthly maintenance fee (Maintain a daily balance of $500 or more and we’ll waive the monthly fee.)",
+    "Interest Checking",
+    "$3.00 monthly maintenance fee (Maintain an average daily balance of $1,000 or more and we’ll waive the monthly fee.)",
+    "Savings Accounts",
+    "Dormant (Share) Savings Account or Club Account",
+    "$10.00 per month (after 12 months of no activity)",
+    "Early (Share) Savings Account Closing",
+    "$10.00 (closed within 90 days of opening new membership account)",
+    "Money Market",
+    "$5.00 monthly maintenance fee (Maintain an average daily balance of $1,000 or more and we’ll waive the monthly fee.)",
+    "Statements",
+  ].join("\n");
+  const stored = (values: Partial<{ productName: string; minBalanceToAvoid: number; waiverText: string }>) => ({
+    productName: null,
+    minBalanceToAvoid: null,
+    minOpeningDeposit: null,
+    waiverText: null,
+    ...values,
+  });
+  const basic = "$5.95 monthly maintenance fee (Use your debit card 15 or more times per month and we’ll waive the monthly fee.)";
+  const moneyMarket = "$5.00 monthly maintenance fee (Maintain an average daily balance of $1,000 or more and we’ll waive the monthly fee.)";
+
+  it("drops a balance read from the next account's fee line (5886 Basic Checking, raw 267602)", () => {
+    const fix = lineupCorrections(
+      { feeName: "monthly maintenance fee (Use your debit card 15 or more times per month and we’ll waive the monthly fee.)", excerpt: basic },
+      stored({ productName: "Basic Checking", minBalanceToAvoid: 500, waiverText: "waive the monthly fee" }),
+      allSouth,
+    );
+    expect(fix).toEqual([{ field: "minBalanceToAvoid", old: 500, new: null }]);
+  });
+
+  it("renames a fee heading to the account heading above the fee (5886 Money Market, raw 267604 / live 71912)", () => {
+    const fix = lineupCorrections(
+      { feeName: "monthly maintenance fee (Maintain an average daily balance of or more and we’ll waive the monthly fee.)", excerpt: moneyMarket },
+      stored({ productName: "Early (Share) Savings Account Closing", minBalanceToAvoid: 1000, waiverText: "waive the monthly fee" }),
+      allSouth,
+    );
+    expect(fix).toEqual([{ field: "productName", old: "Early (Share) Savings Account Closing", new: "Money Market" }]);
+  });
+
+  it("drops a balance read from a later account's clause of a one-line footnote (231, raw 321960)", () => {
+    const footnote =
+      "2 Student Checking: No monthly fees if the primary account holder is 22 years of age or less; $5.00 monthly fee when the primary account holder reaches 23 years of age.; Freedom Checking: At least one direct deposit credited on a monthly basis is required to avoid a maintenance service charge fee. A direct deposit is defined as an ACH deposit such as payroll, social security, pension, or other government benefits to avoid monthly service charge of $5.00. No fee will be assessed if Tax Reported Owner is 62 and older; Freedom Plus Relationship Checking: $5,000 or more aggregate average collected balance in any Washington Trust deposit account and/or outstanding principal balance of any combination of Washington Trust consumer loans and mortgages on the last day of the statement period required to avoid monthly service charge of $15.00.; Freedom Ultra Checking: Daily minimum balance of $25,000 average collected daily balance required to avoid monthly service charge of $30.00.";
+    const page = ["Debit Cards", "1 We may decline or return transactions that would result in an overdraft. Payees or merchants may still charge a fee.", footnote, "3 Freedom Plus Accounts: One (1) free basic check style through Washington Trust per calendar year, restrictions may apply."].join("\n");
+    const fix = lineupCorrections(
+      {
+        feeName: "monthly fee when the primary account holder reaches 23 years of age.; Freedom Checking: At least one direct deposit cred",
+        excerpt: "$5.00 monthly fee when the primary account holder reaches 23 years of age.; Freedom Checking: At least one direct deposit credited on a monthly basis is required to avoid a mainten",
+      },
+      stored({ minBalanceToAvoid: 25000 }),
+      page,
+    );
+    expect(fix).toEqual([{ field: "minBalanceToAvoid", old: 25000, new: null }]);
+  });
+
+  it("keeps a value the fee's own line states, and a value v55 cannot explain", () => {
+    const interest = "$3.00 monthly maintenance fee (Maintain an average daily balance of $1,000 or more and we’ll waive the monthly fee.)";
+    expect(lineupCorrections({ feeName: "monthly maintenance fee", excerpt: interest }, stored({ productName: "Interest Checking", minBalanceToAvoid: 1000 }), allSouth)).toEqual([]);
+    // $2,500 is on no line around the fee: perhaps a model read; it stays.
+    expect(lineupCorrections({ feeName: "monthly maintenance fee", excerpt: basic }, stored({ minBalanceToAvoid: 2500 }), allSouth)).toEqual([]);
   });
 });
