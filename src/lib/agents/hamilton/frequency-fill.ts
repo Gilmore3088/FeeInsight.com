@@ -27,7 +27,8 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v4: "per loan", "per levy", "per stop payment", "/sheet", "/quarter", "per business day" and
 // "one-time"; a period the line never states is cleared from a per-event fee; an allowance ("1 free
 // per month") is not the fee's period (Darwin's 211-row eval, Oct 9).
-export const FREQUENCY_FILL_VERSION = 4;
+// v5: "More than 2 per year" is an allowance, not the fee's period.
+export const FREQUENCY_FILL_VERSION = 5;
 export const FREQUENCY_FILL_LIMIT = 2_000;
 /** Postgres pre-filter for a blank: an excerpt with any frequency word (`settledFrequency` decides). */
 const CANDIDATE_WORDING = String.raw`excerpt=.*(each|every|per |monthly|annual|quarterly|yearly|a month|a year|\$\s?[0-9.,]+\s*ea\y|/\s?[a-z])`;
