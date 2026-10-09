@@ -1623,6 +1623,7 @@ async function executeAgenticStep(
           flagged_fees: guard.flaggedFees,
           awaiting_second_look: guard.awaitingSecondLook,
           restored_fees: guard.restoredFees,
+          refiled_fees: guard.refiledFees,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
