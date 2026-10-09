@@ -1,0 +1,105 @@
+url	http_status	file
+https://unclaimedproperty.alaska.gov/docs/AK%20Property%20Types%20and%20Dormancy%20Periods.pdf	200	AK-1.pdf
+https://www.akleg.gov/basis/get_documents.asp?session=34&docid=11679	403	AK-2.html
+https://www.akleg.gov/basis/get_documents.asp?session=32&docid=78316	403	AK-3.html
+https://judicial.alabama.gov/docs/library/rules/cv64_A.pdf	000	
+https://alison.legislature.state.al.us/files/pdf/SearchableInstruments/2019RS/PrintFiles/SB33-Eng.pdf	200	AL-2.pdf
+https://www.arkleg.state.ar.us/Home/FTPDocument?path=%2FACTS%2F1997%2FPublic%2F408.pdf	200	AR-1.pdf
+https://sas.arkansas.gov/wp-content/uploads/Bank-Authorization-Form-8.01.2025.pdf	200	AR-2.pdf
+https://www.azag.gov/press-release/attorney-general-mayes-fights-protect-consumers-high-overdraft-fees	200	AZ-1.html
+https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=199920000AB1606	403	CA-1.html
+https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=202520260AB2795	403	CA-2.html
+https://leginfo.legislature.ca.gov/faces/billNavClient.xhtml?bill_id=202520260AB1365	403	CA-3.html
+https://law.justia.com/codes/colorado/2018/title-38/unclaimed-property/article-13/section-38-13-107/	403	CO-1.html
+https://law.justia.com/codes/colorado/title-11/credit-unions/article-30/section-11-30-104/	403	CO-2.html
+https://content.leg.colorado.gov/sites/default/files/2019a_1189_signed.pdf	403	CO-3.html
+https://leg.colorado.gov/bills/hb25-1090	406	
+https://content.leg.colorado.gov/sites/default/files/images/olls/crs2024-title-05.pdf	403	CO-5.html
+https://www.cga.ct.gov/2005/rpt/2005-R-0842.htm	200	CT-1.html
+https://www.cga.ct.gov/current/PUB/chap_665.htm	200	CT-2.html
+https://cfo.dc.gov/sites/default/files/dc/sites/ocfo/publication/attachments/ocfo_dc_unclaimed_property_law_title_41.pdf	200	DC-1.pdf
+https://www.dccourts.gov/sites/default/files/pdf-forms/NoticeOfExemptionBeforeNewRule.pdf	200	DC-2.pdf
+https://vda.delaware.gov/?p=76	404	DE-1.html
+https://www.flsenate.gov/Laws/statutes/1999/657.031	200	FL-1.html
+https://m.flsenate.gov/Statutes/655.0201	200	FL-2.html
+https://www.legis.ga.gov/api/document/docs/default-source/house-budget-and-research-office-document-library/2020-end-of-session-report-by-committee-with-vetoes.pdf	200	GA-1.pdf
+https://dbf.georgia.gov/document/document/2026-proposed-rulemaking-5-13-2026/download	200	GA-2.pdf
+https://budget.hawaii.gov/wp-content/uploads/2026/01/Holder-Reporting-Guidelines-Revised-January-2026.pdf	200	HI-1.pdf
+https://files.hawaii.gov/dcca/dfi/Laws_html/HRS0412/HRS_0412-0001-0109.htm	200	HI-2.html
+https://www.capitol.hawaii.gov/hrscurrent/Vol13_Ch0601-0676/HRS0652/HRS_0652-.htm	403	HI-3.html
+https://www.legis.iowa.gov/docs/ico/chapter/642.pdf	200	IA-1.pdf
+https://adminrules.idaho.gov/rules/2018%20Archive/12/120104.pdf	200	ID-1.pdf
+https://www.finance.idaho.gov/wp-content/uploads/legal/guidance/archive/documents/ca_act_faq.pdf	200	ID-2.pdf
+https://legislature.idaho.gov/statutesrules/idstat/title28/t28ch42/sect28-42-308/	000	
+https://ilga.gov/documents/legislation/ilcs/documents/073500050K12-1001.htm	000	
+https://www.ilga.gov/Legislation/BillStatus/FullText?GAID=18&DocNum=4474&DocTypeID=HB&LegId=165196&SessionID=114	000	
+https://www.ilga.gov/legislation/ilcs/ilcs3.asp?ActID=1189&ChapterID=20	000	
+https://iga.in.gov/publications/senate_journal/js-apr21-2021-fortysixth.pdf	200	IN-1.html
+https://kslegislature.gov/li_2022/b2021_22/statute/009_000_0000_chapter/009_017_0000_article/009_017_0015_section/009_017_0015_k/	200	KS-1.html
+https://apps.legislature.ky.gov/recorddocuments/bill/18RS/hb394/bill.pdf	200	KY-1.pdf
+https://apps.legislature.ky.gov/recorddocuments/bill/19RS/hb452/orig_bill.pdf	200	KY-2.pdf
+https://apps.legislature.ky.gov/law/statutes/statute.aspx?id=14551	200	KY-3.pdf
+https://www.legis.la.gov/legis/ViewDocument.aspx?d=875592	200	LA-1.pdf
+https://www.legis.la.gov/legis/Law.aspx?d=106092	200	LA-2.html
+https://www.legis.la.gov/legis/LawPrint.aspx?d=106285	200	LA-3.html
+https://www.mass.gov/info-details/savings-and-checking-accounts	403	MA-1.html
+https://malegislature.gov/Bills/190/H2976.Html	000	
+https://www.mass.gov/regulatory-bulletin/21-106-guidelines-for-18-65-accounts-for-banks-and-credit-unions	403	MA-3.html
+https://mgaleg.maryland.gov/cmte_testimony/2021/fin/4303_03242021_8213-535.pdf	200	MD-1.pdf
+https://labor.maryland.gov/finance/consumers/frcheckcash.shtml	200	MD-2.html
+https://www1.maine.gov/pfr/financialinstitutions/sites/maine.gov.pfr.financialinstitutions/files/pdf/advisory-rulings/1990-04-02-Advisory-Ruling-95.pdf	200	ME-1.pdf
+https://legislature.mi.gov/documents/2023-2024/billengrossed/House/pdf/2023-HEBS-4900.pdf	403	MI-1.html
+https://legislature.mi.gov/documents/2025-2026/billengrossed/Senate/pdf/2025-SEBS-0360.pdf	403	MI-2.html
+https://www.revisor.mn.gov/bills/94/2025/0/HF/3188/versions/0/	200	MN-1.html
+https://www.revisor.mn.gov/rules/2872.0100/	200	MN-2.html
+https://www.revisor.mn.gov/statutes/2025/2025-10-19%2010:04:35+00:00/cite/48.61/pdf	200	MN-3.pdf
+https://senate.mo.gov/03info/billtext/intro/sb346.htm	200	MO-1.html
+https://www.revisor.mo.gov/main/OneSection.aspx?section=525.235&bid=60211	200	MO-2.html
+https://revisor.mo.gov/main/OneSection.aspx?section=400.4-401	200	MO-3.html
+https://www.sos.ms.gov/adminsearch/ACCode/00000214c.pdf	403	MS-1.html
+https://dbcf.ms.gov/banks-and-credit-unions/	200	MS-2.html
+https://treasury.ms.gov/wp-content/uploads/2020/06/Holder-Reporting-Instructions.pdf	200	MS-3.pdf
+https://dbcf.ms.gov/wp-content/uploads/2020/06/Check-Casher-Regulations-Effective-12-1-12-PDF.pdf	200	MS-4.pdf
+https://dbcf.ms.gov/wp-content/uploads/2026/05/Legislative-Update-for-Website.2026-Regular-Session.Revised.pdf	200	MS-5.pdf
+https://leg.mt.gov/bills/mca/title_0250/chapter_0130/part_0060/section_0100/0250-0130-0060-0100.html	200	MT-1.html
+https://nccob.nc.gov/financial-institutions/banks-trusts/banking-frequently-asked-questions	200	NC-1.html
+https://ndlegis.gov/cencode/t06c08.pdf	000	
+https://www.nd.gov/dfi/sites/www/files/documents/State%20Credit%20Union%20Board/Orders/SCUBOrder206052020.pdf	000	
+https://www.nebraskalegislature.gov/laws/statutes.php?statute=25-1056	000	
+https://makecentsmakesense.nebraska.gov/overdraft-fees-what-you-need-know	200	NE-2.html
+https://gc.nh.gov/rsa/html/NHTOC/NHTOC-XXXV-384-G.htm	403	NH-1.html
+https://gc.nh.gov/rsa/html/xxxv/383-b/383-b-mrg.htm	000	
+https://pub.njleg.gov/bills/9899/A1500/1317_I1.PDF	000	
+https://www.njcourts.gov/sites/default/files/forms/12323_obj_bank_levy.pdf	403	NJ-2.html
+https://pub.njleg.state.nj.us/Bills/2024/A4000/3513_I1.PDF	000	
+https://pub.njleg.gov/bills/2016/A5000/4965_I1.HTM	000	
+https://www.nmlegis.gov/Sessions/23%20Regular/final/HB0165.pdf	403	NM-1.html
+https://www.srca.nm.gov/parts/title03/03.002.0219.html	200	NM-2.html
+https://archive.leg.state.nv.us/Session/83rd2025/Bills/SB/SB142_R1.pdf	403	NV-1.html
+https://www.steptoe.com/en/news-publications/nydfs-proposals-target-overdraft-fees.html	403	NY-1.html
+https://www.nysenate.gov/legislation/bills/2025/S4109	403	NY-2.html
+https://www.nysenate.gov/legislation/bills/2025/S7031	403	NY-3.html
+https://codes.ohio.gov/ohio-revised-code/section-1109.20	000	
+https://codes.ohio.gov/ohio-revised-code/section-2716.05	000	
+https://oksenate.gov/sites/default/files/2019-12/os6.pdf	200	OK-1.pdf
+https://www.oklegislature.gov/cf_pdf/2025-26%20ENR/SB/SB999%20ENR.PDF	200	OK-2.pdf
+https://dfr.oregon.gov/laws-rules/Documents/Bulletins/Bulletin2025-7.pdf	200	OR-1.pdf
+https://olis.oregonlegislature.gov/liz/2021R1/Downloads/MeasureDocument/HB2356	000	
+https://webserver.rilegislature.gov/BillText12/SenateText12/S2437.htm	000	
+https://webserver.rilegislature.gov/Statutes/TITLE19/19-9/INDEX.htm	000	
+https://webserver.rilegislature.gov/BillText12/SenateText12/S2437.htm	000	
+https://www.scstatehouse.gov/sess121_2015-2016/bills/3746.htm	200	SC-1.html
+https://www.scstatehouse.gov/billsearch.php?billnumbers=3532&session=107&summary=B	200	SC-2.html
+https://www.scstatehouse.gov/sess123_2019-2020/bills/524.htm	200	SC-3.html
+https://mylrc.sdlegislature.gov/api/Documents/298729.htm	200	SD-1.html
+https://ujs.sd.gov/files/garnishment-cover-sheet/	200	SD-2.pdf
+https://www.capitol.tn.gov/Bills/114/Fiscal/SB0766.pdf;	000	
+https://www.tn.gov/tdfi/bank-trust/banking/bank-bulletins/bulletin-b-04-1.html	200	TN-2.html
+https://www.bills.com/learn/debt/texas-collection-laws	200	TX-1.html
+https://cud.texas.gov/wp-content/uploads/2026/04/FINANCE-CODE-REV-06-25.pdf	200	TX-2.pdf
+https://legacy.utcourts.gov/rules/view.php?type=urcp&rule=64d	000	
+https://legislature.vermont.gov/statutes/section/08/221/31405	000	
+https://dfi.wa.gov/documents/reports/overdraft-legislative-report.pdf	200	WA-1.pdf
+https://statetreasurer.wyo.gov/wp-content/uploads/2020/04/AnnualReportChecklist.pdf	000	
+https://www.wyocourts.gov/legal-help-by-topic/garnishment/	202	
+https://wyoleg.gov/2016/Introduced/HB0124.pdf	200	WY-3.pdf
