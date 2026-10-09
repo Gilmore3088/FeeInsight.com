@@ -96,11 +96,19 @@ const TOPIC_KEYWORDS: Record<string, string[]> = {
   funds_availability: ["funds availability", "regulation cc", "check collection"],
 };
 
-function topicsFor(text: string, cfrParts: string[]): string[] {
+/**
+ * Mortgage escrow and real estate lending rules talk about fees and charges too, but they are not
+ * deposit account fees. A title naming one of these keeps the keyword topics off; CFR parts still count.
+ */
+const NOT_DEPOSIT_FEE_TITLE = /\b(escrow|mortgage|real estate lending)\b/i;
+
+function topicsFor(title: string, text: string, cfrParts: string[]): string[] {
   const lower = ` ${text.toLowerCase()} `;
   const topics = new Set<string>();
-  for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
-    if (keywords.some((keyword) => new RegExp(`\\b${keyword}\\b`).test(lower))) topics.add(topic);
+  if (!NOT_DEPOSIT_FEE_TITLE.test(title)) {
+    for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+      if (keywords.some((keyword) => new RegExp(`\\b${keyword}\\b`).test(lower))) topics.add(topic);
+    }
   }
   for (const part of cfrParts) {
     const topic = FEE_CFR_PARTS[part];
@@ -140,7 +148,7 @@ export function parseFederalRegisterDocument(raw: RawDocument): FederalRegisterI
     rins: raw.regulation_id_numbers ?? [],
     dockets: raw.docket_ids ?? [],
     cfr_parts: cfrParts,
-    topics: topicsFor(`${raw.title} ${raw.abstract ?? ""}`, cfrParts),
+    topics: topicsFor(raw.title, `${raw.title} ${raw.abstract ?? ""}`, cfrParts),
   };
 }
 

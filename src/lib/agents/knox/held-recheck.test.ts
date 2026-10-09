@@ -137,6 +137,23 @@ describe("Knox held-line re-check", () => {
     expect(log?.json).toContain("[20,24,");
   });
 
+  it("keeps a held line on hold when its promoted name is already a row of the same page (Guaranty, Oct 8)", async () => {
+    const db = createDb([courtesyPay]);
+    db.mockImplementation((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT fr.fee_raw_id")) return Promise.resolve([courtesyPay]);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      // The same page already has the promoted name at this price: no row is renamed.
+      return Promise.resolve([]);
+    });
+    const result = await recheckHeldRows(db as unknown as Db, { stateCode: "tx", runId: 7 });
+    expect(result.promoted).toBe(0);
+    expect(result.stillHeld).toBe(1);
+    const promotion = db.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("RETURNING fr.fee_raw_id"));
+    expect(promotion).toContain("other.source_document_id = fr.source_document_id");
+    expect(promotion).toContain("COALESCE(other.amount, -1) = COALESCE(fr.amount, -1)");
+  });
+
   it("writes nothing on a dry run", async () => {
     const db = createDb([courtesyPay, membership]);
     const result = await recheckHeldRows(db as unknown as Db, { dryRun: true });

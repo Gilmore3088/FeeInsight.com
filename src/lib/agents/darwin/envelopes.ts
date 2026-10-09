@@ -49,7 +49,9 @@ export const CATEGORY_AMOUNT_ENVELOPES: Readonly<Record<string, AmountEnvelope>>
   estatement_fee: { min: 0.5, max: 10 },
   check_image: { min: 0.5, max: 15 },
   dormant_account: { min: 1, max: 30 },
-  account_research: { min: 5, max: 150 },
+  // Keep 50 (James, 2026-10-09) pools returned mail, fax and copy fees here; they run $1 to $4 at
+  // most banks (1,380 held rows at 850 institutions were under the old $5 floor).
+  account_research: { min: 1, max: 150 },
   garnishment_levy: { min: 10, max: 250 },
   legal_process: { min: 10, max: 250 },
   safe_deposit_box: { min: 5, max: 1_500 },

@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
-import { KNOX_RATE_FEE_FLAG } from "@/lib/agents/knox/extract";
+import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
@@ -199,7 +199,9 @@ export async function recheckHeldRows(
             AND adt.text_hash IS NOT NULL
             AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
        )
-     ORDER BY fr.fee_raw_id
+     -- $10B+ banks first, as Knox's re-reads go: a full pass over every held line takes
+     -- about 12 hours at 300 a step, and the largest banks' gaps show most.
+     ORDER BY (COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, fr.fee_raw_id
      LIMIT ${limit}
   `;
 
@@ -233,9 +235,23 @@ export async function recheckHeldRows(
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
            AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:range')
            AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+           -- The dedupe index is (document, name, amount): a held "Stop Payment (each)" renamed
+           -- "Stop Payment" beside the same page's "Stop Payment" row is that fee already, and
+           -- renaming it failed the whole extract step (Guaranty Bank and Trust, Oct 8).
+           AND NOT EXISTS (
+             SELECT 1 FROM raw_fee_observations other
+              WHERE other.source = 'knox'
+                AND other.source_document_id = fr.source_document_id
+                AND lower(other.fee_name) = lower(${promotedName(row, candidate)})
+                AND COALESCE(other.amount, -1) = COALESCE(fr.amount, -1)
+                AND other.fee_raw_id <> fr.fee_raw_id
+           )
         RETURNING fr.fee_raw_id
       `;
-      if (updated.length === 0) continue;
+      if (updated.length === 0) {
+        stillHeldIds.push(Number(row.fee_raw_id));
+        continue;
+      }
     }
     promoted += 1;
     promotedByCategory[candidate.canonicalHint] = (promotedByCategory[candidate.canonicalHint] ?? 0) + 1;

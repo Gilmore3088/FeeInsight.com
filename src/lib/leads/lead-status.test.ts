@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addBusinessHours, isLeadOverdue, isLeadStatus, isRequestLead, leadDueAt } from "./lead-status";
+import { addBusinessHours, isLeadOverdue, isLeadStatus, isRequestLead, isTestLead, leadDueAt } from "./lead-status";
 
 const CREATED = "2026-10-05T12:00:00.000Z";
 
@@ -45,5 +45,14 @@ describe("addBusinessHours", () => {
   it("starts a weekend request's clock on Monday", () => {
     // Saturday -> Monday 00:00 UTC + 24h = Tuesday 00:00 UTC
     expect(addBusinessHours(new Date("2026-10-10T12:00:00Z"), 24).toISOString()).toBe("2026-10-13T00:00:00.000Z");
+  });
+
+  it("recognizes named test requests without catching real names", () => {
+    expect(isTestLead({ name: "Test User", company: null, email: "a@gmail.com" })).toBe(true);
+    expect(isTestLead({ name: "Jane", company: "Testing Bank", email: "a@gmail.com" })).toBe(true);
+    expect(isTestLead({ name: "Jane", company: null, email: "jane@example.com" })).toBe(true);
+    expect(isTestLead({ name: "Jane", company: null, email: "jane@testjg.com" })).toBe(true);
+    expect(isTestLead({ name: "Jane Testa", company: "Contest Credit Union", email: "jane@ccu.org" })).toBe(false);
+    expect(isTestLead({ name: "Jane", company: null, email: "jane.test@gmail.com" })).toBe(false);
   });
 });

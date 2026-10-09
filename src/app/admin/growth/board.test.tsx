@@ -170,14 +170,14 @@ describe("GrowthBoard", () => {
       agent: "murrow" as const,
     };
     const lessons = new Map(GROWTH_AGENTS.map((agent) => [agent, [] as GrowthLesson[]]));
-    lessons.set("ernest", [{ draftId: 4, agent: "ernest", kind: "article", workflow: null, title: "Old post", reason: "Too long", at: "2026-10-07T00:00:00Z" }]);
+    lessons.set("ernest", [{ draftId: 4, agent: "ernest", kind: "article", workflow: null, subjectKey: null, title: "Old post", reason: "Too long", at: "2026-10-07T00:00:00Z" }]);
     render(<GrowthBoard {...data({ view: "team", steps: [step], lessons })} />);
     expect(screen.getByRole("heading", { name: "MURROW" })).toBeTruthy();
     expect(screen.getByText("Drafted a post")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "ERNEST" })).toBeTruthy();
     expect(screen.getByText(/Too long/)).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "CARNEGIE" })).toBeNull();
-    expect(screen.getByText("No activity yet: carnegie, draper, edison, nielsen, norman, sherlock, team work.")).toBeTruthy();
+    expect(screen.getByText("No activity yet: bernays, carnegie, draper, edison, nielsen, norman, sherlock, team work.")).toBeTruthy();
     // No queue on the team view.
     expect(screen.queryByText("Nothing waiting for review.")).toBeNull();
   });

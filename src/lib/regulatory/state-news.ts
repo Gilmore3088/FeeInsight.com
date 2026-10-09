@@ -51,6 +51,58 @@ export function cleanTitle(title: string): string {
   return decode(title).replace(/\s+/g, " ").trim();
 }
 
+/** Acronyms kept in capitals when an all-caps headline is set in title case. */
+const ACRONYMS = new Set([
+  "ACH", "ATM", "ATMS", "CFPB", "DCCA", "DFS", "DFPI", "DOB", "FDIC", "FTC", "LLC", "MOU", "NCUA", "NMLS", "NSF", "OCC", "US", "USA",
+  "II", "III", "IV",
+]);
+const SMALL_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"]);
+
+function titleWord(word: string, first: boolean): string {
+  return word
+    .split("-")
+    .map((part, i) => {
+      const letters = part.replace(/[^\p{L}]/gu, "");
+      if (ACRONYMS.has(letters) || /\d/.test(part)) return part;
+      const lower = part.toLowerCase();
+      if (!(first && i === 0) && SMALL_WORDS.has(letters.toLowerCase())) return lower;
+      return lower.replace(/\p{L}/u, (c) => c.toUpperCase());
+    })
+    .join("-");
+}
+
+/**
+ * Some regulators (Hawaii's DCCA among them) publish every headline in capitals. Shown as-is
+ * it reads as shouting next to the other states' posts, so an all-caps headline is set in
+ * title case, keeping agency acronyms. Any headline with a lowercase letter is left alone.
+ */
+export function readableHeadline(title: string): string {
+  const letters = title.match(/\p{L}/gu) ?? [];
+  if (letters.length < 8 || /\p{Ll}/u.test(title)) return title;
+  return title
+    .split(" ")
+    .map((word, i) => titleWord(word, i === 0))
+    .join(" ");
+}
+
+const EMPTY_HEADLINE =
+  /^(electronic |e-)?(bulletin|newsletter|news ?letter|update|press release|news release|announcement)s?$/i;
+const HEADLINE_DATE =
+  /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? \d{1,2},? \d{4}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]* \d{4}\b/gi;
+
+/**
+ * A headline that names only a publication and a date ("2026-09-17 Electronic Bulletin")
+ * says nothing about what is inside. Returns the publication's name in plain words
+ * ("Electronic bulletin") so the page can show it below posts that do say something, or
+ * null when the headline has content of its own.
+ */
+export function emptyHeadlineLabel(title: string): string | null {
+  const rest = title.replace(HEADLINE_DATE, " ").replace(/[\s\-–—:|,.()]+/g, " ").trim();
+  if (!EMPTY_HEADLINE.test(rest)) return null;
+  const lower = rest.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 const stripTags = (s: string) => decode(s.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 
 function resolve(href: string, baseUrl: string): string | null {

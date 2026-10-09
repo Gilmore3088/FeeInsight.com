@@ -16,6 +16,7 @@ import type {
   ExtractedFee,
   InstitutionDetail,
 } from "./types";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 
 export interface PublicStats {
   total_observations: number;
@@ -386,7 +387,7 @@ export async function getInstitutionMetadataById(
   if (!row) return null;
   return {
     id: Number(row.id),
-    institution_name: row.institution_name,
+    institution_name: institutionDisplayName(row.institution_name),
     state_code: row.state_code,
     charter_type: row.charter_type,
   };

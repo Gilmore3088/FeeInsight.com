@@ -6,19 +6,22 @@ const { startAgentRunMock, loadMarketLeaderIdsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(), getSql: vi.fn() }));
-vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock }));
+vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: startAgentRunMock, currentDeploy: () => "deploy-now" }));
 vi.mock("@/lib/data-store/market-leaders", () => ({ loadMarketLeaderIds: loadMarketLeaderIdsMock }));
 vi.mock("@/lib/agents/darwin/verify", () => ({ DARWIN_VERIFY_MAX_LIMIT: 500 }));
 vi.mock("@/lib/agents/hamilton/publish", () => ({ HAMILTON_PUBLISH_MAX_LIMIT: 500 }));
 
 import {
   PRIORITY_INSTITUTION_REQUESTS,
+  PRIORITY_FIXED_BREAK_RUNS,
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
+  PRIORITY_RULES_REREAD_HOURS,
   priorityInstitutionSteps,
   schedulePriorityInstitutionRuns,
   selectPriorityInstitutions,
 } from "./priority-institutions";
+import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 
 type Db = Parameters<typeof selectPriorityInstitutions>[0];
 
@@ -43,10 +46,12 @@ describe("priority institutions", () => {
     }));
   });
 
-  it("lists each requested institution once, the Tennessee report's largest banks first", () => {
+  it("lists each requested institution once, the v57 re-reads, Marketing's outreach batch, then the Tennessee report's largest banks first", () => {
     const ids = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.slice(0, 10)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
+    expect(ids.slice(0, 2)).toEqual([78, 41]);
+    expect(ids.slice(2, 16)).toEqual([1223, 767, 4715, 8085, 4522, 3331, 4779, 850, 400, 599, 348, 424, 7034, 5579]);
+    expect(ids.slice(16, 26)).toEqual([37, 47, 27, 122, 5, 251, 393, 19, 371, 255]);
     expect(ids).toContain(8109);
   });
 
@@ -59,8 +64,8 @@ describe("priority institutions", () => {
     const rows = await selectPriorityInstitutions(db, { limit: 2, leaderIds: [7, 9] });
 
     expect(rows).toEqual([
-      { id: 1, institution_name: "JPMorgan Chase Bank, N.A.", state_code: "OH", tier: "hand_found", hand_link_id: 2070, paid_document_id: null },
-      { id: 8109, institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: "requested", hand_link_id: null, paid_document_id: null },
+      { id: 1, institution_name: "JPMorgan Chase Bank, N.A.", state_code: "OH", tier: "hand_found", hand_link_id: 2070, paid_document_id: null, rules_version: null },
+      { id: 8109, institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: "requested", hand_link_id: null, paid_document_id: null, rules_version: null },
     ]);
     const { text, values } = calls[0];
     const hand = text.indexOf("hand.found_by_strategy = 'discover.operator_schedule'");
@@ -97,6 +102,48 @@ describe("priority institutions", () => {
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
     expect(select).toContain("CASE c.tier WHEN 1 THEN 1 WHEN 4 THEN 2 WHEN 2 THEN 3 ELSE 4 END");
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
+    // A hand-found schedule fetched in another state's lane is unread work too (First United, 8 Oct).
+    expect(select).toContain("JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id");
+    expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = hand_doc.id)");
+    // A dormant bank with a hand-found schedule still gets its run; a closed charter does not.
+    expect(select).toContain("OR (inst.status = 'dormant' AND EXISTS (");
+    // A request by name does not wait out the retry window of an earlier overdraft-gap run.
+    expect(select).toContain("c.tier <> 2 OR r.params_json->>'tier' = 'requested'");
+  });
+
+  it("reruns a large bank with no live overdraft fee once per Knox rules version, keyed by the version", async () => {
+    const { db, calls } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [{ id: 78, institution_name: "Arvest Bank", state_code: "AR", tier: 3, hand_link_id: null, paid_document_id: null, rules_unread: true }];
+    });
+
+    const result = await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-09T06:10:00Z") });
+
+    expect(result.runs).toEqual([{ institutionId: 78, runId: 1078, tier: "overdraft_gap" }]);
+    expect(startAgentRunMock.mock.calls[0][0]).toMatchObject({
+      idempotencyKey: `atlas:priority:78:knox:${KNOX_RULES_STRATEGY.version}`,
+      params: { institution_id: 78, tier: "overdraft_gap" },
+    });
+    const { text, values } = calls.find((call) => call.text.includes("WITH candidates"))!;
+    expect(text).toContain("rules_read.strategy_version = ");
+    expect(text).toContain("unread_doc.superseded_by_id IS NULL");
+    expect(text).toContain("OR NOT c.rules_unread");
+    expect(text).toContain("OR r.idempotency_key = ");
+    expect(values).toContain(`:knox:${KNOX_RULES_STRATEGY.version}`);
+    expect(values).toContain(KNOX_RULES_STRATEGY.strategy);
+    expect(values).toContain(KNOX_RULES_STRATEGY.version);
+    expect(values).toContain(PRIORITY_RULES_REREAD_HOURS);
+  });
+
+  it("keys an overdraft-gap run its current rules already read by the day", async () => {
+    const { db } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [{ id: 78, institution_name: "Arvest Bank", state_code: "AR", tier: 3, hand_link_id: null, paid_document_id: null, rules_unread: false }];
+    });
+
+    await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-09T06:10:00Z") });
+
+    expect(startAgentRunMock.mock.calls[0][0]).toMatchObject({ idempotencyKey: "atlas:priority:78:2026-10-09" });
   });
 
   it("runs only free steps, each scoped to the one institution", () => {
@@ -165,5 +212,20 @@ describe("priority institutions", () => {
 
     expect(result.failed).toEqual([{ institutionId: 1, error: "constraint" }]);
     expect(result.scheduled).toBe(1);
+  });
+
+  it("does not let a run that failed on a since-fixed break hold its institution (2877, Oct 8)", async () => {
+    const { db, calls } = createDb(() => []);
+    await selectPriorityInstitutions(db, { limit: 2, leaderIds: [], deploy: "abc123" });
+    const { text, values } = calls[0];
+    expect(text).toContain("r.status = 'failed'");
+    expect(text).toContain("event.detail->>'deploy' = ?::text");
+    expect(values).toContain("abc123");
+    expect(values).toContain(PRIORITY_FIXED_BREAK_RUNS);
+
+    // Off Vercel there is no deploy to compare, so every failed run still holds.
+    const off = createDb(() => []);
+    await selectPriorityInstitutions(off.db, { limit: 2, leaderIds: [], deploy: null });
+    expect(off.calls[0].values).toContain(null);
   });
 });

@@ -4,13 +4,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { hasPermission, requireAuth } from "@/lib/auth";
-import { formatAmount } from "@/lib/format";
 import {
+  getKnoxReasonGroupCounts,
   getKnoxReviewCounts,
   listKnoxRejections,
-  KNOX_REASON_CATEGORIES,
-  type KnoxReasonCategory,
 } from "@/lib/data-store/knox-reviews";
+import {
+  describeFeeAmount,
+  interpretKnoxReasons,
+  isKnoxReasonGroup,
+  KNOX_REASON_GROUP_LABELS,
+  KNOX_REASON_GROUPS,
+  type KnoxReasonGroup,
+} from "@/lib/knox-reasons";
 import { ConfirmButton, OverrideButton, SkipButton } from "./review-actions";
 import { KnoxKeyboardNav } from "./keyboard-nav";
 import { buildAdminRedirectPath, type AdminSearchParams } from "@/lib/admin-redirect-path";
@@ -23,16 +29,6 @@ const FILTER_COLORS: Record<FilterTab, string> = {
   confirmed: "bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400",
   overridden: "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400",
   all: "bg-gray-100 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400",
-};
-
-const REASON_LABELS: Record<KnoxReasonCategory, string> = {
-  outlier: "Outlier",
-  duplicate: "Duplicate",
-  low_confidence: "Low confidence",
-  schema_mismatch: "Schema mismatch",
-  canonical_miss: "Canonical miss",
-  policy_violation: "Policy",
-  other: "Other",
 };
 
 function confidenceBadge(conf: number | null) {
@@ -53,6 +49,13 @@ function confidenceBadge(conf: number | null) {
   );
 }
 
+/** The first reason Knox rejected on, in plain words, for the queue row. */
+function reasonSummary(row: { payload: Record<string, unknown>; amount: number | null; amount_kind: string | null; rate_percent: number | null }): string {
+  const amountRecorded = describeFeeAmount(row).kind !== "unknown";
+  const first = interpretKnoxReasons(row.payload, { amountRecorded }).find((r) => r.blocking);
+  return first ? first.detail : "No rejection reason stored.";
+}
+
 export async function KnoxDecisionsView({
   searchParams,
   embedded = false,
@@ -67,19 +70,19 @@ export async function KnoxDecisionsView({
   const filter = (TABS as readonly string[]).includes(params.filter ?? "")
     ? (params.filter as FilterTab)
     : "pending";
-  const reason = (KNOX_REASON_CATEGORIES as readonly string[]).includes(params.reason ?? "")
-    ? (params.reason as KnoxReasonCategory)
-    : ("all" as const);
+  const reason: KnoxReasonGroup | "all" = isKnoxReasonGroup(params.reason) ? params.reason : "all";
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
 
   let result = { rows: [], total: 0, page, pageSize: 25 } as Awaited<
     ReturnType<typeof listKnoxRejections>
   >;
   let counts = { pending: 0, confirmed: 0, overridden: 0, total: 0 };
+  let groupCounts: Record<KnoxReasonGroup, number> = { zero_amount: 0, above_peers: 0, unrecognized: 0 };
   try {
-    [result, counts] = await Promise.all([
-      listKnoxRejections({ filter, reasonCategory: reason, page, pageSize: 25 }),
+    [result, counts, groupCounts] = await Promise.all([
+      listKnoxRejections({ filter, reasonGroup: reason, page, pageSize: 25 }),
       getKnoxReviewCounts(),
+      getKnoxReasonGroupCounts(filter),
     ]);
   } catch (e) {
     console.error("KnoxReviewsPage load failed:", e);
@@ -161,7 +164,7 @@ export async function KnoxDecisionsView({
         >
           All
         </Link>
-        {KNOX_REASON_CATEGORIES.map((r) => (
+        {KNOX_REASON_GROUPS.filter((r) => groupCounts[r] > 0 || reason === r).map((r) => (
           <Link
             key={r}
             href={hrefFor({ reason: r, page: 1 })}
@@ -171,7 +174,8 @@ export async function KnoxDecisionsView({
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-400 dark:hover:bg-white/[0.1]"
             }`}
           >
-            {REASON_LABELS[r]}
+            {KNOX_REASON_GROUP_LABELS[r]}
+            <span className="ml-1 tabular-nums opacity-70">{groupCounts[r].toLocaleString("en-US")}</span>
           </Link>
         ))}
       </div>
@@ -236,14 +240,14 @@ export async function KnoxDecisionsView({
                   </td>
                   <td className="px-4 py-2.5 text-xs">
                     <span className="inline-block rounded-full px-2 py-0.5 bg-gray-100 dark:bg-white/[0.06] text-gray-700 dark:text-gray-300 text-[10px] font-medium mr-1.5">
-                      {REASON_LABELS[(r.reason_category as KnoxReasonCategory) ?? "other"]}
+                      {KNOX_REASON_GROUP_LABELS[r.reason_group]}
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
-                      {r.reason ?? "(no reason)"}
+                      {reasonSummary(r)}
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-gray-900 dark:text-gray-200">
-                    {r.amount !== null ? formatAmount(Number(r.amount)) : "-"}
+                    {describeFeeAmount(r).label}
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     {confidenceBadge(r.confidence !== null ? Number(r.confidence) : null)}

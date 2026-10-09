@@ -13,7 +13,171 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Monthly marketing email | `/api/admin/crew/marketing`, the 1st at 14:07 UTC | `marketing-score`, `marketing-write` (paid), `marketing-states` | `../marketing/AGENTS.md` |
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
-| Weekly scores | `/api/admin/crew/growth-score`, **not scheduled** (planned Mondays 13:07 UTC) | `growth-score` | below |
+| Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
+| First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
+| Quote drafts (CARNEGIE) | started when James marks a lead qualified on `/admin/leads` (never cron); also in the daily loop as a dry run | `growth-quote` | below |
+| What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
+| Monday plan and proposals (DRAPER) | `/api/admin/crew/draper`; not scheduled yet (proposed Mondays 14:57 UTC, waiting on James) | `growth-proposals`, `growth-plan` | below |
+| Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
+| Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
+| Press pitches (BERNAYS) | `/api/admin/crew/press` (admin or cron secret; not scheduled yet, waits for James) | `growth-press` | below |
+| Price check (EDISON) | in the daily loop below | `growth-tools` | runs `src/lib/price-check.ts` for one state a day, read-only |
+| Daily growth loop | `/api/admin/crew/growth-loop`, daily 00:57 UTC | every step in `loop.ts`, as one `dry_run` run | nothing saved or sent; leaves out `marketing-write` (paid) and `marketing-send` |
+
+### Prospect contacts (`contacts.ts`)
+
+The same walk Magellan makes for fee schedules, aimed at people. For each prospect (assets
+$100M to $5B, 10+ live fees, a website; biggest local markets first) it reads robots.txt, the
+homepage, and up to three same-site leadership, about or contact pages, as `FeeInsightBot
+(Growth)`. It keeps only addresses the institution publishes under its own domain, with the name
+and title printed just before each one. Nothing is guessed from a name pattern, and nothing
+sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 days.
+
+Each contact has a confidence (`contactConfidence`): high for a named person with a title in a
+buying role, medium for a person's own address with a name or title, low for anything else or a
+shared mailbox. `rankContacts` orders an institution's contacts (confidence, then marketing,
+retail, executive, finance). `pickContacts` marks the first decision-maker in that order
+(`isDecisionMaker`, the rule outreach uses) as the institution's primary buyer contact and the
+second as backup; an institution with no decision-maker has neither.
+
+These are stored on `prospect_contacts` (migration `20270110000031`): `role` re-read with today's
+rules (`normalizeContact`), `confidence`, `pick` (`primary`, `backup` or null) and `ranked_at`.
+`refreshContactPicks` writes them, only on rows whose values change. `growth-contacts` runs it for
+the institutions it just read; the second step of the same run, `growth-contact-picks`, re-ranks
+every saved contact, so a rule change reaches old rows each Monday (its first run is the backfill
+for rows saved before the columns). Both skip the write before the migration and on a dry run.
+The CSV reads the stored confidence and pick, and ranks an institution itself, the same way, only
+while any of its rows is unranked. Outreach still ranks each candidate's contacts when it drafts
+(`buildOutreachDraft`), with the same functions, so its choice matches the stored pick.
+
+### First-email drafts (`outreach.ts`, `market-snapshot.ts`)
+
+One draft per prospect ($500M to $2B first, then $100M to $500M), in one of the pilot's three
+emails (James's outreach audit, 22:34 UTC Oct 8; plan doc
+https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c). Every email sells easier,
+source-backed competitive fee research; none states the prospect's position against a median or
+suggests a price. A (research efficiency) has no figures and no link and asks how the team does
+the research. B (personalized research) names local institutions whose schedules verify alongside
+the prospect's and offers a comparison; still no figures and no link. C (market insight) states one
+tier-A comparison (the prospect and at least 5 named local competitors all verify) as a range with
+the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
+only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
+otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
+no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
+nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
+90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
+Comparisons are local only. All emails sign off "Founder, Fee Insight" with one ask. Each run reads every candidate, scores it with the plan's
+weights (`prospect-score.ts`: fit 25, buyer 20, research 20, data confidence 20, commercial 15) and
+drafts the highest scores first. Every fee type gets a comparison tier (A: prospect and 5+ local
+verify; B: fewer verified peers; C: the source check fails; D: a row waits on a takedown second
+look), stored on the draft; only tier A is ever quoted and tier D is never used. The A and B emails
+name the research problem that fits the addressee's role. No draft is made when the prospect has no decision-maker
+(`isDecisionMaker`: a person's own address, not a shared mailbox, under a buying-role title). Under the email
+each draft carries an audit block (the schedule line and link behind every figure, the rows'
+conditions, the peers left out) so James checks each comparison before he sends it himself.
+Every draft ends with a postal-address placeholder James fills before sending (CAN-SPAM; the
+site's mailing address stays blank) and an opt-out line. The same step drafts the pilot's two
+follow-ups (`runOutreachFollowUps`): one 6 days after a first email marked sent, and a final one
+13 days after it once the first follow-up is marked sent, each only with nothing recorded since,
+no figures or link, once per institution; then outreach to that institution stops. Contacts are
+re-read with today's rules (`normalizeContact`): lenders, branch staff and a vice president's
+rank are not buyers, labels and headings printed where a name would be ("Mailing Address") are
+not names, and a name that can't own the personal address beside it (`nameFitsEmail`) is dropped
+with its title. `?dry_run=1` counts the drafts and withdrawals a run would make and writes nothing. A real run drafts only the pilot campaigns James chose in `OUTREACH_CAMPAIGNS` (letters, e.g. `A,B`); while it is unset the run drafts nothing and only withdraws drafts that no longer qualify, including the Monday cron. Each run first
+withdraws unreviewed drafts whose addressee fails that test, that were written under an older
+`OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
+longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
+institutions can be drafted again. Nothing sends.
+
+### Qualified leads and quote drafts (`quote.ts`, BUILD-PLAN 2.25)
+
+James marks a lead qualified on `/admin/leads` ("Mark qualified"); the row records when and by
+whom (`leads.qualified_at`, `leads.qualified_by`, migration `20270110000032`;
+`src/lib/data-store/lead-qualified.ts`). "Clear qualified" removes the mark. Marking starts a
+growth run with one free `growth-quote` step, so it is on the run ledger and held by the
+marketing pause. The step drafts one quote email per qualified lead that is not paid, not
+unsubscribed and not a test lead (`isTestLead`), once per lead (`subject_key` `lead:<id>`,
+workflow `quote`, skipped drafts included), into `content_drafts` as CARNEGIE's `pitch` (channel
+`email`) for James to review in `/admin/growth` and send himself. Nothing sends.
+
+Every price comes from the code: the Pro tiers on `/subscribe` (`PRO_TIERS` in
+`src/lib/pro-tiers.ts`; the lead's tier from its quoted institution's assets, else all three) and
+the one-off Competitive Fee Position Report (`REPORT_OFFER`: James's saved quote for the lead
+when there is one, else "From $300", `fromPriceUsd`). No delivery time, no fee advice, never
+"free report". The email signs off "Founder, Fee Insight" and carries the same postal-address
+placeholder and opt-out line as outreach; an audit block under it names the lead, who qualified
+it and where each price came from. Before the migration the step drafts nothing and says so.
+
+DRAPER's sales metrics count the mark: a qualified lead whose quote names an institution we
+emailed counts toward qualified conversations per 100 contacts; any other qualified lead is an
+inbound qualified lead (each institution once), reported on its own line and added to the
+month-one floor's count.
+
+### The outreach journey (`src/lib/outreach-journey.ts`)
+
+Five stages per institution (James, 15:39 Oct 8): email sent, snapshot opened, engaged with the
+data, commercial interest, purchase. The snapshot page records first-party events
+(`snapshot_events` via `POST /api/track/snapshot`: opened, source, fee, competitor, report click;
+no personal data). Marking an outreach draft done records "sent"; James records what happened
+next (replied, conversation, report requested, proposal, bought, declined with the reason) on the
+done item in `/admin/growth` (`outreach_outcomes`). No email-open tracking. The team view shows
+the funnel.
+
+### What we learned (`learning.ts`)
+
+DRAPER's weekly report (James, 15:33 Oct 8) for the Monday-to-Monday week just ended: outreach
+drafted and sent, snapshot events, leads from outreach links, the outcomes James recorded with
+his notes, every decline reason to date, and the plan's sales metrics to date (qualified
+conversations per 100 contacts, share reaching a proposal, proposal to paid, median days from
+email to purchase) against the month-one floor. Counts and James's own notes only; a metric with
+no data says so. It lands in the queue as DRAPER's `brief` (channel `internal`), once per week.
+
+### Press pitches (`bernays.ts`)
+
+BERNAYS drafts `PITCHES_PER_WEEK` (2) press pitches a week into the queue (agent `bernays`, kind
+`pitch`, workflow `press-pitch`). Free, no model call, nothing sends. Each pitch goes to one of the
+outlets due next in `PRESS_OUTLETS` (the press list of the 2026-10-08 research draft, less Bank
+Director and Independent Banker, which take contributed content only as paid placement): never
+pitched first in list order, then the longest since a pitch, none again within 7 weeks.
+
+Each pitch carries one finding: in one state, the median of one of the month's theme fees
+(`../content/calendar.ts`) at banks and at credit unions. Rows are the fee-stats contract's
+(sourced, one value per institution, overdraft at its highest tier, $0 counts; unknown charters
+count as neither). An institution counts only when every row behind its value passes
+`checkFeeAgainstSource` (via `failingEnds` in `../content/end-check.ts`); each median needs
+`MIN_INSTITUTIONS_FOR_MEDIAN` verified institutions, else the next finding is tried. A finding is
+not reused within 8 weeks, and the week's two pitches use different findings. Every number in the
+pitch must be one of the finding's facts (`unbackedNumbers`), and `pitchStyleProblems` holds back a
+pitch that does not open with "Fee Insight publishes the Bank Fee Index", uses the first person,
+advises a fee change, judges ("cheapest", "worst") or offers a free report. Under the pitch,
+James's notes give the outlet's route and link (from the research draft: confirm before sending)
+and the method; the institution ids behind each median are in the draft's facts. The queue
+subject is `<outlet>|<fee>:<state>`, so a pitch James skips with a reason keeps both that outlet
+and that finding out of BERNAYS's drafts while the lesson stands. A dry run picks the outlets and
+findings and writes nothing.
+
+### Monday plan and proposals (`draper.ts`)
+
+DRAPER's two Monday drafts, both free (no model call), each filed once per Monday-to-Monday week
+into the queue as DRAPER's item (channel `internal`). The route runs proposals first, then the plan.
+
+- `growth-proposals` (kind `brief`, workflow `draper-proposals`): at most 3 changes the evidence
+  supports, strongest evidence first, each citing its counts. The rules: retire a pilot campaign
+  with `RETIRE_AFTER_SENDS` (20) first emails marked sent and nothing recorded back; change or
+  pause a workflow James skipped `SKIP_PATTERN_MIN` (3) times with a reason in 30 days (the skip
+  lessons in `pipeline_feedback`, so CARNEGIE's own withdrawals don't count); answer a decline
+  reason recorded `DECLINE_PATTERN_MIN` (2) times. When nothing meets a rule it files one line
+  with the counts saying so, never a guess.
+- `growth-plan` (kind `plan`, workflow `draper-plan`): the week's work. First emails and
+  follow-ups waiting for review (by campaign) and approved emails not marked sent; follow-ups that
+  come due this week by `runOutreachFollowUps`'s rule; the other queued drafts and briefs by agent;
+  the latest what-we-learned report's metrics and the latest proposals; and the GTM plan's
+  month-one floor (`MONTH_ONE_FLOOR` in `learning.ts`, the only dated target in the code) with
+  progress against it.
+
+Both carry the conversation log: `outreach_outcomes` counts by outcome, to date and last week. No
+new table. A missing count is said to be missing.
 
 ### Queue intake (`intake.ts`)
 
@@ -37,14 +201,46 @@ A scheduled Claude Code session files a draft or a PR it opened with
 The `growth-score` step scores each posted item with no score whose post date is at least 7
 days old, over the 7 days after posting: tracked visits from `marketing_touches` (same
 `utm_campaign` and `utm_content` as its link) and leads whose `first_utm_*` match. The score is
-the visit count; leads sit beside it in the step result. Emails (opens and clicks are not read
-into the app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
+the visit count; leads sit beside it in the step result. A sent outreach email (marked posted,
+which records "sent") is scored by its institution's journey in the same 7 days: snapshot events
+from the outreach link and the outcomes James recorded, as the stage's place on the journey (1
+sent to 5 purchase, `score-label.ts`). MailerLite emails (opens and clicks are not read into the
+app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
 
-**Not turned on.** The route exists and is on the publishing calendar as "not turned on yet";
-there is no cron for it in `vercel.json`. Nothing runs on a schedule until James says go. An admin
-can start it by hand meanwhile.
+After the queue, the same step reads Google Search Console (`search-console.ts`) into the step
+result's `search`: total clicks, impressions and average position for the 7 days ending 3 days
+before the run (Search Console data lags about 3 days) against the 7 days before that, and the
+top 10 pages by clicks this week. It signs a service-account JWT with `node:crypto` (scope
+`webmasters.readonly`, no Google SDK) and uses plain fetch; still free, no model call, and it
+reads on dry runs too. Env: `GSC_SERVICE_ACCOUNT_JSON` (the key JSON; the service account must be
+a user on the property) and `GSC_SITE_URL` (default `sc-domain:feeinsight.com`). With no key,
+`search` is `{ measured: false, reason }`; a failed token exchange or query records its error
+message the same way. Neither fails the step, and nothing is estimated.
+
+James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
+Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
+
+### Market brief (`sherlock.ts`)
+
+SHERLOCK reads, once a day, the regulator releases and tracked bills first seen in the last day
+(`reg_articles`, `reg_tracker_items`) whose title is about consumer deposit fees, and pairs each
+with the live catalog's median for that fee in that state or nationally. It also reads five
+competitors' own public pages (`COMPETITOR_PAGES`, robots.txt respected) and compares their
+fee-related lines with the previous run's, kept in that step's event. At most 3 findings a day;
+a finding with fewer than 10 institutions behind it, or cited in the last 14 days, is skipped.
+Findings go to the queue as one SHERLOCK `brief`; a quiet day files nothing.
+
+### Conversion check (`norman.ts`)
+
+NORMAN, each Monday, loads every buying page (`BUYING_PAGES`) and the link in every outreach
+draft not yet sent. A link that doesn't load, or shows our not-found page, is a broken
+destination: no draft should be sent until its link works. It counts the week's funnel from our
+own tables (tracked visits, snapshot opens and report clicks, report requests, quotes, paid; a
+missing table is "not measured") against the week before and the previous brief's "before", and
+names the week's one fix: broken destinations first, else the first step where everyone stops.
+The brief goes to the queue as NORMAN's `brief`; its fix comes as a pull request or preview.
 
 ### Lessons from skip reasons (`lessons.ts`)
 
@@ -52,8 +248,10 @@ Skipping a queue item with a reason at `/admin/customers/content` writes a `pipe
 row: `reported_by` growth, `about_stage` marketing, `about_strategy` the item's agent, signal
 `wrong`, kind `skipped_by_james`, dedupe key `growth.skip:draft:<id>`. Sending it back to review
 marks it `restored`. `recentLessons(db, agent)` returns the standing ones (90 days, newest 10):
-the weekly content steps read MURROW's before drafting and list them in their step result, and a
-scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
+the weekly content steps read MURROW's before drafting, leave each skipped subject (a fee and
+metro, or a metro) out of that workflow's drafts while its lesson stands (`skippedSubjects`), and
+list them in their step result; BERNAYS's press step reads its own the same way (a skipped
+outlet and finding stay out); and a scheduled session reads its own with `GET /api/admin/growth/intake?agent=<name>`.
 
 These runs moved from Hamilton to growth on 2026-10-08. Their idempotency keys
 (`hamilton:content:<day>`, `hamilton:marketing:<month>`, `hamilton:marketing-send:<month>`) and
@@ -118,4 +316,11 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `murrow`), `kind` (default `linkedin_post`), and can carry `skip_reason` (from the Skip form),
   `pr_url` and `score` / `scored_at` (migration `20270110000025`). Scheduled sessions file into
   it through the intake route above.
+- Prospect contacts go to `prospect_contacts` and `prospect_contact_checks` (migration
+  `20270110000028`); their stored confidence and primary/backup pick are columns on
+  `prospect_contacts` (migration `20270110000031`).
+- Snapshot page events go to `snapshot_events`, and outreach outcomes to `outreach_outcomes`
+  (migration `20270110000029`).
+- The qualified mark is two columns on `leads` (migration `20270110000032`); quote drafts go to
+  `content_drafts` like every other draft.
 - No other tables for marketing results.

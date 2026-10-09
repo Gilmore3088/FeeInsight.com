@@ -32,7 +32,7 @@ describe("fee-type to category mapping", () => {
   });
 
   it("keeps tag order, drops repeats and caps the list", () => {
-    expect(categoriesForFeeTypes(["atm", "overdraft"])).toEqual(["atm_non_network", "atm_international", "overdraft", "nsf"]);
+    expect(categoriesForFeeTypes(["atm", "overdraft"])).toEqual(["atm_non_network", "card_foreign_txn", "overdraft", "nsf"]);
     expect(categoriesForFeeTypes(["overdraft", "overdraft"])).toEqual(["overdraft", "nsf"]);
     expect(categoriesForFeeTypes(["overdraft", "atm", "wire"])).toHaveLength(4);
   });

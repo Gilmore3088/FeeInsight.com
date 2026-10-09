@@ -29,7 +29,7 @@ import { feeTypesOf, type FeeType } from "./wire-fee-types";
  */
 export const FEE_TYPE_CATEGORIES: Record<FeeType, readonly string[]> = {
   overdraft: ["overdraft", "nsf"],
-  atm: ["atm_non_network", "atm_international"],
+  atm: ["atm_non_network", "card_foreign_txn"],
   maintenance: ["monthly_maintenance"],
   wire: ["wire_domestic_outgoing", "wire_intl_outgoing"],
   card: ["card_foreign_txn", "card_replacement"],

@@ -49,7 +49,7 @@ const UNFORMATTED_UNITS = [
   { re: /(?<![$\d.,])0\.\d+(?![\d%])/, why: "share written as a decimal fraction" },
 ];
 
-function words(sentence: string): number {
+export function words(sentence: string): number {
   // A quotation is the source's words, not Hamilton's, so it does not count.
   // A lone "/" or "&" (as in "NSF / returned item") is punctuation, not a word.
   const own = sentence.replace(/"[^"]*"/g, "").trim();
@@ -69,7 +69,9 @@ export function sentences(text: string): string[] {
     if (!inQuote && ends && (i === text.length - 1 || /\s/.test(text[i + 1]))) {
       // "$35.50" and "e.g." are not sentence ends: the next character is not a space or is lowercase.
       const next = text.slice(i + 1).trimStart()[0];
-      if (next === undefined || /[A-Z"$0-9]/.test(next)) {
+      // "U.S. Bank": a period after a single capital is an initial, not a sentence end.
+      const initial = c === "." && /(^|[\s.])[A-Z]$/.test(current.slice(0, -1));
+      if (!initial && (next === undefined || /[A-Z"$0-9]/.test(next))) {
         out.push(current.trim());
         current = "";
       }
@@ -114,6 +116,17 @@ function dated(fact: Fact): boolean {
 
 const MARKET_FIGURE = /\bmedian|percentile|middle half|peers?\b|institutions\b/i;
 
+/**
+ * A statement of law (cited to the CFR, the U.S. Code or a named regulation) or of who
+ * regulates the bank (its registry record). These are sourced statements, not figures: they
+ * need a named source but no number, and a threshold in a rule ("$10 billion in assets") is
+ * not a market figure. A rule cited to its section is dated by that citation.
+ */
+const CITED_RULE = /\b\d+ CFR\b|U\.S\.C\.|\bReg(?:ulation)? [A-Z]{1,2}\b|Truth in Savings|\bPub(?:lic)?\.? L(?:aw|\.)|\bFIL-\d|\bCircular \d{4}-\d+|Congressional Review Act/i;
+function isRuleOrRegistry(fact: Fact): boolean {
+  return CITED_RULE.test(fact.source.label ?? "") || fact.source.table === "institution_sources";
+}
+
 function checkEconomist(answer: HamiltonAnswer): RoleCheck {
   const failures: string[] = [];
   const grounded = answer.drivers.filter((d) => /\d/.test(d.text.replace(/"[^"]*"/g, "")) && dated(d));
@@ -129,6 +142,11 @@ function checkConsultant(answer: HamiltonAnswer): RoleCheck {
   const failures: string[] = [];
   if (answer.claims.length === 0) failures.push("No sourced claims.");
   for (const claim of [...answer.claims, ...storyFacts(answer)]) {
+    if (isRuleOrRegistry(claim)) {
+      const cited = CITED_RULE.test(claim.source.label ?? "");
+      if (!claim.source.label?.trim() || (!cited && !dated(claim))) failures.push(`Claim has no named, dated source: "${claim.text}"`);
+      continue;
+    }
     if (!/\d/.test(claim.text)) failures.push(`Claim has no number: "${claim.text}"`);
     if (!dated(claim)) failures.push(`Claim has no named, dated source: "${claim.text}"`);
     if (MARKET_FIGURE.test(claim.text) && !(claim.sampleSize && claim.sampleSize > 0)) {

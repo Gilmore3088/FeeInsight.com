@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AtlasStateLaneDispatch, AtlasStateLaneDispatchRow } from "@/lib/agents/state-lane-memory";
-import { AtlasStateLaneDispatchPanel } from "./atlas-state-lane-dispatch";
+import { AtlasStateLaneDispatchPanel, snapshotAge } from "./atlas-state-lane-dispatch";
+import { ATLAS_RUN_STATUSES_EVENT, finishedLaneRunLabel } from "./atlas-run-statuses";
 
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -146,5 +147,47 @@ describe("AtlasStateLaneDispatchPanel", () => {
       "href",
       "/admin/states/NY/runs/44",
     );
+  });
+
+  it("marks a snapshot-running lane finished once the live ledger says its run completed", () => {
+    render(
+      <AtlasStateLaneDispatchPanel
+        dispatch={dispatch([
+          row({ stateCode: "IA", name: "Iowa", status: "running", activeRunId: 3151, activeRunStatus: "running" }),
+        ])}
+        automationEnabled
+        executionEnabled
+        activeJobCount={0}
+      />,
+    );
+    expect(screen.getByText("Running", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText(/Lane snapshot read Aug 15, 1:00 PM PDT/)).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(ATLAS_RUN_STATUSES_EVENT, {
+        detail: { generatedAt: "2026-08-15T20:05:00.000Z", runs: [{ id: 3151, status: "completed" }] },
+      }));
+    });
+
+    expect(screen.queryByText("Running", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.getByText("Run completed")).toBeInTheDocument();
+  });
+});
+
+describe("snapshotAge", () => {
+  it("says how old a cached snapshot is", () => {
+    const read = "2026-10-08T22:00:00.000Z";
+    expect(snapshotAge(read, Date.parse("2026-10-08T22:00:20.000Z"))).toBe("under a minute old");
+    expect(snapshotAge(read, Date.parse("2026-10-08T22:04:00.000Z"))).toBe("4 min old");
+    expect(snapshotAge(read, Date.parse("2026-10-09T00:00:00.000Z"))).toBe("2 hours old");
+  });
+});
+
+describe("finishedLaneRunLabel", () => {
+  it("keeps the snapshot status while the ledger still has the run active or unread", () => {
+    const lane = { status: "running" as const, activeRunId: 9 };
+    expect(finishedLaneRunLabel(lane, new Map())).toBeNull();
+    expect(finishedLaneRunLabel(lane, new Map([[9, "running"]]))).toBeNull();
+    expect(finishedLaneRunLabel(lane, new Map([[9, "failed"]]))).toBe("Run failed");
   });
 });

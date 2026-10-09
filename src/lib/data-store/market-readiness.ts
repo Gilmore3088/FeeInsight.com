@@ -162,46 +162,62 @@ export function reportRulePeers(stateRich: number, districtRich: number | null):
   return { scope: "state", count: stateRich };
 }
 
-/** James's report rule for one institution, from the same counts getMarketReadiness uses. */
-export async function getReportRuleCheck(institutionId: number): Promise<ReportRuleCheck | null> {
+/** One institution's headline coverage with the fields the report rule groups peers by. */
+export type HeadlineCoverageRow = [
+  institutionId: number,
+  categories: number,
+  stateCode: string | null,
+  charterType: string | null,
+  fedDistrict: number | null,
+];
+
+/**
+ * Headline coverage for every institution with at least one headline category live. The
+ * report rule needs every institution's count to find rich peers, and the count reads the
+ * catalog views over all institutions (about a second), so callers that check many
+ * institutions load this once and reuse it.
+ */
+export async function getHeadlineCoverageRows(): Promise<HeadlineCoverageRow[]> {
   const keys = [...HEADLINE_FEE_KEYS];
-  const [row] = await sql<
-    {
-      state_code: string | null;
-      charter_type: string | null;
-      fed_district: number | null;
-      own: string | null;
-      rich_competitors: string;
-      district_rich_competitors: string | null;
-    }[]
+  const rows = await sql<
+    { institution_id: number; categories: string; state_code: string | null; charter_type: string | null; fed_district: number | null }[]
   >`
-    WITH coverage AS (${headlineCoverageSql(keys)}),
-    subject AS (SELECT id, state_code, charter_type, fed_district FROM institution_sources WHERE id = ${institutionId})
-    SELECT subject.state_code, subject.charter_type, subject.fed_district,
-           (SELECT categories FROM coverage WHERE coverage.institution_id = subject.id) AS own,
-           (SELECT COUNT(*) FROM institution_sources s
-              JOIN coverage ON coverage.institution_id = s.id
-             WHERE s.id <> subject.id
-               AND s.state_code = subject.state_code
-               AND s.charter_type = subject.charter_type
-               AND coverage.categories >= ${RICH_MIN_CATEGORIES}) AS rich_competitors,
-           CASE WHEN subject.fed_district IS NULL THEN NULL ELSE
-           (SELECT COUNT(*) FROM institution_sources s
-              JOIN coverage ON coverage.institution_id = s.id
-             WHERE s.id <> subject.id
-               AND s.fed_district = subject.fed_district
-               AND s.charter_type = subject.charter_type
-               AND coverage.categories >= ${RICH_MIN_CATEGORIES}) END AS district_rich_competitors
-    FROM subject`;
-  if (!row) return null;
-  const ownCategories = Number(row.own ?? 0);
-  const stateRichCompetitors = Number(row.rich_competitors);
-  const districtRichCompetitors = row.district_rich_competitors === null ? null : Number(row.district_rich_competitors);
+    WITH coverage AS (${headlineCoverageSql(keys)})
+    SELECT coverage.institution_id, coverage.categories, s.state_code, s.charter_type, s.fed_district
+    FROM coverage JOIN institution_sources s ON s.id = coverage.institution_id
+    ORDER BY coverage.institution_id`;
+  return rows.map((row) => [
+    Number(row.institution_id),
+    Number(row.categories),
+    row.state_code,
+    row.charter_type,
+    row.fed_district === null ? null : Number(row.fed_district),
+  ]);
+}
+
+/** The report rule for one institution, counted from loaded coverage rows. */
+export function reportRuleCheckFromCoverage(
+  subject: { id: number; state_code: string | null; charter_type: string | null; fed_district: number | null },
+  coverage: HeadlineCoverageRow[],
+): ReportRuleCheck {
+  let ownCategories = 0;
+  let stateRichCompetitors = 0;
+  let districtRich = 0;
+  for (const [id, categories, state, charter, district] of coverage) {
+    if (id === subject.id) {
+      ownCategories = categories;
+      continue;
+    }
+    if (categories < RICH_MIN_CATEGORIES || charter === null || charter !== subject.charter_type) continue;
+    if (state !== null && state === subject.state_code) stateRichCompetitors += 1;
+    if (district !== null && district === subject.fed_district) districtRich += 1;
+  }
+  const districtRichCompetitors = subject.fed_district === null ? null : districtRich;
   const peers = reportRulePeers(stateRichCompetitors, districtRichCompetitors);
   return {
-    state_code: row.state_code,
-    charter_type: row.charter_type,
-    fed_district: row.fed_district === null ? null : Number(row.fed_district),
+    state_code: subject.state_code,
+    charter_type: subject.charter_type,
+    fed_district: subject.fed_district,
     ownCategories,
     richCompetitors: peers.count,
     peerScope: peers.scope,
@@ -209,6 +225,41 @@ export async function getReportRuleCheck(institutionId: number): Promise<ReportR
     districtRichCompetitors,
     passes: passesReportRule(ownCategories, stateRichCompetitors, districtRichCompetitors ?? 0),
   };
+}
+
+/**
+ * The report rule from loaded coverage rows alone. Null when the institution has no headline
+ * category live: it has no row, and with no categories it cannot pass the rule.
+ */
+export function reportRuleCheckFromRows(institutionId: number, coverage: HeadlineCoverageRow[]): ReportRuleCheck | null {
+  const own = coverage.find(([id]) => id === institutionId);
+  if (!own) return null;
+  const [, , state_code, charter_type, fed_district] = own;
+  return reportRuleCheckFromCoverage({ id: institutionId, state_code, charter_type, fed_district }, coverage);
+}
+
+/**
+ * James's report rule for one institution, from the same counts getMarketReadiness uses.
+ * `loadCoverage` lets a caller pass a shared (cached) copy of the coverage rows; by default
+ * they are read live.
+ */
+export async function getReportRuleCheck(
+  institutionId: number,
+  loadCoverage: () => Promise<HeadlineCoverageRow[]> = getHeadlineCoverageRows,
+): Promise<ReportRuleCheck | null> {
+  const [subject] = await sql<{ id: number; state_code: string | null; charter_type: string | null; fed_district: number | null }[]>`
+    SELECT id, state_code, charter_type, fed_district FROM institution_sources WHERE id = ${institutionId}`;
+  if (!subject) return null;
+  const coverage = await loadCoverage();
+  return reportRuleCheckFromCoverage(
+    {
+      id: Number(subject.id),
+      state_code: subject.state_code,
+      charter_type: subject.charter_type,
+      fed_district: subject.fed_district === null ? null : Number(subject.fed_district),
+    },
+    coverage,
+  );
 }
 
 export function toMarketReadiness(row: {

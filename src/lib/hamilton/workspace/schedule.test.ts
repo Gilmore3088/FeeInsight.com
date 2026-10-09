@@ -19,6 +19,15 @@ describe("whole-schedule questions", () => {
     expect(asksWholeSchedule("How does our overdraft fee compare?")).toBe(false);
   });
 
+  it("recognises the ways Pro readers really asked for the whole schedule", () => {
+    expect(asksWholeSchedule("Which of our fees sit furthest from our peers, and by how much?")).toBe(true);
+    expect(asksWholeSchedule("How do our fees stack up against the market?")).toBe(true);
+    expect(asksWholeSchedule("Summarize Space Coast Federal Credit Union's fee evidence and data caveats.")).toBe(true);
+    expect(asksWholeSchedule("Who in our state changed their NSF fee this year?")).toBe(false);
+    // Read only when no fee is named: a follow-up about peers asks how the schedule compares.
+    expect(asksWholeSchedule("what about national peers by size")).toBe(true);
+  });
+
   it("orders fees by distance from the peer median and says higher or lower", () => {
     const overview = scheduleOverview([
       row("overdraft", "Overdraft", 30, 29),

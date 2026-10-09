@@ -49,6 +49,13 @@ export interface AttentionItem {
   repairRunId?: number;
 }
 
+/**
+ * A control as the admin read it. `unreadable` marks the fail-closed fallback used
+ * when the control row could not be read: the console treats the work as held, but
+ * it must never present that as a switch an operator set.
+ */
+export type AdminControlState = AutomationControlState & { unreadable?: true };
+
 export interface AtlasCommandCenter {
   generatedAt: string;
   metrics: {
@@ -61,10 +68,10 @@ export interface AtlasCommandCenter {
   activeJobs: CommandCenterJob[];
   recentJobs: CommandCenterJob[];
   attention: AttentionItem[];
-  automation: AutomationControlState;
-  pipeline: AutomationControlState;
+  automation: AdminControlState;
+  pipeline: AdminControlState;
   /** Growth's marketing pause, separate from the pipeline pause. */
-  marketing: AutomationControlState;
+  marketing: AdminControlState;
   provider: ProviderReadiness;
   trustReview: TrustReviewOverview;
   apiUsage: ApiUsageOverview;
@@ -159,7 +166,7 @@ function operatorError(error: unknown): string {
 }
 
 export function buildProviderReadiness(
-  automation: AutomationControlState,
+  automation: AdminControlState,
   creditFailure: { createdAt: string } | null,
 ): ProviderReadiness {
   const apiKeyConfigured = hasAnthropicApiKey();
@@ -172,6 +179,17 @@ export function buildProviderReadiness(
       label: "Anthropic API key missing",
       detail: "Set ANTHROPIC_API_KEY in the server environment, then restart/redeploy before provider-backed agent work can run.",
       lastCreditFailureAt: null,
+    };
+  }
+
+  if (automation.unreadable) {
+    return {
+      provider: "anthropic",
+      apiKeyConfigured,
+      status: "automation_stopped",
+      label: "Couldn't read the provider stop control",
+      detail: "Provider calls are held until the safety control reads again. This is not a confirmed stop; reload to retry.",
+      lastCreditFailureAt: creditFailure?.createdAt ?? null,
     };
   }
 
@@ -205,6 +223,62 @@ export function buildProviderReadiness(
     detail: "ANTHROPIC_API_KEY is present and no recent credit circuit is blocking provider-backed work. The key is validated on the next guarded provider call.",
     lastCreditFailureAt: null,
   };
+}
+
+/**
+ * Today's items for the provider stop and the pipeline pause. A control that could
+ * not be read gets its own "couldn't read" item with a retry link: work stays held
+ * (fail-closed), but the item never claims an operator turned the switch.
+ */
+export function controlAttention(
+  automation: AdminControlState,
+  pipeline: AdminControlState,
+): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  if (automation.unreadable) {
+    items.push({
+      id: "automation:unreadable",
+      severity: "warning",
+      owner: "atlas",
+      title: "Couldn't read the provider stop control",
+      detail: "The safety control read failed, so paid provider steps are held until it reads again. This is not a confirmed switch setting.",
+      href: "/admin",
+      action: "Retry",
+    });
+  } else if (!automation.enabled) {
+    items.push({
+      id: "automation:stopped",
+      severity: "critical",
+      owner: "atlas",
+      title: "Provider automation stop is active",
+      detail: automation.reason ?? "Paid AI provider calls are blocked; deterministic pipeline steps continue.",
+      href: "/admin/controls",
+      action: "Review safety control",
+    });
+  }
+
+  if (pipeline.unreadable) {
+    items.push({
+      id: "pipeline:unreadable",
+      severity: "warning",
+      owner: "atlas",
+      title: "Couldn't read the pipeline control",
+      detail: "The pipeline control read failed, so deterministic steps are held until it reads again. This is not a confirmed pause.",
+      href: "/admin",
+      action: "Retry",
+    });
+  } else if (!pipeline.enabled) {
+    items.push({
+      id: "pipeline:paused",
+      severity: "critical",
+      owner: "atlas",
+      title: "Pipeline is paused",
+      detail: pipeline.reason ?? "Discovery, fetch, read, extract, verify, and publish are paused.",
+      href: "/admin/controls",
+      action: "Review pipeline pause",
+    });
+  }
+  return items;
 }
 
 function parseJobArgs(params: unknown): string[] {
@@ -472,7 +546,8 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
         changedBy: "system",
         changedAt: new Date().toISOString(),
         revision: 0,
-      } satisfies AutomationControlState;
+        unreadable: true,
+      } satisfies AdminControlState;
     }),
     getPipelineControl().catch((error) => {
       console.error("Atlas pipeline control query failed", error);
@@ -482,7 +557,8 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
         changedBy: "system",
         changedAt: new Date().toISOString(),
         revision: 0,
-      } satisfies AutomationControlState;
+        unreadable: true,
+      } satisfies AdminControlState;
     }),
     getMarketingControl().catch((error) => {
       console.error("Atlas marketing control query failed", error);
@@ -492,7 +568,8 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
         changedBy: "system",
         changedAt: new Date().toISOString(),
         revision: 0,
-      } satisfies AutomationControlState;
+        unreadable: true,
+      } satisfies AdminControlState;
     }),
     getApiUsageOverview(),
     getAgentFailureOverview(),
@@ -527,34 +604,12 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       owner: "atlas",
       title: provider.label,
       detail: provider.detail,
-      href: "/admin#provider-readiness",
+      href: "/admin/atlas/details#provider-readiness",
       action: "Inspect provider",
     });
   }
 
-  if (!automation.enabled) {
-    attention.push({
-      id: "automation:stopped",
-      severity: "critical",
-      owner: "atlas",
-      title: "Provider automation stop is active",
-      detail: automation.reason ?? "Paid AI provider calls are blocked; deterministic pipeline steps continue.",
-      href: "/admin",
-      action: "Review safety control",
-    });
-  }
-
-  if (!pipeline.enabled) {
-    attention.push({
-      id: "pipeline:paused",
-      severity: "critical",
-      owner: "atlas",
-      title: "Pipeline is paused",
-      detail: pipeline.reason ?? "Discovery, fetch, read, extract, verify, and publish are paused.",
-      href: "/admin#atlas-safety",
-      action: "Review pipeline pause",
-    });
-  }
+  attention.push(...controlAttention(automation, pipeline));
 
   if (agentHealth.errors24h > 0) {
     attention.push({
@@ -563,7 +618,7 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       owner: "atlas",
       title: `${agentHealth.errors24h.toLocaleString()} agent failures in the last 24 hours`,
       detail: `${agentHealth.affectedAgents24h.toLocaleString()} agents are affected. ${agentHealth.groups[0]?.error ?? "Inspect the failure ledger."}`,
-      href: "/admin#agent-failures",
+      href: "/admin/agents/health",
       action: "Inspect failures",
     });
   }

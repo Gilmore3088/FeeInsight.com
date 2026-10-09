@@ -18,7 +18,8 @@ import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
-import { StructuredAsk } from "./StructuredAsk";
+import { DownloadAnswerPdf, StructuredAsk } from "./StructuredAsk";
+import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
 import { ExhibitFrame } from "@/components/hamilton/memo/exhibit-view";
 import { AuditPanel, Callout, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF } from "@/components/hamilton/memo/memo";
 
@@ -124,6 +125,10 @@ interface AnalyzeWorkspaceProps {
   /** Pre-populated analysis loaded from hamilton_saved_analyses via ?analysis= searchParam */
   initialAnalysis?: AnalyzeResponse | null;
   initialAnalysisId?: string | null;
+  /** The question a reopened saved answer was asked with */
+  initialAnalysisPrompt?: string | null;
+  /** The reader's latest saved answers, listed on the Ask start screen to reopen. */
+  recent?: Array<{ id: string; title: string; updated_at: string }>;
   /** A question handed over from another page or the Ask bar */
   initialQuestion?: string | null;
   /** True when the question came from the Ask bar, so it is sent on arrival rather than retyped */
@@ -186,27 +191,63 @@ export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) 
   );
 }
 
+const ASK_STAGES = [
+  { key: "reading", label: "Reading the data" },
+  { key: "writing", label: "Writing it up" },
+] as const;
+
 /**
- * Shown while a written answer is drafted, which can take most of a minute: what is happening and
- * the seconds waited, so the page never sits empty. Only the elapsed time is live; no step is
+ * One progress strip for the whole ask, from the moment it is sent: the stage it is at, one clock
+ * that never restarts between stages, and Stop while an answer is being written. No step is
  * claimed done that the server has not reported.
  */
-export function WrittenAnswerProgress() {
+export function WrittenAnswerProgress({
+  stage = "writing",
+  startedAt,
+  onStop,
+}: {
+  stage?: "reading" | "writing";
+  /** When the question was sent; the clock counts from here across both stages. */
+  startedAt?: number | null;
+  onStop?: () => void;
+}) {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
-    const started = Date.now();
-    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    const started = startedAt ?? Date.now();
+    const tick = () => setSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [startedAt]);
+  const at = ASK_STAGES.findIndex((s) => s.key === stage);
   return (
-    <div role="status" aria-live="polite" className="flex flex-col gap-3 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
-      <p className="flex items-center gap-2 text-sm font-medium text-warm-900">
+    <div className="flex flex-col gap-3 rounded-lg border border-warm-200 bg-warm-100/60 px-4 py-4">
+      <ol aria-label="Progress" className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.1em]">
+        {ASK_STAGES.map((s, i) => (
+          <li key={s.key} className={`flex items-center gap-2 ${i <= at ? "text-terra-text" : "text-warm-500"}`}>
+            {i > 0 ? <span aria-hidden className={`h-px w-6 ${i <= at ? "bg-terra" : "bg-warm-300"}`} /> : null}
+            <span aria-current={i === at ? "step" : undefined}>{s.label}</span>
+          </li>
+        ))}
+      </ol>
+      {/* Only the sentence is announced; a counter in a live region is read out every second. */}
+      <p role="status" className="flex items-center gap-2 text-sm font-medium text-warm-900">
         <Loader2 aria-hidden className="h-4 w-4 animate-spin text-terra" />
-        Hamilton is writing this answer from the fee data and filings.
+        {stage === "reading"
+          ? "Hamilton is reading your figures and the market."
+          : "Hamilton is writing this answer from the fee data and filings."}
       </p>
-      <p className="text-sm text-warm-700">
-        Written answers can take up to a minute. <span className="[font-variant-numeric:tabular-nums]">{seconds}s so far.</span>
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-warm-700">
+        <p>
+          {stage === "reading" ? "Most answers start within a few seconds." : "Written answers can take up to a minute."}{" "}
+          <span aria-hidden="true" className="[font-variant-numeric:tabular-nums]">{seconds}s so far.</span>
+        </p>
+        {onStop ? (
+          <button type="button" onClick={onStop} className="min-h-11 rounded-md border border-warm-300 bg-warm-50 px-3 text-sm text-warm-800 hover:border-warm-500 sm:min-h-9">
+            Stop
+          </button>
+        ) : null}
+      </div>
       <div className="space-y-2" aria-hidden="true">
         <div className="skeleton h-5 w-full rounded" />
         <div className="skeleton h-5 w-4/6 rounded" />
@@ -223,6 +264,8 @@ export function AnalyzeWorkspace({
   initialIntent,
   initialAnalysis,
   initialAnalysisId = null,
+  initialAnalysisPrompt = null,
+  recent = [],
   initialQuestion = null,
   autoSend = false,
 }: AnalyzeWorkspaceProps) {
@@ -251,12 +294,23 @@ export function AnalyzeWorkspace({
   const [exportError, setExportError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
+  // Bumped on every ask, so asking the same question again (or Try again) really asks again.
+  const [askSeq, setAskSeq] = useState(0);
+  // A new conversation drops the engine's decision context along with the earlier answers.
+  const [conversation, setConversation] = useState(0);
+  // Earlier questions in this conversation and their one-line answers, oldest first.
+  const [thread, setThread] = useState<Array<{ question: string; lead: string | null }>>([]);
+  const [engineBusy, setEngineBusy] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [storyLead, setStoryLead] = useState<string | null>(null);
+  const currentLeadRef = useRef<string | null>(null);
+  const answerHeadingRef = useRef<HTMLDivElement>(null);
   const lastPromptRef = useRef<string>("");
   // The question before this one, so a follow-up's written answer knows what "this" refers to.
   const previousPromptRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, sendMessage, status, setMessages, error: chatError, clearError } = useChat({
+  const { messages, sendMessage, status, setMessages, error: chatError, clearError, stop } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/research/hamilton",
       body: () => ({
@@ -337,21 +391,55 @@ export function AnalyzeWorkspace({
     (question: string) => {
       const trimmed = question.trim();
       if (!trimmed || isLoading) return;
-      if (lastPromptRef.current && lastPromptRef.current !== trimmed) previousPromptRef.current = lastPromptRef.current;
+      if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
+        previousPromptRef.current = lastPromptRef.current;
+        // The answer just read moves up into the conversation, collapsed to its question and lead.
+        const earlier = lastPromptRef.current;
+        setThread((t) => [...t, { question: earlier, lead: currentLeadRef.current }]);
+      }
       lastPromptRef.current = trimmed;
+      setStartedAt(Date.now());
+      setStoryLead(null);
       clearError();
       setParsedResponse(null);
       setFigureCheck(null);
       setAskedQuestion(trimmed);
+      setAskSeq((n) => n + 1);
       setMessages([]);
       // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
       // question without one is sent on for a written answer (onNoStoryline below), so one
       // question never pays for two write-ups.
       setInput("");
+      // On a phone the keyboard fights a scroll, so it closes first.
+      if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [clearError, isLoading, setMessages],
   );
+
+  /** Starts over: no earlier answers, no carried context, the start screen. */
+  const newQuestion = useCallback(() => {
+    if (isLoading) stop();
+    clearError();
+    setThread([]);
+    previousPromptRef.current = "";
+    lastPromptRef.current = "";
+    setAskedQuestion(null);
+    setParsedResponse(null);
+    setStoryLead(null);
+    setMessages([]);
+    setConversation((c) => c + 1);
+    setInput("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    textareaRef.current?.focus();
+  }, [clearError, isLoading, setMessages, stop]);
+
+  // A storyline answer for a fee picked after a written answer replaces that answer.
+  const dropWrittenAnswer = useCallback(() => {
+    if (isLoading) stop();
+    setParsedResponse(null);
+    setMessages([]);
+  }, [isLoading, setMessages, stop]);
 
   // A question typed in the Ask bar on another screen is answered here without retyping it.
   const autoSent = useRef(false);
@@ -372,7 +460,8 @@ export function AnalyzeWorkspace({
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Enter that confirms an IME composition (Japanese, Chinese) is not a send.
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       ask(input);
     }
@@ -381,7 +470,11 @@ export function AnalyzeWorkspace({
   const handleExportPdf = useCallback(async () => {
     if (!parsedResponse || isExporting) return;
     if (!savedAnalysisId) {
-      setExportError("This answer is still being saved. Try the download again in a moment.");
+      setExportError(
+        saveError
+          ? "This answer wasn't saved, so it can't be made into a PDF. Ask it again to save it."
+          : "This answer is still being saved. Try the download again in a moment.",
+      );
       return;
     }
     setIsExporting(true);
@@ -410,7 +503,7 @@ export function AnalyzeWorkspace({
     } finally {
       setIsExporting(false);
     }
-  }, [parsedResponse, isExporting, savedAnalysisId]);
+  }, [parsedResponse, isExporting, savedAnalysisId, saveError]);
 
   // Live-parse streaming content for progressive rendering. Only the reply to the question just
   // sent counts; an earlier answer must not stand in for it.
@@ -426,6 +519,12 @@ export function AnalyzeWorkspace({
   const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
   const complete = !isLoading && parsedResponse !== null && Boolean(view.lead);
   const instName = selectedInstitution?.name ?? null;
+  currentLeadRef.current = view.lead || storyLead || null;
+  // A reopened storyline answer is shown with its charts, as it was first answered.
+  const reopenedStory = !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
+  const proseActive = isLoading || Boolean(shown && view.lead);
+  const showProgress = Boolean(askedQuestion) && (engineBusy || (isLoading && !(shown && view.lead)));
+  const longQuestion = (askedQuestion ?? initialAnalysisPrompt ?? "").length > 120;
   const suggestions = [
     "How does our overdraft fee compare with banks in our counties?",
     "Which of our fees sit furthest from our peers, and by how much?",
@@ -445,11 +544,38 @@ export function AnalyzeWorkspace({
         </div>
       ) : null}
 
+      {thread.length > 0 && askedQuestion ? (
+        <section aria-label="Earlier in this conversation" className="flex flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Earlier in this conversation</p>
+          <ol className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+            {thread.map((t, i) => (
+              <li key={i} className="flex flex-col gap-0.5 px-4 py-3">
+                <p className="text-warm-900" style={SERIF}>{t.question}</p>
+                {t.lead ? <p className="line-clamp-2 text-sm text-warm-700">{renderInline(t.lead)}</p> : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
       {askedQuestion || shown ? (
-        <MemoHeader
-          kicker={instName ? `You asked · ${instName}` : "You asked"}
-          title={askedQuestion ?? "A saved answer"}
-        />
+        <div ref={answerHeadingRef} tabIndex={-1} className="focus:outline-none">
+          <MemoHeader
+            kicker={instName ? `You asked · ${instName}` : "You asked"}
+            title={askedQuestion ?? initialAnalysisPrompt ?? "A saved answer"}
+            compact={longQuestion}
+            dek={thread.length > 0 && askedQuestion ? `Following up on: “${thread[thread.length - 1].question}”` : undefined}
+            actions={
+              <button
+                type="button"
+                onClick={newQuestion}
+                className="inline-flex min-h-11 items-center rounded-md border border-warm-300 bg-warm-50 px-3.5 py-2 text-sm font-medium text-warm-800 hover:border-warm-500 sm:min-h-9"
+              >
+                New question
+              </button>
+            }
+          />
+        </div>
       ) : (
         <>
           <MemoHeader
@@ -476,23 +602,63 @@ export function AnalyzeWorkspace({
               ))}
             </ul>
           </MemoSection>
+          {recent.length > 0 ? (
+            <MemoSection title="Your recent questions" note="Saved answers reopen as they were written, with their figures.">
+              <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
+                {recent.map((r) => (
+                  <li key={r.id}>
+                    <a
+                      href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(r.id)}`, instId)}
+                      className="flex min-h-11 items-baseline justify-between gap-4 px-4 py-3 text-warm-900 no-underline hover:bg-warm-100"
+                    >
+                      <span className="min-w-0" style={SERIF}>{r.title}</span>
+                      <span className="shrink-0 text-xs text-warm-600">{shortDate(r.updated_at)}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </MemoSection>
+          ) : null}
         </>
       )}
 
+      {showProgress ? (
+        <WrittenAnswerProgress stage={engineBusy ? "reading" : "writing"} startedAt={startedAt} onStop={isLoading ? stop : undefined} />
+      ) : !askedQuestion && isLoading && !(shown && view.lead) ? (
+        <WrittenAnswerProgress />
+      ) : null}
+      <p role="status" className="sr-only">
+        {complete ? "Answer ready." : ""}
+      </p>
+
+      {reopenedStory ? (
+        <StorylineView
+          story={reopenedStory}
+          memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
+          nextSteps={initialAnalysisId ? <DownloadAnswerPdf analysisId={initialAnalysisId} /> : null}
+        />
+      ) : null}
+
+      <div className="flex flex-col gap-8">
       {askedQuestion ? (
+        <div className={proseActive ? "order-last" : undefined}>
         <StructuredAsk
+          key={conversation}
           question={askedQuestion}
+          nonce={askSeq}
+          onStoryline={dropWrittenAnswer}
+          onBusyChange={setEngineBusy}
+          onLead={setStoryLead}
           institutionId={instId}
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
           onNoStoryline={answerInProse}
         />
+        </div>
       ) : null}
 
-      {isLoading && !(shown && view.lead) ? <WrittenAnswerProgress /> : null}
-
-      {shown && view.lead ? (
-        <>
+      {shown && view.lead && !reopenedStory ? (
+        <div className="flex flex-col gap-8">
           {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
           {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
           <article className="flex max-w-[68ch] flex-col gap-4">
@@ -595,11 +761,11 @@ export function AnalyzeWorkspace({
               <AuditPanel
                 trail={answerAuditTrail({ lookups, figureCheck, institutionName: instName, preparedAt: answeredAt })}
               />
-              {savedAnalysisId ? <p className="text-xs text-warm-600">Saved to your workspace.</p> : null}
             </>
           ) : null}
-        </>
+        </div>
       ) : null}
+      </div>
 
       <div className="sticky bottom-4 z-30 print:hidden">
         <form
@@ -621,23 +787,28 @@ export function AnalyzeWorkspace({
             onKeyDown={handleKeyDown}
             rows={1}
             maxLength={500}
-            disabled={isLoading}
             placeholder={askedQuestion ? "Ask a follow-up…" : "Ask Hamilton about your fees or your market"}
             className="min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-relaxed text-warm-ink-50 placeholder:text-warm-ink-300 focus:outline-none"
           />
           <button
             type="submit"
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || engineBusy || !input.trim()}
             aria-label="Ask"
             className="flex items-center gap-1.5 rounded-lg bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50"
           >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
             Ask
           </button>
         </form>
       </div>
     </MemoPage>
   );
+}
+
+/** "Oct 8" for a saved answer's date; empty when the date can't be read. */
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /** The focus a deep link asks for (?intent=benchmark → Peer Position, etc.). */

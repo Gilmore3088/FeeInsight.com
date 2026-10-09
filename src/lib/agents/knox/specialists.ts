@@ -11,6 +11,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
+import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -35,7 +36,24 @@ import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names"
  */
 
 /** The pass 1 strategy; its version gates re-extraction of a text. */
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 34 } as const;
+// v48: a fee-change notice's row ("Fee through | Fee as of") is read at its newest column.
+// v49: a monthly fee with no account name takes it from its own name or the heading above it.
+// v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
+// v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
+// v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
+// v53: a fax service is document reproduction, the fold's home for it (`FAX_SERVICE`).
+// v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+// v55: a monthly fee's lineup is never read from a neighbour: the next account's fee line, another
+// account's clause of a one-line footnote, or a fee heading above "Money Market" (`lineup.ts`).
+// v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
+// v57: a long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
+// and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest, Old National).
+// v59: a "Cross-Border Banking" bundle or package is an account, so its fee is the account's
+// maintenance fee, not the card's currency fee (`CROSS_BORDER_BUNDLE`; RBC, TD, BMO).
+// v60: a threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and Over)"),
+// a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words (`nameFrom`, `tidyFeeName`).
+// v61: adjusting an ATM deposit or dispute is account research, not a network ATM fee (`ATM_ADJUSTMENT`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 61 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -61,7 +79,7 @@ const MAX_HELD_PER_DOCUMENT = 40;
 /** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
 const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
 const NSF_AND_OVERDRAFT = new RegExp(
-  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*overdrafts?\b|\boverdrafts?\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
+  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*(?:overdrafts?|OD)\b|\b(?:overdrafts?|OD)\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
   "i",
 );
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
@@ -88,6 +106,12 @@ export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boo
 function tracesToSource(text: string, feeName: string, amount: number): boolean {
   const result = checkFeeAgainstSource(text, feeName, amount, ".");
   return result.ok || result.reason === "tiered_fee";
+}
+
+/** The self-check's verdict: whether the fee traces, and the row it traced to. */
+function selfCheck(text: string, feeName: string, amount: number): { traces: boolean; row: string | null } {
+  const result = checkFeeAgainstSource(text, feeName, amount, ".");
+  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
 }
 
 function heldKey(held: HeldFeeCandidate): string {
@@ -140,7 +164,24 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     let selfCheckFailed = 0;
     for (const read of found.candidates) {
       if (candidates.length >= MAX_FEES_PER_DOCUMENT) break;
-      const candidate = { ...read, feeName: tidyFeeName(read.feeName) };
+      // v44: a fee with no frequency takes the one its own line states right after its price
+      // ("$6.00 each", "| $28.00 | Per request"); Darwin's eval found 48% of live fees blank.
+      // v47: the fee's own row wins over a frequency read anywhere on the line, and one read
+      // from another fee's row is dropped ("... per year .. $10.00 | Reverse Stop Payment
+      // .. $20.00" gave the $20 fee "annual"); 25 of 131 stated frequencies in the seven-state
+      // keys were wrong this way.
+      // v52: the same rule as Hamilton's frequency fill (`settledFrequency`), so a period the line
+      // never states is dropped on a per-event fee and a per-item reading never lands on a period
+      // category.
+      // v57: a fee whose own row traces reads its frequency from that row, not from a window
+      // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
+      const feeName = tidyFeeName(read.feeName);
+      const checked = selfCheck(text, feeName, read.amount);
+      const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
+      const frequency = rowFrequency
+        ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
+        : settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
+      const candidate = { ...read, feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
@@ -150,7 +191,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       if (namesAWorkedExample(candidate.feeName)) continue;
       // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
       if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
-      if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
+      if (!checked.traces) {
         selfCheckFailed += 1;
         untraced.push({
           shape: "untraced",

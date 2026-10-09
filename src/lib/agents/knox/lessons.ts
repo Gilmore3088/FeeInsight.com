@@ -128,20 +128,35 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
             FROM judged
            WHERE name <> '' AND institution_id IS NOT NULL
            GROUP BY institution_id, name, fee_key
+        ),
+        -- The wrong-only and right-only categories of each name, side by side. A self-join of the
+        -- tallies is equivalent, but the planner misjudged the CTE sizes as a few rows and
+        -- chose a nested loop: 53 s average over 538 runs on Oct 8, near the 120 s timeout.
+        global_sides AS (
+          SELECT name,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE wrong_banks >= ${LESSON_MIN_BANKS} AND right_banks = 0) AS wrong_keys,
+                 array_agg(wrong_banks ORDER BY fee_key) FILTER (WHERE wrong_banks >= ${LESSON_MIN_BANKS} AND right_banks = 0) AS wrong_counts,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE right_banks >= ${LESSON_MIN_BANKS} AND wrong_banks = 0) AS right_keys,
+                 array_agg(right_banks ORDER BY fee_key) FILTER (WHERE right_banks >= ${LESSON_MIN_BANKS} AND wrong_banks = 0) AS right_counts
+            FROM tally
+           GROUP BY name
+        ), bank_sides AS (
+          SELECT institution_id, name,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE wrong_count > 0 AND right_count = 0) AS wrong_keys,
+                 array_agg(fee_key ORDER BY fee_key) FILTER (WHERE right_count > 0 AND wrong_count = 0) AS right_keys
+            FROM bank_tally
+           GROUP BY institution_id, name
         )
-        (SELECT NULL::bigint AS institution_id, w.name, w.fee_key AS wrong_key, r.fee_key AS right_key, w.wrong_banks, r.right_banks
-          FROM tally w
-          JOIN tally r ON r.name = w.name AND r.fee_key <> w.fee_key
-         WHERE w.wrong_banks >= ${LESSON_MIN_BANKS} AND w.right_banks = 0
-           AND r.right_banks >= ${LESSON_MIN_BANKS} AND r.wrong_banks = 0
-         ORDER BY w.wrong_banks DESC
+        (SELECT NULL::bigint AS institution_id, s.name, w.fee_key AS wrong_key, r.fee_key AS right_key,
+                w.banks AS wrong_banks, r.banks AS right_banks
+          FROM global_sides s,
+               unnest(s.wrong_keys, s.wrong_counts) AS w(fee_key, banks),
+               unnest(s.right_keys, s.right_counts) AS r(fee_key, banks)
+         ORDER BY w.banks DESC
          LIMIT ${LESSON_LIMIT})
         UNION ALL
-        (SELECT w.institution_id, w.name, w.fee_key AS wrong_key, r.fee_key AS right_key, 1 AS wrong_banks, 1 AS right_banks
-          FROM bank_tally w
-          JOIN bank_tally r ON r.institution_id = w.institution_id AND r.name = w.name AND r.fee_key <> w.fee_key
-         WHERE w.wrong_count > 0 AND w.right_count = 0
-           AND r.right_count > 0 AND r.wrong_count = 0
+        (SELECT s.institution_id, s.name, w AS wrong_key, r AS right_key, 1 AS wrong_banks, 1 AS right_banks
+          FROM bank_sides s, unnest(s.wrong_keys) AS w, unnest(s.right_keys) AS r
          LIMIT ${LESSON_LIMIT})
 
         UNION ALL

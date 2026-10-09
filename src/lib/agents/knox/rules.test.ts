@@ -1,16 +1,32 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
+import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
   return extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
 }
 
+const MVB_WRAPPED = [
+  "Non-MVB Bank ATM Fee (fee for other bank ATM usage) $2.50",
+  "Non-Sufficient Funds Fee (per item, both returned or paid created by check, in person",
+  "withdrawal, ATM withdrawal, or other electronic means. Maximum of 6 fees per day)",
+  "",
+  "$36.00",
+  "",
+  "Overdraft Fee (per item, both returned or paid created by check, in person withdrawal,",
+  "ATM withdrawal, or other electronic means. Maximum of 6 fees per day.)",
+  "",
+  "$36.00",
+  "",
+  "Paper Statement (monthly-in lieu of electronic statement) $4.00",
+].join("\n");
+
 describe("Knox extract.rules", () => {
   it("v12 never reads a limit, threshold or refundable deposit as the fee", () => {
     expect(fees("Money Orders ($1,000 Limit) Non-Customer ........................ $10.00")).toEqual([
-      ["Money Orders ( Limit) Non-Customer", 10, "money_order"],
+      ["Money Orders ($1,000 Limit) Non-Customer", 10, "money_order"],
     ]);
     expect(fees("COURTESY PAY ($300 THRESHOLD, FEE PER TRANS.) $ | 30.00")).toEqual([]);
     expect(fees("Safe Deposit Box / $10.00 refundable key deposit on each box")).toEqual([]);
@@ -273,7 +289,7 @@ describe("Knox extract.rules", () => {
     ["Statement Copy", "document_reproduction"],
     ["Deposit Bags", "night_deposit"],
     ["Verification of Deposit", "account_verification"],
-    ["Mortgage Subordination Fee", "legal_process"],
+    ["Mortgage Subordination Fee", "other_lending_fee"],
     ["Loan Application Fee", "other_lending_fee"],
     ["Same Day Bill Payment", "bill_pay"],
     ["Gift Cards (Visa)", "gift_card_purchase"],
@@ -437,6 +453,7 @@ describe("Knox extract.rules", () => {
     ["Checkbook Balancing", "account_research"],
     ["Assistance in Balancing Checkbook", "account_research"],
     ["Check Book Order", "check_printing"],
+    ["Checkbook Order (includes balance register)", "check_printing"],
     ["NSF Fee ( Fee applies when overdraft is", "nsf"],
     ["Insufficient Funds Fee (when overdraft coverage is not available)", "nsf"],
     ["Non-Sufficient Funds (NSF)/Overdraft Fee", "overdraft"],
@@ -451,14 +468,52 @@ describe("Knox extract.rules", () => {
   });
 
   it.each([
+    ["Account Research Copies (per page)", "document_reproduction"],
+    ["Research Request - Per Page Copied", "document_reproduction"],
+    ["Account Research (Per hour + $0.50 per copy)", "account_research"],
+  ])("v54 reads %s as %s (a copy charged by the page)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["Checkbook Reconciliation (per hour)", "account_research"],
+    ["Balance Check Book", "account_research"],
+    ["Check Book Order", "check_printing"],
+  ])("v56 reads %s as %s (checkbook reconciliation)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["Cross-Border Banking Bundle annual fee", "monthly_maintenance"],
+    ["Cross-Border Banking Package monthly fee", "monthly_maintenance"],
+    ["Cross-Border Fee", "card_foreign_txn"],
+    ["Cross-border transaction fee", "card_foreign_txn"],
+    ["Cross-Border Banking card purchases (3% of purchase)", "card_foreign_txn"],
+  ])("v59 reads %s as %s (cross-border banking bundle)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
+    ["ATM Adjustment", "account_research"],
+    ["ATM Adjustment Fee $5.00 Network fee may apply", "account_research"],
+    ["Special Handling (i.e. ATM adjustment, etc.)", "account_research"],
+    ["ATM Limit Adjustment", "atm_non_network"],
+    ["ATM Transaction Adjustment", "account_research"],
+    ["ATM Balance Inquiry (at non-Wildfire ATM)", "atm_non_network"],
+  ])("v61 reads %s as %s (ATM adjustment)", (name, key) => {
+    expect(classifyFeeText(name)).toBe(key);
+  });
+
+  it.each([
     ["Returned Mail Fee", "account_research"],
     ["Bad Address Fee", "account_research"],
-    ["Fax Outgoing", "account_research"],
+    ["Fax Outgoing", "document_reproduction"],
+    ["Loan Payoff Fax/Mail Fee", "account_research"],
     ["Excessive Withdrawal Fee", "account_research"],
     ["Withdrawal Limit Fee", "account_research"],
-    ["Foreign Item Collection", "check_cashing"],
-    ["Canadian Check Processing Fee", "check_cashing"],
-    ["Collection Item", "check_cashing"],
+    ["Foreign Item Collection", "collection_item"],
+    ["Canadian Check Processing Fee", "collection_item"],
+    ["Collection Item", "collection_item"],
     ["Loan Cancellation Fee", "loan_origination"],
     ["Loan Refinance Fee", "other_lending_fee"],
   ])("v26 folds %s into %s (James, Oct 7 2026)", (name, key) => {
@@ -487,8 +542,8 @@ describe("Knox extract.rules", () => {
 
   it.each([
     ["Payoff fax fee", "account_research"],
-    ["Clean Collection Fee (per item)", "check_cashing"],
-    ["Collection Items for Deposit", "check_cashing"],
+    ["Clean Collection Fee (per item)", "collection_item"],
+    ["Collection Items for Deposit", "collection_item"],
     ["Credit Report Fee", "loan_origination"],
   ])("v30 still folds %s into %s", (name, key) => {
     expect(foldedCategory(name)).toBe(key);
@@ -574,6 +629,103 @@ describe("Knox extract.rules", () => {
     ]);
     expect(fees("†Standard Practices and Fees: We will charge a fee of $20 each time we pay an overdraft; you can only be assessed one overdraft fee per day per account.")).toEqual([
       ["Overdraft fee (each time we pay an overdraft; one per day)", 20, "overdraft"],
+    ]);
+  });
+
+  it("v40 names a sentence fee by its own title and reads Paid Item Fee as an overdraft (Northeast Bank)", () => {
+    // Text 19354: the Paid Item Fee line was held unclassified, and the Return Item Fee kept
+    // the sentence around it as its name.
+    expect(fees([
+      "We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your",
+      "Ledger Balance. We may charge you a Return Item Fee of $30.00 if we return an",
+      "item unpaid due to an insufficient Ledger Balance.",
+    ].join("\n"))).toEqual([
+      ["Paid Item Fee", 30, "overdraft"],
+      ["Return Item Fee", 30, "nsf"],
+    ]);
+    // One price for the paid and the returned NSF item is the overdraft price too (v43).
+    expect(classifyFeeText("NSF Paid Item Fee/NSF Returned Item Fee")).toBe("overdraft");
+  });
+
+  it("v43 reads one price for the paid and the returned NSF item as the overdraft price (Pinnacle Bank Wyoming)", () => {
+    expect(fees("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32.00")).toEqual([
+      ["NSF Paid Item Fee/Returned Item Fee (items over $10)", 32, "overdraft"],
+    ]);
+    expect(classifyFeeText("Returned Item Fee/Paid Item Fee")).toBe("overdraft");
+    expect(classifyFeeText("NSF Returned Item Fee")).toBe("nsf");
+  });
+
+  it("v42 reads the overdraft lines of Marketing's outreach batch", () => {
+    const paidAndReturned = (text: string) =>
+      runFreeSpecialists(text)
+        .candidates.filter((fee) => fee.canonicalHint === "overdraft" || fee.canonicalHint === "nsf")
+        .map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+    // BankIowa (text 13837): a long name ending in a note kept the note's last clause.
+    expect(paidAndReturned([
+      "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)",
+      "$30.00",
+      "",
+      "Returned Item Fee* - each debit or check presentment returned (Consumer Accts: 5 max total OD or Returned Item fees daily)",
+      "$30.00",
+    ].join("\n"))).toEqual([
+      ["Overdraft Fee - each debit or check presentment paid", 30, "overdraft"],
+      ["Returned Item Fee - each debit or check presentment returned", 30, "nsf"],
+    ]);
+    // Saco & Biddeford (text 16363): a paid NSF item is an overdraft.
+    expect(paidAndReturned([
+      "Paid nonsufficient funds (NSF)*", "", "Consumer account | $25.00", "", "Business account | $35.00", "",
+      "Return item*", "", "Consumer account | $15.00", "", "Business account | $25.00",
+    ].join("\n"))).toEqual([
+      ["Paid nonsufficient funds (NSF)*: Consumer account", 25, "overdraft"],
+      ["Paid nonsufficient funds (NSF)*: Business account", 35, "overdraft"],
+      ["Return item*: Consumer account", 15, "nsf"],
+      ["Return item*: Business account", 25, "nsf"],
+    ]);
+    // Bluestone FCU (text 22145): an honored NSF draft is paid.
+    expect(paidAndReturned([
+      "NSF Share Draft (Returned) | $25.00 per item ($100.00 Max per day)",
+      "NSF Share Draft (Honored) | $25.00 per item ($100.00 Max per day)",
+    ].join("\n"))).toEqual([
+      ["NSF Share Draft (Returned)", 25, "nsf"],
+      ["NSF Share Draft (Honored)", 25, "overdraft"],
+    ]);
+    // Los Angeles FCU (text 18523): the cell listing what an overdraft covers does not name it.
+    expect(paidAndReturned([
+      "General Fees | Courtesy Pay for paid items | Checks (Share Drafts), Online Payments, & Automated Clearing House (ACH) | $29 per presentment; $145 daily maximum",
+      "General Fees | Overdrawn/Courtesy Pay | For Debit Card Transactions including ATM, POS, Debit, & Credit | $29 per presentment; $145 daily maximum",
+    ].join("\n")).map(([name, amount, hint]) => [hint, amount, String(name).includes("ATM") ? "debit cell" : "items cell"])).toEqual([
+      ["overdraft", 29, "items cell"],
+      ["overdraft", 29, "debit cell"],
+    ]);
+    // NIH FCU (text 12917): a threshold row under a priceless fee line is that fee's.
+    expect(paidAndReturned([
+      "Non-Sufficient Funds (NSF)",
+      "Paid Consumer & Business NSF Items- active",
+      "enrollment in the Courtesy Pay program is required.",
+      "Per Item less than $10.01 | No Fee",
+      "Per Item greater than $10.01 | $30 per item",
+      "Returned Unpaid NSF Items (consumer) | $30 per item",
+    ].join("\n"))).toEqual([
+      ["Returned Unpaid NSF Items (consumer)", 30, "nsf"],
+      ["Paid Consumer & Business NSF Items", 30, "overdraft"],
+    ]);
+  });
+
+  it("v38 keeps a threshold cell in the name, and reads Privilege Pay as an overdraft", () => {
+    // Lighthouse FCU (text 15165): "Over $5" is the smallest item charged, not a tier.
+    expect(fees("Courtesy Pay | Over $5 | Per occurrence | $32 | Courtesy Pay fee")).toEqual([
+      ["Courtesy Pay (over $5)", 32, "overdraft"],
+    ]);
+    // Arkansas FCU (text 1736): one price for NSF and the paid item names an overdraft too.
+    expect(fees("NSF, Privilege Pay, & Uncollected Funds Fee | $ 35.00")).toEqual([
+      ["NSF, Privilege Pay, & Uncollected Funds Fee", 35, "overdraft"],
+    ]);
+    expect(classifyFeeText("Privilege Pay Fee")).toBe("overdraft");
+  });
+
+  it("v37 reads a one-time fee sentence with a daily cap after it (Guaranty)", () => {
+    expect(fees("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day.")).toEqual([
+      ["Overdraft fee (each time we pay an overdraft)", 36, "overdraft"],
     ]);
   });
 
@@ -705,6 +857,45 @@ describe("Knox extract.rules", () => {
     expect(classifyFeeText("Overdraft Protection")).toBe("od_protection_transfer");
   });
 
+  it("v36 reads a price printed between a name's two lines, and drops footnote marks glued to it", () => {
+    // Starion's schedule of charges (text 16159): superscript marks "4, 5" read onto the price.
+    const starion = [
+      "Loan Extension Fee $50",
+      "NSF Fee³ - All Checking and Savings Accounts (Including",
+      "$334, 5",
+      "Money Markets)",
+      "Overdraft Fee³ - All Checking and Savings Accounts",
+      "$334, 5",
+      "(Including Money Markets)",
+      "Continuous Overdrawn Fee $331",
+      "4. Please be aware that an item may be presented multiple times.",
+      "5. Maximum of six (6) Overdraft Fees and/or NSF Fees combined may be charged per day.",
+    ].join("\n");
+    expect(fees(starion)).toEqual(
+      expect.arrayContaining([
+        ["NSF Fee - All Checking and Savings Accounts", 33, "nsf"],
+        ["Overdraft Fee - All Checking and Savings Accounts", 33, "overdraft"],
+      ]),
+    );
+    expect(fees(starion).some(([, amount]) => amount === 334)).toBe(false);
+    // Marks with no printed footnotes stay part of the price, and a line below that is not a
+    // note leaves the price unjoined.
+    expect(fees("Overdraft Fee - All Accounts\n$334, 5\n(Including Money Markets)")).not.toContainEqual(["Overdraft Fee - All Accounts", 33, "overdraft"]);
+    expect(fees("Overdraft Fee - All Accounts\n$33\nStop Payment")).toEqual([]);
+  });
+
+  it("v35 reads a fee name that wraps onto a second line, with its price alone below", () => {
+    // MVB's fee schedule (text 18808): the note opened on the name's line closes above the price.
+    expect(fees(MVB_WRAPPED)).toEqual(
+      expect.arrayContaining([
+        ["Non-Sufficient Funds Fee", 36, "nsf"],
+        ["Overdraft Fee", 36, "overdraft"],
+      ]),
+    );
+    // A name line with no open note is not joined to a later line's price.
+    expect(fees(["Dormant Account Fee", "Gift Cards", "$3.50"].join("\n"))).toEqual([]);
+  });
+
   it("v34 reads a price change the bank already made as today's price, and a unit cell under the fee's name", () => {
     // Pinnacle's fee change notice (raw 321489); a change still to come stays a held range.
     expect(fees("- We've lowered Overdraft Paid Item fees from $38 to $30 for ***all*** clients.")).toEqual([
@@ -725,5 +916,116 @@ describe("Knox extract.rules", () => {
     expect(fees("Overdraft Fee - Items Paid3 | Per transaction | $20.00")).toEqual([
       ["Overdraft Fee - Items Paid3 | Per transaction", 20, "overdraft"],
     ]);
+  });
+
+  it("v39 reads the OD abbreviation as the overdraft fee, and a continued OD charge as continuous", () => {
+    // GreenState's schedule: the line was read as no fee at all.
+    expect(fees("OD Privilege* (Overdrafts - Created by check, | $29.00/Item**")).toEqual([
+      ["OD Privilege (Overdrafts - Created by check", 29, "overdraft"],
+    ]);
+    expect(fees("Paid Item O/D Fee | $28.00")).toEqual([["Paid Item O/D Fee", 28, "overdraft"]]);
+    expect(fees("Continued OD Charge | $7.50/day")).toEqual([["Continued OD Charge", 7.5, "continuous_od"]]);
+    expect(fees("Consecutive Day OD Fee(3) | $35.00")).toEqual([["Consecutive Day OD Fee(3)", 35, "continuous_od"]]);
+    expect(fees("OD Protection Transfer | $10.00")).toEqual([["OD Protection Transfer", 10, "od_protection_transfer"]]);
+    expect(runFreeSpecialists("NSF/OD Charges* | $30.00").candidates.map((fee) => fee.canonicalHint).sort()).toEqual(["nsf", "overdraft"]);
+  });
+});
+
+describe("v46 wrapped paragraphs", () => {
+  const ORIGIN = [
+    "charges. We will generally not pay items which will create in excess of a $500",
+    "overdraft (negative) balance in your account. Normal bank fees and charges,",
+    "including returned item charge/overdraft item charge of $35.00 for each item",
+    "will be included in the calculation of this limit. However, we will charge you",
+    "no more than five overdraft item charges per day and will not charge an",
+    "overdraft item charge if your checking account is overdrawn $5 or less at",
+    "the end of each business day. The $35.00 overdraft item charge applies to",
+    "overdrafts created by check, in-person withdrawal, ATM withdrawal or other",
+    "electronic means if you opted in to the authorization and payment of ATM",
+    "and everyday debit card transactions (Regulation E). Also, we will charge",
+    "you an overdrawn account fee of$10.00 on the 5th consecutive business",
+    "day your account is overdrawn; if your account is overdrawn for more than",
+    "5 consecutive business days, we will charge an additional $10.00 per week.",
+  ].join("\n");
+
+  it("reads Origin Bank's overdraft paragraph as sentences: one $35 overdraft fee, no $10 or $5", () => {
+    const found = runFreeSpecialists(ORIGIN).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+    expect(found).toEqual([["Returned item charge/overdraft item charge", 35, "overdraft"]]);
+  });
+
+  it("joins only long prose lines that end mid-sentence onto a lower-case line", () => {
+    expect(joinWrappedProse(["The overdraft item charge of $35.00 applies to each", "item we pay."])).toEqual([
+      "The overdraft item charge of $35.00 applies to each item we pay.",
+    ]);
+    expect(joinWrappedProse(["Overdraft Fee", "per item | $35"])).toEqual(["Overdraft Fee", "per item | $35"]);
+    expect(joinWrappedProse(["Stop payment fee charged for each request we receive.", "wire fee $25"])).toHaveLength(2);
+    expect(joinWrappedProse(["Overdraft Fee (each item we pay into the overdraft) | $35", "per item"])).toHaveLength(2);
+  });
+});
+
+describe("v57: long table rows and sentence-fragment names (Arvest, Old National)", () => {
+  const ARVEST_OD =
+    '| Overdraft (OD) - Paid Item | A fee may be charged, when permitted by law, for each transaction presented to us for payment when the balance in your account after we post all credits and debits for the day ("Ledger Balance") is less than the amount we need to pay your transaction. For all consumer accounts, we will assess a maximum of four (4) OD fees per day. We do not charge a fee if we return the transaction unpaid. | $17.00 | per item |';
+
+  it("keeps the overdraft fee of a table row whose details column runs long", () => {
+    const found = runFreeSpecialists(ARVEST_OD).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint, fee.frequency]);
+    // Per item from its own row, not "daily" from the cap sentence before the price.
+    expect(found).toEqual([["Overdraft (OD) - Paid Item", 17, "overdraft", "per_item"]]);
+  });
+
+  it("names a table row by its first cell when its details cell names no fee", () => {
+    const found = runFreeSpecialists("| Stop Payment Order | Initial order or a renewal | $30.00 | per item |").candidates;
+    expect(found.map((fee) => [fee.amount, fee.canonicalHint])).toEqual([[30, "stop_payment"]]);
+    const billPay = runFreeSpecialists("| Online BillPay | If applicable, based on account type features | $0.50 | per item |").candidates;
+    expect(billPay.map((fee) => [fee.feeName, fee.amount])).toEqual([["Online BillPay", 0.5]]);
+  });
+
+  it("drops an N/A cell and a details cell from the name", () => {
+    expect(runFreeSpecialists("| ATM or Debit Card Replacement | N/A | $7.50 | per card |").candidates.map((fee) => fee.feeName)).toEqual([
+      "ATM or Debit Card Replacement",
+    ]);
+    const atm =
+      "| ATM Account Inquiry/ATM Transaction | Fee applies to the use of an ATM or terminal not owned and operated by Arvest Bank, including balance inquiry, deposit, or withdrawal. The ATM owner may charge an additional fee. | $2.50 | per item |";
+    expect(runFreeSpecialists(atm).candidates.map((fee) => [fee.feeName, fee.amount])).toContainEqual(["ATM Account Inquiry/ATM Transaction", 2.5]);
+  });
+
+  it("names a monthly fee without the word that joins its sentence to the one before", () => {
+    const found = runFreeSpecialists("Otherwise, a monthly service fee of $6.95.").candidates;
+    expect(found.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Monthly service fee", 6.95, "monthly_maintenance"]]);
+  });
+
+  it("names the fee a sentence avoids by the words after its price", () => {
+    const found = runFreeSpecialists("Go green with eStatements to avoid $3 paper statement fee").candidates;
+    expect(found.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Paper statement fee", 3, "paper_statement"]]);
+  });
+});
+
+describe("v60: names keep their threshold and lose a column label", () => {
+  const names = (text: string) => runFreeSpecialists(text).candidates.map((fee) => fee.feeName);
+
+  it("keeps a threshold figure in the name's parenthetical (101115, 40261)", () => {
+    expect(fees("Cashier's Checks ($10,000.01 and Over) | $10.00")).toEqual([["Cashier's Checks ($10,000.01 and Over)", 10, "cashiers_check"]]);
+    expect(fees("Dormant Account Fee-(No activity for 2 years and the balance is under $100) | $5.00 - Monthly")[0]?.[0]).toBe(
+      "Dormant Account Fee-(No activity for 2 years and the balance is under $100)",
+    );
+  });
+
+  it("still drops a price that is not a threshold", () => {
+    expect(nameFrom("Overdraft Fee ($35.00 per item)")).toBe("Overdraft Fee ( per item)");
+  });
+
+  it("drops a \"Name\" column label (Maple FCU)", () => {
+    expect(names("Name Stop Payment | Fee $25.00")).toContain("Stop Payment");
+  });
+
+  it("keeps \"In addition to\" as words of the name", () => {
+    expect(tidyFeeName("In addition to the Card Replacement Fee")).not.toMatch(/^To the/);
+    expect(tidyFeeName("Otherwise, a monthly service fee")).toBe("Monthly service fee");
+  });
+
+  it("never cuts a name down to its section heading", () => {
+    expect(
+      tidyFeeName("SERVICE FEES | Check Cashing (Less than $500, no other active service) Active = service used at least every 6 months"),
+    ).not.toBe("SERVICE FEES");
   });
 });
