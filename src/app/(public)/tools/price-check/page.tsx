@@ -3,7 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
+import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
+import { DistributionChart } from "@/components/public/distribution-chart";
+import { getNationalIndexCached } from "@/lib/data-store/fee-index";
+import { getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
 import {
+  charterChecks,
+  marketChecks,
+  type GroupCheck,
   isPriceCheckFee,
   loadStatePricesCached,
   parsePrice,
@@ -43,6 +50,15 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const prices = asked ? await loadStatePricesCached(state, fee).catch(() => null) : null;
   const check = prices && price !== null ? priceCheck(price, prices) : null;
   const stateName = state ? STATE_NAMES[state] : "";
+  const [national, demographics] = check && state
+    ? await Promise.all([
+        getNationalIndexCached().catch(() => []),
+        STATE_TO_FIPS[state] ? getStateDemographicsCached(STATE_TO_FIPS[state]).catch(() => null) : Promise.resolve(null),
+      ])
+    : [[], null];
+  const nationalEntry = national.find((entry) => entry.fee_category === fee) ?? null;
+  const charters = prices && price !== null ? charterChecks(price, prices) : [];
+  const markets = prices && price !== null ? marketChecks(price, prices) : [];
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6">
@@ -138,6 +154,54 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           )}
 
           <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+            How the {stateName} figures are spread
+          </h3>
+          <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-3">
+            <DistributionChart values={prices.institutions.map((institution) => institution.value)} median={check.median} />
+          </div>
+          <p className="mt-3 text-[14px] leading-relaxed text-[#5A5347]">
+            The {stateName} median is {money(check.median)}
+            {nationalEntry?.median_amount != null && (nationalEntry.institution_count ?? 0) > 0
+              ? `, against ${money(nationalEntry.median_amount)} across ${nationalEntry.institution_count.toLocaleString()} institutions nationally`
+              : ""}
+            .
+            {demographics?.median_household_income
+              ? ` Median household income in ${stateName} is ${money(Number(demographics.median_household_income))} (Census ACS ${demographics.year}).`
+              : ""}
+          </p>
+
+          {charters.length > 0 && (
+            <>
+              <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+                Banks and credit unions
+              </h3>
+              <GroupTable rows={charters} price={check.price} firstColumn="Charter" />
+            </>
+          )}
+
+          {markets.length > 0 && (
+            <>
+              <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+                By local market
+              </h3>
+              <p className="mt-1 text-[13px] text-[#6B6255]">
+                Metro areas, or the city where an institution has no metro, with at least 3 source-checked institutions.
+              </p>
+              <GroupTable rows={markets} price={check.price} firstColumn="Market" />
+            </>
+          )}
+          <p className="mt-4 text-[13px] text-[#5A5347]">
+            More on {stateName}:{" "}
+            <Link href={`/research/state/${state}`} className="font-medium text-[#A93D25] hover:underline">
+              state fee report
+            </Link>
+            {" · "}
+            <Link href={`/fees/city/${(state ?? "").toLowerCase()}`} className="font-medium text-[#A93D25] hover:underline">
+              fees by city
+            </Link>
+          </p>
+
+          <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
             The institutions behind the count
           </h3>
           <ul className="mt-3 divide-y divide-[#E8DFD1]/60 rounded-xl border border-[#E8DFD1]/80 bg-white/70">
@@ -191,6 +255,36 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           </p>
         </section>
       )}
+    </div>
+  );
+}
+
+/** Where the price sits in each group: lower, same, higher, and the group's median. */
+function GroupTable({ rows, price, firstColumn }: { rows: GroupCheck[]; price: number; firstColumn: string }) {
+  return (
+    <div className="mt-3 overflow-x-auto rounded-xl border border-[#E8DFD1]/80 bg-white/70">
+      <table className="w-full min-w-[22rem] text-left text-[14px]">
+        <thead>
+          <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
+            <th className={`px-4 py-2.5 ${EYEBROW}`}>{firstColumn}</th>
+            <th className={`px-3 py-2.5 text-right ${EYEBROW}`}>Counted</th>
+            <th className={`px-3 py-2.5 text-right ${EYEBROW}`}>Median</th>
+            <th className={`px-4 py-2.5 text-right ${EYEBROW}`}>Lower / same / higher than {money(price)}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#E8DFD1]/40">
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td className="px-4 py-2.5 text-[#1A1815]">{row.label}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{row.count}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums">{money(row.median)}</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {row.lower} / {row.same} / {row.higher}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

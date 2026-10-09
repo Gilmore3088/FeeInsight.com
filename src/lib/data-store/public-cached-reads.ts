@@ -11,7 +11,7 @@ import {
   getStateStats,
   getStatesWithFeeData,
 } from "./geographic";
-import { getDataCoverageSummary, getMarketConcentration } from "./financial";
+import { getDataCoverageSummary, getMarketConcentration, getStateDemographics } from "./financial";
 import {
   getCharterFeeRevenueSummary,
   getFeeRevenueData,
@@ -54,6 +54,7 @@ export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCit
 export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
+export const getStateDemographicsCached = cachedPublicRead("state-demographics", getStateDemographics);
 export const getFeeRevenueDataCached = cachedPublicRead("fee-revenue-data", getFeeRevenueData);
 export const getCharterFeeRevenueSummaryCached = cachedPublicRead(
   "charter-fee-revenue-summary",
