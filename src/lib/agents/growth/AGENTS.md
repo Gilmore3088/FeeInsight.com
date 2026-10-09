@@ -16,7 +16,9 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
 | Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
+| Quote drafts (CARNEGIE) | started when James marks a lead qualified on `/admin/leads` (never cron); also in the daily loop as a dry run | `growth-quote` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
+| Monday plan and proposals (DRAPER) | `/api/admin/crew/draper`; not scheduled yet (proposed Mondays 14:57 UTC, waiting on James) | `growth-proposals`, `growth-plan` | below |
 | Market brief (SHERLOCK) | `/api/admin/crew/intel`, daily 14:17 UTC | `growth-intel` | below |
 | Conversion check (NORMAN) | `/api/admin/crew/conversion`, Mondays 13:47 UTC | `growth-conversion` | below |
 | Press pitches (BERNAYS) | `/api/admin/crew/press` (admin or cron secret; not scheduled yet, waits for James) | `growth-press` | below |
@@ -88,6 +90,30 @@ withdraws unreviewed drafts whose addressee fails that test, that were written u
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
 institutions can be drafted again. Nothing sends.
 
+### Qualified leads and quote drafts (`quote.ts`, BUILD-PLAN 2.25)
+
+James marks a lead qualified on `/admin/leads` ("Mark qualified"); the row records when and by
+whom (`leads.qualified_at`, `leads.qualified_by`, migration `20270110000032`;
+`src/lib/data-store/lead-qualified.ts`). "Clear qualified" removes the mark. Marking starts a
+growth run with one free `growth-quote` step, so it is on the run ledger and held by the
+marketing pause. The step drafts one quote email per qualified lead that is not paid, not
+unsubscribed and not a test lead (`isTestLead`), once per lead (`subject_key` `lead:<id>`,
+workflow `quote`, skipped drafts included), into `content_drafts` as CARNEGIE's `pitch` (channel
+`email`) for James to review in `/admin/growth` and send himself. Nothing sends.
+
+Every price comes from the code: the Pro tiers on `/subscribe` (`PRO_TIERS` in
+`src/lib/pro-tiers.ts`; the lead's tier from its quoted institution's assets, else all three) and
+the one-off Competitive Fee Position Report (`REPORT_OFFER`: James's saved quote for the lead
+when there is one, else "From $300", `fromPriceUsd`). No delivery time, no fee advice, never
+"free report". The email signs off "Founder, Fee Insight" and carries the same postal-address
+placeholder and opt-out line as outreach; an audit block under it names the lead, who qualified
+it and where each price came from. Before the migration the step drafts nothing and says so.
+
+DRAPER's sales metrics count the mark: a qualified lead whose quote names an institution we
+emailed counts toward qualified conversations per 100 contacts; any other qualified lead is an
+inbound qualified lead (each institution once), reported on its own line and added to the
+month-one floor's count.
+
 ### The outreach journey (`src/lib/outreach-journey.ts`)
 
 Five stages per institution (James, 15:39 Oct 8): email sent, snapshot opened, engaged with the
@@ -131,6 +157,28 @@ subject is `<outlet>|<fee>:<state>`, so a pitch James skips with a reason keeps 
 and that finding out of BERNAYS's drafts while the lesson stands. A dry run picks the outlets and
 findings and writes nothing.
 
+### Monday plan and proposals (`draper.ts`)
+
+DRAPER's two Monday drafts, both free (no model call), each filed once per Monday-to-Monday week
+into the queue as DRAPER's item (channel `internal`). The route runs proposals first, then the plan.
+
+- `growth-proposals` (kind `brief`, workflow `draper-proposals`): at most 3 changes the evidence
+  supports, strongest evidence first, each citing its counts. The rules: retire a pilot campaign
+  with `RETIRE_AFTER_SENDS` (20) first emails marked sent and nothing recorded back; change or
+  pause a workflow James skipped `SKIP_PATTERN_MIN` (3) times with a reason in 30 days (the skip
+  lessons in `pipeline_feedback`, so CARNEGIE's own withdrawals don't count); answer a decline
+  reason recorded `DECLINE_PATTERN_MIN` (2) times. When nothing meets a rule it files one line
+  with the counts saying so, never a guess.
+- `growth-plan` (kind `plan`, workflow `draper-plan`): the week's work. First emails and
+  follow-ups waiting for review (by campaign) and approved emails not marked sent; follow-ups that
+  come due this week by `runOutreachFollowUps`'s rule; the other queued drafts and briefs by agent;
+  the latest what-we-learned report's metrics and the latest proposals; and the GTM plan's
+  month-one floor (`MONTH_ONE_FLOOR` in `learning.ts`, the only dated target in the code) with
+  progress against it.
+
+Both carry the conversation log: `outreach_outcomes` counts by outcome, to date and last week. No
+new table. A missing count is said to be missing.
+
 ### Queue intake (`intake.ts`)
 
 A scheduled Claude Code session files a draft or a PR it opened with
@@ -160,6 +208,16 @@ sent to 5 purchase, `score-label.ts`). MailerLite emails (opens and clicks are n
 app for queue items), PRs (no before-and-after count yet, BUILD-PLAN 2.16) and items with
 no tagged link get no score: `scored_at` is set, `score` stays null, and the reason is in that
 step's event. Nothing is estimated.
+
+After the queue, the same step reads Google Search Console (`search-console.ts`) into the step
+result's `search`: total clicks, impressions and average position for the 7 days ending 3 days
+before the run (Search Console data lags about 3 days) against the 7 days before that, and the
+top 10 pages by clicks this week. It signs a service-account JWT with `node:crypto` (scope
+`webmasters.readonly`, no Google SDK) and uses plain fetch; still free, no model call, and it
+reads on dry runs too. Env: `GSC_SERVICE_ACCOUNT_JSON` (the key JSON; the service account must be
+a user on the property) and `GSC_SITE_URL` (default `sc-domain:feeinsight.com`). With no key,
+`search` is `{ measured: false, reason }`; a failed token exchange or query records its error
+message the same way. Neither fails the step, and nothing is estimated.
 
 James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
 Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
@@ -263,4 +321,6 @@ The provider (`global`) stop still blocks growth's paid step, `marketing-write`.
   `prospect_contacts` (migration `20270110000031`).
 - Snapshot page events go to `snapshot_events`, and outreach outcomes to `outreach_outcomes`
   (migration `20270110000029`).
+- The qualified mark is two columns on `leads` (migration `20270110000032`); quote drafts go to
+  `content_drafts` like every other draft.
 - No other tables for marketing results.

@@ -107,4 +107,10 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     expect(settledFrequency("Returned Item: | $6.00 per presentment | Replace Lost Card: | $6.00", 6, "per_item", "card_replacement")).toBe("per_item");
     expect(frequencyFromLine("Returned Item: | $6.00 per presentment | Replace Lost Card: | $6.00", 6)).toBeNull();
   });
+
+  it("reads a count beyond the allowance as an allowance (v5)", () => {
+    expect(settledFrequency("Debit Card Replacement (More than 2 per year) | $5", 5, "annual", "card_replacement")).toBeNull();
+    expect(settledFrequency("Excess Withdrawals (over 6 per month) | $10.00 each", 10, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("Annual Fee | $25.00 per year", 25, "annual", "card_annual")).toBe("annual");
+  });
 });

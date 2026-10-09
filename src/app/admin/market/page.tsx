@@ -6,6 +6,10 @@ import { searchInstitutions } from "@/lib/data-store/search";
 import { getLocalMarketAnswer, type LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { LocalMarketView } from "@/components/hamilton/analyze/local-market";
 
+function percent(share: number): string {
+  return `${Math.round(share * 100)}%`;
+}
+
 /**
  * One institution's local market, the same answer a Pro customer gets from Hamilton: who has
  * branches in its counties, each one's deposit share, their published fees beside its own, and
@@ -87,7 +91,20 @@ export default async function MarketPage({
       {failed ? (
         <p className="text-sm text-red-700 dark:text-red-400">The market could not be loaded just now.</p>
       ) : answer ? (
-        <LocalMarketView data={answer} />
+        <>
+          {answer.coverage && answer.coverage.competitors > 0 ? (
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              <span className="font-semibold text-gray-900 dark:text-gray-100">
+                {answer.coverage.withFees.toLocaleString("en-US")} of {answer.coverage.competitors.toLocaleString("en-US")}
+              </span>{" "}
+              competitors in this market show live fees ({answer.coverage.withOverdraft.toLocaleString("en-US")} with an overdraft fee)
+              {answer.coverage.depositShare !== null
+                ? `. They hold ${percent(answer.coverage.depositShare)} of the competitors' bank deposits here (${percent(answer.coverage.depositShareOverdraft ?? 0)} with an overdraft fee).`
+                : "."}
+            </p>
+          ) : null}
+          <LocalMarketView data={answer} />
+        </>
       ) : institutionId > 0 ? (
         <p className="text-sm text-gray-500 dark:text-gray-400">No branch market is on file for this institution yet.</p>
       ) : null}

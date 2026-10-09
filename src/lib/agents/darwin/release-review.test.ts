@@ -257,6 +257,29 @@ describe("Darwin held-fee release review", () => {
     expect(releaseHoldReason(held("IntraFi Network-ICS Monthly Fee (Consumer)", "monthly_maintenance", "25.00"))).toBe("category_guard");
   });
 
+  it("v17 holds the cut-off shapes retidy v6 repairs, and releases a plain name", () => {
+    const held = (fee_name: string, held_canonical_fee_key: string) => ({
+      row: row({ fee_name, held_canonical_fee_key, amount: "5.00" }) as unknown as HeldFeeRow,
+      sourceContext: null,
+    });
+    const fragments: Array<[string, string]> = [
+      ["Inactive fee: This account may be subject to an Inactive fee of", "dormant_account"],
+      ["to open the account. A Maintenance Service Charge of", "monthly_maintenance"],
+      ["Charge Return Statement or Dormant Account Monthly Fee (Dormant Account Fee assessed after 12 months of inactivity.) | F", "dormant_account"],
+      ["Fee Wire Transfer In", "wire_domestic_incoming"],
+      ["+ drilling cost", "safe_deposit_box"],
+      ["Late Fee | Up to", "late_payment"],
+      ["Service Charge if balance falls below", "minimum_balance"],
+      ["GUASFCU charges a", "check_image"],
+    ];
+    for (const [name, key] of fragments) {
+      expect(releaseHoldReason(held(name, key)), name).toBe("name_fragment");
+    }
+    expect(releaseHoldReason(held("Maintenance Service Charge", "monthly_maintenance"))).toBeNull();
+    expect(releaseHoldReason(held("Charge Back Fee", "deposited_item_return"))).toBeNull();
+    expect(releaseHoldReason(held("Stop Payment Fee", "stop_payment"))).toBeNull();
+  });
+
   it("v13 keeps names cut from the middle of a line held (hand check, Oct 8)", () => {
     const held = (fee_name: string, held_canonical_fee_key: string) => ({
       row: row({ fee_name, held_canonical_fee_key, amount: "5.00" }) as unknown as HeldFeeRow,

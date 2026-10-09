@@ -1,6 +1,6 @@
 import { getSql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
-import { minBalanceFromExcerpt, productNameFromFeeName, readableProductName, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
+import { INTEREST_TIER, minBalanceFromExcerpt, productNameFromFeeName, readableProductName, readableWaiver, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
 
 export { minBalanceFromExcerpt, productNameFromFeeName, waiverFromExcerpt };
 
@@ -77,9 +77,10 @@ export function lineupAccountFromRow(row: LineupCatalogRow): LineupAccount | nul
 
   const storedName = readableProductName(row.account_product_type);
   const derivedName = storedName ? null : productNameFromFeeName(row.fee_name);
-  const storedBalance = toNumber(row.min_balance_to_avoid);
+  // A balance stored beside an interest-tier "waiver" is the rate tier, not the fee's waiver.
+  const storedBalance = row.waiver_text && INTEREST_TIER.test(row.waiver_text) ? null : toNumber(row.min_balance_to_avoid);
   const derivedBalance = storedBalance === null && excerpt ? minBalanceFromExcerpt(excerpt) : null;
-  const storedWaiver = row.waiver_text?.trim() || null;
+  const storedWaiver = readableWaiver(row.waiver_text);
   const derivedWaiver = storedWaiver || !excerpt ? null : waiverFromExcerpt(excerpt);
 
   return {

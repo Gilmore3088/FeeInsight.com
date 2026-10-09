@@ -594,6 +594,9 @@ describe("Hamilton agentic publish", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key");
       expect(params).toContain("darwin_schedule_refiled");
+      // A guard rejection recorded before the guard re-queue step passed the row does not count.
+      expect(query).toContain("pa.detail->>'reason' LIKE 'Category guard%'");
+      expect(query).toContain("flag LIKE 'category_guard_requeued:%'");
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {
