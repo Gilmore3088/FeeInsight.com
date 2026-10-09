@@ -204,12 +204,12 @@ export default async function DataSourcesPage() {
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                     source.cadence === "Daily"
-                      ? "bg-blue-50 text-blue-600"
+                      ? "bg-[#F1ECF3] text-[#4E3A66]"
                       : source.cadence === "Weekly"
                         ? "bg-emerald-50 text-emerald-600"
                         : source.cadence === "Quarterly"
-                          ? "bg-amber-50 text-amber-700"
-                          : "bg-slate-50 text-slate-500"
+                          ? "bg-[#FDF0ED] text-[#8E2A17]"
+                          : "bg-[#F0ECE6] text-[#5A5347]"
                   }`}
                 >
                   {source.cadence}
@@ -242,7 +242,7 @@ export default async function DataSourcesPage() {
         </h2>
         <div className="mt-3 grid gap-2 text-[13px] text-[#6B6255]">
           <div className="flex items-center gap-3">
-            <span className="w-20 shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-center text-[10px] font-semibold text-blue-600">
+            <span className="w-20 shrink-0 rounded-full bg-[#F1ECF3] px-2 py-0.5 text-center text-[10px] font-semibold text-[#4E3A66]">
               Daily
             </span>
             <span>OFR Financial Stress Index, NY Fed reference rates</span>
@@ -254,7 +254,7 @@ export default async function DataSourcesPage() {
             <span>FRED macroeconomic indicators, BLS CPI, CFPB complaints, Fed speeches &amp; research, fee schedule crawls</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="w-20 shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-center text-[10px] font-semibold text-amber-700">
+            <span className="w-20 shrink-0 rounded-full bg-[#FDF0ED] px-2 py-0.5 text-center text-[10px] font-semibold text-[#8E2A17]">
               Quarterly
             </span>
             <span>FDIC Call Reports, NCUA 5300 Reports</span>

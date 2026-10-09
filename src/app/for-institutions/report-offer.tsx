@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
 import { CONTACT_EMAIL, REPORT_INCLUDES } from "@/lib/constants";
 import type { CustomReportAnalysis, ReportLine } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { money, POSITION_LABEL } from "@/app/market-report/report-body";
 import { RequestReportForm } from "./request-report-form";
+import { BAND, BODY, CheckList, EYEBROW, GLASS_SOFT, H2 } from "@/components/public/site-look";
 
 
 // The same list as the homepage offer and the pay page, so the paid report is described one way.
@@ -14,36 +14,25 @@ const REPORT_CONTENTS = REPORT_INCLUDES;
 export async function ReportOfferSection() {
   const sample = await loadSampleReport().catch(() => null);
   return (
-    <section aria-label="Fee reports" className="border-b border-warm-200 bg-white">
-      <div className="mx-auto max-w-page px-6 py-14">
-        {/* grid-cols-1 + min-w-0: below lg the single column is the viewport, so the excerpt
-            table scrolls inside its own box instead of widening the form past 320px. */}
-        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
+    <section aria-labelledby="fee-reports-title" className={BAND}>
+      <div className="mx-auto max-w-page px-6 py-14 sm:py-16">
+        {/* grid-cols-1 + min-w-0: below xl the single column is the viewport, so the excerpt
+            table scrolls inside its own box instead of widening the form past 320px. Two equal
+            columns at xl (the /subscribe layout). */}
+        <div className="grid grid-cols-1 gap-10 xl:grid-cols-2 xl:items-start xl:gap-14">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-              Fee reports
-            </p>
-            <h2
-              className="mt-3 text-warm-900 text-[28px] leading-tight"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-            >
+            <p className={EYEBROW}>Fee reports</p>
+            <h2 id="fee-reports-title" className={`mt-3 ${H2}`}>
               Free national reports, and a paid report on your institution
             </h2>
-            <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-warm-700">
+            <p className={`mt-4 ${BODY}`}>
               Pick the national report or your Fed district and it opens right away: the median
               and typical range for the 15 headline fees, from each institution&apos;s own
               published schedule. When you want your own institution against named competitors,
               that is the paid institution report.
             </p>
-            <p className="mt-6 text-[13px] font-semibold text-warm-900">The institution report adds</p>
-            <ul className="mt-3 space-y-2.5">
-              {REPORT_CONTENTS.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-[14px] text-warm-700">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-terra" aria-hidden="true" />
-                  <span className="min-w-0">{item}</span>
-                </li>
-              ))}
-            </ul>
+            <h3 className="mt-7 text-sm font-semibold text-warm-900">The institution report adds</h3>
+            <CheckList items={REPORT_CONTENTS} className="mt-3" />
             {/* Live rows from the sample report; hidden when no sample market passes the rule today. */}
             {sample && <SampleExcerpt report={sample} />}
           </div>
@@ -76,7 +65,7 @@ function SampleExcerpt({ report }: { report: MarketReport }) {
   const lines = sampleExcerptLines(report.analysis);
   if (lines.length === 0) return null;
   return (
-    <figure className="mt-8 overflow-hidden rounded-lg border border-warm-300 bg-warm-50">
+    <figure className={`mt-8 overflow-hidden ${GLASS_SOFT}`}>
       <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-warm-200 px-4 py-2">
         <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">From the sample report</span>
         <span className="text-[11px] text-warm-600">

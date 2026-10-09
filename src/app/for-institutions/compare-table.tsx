@@ -1,5 +1,6 @@
 import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import { BAND, EYEBROW, GLASS, GLASS_SOFT, H2 } from "@/components/public/site-look";
 
 interface CompareRow {
   option: string;
@@ -58,7 +59,7 @@ function buildRows(summary: Pick<PublicStatsSummary, "institutionsLabel" | "refr
   ];
 }
 
-const HEAD_CELL = "px-4 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600";
+const HEAD_CELL = "px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-warm-700";
 
 export function CompareTableSection({
   summary,
@@ -67,26 +68,29 @@ export function CompareTableSection({
 }) {
   const rows = buildRows(summary);
   return (
-    <section className="bg-white border-b border-warm-200">
-      <div className="mx-auto max-w-page px-6 py-14">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-          How this compares
-        </p>
-        <h2
-          className="mt-3 text-warm-900 text-[28px]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
+    <section aria-labelledby="compare-title" className={BAND}>
+      <div className="mx-auto max-w-page px-6 py-14 sm:py-16">
+        <p className={EYEBROW}>How this compares</p>
+        <h2 id="compare-title" className={`mt-3 ${H2}`}>
           Four ways to find out what competitors charge
         </h2>
 
         {/* Table from 640px up; stacked cards below. */}
-        <div className="mt-8 hidden overflow-x-auto rounded-lg border border-warm-300 sm:block">
-          <table className="w-full min-w-[720px] text-[13px]">
+        <div
+          role="region"
+          aria-label="Comparison of four ways to find competitor fees (scrolls sideways)"
+          tabIndex={0}
+          className={`mt-8 hidden overflow-x-auto sm:block ${GLASS}`}
+        >
+          <table className="w-full min-w-[720px] text-sm">
+            <caption className="sr-only">
+              Four ways to find out what competitors charge, by coverage, refresh, source tracing, peer-group control and cost
+            </caption>
             <thead>
-              <tr className="bg-warm-150 text-left">
-                <th className={HEAD_CELL}>Option</th>
+              <tr className="bg-[#F3EEE6]/70 text-left">
+                <th scope="col" className={HEAD_CELL}>Option</th>
                 {COLUMNS.map((column) => (
-                  <th key={column.key} className={HEAD_CELL}>
+                  <th scope="col" key={column.key} className={HEAD_CELL}>
                     {column.label}
                   </th>
                 ))}
@@ -96,11 +100,13 @@ export function CompareTableSection({
               {rows.map((row) => (
                 <tr
                   key={row.option}
-                  className={`border-t border-warm-200 ${row.highlight ? "bg-terra-soft/60" : "bg-white"}`}
+                  className={`border-t border-[#E8E1D6] ${row.highlight ? "bg-terra-soft/70" : ""}`}
                 >
-                  <td className="px-4 py-3 font-semibold text-warm-900">{row.option}</td>
+                  <th scope="row" className="px-4 py-3.5 text-left font-semibold text-warm-900">
+                    {row.option}
+                  </th>
                   {COLUMNS.map((column) => (
-                    <td key={column.key} className="px-4 py-3 text-warm-700">
+                    <td key={column.key} className="px-4 py-3.5 text-warm-800">
                       {row[column.key]}
                     </td>
                   ))}
@@ -114,18 +120,16 @@ export function CompareTableSection({
           {rows.map((row) => (
             <div
               key={row.option}
-              className={`rounded-lg border p-4 ${
-                row.highlight ? "border-terra/40 bg-terra-soft/60" : "border-warm-300 bg-white"
-              }`}
+              className={`p-5 ${row.highlight ? `${GLASS} ring-terra/40` : GLASS_SOFT}`}
             >
               <p className="text-[15px] font-semibold text-warm-900">{row.option}</p>
               <dl className="mt-3 space-y-2">
                 {COLUMNS.map((column) => (
                   <div key={column.key} className="flex flex-col">
-                    <dt className="text-[11px] font-bold uppercase tracking-[0.12em] text-warm-600">
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-700">
                       {column.label}
                     </dt>
-                    <dd className="text-[13px] text-warm-700">{row[column.key]}</dd>
+                    <dd className="text-sm text-warm-800">{row[column.key]}</dd>
                   </div>
                 ))}
               </dl>

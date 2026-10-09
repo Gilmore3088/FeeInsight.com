@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { formatFeeAmount } from "@/lib/format";
 import { otherRange, sourcePageLabel, type HeadlineLine, type HeadlineLines, type HeadlineRow } from "./profile-data";
+import { GLASS_SOFT, NUM } from "@/components/public/site-look";
 
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 const LINK_CLASS =
   "inline-flex min-h-6 items-center font-semibold text-[#A93D25] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A93D25]";
 
@@ -97,7 +97,7 @@ export function HeadlineFees({ institutionId, lines }: { institutionId: number; 
   const present = LINES.filter((spec) => lines[spec.key] !== null);
   if (present.length === 0) return null;
   return (
-    <div className="border-b border-[#E0D7C9] bg-[#FDFBF8] px-4 py-4 sm:px-5" aria-labelledby="headline-fees-heading">
+    <div className="border-b border-[#E8E1D6] bg-[#F3EEE6]/50 px-4 py-4 sm:px-5" aria-labelledby="headline-fees-heading">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h3 id="headline-fees-heading" className="text-sm font-semibold text-[#1A1815]">
           Headline fees
@@ -106,14 +106,14 @@ export function HeadlineFees({ institutionId, lines }: { institutionId: number; 
           How headline fees are chosen
         </Link>
       </div>
-      <dl className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <dl className="mt-3 grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
         {present.map((spec) => {
           const line = lines[spec.key] as HeadlineLine;
           return (
-            <div key={spec.key} className="min-w-0 border border-[#E0D7C9] bg-white px-4 py-3">
-              <dt className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">{spec.label}</dt>
+            <div key={spec.key} className={`h-full min-w-0 px-4 py-3 ${GLASS_SOFT}`}>
+              <dt className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#5A5347]">{spec.label}</dt>
               <dd className="mt-1">
-                <p className="text-2xl tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+                <p className={`text-2xl font-semibold text-[#1A1815] ${NUM}`}>
                   {leadAmount(spec, line)}
                 </p>
                 <WhoItIsFor spec={spec} row={line.pick} />

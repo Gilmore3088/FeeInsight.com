@@ -67,6 +67,7 @@ import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileSidebar } from "./profile-sidebar";
 import { FeeProfileSummary, StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
+import { AmbientGlow, GLASS, INTERACTION } from "@/components/public/site-look";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -291,8 +292,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         ]}
       />
 
-      <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
-        <div className="mx-auto max-w-page px-4 py-5 sm:px-6 sm:py-7">
+      <div className={`relative isolate min-h-screen overflow-x-clip bg-[#FAF7F2] text-[#1A1815] ${INTERACTION}`}>
+        <AmbientGlow height={900} />
+        <div className="mx-auto max-w-page px-6 py-6 sm:py-8">
           <ProfileHeader
             name={inst.institution_name}
             status={status}
@@ -315,13 +317,13 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             claimHref={links.claimHref}
           />
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-8">
             <div className="min-w-0 space-y-6">
               {/* The answer first: what this institution charges. */}
-              <section className="border border-[#E0D7C9] bg-white">
-                <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
+              <section className={`overflow-hidden ${GLASS}`} aria-labelledby="published-fees-heading">
+                <div className="border-b border-[#E8E1D6] px-4 py-4 sm:px-6">
                   <div className="flex items-center gap-1.5">
-                    <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
+                    <h2 id="published-fees-heading" className="text-xl font-semibold tracking-tight text-[#1A1815]">Published fees</h2>
                     <InfoTip label="About published fees">
                       Published fees power benchmarks; fees under review do not.
                     </InfoTip>
@@ -343,13 +345,13 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   </>
                 ) : (
                   <div className="px-4 py-8 sm:px-5">
-                    <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
+                    <div className="rounded-xl border border-[#E8E1D6] bg-[#F3EEE6]/60 p-4">
                       <p className="text-sm font-semibold text-[#1A1815]">
                         {underReviewCount > 0
                           ? "Fees for this institution are under review."
                           : "No published schedule found."}
                       </p>
-                      <p className="mt-1 text-sm leading-relaxed text-[#6B6255]">
+                      <p className="mt-1 text-sm leading-relaxed text-[#5A5347]">
                         {underReviewCount > 0
                           ? "Fees will appear here once review is complete."
                           : "Fee comparisons are withheld until a published fee schedule has been reviewed."}

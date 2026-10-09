@@ -24,13 +24,15 @@ import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { BreakdownRow, BREAKDOWN_HEADERS, DistrictSection, WarmTable, range } from "./breakdown-tables";
+import { AmbientGlow, GLASS, GLASS_SOFT, H1, INTERACTION, LEAD, NUM, TEXT_LINK } from "@/components/public/site-look";
 
 interface PageProps {
   params: Promise<{ category: string }>;
 }
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const EYEBROW = "text-xs font-semibold uppercase tracking-[0.14em] text-[#5A5347]";
+/** Headings and figures in the page font (Plus Jakarta Sans), semibold, as on /subscribe. */
+const SERIF = { fontWeight: 600, letterSpacing: "-0.015em" };
 
 /** Thousands-separated dollars ("$5,000", "$2.50"); "-" when unavailable. */
 const money = (value: number | null | undefined) => formatFeeAmount(value) ?? "-";
@@ -115,7 +117,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
     : [];
 
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <div className={`relative isolate overflow-x-clip ${INTERACTION}`}>
+    <AmbientGlow height={800} />
+    <div className="mx-auto max-w-page px-6 py-12 sm:py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -125,7 +129,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       />
 
       {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
+      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[13px] text-[#5A5347]">
         <Link href="/" className="hover:text-[#1A1815] transition-colors">
           Home
         </Link>
@@ -141,7 +145,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       <div className="flex items-center gap-2">
         {family && familyColor && (
           <span
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${familyColor.bg} ${familyColor.text}`}
+            className="rounded-full bg-[#C44B2E]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]"
           >
             {family}
           </span>
@@ -149,24 +153,23 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       </div>
 
       <h1
-        className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-        style={SERIF}
+        className={`mt-3 ${H1}`}
       >
         {name} Fee
       </h1>
-      <p className="mt-2 text-[14px] text-[#5A5347]">
+      <p className={`mt-4 ${LEAD}`}>
         {national ? benchmarkBasis(national, refreshedOn) : "Not enough published fees yet for a national benchmark."}
       </p>
-      <p className="mt-1 text-[12px] text-[#6B6255]">
+      <p className="mt-2 text-sm text-[#5A5347]">
         Each institution counts once. The median and percentiles are taken across institutions, from
         published fee schedules.{" "}
-        <Link href="/methodology" className="font-medium text-[#A93D25] hover:underline">
+        <Link href="/methodology" className={TEXT_LINK}>
           Methodology
         </Link>
       </p>
 
-      {/* Stat cards */}
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Stat cards: four boxes of one size, the /subscribe glass */}
+      <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:gap-5">
         {[
           { label: "Median", value: money(stats.median) },
           { label: "25th percentile", value: money(stats.p25) },
@@ -175,14 +178,13 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         ].map((s) => (
           <div
             key={s.label}
-            className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3.5"
+            className={`px-5 py-4 sm:px-6 sm:py-5 ${GLASS}`}
           >
             <p className={EYEBROW}>
               {s.label}
             </p>
             <p
-              className="mt-1 text-[22px] font-light tabular-nums text-[#1A1815]"
-              style={SERIF}
+              className={`mt-1.5 text-2xl font-semibold tracking-tight text-[#1A1815] sm:text-3xl ${NUM}`}
             >
               {s.value}
             </p>
@@ -191,7 +193,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       </div>
 
       {showRates && rateStats && (
-        <section className="mt-6 rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4">
+        <section className={`mt-6 px-5 py-5 sm:px-6 ${GLASS_SOFT}`}>
           <h2 className="text-[16px] font-medium text-[#1A1815]" style={SERIF}>
             When stated as a rate
           </h2>
@@ -214,7 +216,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             ].map((s) => (
               <div key={s.label}>
                 <p className={EYEBROW}>{s.label}</p>
-                <p className="mt-1 text-[20px] font-light tabular-nums text-[#1A1815]" style={SERIF}>
+                <p className={`mt-1 text-xl font-semibold tracking-tight text-[#1A1815] ${NUM}`}>
                   {s.value}
                 </p>
               </div>
@@ -292,20 +294,17 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       {familyMembers.length > 0 && (
         <section className="mt-10">
           <div className="flex items-center gap-3 mb-4">
-            <h2
-              className="text-[16px] font-medium text-[#1A1815]"
-              style={SERIF}
-            >
-              Related Fees in {family}
+            <h2 className="text-xl font-semibold tracking-tight text-[#1A1815]">
+              Related fees in {family}
             </h2>
-            <span className="h-px flex-1 bg-[#E8DFD1]" />
+            <span className="h-px flex-1 bg-[#E8E1D6]" />
           </div>
           <div className="flex flex-wrap gap-2">
             {familyMembers.map((cat) => (
               <Link
                 key={cat}
                 href={`/fees/${cat}`}
-                className="rounded-full border border-[#E8DFD1] px-3.5 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+                className="inline-flex min-h-11 items-center rounded-full bg-white/70 px-4 text-sm font-medium text-[#3D3830] ring-1 ring-[#E8E1D6] transition-colors duration-200 hover:text-[#A93D25] hover:ring-[#C44B2E]/40 no-underline"
               >
                 {getDisplayName(cat)}
               </Link>
@@ -315,11 +314,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       )}
 
       {/* Methodology */}
-      <section className="mt-12 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 p-6">
-        <h3 className={EYEBROW}>
+      <section className={`mt-12 p-6 sm:p-7 ${GLASS_SOFT}`}>
+        <h2 className={EYEBROW}>
           Methodology
-        </h3>
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+        </h2>
+        <p className="mt-2 text-[15px] leading-relaxed text-[#3D3830]">
           Based on {entryCount.toLocaleString()} published fee entries from{" "}
           {institutionCount.toLocaleString()} US banks and credit unions, read from their published
           fee schedules. Fees the software is not sure about are held for a person to check and are
@@ -420,6 +419,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           }).replace(/</g, "\\u003c"),
         }}
       />
+    </div>
     </div>
   );
 }

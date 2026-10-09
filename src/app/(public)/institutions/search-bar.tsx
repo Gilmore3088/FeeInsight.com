@@ -219,7 +219,7 @@ function InstitutionSearchBarInner({
                 </span>
               )}
               {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) > 0 && (
-                <span className="rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#9A5A00]">
+                <span className="rounded-sm border border-[#C44B2E]/25 bg-[#FDF0ED] px-1.5 py-0.5 text-[10px] font-semibold text-[#8E2A17]">
                   {r.provisional_fee_count} fees under review
                 </span>
               )}

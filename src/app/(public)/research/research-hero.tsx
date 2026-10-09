@@ -3,8 +3,6 @@ import { PRODUCT_NAME } from "@/lib/constants";
 import { PrintButton } from "./print-button";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
-
 export const RESEARCH_SECTIONS = [
   { id: "findings", label: "Key findings" },
   { id: "benchmarks", label: "Benchmarks" },
@@ -23,7 +21,7 @@ interface ResearchHeroProps {
   territoryCount: number;
 }
 
-/** Dark editorial band: what this page is, the live counts behind it, and where to jump. */
+/** Light glass hero (the /subscribe look): what this page is, the live counts behind it, and where to jump. */
 export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: ResearchHeroProps) {
   const extras = [hasDc ? "DC" : null, territoryCount > 0 ? `${territoryCount} territories` : null].filter(Boolean);
   const stats = [
@@ -38,59 +36,52 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
   ];
 
   return (
-    <section className="relative overflow-hidden bg-[#1A1815] text-[#F5EFE6]">
-      {/* Faint grid of bars as texture: decoration only, carries no data. */}
-      <svg aria-hidden="true" className="pointer-events-none absolute -right-10 bottom-0 h-full w-[46rem] opacity-[0.07]" viewBox="0 0 460 300" preserveAspectRatio="xMaxYMax meet">
-        {Array.from({ length: 18 }).map((_, i) => {
-          const h = 40 + ((i * 53) % 220);
-          return <rect key={i} x={i * 25} y={300 - h} width="14" height={h} rx="2" fill="#F5EFE6" />;
-        })}
-      </svg>
+    <section aria-labelledby="research-title" className="relative">
+      <div className="relative mx-auto grid max-w-page items-end gap-10 px-6 pb-10 pt-12 sm:pb-12 sm:pt-16 xl:grid-cols-2">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Research</p>
+          <h1
+            id="research-title"
+            className="mt-3 max-w-3xl text-4xl font-bold leading-[1.08] tracking-tight text-[#1A1815] sm:text-5xl"
+          >
+            What banks and credit unions actually charge
+          </h1>
+          <p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#3D3830]">
+            National benchmarks, state and Federal Reserve district coverage, and original studies from the{" "}
+            {PRODUCT_NAME}. Every number on this page comes from verified, published fee schedules.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 text-[13px]">
+            <span className="inline-flex items-center gap-2 text-[#5A5347]">
+              <span aria-hidden="true" className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#7FB77E] opacity-60 motion-reduce:hidden" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#4F6B3A]" />
+              </span>
+              {summary.freshnessLabel}
+            </span>
+            <Link
+              href="/research/national-fee-index"
+              className="inline-flex min-h-11 items-center rounded-lg bg-[#C44B2E] px-4 py-2 font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[#A93D25]"
+            >
+              Open the full {PRODUCT_NAME} &rarr;
+            </Link>
+            <Link href="/methodology" className="inline-flex min-h-11 items-center font-semibold text-[#A93D25] underline underline-offset-2 hover:text-[#8E2A17]">
+              Methodology
+            </Link>
+            <PrintButton className="inline-flex min-h-11 items-center rounded-lg bg-white/70 px-4 py-2 font-semibold text-[#1A1815] ring-1 ring-[#E8E1D6] transition-colors duration-200 hover:bg-white print:hidden" />
+          </div>
+        </div>
 
-      <div className="relative mx-auto max-w-page px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#E8A48F]">
-          <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
-          Research
-        </p>
-        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
-          What banks and credit unions actually charge
-        </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
-          National benchmarks, state and Federal Reserve district coverage, and original studies from the{" "}
-          {PRODUCT_NAME}. Every number on this page comes from verified, published fee schedules.
-        </p>
-
-        <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">
+        <dl className="grid grid-cols-2 items-stretch gap-3 sm:gap-4">
           {stats.map((s) => (
-            <div key={s.label} className="bg-[#1A1815] px-5 py-5">
-              <dt className="sr-only">{s.label}</dt>
-              <dd>
-                <span className="block text-[2rem] font-semibold leading-none tabular-nums text-white sm:text-[2.5rem]" style={SERIF}>
-                  {s.value}
-                </span>
-                <span className="mt-2 block text-[13px] font-semibold text-[#F5EFE6]">{s.label}</span>
-                <span className="mt-0.5 block text-[11px] text-[#F5EFE6]/60">{s.note}</span>
+            <div key={s.label} className="rounded-2xl bg-white/75 ring-1 ring-[#E8E1D6]/80 shadow-[0_12px_40px_-12px_rgba(26,24,21,0.25),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl flex h-full flex-col px-5 py-5">
+              <dt className="order-2 mt-2 text-[13px] font-semibold text-[#1A1815]">{s.label}</dt>
+              <dd className="order-1 text-[2rem] font-bold leading-none tracking-tight text-[#1A1815] [font-variant-numeric:tabular-nums] sm:text-[2.5rem]">
+                {s.value}
               </dd>
+              <dd className="order-3 mt-0.5 text-[12px] text-[#5A5347]">{s.note}</dd>
             </div>
           ))}
         </dl>
-
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12px]">
-          <span className="inline-flex items-center gap-2 text-[#F5EFE6]/75">
-            <span aria-hidden="true" className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#7FB77E] opacity-60 motion-reduce:hidden" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#7FB77E]" />
-            </span>
-            {summary.freshnessLabel}
-          </span>
-          <Link href="/research/national-fee-index" className="font-semibold text-[#E8A48F] hover:text-white">
-            Open the full {PRODUCT_NAME} &rarr;
-          </Link>
-          <Link href="/methodology" className="text-[#F5EFE6]/75 hover:text-white">
-            Methodology
-          </Link>
-          <PrintButton className="rounded-full border border-white/25 px-3.5 py-1.5 font-semibold text-white hover:bg-white/10 print:hidden" />
-        </div>
       </div>
     </section>
   );
@@ -105,13 +96,13 @@ export function ResearchSectionNav({
   label?: string;
 } = {}) {
   return (
-    <nav aria-label={label} className="print:hidden sticky top-14 z-30 border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur">
-      <ul className="mx-auto flex max-w-page gap-1 overflow-x-auto px-4 py-2 sm:px-6">
+    <nav aria-label={label} className="print:hidden sticky top-14 z-30 border-y border-white/60 bg-[#F3EEE6]/80 backdrop-blur-md">
+      <ul className="mx-auto flex max-w-page gap-1 overflow-x-auto px-6 py-2">
         {sections.map((s) => (
           <li key={s.id} className="shrink-0">
             <a
               href={`#${s.id}`}
-              className="block rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-[#5A5347] transition-colors hover:bg-[#1A1815] hover:text-white"
+              className="flex min-h-9 items-center rounded-full px-3.5 py-1.5 text-[13px] font-semibold text-[#3D3830] transition-colors duration-200 hover:bg-white hover:text-[#A93D25]"
             >
               {s.label}
             </a>
@@ -122,7 +113,7 @@ export function ResearchSectionNav({
   );
 }
 
-/** Shared section heading: eyebrow, serif title, one-line explainer. */
+/** Shared section heading: eyebrow, title in the page font, one-line explainer. */
 export function SectionHeading({
   eyebrow,
   title,
@@ -137,11 +128,11 @@ export function SectionHeading({
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div className="max-w-2xl">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{eyebrow}</p>
-        <h2 className="mt-1.5 text-[1.6rem] font-normal leading-tight tracking-[-0.01em] text-[#1A1815] sm:text-[2rem]" style={SERIF}>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{eyebrow}</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[#1A1815] sm:text-3xl">
           {title}
         </h2>
-        {children && <p className="mt-2 text-[14px] leading-relaxed text-[#6B6255]">{children}</p>}
+        {children && <p className="mt-2 text-[15px] leading-relaxed text-[#3D3830]">{children}</p>}
       </div>
       {action}
     </div>

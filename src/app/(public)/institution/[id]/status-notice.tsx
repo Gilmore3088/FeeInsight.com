@@ -6,11 +6,12 @@ import { NO_VERDICT_LABEL, type RatingResult } from "@/lib/institution-rating";
 import { formatFeeAmount } from "@/lib/format";
 import { getPublicStatusLabel } from "./enum-labels";
 import { STATUS_COPY } from "./profile-copy";
+import { GLASS_SOFT } from "@/components/public/site-look";
 
 const STATUS_TONE: Record<FeePublicationStatus, string> = {
   verified: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  provisional: "border-amber-200 bg-amber-50 text-amber-900",
-  under_review: "border-amber-200 bg-amber-50 text-amber-900",
+  provisional: "border-[#C44B2E]/25 bg-[#FDF0ED] text-[#8E2A17]",
+  under_review: "border-[#C44B2E]/25 bg-[#FDF0ED] text-[#8E2A17]",
   unavailable: "border-[#E0D7C9] bg-white text-[#5A5347]",
 };
 
@@ -37,7 +38,7 @@ export function StatusNotice({
   const Icon = STATUS_ICON[status];
 
   return (
-    <section className={`fi-reveal fi-reveal-delay-2 mb-6 border px-4 py-4 sm:px-5 ${STATUS_TONE[status]}`}>
+    <section className={`fi-reveal fi-reveal-delay-2 mb-6 rounded-2xl border px-5 py-4 backdrop-blur-xl sm:px-6 ${STATUS_TONE[status]}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 gap-3">
           <Icon className="mt-0.5 h-5 w-5 shrink-0" />
@@ -50,14 +51,14 @@ export function StatusNotice({
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
             <Link
               href={correctSourceHref}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#C44B2E] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#A93D25]"
+              className="inline-flex items-center justify-center gap-2 min-h-11 rounded-lg bg-[#C44B2E] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#A93D25]"
             >
               <FileText className="h-3.5 w-3.5" />
               Send us the fee schedule
             </Link>
             <Link
               href={claimHref}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-xs font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
+              className="inline-flex items-center justify-center gap-2 min-h-11 rounded-lg border border-[#D5CBBF] bg-white px-3 py-2 text-xs font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
             >
               <ClipboardCheck className="h-3.5 w-3.5" />
               Claim or validate
@@ -83,14 +84,14 @@ export function FeeProfileSummary({
   factsOnly?: boolean;
 }) {
   return (
-    <section className="border border-[#E0D7C9] bg-white p-5">
+    <section className={`p-6 ${GLASS_SOFT}`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
             {factsOnly ? "Headline fees vs. national median" : "Verified Fee Profile"}
           </p>
           <div className="mt-2 flex items-center gap-1.5">
-            <h2 className="text-xl font-semibold text-[#1A1815]">
+            <h2 className="text-xl font-semibold tracking-tight text-[#1A1815]">
               {factsOnly ? "How the headline fees compare" : rating.label}
             </h2>
             {factsOnly && (
@@ -105,12 +106,9 @@ export function FeeProfileSummary({
           )}
         </div>
         {overdraftAmount !== null && (
-          <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] px-4 py-3">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Overdraft</p>
-            <p
-              className="mt-1 text-3xl text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-            >
+          <div className="rounded-xl bg-[#F3EEE6]/80 px-4 py-3 ring-1 ring-[#E8E1D6]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#5A5347]">Overdraft</p>
+            <p className="mt-1 text-3xl font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">
               {formatFeeAmount(overdraftAmount)}
             </p>
           </div>
@@ -121,7 +119,7 @@ export function FeeProfileSummary({
           {rating.bullets.map((bullet) => (
             <div
               key={bullet}
-              className="rounded-md border border-[#E0D7C9] bg-[#FDFBF8] px-3 py-2 text-sm text-[#5A5347]"
+              className="h-full rounded-xl bg-white/70 px-3 py-2 text-sm text-[#3D3830] ring-1 ring-[#E8E1D6]"
             >
               {bullet}
             </div>
@@ -135,8 +133,8 @@ export function FeeProfileSummary({
 /** Shown instead of a verdict when enough fees are verified but no paid-item overdraft/NSF fee is. */
 export function FeeProfileNoVerdict({ verifiedCount }: { verifiedCount: number }) {
   return (
-    <section className="border border-[#E0D7C9] bg-white p-5">
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+    <section className={`p-6 ${GLASS_SOFT}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
         Verified Fee Profile
       </p>
       <h2 className="mt-2 text-xl font-semibold text-[#1A1815]">{NO_VERDICT_LABEL}</h2>

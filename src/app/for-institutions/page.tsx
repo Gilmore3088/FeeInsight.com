@@ -15,6 +15,21 @@ import { TrackLink } from "@/components/track-link";
 import { ReportOfferSection } from "./report-offer";
 import { ProToolsSection } from "./pro-tools";
 import { CompareTableSection } from "./compare-table";
+import {
+  AmbientGlow,
+  BODY,
+  CheckList,
+  CTA_PRIMARY,
+  CTA_SECONDARY,
+  EYEBROW,
+  GLASS,
+  GLASS_SOFT,
+  H1,
+  H2,
+  INTERACTION,
+  LEAD,
+  NUM,
+} from "@/components/public/site-look";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REPORT_ANCHOR = "#report";
@@ -36,40 +51,40 @@ export const metadata: Metadata = {
   ...linkPreview({ title: PAGE_TITLE, description: PAGE_DESCRIPTION, path: "/for-institutions" }),
 };
 
-const HERO_BUTTON_BASE =
-  "inline-flex items-center justify-center gap-2 rounded-md px-7 py-3.5 text-[15px] transition-colors";
-const PRIMARY_BUTTON = `${HERO_BUTTON_BASE} bg-[#C44B2E] font-bold text-white hover:bg-[#A93D25]`;
+const PRIMARY_BUTTON = CTA_PRIMARY;
+const SECONDARY_BUTTON = CTA_SECONDARY;
+
+/** What every figure on the index carries, as stated in the hero copy and the compare table. */
+const HERO_CHECKS = [
+  "Every figure traceable to the disclosure it came from",
+  "Free national and Fed district reports, open right away",
+  `Your institution against named competitors, ${INSTITUTION_REPORT_PRICE}`,
+];
 
 export default async function ForInstitutionsPage() {
   const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className={`relative isolate min-h-screen overflow-x-clip bg-[#FAF7F2] ${INTERACTION}`}>
+      <AmbientGlow />
       <ConsumerNav />
       <main id="main-content">
-        <section className="bg-warm-900 relative overflow-hidden">
-          <div className="mx-auto max-w-page px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
-            <div className="max-w-2xl">
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D16A52]">
-                For banks and credit unions
-              </span>
-              <h1
-                className="mt-4 text-warm-150 leading-[1.1] tracking-[-0.02em]"
-                style={{
-                  fontFamily: "var(--font-newsreader), Georgia, serif",
-                  fontSize: "clamp(28px, 5vw, 44px)",
-                  fontWeight: 400,
-                }}
-              >
+        {/* Light hero in the /subscribe look: the pitch beside one glass box of facts, equal
+            columns at xl. */}
+        <section aria-labelledby="fi-title">
+          <div className="mx-auto grid max-w-page gap-10 px-6 pb-14 pt-12 sm:pt-16 xl:grid-cols-2 xl:items-center xl:gap-14">
+            <div className="min-w-0">
+              <p className={EYEBROW}>For banks and credit unions</p>
+              <h1 id="fi-title" className={`mt-3 ${H1}`}>
                 Stop guessing what your competitors charge
               </h1>
-              <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
+              <p className={`mt-5 ${LEAD}`}>
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
                 it came from. Start with a free national or Fed district report, or run the workspace yourself.
               </p>
 
-              <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 {/* The sample is offline until it is re-rendered from source-checked data, so the
                     hero leads to the free reports instead of a "coming soon" page. */}
                 {sampleLive ? (
@@ -80,7 +95,7 @@ export default async function ForInstitutionsPage() {
                     className={PRIMARY_BUTTON}
                   >
                     See the sample report
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </TrackLink>
                 ) : (
                   <TrackLink
@@ -90,25 +105,31 @@ export default async function ForInstitutionsPage() {
                     className={PRIMARY_BUTTON}
                   >
                     {REPORT_OFFER.ctaLabel}
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </TrackLink>
                 )}
                 {/* With the sample offline the first button already leads to #report, so the
                     second one leads to Pro instead of repeating it. */}
-                <a
-                  href={sampleLive ? REPORT_ANCHOR : PRO_ANCHOR}
-                  className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
-                >
+                <a href={sampleLive ? REPORT_ANCHOR : PRO_ANCHOR} className={SECONDARY_BUTTON}>
                   {sampleLive ? "What’s in the report" : `See ${SITE_NAME} Pro`}
                 </a>
               </div>
-              <p className="mt-4 text-[13px] text-[#D5CBBF]">
-                National and Fed district reports, free and instant. Your institution against named
-                competitors, {INSTITUTION_REPORT_PRICE}.
-              </p>
+            </div>
+
+            <div className={`min-w-0 p-6 sm:p-8 ${GLASS}`}>
+              <dl className="grid grid-cols-2 gap-6">
+                <div>
+                  <dd className={`text-4xl font-bold tracking-tight text-[#1A1815] ${NUM}`}>{summary.institutionsLabel}</dd>
+                  <dt className="mt-1 text-sm text-[#5A5347]">institutions with published fees</dt>
+                </div>
+                <div>
+                  <dd className={`text-4xl font-bold tracking-tight text-[#1A1815] ${NUM}`}>{summary.categoriesLabel}</dd>
+                  <dt className="mt-1 text-sm text-[#5A5347]">fee categories</dt>
+                </div>
+              </dl>
+              <CheckList items={HERO_CHECKS} className="mt-6 border-t border-[#E8E1D6] pt-6" />
             </div>
           </div>
-          <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-terra/[0.06] to-transparent" />
         </section>
 
         <ReportOfferSection />
@@ -149,23 +170,22 @@ const AUDIENCES = [
 
 function AudienceSection() {
   return (
-    <section className="bg-warm-100 border-b border-warm-200">
-      <div className="mx-auto max-w-page px-6 py-14">
-        <h2
-          className="text-center text-[28px] text-warm-900"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
+    <section aria-labelledby="audiences-title">
+      <div className="mx-auto max-w-page px-6 py-14 sm:py-16">
+        <h2 id="audiences-title" className={H2}>
           Built for the people who set the prices
         </h2>
-        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-5">
           {AUDIENCES.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="text-center">
-              <Icon className="mx-auto h-6 w-6 text-terra" />
-              <p className="mt-3 text-[15px] font-bold text-warm-900">{title}</p>
-              <p className="mt-2 text-[14px] leading-relaxed text-warm-700">{body}</p>
-            </div>
+            <li key={title} className={`h-full p-6 ${GLASS_SOFT}`}>
+              <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#C44B2E]/10">
+                <Icon className="h-5 w-5 text-terra" />
+              </span>
+              <h3 className="mt-4 text-lg font-semibold tracking-tight text-warm-900">{title}</h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-warm-800">{body}</p>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   );
@@ -173,23 +193,20 @@ function AudienceSection() {
 
 function AdvisorySection() {
   return (
-    <section className="bg-white border-b border-warm-200">
-      <div className="mx-auto max-w-page px-6 py-14">
-        <div className="max-w-3xl">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            {SITE_NAME} Advisory
-          </p>
-          <h2
-            className="mt-3 text-[28px] text-warm-900"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-          >
+    <section aria-labelledby="advisory-title">
+      <div className="mx-auto max-w-page px-6 pb-14 sm:pb-16">
+        <div className={`flex flex-col gap-6 p-6 sm:p-8 xl:flex-row xl:items-center xl:justify-between ${GLASS}`}>
+          <div className="min-w-0">
+          <p className={EYEBROW}>{SITE_NAME} Advisory</p>
+          <h2 id="advisory-title" className={`mt-3 ${H2}`}>
             Need more than one report?
           </h2>
-          <p className="mt-4 text-[15px] leading-relaxed text-warm-700">
+          <p className={`mt-3 ${BODY}`}>
             {SITE_NAME} Advisory is the bespoke tier: custom competitor sets, board decks and
             multi-institution work, prepared by us on the same verified data.
           </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          </div>
+          <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_advisory" }}
@@ -197,13 +214,13 @@ function AdvisorySection() {
               className={PRIMARY_BUTTON}
             >
               Talk to us
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </TrackLink>
             <TrackLink
               event="request_report_click"
               eventProps={{ placement: "for_institutions_advisory", report: "institution" }}
               href={INSTITUTION_REPORT_HREF}
-              className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
+              className={SECONDARY_BUTTON}
             >
               {REPORT_OFFER.institutionCtaLabel}
             </TrackLink>
@@ -221,19 +238,16 @@ function AdvisorySection() {
  */
 function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
   return (
-    <section className="bg-warm-900">
-      <div className="mx-auto max-w-page px-6 py-14 text-center">
-        <h2
-          className="text-[28px] text-warm-150"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
+    <section aria-labelledby="fi-cta" className="mx-auto max-w-page px-6 pb-16">
+      <div className={`px-6 py-10 text-center sm:px-10 ${GLASS}`}>
+        <h2 id="fi-cta" className={H2}>
           Ready to see where your fees stand?
         </h2>
-        <p className="mx-auto mt-3 text-[15px] text-[#D5CBBF]">
+        <p className={`mx-auto mt-3 ${BODY}`}>
           Request your institution&apos;s own report against named competitors, {INSTITUTION_REPORT_PRICE}, or
           start with a free national or Fed district report.
         </p>
-        <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
           <TrackLink
             event="request_report_click"
             eventProps={{ placement: "for_institutions_footer", report: "institution" }}
@@ -247,18 +261,18 @@ function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
             event="request_report_click"
             eventProps={{ placement: "for_institutions_footer", report: "national" }}
             href={FREE_REPORT_HREF}
-            className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
+            className={SECONDARY_BUTTON}
           >
             {REPORT_OFFER.ctaLabel}
           </TrackLink>
         </div>
         {sampleLive && (
-          <p className="mt-5 text-[14px] text-[#D5CBBF]">
+          <p className="mt-5 text-sm text-[#5A5347]">
             <TrackLink
               event="see_sample_report"
               eventProps={{ placement: "for_institutions_footer" }}
               href={SAMPLE_REPORT_HREF}
-              className="font-semibold text-warm-150 underline underline-offset-4 hover:text-white"
+              className="font-semibold text-[#A93D25] underline underline-offset-4 hover:text-[#8E2A17]"
             >
               See the sample institution report
             </TrackLink>

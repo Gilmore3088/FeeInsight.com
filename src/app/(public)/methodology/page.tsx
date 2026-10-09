@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
+import { AmbientGlow, CheckList, EYEBROW, GLASS, GLASS_SOFT, H1, INTERACTION, LEAD } from "@/components/public/site-look";
 
 const METHODOLOGY_URL = `${SITE_URL}/methodology`;
 
@@ -71,7 +72,8 @@ export default async function MethodologyPage() {
   const institutions = summary.institutionsLabel;
   const jsonLdData = buildJsonLd(institutions);
   return (
-    <div>
+    <div className={`relative isolate overflow-x-clip ${INTERACTION}`}>
+      <AmbientGlow height={800} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdData) }}
@@ -79,25 +81,43 @@ export default async function MethodologyPage() {
       <div className="mx-auto max-w-page px-6 pb-24 pt-16">
 
         {/* Header */}
-        <div className="mb-12 border-b-2 border-[#1A1815] pb-6">
-          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+        <div className="mb-12 grid items-end gap-8 xl:grid-cols-2">
+          <div className="min-w-0">
+          <p className={`mb-3 ${EYEBROW}`}>
             Research Methodology
           </p>
-          <h1 className="mb-3 text-[36px] font-semibold leading-[1.2] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
+          <h1 className={`mb-4 ${H1}`}>
             How the Bank Fee Index works
           </h1>
-          <p className="text-base leading-relaxed text-[#5A5347]">
+          <p className={LEAD}>
             A transparent account of how we collect, classify, and verify fee data across {institutions} financial institutions — and what that means for the accuracy of our benchmarks.
           </p>
-          <p className="mt-4 text-xs text-[#6B6255]">
+          <p className="mt-4 text-xs text-[#5A5347]">
             {RESEARCH_IMPRINT} &mdash; {summary.freshnessLabel}
           </p>
+          </div>
+          {/* The publication rules from the sections below, in one box. */}
+          <aside aria-labelledby="rules-at-a-glance" className={`p-6 sm:p-7 ${GLASS}`}>
+            <h2 id="rules-at-a-glance" className="text-lg font-semibold tracking-tight text-[#1A1815]">
+              Publication rules at a glance
+            </h2>
+            <CheckList
+              className="mt-4"
+              items={[
+                `Strong benchmark: ${STRONG_INSTITUTION_COUNT} or more institutions publish a verified fee`,
+                `Provisional: ${MIN_INSTITUTIONS_FOR_MEDIAN} to ${STRONG_INSTITUTION_COUNT - 1} institutions, benchmarked with a caution`,
+                `Fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN}: shown, but not used for medians`,
+                "Fees still being checked stay out of benchmarks",
+                "Every fee carries the date its schedule was collected",
+              ]}
+            />
+          </aside>
         </div>
 
-        <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-16">
+        <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-10 xl:gap-12">
           <nav aria-label="On this page" className="hidden lg:block">
-            <div className="sticky top-24">
-              <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">On this page</p>
+            <div className={`sticky top-24 p-5 ${GLASS_SOFT}`}>
+              <p className={`mb-3 ${EYEBROW}`}>On this page</p>
               <ul className="space-y-1 text-sm">
                 {SECTIONS.map((section) => (
                   <li key={section.id}>
@@ -195,7 +215,7 @@ export default async function MethodologyPage() {
         />
 
         {/* Footer */}
-        <div className="mt-16 border-t border-[#E8DFD1] pt-6 text-xs text-[#6B6255]">
+        <div className="mt-12 border-t border-[#E8DFD1] pt-6 text-xs text-[#5A5347]">
           <p>{SITE_NAME} is independently operated. Our data collection methodology is designed to comply with the terms of service of the financial institutions we monitor. We collect only publicly disclosed fee information.</p>
           <p className="mt-2">
             Questions about our methodology:{" "}
@@ -210,18 +230,19 @@ export default async function MethodologyPage() {
   );
 }
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+/** Each section is a glass card (the /subscribe look), headings in the page font. */
+const SECTION_CARD = `mb-6 scroll-mt-24 p-6 sm:p-8 [&>p:last-child]:mb-0 ${GLASS_SOFT}`;
 
-const SECTION_LABEL = "mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]";
-const SECTION_TITLE = "mb-4 text-[22px] font-semibold leading-[1.3] tracking-[-0.01em] text-[#1A1815]";
+const SECTION_LABEL = "mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]";
+const SECTION_TITLE = "mb-4 text-2xl font-semibold leading-[1.25] tracking-tight text-[#1A1815]";
 const PARAGRAPH = "mb-4 text-[15px] leading-[1.75] text-[#3D3830]";
 
 // Internal section component — page-local only
 function Section({ id, label, title, body }: { id: string; label: string; title: string; body: string[] }) {
   return (
-    <section id={id} className="mb-12 scroll-mt-24" aria-labelledby={`${id}-title`}>
+    <section id={id} className={SECTION_CARD} aria-labelledby={`${id}-title`}>
       <p className={SECTION_LABEL}>{label}</p>
-      <h2 id={`${id}-title`} className={SECTION_TITLE} style={SERIF}>
+      <h2 id={`${id}-title`} className={SECTION_TITLE}>
         {title}
       </h2>
       {body.map((paragraph, i) => (
@@ -245,7 +266,7 @@ function CodeRef({ fn, file }: { fn: string; file: string }) {
 
 function RuleCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 border border-[#E0D7C9] bg-white px-5 py-4">
+    <div className="h-full min-w-0 rounded-xl bg-white/80 px-5 py-4 ring-1 ring-[#E8E1D6]">
       <h3 className="mb-2 text-base font-semibold text-[#1A1815]">{title}</h3>
       <div className="space-y-2 text-sm leading-relaxed text-[#3D3830]">{children}</div>
     </div>
@@ -258,9 +279,9 @@ function RuleCard({ title, children }: { title: string; children: ReactNode }) {
  */
 function RepresentativeValues() {
   return (
-    <section id="headline-fees" className="mb-12 scroll-mt-24" aria-labelledby="headline-fees-title">
+    <section id="headline-fees" className={SECTION_CARD} aria-labelledby="headline-fees-title">
       <p className={SECTION_LABEL}>Representative values</p>
-      <h2 id="headline-fees-title" className={SECTION_TITLE} style={SERIF}>
+      <h2 id="headline-fees-title" className={SECTION_TITLE}>
         How several published amounts become one number
       </h2>
       <p className={PARAGRAPH}>
@@ -269,7 +290,7 @@ function RepresentativeValues() {
         institution&apos;s fee table. Where one number has to stand for the institution, the rule depends on where
         the number appears, and the three places use different rules.
       </p>
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <RuleCard title="Institution pages: page title, search summary and Headline fees">
           <p>
             <strong className="font-semibold text-[#1A1815]">Monthly maintenance:</strong> the lowest verified amount above

@@ -31,6 +31,9 @@ export function InstitutionCombobox({
   readOnly,
   className,
   onPick,
+  invalid = false,
+  describedBy,
+  onFieldBlur,
 }: {
   id: string;
   name: string;
@@ -38,6 +41,12 @@ export function InstitutionCombobox({
   readOnly: boolean;
   className: string;
   onPick: (picked: PickedInstitution | null) => void;
+  /** The form found a problem with this field: sets aria-invalid. */
+  invalid?: boolean;
+  /** Ids of the helper or error text that describes the field. */
+  describedBy?: string;
+  /** Called with the typed value when the field loses focus (validate on blur). */
+  onFieldBlur?: (value: string) => void;
 }) {
   const listId = useId();
   const [value, setValue] = useState(defaultValue);
@@ -117,7 +126,12 @@ export function InstitutionCombobox({
             setOpen(false);
           }
         }}
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
+        onBlur={(event) => {
+          onFieldBlur?.(event.target.value);
+          setTimeout(() => setOpen(false), 120);
+        }}
         onFocus={() => suggestions.length > 0 && setOpen(true)}
         autoComplete="off"
         placeholder="Start typing your bank or credit union"

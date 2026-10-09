@@ -13,7 +13,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
@@ -24,6 +24,23 @@ import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
 import { PositionPreview } from "./position-preview";
 import { bestMarket, StateReportGrid, type StateCoverage } from "./state-report-grid";
+import {
+  AmbientGlow,
+  BAND,
+  BODY,
+  CheckList,
+  CTA_PRIMARY,
+  CTA_SECONDARY,
+  EYEBROW,
+  GLASS,
+  GLASS_SOFT,
+  H1,
+  H2,
+  INTERACTION,
+  LEAD,
+  NUM,
+  TEXT_LINK,
+} from "@/components/public/site-look";
 
 export const revalidate = 3600;
 
@@ -35,11 +52,8 @@ export const metadata: Metadata = {
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REQUEST_HREF = "/reports?report=institution#request";
 
-const PRIMARY_BUTTON =
-  "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:bg-[#A93D25]";
-const SECONDARY_BUTTON =
-  "inline-flex items-center rounded-md border border-[#D5CBBF] bg-white px-4 py-2.5 text-sm font-semibold text-[#1A1815] no-underline transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+const PRIMARY_BUTTON = `${CTA_PRIMARY} no-underline`;
+const SECONDARY_BUTTON = `${CTA_SECONDARY} no-underline`;
 
 const REPORT_CONTENTS = [
   {
@@ -161,12 +175,10 @@ const CHARTER_NOUN: Record<string, string> = { bank: "banks", credit_union: "cre
 
 function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
-    <div className="mb-8 max-w-[640px]">
-      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{eyebrow}</p>
-      <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#1A1815]" style={SERIF}>
-        {title}
-      </h2>
-      {children && <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">{children}</p>}
+    <div className="mb-8 max-w-3xl">
+      <p className={EYEBROW}>{eyebrow}</p>
+      <h2 className={`mt-3 ${H2}`}>{title}</h2>
+      {children && <p className={`mt-3 ${BODY}`}>{children}</p>}
     </div>
   );
 }
@@ -176,21 +188,20 @@ function PublishedReportItem({ report }: { report: PublishedReport }) {
   return (
     <li className="flex flex-col gap-2 border-b border-[#E0D7C9] py-6">
       <div className="flex flex-wrap items-center gap-2.5">
-        <span className="rounded bg-[#F5F0E8] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5A5347]">
+        <span className="rounded-full bg-[#F3EEE6] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5A5347]">
           {typeLabel}
         </span>
-        <span className="text-[12px] text-[#6B6255]">{timeAgo(report.published_at)}</span>
+        <span className="text-[13px] text-[#5A5347]">{timeAgo(report.published_at)}</span>
       </div>
       <Link
         href={`/reports/${report.slug}`}
-        className="report-title-link text-[20px] font-semibold leading-snug tracking-[-0.01em] text-[#1A1815] no-underline"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="report-title-link text-xl font-semibold leading-snug tracking-tight text-[#1A1815] no-underline"
       >
         {report.title}
       </Link>
       <Link
         href={`/reports/${report.slug}`}
-        className="inline-flex items-center gap-1 text-[13px] font-medium text-[#A93D25] no-underline"
+        className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-[#A93D25] no-underline"
       >
         Read report &rarr;
       </Link>
@@ -229,21 +240,18 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const closestMarket = readiness ? bestMarket(readiness.filter((m) => !m.ready)) : null;
 
   return (
-    <div className="pb-24">
-      {/* Hero: the report, with its real position map */}
-      <section className="border-b border-[#E8DFD1] bg-[linear-gradient(180deg,#FBF7F1_0%,#FDFBF8_100%)]">
-        <div className="mx-auto grid max-w-page grid-cols-1 gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-center">
+    <div className={`relative isolate overflow-x-clip pb-24 ${INTERACTION}`}>
+      <AmbientGlow />
+      {/* Hero: the headline and pitch beside one glass box with the offer's terms and contents
+          (or the sample's real position map once the sample is live), equal columns at xl. */}
+      <section aria-labelledby="reports-title">
+        <div className="mx-auto grid max-w-page grid-cols-1 gap-10 px-6 pb-14 pt-12 sm:pt-16 xl:grid-cols-2 xl:items-center xl:gap-14">
           <div className="min-w-0">
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
-              {REPORT_OFFER.name}
-            </p>
-            <h1
-              className="text-[2.25rem] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1A1815] sm:text-[2.75rem]"
-              style={SERIF}
-            >
+            <p className={EYEBROW}>{REPORT_OFFER.name}</p>
+            <h1 id="reports-title" className={`mt-3 ${H1}`}>
               Know where your fees stand against your market.
             </h1>
-            <p className="mt-5 max-w-[540px] text-[16px] leading-relaxed text-[#5A5347]">
+            <p className={`mt-5 ${LEAD}`}>
               We put your published fees next to the banks and credit unions you compete with, line by
               line, and show where you are priced above, inside or below the market. Every number cites
               the fee schedule it came from.
@@ -263,50 +271,60 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 </Link>
               )}
             </div>
-            <dl className="mt-8 grid max-w-[520px] grid-cols-1 gap-3 border-t border-[#E8DFD1] pt-5 min-[400px]:grid-cols-3 min-[400px]:gap-4">
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Price</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">
-                  {REPORT_OFFER.priceLabel}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Next step</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">Reply in 1 business day</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Format</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">Board-ready PDF</dd>
-              </div>
-            </dl>
+            {positionMap && positionMap.rows.length > 0 && (
+              <p className="mt-6 text-sm text-[#5A5347]">
+                <span className="font-semibold text-[#1A1815]">{REPORT_OFFER.priceLabel}</span> · reply in 1 business
+                day · board-ready PDF
+              </p>
+            )}
           </div>
 
-          {positionMap && positionMap.rows.length > 0 && (
+          {positionMap && positionMap.rows.length > 0 ? (
             <div className="min-w-0">
               <PositionPreview map={positionMap} />
-              <p className="mt-3 text-[12px] leading-relaxed text-[#6B6255]">
+              <p className="mt-3 text-[13px] leading-relaxed text-[#5A5347]">
                 Real figures from a report prepared for a ~$400M community bank; only the bank&apos;s name
                 is hidden.{" "}
-                <Link href={SAMPLE_REPORT_HREF} className="text-[#A93D25] underline-offset-2 hover:underline">
+                <Link href={SAMPLE_REPORT_HREF} className={TEXT_LINK}>
                   See the whole report
                 </Link>
               </p>
+            </div>
+          ) : (
+            <div className={`min-w-0 p-6 sm:p-8 ${GLASS}`}>
+              <dl className="grid grid-cols-1 gap-4 min-[400px]:grid-cols-3">
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5A5347]">Price</dt>
+                  <dd className={`mt-1 text-2xl font-semibold tracking-tight text-[#1A1815] ${NUM}`}>
+                    {REPORT_OFFER.priceLabel}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5A5347]">Next step</dt>
+                  <dd className="mt-1 text-[15px] font-semibold leading-snug text-[#1A1815]">Reply in 1 business day</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5A5347]">Format</dt>
+                  <dd className="mt-1 text-[15px] font-semibold leading-snug text-[#1A1815]">Board-ready PDF</dd>
+                </div>
+              </dl>
+              <CheckList items={REPORT_INCLUDES} className="mt-6 border-t border-[#E8E1D6] pt-6" />
             </div>
           )}
         </div>
       </section>
 
       {/* What's inside */}
-      <section className="mx-auto max-w-page px-6 pt-16">
+      <section className="mx-auto max-w-page px-6 pt-12">
         <SectionHeading eyebrow="What's inside" title="Six sections, one PDF you can hand to your pricing committee." />
-        <ol className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3">
+        <ol className="m-0 grid list-none gap-4 p-0 sm:grid-cols-2 xl:grid-cols-3 xl:gap-5">
           {REPORT_CONTENTS.map((item, index) => (
-            <li key={item.title} className="rounded-lg border border-[#E8DFD1] bg-white p-5">
-              <span className="text-[13px] font-semibold tabular-nums text-[#C44B2E]">
+            <li key={item.title} className={`h-full p-6 ${GLASS_SOFT}`}>
+              <span className={`text-sm font-semibold text-[#A93D25] ${NUM}`}>
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <h3 className="mt-2 text-[16px] font-semibold text-[#1A1815]">{item.title}</h3>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-[#5A5347]">{item.body}</p>
+              <h3 className="mt-2 text-lg font-semibold tracking-tight text-[#1A1815]">{item.title}</h3>
+              <p className="mt-1.5 text-[15px] leading-relaxed text-[#3D3830]">{item.body}</p>
             </li>
           ))}
         </ol>
@@ -315,43 +333,38 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       {/* How it works */}
       <section className="mx-auto max-w-page px-6 pt-16">
         <SectionHeading eyebrow="How it works" title="Three steps, and you don't lift a finger after the first." />
-        <ol className="m-0 grid list-none gap-6 p-0 md:grid-cols-3">
+        <ol className="m-0 grid list-none gap-4 p-0 md:grid-cols-3 xl:gap-5">
           {STEPS.map((step, index) => (
-            <li key={step.title} className="relative">
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1A1815] text-[13px] font-semibold text-white">
-                  {index + 1}
-                </span>
-                {index < STEPS.length - 1 && <span className="hidden h-px flex-1 bg-[#E0D7C9] md:block" />}
-              </div>
-              <h3 className="mt-4 text-[16px] font-semibold text-[#1A1815]">{step.title}</h3>
-              <p className="mt-1.5 max-w-[320px] text-[14px] leading-relaxed text-[#5A5347]">{step.body}</p>
+            <li key={step.title} className={`relative h-full p-6 ${GLASS_SOFT}`}>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1A1815] text-[13px] font-semibold text-white">
+                {index + 1}
+              </span>
+              <h3 className="mt-4 text-lg font-semibold tracking-tight text-[#1A1815]">{step.title}</h3>
+              <p className="mt-1.5 text-[15px] leading-relaxed text-[#3D3830]">{step.body}</p>
             </li>
           ))}
         </ol>
       </section>
 
       {/* Request form: the lead lands in the leads table (/admin/leads) */}
-      <section id="request" className="mx-auto max-w-page scroll-mt-20 px-6 pt-16">
-        {/* Below lg one shrinkable column, with a lighter inset on phones so the form keeps
-            its width at 320px. */}
-        <div className="grid grid-cols-1 gap-8 rounded-xl border border-[#E8DFD1] bg-[#FBF7F1] p-4 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
+      <section id="request" aria-labelledby="request-title" className={`mt-16 scroll-mt-20 ${BAND}`}>
+        {/* A frosted band with two equal columns at xl: the terms, then the form. One shrinkable
+            column below that, so the form keeps its width at 320px. */}
+        <div className="mx-auto grid max-w-page grid-cols-1 gap-8 px-4 py-12 sm:px-6 sm:py-16 xl:grid-cols-2 xl:items-start xl:gap-14">
           <div className="min-w-0">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
-              Request your report
-            </p>
-            <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#1A1815]" style={SERIF}>
+            <p className={EYEBROW}>Request your report</p>
+            <h2 id="request-title" className={`mt-3 ${H2}`}>
               Tell us where to send it.
             </h2>
-            <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-[#5A5347]">
+            <p className={`mt-3 ${BODY}`}>
               The national and Fed district reports are free and open right away with just an email.
               For your institution against named competitors ({REPORT_OFFER.priceLabel.toLowerCase()}), leave
               your institution and work email. {REPORT_OFFER.nextStep}, and we confirm your peer set before
               any work starts.
             </p>
-            <p className="mt-4 text-[13px] text-[#6B6255]">
+            <p className="mt-4 text-sm text-[#5A5347]">
               Prefer to write?{" "}
-              <Link href="/contact?source=report" className="text-[#A93D25] underline-offset-2 hover:underline">
+              <Link href="/contact?source=report" className={TEXT_LINK}>
                 Send us a message
               </Link>
             </p>
@@ -373,13 +386,13 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </SectionHeading>
         {stateCoverage ? (
           <>
-            <p className="mb-4 text-[13px] text-[#6B6255]">
+            <p className="mb-4 text-sm text-[#5A5347]">
               <b className="font-semibold text-[#1A1815]">{coveredInstitutions.toLocaleString()}</b> institutions
               with verified fees across <b className="font-semibold text-[#1A1815]">{coveredStateCount}</b> states
               {dcCovered ? " plus DC" : ""} · <b className="font-semibold text-[#1A1815]">{coveredFees.toLocaleString()}</b> fee lines
             </p>
             {readiness && (
-              <p className="mb-4 text-[13px] text-[#6B6255]">
+              <p className="mb-4 text-sm text-[#5A5347]">
                 {readyMarkets > 0 ? (
                   <>
                     <b className="font-semibold text-[#1A1815]">{readyMarkets}</b> of {readiness.length} state
@@ -401,7 +414,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <StateReportGrid states={stateCoverage} readiness={readiness} />
           </>
         ) : (
-          <p className="rounded-lg border border-dashed border-[#D5CBBF] bg-[#FDFBF8] px-5 py-4 text-[14px] text-[#6B6255]">
+          <p className={`px-5 py-4 text-[15px] text-[#3D3830] ${GLASS_SOFT}`}>
             State coverage is temporarily unavailable. Try again shortly, or browse the{" "}
             <Link href="/research" className="text-[#A93D25] underline-offset-2 hover:underline">
               research hub
@@ -424,12 +437,12 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 <PublishedReportItem key={report.id} report={report} />
               ))}
             </ul>
-            <p className="mt-6 text-[12px] text-[#6B6255]">
+            <p className="mt-6 text-[13px] text-[#5A5347]">
               Showing {reports.length} report{reports.length !== 1 ? "s" : ""}.
             </p>
           </>
         ) : (
-          <p className="max-w-[640px] text-[14px] leading-relaxed text-[#6B6255]">
+          <p className={`max-w-[640px] px-5 py-4 text-[15px] leading-relaxed text-[#3D3830] ${GLASS_SOFT}`}>
             {unavailable
               ? "The research catalog is temporarily unavailable. Try again shortly."
               : filtersActive
@@ -439,18 +452,16 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         )}
       </section>
 
-      {/* Closing call to action */}
-      <section className="mx-auto max-w-page px-6 pt-20">
-        <div className="flex flex-col items-start gap-5 rounded-xl bg-[#1A1815] px-5 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-          <div className="min-w-0">
-            <p className="text-[24px] leading-snug text-white" style={SERIF}>
-              See your own fees against your market.
-            </p>
-            <p className="mt-1 text-[13px] text-[#C9BFB1]">
-              The {REPORT_OFFER.name}, {REPORT_OFFER.priceLabel.toLowerCase()}: your fees next to named competitors in your market, with a source for every figure.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
+      {/* Closing call to action: the /subscribe closing panel (centered glass, one primary). */}
+      <section aria-labelledby="reports-cta" className="mx-auto max-w-page px-6 pt-20">
+        <div className={`px-6 py-10 text-center sm:px-10 ${GLASS}`}>
+          <h2 id="reports-cta" className={H2}>
+            See your own fees against your market.
+          </h2>
+          <p className={`mx-auto mt-3 ${BODY}`}>
+            The {REPORT_OFFER.name}, {REPORT_OFFER.priceLabel.toLowerCase()}: your fees next to named competitors in your market, with a source for every figure.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
             <TrackLink
               event="request_report_click"
               eventProps={{ placement: "reports_hub_footer" }}
@@ -460,10 +471,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               {REPORT_OFFER.institutionCtaLabel}
             </TrackLink>
             {sampleLive && (
-              <Link
-                href={SAMPLE_REPORT_HREF}
-                className="inline-flex items-center rounded-md border border-[#5A5347] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:border-white"
-              >
+              <Link href={SAMPLE_REPORT_HREF} className={SECONDARY_BUTTON}>
                 Read the sample
               </Link>
             )}
@@ -475,7 +483,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         .report-title-link:hover { color: #C44B2E; }
         .state-tile { transition: transform 120ms ease, box-shadow 120ms ease; }
         .state-tile:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px #1A1815; }
-        .state-tile:focus-visible { outline: 2px solid #1A1815; outline-offset: 2px; }
+        .state-tile:focus-visible { outline: 2px solid #A93D25; outline-offset: 2px; }
+        @media (prefers-reduced-motion: reduce) { .state-tile, .state-tile:hover { transition: none; transform: none; } }
       `}</style>
     </div>
   );

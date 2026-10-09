@@ -66,7 +66,7 @@ type Position = "below" | "within" | "above";
 const POSITION_DOT: Record<Position, string> = {
   below: "bg-emerald-600",
   within: "bg-[#8A8072]",
-  above: "bg-amber-600",
+  above: "bg-[#C44B2E]",
 };
 
 const POSITION_TEXT: Record<Position, string> = {
@@ -266,7 +266,7 @@ function GroupBadge({ group }: { group: FeeGroup }) {
   const verified = group.verifiedCount > 0;
   const className = verified
     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : "border-amber-200 bg-amber-50 text-amber-900";
+    : "border-[#C44B2E]/25 bg-[#FDF0ED] text-[#8E2A17]";
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${className}`}>
@@ -280,7 +280,6 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 }
 
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]";
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
 const FOCUSED_ROW = "border-l-2 border-l-[#C44B2E] bg-[#C44B2E]/[0.035]";
 
@@ -370,7 +369,7 @@ export function FeeScheduleTable({
 
 function UnderReviewChip() {
   return (
-    <span className="ml-2 inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+    <span className="ml-2 inline-flex items-center rounded-md border border-[#C44B2E]/25 bg-[#FDF0ED] px-1.5 py-0.5 text-[10px] font-semibold text-[#8E2A17]">
       Under review
     </span>
   );
@@ -428,7 +427,7 @@ function FeeRow({
         {showUnderReview && <UnderReviewChip />}
         <AccountNotes fee={fee} />
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">
         {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
@@ -494,7 +493,7 @@ function FeeScheduleStack({
                       <AccountNotes fee={fee} />
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
-                      <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+                      <span className="text-base font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">
                         {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
                       </span>
                       {benchmark && fee.amount !== null && (
