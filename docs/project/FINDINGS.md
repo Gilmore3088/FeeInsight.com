@@ -25,6 +25,28 @@ Template:
 **Fix:** a plan Stripe can't read is listed with Stripe's error code instead of failing the rest; a section that does fail shows its error code, a log reference and a Retry link (this PR). The next page load names the real code.
 **Lesson:** an error state names what was being read and the error code it got; never guess the cause in the copy.
 
+## 2026-10-09: Admin panels showed placeholder zeros, cached fallbacks and dead anchors as facts
+**What happened:** the 2026-10-08 admin audit saw Magellan and Darwin at "Spend today $0.00", Darwin
+"Promoted today 0" and "No recent run" while Controls attributed spend to both and the run ledger
+had completed Darwin steps; Today briefly showed the provider stop "active" and the pipeline
+"paused" while Controls showed both running; the Atlas lane table showed Running for runs the
+ledger had completed (IA 3151); and links to `/admin#atlas-safety` and `/admin#atlas-live-status`
+went nowhere. A KS paid pass read "stopped at the budget cap" though its step event recorded the
+cap ("Provider call cap exhausted for run 3152 under agent:magellan").
+**Cause:** `fetchDarwinStatus` and `fetchMagellanStatus` returned hard-coded 0 for spend (and
+Darwin for every counter). The command center turns a failed control read into a fail-closed
+"stopped" row, and `unstable_cache` keeps serving that row (and stale lane snapshots) until it
+revalidates. The anchors moved to Controls and Atlas details when Today was slimmed down. The
+step summary dropped the recorded `budget_reason`.
+**Fix:** this branch: the panels read the shared spend ledger (`getAgentSpendToday`) and run ledger
+with an as-of time; an unreadable control is shown as "Couldn't read the control" with a retry;
+the lane table shows its snapshot age and takes terminal status from the live run feed; anchors
+point at Controls / Live board / Atlas details with a test against dead `/admin#` fragments;
+budget messages name cap, limit, used and reset.
+**Lesson:** never return a literal 0 for a value that was not read; return null and say so. A
+fail-closed fallback must carry an "unreadable" flag so a display never presents it as a switch
+setting.
+
 ## 2026-10-08: Seven of the "192 $10B+ banks" are closed charters
 **What happened:** the large-bank overdraft count (106 of 192 at 23:25 UTC) counts every `institution_sources` row at $10B+ in assets. Seven are marked closed by the FDIC or NCUA registry sync (`regulatory_status = 'inactive'`): Webster Bank (closed 2026-08-20), Comerica Bank and Cadence Bank (2026-02-01), FirstBank of Colorado (2026-06-18), First Foundation Bank (2026-04-01), Stellar Bank (2026-07-01) and First Technology FCU (no closed date; NCUA's list no longer has its charter). Six of the seven have no live overdraft fee, and companion fetch skips inactive banks, so their hand-found schedules never fetched. Stock Yards ($10B) is `dormant`, which companion fetch also skipped.
 **Cause:** the count's denominator was never filtered on registry status; the merged banks' fees now belong to the acquirers' charters.
