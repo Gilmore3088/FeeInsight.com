@@ -76,6 +76,7 @@ import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
+import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -1895,6 +1896,25 @@ async function executeAgenticStep(
           retired: result.retired,
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
+        },
+      };
+    }
+    case "bayes-replay-ledger": {
+      const result = await runBayesLedger({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      return {
+        status: "completed",
+        summary: summarizeBayesLedger(result),
+        detail: {
+          version: BAYES_LEDGER_VERSION,
+          schema_ready: result.schemaReady,
+          dry_run: result.dryRun,
+          closed: result.closed,
+          open: result.open,
+          stuck: result.stuck,
+          not_counted: result.notCounted,
+          failed: result.failed,
+          queued_records: result.queuedRecords,
+          jobs: result.jobs,
         },
       };
     }
