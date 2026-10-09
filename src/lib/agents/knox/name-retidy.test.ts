@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LiveFeeRow } from "@/lib/agents/hamilton/source-check";
-import { cellName, dropsCondition, restoredName, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
+import { cellName, dropsCondition, restoredName, restoreOnPage, fontDecodedName, fontMapVerified, headName, isMessyName, spacedControlName, planRetidy, sharedNameFeeIds, accountHeading, neighbourCellName, conditionOnlyName, unligatedName, restoreStrippedAmount, retidiedFeeName, withoutWaiverAdvice } from "@/lib/agents/knox/name-retidy";
 
 const fee = (overrides: Partial<LiveFeeRow>): LiveFeeRow => ({
   fee_published_id: 1,
@@ -651,6 +651,19 @@ describe("v15: a rename never drops a condition, and v14's trims get theirs back
     const restored = { ...atm, fee_name: "ATM Fee - Cash withdrawal at ATMs we do not own or operate" };
     const again = planRetidy([restored], [], [restored], new Map([[47474, { oldName: "ATM Fee", newName: restored.fee_name }]]));
     expect(again.renames).toEqual([]);
+  });
+
+  it("an older window's name must print whole on the fee's own page", () => {
+    const page = "Inactive Account (After 1 year of no activity) $5.00\nPriority Rush Card Fee (up to 3 business days) $35.00";
+    expect(restoreOnPage("Inactive Account (After 1 year of no activity)", [page])).toBe(true);
+    expect(restoreOnPage("Priority Rush Card Fee (up to 3 business)", [page])).toBe(false);
+    expect(restoreOnPage("Priority Rush Card Fee (up to 3", [page])).toBe(false);
+    const inactive = fee({ fee_published_id: 82276, canonical_fee_key: "dormant_account", fee_name: "Inactive Account", amount: 5 });
+    const logged = new Map([[82276, { oldName: "Inactive Account (After 1 year of no activity)", newName: "Inactive Account", pageCheck: true }]]);
+    expect(planRetidy([inactive], [], [inactive], logged).renames).toEqual([]);
+    expect(planRetidy([inactive], [{ source_document_id: 70, normalized_text: page }], [inactive], logged).renames.map((rename) => rename.newName)).toEqual([
+      "Inactive Account (After 1 year of no activity)",
+    ]);
   });
 
   it("leaves a condition on a run-on name rather than trimming it", () => {

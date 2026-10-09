@@ -745,11 +745,11 @@ const ACCOUNT_BOUND_KEYS = new Set(["monthly_maintenance", "minimum_balance", "d
 export function dropsCondition(oldName: string, newName: string, canonicalKey?: string): boolean {
   oldName = oldName.replace(/\b24\s*\/\s*7\b/g, " ");
   const kept = new Set(nameWords(newName));
-  // How to waive or avoid the fee is advice, not a condition (v8 cuts it off on purpose).
+  // How to waive or avoid the fee, or qualify for no fee, is advice, not a condition (v8 cuts it off).
   const advice = new Set(
     oldName
       .split(NAME_SEGMENT)
-      .filter((segment) => /\b(?:waiv|avoid)/i.test(segment))
+      .filter((segment) => /\b(?:waiv|avoid|qualif)|\bfollowing\b/i.test(segment))
       .flatMap((segment) => nameWords(segment)),
   );
   // An account heading cell read onto the front of another fee's name ("PERSONAL CHECKING
@@ -773,6 +773,12 @@ export function dropsCondition(oldName: string, newName: string, canonicalKey?: 
  * first write on are put back; earlier versions' trims were checked by UAT when they landed.
  */
 export const CONDITION_RESTORE_SINCE = "2026-10-09T10:46:00Z";
+/**
+ * Older versions whose condition trims go back too, one window at a time and oldest first, each
+ * only after UAT scores a random 20 at 18 or better against source. Their old names are often
+ * fragments publish cut off, so each must also print whole on the fee's own page.
+ */
+export const CONDITION_RESTORE_OLDER_VERSIONS: number[] = [];
 const RESTORE_CUT_LENGTH = 110;
 const RESTORE_BOUNDARY = /(?:\.\s|\s[-–—]\s|;\s|\)\s)/g;
 /**
@@ -790,19 +796,47 @@ export function restoredName(oldName: string, trimmedName: string, canonicalKey?
     const clause = end > 0 ? closedParens(name.slice(0, end).replace(/[\s,;:\-–—]+$/u, "").trim()) : "";
     restored = clause.length > trimmedName.length && dropsCondition(clause, trimmedName, canonicalKey) ? clause : closedParens(withoutDanglingWords(name));
   }
-  if (restored === trimmedName || !dropsCondition(restored, trimmedName, canonicalKey) || AMOUNT_GAP.test(restored)) return null;
+  if (restored === trimmedName || !dropsCondition(restored, trimmedName, canonicalKey) || AMOUNT_GAP.test(restored) || DOT_LEADER.test(restored)) return null;
   // The old name must open with the trimmed one, or with only its account heading before it
   // ("Premier Checking: Printed Statements"). Another row's cells ("per item | Stop payment ACH")
   // or a sentence the name was cut out of ("Please note that after 180 days ...") stay off.
   const at = restored.toLowerCase().indexOf(trimmedName.trim().toLowerCase());
-  if (at === 0) return restored;
+  if (at === 0) {
+    // What comes back must read as the condition itself, not a cut-off fragment or the next
+    // sentence ("(min.=)", "if average goes", ". You will be charged", "(per month after 730)").
+    const added = restored.slice(trimmedName.trim().length);
+    return RESTORE_FRAGMENT.test(added) || FIGURE_WITHOUT_UNIT.test(added) || GLUED_CAPITALS.test(restored) ? null : restored;
+  }
   const prefix = at > 0 ? restored.slice(0, at) : "";
   return RESTORE_HEADING.test(prefix) && ACCOUNT_WORD.test(prefix) && !/[\d$|]/.test(prefix) ? restored : null;
 }
 
+/**
+ * The fee's own page prints the restored name whole: it appears there and ends where its line,
+ * cell or clause ends (a price, a "|", a line break, " - ", "; ", ". " or a closing bracket
+ * follows), not mid-phrase ("(up to 3 business" of "(up to 3 business days)").
+ */
+export function restoreOnPage(restored: string, ownTexts: string[]): boolean {
+  const target = restored.toLowerCase().replace(/\s+/g, " ").trim();
+  for (const text of ownTexts) {
+    const page = text.toLowerCase().replace(/[ \t\u00a0]+/g, " ").replace(/ ?\n ?/g, "\n");
+    const flat = page.replace(/\n/g, " ");
+    let at = flat.indexOf(target);
+    while (at >= 0) {
+      const after = page.slice(at + target.length, at + target.length + 12);
+      if (/^(?:[ .…_]*(?:$|\n|\||\$|\d)|\s?[-–—;.]\s|\s?\))/u.test(after)) return true;
+      at = flat.indexOf(target, at + 1);
+    }
+  }
+  return false;
+}
+
 /** A dollar figure publish cut out of the old name ("if minimum balance is or less", "falls below during"). */
 const AMOUNT_GAP =
-  /\b(?:below|under|than|is|of|exceeds?|drops?|over|least)\s+(?:or|and|during|\))(?:\s|$)|\b(?:falls?|below|under|than|less|exceeds?|drops?|least)\s*(?:$|[.,:;)])|:\s*(?:n\/a|none)\b/i;
+  /\b(?:below|under|than|is|of|exceeds?|drops?|over|least)\s+(?:or|and|during|\))(?:\s|$)|\b(?:falls?|below|under|than)\s+(?:below\s+)?(?:for|in|the|during)\b|\b(?:falls?|below|under|than|less|exceeds?|drops?|least)\s*(?:$|[.,:;)])|:\s*(?:n\/a|none)\b/i;
+const RESTORE_FRAGMENT = /=|\.\s+[A-Z]|\s(?:has|have|goes|go|if|when|than|balance|average)\s*[.)]*$/i;
+const FIGURE_WITHOUT_UNIT = /\b(?:after|over|than|below|under)\s+\d[\d,]*\s*\)?\s*$/i;
+const GLUED_CAPITALS = /\b[A-Za-z]*[a-z][A-Z]{2,}\b|\(\/?(?:br|small|b|i|sup)\)/;
 const RESTORE_HEADING = /^[A-Z][\w®™’'&+./ -]{0,60}?\s*:\s*$/;
 
 /** A clause cut off after a joining word ("... is dormant if for one", "... assessed per"). */
@@ -825,6 +859,8 @@ function closedParens(name: string): string {
 export interface LoggedRename {
   oldName: string;
   newName: string;
+  /** Older windows' names must print whole on the fee's own page (`restoreOnPage`). */
+  pageCheck?: boolean;
 }
 
 function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null {
@@ -861,7 +897,10 @@ export function planRetidy(
       last && last.newName === stored.fee_name && !CONTROL_CHARACTER.test(last.oldName) && !LIGATURE_CHARACTER.test(last.oldName)
         ? restoredName(last.oldName, stored.fee_name, stored.canonical_fee_key)
         : null;
-    if (restored) {
+    const storedOwnTexts = texts
+      .filter((text) => stored.source_document_id != null && Number(text.source_document_id) === Number(stored.source_document_id))
+      .map((text) => text.normalized_text);
+    if (restored && (!last?.pageCheck || restoreOnPage(restored, storedOwnTexts))) {
       if (taken.has(lineKey(stored, restored))) {
         skipped.same_name_live += 1;
         continue;
@@ -1062,7 +1101,7 @@ export function retidyDueInstitutions(
            WHERE pf.kind = ${NAME_RETIDY_KIND}
              AND pf.check_name = ${NAME_RETIDY_STRATEGY.strategy}
              AND pf.institution_id = live.institution_id
-             AND pf.updated_at >= ${CONDITION_RESTORE_SINCE}::timestamptz
+             AND (pf.updated_at >= ${CONDITION_RESTORE_SINCE}::timestamptz OR pf.about_version = ANY(${CONDITION_RESTORE_OLDER_VERSIONS}::int[]))
              AND rfp.rolled_back_at IS NULL
              AND rfp.fee_name = pf.evidence->>'new_name'
              AND length(pf.evidence->>'old_name') > length(pf.evidence->>'new_name')
@@ -1145,17 +1184,22 @@ export async function retidyLiveFeeNames(
        ORDER BY source_document_id, id DESC
     `);
     // v15: each live fee's latest rename since v14's first write, for the conditions it put back.
-    const renamed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string; old_name: string; new_name: string }[]>`
-      SELECT DISTINCT ON (pf.fee_published_id) pf.fee_published_id, pf.evidence->>'old_name' AS old_name, pf.evidence->>'new_name' AS new_name
+    const renamed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string; old_name: string; new_name: string; updated_at: string | Date }[]>`
+      SELECT DISTINCT ON (pf.fee_published_id) pf.fee_published_id, pf.evidence->>'old_name' AS old_name, pf.evidence->>'new_name' AS new_name, pf.updated_at
         FROM pipeline_feedback pf
        WHERE pf.kind = ${NAME_RETIDY_KIND}
          AND pf.check_name = ${NAME_RETIDY_STRATEGY.strategy}
          AND pf.institution_id = ANY(${ids}::bigint[])
-         AND pf.updated_at >= ${CONDITION_RESTORE_SINCE}::timestamptz
+         AND (pf.updated_at >= ${CONDITION_RESTORE_SINCE}::timestamptz OR pf.about_version = ANY(${CONDITION_RESTORE_OLDER_VERSIONS}::int[]))
          AND pf.evidence ? 'old_name' AND pf.evidence ? 'new_name'
        ORDER BY pf.fee_published_id, pf.updated_at DESC, pf.id DESC
     `);
-    logged = new Map(renamed.map((row) => [Number(row.fee_published_id), { oldName: row.old_name, newName: row.new_name }]));
+    logged = new Map(
+      renamed.map((row) => [
+        Number(row.fee_published_id),
+        { oldName: row.old_name, newName: row.new_name, pageCheck: new Date(row.updated_at) < new Date(CONDITION_RESTORE_SINCE) },
+      ]),
+    );
   } catch (error) {
     // A failed tidy must never block publishing.
     console.error("retidyLiveFeeNames select failed:", error);
