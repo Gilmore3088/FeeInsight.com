@@ -20,7 +20,7 @@ import {
   statCardRow,
   footnote,
   escapeHtml,
-} from "../index";
+} from "../primitives";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
