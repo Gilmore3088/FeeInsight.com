@@ -106,6 +106,7 @@ async function HamiltonLayoutInner({
           isWorkspaceBank === false
             ? `${pathname}?${(() => {
                 const next = new URLSearchParams(requestSearchParams);
+                next.set("instId", String(selectedInstitution.id));
                 next.set("setBank", "1");
                 return next.toString();
               })()}`
