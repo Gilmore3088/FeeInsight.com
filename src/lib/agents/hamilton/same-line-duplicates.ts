@@ -39,6 +39,13 @@ export const SOURCE_CHECKED_SEPARATE_LINES: ReadonlyMap<number, string> = new Ma
   [104906, "Check Copy - Certified $5, beside Check Copy - Member Draft $5"],
 ]);
 
+/**
+ * Flagged fees whose older twin is the bad read (UAT, 9 Oct): the newer row stays live and the
+ * older one goes through the second look instead. 14458's name runs three lines together
+ * ("ACH, one-time from Credit Card, ... Night Deposit Ba").
+ */
+export const GARBLED_OLDER_TWINS: ReadonlyMap<number, number> = new Map([[104758, 14458]]);
+
 type CandidateRow = VerifiedFeeRow & { fee_published_id: number | string };
 
 export interface SameLineDuplicate {
@@ -114,6 +121,24 @@ export async function retireSameLineDuplicates(
   const passing: number[] = [];
   for (const row of rows) {
     const feePublishedId = Number(row.fee_published_id);
+    const garbled = GARBLED_OLDER_TWINS.get(feePublishedId);
+    if (garbled != null) {
+      passing.push(feePublishedId);
+      const twin = await liveTwin(db, garbled);
+      if (twin) {
+        failing.push({
+          feePublishedId: garbled,
+          feeVerifiedId: twin.feeVerifiedId,
+          institutionId: Number(row.institution_id),
+          canonicalFeeKey: row.canonical_fee_key,
+          amount: num(row.amount),
+          sourceDocumentId: num(row.source_document_id),
+          olderFeePublishedId: feePublishedId,
+          reason: `${SAME_LINE_DUPLICATE_REASON}: live fee #${feePublishedId}`,
+        });
+      }
+      continue;
+    }
     const older = SOURCE_CHECKED_SEPARATE_LINES.has(feePublishedId) ? null : await sameLineDuplicateOf(db, row, feePublishedId);
     if (older == null) {
       passing.push(feePublishedId);
@@ -194,6 +219,20 @@ export async function retireSameLineDuplicates(
   }
   if (result.rolledBack.length > 0) invalidatePublicReadCache();
   return result;
+}
+
+/** A live fee's verified row, for a garbled twin taken down in place of the newer read. */
+async function liveTwin(db: SqlTag, feePublishedId: number): Promise<{ feeVerifiedId: number } | null> {
+  try {
+    const [twin] = await inSavepoint(db, (scope) => scope<{ lineage_ref: number | string }[]>`
+      SELECT lineage_ref FROM published_fee_records
+       WHERE fee_published_id = ${feePublishedId} AND rolled_back_at IS NULL
+    `);
+    return twin ? { feeVerifiedId: Number(twin.lineage_ref) } : null;
+  } catch (error) {
+    console.error("liveTwin read failed:", error);
+    return null;
+  }
 }
 
 /** Brings back takedowns whose older line is no longer live, with the verified row. Returns the count. */

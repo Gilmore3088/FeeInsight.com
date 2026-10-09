@@ -49,5 +49,8 @@ Because of that, the same-line duplicate cleanup (PR 902) flagged 103621 as a du
   - By the rules: 103621 (footnote mark), 104744 (box size), 104895 (zero-width character) and
     105054 (another document's unrelated name).
   - By the source-checked list: 104713, 104650, 104875, 104615 and 104906.
+- **Swapped:** 104758 ("Night Deposit Key Replacement (Business)") stays live. Its older twin 14458
+  is the garbled read ("ACH, one-time ... Night Deposit Ba"), so 14458 goes through the second
+  look instead (`GARBLED_OLDER_TWINS`, from UAT).
 - **Kept flagged:** without the cut-off-sentence rule, 104637 would have cleared against
   "GUASFCU charges a". That is a sentence restating the check copy fee, so it stays flagged.
