@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ sql: vi.fn(), market: vi.fn(), footprint: vi.fn(), branches: vi.fn(), study: vi.fn() }));
-vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
+vi.mock("@/lib/data-store/connection", () => ({ sql: Object.assign(mocks.sql, { unsafe: vi.fn((value: string) => value) }) }));
 vi.mock("@/lib/data-store/local-market", () => ({ getLocalMarketCompetitors: mocks.market }));
 vi.mock("@/lib/data-store/branches", () => ({ getMarketBranchFootprint: mocks.footprint, getBranchesForInstitution: mocks.branches }));
 vi.mock("@/lib/data-store/market-study", () => ({ getMarketStudyData: mocks.study }));
@@ -51,9 +51,12 @@ describe("local-market category propagation through the real service", () => {
     expect(mocks.market).toHaveBeenCalledWith(expect.objectContaining({ institutionId: 101, categories }));
     const ownFeeCall = mocks.sql.mock.calls.find(([strings]) => strings.join("?").includes("PERCENTILE_CONT"));
     expect(ownFeeCall?.[1]).toBe(101);
-    expect(ownFeeCall?.[2]).toEqual(categories);
+    expect(String(ownFeeCall?.[2])).toContain("fee_audience IN ('consumer', 'both')");
+    expect(ownFeeCall?.[3]).toEqual(categories);
     expect(result?.categories).toEqual(categories);
     expect(result?.you.fees).toEqual({ money_order: 4, paper_statement: 0 });
+    expect(ownFeeCall?.[0].join("?")).toContain("c.amount >= 0");
+    expect(ownFeeCall?.[0].join("?")).toContain("CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)");
     expect(result?.competitors[0].fees).toEqual({ money_order: 3, paper_statement: 2 });
     expect(result?.institutionId).toBe(101);
     expect(result?.market.basis).toBe("branch_counties");
