@@ -33,6 +33,7 @@ import {
 } from "@/lib/data-store/saved-peers";
 import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
 import { parseSavedPeerSetFilters } from "@/lib/hamilton/peer-index";
+import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { STATE_NAMES } from "@/lib/us-states";
 
 export type WorkspaceInstitutionState = {
@@ -536,7 +537,7 @@ const MAX_CHOSEN_PEERS = 50;
 
 const PeerSetSchema = z
   .object({
-    name: z.string().trim().min(1, "Give the peer group a name.").max(100),
+    name: z.string().trim().max(100),
     mode: z.enum(["filters", "institutions"]),
     charter_type: z.enum(["bank", "credit_union"]).nullable(),
     asset_tiers: z.array(z.enum(PEER_SET_ASSET_TIERS)).optional(),
@@ -588,7 +589,7 @@ function parsePeerSetForm(formData: FormData) {
           fed_districts: v.fed_districts,
           states: [...new Set(v.states ?? [])],
         };
-  return { ok: true as const, name: v.name, filters };
+  return { ok: true as const, name: v.name || defaultPeerSetName(filters), filters };
 }
 
 /** The workspace the user is working in, or null (personal sets). A lookup failure means personal. */

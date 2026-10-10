@@ -172,6 +172,26 @@ describe("peer group actions", () => {
     expect(await setPeerSetForAllCharts(1)).toMatchObject({ success: false });
   });
 
+  it("generates a name from Florida and asset criteria with no district", async () => {
+    const result = await createPeerSet(form([["states", "FL"], ["asset_tiers", "community_large"]]));
+    expect(result.success).toBe(true);
+    expect(mocks.savedPeers.savePeerSet).toHaveBeenCalledWith(
+      "Florida · $1B to $10B · Institutions",
+      { charter_type: undefined, asset_tiers: ["community_large"], fed_districts: [], states: ["FL"] }, "7", null,
+    );
+    expect(await createPeerSet(form([["mode", "institutions"], ["institution_ids", "11"], ["institution_ids", "12"], ["institution_ids", "11"]]))).toMatchObject({ success: true });
+    expect(mocks.savedPeers.savePeerSet).toHaveBeenLastCalledWith("2 selected institutions", { institution_ids: [11, 12] }, "7", null);
+  });
+
+  it("accepts Florida and an asset band without any district when named", async () => {
+    const result = await createPeerSet(form([["name", "Florida research"], ["states", "FL"], ["asset_tiers", "community_large"]]));
+    expect(result.success).toBe(true);
+    expect(mocks.savedPeers.savePeerSet).toHaveBeenCalledWith(
+      "Florida research",
+      { charter_type: undefined, asset_tiers: ["community_large"], fed_districts: [], states: ["FL"] }, "7", null,
+    );
+  });
+
   it("saves exact selected IDs personally when the research subject has no membership", async () => {
     mocks.savedPeers.getPeerSetWorkspace.mockResolvedValue({ institutionId: 2945, role: "owner" });
     const result = await createPeerSet(form([

@@ -25,6 +25,11 @@ jobs:
         run: npx tsc --noEmit
       - name: Lint
         run: npm run lint
+      - name: Verify peer-list source and focused UI regression
+        run: |
+          git rev-parse HEAD
+          git hash-object src/components/hamilton/analyze/PeerListView.tsx src/components/hamilton/analyze/PeerAwareStructuredAsk.tsx src/components/hamilton/analyze/PeerAwareStructuredAsk.test.tsx
+          npx vitest run src/components/hamilton/analyze/PeerAwareStructuredAsk.test.tsx
       - name: Run full test suite
         run: npx vitest run
       - name: End-to-end pipeline test
@@ -35,7 +40,7 @@ jobs:
           sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres'"
           sudo -u postgres createdb e2e
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run src/lib/agents/pipeline.e2e.test.ts
+          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run src/lib/agents/pipeline.e2e.test.ts src/lib/data-store/hamilton-peer-list.db.test.ts
 
   fee-audience-sql:
     runs-on: ubuntu-latest
