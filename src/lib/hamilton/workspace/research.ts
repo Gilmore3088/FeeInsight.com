@@ -778,7 +778,7 @@ export async function getFeeResearch(
     segment && !segment.problem
       ? { label: shortSegmentLabel(segment.segment), members: segment.members }
       : local.competitors && local.competitors.length >= MIN_PEERS_FOR_POSITION
-        ? { label: "competitors in your market", members: local.competitors }
+        ? { label: "local competitors", members: local.competitors }
         : { label: `peers (${chosen?.label ?? base.peerLabel})`, members: peers };
   const structure = STRUCTURE_FEES.has(feeCategory) ? await loadStructure(base, structureGroup) : null;
   const lineup = feeCategory === LINEUP_CATEGORY ? await loadLineup(base, structureGroup) : null;

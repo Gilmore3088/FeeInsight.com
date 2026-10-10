@@ -535,9 +535,10 @@ export async function getDistrictFeeMedians(
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${district}
       AND ef.review_status = 'approved'
-      AND ef.source_document_id IS NOT NULL
       AND ef.fee_category IS NOT NULL
       AND ef.amount IS NOT NULL
+      AND ef.amount >= 0
+      AND ${sql.unsafe(STATS_ROW_FILTER)}
   ` as { fee_category: string; amount: number | null; institution_id: number }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]

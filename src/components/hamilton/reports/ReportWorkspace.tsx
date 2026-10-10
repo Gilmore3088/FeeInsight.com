@@ -38,23 +38,23 @@ const TEMPLATES: Array<{
 }> = [
   {
     type: "peer_benchmarking",
-    title: "How your fees compare with peers",
-    description: "Each of your published fees set against your peer group, one fee at a time.",
+    title: "How the research institution's fees compare with peers",
+    description: "Each published fee set against the selected peer group, one fee at a time.",
   },
   {
     type: "regional_landscape",
-    title: "Fees in your region",
-    description: "What institutions in your state and Federal Reserve district charge, and how that differs from elsewhere.",
+    title: "Fees in the research institution's region",
+    description: "What institutions in its state and Federal Reserve district charge, and how that differs from elsewhere.",
   },
   {
     type: "category_deep_dive",
     title: "One fee in detail",
-    description: "A single fee: the range peers charge, where you sit in it, and how it has moved.",
+    description: "A single fee: the range peers charge, the research institution's position, and how it has moved.",
   },
   {
     type: "competitive_positioning",
-    title: "Where you stand against competitors",
-    description: "Which of your fees sit above or below the institutions you compete with, across your whole schedule.",
+    title: "Where the research institution stands against competitors",
+    description: "Which research institution fees sit above or below its competitors, across its published schedule.",
   },
 ];
 

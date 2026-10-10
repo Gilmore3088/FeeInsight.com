@@ -52,6 +52,7 @@ import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { getInstitutionById } from "@/lib/data-store";
 
 export const maxDuration = 300;
 
@@ -166,10 +167,18 @@ async function handlePOST(request: Request) {
 
   // Account identity is read from this authenticated user's memberships, not the
   // browser body, selected institution, or saved research preference.
+  const requestedInstitutionId = contract.institutionId;
   const enrichedContract = await withHamiltonAccountContext(contract, user);
   contract = enrichedContract;
   institutionId = enrichedContract.institutionId;
-  const identityContext = accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext);
+  const subject = institutionId === null ? null : await getInstitutionById(institutionId).catch(() => null);
+  const identityContext = accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
+    researchInstitutionName: subject?.institution_name ?? null,
+    researchSelectionSource: requestedInstitutionId !== null ? "authenticated request" : institutionId !== null ? "linked account default" : "unscoped",
+    peerBaselineLabel: null,
+    peerBaselineSource: null,
+    peerBaselineFallbackReason: "The written answer did not capture a named peer cohort. Its original figures remain unchanged; no current peer selection is substituted.",
+  });
 
   const agent = await getHamilton(role);
 
@@ -190,6 +199,13 @@ async function handlePOST(request: Request) {
       return Response.json({ error: "Institution not found" }, { status: 404 });
     }
     systemPrompt += selectedInstitutionContext;
+  }
+  const homeId = enrichedContract.serverAccountContext.institution?.id;
+  if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
+    const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
+    systemPrompt += homeBriefing
+      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
+      : "\nAccount institution evidence could not be loaded. State that limitation; do not substitute research-subject or peer data for our institution.\n";
   }
 
   // Analyze mode: override output structure with structured analysis sections (ARCH-05)
@@ -392,7 +408,7 @@ async function handlePOST(request: Request) {
             onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
           }));
           const id = await savedId;
-          if (id) writer.write({ type: "message-metadata", messageMetadata: { [SAVED_ANALYSIS_ID_KEY]: id, hamiltonIdentity: identityContext } });
+          writer.write({ type: "message-metadata", messageMetadata: { ...(id ? { [SAVED_ANALYSIS_ID_KEY]: id } : {}), hamiltonIdentity: identityContext } });
         },
       }),
     });

@@ -1,3 +1,4 @@
+import type { FeeAudience } from "@/lib/fee-audience";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
@@ -31,7 +32,7 @@ import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/ham
 type SqlTag = typeof sql;
 
 /** The publisher recorded in the attempt log; bump the version when the rules change. */
-export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 2 } as const;
+export const HAMILTON_PUBLISH_STRATEGY = { strategy: "publish.rules", version: 3 } as const;
 
 export const HAMILTON_PUBLISH_DEFAULT_LIMIT = 100;
 export const HAMILTON_PUBLISH_MAX_LIMIT = 500;
@@ -58,6 +59,7 @@ const BLOCKING_FLAGS = new Set([
 ]);
 
 export interface VerifiedFeeRow extends RateFields {
+  fee_audience?: FeeAudience;
   fee_verified_id: number | string;
   fee_raw_id: number | string;
   institution_id: number | string;
@@ -416,6 +418,7 @@ async function selectVerifiedFees(
              fv.fee_name,
              fv.amount,
              fv.frequency,
+             fv.fee_audience,
              fv.amount_kind,
              fv.rate_percent,
              fv.rate_min_amount,
@@ -626,6 +629,8 @@ async function selectLivePublishedFees(
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fp.institution_id = ${Number(row.institution_id)}
          AND fp.canonical_fee_key = ${row.canonical_fee_key}
+         AND fp.fee_audience = ${row.fee_audience ?? "unknown"}
+         AND fp.quarantined_at IS NULL
          AND (${anyVariant} OR COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, ''))
          AND (${anyVariant} OR COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, ''))
          AND fp.rolled_back_at IS NULL
@@ -1264,6 +1269,7 @@ function movementFor(
 type MovementGroupEntry = {
   canonical_fee_key: string;
   fee_name: string;
+  fee_audience: FeeAudience;
   previous_fee_published_id: number;
   new_fee_published_id: number;
   previous_amount: number;
@@ -1317,6 +1323,7 @@ async function recordPublicationSignals(
     feeVerifiedIds: number[];
     feePublishedIds: number[];
     canonicalFeeKeys: string[];
+    consumerCanonicalFeeKeys: string[];
   }>();
   const movementGroups = new Map<number, {
     institutionName: string;
@@ -1332,10 +1339,14 @@ async function recordPublicationSignals(
       feeVerifiedIds: [],
       feePublishedIds: [],
       canonicalFeeKeys: [],
+      consumerCanonicalFeeKeys: [],
     };
     group.feeVerifiedIds.push(result.feeVerifiedId);
     group.feePublishedIds.push(result.feePublishedId);
     group.canonicalFeeKeys.push(result.canonicalFeeKey);
+    if (row?.fee_audience === "consumer" || row?.fee_audience === "both") {
+      group.consumerCanonicalFeeKeys.push(result.canonicalFeeKey);
+    }
     grouped.set(institutionId, group);
 
     if (
@@ -1351,6 +1362,7 @@ async function recordPublicationSignals(
       movementGroup.movements.push({
         canonical_fee_key: result.canonicalFeeKey,
         fee_name: result.feeName,
+        fee_audience: row?.fee_audience ?? "unknown",
         previous_fee_published_id: result.previousFeePublishedId,
         new_fee_published_id: result.feePublishedId,
         previous_amount: result.previousAmount,
@@ -1419,6 +1431,7 @@ async function recordPublicationSignals(
           published_fee_ids: group.feePublishedIds,
           verified_fee_ids: group.feeVerifiedIds,
           canonical_fee_keys: Array.from(new Set(group.canonicalFeeKeys)),
+          consumer_canonical_fee_keys: Array.from(new Set(group.consumerCanonicalFeeKeys)),
           published_fee_count: count,
           unconfirmed_movement_count: unconfirmed.length,
           unconfirmed_movements: unconfirmed,

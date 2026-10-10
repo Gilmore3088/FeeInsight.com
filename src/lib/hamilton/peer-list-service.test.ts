@@ -80,7 +80,7 @@ describe("exact displayed peer-list continuation", () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
     const prior = makePeerListContinuation(original, "List peers", "202")!;
     mocks.rows.mockResolvedValue({ rows: [{ ...peer, recordId: 99 }], totalMatches: 1 });
-    const result = await answerPeerList(user, { question: "Only Florida", previousPeerList: prior });
+    const result = await answerPeerList(user, { institutionId: 202, question: "Only Florida", previousPeerList: prior });
     expect(result?.peerList.status).toBe("unavailable");
     expect(result?.peerList.rows).toEqual([]);
   });
@@ -88,7 +88,7 @@ describe("exact displayed peer-list continuation", () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
     const prior = makePeerListContinuation(original, "List peers", "202")!;
     mocks.rows.mockClear();
-    const result = await answerPeerList(user, { question: "Compare their NSF fees", previousPeerList: prior });
+    const result = await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: prior });
     expect(result?.peerList.status).toBe("needs_criteria");
     expect(result?.shortAnswer).toContain("not yet supported");
     expect(mocks.rows).not.toHaveBeenCalled();

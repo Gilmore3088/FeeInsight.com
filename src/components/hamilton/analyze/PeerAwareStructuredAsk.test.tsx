@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useCallback, useState } from "react";
 import { PeerAwareStructuredAsk } from "./PeerAwareStructuredAsk";
 import { PeerListView } from "./PeerListView";
 import type { PeerListResponse, PeerListRow } from "@/lib/hamilton/peer-list";
@@ -90,6 +91,33 @@ describe("peer-first Ask rendering", () => {
 
 
 describe("exact-list follow-ups within one Ask conversation", () => {
+  it("retains the exact snapshot when the parent submits a follow-up as soon as the answer resolves", async () => {
+    const filtered: PeerListResponse = {
+      ...fixture, shortAnswer: "Immediate refinement completed.",
+      peerList: { ...fixture.peerList, rows: [fixture.peerList.rows[0]], totalMatches: 1 },
+    };
+    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce(ok(filtered));
+    function ImmediateFollowUp() {
+      const [submitted, setSubmitted] = useState({ question: props.question, nonce: props.nonce });
+      const onLead = useCallback((answer: string) => {
+        if (answer === fixture.shortAnswer) setSubmitted({ question: "Only Florida", nonce: 2 });
+      }, []);
+      return <PeerAwareStructuredAsk {...props} {...submitted} onLead={onLead} />;
+    }
+    render(<ImmediateFollowUp />);
+    await screen.findByText("Immediate refinement completed.");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const body = JSON.parse(fetcher.mock.calls[1][1].body as string);
+    expect(body.previousPeerList.selectedIds).toEqual([202, 203, 204]);
+    expect(body.previousPeerList.originInstitutionId).toBe("101");
+    expect(body.previousPeerList.originRows).toEqual([
+      { institutionId: 202, recordId: 202, reportDate: "2026-06-30", source: "ncua" },
+      { institutionId: 203, recordId: 203, reportDate: "2026-06-30", source: "ncua" },
+      { institutionId: 204, recordId: null, reportDate: null, source: null },
+    ]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fallback).not.toHaveBeenCalled();
+  });
   it("sends previously displayed peer IDs and dated record IDs for Only Florida", async () => {
     const filtered: PeerListResponse = {
       ...fixture, shortAnswer: "1 of 3 previously displayed peers are in FL.",
@@ -139,6 +167,15 @@ describe("exact-list follow-ups within one Ask conversation", () => {
     view.rerender(<PeerAwareStructuredAsk {...props} question="Only Florida" nonce={3} />);
     expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("does not reuse a peer list after an unrelated answer intervenes", async () => {
+    const view = render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("table");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Compare our NSF fees with peers" nonce={2} />);
+    expect(screen.getByText("Existing fee-answer path")).toBeTruthy();
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Only Florida" nonce={3} />);
+    expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it("refuses list-relative questions when there is no list or context changed", () => {
     const view = render(<PeerAwareStructuredAsk {...props} question="Only Florida" />);

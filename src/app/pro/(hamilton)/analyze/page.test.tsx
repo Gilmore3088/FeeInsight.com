@@ -73,7 +73,7 @@ describe("AnalyzePage saved subject", () => {
   it("retains explicit URL context and question handoff for new research", async () => {
     const page = await AnalyzePage({ searchParams: Promise.resolve({ instId: "2945", q: "peers", send: "1", intent: "peer" }) });
     expect(mocks.load).not.toHaveBeenCalled();
-    expect(mocks.resolve).toHaveBeenCalledWith({ userId: 7, instId: "2945", intent: "peer", persistUrlSelection: true, transientSource: undefined });
+    expect(mocks.resolve).toHaveBeenCalledWith({ userId: 7, instId: "2945", intent: "peer", persistUrlSelection: false, transientSource: undefined });
     expect(page.props.initialQuestion).toBe("peers");
     expect(page.props.autoSend).toBe(true);
     expect(page.props.initialAnalysis).toBeNull();
@@ -81,7 +81,7 @@ describe("AnalyzePage saved subject", () => {
 
   it("requires sign-in before reading saved content or institution context", async () => {
     mocks.user.mockResolvedValue(null);
-    await expect(AnalyzePage({ searchParams: Promise.resolve({ analysis: "saved-a" }) })).rejects.toThrow("REDIRECT:/");
+    await expect(AnalyzePage({ searchParams: Promise.resolve({ analysis: "saved-a" }) })).rejects.toThrow("REDIRECT:/login?from=");
     expect(mocks.load).not.toHaveBeenCalled();
     expect(mocks.resolve).not.toHaveBeenCalled();
   });

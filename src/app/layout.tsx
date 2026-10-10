@@ -1,23 +1,26 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { Newsreader, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import { SITE_URL } from "@/lib/constants";
 import { MarketingTouchRecorder } from "@/components/public/marketing-touch-recorder";
 import "./globals.css";
 
-const newsreader = Newsreader({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  style: ["normal", "italic"],
+// Keep the same families locally: Google's extensionless font URLs can break
+// next/font's production parser before a preview can be built.
+const newsreader = localFont({
+  src: [
+    { path: "../../public/fonts/newsreader-variable.ttf", weight: "300 600", style: "normal" },
+    { path: "../../public/fonts/newsreader-italic-variable.ttf", weight: "300 600", style: "italic" },
+  ],
+  adjustFontFallback: "Times New Roman",
   variable: "--font-newsreader",
   display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
+const jetbrainsMono = localFont({
+  src: [{ path: "../../public/fonts/jetbrains-mono-variable.ttf", weight: "300 700", style: "normal" }],
   variable: "--font-jetbrains",
   display: "swap",
 });

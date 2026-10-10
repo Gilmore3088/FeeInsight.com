@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { statsRowFilter } from "./fee-stats";
 
 /**
  * Data behind the State Index report's charts: every institution's own fee for the featured
@@ -66,15 +67,21 @@ const num = (v: unknown): number | null => {
 
 /**
  * Each county's deposit-weighted fee for one category: every institution with branches there
- * counts with its own median published fee, wherever it is headquartered. A $0 reading is left
- * out of the weighting: it is a fee the institution does not charge, and the map shows what
- * customers pay where the fee exists.
+ * counts with its own published consumer value, wherever it is headquartered. Genuine $0
+ * fees remain in the weighting and coverage: an eliminated fee is real customer evidence,
+ * not missing data. Overdraft uses the highest published tier; other categories use the median.
  */
 async function countyFeeRows(code: string, sodYear: number, feeCategory: string): Promise<CountyOverdraft[]> {
   const rows = await sql<{ fips: string; deposits: unknown; covered: unknown; weighted: unknown; institutions: unknown }[]>`
     WITH od AS (
-      SELECT institution_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amt
-        FROM published_fee_catalog WHERE fee_category = ${feeCategory} AND amount > 0 GROUP BY institution_id
+      SELECT ef.institution_id,
+             CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
+                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amt
+        FROM published_fee_catalog ef
+       WHERE ef.fee_category = ${feeCategory}
+         AND ef.amount IS NOT NULL AND ef.amount >= 0
+         AND ${sql.unsafe(statsRowFilter("ef"))}
+       GROUP BY ef.institution_id
     ), b AS (
       SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, COALESCE(d.deposits, 0) AS deposits
         FROM institution_branch_deposits d
@@ -103,7 +110,7 @@ export interface CountyInstitution {
   name: string;
   /** Its branch deposits in the county, in dollars. */
   deposits: number;
-  /** Median published amount above $0; null when it has none on file. */
+  /** Consumer-applicable published value, including a genuine $0; null when none is verified. */
   fee: number | null;
 }
 
@@ -128,8 +135,14 @@ export async function getCountyFeeMap(stateCode: string, feeCategory: string): P
     countyFeeRows(code, sodYear, feeCategory),
     sql<{ fips: string; institution_id: number; name: string; deposits: unknown; fee: unknown }[]>`
       WITH f AS (
-        SELECT institution_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amt
-          FROM published_fee_catalog WHERE fee_category = ${feeCategory} AND amount > 0 GROUP BY institution_id
+        SELECT ef.institution_id,
+               CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
+                    ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amt
+          FROM published_fee_catalog ef
+         WHERE ef.fee_category = ${feeCategory}
+           AND ef.amount IS NOT NULL AND ef.amount >= 0
+           AND ${sql.unsafe(statsRowFilter("ef"))}
+         GROUP BY ef.institution_id
       ), b AS (
         SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, SUM(COALESCE(d.deposits, 0)) AS deposits
           FROM institution_branch_deposits d
@@ -164,10 +177,14 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
   const [instRows, yearRows] = await Promise.all([
     sql<{ institution_id: number; name: string; charter_type: string | null; fee_category: string; amount: unknown }[]>`
       SELECT f.institution_id, s.institution_name AS name, s.charter_type, f.fee_category,
-             percentile_cont(0.5) WITHIN GROUP (ORDER BY f.amount) AS amount
+             CASE WHEN f.fee_category = 'overdraft' THEN MAX(f.amount)
+                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY f.amount) END AS amount
         FROM published_fee_catalog f
         JOIN institution_sources s ON s.id = f.institution_id
-       WHERE s.state_code = ${code} AND f.amount IS NOT NULL AND f.fee_category = ANY(${fees}::text[])
+       WHERE s.state_code = ${code}
+         AND f.amount IS NOT NULL AND f.amount >= 0
+         AND f.fee_category = ANY(${fees}::text[])
+         AND ${sql.unsafe(statsRowFilter("f"))}
        GROUP BY f.institution_id, s.institution_name, s.charter_type, f.fee_category`,
     sql<{ y: unknown }[]>`SELECT MAX(year) AS y FROM institution_branch_deposits WHERE state = ${code}`,
   ]);
@@ -201,8 +218,12 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
          WHERE state = ${code} AND year = ${sodYear} AND institution_id IS NOT NULL
          GROUP BY institution_id
       ), od AS (
-        SELECT institution_id, percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS amt
-          FROM published_fee_catalog WHERE fee_category = 'overdraft' AND amount IS NOT NULL GROUP BY institution_id
+        SELECT ef.institution_id, MAX(ef.amount) AS amt
+          FROM published_fee_catalog ef
+         WHERE ef.fee_category = 'overdraft'
+           AND ef.amount IS NOT NULL AND ef.amount >= 0
+           AND ${sql.unsafe(statsRowFilter("ef"))}
+         GROUP BY ef.institution_id
       )
       SELECT t.institution_id, s.institution_name AS name, s.state_code AS hq_state, t.deposits, t.branches, od.amt AS overdraft
         FROM t JOIN institution_sources s ON s.id = t.institution_id

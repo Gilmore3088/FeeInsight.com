@@ -35,7 +35,7 @@ export function evidencePolicyLabel(policy: ReportArtifactMetadata["evidencePoli
 export const REPORT_SECTION_HEADINGS = {
   summary: "Summary",
   addedFindings: "Findings you added",
-  snapshot: "Snapshot: your figure against its benchmark",
+  snapshot: "Snapshot: research institution against its benchmark",
   rationale: "Why it matters",
   tradeoffs: "What each choice trades off",
   position: "For management to weigh",

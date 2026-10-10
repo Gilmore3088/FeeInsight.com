@@ -3,6 +3,10 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { getInstitutionById } from "@/lib/data-store";
+import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
+import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
@@ -42,6 +46,24 @@ export async function saveAnalysis(params: {
   const institutionId = normalizeCanonicalInstitutionId(params.institutionId) ?? "";
 
   try {
+    const institution = institutionId ? await getInstitutionById(Number(institutionId)) : null;
+    if (institutionId && !institution) return { error: "Selected institution not found" };
+    // The normal answer path saves on the server at generation time. This fallback
+    // captures membership at SAVE time, never treats browser metadata as authority,
+    // and does not silently substitute today's peer baseline for the original one.
+    const account = await loadHamiltonAccountContext(user);
+    const responseJson: AnalyzeResponse = {
+      ...params.responseJson,
+      identityContext: accountIdentitySnapshot(institution?.id ?? null, account, {
+        researchInstitutionName: institution?.institution_name ?? null,
+        researchSelectionSource: "Captured at save; generation-time account and peer context unavailable",
+        peerBaselineLabel: null,
+        peerBaselineSource: null,
+        peerSetId: null,
+        peerBaselineFallbackReason: "Original peer baseline was not authenticated in the fallback save.",
+      }),
+    };
+    // Browser snapshots never choose the account institution.
     const rows = await sql<{ id: string }[]>`
       INSERT INTO hamilton_saved_analyses (
         user_id,
@@ -57,7 +79,7 @@ export async function saveAnalysis(params: {
         ${title},
         ${params.analysisFocus},
         ${params.prompt},
-        ${JSON.stringify(params.responseJson)},
+        ${JSON.stringify(responseJson)},
         'active'
       )
       RETURNING id::text
@@ -109,9 +131,13 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
       LIMIT 1
     `;
     if (!rows[0]) return null;
+    const responseJson = JSON.parse(rows[0].response_json) as AnalyzeResponse & { hamiltonIdentity?: unknown };
+    // Older server-written answers stored the same version-1 snapshot under this alias.
+    const snapshot = readHamiltonIdentitySnapshot(responseJson.identityContext ?? responseJson.hamiltonIdentity);
+    if (snapshot) responseJson.identityContext = snapshot;
     return {
       id: rows[0].id,
-      responseJson: JSON.parse(rows[0].response_json) as AnalyzeResponse,
+      responseJson,
       institutionId: normalizeCanonicalInstitutionId(rows[0].institution_id),
       analysisFocus: rows[0].analysis_focus,
       prompt: rows[0].prompt,

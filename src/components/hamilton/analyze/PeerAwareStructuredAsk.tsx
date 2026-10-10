@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
   isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation,
   type PeerListContinuation, type PeerListResponse,
@@ -12,24 +12,27 @@ type Props = ComponentProps<typeof StructuredAsk>;
 
 /** The answer is list-aware within a conversation; no second input or paid fallback. */
 export function PeerAwareStructuredAsk(props: Props) {
-  // The answer must be available for an immediate next turn without waiting for a React state flush.
-  const continuationRef = useRef<{ snapshot: PeerListContinuation; answeredNonce: number } | null>(null);
-  const continuation = continuationRef.current;
+  // This snapshot participates in rendering. Queue it before exposing the answer
+  // or notifying the parent so an immediate next turn receives the same peers.
+  const [continuation, setContinuation] = useState<{ snapshot: PeerListContinuation; answeredNonce: number; answeredQuestion: Props["question"] } | null>(null);
   const isNewList = Boolean(props.question && isPeerListQuestion(props.question));
   const isFollowUp = Boolean(props.question && !isNewList && isPeerListContinuationQuestion(props.question));
 
   const remember = useCallback((data: PeerListResponse, previous: PeerListContinuation | null) => {
     if (data.peerList.status !== "ready") return;
     if (previous) {
-      continuationRef.current = { snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) }, answeredNonce: props.nonce ?? 0 };
+      setContinuation({ snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) }, answeredNonce: props.nonce ?? 0, answeredQuestion: props.question });
     } else if (props.question) {
       const snapshot = makePeerListContinuation(data, props.question, props.institutionId);
-      if (snapshot) continuationRef.current = { snapshot, answeredNonce: props.nonce ?? 0 };
+      if (snapshot) setContinuation({ snapshot, answeredNonce: props.nonce ?? 0, answeredQuestion: props.question });
     }
   }, [props.question, props.institutionId, props.nonce]);
 
   if (!isNewList && !isFollowUp) return <StructuredAsk {...props} />;
-  if (isFollowUp && (!continuation || continuation.answeredNonce + 1 !== (props.nonce ?? 0) || continuation.snapshot.originInstitutionId !== props.institutionId)) {
+  // A resolved follow-up re-renders with its own snapshot. Keep its mounted
+  // request visible; the frozen submittedPrior still owns that request body.
+  const isCurrentAnswer = continuation?.answeredNonce === (props.nonce ?? 0) && continuation?.answeredQuestion === props.question;
+  if (isFollowUp && (!continuation || (!isCurrentAnswer && continuation.answeredNonce + 1 !== (props.nonce ?? 0)) || continuation.snapshot.originInstitutionId !== props.institutionId)) {
     return <p role="alert" className="text-sm text-warm-800">Ask for a peer list first. This question cannot borrow an old or different institution’s peers.</p>;
   }
   return <PeerListRequest

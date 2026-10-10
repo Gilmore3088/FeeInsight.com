@@ -42,12 +42,34 @@ export function accountContextFromMemberships(
   };
 }
 
-/** Minimal historical reference snapshot; never reuse it as an authorization check. */
-export function accountIdentitySnapshot(subjectInstitutionId: number | null, context: HamiltonAccountContext) {
+/** Frozen reference context, never an authorization check. Names are optional for legacy v1 artifacts. */
+export interface HamiltonIdentitySnapshot {
+  version: 1;
+  researchInstitutionId: number | null;
+  accountInstitutionId: number | null;
+  accountStatus: HamiltonAccountContext["status"];
+  researchInstitutionName?: string | null;
+  accountInstitutionName?: string | null;
+  researchSelectionSource?: string | null;
+  peerSetId?: number | null;
+  peerBaselineLabel?: string | null;
+  peerBaselineSource?: string | null;
+  peerBaselineFallbackReason?: string | null;
+}
+
+export type HamiltonIdentitySnapshotOptions = Omit<HamiltonIdentitySnapshot, "version" | "researchInstitutionId" | "accountInstitutionId" | "accountStatus" | "accountInstitutionName">;
+
+/** Two-argument callers retain the original minimal v1 shape. */
+export function accountIdentitySnapshot(
+  subjectInstitutionId: number | null,
+  context: HamiltonAccountContext,
+  options?: HamiltonIdentitySnapshotOptions,
+): HamiltonIdentitySnapshot {
   return {
     version: 1 as const,
     researchInstitutionId: subjectInstitutionId,
     accountInstitutionId: context.institution?.id ?? null,
     accountStatus: context.status,
+    ...(options ? { ...options, accountInstitutionName: context.institution?.name ?? null } : {}),
   };
 }

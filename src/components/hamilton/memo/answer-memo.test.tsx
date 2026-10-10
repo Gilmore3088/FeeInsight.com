@@ -31,11 +31,11 @@ describe("AnswerMemo", () => {
 
   it("gives competitor ranges and trends their own figures", () => {
     expect(
-      keyFiguresFor({ kind: "competitor_range", title: "t", unit: "dollars", own: 30, ownLabel: "You", items: [{ name: "A", amount: 25, url: null }, { name: "B", amount: 35, url: null }], sources: [] }),
+      keyFiguresFor({ kind: "competitor_range", title: "t", unit: "dollars", own: 30, ownLabel: "Example Bank", items: [{ name: "A", amount: 25, url: null }, { name: "B", amount: 35, url: null }], sources: [] }),
     ).toEqual([
-      { value: "$30", label: "You" },
+      { value: "$30", label: "Example Bank" },
       { value: "$25 to $35", label: "Range across 2 named institutions" },
-      { value: "1 of 2", label: "Charge less than you" },
+      { value: "1 of 2", label: "Charge less than Example Bank" },
     ]);
     expect(
       keyFiguresFor({ kind: "trend", title: "t", unit: "dollars", series: [{ label: "Income", points: [{ date: "2025-01-01", value: 100 }, { date: "2026-01-01", value: 110 }] }], sources: [] })[1].value,

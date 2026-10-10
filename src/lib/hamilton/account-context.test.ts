@@ -49,6 +49,15 @@ describe("account identity is not research selection", () => {
   it("records unknown account identity without claiming the subject", () => {
     expect(accountIdentitySnapshot(202, accountContextFromMemberships(7, []))).toEqual({ version: 1, researchInstitutionId: 202, accountInstitutionId: null, accountStatus: "unlinked" });
   });
+  it("freezes server-derived names, research selection and peer provenance without account records", () => {
+    const snapshot = accountIdentitySnapshot(202, accountContextFromMemberships(7, [member()]), {
+      researchInstitutionName: "Synthetic Research Bank", researchSelectionSource: "url", peerSetId: 51,
+      peerBaselineLabel: "Saved credit-union peers", peerBaselineSource: "saved_peer_set", peerBaselineFallbackReason: null,
+    });
+    expect(snapshot).toEqual({ version: 1, researchInstitutionId: 202, accountInstitutionId: 101, accountStatus: "identified",
+      researchInstitutionName: "Synthetic Research Bank", accountInstitutionName: "Synthetic Home CU", researchSelectionSource: "url",
+      peerSetId: 51, peerBaselineLabel: "Saved credit-union peers", peerBaselineSource: "saved_peer_set", peerBaselineFallbackReason: null });
+  });
 });
 
 describe("trusted request identity and prompt", () => {

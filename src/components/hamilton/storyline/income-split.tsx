@@ -49,7 +49,7 @@ function PriceDial({ index }: { index: number }) {
   );
 }
 
-export function IncomeSplitChart({ data }: { data: IncomeSplitData }) {
+export function IncomeSplitChart({ data, researchInstitutionName }: { data: IncomeSplitData; researchInstitutionName?: string | null }) {
   const gap = data.own - data.peerMedian;
   const gapShare = data.peerMedian > 0 ? Math.round((gap / data.peerMedian) * 100) : null;
   const max = Math.max(data.own, data.peerMedian) || 1;
@@ -59,7 +59,7 @@ export function IncomeSplitChart({ data }: { data: IncomeSplitData }) {
   ];
   const total = parts.reduce((s, p) => s + Math.abs(p.value), 0);
   const bars = [
-    { label: "You", value: data.own, cls: "bg-terra", own: true },
+    { label: researchInstitutionName ?? "Research institution", value: data.own, cls: "bg-terra", own: true },
     { label: `Peer median (${data.n})`, value: data.peerMedian, cls: "bg-warm-400", own: false },
   ];
   return (
@@ -122,7 +122,7 @@ export function IncomeSplitChart({ data }: { data: IncomeSplitData }) {
         <div className="flex items-center gap-4 border-t border-warm-200 pt-4">
           <PriceDial index={data.priceIndex} />
           <p className="text-sm text-warm-700">
-            Your published prices index at <strong className="font-semibold text-warm-900">{Math.round(data.priceIndex)}</strong> against a peer median of 100
+            {researchInstitutionName ? `${researchInstitutionName}'s` : "The research institution's"} published prices index at <strong className="font-semibold text-warm-900">{Math.round(data.priceIndex)}</strong> against a peer median of 100
             (the tick). Peers: {data.peerLabel}.
           </p>
         </div>

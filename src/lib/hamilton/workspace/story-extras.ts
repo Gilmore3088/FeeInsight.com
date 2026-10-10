@@ -4,6 +4,7 @@
  * into the short answer. Pure.
  */
 
+import { subjectPossessive } from "./subject";
 import type { IntensityQuarter } from "@/lib/data-store/call-reports";
 import { formatFeeAmount } from "@/lib/format";
 import { MAX_STORY_EXHIBITS } from "./storyline";
@@ -19,18 +20,18 @@ function quarterLabel(iso: string): string {
 }
 
 /** Every compared fee against its peer median, furthest first. */
-export function scheduleExhibit(positions: readonly SchedulePosition[], feesAsOf: string | null): StoryExhibit | null {
+export function scheduleExhibit(positions: readonly SchedulePosition[], feesAsOf: string | null, subjectName?: string): StoryExhibit | null {
   if (positions.length === 0) return null;
   const higher = positions.filter((p) => p.direction === "higher").length;
   const lower = positions.filter((p) => p.direction === "lower").length;
   const source: SourceRef = { label: "Fees on each institution's own published schedule (verified, live)", table: "published_fee_catalog", asOf: feesAsOf };
   return {
     id: "schedule-overview",
-    actionTitle: `Of your ${positions.length} compared fees, ${higher} ${higher === 1 ? "sits" : "sit"} higher than the peer median and ${lower} lower.`,
+    actionTitle: `Of ${subjectPossessive({ subjectName }, false)} ${positions.length} compared fees, ${higher} ${higher === 1 ? "sits" : "sit"} higher than the peer median and ${lower} lower.`,
     exhibit: {
       kind: "structure_matrix",
       title: "Every fee against its peer median",
-      columns: ["Yours", "Peer median", "Peers", "Against median"],
+      columns: [subjectName ?? "Yours", "Peer median", "Peers", "Against median"],
       rows: positions.map((p) => ({
         name: p.displayName,
         cells: [
@@ -64,14 +65,14 @@ export function incomeSplitData(split: IncomeSplit): IncomeSplitData {
 }
 
 /** The bank's fee income against peers of its size, and what its prices explain of the gap. */
-export function incomeExhibit(split: IncomeSplit): StoryExhibit {
+export function incomeExhibit(split: IncomeSplit, subjectName?: string): StoryExhibit {
   const gap = `${Math.round(Math.abs(split.incomeGap) * 100)}%`;
   const near = Math.abs(Math.log(1 + split.incomeGap)) < Math.log(1.05);
   const actionTitle = near
-    ? `Your fee income per $1,000 of deposits sits about at the median of ${split.peers.toLocaleString("en-US")} peers.`
+    ? `${subjectPossessive({ subjectName })} fee income per $1,000 of deposits sits about at the median of ${split.peers.toLocaleString("en-US")} peers.`
     : split.priceShare !== null
-      ? `Price explains about ${split.priceShare}% of your ${gap} fee income gap with peers.`
-      : `Your fee income is ${gap} ${split.incomeGap > 0 ? "higher" : "lower"} than peers, and price does not explain it.`;
+      ? `Price explains about ${split.priceShare}% of ${subjectPossessive({ subjectName }, false)} ${gap} fee income gap with peers.`
+      : `${subjectPossessive({ subjectName })} fee income is ${gap} ${split.incomeGap > 0 ? "higher" : "lower"} than peers, and price does not explain it.`;
   const source: SourceRef = {
     label: "FDIC call reports and NCUA 5300 reports, service charges on deposit accounts and total deposits",
     table: "institution_financial_records",
@@ -83,7 +84,7 @@ export function incomeExhibit(split: IncomeSplit): StoryExhibit {
     exhibit: {
       kind: "structure_matrix",
       title: "Fee income and price against peers",
-      columns: ["Yours", "Peer median"],
+      columns: [subjectName ?? "Yours", "Peer median"],
       rows: [
         { name: "Service charges per $1,000 of deposits, last four quarters", cells: [money(split.own), money(split.peerMedian)] },
         ...(split.priceGap === null
@@ -105,17 +106,17 @@ export function incomeExhibit(split: IncomeSplit): StoryExhibit {
 const MIN_TREND_QUARTERS = 4;
 
 /** Service charges per $1,000 of deposits by quarter, the bank against its peer median. */
-export function incomeTrendExhibit(trend: readonly IntensityQuarter[], peerLabel: string): StoryExhibit | null {
+export function incomeTrendExhibit(trend: readonly IntensityQuarter[], peerLabel: string, subjectName?: string): StoryExhibit | null {
   const own = trend.filter((q) => q.own !== null);
   const peer = trend.filter((q) => q.peerMedian !== null);
   if (own.length < MIN_TREND_QUARTERS || peer.length < MIN_TREND_QUARTERS) return null;
   const below = own.filter((q) => q.peerMedian !== null && q.own! < q.peerMedian).length;
   const actionTitle =
     below === own.length
-      ? `Your fee income per $1,000 of deposits sat below the peer median in each of the last ${own.length} quarters.`
+      ? `${subjectPossessive({ subjectName })} fee income per $1,000 of deposits sat below the peer median in each of the last ${own.length} quarters.`
       : below === 0
-        ? `Your fee income per $1,000 of deposits sat above the peer median in each of the last ${own.length} quarters.`
-        : `Your fee income per $1,000 of deposits sat below the peer median in ${below} of the last ${own.length} quarters.`;
+        ? `${subjectPossessive({ subjectName })} fee income per $1,000 of deposits sat above the peer median in each of the last ${own.length} quarters.`
+        : `${subjectPossessive({ subjectName })} fee income per $1,000 of deposits sat below the peer median in ${below} of the last ${own.length} quarters.`;
   const round = (n: number) => Math.round(n * 100) / 100;
   return {
     id: "income-trend",
@@ -125,7 +126,7 @@ export function incomeTrendExhibit(trend: readonly IntensityQuarter[], peerLabel
       title: "Service charges per $1,000 of deposits, by quarter (annualized)",
       unit: "dollars",
       series: [
-        { label: "You", points: own.map((q) => ({ date: q.quarterEnd, value: round(q.own!) })) },
+        { label: subjectName ?? "You", points: own.map((q) => ({ date: q.quarterEnd, value: round(q.own!) })) },
         { label: `${peerLabel[0].toUpperCase()}${peerLabel.slice(1)} median`, points: peer.map((q) => ({ date: q.quarterEnd, value: round(q.peerMedian!) })) },
       ],
       sources: [
@@ -164,12 +165,12 @@ export interface IncomeWhy {
  * The whole-schedule overview and the income split, in the short answer and as exhibits leading
  * the storyline, so the memo written over the storyline carries them too.
  */
-export function withDepth(built: AskResponse, schedule: ScheduleOverview | null, why: IncomeWhy | null, feesAsOf: string | null): AskResponse {
+export function withDepth(built: AskResponse, schedule: ScheduleOverview | null, why: IncomeWhy | null, feesAsOf: string | null, subjectName?: string): AskResponse {
   let response = schedule ? withSchedule(built, schedule) : built;
   if (why) response = withIncomeSplit(response, why.explained);
   return withStoryExhibits(response, [
-    why ? incomeExhibit(why.split) : null,
-    why?.trend ? incomeTrendExhibit(why.trend, why.split.peerLabel) : null,
-    schedule ? scheduleExhibit(schedule.positions, feesAsOf) : null,
+    why ? incomeExhibit(why.split, subjectName) : null,
+    why?.trend ? incomeTrendExhibit(why.trend, why.split.peerLabel, subjectName) : null,
+    schedule ? scheduleExhibit(schedule.positions, feesAsOf, subjectName) : null,
   ]);
 }

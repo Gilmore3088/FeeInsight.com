@@ -36,7 +36,7 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
     if (exhibit.own != null) {
       const own = exhibit.own;
       const less = amounts.filter((a) => a < own - 0.005).length;
-      out.push({ value: `${less} of ${amounts.length}`, label: "Charge less than you" });
+      out.push({ value: `${less} of ${amounts.length}`, label: `Charge less than ${exhibit.ownLabel}` });
     }
     return out;
   }

@@ -17,6 +17,15 @@ describe("sanitizeBasketItems", () => {
     expect(items[1].institutionId).toBeNull();
   });
 
+  it("keeps answer A's original context when added while B is selected", () => {
+    const identityContext = { version: 1, researchInstitutionId: 1, accountInstitutionId: 101, accountStatus: "identified", researchInstitutionName: "Research Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort" };
+    const items = sanitizeBasketItems([{ id: "saved-a", source: "Ask", title: "A answer", institutionId: "2", savedAnalysisId: "11111111-2222-3333-4444-555555555555", identityContext }]);
+    expect(items[0].institutionId).toBe("1");
+    expect(items[0].identityContext).toEqual(identityContext);
+    expect(basketItemsFor(items, "2")).toEqual([]);
+    expect(sanitizeBasketItems(JSON.parse(JSON.stringify(items)))).toEqual(items);
+  });
+
   it("keeps at most 12, newest last", () => {
     const raw = Array.from({ length: 15 }, (_, i) => ({ id: `i${i}`, source: "Position", title: `t${i}` }));
     const items = sanitizeBasketItems(raw);

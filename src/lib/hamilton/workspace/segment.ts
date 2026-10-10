@@ -7,6 +7,7 @@
  * charges what; it never says what the bank should charge.
  */
 
+import { subjectPossessive } from "./subject";
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { plainName, proseFeeName } from "./names";
@@ -247,7 +248,7 @@ function capitalize(text: string): string {
   return `${text[0].toUpperCase()}${text.slice(1)}`;
 }
 
-export function segmentHeadline(seg: SegmentResearch, feeCategory: string, current: number | null): string {
+export function segmentHeadline(seg: SegmentResearch, feeCategory: string, current: number | null, research?: { subjectName?: string }): string {
   const name = proseFeeName(feeCategory);
   if (seg.problem) return seg.problem;
   const n = seg.members.length;
@@ -256,16 +257,16 @@ export function segmentHeadline(seg: SegmentResearch, feeCategory: string, curre
   }
   if (current !== null && seg.ownPosition !== null) {
     const where = seg.ownPosition <= 0 ? "at the bottom" : seg.ownPosition >= 100 ? "at the top" : `at the ${ordinal(seg.ownPosition)} percentile`;
-    return `Your ${money(current)} ${name} fee is ${where} of ${count(n)} ${shortSegmentLabel(seg.segment)} (median ${money(seg.band.median)}).`;
+    return `${subjectPossessive(research)} ${money(current)} ${name} fee is ${where} of ${count(n)} ${shortSegmentLabel(seg.segment)} (median ${money(seg.band.median)}).`;
   }
   return `${count(n)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee; median ${money(seg.band.median)}, middle half ${money(seg.band.p25)} to ${money(seg.band.p75)}.`;
 }
 
 /** The claims that describe the segment, each with its source. */
-export function segmentClaims(seg: SegmentResearch, feeCategory: string, current: number | null): Fact[] {
+export function segmentClaims(seg: SegmentResearch, feeCategory: string, current: number | null, research?: { subjectName?: string }): Fact[] {
   const name = proseFeeName(feeCategory);
   const source = seg.source;
-  if (seg.problem) return [{ text: `${seg.problem} The figures below are for your default peer group instead.`, source }];
+  if (seg.problem) return [{ text: `${seg.problem} The figures below are for ${subjectPossessive(research, false)} default peer group instead.`, source }];
   const out: Fact[] = [];
   const n = seg.members.length;
   out.push({
@@ -312,7 +313,7 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
     });
   }
   if (current !== null && !seg.ownInSegment) {
-    out.push({ text: `Your institution is outside this segment; your ${money(current)} is placed against it for comparison.`, source });
+    out.push({ text: `${research?.subjectName ?? "Your institution"} is outside this segment; ${subjectPossessive(research, false)} ${money(current)} is placed against it for comparison.`, source });
   }
   return out;
 }

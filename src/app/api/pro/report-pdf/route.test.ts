@@ -7,8 +7,12 @@ const mocks = vi.hoisted(() => ({
   loadPublishedReport: vi.fn(),
   loadAnalysisRecord: vi.fn(),
   renderToBuffer: vi.fn(),
+  getActivePeerSet: vi.fn(),
+  loadAnswerBrief: vi.fn(),
 }));
 
+vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.getActivePeerSet }));
+vi.mock("@/lib/hamilton/answer-brief", () => ({ loadAnswerBrief: mocks.loadAnswerBrief }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.getCurrentUser }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
 vi.mock("@/lib/api-hardening/audit", () => ({
@@ -64,4 +68,17 @@ describe("POST /api/pro/report-pdf", () => {
     expect((await post({ type: "analysis", analysisId: "not-a-uuid" })).status).toBe(400);
     expect((await post({ type: "analysis", analysisId: REPORT_ID })).status).toBe(404);
   });
+  it("exports frozen A identity without substituting the active B peer group", async () => {
+    const identityContext = { version: 1, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified", researchInstitutionName: "Research Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort" };
+    const analysis = { title: "Saved answer A", identityContext };
+    mocks.loadAnalysisRecord.mockResolvedValue({ id: REPORT_ID, institutionId: "2945", analysisFocus: "Fees", responseJson: analysis });
+    mocks.getActivePeerSet.mockResolvedValue({ id: 999, label: "Current B cohort" });
+    const result = await post({ type: "analysis", analysisId: REPORT_ID, institutionId: 8109, identityContext: { accountInstitutionId: 999 } });
+    expect(result.status).toBe(200);
+    expect(mocks.renderToBuffer.mock.calls[0][0].props.analysis).toEqual(analysis);
+    expect(mocks.renderToBuffer.mock.calls[0][0].props.brief).toBeUndefined();
+    expect(mocks.getActivePeerSet).not.toHaveBeenCalled();
+    expect(mocks.loadAnswerBrief).not.toHaveBeenCalled();
+  });
+
 });

@@ -319,14 +319,14 @@ export function ConfigSidebar({
               </div>
               <div>
                 <dt className="text-xs text-warm-600">
-                  Your fees compared with peers
+                  Research institution fees compared with peers
                 </dt>
                 <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
                   {peerCoveragePreview.selectedFeeDeltaCount}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-warm-600">Your published fees</dt>
+                <dt className="text-xs text-warm-600">Research institution published fees</dt>
                 <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
                   {peerCoveragePreview.selectedVerifiedFeeCount}
                   {peerCoveragePreview.selectedProvisionalFeeCount > 0
@@ -360,7 +360,7 @@ export function ConfigSidebar({
         <p className="text-sm text-warm-600">
           For{" "}
           <span className="font-medium text-warm-900">
-            {institutionName || "your institution"}
+            {institutionName || "the research institution"}
           </span>
           {" · "}
           {peerSetLabel || "all institutions nationally"}

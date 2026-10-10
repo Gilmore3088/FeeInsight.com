@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { buildIndexEntries, getInstitutionFeeValues, getPeerIndexes, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
+import { buildIndexEntries, getDistrictFeeMedians, getInstitutionFeeValues, getPeerIndexes, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 import { sql } from "./connection";
 
@@ -166,5 +166,26 @@ describe("getPeerIndexes", () => {
 
     expect(db.unsafe.mock.calls[0][0]).not.toContain("ANY($1");
     expect(db.unsafe.mock.calls[0][1]).toEqual([]);
+  });
+});
+
+
+describe("getDistrictFeeMedians audience boundary", () => {
+  beforeEach(() => {
+    db.mockReset();
+    db.unsafe.mockReset();
+    db.unsafe.mockImplementation((text: string) => text);
+  });
+
+  it("requires sourced consumer/both rows, keeps zero, and applies the normal minimum sample", async () => {
+    db.mockResolvedValueOnce([]);
+    await getDistrictFeeMedians(6);
+    const query = text(db.mock.calls[0]);
+    expect(query).toContain("ef.amount >= 0");
+    expect(query).not.toContain("ef.amount > 0");
+    expect(db.unsafe).toHaveBeenCalledTimes(1);
+    const predicate = String(db.unsafe.mock.calls[0][0]);
+    expect(predicate).toContain("ef.source_document_id IS NOT NULL");
+    expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both')");
   });
 });
