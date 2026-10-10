@@ -43,7 +43,7 @@ suite("payment delivery with real PostgreSQL and a fake email provider",()=>{
       CREATE TABLE IF NOT EXISTS institution_sources(id bigint PRIMARY KEY,institution_name text);
       CREATE TABLE IF NOT EXISTS stripe_events(id bigserial PRIMARY KEY,stripe_event_id text UNIQUE,event_type text);
       DROP TABLE IF EXISTS payment_email_outbox;`);
-    await db.unsafe(readFileSync(resolve("supabase/migrations/20270110000041_payment_email_outbox.sql"),"utf8"));
+    await db.unsafe(readFileSync(resolve("supabase/migrations/20270110000043_payment_email_outbox.sql"),"utf8"));
     vi.stubEnv("TRANSACTIONAL_EMAIL_FROM","Fee Insight <test@example.invalid>");
     vi.stubEnv("REPORT_REQUEST_EMAIL_FROM","Fee Insight <test@example.invalid>");
     vi.stubEnv("CUSTOM_REPORT_LINK_SECRET","synthetic-test-signing-value-not-a-real-secret");
