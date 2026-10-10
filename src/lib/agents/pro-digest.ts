@@ -1,6 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
 import { statsRowFilter } from "@/lib/data-store/fee-stats";
-import { isConsumerFee } from "@/lib/fee-audience";
 import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -222,7 +221,7 @@ export function netMarketMoves(rows: MovementSignalRow[]): MarketMove[] {
     const movements = Array.isArray(json.movements) ? json.movements : [];
     for (const raw of movements as Array<Record<string, unknown>>) {
       const category = typeof raw.canonical_fee_key === "string" ? raw.canonical_fee_key : null;
-      if (!isConsumerFee(raw.fee_audience)) continue;
+      if (raw.fee_audience !== "consumer" && raw.fee_audience !== "both") continue;
       const previousAmount = toNumberOrNull(raw.previous_amount);
       const newAmount = toNumberOrNull(raw.new_amount);
       if (!category || previousAmount === null || newAmount === null) continue;
