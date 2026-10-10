@@ -587,11 +587,14 @@ export async function rollBackUnreproducedFees(
                  rolled_back_reason = NULL
            WHERE fp.fee_published_id = ANY(${result.restores.map((fee) => fee.feePublishedId)}::bigint[])
              AND fp.rolled_back_reason = ${RULES_RECHECK_REASON}
+             AND fp.quarantined_at IS NULL
              AND NOT EXISTS (
                SELECT 1 FROM published_fee_records live
                 WHERE live.rolled_back_at IS NULL
                   AND live.institution_id = fp.institution_id
                   AND live.canonical_fee_key = fp.canonical_fee_key
+                  AND live.fee_audience = fp.fee_audience
+                  AND live.quarantined_at IS NULL
                   AND live.amount IS NOT DISTINCT FROM fp.amount
              )
           RETURNING fp.fee_published_id, fp.lineage_ref, fp.institution_id

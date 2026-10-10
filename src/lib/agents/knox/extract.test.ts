@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
+import { KNOX_EXTRACT_STRATEGY, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract, insertCandidate } from "./extract";
 import { KNOX_FAULT_REASONS } from "./calibration";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -457,4 +457,22 @@ describe("Knox agentic extraction", () => {
       expect(attemptValues(db)).toHaveLength(0);
     });
   });
+});
+
+
+it("persists separate audience evidence and Darwin's zero flag for an eliminated fee", async () => {
+  const db = createDbMock([]);
+  const excerpt = "We've eliminated NSF fees for consumer clients and lowered them from $38 to $30 for business clients.";
+  await insertCandidate(asExtractDb(db), {
+    runId: 101, row: textArtifact,
+    candidate: { feeName: "NSF fees (consumer)", amount: 0, canonicalHint: "nsf", frequency: null,
+      confidence: 0.98, excerpt, waivable: false },
+  });
+  const calls = JSON.stringify(db.mock.calls);
+  expect(calls).toContain("fee_audience");
+  expect(calls).toContain("audience_evidence");
+  expect(calls).toContain("consumer");
+  expect(calls).toContain("eliminated");
+  expect(calls).toContain("knox_review:zero");
+  expect(calls).toContain("needs_darwin_verification");
 });

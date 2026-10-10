@@ -73,6 +73,17 @@ describe("loadConfirmedMovementPairs", () => {
     expect(mocks.sql).toHaveBeenCalledTimes(1);
     const text = (mocks.sql.mock.calls[0][0] as TemplateStringsArray).join("?");
     expect(text).toContain("document_url");
+    expect(text).toContain("vo.fee_audience = vn.fee_audience");
+    expect(text).toContain("vo.fee_audience IS DISTINCT FROM 'unknown'");
+  });
+
+  it("requires the same known audience before a pair can be a price change", async () => {
+    mocks.sql.mockReset();
+    mocks.sql.mockResolvedValue([candidate()]);
+    await loadConfirmedMovementPairs([signal([move(1, 2)])]);
+    const text = (mocks.sql.mock.calls[0][0] as TemplateStringsArray).join("?");
+    expect(text).toContain("vo.fee_audience = vn.fee_audience");
+    expect(text).toContain("vo.fee_audience IS DISTINCT FROM 'unknown'");
   });
 
   it("applies confirmFeeChange: a reread of the same edition or a renamed line is not a change", async () => {

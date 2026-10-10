@@ -3,6 +3,18 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-10
+
+**Clean, merge-ready PRs have standing merge authorization across FeeInsight chats.** James,
+10 Oct 2026, told the GitHub workstreams that his authorization to merge clean, merge-ready work
+applies across all chats. A routine code PR no longer waits for another per-PR approval when its
+exact current head is reviewed, required checks are green, it is conflict-free, blocking reviews
+and active-owner overlaps are resolved, and no separate release dependency remains. This does not
+silently authorize database migrations or production-data changes, permission/security-setting
+changes, paid-provider activation, outreach sending, force-pushes, branch deletion, or other
+explicitly gated production actions. Those retain their own approval/evidence requirements.
+Merge receipts must still distinguish merged, deployed and production-verified states.
+
 ## 2026-10-08
 
 **No rollback; finish the work.** James, 22:44 UTC, Rollback thread: "i dont want rollback. i want

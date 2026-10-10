@@ -1,4 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { consumerPriceMoveSql } from "@/lib/data-store/consumer-price-moves";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FEE_MOVES_TRACKED_SINCE, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
@@ -189,11 +191,14 @@ async function loadWorkspaceBanks(onlyInstitutionId: number | null): Promise<Wor
 
 async function loadOwnFees(institutionId: number): Promise<Record<string, number>> {
   const rows = await sql<{ fee_category: string; amount: number | string }[]>`
-    SELECT c.fee_category, MIN(c.amount) AS amount
+    SELECT c.fee_category,
+           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
+                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
       FROM published_fee_catalog c
      WHERE c.institution_id = ${institutionId}
        AND c.review_status = 'approved'
-       AND c.amount IS NOT NULL
+       AND c.amount IS NOT NULL AND c.amount >= 0
+       AND ${sql.unsafe(statsRowFilter("c"))}
        AND c.amount_kind IS DISTINCT FROM 'percent'
      GROUP BY c.fee_category
   `;
@@ -243,7 +248,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
        AND c.detected_at <= ${agedBefore}::timestamptz
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
-       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+       AND ${sql.unsafe(consumerPriceMoveSql("c"))}
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f

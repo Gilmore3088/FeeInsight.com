@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
+import { statsRowFilter } from "./fee-stats";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
 /**
@@ -14,7 +14,7 @@ export interface LocalMarketCompetitorRow {
   charter_type: string | null;
   /** Deposits held in the market counties, whole dollars; null for HQ-city matches. */
   market_deposits: number | null;
-  /** Median published amount per fee category (approved rows only). */
+  /** Sourced consumer value per category: median, or highest overdraft tier. */
   fees: Record<string, number>;
   document_url: string | null;
   document_date: string | null;
@@ -74,9 +74,8 @@ async function marketFromHqCity(city: string, state: string): Promise<{ counties
 }
 
 /**
- * Up to `limit` local competitors (largest market deposits first) that publish at
- * least one of `categories`, with their median approved amount per category.
- * Returns null when no market can be located.
+ * Up to `limit` local competitors (largest market deposits first) with sourced consumer
+ * evidence for at least one requested category. Returns null when no market can be located.
  */
 export async function getLocalMarketCompetitors(params: {
   institutionId: number;
@@ -108,17 +107,16 @@ export async function getLocalMarketCompetitors(params: {
     ),
     fees AS (
       SELECT c.institution_id, c.fee_category,
-             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) AS amount,
+             CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
+                  ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount,
              MAX(c.document_url) AS document_url,
              MAX(c.updated_at) AS document_date
         FROM published_fee_catalog c
        WHERE c.institution_id IN (SELECT institution_id FROM rivals)
          AND c.review_status = 'approved'
-         AND c.amount IS NOT NULL
+         AND c.amount IS NOT NULL AND c.amount >= 0
          AND c.fee_category = ANY(${params.categories})
-         -- Business-only schedules are not the rival's consumer price (fee-stats rule 6).
-         AND NOT (lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
-                  AND lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL})
+         AND ${sql.unsafe(statsRowFilter("c"))}
        GROUP BY c.institution_id, c.fee_category
     )
     SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type,
@@ -196,9 +194,21 @@ export async function getLocalFeeMoves(params: {
      WHERE c.institution_id = ANY(${params.institutionIds}::int[])
        AND c.fee_category = ANY(${params.categories}::text[])
        AND c.detected_at >= ${FEE_MOVES_TRACKED_SINCE}::timestamptz
-       -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
+       -- Keep the original pairing gate, then require a live, same-audience consumer pair.
        AND c.like_for_like IS TRUE
-       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+       AND EXISTS (
+         SELECT 1 FROM published_fee_catalog nl
+         JOIN published_fee_records previous ON previous.fee_published_id = c.previous_fee_published_id
+         WHERE nl.fee_published_id = c.new_fee_published_id
+           AND nl.institution_id = c.institution_id AND previous.institution_id = c.institution_id
+           AND nl.canonical_fee_key = c.fee_category AND previous.canonical_fee_key = c.fee_category
+           AND ${sql.unsafe(statsRowFilter("nl"))}
+           AND previous.fee_audience = nl.fee_audience
+           AND previous.quarantined_at IS NULL
+           AND nl.amount = c.new_amount
+           AND previous.amount = COALESCE(c.previous_amount, c.old_amount)
+           AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending')
+       )
        AND COALESCE(c.previous_amount, c.old_amount) IS NOT NULL
        AND c.new_amount IS NOT NULL
      ORDER BY c.detected_at DESC
