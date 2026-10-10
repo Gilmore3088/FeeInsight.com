@@ -56,7 +56,7 @@ describe("executeCrewWrite", () => {
     expect(mocks.startStateLaneRun).toHaveBeenCalledWith(expect.objectContaining({ stateCode: "GA", triggeredBy: "owner" }));
     expect(reply.lines[0]).toBe("Queued Georgia (run #501).");
     expect(reply.runId).toBe(501);
-    expect(reply.links).toContainEqual({ label: "Track run #501", href: "/admin/atlas/details" });
+    expect(reply.links).toContainEqual({ label: "Track run #501", href: "/admin/atlas/runs/501" });
   });
 
   it("runs only the addressed worker's steps", async () => {
@@ -81,7 +81,7 @@ describe("executeCrewWrite", () => {
       steps: [{ key: "publish", agent: "hamilton", title: "Publish verified fees" }],
     }));
     expect(reply.runId).toBe(847);
-    expect(reply.links).toContainEqual({ label: "Track run #847", href: "/admin/atlas/details" });
+    expect(reply.links).toContainEqual({ label: "Track run #847", href: "/admin/atlas/runs/847" });
   });
 
   it("reuses an active bank publish run rather than launching another", async () => {
