@@ -248,7 +248,7 @@ describe("legacy saved confidence compatibility", () => {
     expect(base.confidence.level).toBe("high");
   });
 
-  it("does not downgrade an artifact that actually carries structured evidence", () => {
+  it("does not consider an empty structured bundle proof of narrative accuracy", () => {
     const factEvidence: HamiltonEvidenceBundle = {
       version: 1,
       generatedAt: "2026-10-10T00:00:00Z",
@@ -257,7 +257,23 @@ describe("legacy saved confidence compatibility", () => {
       limitations: [],
     };
     const response = { ...base, factEvidence };
-    expect(normalizeLegacyAnalyzeConfidence(response)).toBe(response);
+    const normalized = normalizeLegacyAnalyzeConfidence(response);
+    expect(normalized.confidence.level).toBe("medium");
+    expect(normalized.confidence.basis).toContain(CLAIM_BINDING_LIMITATION);
+    expect(response.confidence.level).toBe("high");
+  });
+
+  it("also bounds a high label when a nonempty structured bundle exists", () => {
+    const factEvidence: HamiltonEvidenceBundle = {
+      version: 1,
+      generatedAt: "2026-10-10T00:00:00Z",
+      facts: [fact()],
+      derivations: [],
+      limitations: [],
+    };
+    const result = normalizeLegacyAnalyzeConfidence({ ...base, factEvidence });
+    expect(result.confidence.level).toBe("medium");
+    expect(result.confidence.basis).toContain(CLAIM_BINDING_LIMITATION);
   });
 
   it("does not change an already-medium artifact", () => {
