@@ -53,11 +53,14 @@ export function measureFromIndex(row: IndexEntry | undefined): GeographicFeeMeas
     : 0;
   const status: GeographicFeeMeasure["status"] = !row || count === 0
     ? "not_observed"
-    : count < MIN_INSTITUTIONS_FOR_MEDIAN || row.median_amount === null || !Number.isFinite(Number(row.median_amount))
+    : count < MIN_INSTITUTIONS_FOR_MEDIAN ||
+        row.median_amount === null ||
+        !Number.isFinite(Number(row.median_amount)) ||
+        Number(row.median_amount) < 0
       ? "insufficient"
       : "available";
   const figure = (value: number | null | undefined): number | null =>
-    status === "available" && value !== null && value !== undefined && Number.isFinite(Number(value))
+    status === "available" && value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) >= 0
       ? Number(value)
       : null;
   return {
