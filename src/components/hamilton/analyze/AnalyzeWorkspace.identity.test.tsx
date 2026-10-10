@@ -181,3 +181,68 @@ describe("Ask audit identity", () => {
     expect(trail.sources.some(s => s.label === "Research subject" || s.label === "Your institution")).toBe(false);
   });
 });
+
+vi.mock("@/components/hamilton/storyline/StorylineView", () => ({
+  StorylineView: ({ identityContext, memo, nextSteps }: { identityContext?: unknown; memo?: unknown; nextSteps?: import("react").ReactNode }) => <section data-testid="reopened-story"><p>{identityContext ? "Has original identity" : "Saved story persists without original identity"}</p>{memo ? <p data-testid="saved-memo">Original saved memo</p> : null}{nextSteps}</section>,
+}));
+
+describe("AnalyzeWorkspace saved-answer reset", () => {
+  it("removes the saved storyline, memo, exports and historical notice when starting a new question", () => {
+    vi.stubGlobal("scrollTo", vi.fn());
+    const identityContext = { version: 1 as const, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified" as const, researchInstitutionName: "Original Research A", accountInstitutionName: "Original Account CU", peerSetId: 42, peerBaselineLabel: "Original A cohort" };
+    const savedAnswer = { ...answer("Saved storyline answer."), identityContext, storyline: {} as NonNullable<AnalyzeResponse["storyline"]>, memo: {} as NonNullable<AnalyzeResponse["memo"]> };
+    render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bankA} initialAnalysisId="saved-a" initialAnalysis={savedAnswer} />);
+    expect(screen.getByTestId("reopened-story").textContent).toContain("Has original identity");
+    expect(screen.getByTestId("saved-memo")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Download PDF" }).length).toBeGreaterThan(0);
+    const initialContext = screen.getByLabelText("Saved answer institution context");
+    expect(initialContext.textContent).toContain("Research institution: Original Research A");
+    expect(initialContext.textContent).toContain("Account institution: Original Account CU");
+    expect(initialContext.textContent).toContain("Peer baseline: Original A cohort");
+    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    expect(screen.queryByTestId("reopened-story")).toBeNull();
+    expect(screen.queryByTestId("saved-memo")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download PDF" })).toBeNull();
+    expect(screen.queryByLabelText("Saved answer institution context")).toBeNull();
+    expect(screen.queryByText("Historical account and peer context was not recorded with this answer.")).toBeNull();
+  });
+  it("removes the historical context notice when discarding a legacy saved answer", () => {
+    vi.stubGlobal("scrollTo", vi.fn());
+    render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bankA} initialAnalysisId="saved-legacy" initialAnalysis={answer("Historical saved answer.")} />);
+    expect(screen.getByText("Historical account and peer context was not recorded with this answer.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    expect(screen.queryByText("Historical account and peer context was not recorded with this answer.")).toBeNull();
+    expect(document.body.textContent).not.toContain("Historical saved answer.");
+  });
+});
+
+describe("AnalyzeWorkspace delayed fallback save", () => {
+  it.each([
+    { outcome: "success", oldResult: { id: "old-answer-id" } },
+    { outcome: "failure", oldResult: { error: "Old save failure" } },
+  ])("ignores old save $outcome after a new conversation has its own saved answer", async ({ oldResult }) => {
+    let finishOldSave!: (result: { id: string } | { error: string }) => void;
+    chat.save.mockImplementationOnce(() => new Promise<{ id: string } | { error: string }>((finish) => { finishOldSave = finish; }));
+    const fetcher = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal("fetch", fetcher);
+    vi.stubGlobal("scrollTo", vi.fn());
+    render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bankA} />);
+    let oldCompletion!: Promise<void>;
+    await act(async () => { oldCompletion = chat.options.at(-1)!.onFinish!(finished); });
+    expect(chat.save).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain("Late old answer.");
+    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    const current = {
+      message: { parts: [{ type: "text", text: "## Hamilton's View\nCurrent new answer." }], metadata: { savedAnalysisId: "current-answer-id" } },
+      isError: false, isAbort: false,
+    };
+    await act(async () => { await chat.options.at(-1)!.onFinish!(current); });
+    expect(document.body.textContent).toContain("Current new answer.");
+    await act(async () => { finishOldSave(oldResult); await oldCompletion; });
+    expect(document.body.textContent).not.toContain("This answer couldn't be saved to your history.");
+    expect(document.body.textContent).not.toContain("Late old answer.");
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ type: "analysis", analysisId: "current-answer-id" });
+  });
+});

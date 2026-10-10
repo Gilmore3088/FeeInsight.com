@@ -331,6 +331,7 @@ function AnalyzeConversationWorkspace({
   const previousPromptRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = useRef(true);
+  const answerGeneration = useRef(0);
 
   const { messages, sendMessage, status, setMessages, error: chatError, clearError, stop } = useChat({
     transport: new DefaultChatTransport({
@@ -347,6 +348,7 @@ function AnalyzeConversationWorkspace({
       const content = extractTextFromMessage(message);
       // A failed or empty reply is never shown as an answer, and never saved.
       if (!active.current || readOnlyReason || isError || isAbort || !content.trim()) return;
+      const generation = answerGeneration.current;
       const parsed = parseAnalyzeResponse(content);
       const parts = message.parts as ReadonlyArray<MessagePart>;
       const check = checkMessageFigures(parts);
@@ -380,7 +382,7 @@ function AnalyzeConversationWorkspace({
             exploreFurther: parsed.exploreFurther,
           } satisfies AnalyzeResponse,
         });
-        if (!active.current) return;
+        if (!active.current || generation !== answerGeneration.current) return;
         if ("id" in result) setSavedAnalysisId(result.id);
         else setSaveError("This answer couldn't be saved to your history.");
       }
@@ -424,6 +426,7 @@ function AnalyzeConversationWorkspace({
     (question: string) => {
       const trimmed = question.trim();
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
+      answerGeneration.current += 1;
       if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
         previousPromptRef.current = lastPromptRef.current;
         // The answer just read moves up into the conversation, collapsed to its question and lead.
@@ -454,6 +457,7 @@ function AnalyzeConversationWorkspace({
   /** Starts over: no earlier answers, no carried context, the start screen. */
   const newQuestion = useCallback(() => {
     if (isLoading) stop();
+    answerGeneration.current += 1;
     clearError();
     setThread([]);
     previousPromptRef.current = "";
@@ -557,7 +561,7 @@ function AnalyzeConversationWorkspace({
   const instName = answerIdentity?.researchInstitutionName ?? selectedInstitution?.name ?? null;
   currentLeadRef.current = view.lead || storyLead || null;
   // A reopened storyline answer is shown with its charts, as it was first answered.
-  const reopenedStory = !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
+  const reopenedStory = conversation === 0 && !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
   const proseActive = isLoading || Boolean(shown && view.lead);
   const showProgress = Boolean(askedQuestion) && (engineBusy || (isLoading && !(shown && view.lead)));
   const longQuestion = (askedQuestion ?? initialAnalysisPrompt ?? "").length > 120;
@@ -733,7 +737,7 @@ function AnalyzeConversationWorkspace({
         <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
           {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
         </aside>
-      ) : initialAnalysis && !askedQuestion ? (
+      ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
         <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
       ) : null}
 

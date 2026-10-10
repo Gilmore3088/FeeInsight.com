@@ -30,6 +30,25 @@ correction changes direct public-source/chart/report captions to the frozen
 research name or a neutral research institution label. Actual private user input
 retains its proper label; third-party institution names and old prose stay intact.
 
+The final dependency integration also reproduced saved-view reset failures twice:
+New question cleared the frozen identity but retained the immutable saved storyline,
+memo and export button, and left a false legacy-context notice. Reopened artifact
+display is now limited to the original conversation; starting over removes that
+artifact and notice. Two reset regressions cover the original named snapshot and
+the subsequent absence of old content, memo and export. Receipts are in #976.
+
+A related delayed fallback-save race was also reproduced twice. The installed
+AI SDK does not await the async completion callback; an old successful save could
+replace a newer answer's PDF ID, or its failure could add an incorrect save error.
+Accepted asks and resets now advance a generation; post-save callbacks must still
+match it. Both actual PDF-request-ID and stale-error regressions pass with the
+reset and controlled delayed-request tests: 20 tests, scoped lint zero errors.
+
+Final integration includes current main 483f445aa9d4eae766ecd60e1c85103a094759a6,
+merged cleanly after reviewing its 20 new commits. Crew execution/receipts and
+the audited Pinnacle duplicate fix are retained. Main's preview queue policy is
+also retained; the final reviewed commits use its documented [preview] opt-in.
+
 The requested PDF download then failed before interaction because retained native
 credential state was restricted. Existing-tab recovery and explicit navigation to
 the retained origin repeated: Browser observation is unavailable because native
