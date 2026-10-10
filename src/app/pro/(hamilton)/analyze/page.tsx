@@ -1,6 +1,7 @@
 // Auth-gated, renders live DB-backed data at request time; not statically prerendered.
 export const dynamic = "force-dynamic";
 
+import { LandingResearchEntry } from "@/components/hamilton/landing/LandingResearchEntry";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -24,12 +25,12 @@ export const metadata: Metadata = { title: "Ask Hamilton" };
 export default async function AnalyzePage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string }>;
+  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string; research?: string }>;
 }) {
+  const params = await searchParams;
+  if (params.research !== undefined) return <LandingResearchEntry raw={params.research} task="compare" conflictingArtifact={Boolean(params.analysis)} />;
   const user = await getCurrentUser();
   if (!user) redirect("/");
-
-  const params = await searchParams;
   const analysisId = params.analysis;
   const [initialAnalysisRecord, recent] = await Promise.all([
     analysisId ? loadAnalysisRecord(analysisId) : null,

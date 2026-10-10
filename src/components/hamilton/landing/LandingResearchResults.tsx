@@ -9,7 +9,6 @@
 import { useRef, useState } from "react";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
-  localRequestFromLanding,
   type LandingResearchHandoff,
 } from "@/lib/hamilton/landing-research-handoff";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
@@ -37,6 +36,7 @@ export function checkedLandingResearchResult(selection: LandingResearchHandoff, 
   if (!matchesCategories(result.categories)) throw bad();
   if (selection.scope.kind === "local") {
     if (result.institutionId !== selection.scope.institutionId ||
+        result.charter !== selection.charter ||
         !Array.isArray(result.competitors) || !Array.isArray(result.sources) ||
         !result.market || typeof result.market !== "object" ||
         !result.you || typeof result.you !== "object") throw bad();
@@ -87,9 +87,7 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
     setResult(null);
     setMessage(null);
     try {
-      const body = selection.scope.kind === "local"
-        ? localRequestFromLanding(selection)
-        : { research: selection };
+      const body = { research: selection };
       const response = await fetch("/api/hamilton/ask/market", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,6 +137,7 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
           </div>
           {result.map ? (
             <div className="space-y-2">
+              <p className="text-xs text-warm-600">Map shows the full branch footprint for geographic context; the fee table applies your institution-type filter.</p>
               <div role="img" aria-label={"Competitor branch footprint for " + result.market.label}
                 className="overflow-x-auto rounded-md border border-warm-200"
                 dangerouslySetInnerHTML={{ __html: result.map.html }} />
@@ -166,7 +165,7 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
                 </tr>
                 {result.competitors.map(peer => (
                   <tr key={peer.institutionId} className="border-b border-warm-100">
-                    <th scope="row" className="p-2 font-medium">{peer.name}</th>
+                    <th scope="row" className="p-2 font-medium"><a className="underline" href={`/institution/${peer.institutionId}`}>{peer.name}</a><div className="text-xs font-normal">{peer.evidenceUrl && /^https?:\/\//i.test(peer.evidenceUrl) ? <a className="underline" href={peer.evidenceUrl} target="_blank" rel="noreferrer">Published schedule</a> : "Schedule link unavailable"}{peer.evidenceDate ? ` · ${peer.evidenceDate}` : ""}</div></th>
                     <td className="p-2">{peer.branches ?? "Unavailable"}</td>
                     {selection.categories.map(category => <td key={category} className="p-2">{dollars(peer.fees[category])}</td>)}
                   </tr>

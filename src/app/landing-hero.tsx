@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LandingResearchPicker } from "@/components/hamilton/landing/LandingResearchPicker";
 import { useId, useState, type KeyboardEvent } from "react";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
@@ -132,7 +133,8 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
             aria-labelledby={tabId("explore")}
             hidden={active !== "explore"}
           >
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <LandingResearchPicker />
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {EXPLORE_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link

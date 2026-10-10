@@ -32,6 +32,8 @@ export interface MarketCompetitor {
   deposits: number | null;
   /** Median published amount per requested fee category. */
   fees: Record<string, number>;
+  evidenceUrl?: string | null;
+  evidenceDate?: string | null;
 }
 
 export interface LocalMarketAnswer {
@@ -170,7 +172,7 @@ async function ownFees(institutionId: number, categories: readonly string[]): Pr
 /** Null when no market can be located for the institution. */
 export async function getLocalMarketAnswer(
   institutionId: number,
-  options: { categories?: readonly string[] } = {},
+  options: { categories?: readonly string[]; charter?: "all" | "bank" | "credit_union" } = {},
 ): Promise<LocalMarketAnswer | null> {
   const categories = resolveLocalMarketCategories(options.categories);
   const [inst] = await sql`
@@ -213,7 +215,7 @@ export async function getLocalMarketAnswer(
     ? await sql`SELECT id, institution_name, charter_type FROM institution_sources WHERE id = ANY(${[...ids]}::int[])`
     : [];
   const competitors = rankCompetitors(
-    names.map((row) => {
+    names.filter(row => !options.charter || options.charter === "all" || row.charter_type === options.charter).map((row) => {
       const id = Number(row.id);
       const spot = footprint?.byInstitution[id];
       return {
@@ -223,6 +225,8 @@ export async function getLocalMarketAnswer(
         branches: spot?.branches ?? null,
         deposits: spot?.deposits ?? null,
         fees: selectMarketFees(feeBy.get(id)?.fees ?? {}, categories),
+        evidenceUrl: feeBy.get(id)?.document_url ?? null,
+        evidenceDate: feeBy.get(id)?.document_date ?? null,
       };
     }),
   );

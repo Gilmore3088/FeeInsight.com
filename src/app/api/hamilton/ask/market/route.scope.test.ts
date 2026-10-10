@@ -53,10 +53,20 @@ describe("governed geographic research at the same authenticated market route", 
     expect(mocks.geography).toHaveBeenCalledWith(national);
   });
 
+  it("preserves local subject, charter and categories without workspace fallback", async () => {
+    const local = { ...selected, scope: { kind: "local", institutionId: 101 } };
+    const response = await POST(request({ research: local }));
+    expect(response.status).toBe(200);
+    expect(mocks.answer).toHaveBeenCalledWith(101, { categories: selected.categories, charter: selected.charter });
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.geography).not.toHaveBeenCalled();
+    expect((await response.json()).charter).toBe(selected.charter);
+  });
+
   it.each([
     { research: { ...selected, scope: { kind: "state", stateCode: "XX" } } },
     { research: { ...selected, task: "board_report" } },
-    { research: { ...selected, scope: { kind: "local", institutionId: 101 } } },
+
     { research: selected, institutionId: 101 },
     { research: selected, categories: ["overdraft"] },
     { research: null },

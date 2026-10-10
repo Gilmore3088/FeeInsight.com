@@ -1,3 +1,4 @@
+import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { HamiltonPageSkeleton } from "@/components/hamilton/layout/HamiltonPageSkeleton";
@@ -69,7 +70,12 @@ async function HamiltonLayoutInner({
   const pathname = requestPath.split("?")[0] || requestPath;
   const queryString = requestPath.includes("?") ? requestPath.split("?")[1] : "";
   const requestSearchParams = new URLSearchParams(queryString);
-  const selectedInstId = requestSearchParams.get("instId");
+  const hasResearch = requestSearchParams.has("research");
+  let research = null;
+  try { research = decodeLandingResearch(requestSearchParams.get("research")); } catch { /* Page shows validation error. */ }
+  const selectedInstId = hasResearch
+    ? research?.scope.kind === "local" ? String(research.scope.institutionId) : null
+    : requestSearchParams.get("instId");
   const selectedIntent = requestSearchParams.get("intent");
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
@@ -84,12 +90,12 @@ async function HamiltonLayoutInner({
   });
   const isArtifactContext = !selectedInstId && Boolean(artifactInstitutionId);
   const { institution: selectedInstitution, source: selectedSource, isWorkspaceBank } =
-    await resolveHamiltonInstitutionContext({
+    hasResearch && !selectedInstId ? { institution: null, source: "none" as const, isWorkspaceBank: false } : await resolveHamiltonInstitutionContext({
       userId: user.id,
       instId: contextInstitutionId,
       intent: selectedIntent,
-      persistUrlSelection: shouldPersistUrlInstitutionSelection(selectedInstId),
-      makeDefault: requestSearchParams.get("setBank") === "1",
+      persistUrlSelection: hasResearch ? false : shouldPersistUrlInstitutionSelection(selectedInstId),
+      makeDefault: !hasResearch && requestSearchParams.get("setBank") === "1",
       transientSource: isArtifactContext ? "artifact" : undefined,
     });
   const selectedInstitutionId = selectedInstitution?.id.toString() ?? null;
@@ -103,7 +109,7 @@ async function HamiltonLayoutInner({
         stateCode: selectedInstitution.stateCode,
         feesCheckedAt: selectedInstitution.latestSourceCollectedAt,
         makeDefaultHref:
-          isWorkspaceBank === false
+          !hasResearch && isWorkspaceBank === false
             ? `${pathname}?${(() => {
                 const next = new URLSearchParams(requestSearchParams);
                 next.set("setBank", "1");
@@ -117,7 +123,7 @@ async function HamiltonLayoutInner({
         selectedFromUrl: selectedSource === "url",
       }
     : {
-        name: user.institution_name,
+        name: hasResearch ? "Market research" : user.institution_name,
         type: user.institution_type,
         assetTier: user.asset_tier,
         fedDistrict: user.fed_district ?? null,

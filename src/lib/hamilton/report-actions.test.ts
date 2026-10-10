@@ -3,6 +3,7 @@ import type { SectionInput } from "@/lib/hamilton/types";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
+  landingResearch: vi.fn(),
   getInstitutionById: vi.fn(),
   getFeesByInstitution: vi.fn(),
   getFinancialsByInstitution: vi.fn(),
@@ -24,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
 }));
+
+vi.mock("@/lib/hamilton/landing-geographic-research", () => ({ loadLandingGeographicResearch: mocks.landingResearch }));
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: mocks.getCurrentUser,
@@ -559,4 +562,35 @@ describe("Hamilton Reports generateReport", () => {
       fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],
     });
   });
+});
+
+describe("landing board draft confirmation boundary", () => {
+  it("rejects an unconfirmed request before evidence reads or persistence", async () => {
+    vi.clearAllMocks();
+    mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "admin" });
+    const { saveLandingResearchReport } = await import("@/app/pro/(hamilton)/reports/actions");
+    const result = await saveLandingResearchReport({ research: {}, confirmed: false });
+    expect(result.success).toBe(false);
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+  });
+  it("rejects a signed-out caller even with explicit confirmation", async () => {
+    vi.clearAllMocks(); mocks.getCurrentUser.mockResolvedValue(null);
+    const { saveLandingResearchReport } = await import("@/app/pro/(hamilton)/reports/actions");
+    expect((await saveLandingResearchReport({ research: {}, confirmed: true })).success).toBe(false);
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+});
+
+it("saves exact confirmed geographic scope through the existing report store without provider calls", async () => {
+  vi.clearAllMocks(); mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "admin" });
+  const research = { version: 1, task: "board_report", scope: { kind: "state", stateCode: "DC" }, charter: "credit_union", categories: ["money_order"] };
+  mocks.landingResearch.mockResolvedValue({ comparisons: [{ category: "money_order", selected: { median: 0, institutions: 8, lastUpdated: "2026-10-10" }, national: { median: 3 } }] });
+  mocks.saveHamiltonReport.mockResolvedValue("saved-id");
+  const { saveLandingResearchReport } = await import("@/app/pro/(hamilton)/reports/actions");
+  expect(await saveLandingResearchReport({ research, confirmed: true })).toEqual({ success: true, reportId: "saved-id" });
+  expect(mocks.landingResearch).toHaveBeenCalledWith({ ...research, task: "compare" });
+  expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: "", reportType: "landing_research", evidencePolicy: "verified-only", reportJson: expect.objectContaining({ title: "DC — board research draft", exhibits: [expect.objectContaining({ rows: [["Money Order", "$0.00", "8", "$3.00", "2026-10-10"]] })] }) }));
+  expect(mocks.generateSection).not.toHaveBeenCalled();
+  expect(mocks.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({ operation: "report", userId: 7, detail: expect.objectContaining({ research }) }));
 });

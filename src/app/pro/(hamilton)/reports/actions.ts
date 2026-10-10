@@ -1021,3 +1021,40 @@ export async function loadPublishedReport(reportId: string) {
     },
   };
 }
+
+/** Explicitly confirmed landing selection; uses the same user-scoped report library/PDF workflow. */
+export async function saveLandingResearchReport(input: { research: unknown; confirmed: boolean }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user || !canAccessPremium(user)) return { success: false, error: "Hamilton access required." };
+  if (input.confirmed !== true) return { success: false, error: "Confirm the selection before creating a report." };
+  try {
+    const { parseLandingResearch } = await import("@/lib/hamilton/landing-research-handoff");
+    const { buildLandingReport } = await import("@/lib/hamilton/landing-report");
+    const selection = parseLandingResearch(input.research);
+    if (selection.task !== "board_report") return { success: false, error: "Choose the board-report workflow." };
+    const result = selection.scope.kind === "local"
+      ? await (await import("@/lib/hamilton/local-market-answer")).getLocalMarketAnswer(selection.scope.institutionId, { categories: selection.categories, charter: selection.charter })
+      : await (await import("@/lib/hamilton/landing-geographic-research")).loadLandingGeographicResearch({ ...selection, task: "compare" });
+    if (!result) return { success: false, error: "No branch market is on file for this institution yet." };
+    const report = buildLandingReport(selection, result, new Date().toISOString());
+    const quality = validateHamiltonReportArtifact({ report, selectedInstitutionId: selection.scope.kind === "local" ? selection.scope.institutionId : null });
+    if (!quality.ok) return { success: false, error: quality.error };
+    const reportId = await saveHamiltonReport({
+      userId: user.id,
+      institutionId: selection.scope.kind === "local" ? String(selection.scope.institutionId) : "",
+      reportType: "landing_research", reportJson: report, evidencePolicy: "verified-only",
+      selectedSource: "url", selectedSourceLabel: "Landing research selection",
+      peerBaselineLabel: report.exhibits![0].subtitle,
+      peerFallbackReason: "Explicit landing selection; no fallback cohort or account institution was substituted.",
+    });
+    await recordProRequest({ operation: "report", title: report.title, status: "completed",
+      summary: "Saved explicitly confirmed published-fee research draft", userId: user.id,
+      institutionId: selection.scope.kind === "local" ? selection.scope.institutionId : null,
+      detail: { report_id: reportId, research: selection, provider_call_queued: false, evidence_policy: "verified-only" },
+    });
+    return { success: true, reportId };
+  } catch (error) {
+    console.error("[landing-report]", error);
+    return { success: false, error: "Could not save this research selection. Please retry." };
+  }
+}

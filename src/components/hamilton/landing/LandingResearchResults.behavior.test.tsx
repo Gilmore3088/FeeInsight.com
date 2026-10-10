@@ -127,6 +127,7 @@ describe("landing research confirmation and explicit scope", () => {
       ok: true,
       json: async () => ({
         institutionId: 101,
+        charter: "all",
         institutionName: "Example Credit Union",
         market: { label: "Example County", basis: "branch_counties", sodYear: 2025, countyCount: 1 },
         you: { branches: 1, branchesInMarket: 1, fees: { paper_statement: 0 }, cities: [] },
@@ -143,7 +144,7 @@ describe("landing research confirmation and explicit scope", () => {
     await render(local);
     await clickRun();
     expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
-      institutionId: 101, categories: ["paper_statement", "money_order"],
+      research: local,
     });
     expect(host.textContent).toContain("Peer Bank");
     expect(host.textContent).toContain("$0.00");

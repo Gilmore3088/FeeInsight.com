@@ -45,6 +45,12 @@ beforeEach(() => {
 });
 
 describe("local-market category propagation through the real service", () => {
+  it("applies charter before ranking and never substitutes another type", async () => {
+    const result = await getLocalMarketAnswer(101, { categories: ["money_order"], charter: "credit_union" });
+    expect(result?.competitors).toEqual([]);
+    expect(result?.institutionId).toBe(101);
+  });
+
   it("uses exactly the selected list in both fee queries and the response", async () => {
     const categories = ["money_order", "paper_statement"];
     const result = await getLocalMarketAnswer(101, { categories });

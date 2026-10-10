@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 // figure-check retry can take minutes.
 export const maxDuration = 300;
 
+import { LandingResearchEntry } from "@/components/hamilton/landing/LandingResearchEntry";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -71,6 +72,7 @@ export default async function ReportsPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    research?: string;
     scenario_id?: string;
     report_id?: string;
     report?: string;
@@ -83,10 +85,10 @@ export default async function ReportsPage({
     district?: string;
   }>;
 }) {
+  const params = await searchParams;
+  if (params.research !== undefined) return <LandingResearchEntry raw={params.research} task="board_report" conflictingArtifact={Boolean(params.report_id || params.report || params.scenario_id)} />;
   const user = await getCurrentUser();
   if (!user) redirect("/");
-
-  const params = await searchParams;
   const initialReportId = params.report_id ?? params.report ?? null;
   const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
     getPublishedReports().catch(() => []),
@@ -106,7 +108,9 @@ export default async function ReportsPage({
   const {
     institution: selectedInstitution,
     source: selectedSource,
-  } = await resolveHamiltonInstitutionContext({
+  } = initialReport?.report_type === "landing_research" && !initialReport.institution_id
+    ? { institution: null, source: "url" as const }
+    : await resolveHamiltonInstitutionContext({
     userId: user.id,
     instId: contextInstitutionId,
     intent: params.intent ?? "reports",

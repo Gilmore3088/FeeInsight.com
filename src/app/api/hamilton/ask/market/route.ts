@@ -34,8 +34,13 @@ async function handlePOST(request: Request) {
         throw new LandingResearchError("Choose one research scope; mixed request fields were not applied.");
       }
       const selection = parseLandingResearch(envelope.research);
-      if (selection.task !== "compare" || selection.scope.kind === "local") {
+      if (selection.task !== "compare") {
         throw new LandingResearchError("Use the existing local-market or report workflow for this selection.");
+      }
+      if (selection.scope.kind === "local") {
+        const answer = await getLocalMarketAnswer(selection.scope.institutionId, { categories: selection.categories, charter: selection.charter });
+        if (!answer) return NextResponse.json({ error: "No branch market is on file for this institution yet." }, { status: 404 });
+        return NextResponse.json({ ...answer, charter: selection.charter });
       }
       // Auth was checked above. No institution default, account membership or provider call
       // is consulted for a state/national selection; the adapter reads governed live data.
