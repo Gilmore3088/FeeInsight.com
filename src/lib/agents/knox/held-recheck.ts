@@ -1,3 +1,4 @@
+import { feeApplicability, scopedFeeStatements } from "@/lib/fee-audience";
 import { sql } from "@/lib/data-store/connection";
 import { classifyFeeText, extractFromSegment, type ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
@@ -143,6 +144,9 @@ export function recategorizeHeld(row: HeldRow): ExtractedFeeCandidate | null {
   const excerpt = heldExcerpt(row.conditions);
   const amount = Number(row.amount);
   if (!excerpt || row.amount == null || !Number.isFinite(amount)) return null;
+  // A one-row recheck cannot replace one row with two audiences. The full document
+  // reread creates new scoped observations; the ambiguous historical row stays held.
+  if (scopedFeeStatements(excerpt).length > 0) return null;
   const { candidates } = extractFromSegment(excerpt);
   return candidates.find((candidate) => Math.abs(candidate.amount - amount) < 0.005) ?? null;
 }
@@ -226,6 +230,7 @@ export async function recheckHeldRows(
     if (!dryRun) {
       const flags = ["needs_darwin_verification", `canonical_hint:${candidate.canonicalHint}`, HELD_RECHECK_PROMOTED_FLAG];
       if (candidate.waivable) flags.push("waivable");
+      const applicability = feeApplicability(promotedName(row, candidate), candidate.excerpt, candidate.amount);
       const updated = await db`
         UPDATE raw_fee_observations fr
            SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:range')
@@ -233,7 +238,10 @@ export async function recheckHeldRows(
                conditions = ${promotedConditions(row.conditions ?? "", candidate)},
                extraction_confidence = ${candidate.confidence},
                frequency = COALESCE(fr.frequency, ${candidate.frequency}),
-               fee_name = ${promotedName(row, candidate)}
+               fee_name = ${promotedName(row, candidate)},
+               fee_audience = ${applicability.feeAudience},
+               audience_evidence = ${applicability.audienceEvidence},
+               fee_treatment = ${applicability.feeTreatment}
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
            AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:range')
            AND NOT fr.outlier_flags ? 'needs_darwin_verification'
@@ -246,6 +254,7 @@ export async function recheckHeldRows(
                 AND other.source_document_id = fr.source_document_id
                 AND lower(other.fee_name) = lower(${promotedName(row, candidate)})
                 AND COALESCE(other.amount, -1) = COALESCE(fr.amount, -1)
+                AND other.fee_audience = ${applicability.feeAudience}
                 AND other.fee_raw_id <> fr.fee_raw_id
            )
         RETURNING fr.fee_raw_id

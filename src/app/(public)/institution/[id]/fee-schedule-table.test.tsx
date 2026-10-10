@@ -6,6 +6,7 @@ function fee(overrides: Partial<DisplayFee>): DisplayFee {
   return {
     id: "1",
     feeName: "Paid item overdraft",
+    feeAudience: "consumer",
     feeCategory: "overdraft",
     amount: 35,
     frequency: "per_item",
@@ -82,4 +83,21 @@ describe("FeeScheduleTable", () => {
     expect(screen.getAllByText("of the transaction").length).toBeGreaterThan(0);
     expect(screen.queryByText(/(above|below|At) the national median/)).toBeNull();
   });
+});
+
+
+it.each(["business", "unknown"] as const)("shows %s scope without consumer median comparisons", (feeAudience) => {
+  render(<FeeScheduleTable fees={[fee({ feeAudience })]} disclosureUrl={null}
+    medians={new Map([["overdraft", 30]])}
+    benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
+  expect(screen.queryByRole("link", { name: /national median/ })).toBeNull();
+  expect(screen.queryByText(/Within the typical range/)).toBeNull();
+  expect(screen.getAllByText(feeAudience === "business" ? "Business accounts" : "Account audience not verified").length).toBeGreaterThan(0);
+});
+
+it("labels an explicitly eliminated consumer fee instead of treating it as missing", () => {
+  render(<FeeScheduleTable fees={[fee({ feeCategory: "nsf", feeAudience: "consumer", feeTreatment: "eliminated", amount: 0 })]}
+    disclosureUrl={null} medians={new Map([["nsf", 30]])} />);
+  expect(screen.getAllByText(/Fee eliminated/).length).toBeGreaterThan(0);
+  expect(screen.getAllByRole("link", { name: "$30 below the national median" }).length).toBeGreaterThan(0);
 });

@@ -1,3 +1,4 @@
+import type { FeeAudience, FeeTreatment } from "@/lib/fee-audience";
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
 import { STATS_ROW_FILTER, summarizeRates, type RateStatistics } from "./fee-stats";
@@ -10,6 +11,8 @@ import { formatRateFee, type RateFields } from "../percent-fees";
  */
 
 export interface RateFee extends RateFields {
+  fee_audience?: FeeAudience;
+  fee_treatment?: FeeTreatment;
   id: number;
   institution_id: number;
   fee_name: string;
@@ -23,6 +26,8 @@ export interface RateFee extends RateFields {
 }
 
 interface RateFeeDbRow extends RateFields {
+  fee_audience?: FeeAudience;
+  fee_treatment?: FeeTreatment;
   id: number | string;
   institution_id: number | string;
   fee_name: string;
@@ -46,6 +51,8 @@ export function toRateFees(rows: RateFeeDbRow[]): RateFee[] {
       frequency: row.frequency ?? null,
       conditions: readerFeeConditions(row.conditions),
       source_url: row.source_url ?? null,
+      fee_audience: row.fee_audience ?? "unknown",
+      fee_treatment: row.fee_treatment ?? "unknown",
       amount_kind: row.amount_kind,
       rate_percent: Number(row.rate_percent),
       rate_min_amount: row.rate_min_amount == null ? null : Number(row.rate_min_amount),
@@ -57,14 +64,15 @@ export function toRateFees(rows: RateFeeDbRow[]): RateFee[] {
   return fees;
 }
 
-/** The live percentage fees of one institution. */
-export async function getRateFeesByInstitution(institutionId: number): Promise<RateFee[]> {
+/** All audiences remain available for labeled institution display; comparisons opt in to consumer evidence. */
+export async function getRateFeesByInstitution(institutionId: number, scope: "all" | "consumer" = "all"): Promise<RateFee[]> {
   const rows = await sql<RateFeeDbRow[]>`
     SELECT ef.id, ef.institution_id, ef.fee_name, ef.fee_category, ef.frequency, ef.conditions,
            ef.source_url, ef.amount_kind, ef.rate_percent, ef.rate_min_amount, ef.rate_max_amount,
-           ef.rate_basis
+           ef.rate_basis, ef.fee_audience, ef.fee_treatment
       FROM published_fee_rate_catalog ef
      WHERE ef.institution_id = ${institutionId}
+       AND ${sql.unsafe(scope === "consumer" ? STATS_ROW_FILTER : "TRUE")}
      ORDER BY ef.fee_category ASC NULLS LAST, ef.fee_name ASC
   `;
   return toRateFees(rows);

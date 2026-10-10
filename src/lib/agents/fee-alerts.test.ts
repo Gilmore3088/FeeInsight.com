@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  sql: vi.fn(),
+  sql: Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) }),
   withConfirmedMovements: vi.fn(),
   sendResendEmail: vi.fn(),
   getTransactionalFromAddress: vi.fn(() => "alerts@feeinsight.com"),
@@ -48,7 +48,7 @@ function movement(overrides: Partial<CandidateRow> = {}, movements: unknown[] = 
       batch_id: "b1",
       movements: movements.length
         ? movements
-        : [{ canonical_fee_key: "overdraft", fee_name: "Overdraft fee", previous_amount: 32, new_amount: 35, amount_delta: 3 }],
+        : [{ canonical_fee_key: "overdraft", fee_name: "Overdraft fee", fee_audience: "consumer", previous_amount: 32, new_amount: 35, amount_delta: 3 }],
     },
     ...overrides,
   };
@@ -58,7 +58,7 @@ function publication(keys: string[], overrides: Partial<CandidateRow> = {}): Can
   return movement({
     signal_id: "sig-pub",
     signal_type: "hamilton_publication_completed",
-    source_json: { batch_id: "b1", canonical_fee_keys: keys },
+    source_json: { batch_id: "b1", canonical_fee_keys: keys, consumer_canonical_fee_keys: keys },
     ...overrides,
   });
 }
@@ -71,19 +71,36 @@ describe("groupFeeAlertCandidates", () => {
   it("keeps only fees the reader follows", () => {
     const [digest] = groupFeeAlertCandidates([
       movement({}, [
-        { canonical_fee_key: "overdraft", previous_amount: 32, new_amount: 35 },
-        { canonical_fee_key: "nsf", previous_amount: 30, new_amount: 25 },
+        { canonical_fee_key: "overdraft", fee_audience: "consumer", previous_amount: 32, new_amount: 35 },
+        { canonical_fee_key: "nsf", fee_audience: "consumer", previous_amount: 30, new_amount: 25 },
       ]),
     ]);
     expect(digest.institutions[0].changes.map((change) => change.category)).toEqual(["overdraft"]);
     expect(digest.institutions[0].changes[0].delta).toBe(3);
   });
 
+  it("fails closed on movement audience and ignores business or unknown price changes", () => {
+    const [digest] = groupFeeAlertCandidates([
+      movement({ fee_categories: null }, [
+        { canonical_fee_key: "overdraft", fee_audience: "business", previous_amount: 32, new_amount: 35 },
+        { canonical_fee_key: "nsf", previous_amount: 30, new_amount: 25 },
+      ]),
+    ]);
+    expect(digest.institutions).toEqual([]);
+  });
+
+  it("fails closed on old publication signals that do not name consumer-applicable keys", () => {
+    const row = publication(["nsf"], { fee_categories: null });
+    row.source_json = { batch_id: "old", canonical_fee_keys: ["nsf"] };
+    const [digest] = groupFeeAlertCandidates([row]);
+    expect(digest.institutions).toEqual([]);
+  });
+
   it("treats a null category list as every fee", () => {
     const [digest] = groupFeeAlertCandidates([
       movement({ fee_categories: null }, [
-        { canonical_fee_key: "overdraft", previous_amount: 32, new_amount: 35 },
-        { canonical_fee_key: "nsf", previous_amount: 30, new_amount: 25 },
+        { canonical_fee_key: "overdraft", fee_audience: "consumer", previous_amount: 32, new_amount: 35 },
+        { canonical_fee_key: "nsf", fee_audience: "consumer", previous_amount: 30, new_amount: 25 },
       ]),
     ]);
     expect(digest.institutions[0].changes).toHaveLength(2);
@@ -118,7 +135,7 @@ describe("groupFeeAlertCandidates", () => {
   it("tolerates source_json stored as a JSON string", () => {
     const [digest] = groupFeeAlertCandidates([
       movement({
-        source_json: JSON.stringify({ movements: [{ canonical_fee_key: "overdraft", previous_amount: 30, new_amount: 28 }] }),
+        source_json: JSON.stringify({ movements: [{ canonical_fee_key: "overdraft", fee_audience: "consumer", previous_amount: 30, new_amount: 28 }] }),
       }),
     ]);
     expect(digest.institutions[0].changes[0].delta).toBe(-2);
@@ -146,6 +163,7 @@ describe("runFeeAlertDispatch", () => {
   beforeEach(() => {
     vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
     mocks.sql.mockReset();
+    mocks.sql.unsafe.mockClear();
     mocks.sendResendEmail.mockReset();
     mocks.getTransactionalFromAddress.mockReturnValue("alerts@feeinsight.com");
     mocks.withConfirmedMovements.mockReset();
