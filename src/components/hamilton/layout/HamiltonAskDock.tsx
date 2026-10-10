@@ -34,7 +34,7 @@ export function HamiltonAskDock({ selectedInstitutionId, navigationContext }: { 
   if (pathname.startsWith("/pro/analyze") || pathname.startsWith("/pro/simulate/plan")) return null;
   // This composer asks about one institution. A market selection must stay in its
   // existing research workflow instead of silently asking about a saved default.
-  if (navigationContext?.invalid || navigationContext?.unresolved || (navigationContext?.artifact && !navigationContext.institutionId)
+  if ((navigationContext && !navigationContext.institutionId) || navigationContext?.invalid || navigationContext?.unresolved
     || (navigationContext?.research && navigationContext.research.scope.kind !== "local")) return null;
 
   const fee = searchParams.get("fee") ?? searchParams.get("category");

@@ -36,4 +36,10 @@ describe("HamiltonAskDock", () => {
     view.rerender(<HamiltonAskDock selectedInstitutionId="1535" navigationContext={{ institutionId: "1535", research: null, artifact: false, invalid: false }} />);
     expect(screen.getByRole("search").querySelector('input[name="instId"]')).toHaveAttribute("value", "1535");
   });
+
+  it("does not submit a contextless reference-route question into an unrelated saved default", () => {
+    render(<HamiltonAskDock selectedInstitutionId={null} navigationContext={{ institutionId: null, research: null, artifact: false, invalid: false }} />);
+    expect(screen.queryByRole("button", { name: /Ask Hamilton/ })).toBeNull();
+    expect(screen.queryByRole("search")).toBeNull();
+  });
 });
