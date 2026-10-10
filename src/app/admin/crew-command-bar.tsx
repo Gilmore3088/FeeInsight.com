@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { triggerAgentRunExecution } from "@/lib/agents/client-execution";
 import type { CrewReply } from "@/lib/agents/crew-execute";
 import { askCrew, confirmCrewCommand } from "./crew-actions";
@@ -23,7 +22,6 @@ interface Exchange {
 }
 
 export function CrewCommandBar() {
-  const router = useRouter();
   const [text, setText] = useState("");
   const [history, setHistory] = useState<Exchange[]>([]);
   const [pending, startTransition] = useTransition();
@@ -65,7 +63,6 @@ export function CrewCommandBar() {
             startedAt: new Date().toISOString(),
           },
         }));
-        router.refresh();
       }
       const succeeded = reply.runId !== undefined
         || !reply.lines.some((line) => /something went wrong|unauthorized|not found/i.test(line));
