@@ -69,7 +69,7 @@ const verifiedFee = {
   document_r2_key: null,
   extraction_confidence: "0.9200",
   canonical_fee_key: "overdraft",
-  fee_audience: "consumer",
+  fee_audience: "consumer" as const,
   variant_type: null,
   outlier_flags: ["agentic_darwin_verified"],
   verified_by_agent_event_id: "00000000-0000-4000-8000-000000000801",
