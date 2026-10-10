@@ -15,13 +15,13 @@ export const PRO_WORKSPACE_FEATURES: readonly ProFeature[] = [
     key: "benchmarking",
     label: "This month",
     href: "/pro/hamilton",
-    description: "Where your fees sit against peer medians, with the number of institutions behind each one.",
+    description: "Where the selected institution's published fees sit against peer medians, with the number of institutions behind each one.",
   },
   {
     key: "my_fees",
     label: "My fees",
     href: "/pro/research",
-    description: "One fee at a time against your peers, your state and the nation, with the filings behind it.",
+    description: "Compare one institution's published fee at a time with peer, state and national benchmarks, with the filings behind it.",
   },
   {
     key: "analysis",
@@ -33,13 +33,13 @@ export const PRO_WORKSPACE_FEATURES: readonly ProFeature[] = [
     key: "scenario_modeling",
     label: "Try a price",
     href: "/pro/simulate",
-    description: "See where a different fee would land among your peers, and the notice and approvals a change takes.",
+    description: "See where a different fee would land among the selected institution's peers, and the notice and approvals a change takes.",
   },
   {
     key: "reports",
     label: "Reports",
     href: "/pro/reports",
-    description: "Board-ready reports written from your bank's verified fee schedule.",
+    description: "Board-ready reports written from the selected institution's verified fee schedule.",
   },
   {
     key: "market_monitor",

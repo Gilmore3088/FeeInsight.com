@@ -43,7 +43,7 @@ import { isCappedConsultant } from "@/lib/hamilton/report-cap";
 import { CONSULTANT_MONTHLY_REPORTS } from "@/lib/pro-tiers";
 
 export const metadata: Metadata = {
-  title: "My bank and data",
+  title: "Research and data",
 };
 
 const PLAN_LABEL: Record<string, string> = {
@@ -54,8 +54,8 @@ const PLAN_LABEL: Record<string, string> = {
 };
 
 /**
- * My bank and data (reached from the Account menu), in the living-memo layout.
- * The bank picked here is the one Hamilton works on across every screen.
+ * Research and data (reached from the Account menu), in the living-memo layout.
+ * Research selection is separate from authenticated institution membership.
  */
 export default async function SettingsPage({
   searchParams,
@@ -183,12 +183,12 @@ export default async function SettingsPage({
   return (
     <MemoPage>
       <MemoHeader
-        kicker="Account"
-        title="My bank and data"
+        kicker="Settings"
+        title="Research and data"
         dek={
           selectedInstitution
-            ? `Hamilton is working on ${selectedInstitution.name}.`
-            : "Pick your bank so Hamilton can compare your fees with your peers."
+            ? `Research institution: ${selectedInstitution.name}.`
+            : "Choose an institution for Hamilton's fee research and peer comparisons."
         }
         actions={
           <>
@@ -202,12 +202,8 @@ export default async function SettingsPage({
       />
 
       <MemoSection
-        title="Your bank"
-        note={
-          selectedInstitution
-            ? "Every screen starts from this bank."
-            : "Choose your bank so Hamilton can compare your fees with your peers."
-        }
+        title="Research institution"
+        note="Choose the institution Hamilton researches. Account membership and workspace access are separate."
       >
         <div className={panel}>
           <WorkspaceInstitutionForm
@@ -230,7 +226,7 @@ export default async function SettingsPage({
       <MemoSection
         id="peer-sets"
         title="Peer groups"
-        note="Who your fees are compared with."
+        note="Who the research institution's fees are compared with."
       >
         <div className={`${panel} scroll-mt-24`}>
           <PeerSetManager
@@ -257,7 +253,7 @@ export default async function SettingsPage({
       <MemoSection
         id="workspace-access"
         title="Team access"
-        note="Colleagues see the same bank and saved work."
+        note="Manage institution workspace access separately from research selection."
       >
         <div className={`${panel} scroll-mt-24`}>
           <WorkspaceAccessManager
@@ -314,7 +310,7 @@ export default async function SettingsPage({
               href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/pro/analyze"}
               className="mt-3 inline-block text-sm font-medium text-terra-text underline decoration-terra/40 underline-offset-2 hover:decoration-terra"
             >
-              Ask Hamilton about your bank
+              Ask Hamilton about this institution
             </Link>
           </div>
 
@@ -361,7 +357,7 @@ export default async function SettingsPage({
 
       <MemoSection
         title="What your plan includes"
-        note="Each link opens on the bank you picked above."
+        note="Each link opens on the research institution selected above."
       >
         <FeatureToggles selectedInstitutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
       </MemoSection>
