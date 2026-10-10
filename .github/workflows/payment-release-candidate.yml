@@ -53,23 +53,16 @@ jobs:
         run: |
           set -euo pipefail
           psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
-          psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
-          BEGIN
-            IF NOT EXISTS (
-              SELECT 1 FROM information_schema.columns
-              WHERE table_schema='public' AND table_name='raw_fee_observations' AND column_name='fee_audience'
-            ) THEN RAISE EXCEPTION 'Pinnacle migration 40 schema is not present in production snapshot'; END IF;
-            IF NOT EXISTS (
-              SELECT 1 FROM information_schema.columns
-              WHERE table_schema='public' AND table_name='verified_fee_observations' AND column_name='fee_audience'
-            ) THEN RAISE EXCEPTION 'verified fee audience column missing'; END IF;
-            IF NOT EXISTS (
-              SELECT 1 FROM information_schema.columns
-              WHERE table_schema='public' AND table_name='published_fee_records' AND column_name='fee_audience'
-            ) THEN RAISE EXCEPTION 'published fee audience column missing'; END IF;
-          END $;
-          SQL
+          for spec in \
+            raw_fee_observations:fee_audience \
+            verified_fee_observations:fee_audience \
+            published_fee_records:fee_audience
+          do
+            table="${spec%%:*}"
+            column="${spec##*:}"
+            count="$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}' AND column_name='${column}'")"
+            test "$count" = "1"
+          done
       - name: Apply Pinnacle correction 41 then payment 42 → 43
         run: |
           set -euo pipefail
@@ -84,41 +77,19 @@ jobs:
       - name: Assert payment schema and access controls
         run: |
           set -euo pipefail
-          psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 <<'SQL'
-          DO $$
-          BEGIN
-            IF to_regclass('public.pro_checkout_intents') IS NULL THEN
-              RAISE EXCEPTION 'pro_checkout_intents missing';
-            END IF;
-            IF to_regclass('public.payment_email_outbox') IS NULL THEN
-              RAISE EXCEPTION 'payment_email_outbox missing';
-            END IF;
-            IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid='public.pro_checkout_intents'::regclass) THEN
-              RAISE EXCEPTION 'checkout intents RLS disabled';
-            END IF;
-            IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid='public.payment_email_outbox'::regclass) THEN
-              RAISE EXCEPTION 'payment outbox RLS disabled';
-            END IF;
-            IF has_table_privilege('anon','public.pro_checkout_intents','SELECT')
-              OR has_table_privilege('authenticated','public.pro_checkout_intents','SELECT')
-              OR has_table_privilege('anon','public.payment_email_outbox','SELECT')
-              OR has_table_privilege('authenticated','public.payment_email_outbox','SELECT') THEN
-              RAISE EXCEPTION 'client role can read private payment tables';
-            END IF;
-            IF NOT has_table_privilege('service_role','public.pro_checkout_intents','SELECT,INSERT,UPDATE') THEN
-              RAISE EXCEPTION 'service_role checkout privileges missing';
-            END IF;
-            IF NOT has_table_privilege('service_role','public.payment_email_outbox','SELECT,INSERT,UPDATE') THEN
-              RAISE EXCEPTION 'service_role outbox privileges missing';
-            END IF;
-            IF to_regclass('public.pro_checkout_one_current_per_user') IS NULL THEN
-              RAISE EXCEPTION 'checkout uniqueness index missing';
-            END IF;
-            IF to_regclass('public.payment_email_due') IS NULL OR to_regclass('public.payment_email_event') IS NULL THEN
-              RAISE EXCEPTION 'outbox indexes missing';
-            END IF;
-          END $$;
-          SQL
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT (to_regclass('public.pro_checkout_intents') IS NOT NULL)::int")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT (to_regclass('public.payment_email_outbox') IS NOT NULL)::int")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT relrowsecurity::int FROM pg_class WHERE oid='public.pro_checkout_intents'::regclass")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT relrowsecurity::int FROM pg_class WHERE oid='public.payment_email_outbox'::regclass")" = "1"
+          for role in anon authenticated
+          do
+            test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT has_table_privilege('${role}','public.pro_checkout_intents','SELECT')::int")" = "0"
+            test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT has_table_privilege('${role}','public.payment_email_outbox','SELECT')::int")" = "0"
+          done
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT has_table_privilege('service_role','public.pro_checkout_intents','SELECT,INSERT,UPDATE')::int")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT has_table_privilege('service_role','public.payment_email_outbox','SELECT,INSERT,UPDATE')::int")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT (to_regclass('public.pro_checkout_one_current_per_user') IS NOT NULL)::int")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT ((to_regclass('public.payment_email_due') IS NOT NULL) AND (to_regclass('public.payment_email_event') IS NOT NULL))::int")" = "1"
       - name: Install and execute payment integration tests
         run: |
           set -euo pipefail
