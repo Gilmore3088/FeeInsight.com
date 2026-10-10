@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import type { FeeAudience } from "@/lib/fee-audience";
 import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
@@ -35,7 +36,7 @@ type SqlTag = typeof sql;
  */
 // v3: consumer/both-only source-grounded peer population; unknown/business inputs skip checks.
 export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 3 } as const;
-export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 1 } as const;
+export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 2 } as const;
 
 /** Flag on a verified row whose amount another stored document confirms. */
 export const SECOND_SOURCE_FLAG = "second_source_agrees";
@@ -247,6 +248,7 @@ export interface SourceCopy {
   sourceDocumentId: number;
   canonicalFeeKey: string;
   amount: number;
+  feeAudience: FeeAudience;
 }
 
 export interface SecondSourceResult {
@@ -262,13 +264,25 @@ export interface SecondSourceResult {
  * no other document has this fee (nothing to compare).
  */
 export function secondSourceCheck(
-  row: { feeRawId: number; institutionId: number; sourceDocumentId: number | null; canonicalFeeKey: string; amount: number },
+  row: {
+    feeRawId: number;
+    institutionId: number;
+    sourceDocumentId: number | null;
+    canonicalFeeKey: string;
+    amount: number;
+    feeAudience: FeeAudience;
+  },
   copies: readonly SourceCopy[],
 ): SecondSourceResult | null {
-  if (row.sourceDocumentId == null) return null;
+  if (row.sourceDocumentId == null || row.feeAudience === "unknown") return null;
+  const audienceMatches = (copyAudience: FeeAudience) =>
+    copyAudience !== "unknown" &&
+    (copyAudience === row.feeAudience ||
+      (row.feeAudience !== "both" && copyAudience === "both"));
   const others = copies.filter((copy) =>
     copy.institutionId === row.institutionId &&
     copy.canonicalFeeKey === row.canonicalFeeKey &&
+    audienceMatches(copy.feeAudience) &&
     copy.sourceDocumentId !== row.sourceDocumentId &&
     copy.feeRawId !== row.feeRawId,
   );
@@ -306,8 +320,10 @@ export async function loadSourceCopies(
     amount: number | string;
     outlier_flags: unknown;
     conditions: string | null;
+    fee_audience: FeeAudience | null;
   }>>`
-    SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.amount, fr.outlier_flags, fr.conditions
+    SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.amount, fr.outlier_flags, fr.conditions,
+           fr.fee_audience
       FROM raw_fee_observations fr
      WHERE fr.source = 'knox'
        AND fr.institution_id = ANY(${institutionIds}::int[])
@@ -325,6 +341,7 @@ export async function loadSourceCopies(
       sourceDocumentId: Number(row.source_document_id),
       canonicalFeeKey,
       amount: Number(row.amount),
+      feeAudience: row.fee_audience ?? "unknown",
     });
   }
   return copies;
