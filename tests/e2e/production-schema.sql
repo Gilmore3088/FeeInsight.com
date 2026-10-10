@@ -3160,3 +3160,16 @@ ALTER TABLE public.source_documents ADD COLUMN IF NOT EXISTS companion_source_id
 CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
   ON public.source_documents (companion_source_id, id DESC)
   WHERE companion_source_id IS NOT NULL;
+
+-- Fixture alignment with canonical migrations 20270110000004 and 20270110000030.
+-- Test-only schema: mirror current-copy identity and like-for-like fee-change pairing.
+-- No production migration or historical data backfill is executed by this fixture.
+ALTER TABLE public.source_documents
+  ADD COLUMN superseded_by_id bigint REFERENCES public.source_documents(id) ON DELETE SET NULL;
+CREATE INDEX source_documents_current_page_idx
+  ON public.source_documents (institution_id, document_url)
+  WHERE status = 'success' AND duplicate_of_id IS NULL AND superseded_by_id IS NULL;
+ALTER TABLE public.fee_change_records
+  ADD COLUMN previous_fee_published_id bigint,
+  ADD COLUMN new_fee_published_id bigint,
+  ADD COLUMN like_for_like boolean;
