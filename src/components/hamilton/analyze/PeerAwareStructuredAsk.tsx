@@ -65,9 +65,11 @@ function PeerListRequest({
         const data = await response.json() as PeerListResponse;
         if (data.kind !== "peer_list" || data.peerList?.version !== 1 || !Array.isArray(data.peerList.rows)) throw new Error("Unexpected peer list response");
         if (!current) return;
+        // Commit the parent conversation snapshot before revealing the table, so
+        // an immediate next question has its exact peer IDs and dated sources.
+        onResolved(data, submittedPrior);
         setResponse(data);
         onLead?.(data.shortAnswer);
-        onResolved(data, submittedPrior);
       } catch {
         if (current) setError("The peer list could not be loaded. Retry it; no report or paid fallback was started.");
       } finally { if (current) onBusyChange?.(false); }
