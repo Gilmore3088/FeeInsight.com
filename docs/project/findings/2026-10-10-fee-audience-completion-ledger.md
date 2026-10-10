@@ -111,6 +111,12 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 - A rollback-only populated preview rehearsal seeded all 32 exact publication/raw/verified/source IDs into migrated preview `zqjwpjujroahhqtncycv`, executed the script's exact preconditions and postconditions, then ROLLED BACK. All assertions passed. Final counts: institutions=0, raw=0, published=0.
 - The existing Atlas priority-institution path already includes Pinnacle institution 47 and runs free `fetch -> read -> extract -> classify -> publish` steps. No synthetic repair runner or fabricated verification event is needed after migration 41 quarantines the bad Pinnacle lineage.
 
+## October 10 continuation: combined schema compatibility
+
+- Payment owners renumbered their still-unshipped migrations to `20270110000042_pro_checkout_intents.sql` (#990 head `dc78356f4525519f0faa7d0088327e00bbf7bced`) and `20270110000043_payment_email_outbox.sql` (#991 head `3ebf7d4c6a38cd5d8de9ab0fd4fe54923fdb1d0f`).
+- On FeeInsight preview, with #986 migrations 40/41 already installed, the exact current 42 and 43 SQL applied inside a transaction. Assertions passed that both tables existed, both had RLS enabled, and anon/authenticated had no SELECT privileges. The transaction ROLLED BACK and both temporary tables disappeared.
+- Combined-schema receipt posted to #990, #991, #984 and #986. No migration history or persistent preview/production data changed.
+
 ## Remaining acceptance gates
 
 ### 1. Final-head CI and regression integrity
