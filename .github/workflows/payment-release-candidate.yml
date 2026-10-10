@@ -48,12 +48,31 @@ jobs:
           sudo -u postgres createdb payment_release
           sudo -u postgres createdb feeinsight_billing_test
           sudo -u postgres createdb feeinsight_billing_test_outbox
-      - name: Apply production snapshot then 40 → 41 → 42 → 43
+      - name: Load current production-schema snapshot and assert Pinnacle 40 is baked in
         run: |
           set -euo pipefail
           psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
+          psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 <<'SQL'
+          DO $
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='raw_fee_observations' AND column_name='fee_audience'
+            ) THEN RAISE EXCEPTION 'Pinnacle migration 40 schema is not present in production snapshot'; END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='verified_fee_observations' AND column_name='fee_audience'
+            ) THEN RAISE EXCEPTION 'verified fee audience column missing'; END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='published_fee_records' AND column_name='fee_audience'
+            ) THEN RAISE EXCEPTION 'published fee audience column missing'; END IF;
+          END $;
+          SQL
+      - name: Apply Pinnacle correction 41 then payment 42 → 43
+        run: |
+          set -euo pipefail
           for file in \
-            supabase/migrations/20270110000040_fee_audience_integrity.sql \
             supabase/migrations/20270110000041_pinnacle_audience_correction.sql \
             supabase/migrations/20270110000042_pro_checkout_intents.sql \
             supabase/migrations/20270110000043_payment_email_outbox.sql
@@ -109,5 +128,5 @@ jobs:
             --maxWorkers=1
       - name: Payment release-candidate summary
         run: |
-          echo 'Canonical 40→41→42→43 migration sequence and 17 payment PostgreSQL integration tests passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Current production-schema snapshot contains Pinnacle 40; Pinnacle 41 then payment 42→43 applied cleanly; 17 payment PostgreSQL integration tests passed.' >> "$GITHUB_STEP_SUMMARY"
           echo 'This verifies disposable PostgreSQL only; it does not migrate production or contact Stripe/Resend.' >> "$GITHUB_STEP_SUMMARY"
