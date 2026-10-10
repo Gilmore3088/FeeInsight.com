@@ -16,11 +16,11 @@ closed. An unreceipted intent older than 23 hours moves to review instead of
 reusing a provider key beyond its guaranteed 24-hour deduplication window.
 No customer is charged, refunded, or emailed by the tests.
 
-Migration 20270110000040 adds a private RLS-enabled checkout-intent table and
+Migration 20270110000042 adds a private RLS-enabled checkout-intent table and
 unique indexes. Generated with Supabase CLI and renumbered after the repository's
-existing 20270110000039 baseline. It does not rewrite payments, users, fees, or
+Pinnacle's reserved 20270110000040/41 migrations after direct history verification. It does not rewrite payments, users, fees, or
 subscription state. Deploy the reviewed additive migration before code activation;
-no production migration has been run. Rolling code back leaves reservations for
+production still ends at 20270110000039; no payment migration has been run there. The existing R04 preview recorded the superseded checkout migration as 40, so version 42 validates that pre-existing preview table instead of rewriting preview history. Rolling code back leaves reservations for
 recovery and returns to the old, unprotected checkout, so pausing checkout is safer
 than dropping the new table while requests may still be running.
 
