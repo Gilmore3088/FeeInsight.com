@@ -17,6 +17,7 @@ import {
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
 import { subscribeReason } from "@/lib/subscribe-reason";
+import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 
 export const metadata: Metadata = {
   title: {
@@ -53,8 +54,15 @@ async function HamiltonLayoutInner({
   }
 
   if (!user || !canAccessPremium(user)) {
-    // The /pro layout normally handles this first; never render a dead-end gate here.
-    redirect(`/subscribe?from=%2Fpro%2Fhamilton&reason=${user ? subscribeReason(user) : "pro_required"}`);
+    // Nested layouts may resolve concurrently. Preserve the selection whichever
+    // access gate redirects first, just as the outer /pro layout does.
+    const requestHeaders = await headers();
+    const returnTo = sanitizeInternalRedirect(
+      requestHeaders.get("x-invoke-path") || requestHeaders.get("x-next-url") || requestHeaders.get("x-pathname") || "/pro/hamilton",
+      "/pro/hamilton",
+    );
+    if (!user) redirect(`/login?from=${encodeURIComponent(returnTo)}`);
+    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}&reason=${subscribeReason(user)}`);
   }
 
   const isAdmin = user.role === "admin" || user.role === "analyst";
