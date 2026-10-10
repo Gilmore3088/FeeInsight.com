@@ -6,7 +6,7 @@
  * represents a prepared selection, never permission to execute a paid request.
  * The host Analyze page supplies a server-validated selection after Pro auth.
  */
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
   localRequestFromLanding,
@@ -32,19 +32,15 @@ function statusText(measure: GeographicFeeMeasure): string {
 }
 
 export function LandingResearchResults({ selection }: { selection: LandingResearchHandoff }) {
+  // Unmount results and pending requests whenever the complete explicit scope changes.
+  return <LandingResearchResultsForSelection key={JSON.stringify(selection)} selection={selection} />;
+}
+
+function LandingResearchResultsForSelection({ selection }: { selection: LandingResearchHandoff }) {
   const [result, setResult] = useState<Result | null>(null);
   const [status, setStatus] = useState<"ready" | "loading" | "done" | "error">("ready");
   const [message, setMessage] = useState<string | null>(null);
   const requestGeneration = useRef(0);
-  const selectionKey = JSON.stringify(selection);
-
-  // A changed research selection invalidates both any visible result and in-flight response.
-  useEffect(() => {
-    requestGeneration.current += 1;
-    setResult(null);
-    setStatus("ready");
-    setMessage(null);
-  }, [selectionKey]);
   const scopeLabel = selection.scope.kind === "national"
     ? "United States"
     : selection.scope.kind === "state"
