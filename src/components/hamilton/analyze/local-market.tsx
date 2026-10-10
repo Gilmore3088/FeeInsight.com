@@ -11,6 +11,7 @@ import { REPORT_DESIGN_CSS } from "@/lib/report-design/css";
 import { RD } from "@/lib/report-design/tokens";
 import { Exhibit, HeroFigures } from "@/components/report-design";
 import { shortBankName } from "@/lib/hamilton/studies-exhibits/market";
+import { hamiltonIdentityLines } from "@/lib/hamilton/identity-display";
 
 /** "$1.2B", "$850M", "$40K". */
 export function fmtDeposits(v: number): string {
@@ -73,7 +74,7 @@ function HoldersTable({ data }: { data: LocalMarketAnswer }) {
                 <td>
                   <Swatch color={colour} ring={r.charterType === "credit_union" && !r.own} />
                   {shortBankName(r.name)}
-                  {r.own ? " (you)" : r.charterType === "credit_union" ? " · CU" : ""}
+                  {r.own ? " (research subject)" : r.charterType === "credit_union" ? " · CU" : ""}
                 </td>
                 <td className="num">{r.branches ?? "n/a"}</td>
                 <td className="num">{r.deposits != null ? fmtDeposits(r.deposits) : r.charterType === "credit_union" ? "not reported" : "n/a"}</td>
@@ -126,8 +127,8 @@ function CitiesTable({ data }: { data: LocalMarketAnswer }) {
 
 function feeMark(theirs: number | undefined, yours: number | undefined) {
   if (theirs == null || yours == null) return null;
-  if (Math.abs(theirs - yours) < 0.005) return { sign: "=", color: RD.muted, label: "same as yours" };
-  return theirs > yours ? { sign: "▲", color: RD.ink, label: "higher than yours" } : { sign: "▼", color: RD.terraText, label: "lower than yours" };
+  if (Math.abs(theirs - yours) < 0.005) return { sign: "=", color: RD.muted, label: "same as the research subject" };
+  return theirs > yours ? { sign: "▲", color: RD.ink, label: "higher than the research subject" } : { sign: "▼", color: RD.terraText, label: "lower than the research subject" };
 }
 
 /** What the market publishes for the main fees, the bank's row first; each cell marked against the bank's own price. */
@@ -148,7 +149,7 @@ function FeeTable({ data, cats }: { data: LocalMarketAnswer; cats: string[] }) {
         </thead>
         <tbody>
           <tr className="rd-subject">
-            <td>{shortBankName(data.institutionName)} (you)</td>
+            <td>{shortBankName(data.institutionName)} (research subject)</td>
             {cats.map((c) => (
               <td key={c} className="num">
                 {data.you.fees[c] != null ? fmtMoney(data.you.fees[c]) : <span style={{ color: RD.muted }}>·</span>}
@@ -195,7 +196,7 @@ function feeHeadline(data: LocalMarketAnswer, cats: string[]): string {
   const theirs = data.competitors.map((r) => r.fees[cat]).filter((v): v is number => v != null);
   const higher = theirs.filter((v) => v - yours >= 0.005).length;
   const lower = theirs.filter((v) => yours - v >= 0.005).length;
-  return `Of ${plural(theirs.length, "competitor", "competitors")} with ${article(shortFee(cat))} ${shortFee(cat).toLowerCase()} fee on file, ${higher} ${higher === 1 ? "is" : "are"} higher than your ${fmtMoney(yours)} and ${lower} lower`;
+  return `Of ${plural(theirs.length, "competitor", "competitors")} with ${article(shortFee(cat))} ${shortFee(cat).toLowerCase()} fee on file, ${higher} ${higher === 1 ? "is" : "are"} higher than ${data.institutionName}’s ${fmtMoney(yours)} and ${lower} lower`;
 }
 
 export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
@@ -204,8 +205,8 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
     data.you.depositsInMarket != null && data.marketDeposits ? Math.round((data.you.depositsInMarket / data.marketDeposits) * 1000) / 10 : null;
   const basis =
     data.market.basis === "branch_counties"
-      ? `The market is the ${data.market.countyCount === 1 ? "county" : `${data.market.countyCount} counties`} where you hold the most deposits.`
-      : `The market is the ${data.market.countyCount === 1 ? "county" : "counties"} around your headquarters city.`;
+      ? `The market is the ${data.market.countyCount === 1 ? "county" : `${data.market.countyCount} counties`} where ${data.institutionName} holds the most deposits.`
+      : `The market is the ${data.market.countyCount === 1 ? "county" : "counties"} around ${data.institutionName}’s headquarters city.`;
   const sod = `FDIC Summary of Deposits, June 30, ${data.market.sodYear}`;
   const ranked = holders(data);
   const leader = ranked.find((r) => !r.own);
@@ -220,19 +221,22 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
         {REPORT_DESIGN_CSS}
       </style>
       <header className="rd-cover">
-        <div className="rd-eyebrow">Your local market</div>
+        <div className="rd-eyebrow">Local market research</div>
         <h1 className="rd-title">
-          {competitorCount} {competitorCount === 1 ? "institution competes" : "institutions compete"} with you in the {data.market.label}
+          {competitorCount} {competitorCount === 1 ? "institution competes" : "institutions compete"} with {data.institutionName} in the {data.market.label}
         </h1>
         <p className="rd-deck">{basis}</p>
+        {hamiltonIdentityLines(data.identityContext).map((line) => (
+          <p key={line} className="rd-source not-italic">{line}</p>
+        ))}
         <HeroFigures
           heroes={[
-            { figure: String(data.you.branches), label: "Your branches, everywhere" },
+            { figure: String(data.you.branches), label: "Research subject branches, everywhere" },
             {
               figure: data.you.branchesInMarket != null ? String(data.you.branchesInMarket) : "n/a",
-              label: data.marketBranches != null ? `Your branches here, of ${data.marketBranches} bank branches` : "Your branches in this market",
+              label: data.marketBranches != null ? `Research subject branches here, of ${data.marketBranches} bank branches` : "Research subject branches in this market",
             },
-            { figure: ownShare != null ? `${ownShare}%` : "n/a", label: ownShare != null ? "Your share of local bank deposits" : "Credit unions report no deposits by branch" },
+            { figure: ownShare != null ? `${ownShare}%` : "n/a", label: ownShare != null ? "Research subject share of local bank deposits" : "Credit unions report no deposits by branch" },
             { figure: String(competitorCount), label: "Competitors shown" },
           ]}
         />
@@ -250,7 +254,7 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
             panels: [{ html: data.map.html }],
             source:
               data.charterType === "credit_union"
-                ? `Source: ${sod} (bank branches); NCUA credit union branch file (your branches, drawn as rings since credit unions report no deposits by branch).`
+                ? `Source: ${sod} (bank branches); NCUA credit union branch file (research subject branches, drawn as rings since credit unions report no deposits by branch).`
                 : `Source: ${sod}.`,
           }}
         >
@@ -266,8 +270,8 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
           title: !leader
             ? "Who holds the market"
             : ranked[0]?.own
-              ? `You have the most branches here (${ranked[0].branches ?? 0}); ${shortBankName(leader.name)} is next with ${leader.branches ?? 0}`
-              : `${shortBankName(leader.name)} has the most branches here (${leader.branches ?? 0}); you have ${data.you.branchesInMarket ?? "none on file"}`,
+              ? `${data.institutionName} has the most branches here (${ranked[0].branches ?? 0}); ${shortBankName(leader.name)} is next with ${leader.branches ?? 0}`
+              : `${shortBankName(leader.name)} has the most branches here (${leader.branches ?? 0}); ${data.institutionName} has ${data.you.branchesInMarket ?? "none on file"}`,
           sub: "Ranked by branches in the market. Deposits are reported for banks only.",
           source: `Source: ${sod} (bank branches and deposits); NCUA branch file (credit union branches, counted by city).`,
         }}
@@ -279,9 +283,9 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
         <Exhibit
           exhibit={{
             key: "market-cities",
-            label: `Exhibit ${next()} · Your branches`,
-            title: `Your ${plural(data.you.branches, "branch is", "branches are")} in ${plural(data.you.cities.length, "city", "cities")}${topCity ? `, the most in ${topCity.city} (${topCity.branches})` : ""}`,
-            sub: data.network ? "Each circle is a city, sized by your branches there. The shaded counties are the market above." : undefined,
+            label: `Exhibit ${next()} · Research subject branches`,
+            title: `${data.institutionName}: ${plural(data.you.branches, "branch is", "branches are")} in ${plural(data.you.cities.length, "city", "cities")}${topCity ? `, the most in ${topCity.city} (${topCity.branches})` : ""}`,
+            sub: data.network ? "Each circle is a city, sized by research subject branches there. The shaded counties are the market above." : undefined,
             panels: data.network ? [{ html: data.network }] : undefined,
             source: `${data.charterType === "credit_union" ? "Source: NCUA credit union branch file." : `Source: ${sod}.`}${
               data.network && data.unmapped > 0 ? ` ${plural(data.unmapped, "branch has", "branches have")} no location on file and ${data.unmapped === 1 ? "is" : "are"} left off the map.` : ""
@@ -298,8 +302,8 @@ export function LocalMarketView({ data }: { data: LocalMarketAnswer }) {
           label: `Exhibit ${next()} · Fees`,
           title: feeHeadline(data, cats),
           legend: [
-            { label: "▲ higher than yours" },
-            { label: "▼ lower than yours" },
+            { label: "▲ higher than the research subject" },
+            { label: "▼ lower than the research subject" },
             { label: "· no published amount on file" },
           ],
           notice: cats.length === 0 || !feeRows ? "No institution in this market publishes these fees yet." : undefined,

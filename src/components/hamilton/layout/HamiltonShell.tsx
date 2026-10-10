@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
+import type { HamiltonAccountContext } from "@/lib/hamilton/account-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonAskDock } from "./HamiltonAskDock";
@@ -30,6 +31,7 @@ interface HamiltonShellProps {
     selectedFromUrl?: boolean;
   };
   selectedInstitutionId?: string | null;
+  accountContext?: Pick<HamiltonAccountContext, "status" | "institution">;
   children: React.ReactNode;
 }
 
@@ -47,6 +49,7 @@ export function HamiltonShell({
   viewAsCustomer = false,
   institutionContext,
   selectedInstitutionId,
+  accountContext,
   children,
 }: HamiltonShellProps) {
   return (
@@ -88,11 +91,22 @@ export function HamiltonShell({
           <ConsumerNav />
         </div>
 
+        {accountContext ? (
+          <div aria-label="Institution context" className="border-b border-warm-300 px-4 py-2 text-sm text-warm-800">
+            <span>Researching: {selectedInstitutionId ? institutionContext.name ?? `Institution ${selectedInstitutionId}` : institutionContext.name === "Market research" ? "Market research" : "No research subject selected"}.</span>{" "}
+            <span>Account institution: {accountContext.status === "identified" && accountContext.institution
+              ? accountContext.institution.name
+              : accountContext.status === "ambiguous" ? "multiple memberships; no home selected"
+              : accountContext.status === "unavailable" ? "unavailable"
+              : "not linked"}.</span>
+          </div>
+        ) : null}
+
         {institutionContext.makeDefaultHref ? (
           <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
-            You&apos;re looking at {institutionContext.name ?? "another bank"}; your saved bank is unchanged.{" "}
+            You&apos;re researching {institutionContext.name ?? "another institution"}; your saved research preference is unchanged.{" "}
             <Link href={institutionContext.makeDefaultHref} className="font-medium text-terra-text underline">
-              Make this my bank
+              Change research preference in Settings
             </Link>
           </div>
         ) : null}

@@ -9,6 +9,7 @@ import { ANALYSIS_FOCUS_TABS, type AnalysisFocus } from "@/lib/hamilton/navigati
 import { saveAnalysis } from "@/app/pro/(hamilton)/analyze/actions";
 import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { analyzeWorkspaceKey } from "@/lib/hamilton/artifact-context";
 import { answerTitle, humanizeAnswerText, parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
 import { renderInline } from "./markdown";
@@ -307,6 +308,7 @@ function AnalyzeConversationWorkspace({
   const [input, setInput] = useState(() => (initialQuestion && !initialAnalysis ? initialQuestion : ""));
   const [isExporting, setIsExporting] = useState(false);
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
+  const [answerIdentity, setAnswerIdentity] = useState(() => readHamiltonIdentitySnapshot(initialAnalysis?.identityContext));
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
   const [lookups, setLookups] = useState<string[]>([]);
   const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
@@ -352,6 +354,7 @@ function AnalyzeConversationWorkspace({
       setLookups(lookupsUsed(parts));
       setAnsweredAt(new Date().toISOString());
       setParsedResponse(parsed);
+      setAnswerIdentity(readHamiltonIdentitySnapshot((message.metadata as { hamiltonIdentity?: unknown } | undefined)?.hamiltonIdentity));
       setSavedAnalysisId(null);
       setSaveError(null);
 
@@ -432,6 +435,7 @@ function AnalyzeConversationWorkspace({
       setStoryLead(null);
       clearError();
       setParsedResponse(null);
+      setAnswerIdentity(null);
       setFigureCheck(null);
       setAskedQuestion(trimmed);
       setAskSeq((n) => n + 1);
@@ -456,6 +460,7 @@ function AnalyzeConversationWorkspace({
     lastPromptRef.current = "";
     setAskedQuestion(null);
     setParsedResponse(null);
+    setAnswerIdentity(null);
     setStoryLead(null);
     setMessages([]);
     setConversation((c) => c + 1);
@@ -548,7 +553,7 @@ function AnalyzeConversationWorkspace({
   const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
   const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
   const complete = !isLoading && parsedResponse !== null && Boolean(view.lead);
-  const instName = selectedInstitution?.name ?? null;
+  const instName = answerIdentity?.researchInstitutionName ?? selectedInstitution?.name ?? null;
   currentLeadRef.current = view.lead || storyLead || null;
   // A reopened storyline answer is shown with its charts, as it was first answered.
   const reopenedStory = !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
@@ -723,6 +728,14 @@ function AnalyzeConversationWorkspace({
         {complete ? "Answer ready." : ""}
       </p>
 
+      {answerIdentity && (shown || reopenedStory) ? (
+        <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
+          {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+        </aside>
+      ) : initialAnalysis && !askedQuestion ? (
+        <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
+      ) : null}
+
       {reopenedStory ? (
         <StorylineView
           story={reopenedStory}
@@ -826,6 +839,8 @@ function AnalyzeConversationWorkspace({
                     detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
                     feeCategory,
                     institutionId: instId,
+                    savedAnalysisId,
+                    ...(answerIdentity ? { identityContext: answerIdentity } : {}),
                   }}
                 />
               </div> : null}

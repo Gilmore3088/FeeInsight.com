@@ -3,11 +3,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
+import type { ReportBasketItem } from "@/lib/hamilton/report-basket";
+import { sanitizeBasketItems } from "@/lib/hamilton/report-basket";
 
 type Finished = { message: { parts: Array<{ type: string; text: string }> }; isError: boolean; isAbort: boolean };
 const chat = vi.hoisted(() => ({
   options: [] as Array<{ onFinish?: (event: Finished) => Promise<void> }>,
-  send: vi.fn(), setMessages: vi.fn(), clearError: vi.fn(), stop: vi.fn(), save: vi.fn(),
+  send: vi.fn(), setMessages: vi.fn(), clearError: vi.fn(), stop: vi.fn(), save: vi.fn(), addItem: vi.fn(),
 }));
 vi.mock("@ai-sdk/react", () => ({
   useChat: (options: { onFinish?: (event: Finished) => Promise<void> }) => {
@@ -17,7 +19,7 @@ vi.mock("@ai-sdk/react", () => ({
 }));
 vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ saveAnalysis: chat.save }));
 vi.mock("./StructuredAsk", () => ({ StructuredAsk: () => null, DownloadAnswerPdf: () => <button>Download PDF</button> }));
-vi.mock("@/components/hamilton/basket/AddToReportButton", () => ({ AddToReportButton: () => <button>Add to report</button> }));
+vi.mock("@/components/hamilton/basket/AddToReportButton", () => ({ AddToReportButton: ({ item }: { item: Omit<ReportBasketItem, "addedAt"> }) => <button onClick={() => chat.addItem(item)}>Add to report</button> }));
 import { AnalyzeWorkspace, answerAuditTrail } from "./AnalyzeWorkspace";
 
 function answer(text: string): AnalyzeResponse {
@@ -31,6 +33,7 @@ beforeEach(() => {
   chat.options.length = 0;
   chat.send.mockReset(); chat.setMessages.mockReset(); chat.clearError.mockReset(); chat.stop.mockReset();
   chat.save.mockReset().mockResolvedValue({ id: "new-answer" });
+  chat.addItem.mockReset();
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -98,6 +101,32 @@ describe("AnalyzeWorkspace identity boundaries", () => {
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     expect(fetcher.mock.calls[0][0]).toBe("/api/pro/report-pdf");
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ type: "analysis", analysisId: "saved-b" });
+  });
+
+  it("reopens saved A with its original account and cohort after a visit to B, then sends A to reports", () => {
+    const identityContext = { version: 1 as const, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified" as const, researchInstitutionName: "Original Research A", accountInstitutionName: "Original Account CU", peerSetId: 42, peerBaselineLabel: "Original A cohort" };
+    const savedId = "11111111-2222-3333-4444-555555555555";
+    const savedAnswer = { ...answer("Original A answer."), identityContext };
+    const view = render(<AnalyzeWorkspace userId={7} institutionId="8109" selectedInstitution={bankB} />);
+    expect(document.body.textContent).toContain("Synthetic Bank B");
+    view.rerender(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={{ ...bankA, name: "Today's A name" }} initialAnalysisId={savedId} initialAnalysis={savedAnswer} />);
+    const context = screen.getByLabelText("Saved answer institution context");
+    expect(context.textContent).toContain("Research institution: Original Research A");
+    expect(context.textContent).toContain("Account institution: Original Account CU");
+    expect(context.textContent).toContain("Peer baseline: Original A cohort");
+    expect(context.textContent).not.toContain("Synthetic Bank B");
+    expect(context.textContent).not.toContain("Today's A name");
+    fireEvent.click(screen.getByRole("button", { name: "Add to report" }));
+    const item = chat.addItem.mock.calls[0][0];
+    expect(item.savedAnalysisId).toBe(savedId);
+    expect(item.identityContext).toEqual(identityContext);
+    expect(sanitizeBasketItems([item])[0].institutionId).toBe("2945");
+    expect(sanitizeBasketItems([item])[0].identityContext).toEqual(identityContext);
+    view.rerender(<AnalyzeWorkspace userId={7} institutionId="8109" selectedInstitution={bankB} />);
+    expect(screen.queryByLabelText("Saved answer institution context")).toBeNull();
+    expect(document.body.textContent).not.toContain("Original Account CU");
+    expect(document.body.textContent).not.toContain("Original A cohort");
+    expect(screen.queryByRole("button", { name: "Add to report" })).toBeNull();
   });
 
   it("uses subject-neutral starter prompts instead of claiming every institution is ours", () => {

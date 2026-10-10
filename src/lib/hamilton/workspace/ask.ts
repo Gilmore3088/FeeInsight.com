@@ -12,6 +12,7 @@
  * Hamilton never picks a price on its own; every tested price is the reader's.
  */
 
+import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
@@ -170,26 +171,26 @@ export function testedPricesQuestion(feeCategory: string): ClarifyingQuestion {
   };
 }
 
-function currentAmountQuestion(feeCategory: string): ClarifyingQuestion {
+function currentAmountQuestion(feeCategory: string, subject?: { subjectName?: string }): ClarifyingQuestion {
   return {
-    prompt: `What do you charge for one ${proseFeeName(feeCategory)} item today?`,
+    prompt: `${subject?.subjectName ? `What does ${subject.subjectName}` : "What do you"} charge for one ${proseFeeName(feeCategory)} item today?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.current_amount`,
   };
 }
 
 /** Asks again when an answer could not be read for its key. */
-export function clarifyAgain(fieldKey: string): AskResponse {
+export function clarifyAgain(fieldKey: string, research?: { subjectName?: string }): AskResponse {
   const fee = fieldKey.match(/^fee\.([a-z0-9_]+)\./)?.[1] ?? null;
   const question: ClarifyingQuestion =
     fieldKey === "decision.objective"
       ? objectiveQuestion()
       : fee && fieldKey.endsWith(".current_amount")
-        ? currentAmountQuestion(fee)
+        ? currentAmountQuestion(fee, research)
         : fee && fieldKey.endsWith(".annual_items")
-          ? annualItemsQuestion(fee)
+          ? annualItemsQuestion(fee, research?.subjectName)
           : fee && fieldKey.endsWith(".waiver_rate")
-            ? waiverRateQuestion(fee)
+            ? waiverRateQuestion(fee, research?.subjectName)
             : fee && fieldKey.endsWith(".annual_volume")
               ? rateVolumeQuestion(fee)
               : feeQuestion();
@@ -267,6 +268,7 @@ export function scenariosFor(research: FeeResearch, current: number, tested: num
   return tested.map((price) =>
     buildScenario({
       feeCategory: research.feeCategory,
+      subjectName: research.subjectName,
       current,
       tested: price,
       peers,
@@ -281,7 +283,7 @@ export function scenariosFor(research: FeeResearch, current: number, tested: num
 
 const EVIDENCE_WORDS: Record<Scenario["evidenceLevel"], string> = {
   market: "market data only",
-  working_estimate: "a working estimate from your filed income",
+  working_estimate: "a working estimate from the institution’s filed income",
   institution: "the figures you gave",
 };
 
@@ -303,11 +305,11 @@ function revenueSentence(s: Scenario): string {
 }
 
 /** One or two short sentences for a modeled price. */
-export function scenarioSummary(s: Scenario): string {
+export function scenarioSummary(s: Scenario, subject?: { subjectName?: string }): string {
   const name = proseFeeName(s.feeCategory);
   const position =
     s.positionAfter !== null && s.positionBefore !== null
-      ? `At ${money(s.tested)}, your ${name} fee would sit at the ${ordinal(s.positionAfter)} percentile of ${s.n.toLocaleString("en-US")} peers, against the ${ordinal(s.positionBefore)} today.`
+      ? `At ${money(s.tested)}, ${subjectPossessive(subject, false)} ${name} fee would sit at the ${ordinal(s.positionAfter)} percentile of ${s.n.toLocaleString("en-US")} peers, against the ${ordinal(s.positionBefore)} today.`
       : `At ${money(s.tested)}, ${s.peersMore} of ${s.n} peers would charge more and ${s.peersLess} less.`;
   return `${position} ${revenueSentence(s)}`;
 }
@@ -316,7 +318,7 @@ export function scenarioSummary(s: Scenario): string {
  * The strongest tested price for the objective the reader picked. Given only on an
  * explicit ask; it names the objective and compares only prices the reader tested.
  */
-export function buildOpinion(scenarios: Scenario[], objective: AskObjective): (HamiltonOpinion & { chosen: Scenario }) | null {
+export function buildOpinion(scenarios: Scenario[], objective: AskObjective, subject?: { subjectName?: string }): (HamiltonOpinion & { chosen: Scenario }) | null {
   if (scenarios.length === 0) return null;
   const name = proseFeeName(scenarios[0].feeCategory);
   const count = scenarios.length === 1 ? "the one price you tested" : `the ${scenarios.length} prices you tested`;
@@ -335,7 +337,7 @@ export function buildOpinion(scenarios: Scenario[], objective: AskObjective): (H
     const ranked = scenarios.filter((s) => s.positionAfter !== null);
     if (ranked.length === 0) return null;
     best = ranked.reduce((a, b) => (Math.abs((b.positionAfter as number) - 50) < Math.abs((a.positionAfter as number) - 50) ? b : a));
-    why = `It keeps you closest to the middle of ${best.n} peers, at the ${ordinal(best.positionAfter as number)} percentile.`;
+    why = `It keeps ${subjectName(subject)} closest to the middle of ${best.n} peers, at the ${ordinal(best.positionAfter as number)} percentile.`;
   }
   return {
     opinion: `If your objective is ${OBJECTIVE_LABELS[objective]}, ${money(best.tested)} was the strongest of ${count} for the ${name} fee. ${why} The decision stays with you.`,
@@ -380,9 +382,9 @@ function respond(input: AskInput): AskResponse {
     if (!input.objective) return clarify(objectiveQuestion(), { screen: "research", feeCategory: fee });
     const tested = [...new Set([...(input.priorTested ?? []), ...intent.tested])].slice(-MAX_TESTED_PRICES);
     if (tested.length === 0) return clarify(testedPricesQuestion(fee), { screen: "model", feeCategory: fee, tested: [] });
-    if (current === null) return clarify(currentAmountQuestion(fee), { screen: "research", feeCategory: fee });
+    if (current === null) return clarify(currentAmountQuestion(fee, research), { screen: "research", feeCategory: fee });
     const scenarios = scenariosFor(research, current, tested, facts);
-    const opinion = buildOpinion(scenarios, input.objective);
+    const opinion = buildOpinion(scenarios, input.objective, research);
     if (!opinion) {
       return {
         kind: "research",
@@ -402,12 +404,12 @@ function respond(input: AskInput): AskResponse {
   }
 
   if (intent.tested.length > 0) {
-    if (current === null) return clarify(currentAmountQuestion(fee), { screen: "research", feeCategory: fee });
+    if (current === null) return clarify(currentAmountQuestion(fee, research), { screen: "research", feeCategory: fee });
     const scenarios = scenariosFor(research, current, intent.tested, facts);
     const first = scenarios[0];
     return {
       kind: "scenario",
-      shortAnswer: scenarios.map(scenarioSummary).join(" "),
+      shortAnswer: scenarios.map((scenario) => scenarioSummary(scenario, research)).join(" "),
       pageChange: { screen: "model", feeCategory: fee, tested: intent.tested },
       scenario: first,
       question: first.missingInput ?? undefined,

@@ -22,7 +22,9 @@ const SCHEDULE_TEXT = [
   "Monthly fee for balance of $500 & over | FREE",
   "E-Statement | FREE",
 ].join("\n");
+const PINNACLE_TEXT = "- We've eliminated Non-sufficient Funds (NSF) Returned Item fees for consumer clients and lowered them from $38 to $30 for business clients.";
 const SOURCE_TEXTS = [
+  { source_document_id: 21164, normalized_text: PINNACLE_TEXT },
   { source_document_id: 55, normalized_text: SCHEDULE_TEXT },
   { source_document_id: 57, normalized_text: SCHEDULE_TEXT },
   {
@@ -72,6 +74,17 @@ describe("Darwin agentic verification", () => {
   beforeEach(() => {
     resetLearnedEnvelopeCache();
     resetWiderPeerLevelCache();
+  });
+
+  it("fully verifies Pinnacle's eliminated consumer NSF and charged business NSF", async () => {
+    const observations = ([['consumer', 0], ['business', 30]] as const).map(([fee_audience, amount], index) => ({
+      ...rawFee, fee_raw_id: 321490 + index, institution_id: 47, source_document_id: 21164,
+      fee_name: `Non-sufficient Funds (NSF) Returned Item fees (${fee_audience})`, fee_audience, amount,
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:nsf", ...(amount === 0 ? ["knox_review:zero"] : [])],
+      conditions: `canonical_hint=nsf; excerpt="${PINNACLE_TEXT}"`,
+    }));
+    const result = await runDarwinVerify({ runId: 101, db: asVerifyDb(createDbMock(observations)) });
+    expect(result.results.map((row) => [row.amount, row.status, row.reasonCode])).toEqual([[0, "verified", null], [30, "verified", null]]);
   });
 
   it("verifies Knox raw rows with canonical hints into verified_fee_observations", async () => {
@@ -441,6 +454,15 @@ describe("Darwin agentic verification", () => {
     expect(calls).toContain("outside_envelope");
   });
 
+  it("does not collapse equal prices across customer audiences", async () => {
+    const db = createDbMock([
+      { ...rawFee, fee_audience: "consumer" },
+      { ...rawFee, fee_raw_id: 802, fee_audience: "business" },
+    ]);
+    const result = await runDarwinVerify({ runId: 107, db: asVerifyDb(db) });
+    expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 0 });
+  });
+
   it("verifies the same fee line once per batch", async () => {
     const db = createDbMock([rawFee, { ...rawFee, fee_raw_id: 802 }]);
 
@@ -466,7 +488,7 @@ describe("Darwin agentic verification", () => {
 
     // The same line read twice (raw 803) is still one fee.
     expect(result).toMatchObject({ verifiedFees: 2, skippedFees: 1, reasonCounts: { duplicate_in_batch: 1 } });
-    expect(DARWIN_BATCH_KEY_VERSION).toBe(3);
+    expect(DARWIN_BATCH_KEY_VERSION).toBe(4);
   });
 
   it("verifies the same fee once on each stored copy of a page", async () => {
@@ -599,7 +621,7 @@ describe("Darwin agentic verification", () => {
     });
 
     describe("pass 2", () => {
-      const vtFee = { ...rawFee, state_code: "VT", asset_size_tier: null, asset_size: 600000, source_document_id: 55 };
+      const vtFee = { ...rawFee, fee_audience: "consumer", state_code: "VT", asset_size_tier: null, asset_size: 600000, source_document_id: 55 };
       const overdraftPeers = [
         { canonical_fee_key: "overdraft", tier: "community_mid", p25: "30", median: "32", p75: "34", institutions: 9 },
         { canonical_fee_key: "overdraft", tier: "all", p25: "30", median: "32", p75: "34", institutions: 9 },
@@ -638,6 +660,14 @@ describe("Darwin agentic verification", () => {
         const peer = strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy);
         expect(peer).toHaveLength(1);
         expect(peer[0]).toEqual(expect.arrayContaining(["verify", "raw:801", "evidence_mismatch"]));
+      });
+
+      it.each(["business", "unknown"] as const)("does not hold %s fee against consumer-only state peers", async (fee_audience) => {
+        const db = passTwoDb([{ ...vtFee, fee_audience, amount: "5.00" }]);
+        const result = await runDarwinVerify({ runId: 507, stateCode: "VT", db: asVerifyDb(db) });
+        expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0 });
+        expect(result.results[0].peerCheck).toBeNull();
+        expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)).toHaveLength(0);
       });
 
       it("verifies a fee inside its peer range and logs the peer check as passed", async () => {
@@ -683,7 +713,7 @@ describe("Darwin agentic verification", () => {
 
       it("records a sister document with the same amount as second-source evidence", async () => {
         const db = passTwoDb([vtFee], [
-          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "consumer" },
         ]);
 
         const result = await runDarwinVerify({ runId: 504, stateCode: "VT", db: asVerifyDb(db) });
@@ -696,10 +726,21 @@ describe("Darwin agentic verification", () => {
         expect(second[0]).toEqual(expect.arrayContaining(["ok"]));
       });
 
+      it("ignores a business copy when corroborating a consumer fee", async () => {
+        const db = passTwoDb([vtFee], [
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "business" },
+        ]);
+
+        const result = await runDarwinVerify({ runId: 507, stateCode: "VT", db: asVerifyDb(db) });
+
+        expect(result).toMatchObject({ verifiedFees: 1, secondSourceAgreements: 0, secondSourceDisagreements: 0 });
+        expect(result.results[0].secondSource).toBeNull();
+      });
+
       it("notes a disagreeing older copy without blocking the row", async () => {
         const db = passTwoDb([vtFee], [
-          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "30.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
-          { fee_raw_id: 801, institution_id: 42, source_document_id: 55, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "30.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "consumer" },
+          { fee_raw_id: 801, institution_id: 42, source_document_id: 55, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "consumer" },
         ]);
 
         const result = await runDarwinVerify({ runId: 505, stateCode: "VT", db: asVerifyDb(db) });

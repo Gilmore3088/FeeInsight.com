@@ -10,6 +10,7 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({ getUserInstitutionMemberships: mocks.members }));
 vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefing: mocks.briefing }));
+vi.mock("@/lib/data-store", () => ({ getInstitutionById: async (id: number) => ({ id, institution_name: `Synthetic Subject ${id}` }) }));
 vi.mock("@/lib/hamilton/quota", () => ({ checkProAiQuota: async () => ({ allowed: true }), quotaExceededMessage: () => "quota" }));
 vi.mock("@/lib/research/history", () => ({ logUsage: async () => {} }));
 vi.mock("@/lib/analytics-server", () => ({ trackFirstHamiltonUse: async () => {} }));
@@ -74,13 +75,27 @@ describe("live written-answer account/subject boundary", () => {
     expect(system).toContain('"account_institution":{"id":101,"name":"Synthetic Home CU"}');
     expect(system).toContain('"relationship":"different institutions"');
     expect(mocks.briefing.mock.calls[0][0].institutionId).toBe(202);
-    expect((await response.json()).identityContext).toEqual({ version: 1, researchInstitutionId: 202, accountInstitutionId: 101, accountStatus: "identified" });
+    expect((await response.json()).identityContext).toMatchObject({ version: 1, researchInstitutionId: 202, researchInstitutionName: "Synthetic Subject 202", accountInstitutionId: 101, accountInstitutionName: "Synthetic Home CU", accountStatus: "identified" });
+    expect(mocks.briefing.mock.calls.map(([contract]) => contract.institutionId)).toEqual([202, 101]);
+    expect(system).toContain("ACCOUNT INSTITUTION EVIDENCE (101)");
   });
   it("ignores ownership and user-ID claims sent in the body", async () => {
     await POST(request({ userId: 8, accountInstitutionId: 999, serverAccountContext: { status: "identified", institution: { id: 999, name: "Forged" } }, workspaceContext: { accountInstitutionId: 999 } }));
     expect(mocks.members).toHaveBeenCalledWith(7);
     expect(mocks.generate.mock.calls[0][0].system).not.toContain("Forged");
     expect(mocks.generate.mock.calls[0][0].system).toContain('"id":101');
+  });
+  it("withholds only the home comparison when home evidence fails", async () => {
+    mocks.briefing.mockImplementation(async (contract: { institutionId: number }) => {
+      if (contract.institutionId === 101) throw new Error("synthetic home evidence outage");
+      return "Research evidence for 202.";
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    const system = mocks.generate.mock.calls[0][0].system;
+    expect(system).toContain("Research evidence for 202.");
+    expect(system).toContain("Account institution evidence could not be loaded.");
+    expect(mocks.briefing).toHaveBeenLastCalledWith(expect.objectContaining({ institutionId: 101 }), { contextRole: "account_evidence" });
   });
   it("retains the self-reported profile as a label, not an institution ID", async () => {
     mocks.members.mockResolvedValue([]);
@@ -92,7 +107,7 @@ describe("live written-answer account/subject boundary", () => {
   it("does not select the browsed institution from multiple active memberships", async () => {
     mocks.members.mockResolvedValue([home, { ...home, institutionId: 202 }]);
     const response = await POST(request());
-    expect((await response.json()).identityContext).toEqual({ version: 1, researchInstitutionId: 202, accountInstitutionId: null, accountStatus: "ambiguous" });
+    expect((await response.json()).identityContext).toMatchObject({ version: 1, researchInstitutionId: 202, accountInstitutionId: null, accountStatus: "ambiguous" });
   });
   it("keeps a storage outage distinct from an unlinked account", async () => {
     mocks.members.mockRejectedValue(new Error("synthetic database unavailable"));
@@ -128,8 +143,8 @@ describe("live written-answer account/subject boundary", () => {
     expect(mocks.stream.mock.calls[0][0].system).toContain('"relationship":"different institutions"');
     expect(mocks.save).toHaveBeenCalledTimes(1);
     expect(mocks.save.mock.calls[0][0].institutionId).toBe("202");
-    const snapshot = { version: 1, researchInstitutionId: 202, accountInstitutionId: 101, accountStatus: "identified" };
-    expect(mocks.save.mock.calls[0][0].response.identityContext).toEqual(snapshot);
+    const snapshot = mocks.save.mock.calls[0][0].response.identityContext;
+    expect(snapshot).toMatchObject({ version: 1, researchInstitutionId: 202, researchInstitutionName: "Synthetic Subject 202", accountInstitutionId: 101, accountInstitutionName: "Synthetic Home CU", accountStatus: "identified" });
     expect(mocks.metadata).toHaveBeenCalledWith({ type: "message-metadata", messageMetadata: { savedAnalysisId: "saved-1", hamiltonIdentity: snapshot } });
     expect(JSON.stringify(snapshot)).not.toContain("Profile Label");
   });

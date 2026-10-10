@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
+import { statsRowFilter } from "./fee-stats";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
@@ -325,9 +325,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
         AND c.amount IS NOT NULL
         AND COALESCE(c.is_fee_cap, false) = false
         AND c.fee_name ~* r.inc AND c.fee_name !~* r.exc
-        -- Business-only schedules are not the institution's consumer price (fee-stats rule 6).
-        AND NOT (lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) ~ ${BUSINESS_PATH_SQL}
-                 AND lower(regexp_replace(COALESCE(c.source_url, ''), '^https?://[^/]+', '')) !~ ${CONSUMER_PATH_SQL})
+        -- Only sourced, explicitly consumer/both evidence may enter this comparison.
+        AND ${sql.unsafe(statsRowFilter("c"))}
         AND ((c.amount BETWEEN r.lo AND r.hi AND c.amount > 0) OR (c.amount = 0 AND r.allow_zero))
     ),
     -- Every candidate, in preference order; the first one its source text supports is used.
@@ -348,9 +347,9 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     LEFT JOIN ranked p ON p.institution_id = m.institution_id
     ORDER BY m.institution_id, p.line, p.pref`;
 
-  // Each fee is checked against its own document's stored text. Fees carried over from the
-  // pre-agent migration have no document link, so they are checked against the
-  // institution's own stored schedules instead; either way the text is the bank's own.
+  // Each fee is checked against its own document's stored text. The legacy unlinked-row
+  // fallback is retained defensively, but the consumer SQL boundary above excludes those
+  // rows rather than using a different document to invent consumer applicability.
   const documentIds = [...new Set(rows.map((row) => row.source_document_id).filter((id): id is string => Boolean(id)))];
   const unlinkedInstitutions = [
     ...new Set(rows.filter((row) => row.line && !row.source_document_id).map((row) => Number(row.institution_id))),

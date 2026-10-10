@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { isSuccessOutcome, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { assetSizeTier } from "@/lib/regulatory/fdic";
@@ -18,6 +19,8 @@ type SqlTag = typeof sql;
 
 /** A peer level needs this many institutions before anyone acts on it. */
 export const PEER_MIN_INSTITUTIONS = 8;
+/** Version of the sourced consumer-only price population in persisted peer levels. */
+export const PEER_AUDIENCE_POLICY_VERSION = 1;
 /** A fee below p25 / this, or above p75 * this, is far outside its peers. */
 export const PEER_RANGE_FACTOR = 3;
 /** Tier label for the state-wide level of a fee (all asset sizes together). */
@@ -36,6 +39,13 @@ export interface PeerLevel {
   p75: number;
   /** Institutions behind the level (each institution counts once). */
   count: number;
+  /** Absent on legacy mixed-audience state_memory rows; those levels must not be reused. */
+  audiencePolicyVersion?: number;
+}
+
+/** Fail closed on persisted pre-audience peer levels after the schema rollout. */
+export function currentAudiencePeerLevels(levels: readonly PeerLevel[]): boolean {
+  return levels.length > 0 && levels.every((level) => level.audiencePolicyVersion === PEER_AUDIENCE_POLICY_VERSION);
 }
 
 export interface StrategyRank {
@@ -137,13 +147,15 @@ export async function computeStatePeerLevels(db: SqlTag, stateCode: string): Pro
         SELECT c.institution_id,
                c.canonical_fee_key,
                ${assetTierSql("inst")} AS tier,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY c.amount) AS amount
+               CASE WHEN c.canonical_fee_key = 'overdraft' THEN MAX(c.amount)
+                    ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
           FROM published_fee_catalog c
           JOIN institution_sources inst ON inst.id = c.institution_id
          WHERE upper(btrim(inst.state_code)) = $1
            AND COALESCE(inst.status, 'active') = 'active'
            AND c.amount IS NOT NULL
            AND c.amount >= 0
+           AND ${statsRowFilter("c")}
          GROUP BY 1, 2, 3
       )
       SELECT canonical_fee_key,
@@ -165,6 +177,7 @@ export async function computeStatePeerLevels(db: SqlTag, stateCode: string): Pro
     median: round2(row.median),
     p75: round2(row.p75),
     count: Number(row.institutions ?? 0),
+    audiencePolicyVersion: PEER_AUDIENCE_POLICY_VERSION,
   }));
 }
 
@@ -437,6 +450,9 @@ export async function loadStateMemory(db: SqlTag, stateCode: string): Promise<St
   `;
   if (!row) return null;
   const strategies = jsonValue<Partial<StateStrategies>>(row.strategies, {});
+  const peerLevels = jsonValue<PeerLevel[]>(row.peer_levels, []);
+  // An old mixed-audience baseline must never be treated as consumer evidence.
+  const safePeerLevels = Array.isArray(peerLevels) && currentAudiencePeerLevels(peerLevels) ? peerLevels : [];
   return {
     stateCode: String(row.state_code),
     stateName: STATE_NAMES[String(row.state_code)] ?? null,
@@ -451,7 +467,7 @@ export async function loadStateMemory(db: SqlTag, stateCode: string): Promise<St
     }),
     platforms: jsonValue<StatePlatform[]>(row.platforms, []),
     strategies: { finder: strategies.finder ?? [], reader: strategies.reader ?? [] },
-    peerLevels: jsonValue<PeerLevel[]>(row.peer_levels, []),
+    peerLevels: safePeerLevels,
     institutionCount: Number(row.institution_count ?? 0),
     publishedFeeCount: Number(row.published_fee_count ?? 0),
     refreshedAt: row.refreshed_at instanceof Date ? row.refreshed_at.toISOString() : row.refreshed_at ? String(row.refreshed_at) : null,

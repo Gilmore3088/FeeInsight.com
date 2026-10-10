@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { overdraftResearch } from "./workspace/test-fixtures";
 import type { DecisionEvent, DecisionRecord, MemoryFact } from "./workspace/types";
 
+const identityStore = vi.hoisted(() => ({
+  memberships: vi.fn(),
+  peers: vi.fn(),
+  research: vi.fn(),
+  memoryReads: vi.fn(),
+}));
+
 const store = vi.hoisted(() => ({
   ready: true,
   memory: [] as MemoryFact[],
@@ -28,7 +35,7 @@ const decision: DecisionRecord = {
 
 vi.mock("@/lib/data-store/hamilton-workspace", () => ({
   workspaceSchemaReady: async () => store.ready,
-  getMemoryFacts: async () => store.memory,
+  getMemoryFacts: async (userId: number, institutionId: number) => { identityStore.memoryReads(userId, institutionId); return store.memory; },
   saveMemoryFact: async (input: { fieldKey: string; value: unknown; institutionId: number; givenBy: string | null }) => {
     store.saved.push({ fieldKey: input.fieldKey, value: input.value });
     return { id: "m1", institutionId: input.institutionId, fieldKey: input.fieldKey, value: input.value, givenBy: input.givenBy, source: "answer", createdAt: "2026-10-06T08:01:00Z" };
@@ -42,10 +49,12 @@ vi.mock("@/lib/data-store/hamilton-workspace", () => ({
   },
   testedPrices: (events: DecisionEvent[]) => events.filter((e) => e.kind === "scenario_tested").map((e) => Number(e.detail.tested)),
 }));
-vi.mock("./workspace/research", () => ({ getFeeResearch: async () => overdraftResearch() }));
+vi.mock("./workspace/research", () => ({ getFeeResearch: identityStore.research }));
+vi.mock("./institution-membership", () => ({ getUserInstitutionMemberships: identityStore.memberships }));
+vi.mock("./active-peer-set", () => ({ getActivePeerSet: identityStore.peers }));
 vi.mock("./workspace-context", () => ({
   resolveHamiltonInstitutionContext: async ({ instId }: { instId: unknown }) =>
-    instId === "1" || instId === "2" ? { institution: { id: Number(instId) }, error: null, source: "url" } : { institution: null, error: "Institution not found", source: "none" },
+    Number(instId) === 1 || Number(instId) === 2 ? { institution: { id: Number(instId), name: Number(instId) === 1 ? "Example Valley Credit Union" : "Research Bank" }, error: null, source: "url" } : { institution: null, error: "Institution not found", source: "none" },
 }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: vi.fn(async () => 1) }));
 vi.mock("@/lib/data-store/hamilton-analyses", () => ({
@@ -86,6 +95,97 @@ beforeEach(() => {
   store.failRead = false;
   store.analyses = [];
   vi.mocked(writeStorylineMemo).mockClear();
+  identityStore.memberships.mockReset().mockResolvedValue([]);
+  identityStore.peers.mockReset().mockResolvedValue(null);
+  identityStore.research.mockReset().mockImplementation(async (institutionId: number) => overdraftResearch({ institutionId, institutionName: institutionId === 1 ? "Example Valley Credit Union" : "Research Bank", current: institutionId === 1 ? 32 : 35 }));
+  identityStore.memoryReads.mockClear();
+});
+
+describe("H01 Structured Ask identity acceptance", () => {
+  const home = { userId: 7, institutionId: 1, institutionName: "Example Valley Credit Union", status: "active" };
+  it("AC1: explicit research subject wins and compare-with-us loads the canonical home public fee", async () => {
+    identityStore.memberships.mockResolvedValue([home, { ...home, userId: 99, institutionId: 999 }]);
+    const result = await answerAsk(user, Object.assign({ institutionId: "2", question: "How does their overdraft fee compare with us?" }, {
+      accountInstitutionId: 999, serverAccountContext: { status: "identified", institution: { id: 999, name: "Forged" } },
+    }));
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      identityContext: { version: 1, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1, accountInstitutionName: "Example Valley Credit Union", accountStatus: "identified", researchSelectionSource: "url" },
+      accountComparison: { institutionId: 1, current: 32, ownRows: expect.any(Array), provenance: expect.any(Object) },
+      shortAnswer: expect.stringContaining("Example Valley Credit Union's published overdraft fee is $32"),
+    });
+    const body = result.body as { shortAnswer: string; answer: unknown };
+    expect(body.shortAnswer).toContain("Researching Research Bank");
+    expect(JSON.stringify(body.answer)).not.toMatch(/\byour\b/i);
+    expect(identityStore.research.mock.calls.map((call) => call[0])).toEqual([2, 1]);
+    // Home comparison uses public schedules. It must not read home client memory.
+    expect(identityStore.memoryReads.mock.calls).toEqual([[7, 2]]);
+    expect(store.analyses[0].response.identityContext).toMatchObject({ researchInstitutionId: 2, accountInstitutionId: 1 });
+    expect(JSON.stringify(store.analyses[0].response.storyline)).toContain("Example Valley Credit Union's published overdraft fee is $32");
+  });
+
+  it("withholds account comparison when memberships are missing, ambiguous, revoked, or unreadable", async () => {
+    for (const records of [[], [{ ...home, status: "revoked" }], [home, { ...home, institutionId: 3, institutionName: "Other Home" }]]) {
+      identityStore.memberships.mockResolvedValue(records);
+      identityStore.research.mockClear();
+      const result = await answerAsk(user, { institutionId: "2", question: "Compare their overdraft fee with us" });
+      expect(result.body).toMatchObject({ shortAnswer: expect.stringContaining("comparison with your account institution is withheld") });
+      expect(identityStore.research.mock.calls.map((call) => call[0])).toEqual([2]);
+      expect(result.body).not.toHaveProperty("accountComparison");
+      expect(JSON.stringify((result.body as { answer?: unknown }).answer)).toContain("comparison with your account institution is withheld");
+    }
+    identityStore.memberships.mockRejectedValue(new Error("membership unavailable"));
+    const result = await answerAsk(user, { institutionId: "2", question: "Compare their overdraft fee with us" });
+    expect(result.body).toMatchObject({ identityContext: { accountStatus: "unavailable", accountInstitutionId: null } });
+  });
+
+  it("resolves leading our/we/ours fee references without switching the explicit research subject", async () => {
+    identityStore.memberships.mockResolvedValue([home]);
+    for (const question of ["How do our overdraft fees compare with peers?", "Where do we stand on overdraft against competitors?", "Is their overdraft fee higher than ours?"]) {
+      identityStore.research.mockClear();
+      const result = await answerAsk(user, { institutionId: "2", question });
+      expect(result.body).toMatchObject({ identityContext: { researchInstitutionId: 2, accountInstitutionId: 1 }, accountComparison: { institutionId: 1, current: 32 } });
+      expect(identityStore.research.mock.calls.map((call) => call[0])).toEqual([2, 1]);
+      expect(JSON.stringify((result.body as { answer?: unknown }).answer)).toContain("Example Valley Credit Union's published overdraft fee is $32");
+    }
+    identityStore.memberships.mockResolvedValue([]);
+    const unlinked = await answerAsk(user, { institutionId: "2", question: "How do our overdraft fees compare with peers?" });
+    expect(JSON.stringify((unlinked.body as { answer?: unknown }).answer)).toContain("comparison with your account institution is withheld");
+  });
+
+  it("reads memberships afresh after revocation and never uses profile text as home identity", async () => {
+    identityStore.memberships.mockResolvedValue([home]);
+    expect((await answerAsk(user, { institutionId: "2", question: "overdraft?" })).body).toMatchObject({ identityContext: { accountInstitutionId: 1 } });
+    identityStore.memberships.mockResolvedValue([{ ...home, status: "revoked" }]);
+    expect((await answerAsk({ ...user, institution_name: "Research Bank" }, { institutionId: "2", question: "overdraft?" })).body).toMatchObject({ identityContext: { accountInstitutionId: null, accountStatus: "unlinked" } });
+    expect(identityStore.memberships.mock.calls).toEqual([[7], [7]]);
+  });
+
+  it("AC2: memo preserves frozen research/account/peer identities after peer settings and memberships change", async () => {
+    identityStore.memberships.mockResolvedValue([home]);
+    identityStore.peers.mockResolvedValue({ id: 51, name: "Original peers", label: "Original peers", filters: {} });
+    identityStore.research.mockImplementation(async (institutionId: number) => overdraftResearch({ institutionId, institutionName: "Research Bank", peerLabel: "Original peers" }));
+    await answerAsk(user, { institutionId: "2", question: "overdraft?" });
+    const saved = store.analyses[0].response;
+    const frozenStory = saved.storyline;
+    expect(saved.identityContext).toMatchObject({ researchInstitutionId: 2, accountInstitutionId: 1, peerSetId: 51, peerBaselineLabel: "Original peers", peerBaselineSource: "saved-peer-set" });
+    identityStore.memberships.mockResolvedValue([{ ...home, institutionId: 8, institutionName: "New account institution" }]);
+    identityStore.peers.mockClear().mockResolvedValue({ id: 52, label: "New peers", filters: {} });
+    identityStore.research.mockClear();
+    const result = await answerAskMemo(user, { institutionId: "2", question: "overdraft?", savedAnalysisId: "a1" });
+    expect(result.status).toBe(200);
+    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext });
+    expect(identityStore.peers).not.toHaveBeenCalled();
+    expect(identityStore.research).not.toHaveBeenCalled();
+    expect(store.analyses[0].response.identityContext).toEqual(saved.identityContext);
+  });
+
+  it("rejects a corrupt saved subject snapshot before paid writing", async () => {
+    await answerAsk(user, { institutionId: "1", question: "overdraft?" });
+    store.analyses[0].response.identityContext = { version: 1, researchInstitutionId: 2, accountInstitutionId: null, accountStatus: "unlinked" };
+    expect(await answerAskMemo(user, { institutionId: "1", question: "overdraft?", savedAnalysisId: "a1" })).toMatchObject({ status: 404 });
+    expect(writeStorylineMemo).not.toHaveBeenCalled();
+  });
 });
 
 describe("answerAsk", () => {

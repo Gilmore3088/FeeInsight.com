@@ -48,7 +48,7 @@ export function cachedPublicRead<A extends unknown[], R>(
       if (isEmpty(value)) throw new UncacheableResult(value);
       return value;
     },
-    ["public-read", key, "v1"],
+    ["public-read", key, "consumer-audience-v2"],
     { tags: [PUBLIC_READ_CACHE_TAG], revalidate: PUBLIC_READ_CEILING_SECONDS },
   );
   return async (...args: A) => {

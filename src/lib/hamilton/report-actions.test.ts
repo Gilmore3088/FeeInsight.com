@@ -1,8 +1,12 @@
+import { generateReport, saveLandingResearchReport } from "@/app/pro/(hamilton)/reports/actions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
+  loadHamiltonAccountContext: vi.fn(),
+  loadAnalysisRecord: vi.fn(),
+  landingResearch: vi.fn(),
   getInstitutionById: vi.fn(),
   getFeesByInstitution: vi.fn(),
   getFinancialsByInstitution: vi.fn(),
@@ -24,6 +28,11 @@ const mocks = vi.hoisted(() => ({
   getInstitutionComplaintYears: vi.fn(),
   sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => ({ json: value })) }),
 }));
+
+vi.mock("@/lib/hamilton/account-context-store", () => ({ loadHamiltonAccountContext: mocks.loadHamiltonAccountContext }));
+vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ loadAnalysisRecord: mocks.loadAnalysisRecord }));
+
+vi.mock("@/lib/hamilton/landing-geographic-research", () => ({ loadLandingGeographicResearch: mocks.landingResearch }));
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: mocks.getCurrentUser,
@@ -160,6 +169,7 @@ function reportParams() {
 describe("Hamilton Reports generateReport", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "identified", institution: { id: 101, name: "Space Coast CU" }, profileLabel: null });
     mocks.checkProAiQuota.mockResolvedValue({ allowed: true, used: 0, limit: 50, resetsAt: "" });
     mocks.recordProRequest.mockResolvedValue(1);
     mocks.getLocalMarketCompetitors.mockResolvedValue(null);
@@ -204,7 +214,6 @@ describe("Hamilton Reports generateReport", () => {
 
   it("refuses free accounts before any provider call", async () => {
     mocks.getCurrentUser.mockResolvedValue({ id: 8, role: "viewer", subscription_status: null });
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
 
     const result = await generateReport(reportParams());
 
@@ -213,7 +222,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("returns a readiness report and skips provider generation when selected-institution evidence is empty", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
 
     const result = await generateReport(reportParams());
 
@@ -243,8 +251,40 @@ describe("Hamilton Reports generateReport", () => {
     );
   });
 
+  it("records the selected canonical research subject separately from authenticated account identity", async () => {
+    const result = await generateReport({ ...reportParams(), selectedInstitutionName: "Forged browser name" });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.report.identityContext).toMatchObject({ researchInstitutionId: 2945, researchInstitutionName: "Hamilton Federal Credit Union", accountInstitutionId: 101, accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Custom CU peers" });
+    expect(JSON.stringify(result.report)).not.toContain("Forged browser name");
+    expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, reportJson: expect.objectContaining({ identityContext: result.report.identityContext }) }));
+  });
+
+  it("never retargets an original saved answer A into report B from browser metadata", async () => {
+    mocks.loadAnalysisRecord.mockResolvedValue({ institutionId: "8109", responseJson: { title: "Original A finding", hamiltonView: "Original A evidence", whatThisMeans: "", identityContext: { version: 1, researchInstitutionId: 8109, accountInstitutionId: 101, accountStatus: "identified", researchInstitutionName: "Original Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort" } } });
+    mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "answer-a", source: "Ask", title: "Original A finding", detail: "Original A evidence", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555", identityContext: { version: 1, researchInstitutionId: 2945, accountInstitutionId: 999, accountStatus: "identified", accountInstitutionName: "Forged account" } }] });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.report.addedFindings).toBeUndefined();
+    expect(JSON.stringify(result.report)).not.toContain("Forged account");
+    expect(mocks.loadAnalysisRecord).toHaveBeenCalledWith("11111111-2222-3333-4444-555555555555");
+  });
+
+  it("preserves an added saved answer's authenticated original account and cohort", async () => {
+    const originalIdentity = { version: 1, researchInstitutionId: 2945, accountInstitutionId: 111, accountStatus: "identified", researchInstitutionName: "Original Research Name", accountInstitutionName: "Original Account", peerBaselineLabel: "Original A cohort" };
+    mocks.loadAnalysisRecord.mockResolvedValue({ institutionId: "2945", responseJson: { title: "Server original A finding", hamiltonView: "Server original A evidence", whatThisMeans: "Original implications", identityContext: originalIdentity } });
+    mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
+    const result = await generateReport({ ...reportParams(), addedFindings: [{ id: "answer-a", source: "Ask", title: "Original A finding", detail: "Original A evidence", institutionId: "2945", savedAnalysisId: "11111111-2222-3333-4444-555555555555" }] });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    expect(result.report.addedFindings?.[0].identityContext).toEqual(originalIdentity);
+    expect(result.report.addedFindings?.[0].title).toBe("Server original A finding");
+    expect(result.report.addedFindings?.[0].detail).toBe("Server original A evidence Original implications");
+    expect(result.report.identityContext?.accountInstitutionName).toBe("Space Coast CU");
+  });
+
   it("normalizes transient saved-artifact source before persisting a new report", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
 
     const result = await generateReport({
       ...reportParams(),
@@ -264,7 +304,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("passes provisional-only selected-institution evidence into every provider section with benchmark caveats", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
     mocks.getFeesByInstitution.mockResolvedValue([
       {
         fee_name: "Domestic wire",
@@ -377,7 +416,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("rejects generated provider output that fails the report artifact quality gate", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
     mocks.getFeesByInstitution.mockResolvedValue([
       {
         fee_name: "Domestic wire",
@@ -411,7 +449,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("stops before any model call when the daily quota is used up", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
     mocks.getFeesByInstitution.mockResolvedValue([
       { fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, frequency: "per wire", review_status: "pending", extraction_confidence: 0.76, source_url: "https://example.com/fees" },
     ]);
@@ -424,7 +461,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("refuses to save a report whose narrative states figures the data does not support", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
     mocks.getFeesByInstitution.mockResolvedValue([
       {
         fee_name: "Domestic wire",
@@ -450,7 +486,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("does not persist profile-name slugs for reports without a selected institution", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
 
     const result = await generateReport({
       templateType: "peer_benchmarking",
@@ -473,7 +508,6 @@ describe("Hamilton Reports generateReport", () => {
   });
 
   it("builds the answer page, named local competitors and dollar exhibits, and briefs later sections with the answer", async () => {
-    const { generateReport } = await import("@/app/pro/(hamilton)/reports/actions");
     mocks.getFeesByInstitution.mockResolvedValue([
       {
         fee_name: "Domestic wire",
@@ -559,4 +593,32 @@ describe("Hamilton Reports generateReport", () => {
       fee_impacts: [expect.objectContaining({ reference: "local median", gap_amount: -5, income_per_1000_amount: -5000 })],
     });
   });
+});
+
+describe("landing board draft confirmation boundary", () => {
+  it("rejects an unconfirmed request before evidence reads or persistence", async () => {
+    vi.clearAllMocks();
+    mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "admin" });
+      const result = await saveLandingResearchReport({ research: {}, confirmed: false });
+    expect(result.success).toBe(false);
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+  });
+  it("rejects a signed-out caller even with explicit confirmation", async () => {
+    vi.clearAllMocks(); mocks.getCurrentUser.mockResolvedValue(null);
+      expect((await saveLandingResearchReport({ research: {}, confirmed: true })).success).toBe(false);
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+  });
+});
+
+it("saves exact confirmed geographic scope through the existing report store without provider calls", async () => {
+  vi.clearAllMocks(); mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "admin" });
+  const research = { version: 1, task: "board_report", scope: { kind: "state", stateCode: "DC" }, charter: "credit_union", categories: ["money_order"] };
+  mocks.landingResearch.mockResolvedValue({ comparisons: [{ category: "money_order", selected: { median: 0, institutions: 8, lastUpdated: "2026-10-10" }, national: { median: 3 } }] });
+  mocks.saveHamiltonReport.mockResolvedValue("saved-id");
+  expect(await saveLandingResearchReport({ research, confirmed: true })).toEqual({ success: true, reportId: "saved-id" });
+  expect(mocks.landingResearch).toHaveBeenCalledWith({ ...research, task: "compare" });
+  expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: "", reportType: "landing_research", evidencePolicy: "verified-only", reportJson: expect.objectContaining({ title: "DC — board research draft", exhibits: [expect.objectContaining({ rows: [["Money Order", "$0.00", "8", "$3.00", "2026-10-10"]] })] }) }));
+  expect(mocks.generateSection).not.toHaveBeenCalled();
+  expect(mocks.recordProRequest).toHaveBeenCalledWith(expect.objectContaining({ operation: "report", userId: 7, detail: expect.objectContaining({ research }) }));
 });
