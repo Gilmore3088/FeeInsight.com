@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import {
   isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation,
   type PeerListContinuation, type PeerListResponse,
@@ -12,17 +12,19 @@ type Props = ComponentProps<typeof StructuredAsk>;
 
 /** The answer is list-aware within a conversation; no second input or paid fallback. */
 export function PeerAwareStructuredAsk(props: Props) {
-  const [continuation, setContinuation] = useState<{ snapshot: PeerListContinuation; answeredNonce: number } | null>(null);
+  // The answer must be available for an immediate next turn without waiting for a React state flush.
+  const continuationRef = useRef<{ snapshot: PeerListContinuation; answeredNonce: number } | null>(null);
+  const continuation = continuationRef.current;
   const isNewList = Boolean(props.question && isPeerListQuestion(props.question));
   const isFollowUp = Boolean(props.question && !isNewList && isPeerListContinuationQuestion(props.question));
 
   const remember = useCallback((data: PeerListResponse, previous: PeerListContinuation | null) => {
     if (data.peerList.status !== "ready") return;
     if (previous) {
-      setContinuation({ snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) }, answeredNonce: props.nonce ?? 0 });
+      continuationRef.current = { snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) }, answeredNonce: props.nonce ?? 0 };
     } else if (props.question) {
       const snapshot = makePeerListContinuation(data, props.question, props.institutionId);
-      if (snapshot) setContinuation({ snapshot, answeredNonce: props.nonce ?? 0 });
+      if (snapshot) continuationRef.current = { snapshot, answeredNonce: props.nonce ?? 0 };
     }
   }, [props.question, props.institutionId, props.nonce]);
 
