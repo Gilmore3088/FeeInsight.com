@@ -73,6 +73,6 @@ describe("governed geographic landing research", () => {
     ]);
     expect(result.comparisons.map((row) => row.category)).toEqual(["paper_statement", "money_order"]);
     expect(result.comparisons[0].selected.status).toBe("not_observed");
-    expect(result.comparisons[1].national.status).toBe("not_observed");
+    expect(result.comparisons[1].national?.status).toBe("not_observed");
   });
 });
