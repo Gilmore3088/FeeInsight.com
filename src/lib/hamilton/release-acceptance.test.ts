@@ -4,6 +4,9 @@ import {
   HAMILTON_RELEASE_PROTECTION_SNAPSHOT,
   releaseEvidenceIsComplete,
   validateHamiltonComplaintEvidence,
+  assessHamiltonReleaseCandidate,
+  HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS,
+  type HamiltonAcceptanceCaseEvidence,
   type HamiltonComplaintEvidence,
 } from "./release-acceptance";
 
@@ -70,5 +73,62 @@ describe("Hamilton complaint-to-evidence matrix", () => {
     expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.branchProtected).toBe(false);
     expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.requiredStatusContexts).toEqual([]);
     expect(HAMILTON_RELEASE_PROTECTION_SNAPSHOT.note).toContain("not a server-side merge barrier");
+  });
+});
+
+
+describe("Hamilton release-candidate packet", () => {
+  const sha = "a".repeat(40);
+  const allPassed = (): HamiltonAcceptanceCaseEvidence[] =>
+    HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS.map((caseId) => ({
+      caseId,
+      candidateSha: sha,
+      status: "passed",
+      inspectedOutput: true,
+      evidenceRefs: [`artifact:${caseId}`],
+    }));
+
+  it("requires all 28 initiative acceptance cases", () => {
+    expect(HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS).toHaveLength(28);
+    const result = assessHamiltonReleaseCandidate({ candidateSha: sha, cases: allPassed() });
+    expect(result).toEqual({ ready: true, problems: [], passedCases: 28, requiredCases: 28 });
+  });
+
+  it("keeps a skipped required browser case as a release blocker", () => {
+    const cases = allPassed();
+    cases.find((entry) => entry.caseId === "H04-AC4")!.status = "skipped";
+    const result = assessHamiltonReleaseCandidate({ candidateSha: sha, cases });
+    expect(result.ready).toBe(false);
+    expect(result.problems).toContain("skipped_case:H04-AC4");
+    expect(result.passedCases).toBe(27);
+  });
+
+  it("does not transfer evidence from an older SHA", () => {
+    const cases = allPassed();
+    cases.find((entry) => entry.caseId === "H02-AC1")!.candidateSha = "b".repeat(40);
+    expect(assessHamiltonReleaseCandidate({ candidateSha: sha, cases }).problems)
+      .toContain("wrong_sha:H02-AC1");
+  });
+
+  it("requires inspected output and an evidence reference, not a bare pass flag", () => {
+    const cases = allPassed();
+    const target = cases.find((entry) => entry.caseId === "H06-AC2")!;
+    target.inspectedOutput = false;
+    target.evidenceRefs = [];
+    const problems = assessHamiltonReleaseCandidate({ candidateSha: sha, cases }).problems;
+    expect(problems).toContain("uninspected_output:H06-AC2");
+    expect(problems).toContain("missing_evidence_ref:H06-AC2");
+  });
+
+  it("rejects duplicate cases rather than choosing the favorable copy", () => {
+    const cases = allPassed();
+    cases.push({ ...cases[0], status: "failed" });
+    expect(assessHamiltonReleaseCandidate({ candidateSha: sha, cases }).problems)
+      .toContain("duplicate_case:H01-AC1");
+  });
+
+  it("rejects an invalid candidate SHA", () => {
+    expect(assessHamiltonReleaseCandidate({ candidateSha: "main", cases: allPassed() }).problems)
+      .toContain("invalid_candidate_sha");
   });
 });
