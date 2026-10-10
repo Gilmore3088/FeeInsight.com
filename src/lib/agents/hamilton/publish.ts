@@ -1269,6 +1269,7 @@ function movementFor(
 type MovementGroupEntry = {
   canonical_fee_key: string;
   fee_name: string;
+  fee_audience: FeeAudience;
   previous_fee_published_id: number;
   new_fee_published_id: number;
   previous_amount: number;
@@ -1322,6 +1323,7 @@ async function recordPublicationSignals(
     feeVerifiedIds: number[];
     feePublishedIds: number[];
     canonicalFeeKeys: string[];
+    consumerCanonicalFeeKeys: string[];
   }>();
   const movementGroups = new Map<number, {
     institutionName: string;
@@ -1337,10 +1339,14 @@ async function recordPublicationSignals(
       feeVerifiedIds: [],
       feePublishedIds: [],
       canonicalFeeKeys: [],
+      consumerCanonicalFeeKeys: [],
     };
     group.feeVerifiedIds.push(result.feeVerifiedId);
     group.feePublishedIds.push(result.feePublishedId);
     group.canonicalFeeKeys.push(result.canonicalFeeKey);
+    if (row?.fee_audience === "consumer" || row?.fee_audience === "both") {
+      group.consumerCanonicalFeeKeys.push(result.canonicalFeeKey);
+    }
     grouped.set(institutionId, group);
 
     if (
@@ -1356,6 +1362,7 @@ async function recordPublicationSignals(
       movementGroup.movements.push({
         canonical_fee_key: result.canonicalFeeKey,
         fee_name: result.feeName,
+        fee_audience: row?.fee_audience ?? "unknown",
         previous_fee_published_id: result.previousFeePublishedId,
         new_fee_published_id: result.feePublishedId,
         previous_amount: result.previousAmount,
@@ -1424,6 +1431,7 @@ async function recordPublicationSignals(
           published_fee_ids: group.feePublishedIds,
           verified_fee_ids: group.feeVerifiedIds,
           canonical_fee_keys: Array.from(new Set(group.canonicalFeeKeys)),
+          consumer_canonical_fee_keys: Array.from(new Set(group.consumerCanonicalFeeKeys)),
           published_fee_count: count,
           unconfirmed_movement_count: unconfirmed.length,
           unconfirmed_movements: unconfirmed,
