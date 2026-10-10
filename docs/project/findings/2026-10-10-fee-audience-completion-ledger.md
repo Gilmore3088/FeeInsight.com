@@ -91,6 +91,7 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 - `902a7a41` / `60bd7c14`: the shared fee-movement confirmation query itself now requires old/new rows to have the same known audience, closing cross-audience false movements before downstream consumers.
 - `3b8a2da9` / `20121186`: city fee comparisons and averages use consumer/both sourced evidence, preserve zero, and use the highest overdraft tier.
 - Actions run `38017987435` on an earlier head passed focused agentic tests and SQL assertions but failed TypeScript. Exact errors: `verifiedFee.fee_audience` widened to `string` in `hamilton/publish.test.ts`, and Pro digest passed an `unknown` value to `isConsumerFee`. Fixed on the current branch by `f14976ff` (literal audience typing) and `68b69c58` (explicit runtime narrowing). This run did NOT reach lint/full-suite/E2E; do not call it green.
+- Authorized Supabase migration-history read resolved the 40/41 collision direction: production `rmhwbbjjctzfaqjyhomu` ends at `20270110000039 lead_report_refund`; FeeInsight preview `zqjwpjujroahhqtncycv` has `20270110000040 fee_audience_integrity` and `20270110000041 pinnacle_audience_correction`. Receipt posted to #990, #991 and #984. Preserve #986's applied preview 40/41; payment owners should move their confirmed-unshipped migrations to later unique versions and rerun combined schema/application checks. This is not itself a release approval.
 - No production database mutation, deployment, provider activation, or outreach send was performed in this continuation.
 
 
