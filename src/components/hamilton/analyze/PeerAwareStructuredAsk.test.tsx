@@ -87,3 +87,65 @@ describe("peer-first Ask rendering", () => {
     expect(screen.getByRole("region", { name: "Peer table; scroll horizontally" }).getAttribute("tabindex")).toBe("0");
   });
 });
+
+
+describe("exact-list follow-ups within one Ask conversation", () => {
+  it("sends previously displayed peer IDs and dated record IDs for Only Florida", async () => {
+    const filtered: PeerListResponse = {
+      ...fixture, shortAnswer: "1 of 3 previously displayed peers are in FL.",
+      peerList: { ...fixture.peerList, rows: [fixture.peerList.rows[0]], totalMatches: 1 },
+    };
+    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce(ok(filtered));
+    const view = render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("table");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Only Florida" nonce={2} />);
+    await screen.findByText("1 of 3 previously displayed peers are in FL.");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const body = JSON.parse(fetcher.mock.calls[1][1].body as string);
+    expect(body.question).toBe("Only Florida");
+    expect(body.previousPeerList.originQuestion).toBe("List ten peers");
+    expect(body.previousPeerList.originInstitutionId).toBe("101");
+    expect(body.previousPeerList.originSubjectId).toBe(101);
+    expect(body.previousPeerList.selectedIds).toEqual([202, 203, 204]);
+    expect(body.previousPeerList.originRows[0]).toEqual({
+      institutionId: 202, recordId: 202, reportDate: "2026-06-30", source: "ncua",
+    });
+    expect(fallback).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+  it("uses only the filtered peer IDs for the next state refinement", async () => {
+    const filtered = { ...fixture, peerList: { ...fixture.peerList, rows: [fixture.peerList.rows[0]], totalMatches: 1 } };
+    const none = { ...fixture, peerList: { ...fixture.peerList, rows: [], totalMatches: 0 } };
+    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce(ok(filtered)).mockResolvedValueOnce(ok(none));
+    const view = render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("table");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Only Florida" nonce={2} />);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await screen.findByRole("table");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Only Georgia" nonce={3} />);
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+    const body = JSON.parse(fetcher.mock.calls[2][1].body as string);
+    expect(body.previousPeerList.selectedIds).toEqual([202]);
+    expect(body.previousPeerList.originRows).toHaveLength(3);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+  it("refuses list-relative questions when there is no list or context changed", () => {
+    const view = render(<PeerAwareStructuredAsk {...props} question="Only Florida" />);
+    expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");
+    expect(fetcher).not.toHaveBeenCalled();
+    view.rerender(<PeerAwareStructuredAsk {...props} institutionId="999" question="Only Georgia" nonce={2} />);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("shows a deterministic unsupported-fee answer, never the legacy paid fallback", async () => {
+    const blocked = { ...fixture, shortAnswer: "Fee comparisons of 'their' fees are not yet supported.", peerList: { ...fixture.peerList, status: "needs_criteria" as const, rows: [], totalMatches: null } };
+    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce(ok(blocked));
+    const view = render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("table");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Compare their NSF fees" nonce={2} />);
+    await screen.findByText("Fee comparisons of 'their' fees are not yet supported.");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(screen.queryByText("Existing fee-answer path")).toBeNull();
+  });
+});

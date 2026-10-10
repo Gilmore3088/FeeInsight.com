@@ -34,6 +34,11 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const state = peerListRefinementState(question);
         if (!prior || !isPeerListContinuationQuestion(question))
           return message("needs_criteria", "This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
+        const suppliedId = body.institutionId === undefined || body.institutionId === null || body.institutionId === ""
+          ? null : typeof body.institutionId === "string" || typeof body.institutionId === "number"
+            ? String(body.institutionId) : "";
+        if (suppliedId !== prior.originInstitutionId)
+          return message("needs_criteria", "The research institution changed. Start a new peer list; the earlier selection was not reused.");
         if (!state)
           return message("needs_criteria", "Only state refinement of the exact displayed peer list is supported here (for example, 'Only Florida'). Fee comparisons of 'their' fees are not yet supported; no different peer group or paid report was started.");
         const original = await answerPeerList(user, {

@@ -93,4 +93,13 @@ describe("exact displayed peer-list continuation", () => {
     expect(result?.shortAnswer).toContain("not yet supported");
     expect(mocks.rows).not.toHaveBeenCalled();
   });
+  it("rejects a different research context without querying the original peers", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    mocks.rows.mockClear();
+    const result = await answerPeerList(user, { institutionId: 999, question: "Only Florida", previousPeerList: prior });
+    expect(result?.peerList.status).toBe("needs_criteria");
+    expect(mocks.rows).not.toHaveBeenCalled();
+  });
+
 });
