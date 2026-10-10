@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  sql: vi.fn(),
+  sql: Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) }),
   withConfirmedMovements: vi.fn(),
   sendResendEmail: vi.fn(),
   getTransactionalFromAddress: vi.fn(() => "digest@feeinsight.com"),
@@ -64,7 +64,7 @@ function signal(institutionId: number, name: string, state: string, district: nu
   return { institution_id: institutionId, institution_name: name, state_code: state, fed_district: district, signal_at: at, source_json: { movements } };
 }
 
-const od = (previous: number, next: number) => ({ canonical_fee_key: "overdraft", previous_amount: previous, new_amount: next });
+const od = (previous: number, next: number) => ({ canonical_fee_key: "overdraft", fee_audience: "consumer", previous_amount: previous, new_amount: next });
 
 describe("digestWeekStart", () => {
   it("is the Monday of the week in UTC", () => {
@@ -100,6 +100,16 @@ describe("netMarketMoves", () => {
     expect(moves).toEqual([
       expect.objectContaining({ institutionId: 5, category: "overdraft", previousAmount: 30, newAmount: 33 }),
     ]);
+  });
+
+  it("drops business and unknown audience movements from the consumer digest", () => {
+    const moves = netMarketMoves([
+      signal(5, "Lone Star CU", "TX", 11, "2026-10-08T00:00:00Z", [
+        { ...od(30, 35), fee_audience: "business" },
+        { canonical_fee_key: "nsf", previous_amount: 30, new_amount: 25 },
+      ]),
+    ]);
+    expect(moves).toEqual([]);
   });
 
   it("drops a movement marked as not a price change", () => {
@@ -212,6 +222,7 @@ describe("runProDigest", () => {
   beforeEach(() => {
     vi.stubEnv("LEAD_EMAIL_TOKEN_SECRET", "secret");
     mocks.sql.mockReset();
+    mocks.sql.unsafe.mockClear();
     mocks.sendResendEmail.mockReset();
     mocks.getTransactionalFromAddress.mockReturnValue("digest@feeinsight.com");
     mocks.withConfirmedMovements.mockReset();
