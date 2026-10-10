@@ -26,7 +26,7 @@ export class LocalMarketRequestError extends Error {
 export function resolveLocalMarketCategories(value: unknown): string[] {
   if (value === undefined) return [...DEFAULT_LOCAL_MARKET_CATEGORIES];
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_CATEGORIES) {
-    throw new LocalMarketRequestError("Choose between 1 and 50 fee categories.");
+    throw new LocalMarketRequestError("Choose at least one fee category from the available list.");
   }
   for (const key of value) {
     if (typeof key !== "string" || !CATEGORY_KEYS.has(key)) {
