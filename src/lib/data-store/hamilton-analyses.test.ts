@@ -36,13 +36,15 @@ describe("saved Hamilton analysis compatibility read", () => {
     expect((await getSavedAnalysisResponse(7, "legacy"))?.confidence.level).toBe("medium");
   });
 
-  it("preserves high only when the stored artifact carries the new evidence contract", async () => {
-    db.query.mockResolvedValueOnce([{
-      response_json: {
-        ...legacy,
-        factEvidence: { version: 1, generatedAt: "2026-10-10T00:00:00Z", facts: [], derivations: [], limitations: [] },
-      },
-    }]);
-    expect((await getSavedAnalysisResponse(7, "new"))?.confidence.level).toBe("high");
+  it("never treats an attached but empty evidence contract as claim verification", async () => {
+    const stored = {
+      ...legacy,
+      factEvidence: { version: 1, generatedAt: "2026-10-10T00:00:00Z", facts: [], derivations: [], limitations: [] },
+    };
+    db.query.mockResolvedValueOnce([{ response_json: stored }]);
+    const displayed = await getSavedAnalysisResponse(7, "new");
+    expect(displayed?.confidence.level).toBe("medium");
+    expect(displayed?.confidence.basis.join(" ")).toContain("does not by itself verify every sentence");
+    expect(stored.confidence.level).toBe("high");
   });
 });
