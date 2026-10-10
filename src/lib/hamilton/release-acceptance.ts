@@ -108,7 +108,7 @@ export const HAMILTON_COMPLAINT_EVIDENCE: readonly HamiltonComplaintEvidence[] =
     statusAtSnapshot: "in_progress",
     mandatoryReleaseChecks: ["exact_sha_ci", "authenticated_preview", "inspected_output", "release_approval", "post_release_read"],
   },
-] as const;
+];
 
 export const HAMILTON_RELEASE_PROTECTION_SNAPSHOT: HamiltonReleaseProtectionSnapshot = {
   observedAt: "2026-10-10T09:30:00Z",
