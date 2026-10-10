@@ -1,0 +1,32 @@
+name: backlog intake
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: backlog-intake-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  work-intake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test intake logic with the Node runner, separately from application Vitest
+        run: node --test .github/scripts/backlog.node-check.mjs
+      - name: Check work ownership and overlapping implementations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/backlog.mjs guard
