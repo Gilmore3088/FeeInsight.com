@@ -458,6 +458,7 @@ function AnalyzeConversationWorkspace({
     setThread([]);
     previousPromptRef.current = "";
     lastPromptRef.current = "";
+    setEngineBusy(false);
     setAskedQuestion(null);
     setParsedResponse(null);
     setAnswerIdentity(null);
@@ -739,6 +740,7 @@ function AnalyzeConversationWorkspace({
       {reopenedStory ? (
         <StorylineView
           story={reopenedStory}
+          identityContext={answerIdentity}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
           nextSteps={initialAnalysisId && !readOnlyReason ? <DownloadAnswerPdf analysisId={initialAnalysisId} /> : null}
         />

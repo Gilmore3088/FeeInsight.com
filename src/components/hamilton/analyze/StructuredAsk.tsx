@@ -285,7 +285,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
               ? s.revenueEffect.low === s.revenueEffect.high
                 ? fmtSignedMoney(s.revenueEffect.low)
                 : `${fmtSignedMoney(s.revenueEffect.low)} to ${fmtSignedMoney(s.revenueEffect.high)}`
-              : "Needs your volume"}
+              : "Needs institution volume"}
           </span>
         </div>
       </div>
@@ -517,6 +517,7 @@ function StructuredAskConversation({
       {response.answer && storyline ? (
         <StorylineView
           story={storyline}
+          identityContext={response.identityContext}
           memo={memo}
           nextSteps={
             researchHrefFor ? (

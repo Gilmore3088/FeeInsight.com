@@ -13,6 +13,7 @@ import { LensSwitch } from "./LensSwitch";
 import { StoryExhibitView } from "./story-exhibits";
 import { OptionLetter, OptionScaleChart, OptionStanding, optionPoints, optionScale } from "./option-compare";
 import type { StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
+import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
 import type { Storyline } from "./types";
 
 /** Hamilton's written memo over the storyline: still being written, written, or not written and why. */
@@ -149,7 +150,7 @@ function SourceList({ notes }: { notes: SourceNotes }) {
   );
 }
 
-export function StorylineView({ story, nextSteps, memo }: { story: Storyline; nextSteps?: ReactNode; memo?: MemoState }) {
+export function StorylineView({ story, nextSteps, memo, identityContext }: { story: Storyline; nextSteps?: ReactNode; memo?: MemoState; identityContext?: HamiltonIdentitySnapshot | null }) {
   const written = memo?.state === "written" ? memo.memo : null;
   const notes = buildSourceNotes(story);
   const figures = story.keyFigures.slice(0, 4);
@@ -211,7 +212,7 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       ) : null}
 
       {story.exhibits.map((item, i) => (
-        <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} />
+        <StoryExhibitView key={item.id} item={item} number={item.number ?? i + 1} researchInstitutionName={identityContext?.researchInstitutionName} />
       ))}
 
       <section className="border-t border-warm-300 pt-6">
@@ -247,7 +248,7 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
       {story.options && story.options.length > 0 ? (
         <section className="border-t border-warm-300 pt-6">
           <Kicker>Options and what each would mean</Kicker>
-          <OptionsSideBySide story={story} notes={notes} />
+          <OptionsSideBySide story={story} notes={notes} researchInstitutionName={identityContext?.researchInstitutionName} />
           <p className="mt-2 text-[13px] text-warm-600">Hamilton sets out the options; the choice is your team&apos;s.</p>
         </section>
       ) : null}
@@ -267,12 +268,12 @@ export function StorylineView({ story, nextSteps, memo }: { story: Storyline; ne
 }
 
 /** The options lettered in the engine's order, priced on one scale, each card saying where it would sit. */
-function OptionsSideBySide({ story, notes }: { story: Storyline; notes: SourceNotes }) {
+function OptionsSideBySide({ story, notes, researchInstitutionName }: { story: Storyline; notes: SourceNotes; researchInstitutionName?: string | null }) {
   const points = optionPoints(story.options ?? []);
   const scale = optionScale(story);
   return (
     <div className="flex flex-col gap-3">
-      <OptionScaleChart points={points} scale={scale} />
+      <OptionScaleChart points={points} scale={scale} researchInstitutionName={researchInstitutionName} />
       <div className={`grid gap-3 ${points.length >= 3 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
         {points.map(({ letter, option, price }) => (
           <div key={option.label} className="flex flex-col gap-3 rounded-lg border border-warm-300 bg-white p-4">

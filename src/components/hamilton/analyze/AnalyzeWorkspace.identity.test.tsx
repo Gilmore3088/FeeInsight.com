@@ -18,7 +18,10 @@ vi.mock("@ai-sdk/react", () => ({
   },
 }));
 vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ saveAnalysis: chat.save }));
-vi.mock("./StructuredAsk", () => ({ StructuredAsk: () => null, DownloadAnswerPdf: () => <button>Download PDF</button> }));
+vi.mock("./StructuredAsk", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./StructuredAsk")>(),
+  DownloadAnswerPdf: () => <button>Download PDF</button>,
+}));
 vi.mock("@/components/hamilton/basket/AddToReportButton", () => ({ AddToReportButton: ({ item }: { item: Omit<ReportBasketItem, "addedAt"> }) => <button onClick={() => chat.addItem(item)}>Add to report</button> }));
 import { AnalyzeWorkspace, answerAuditTrail } from "./AnalyzeWorkspace";
 
@@ -133,6 +136,37 @@ describe("AnalyzeWorkspace identity boundaries", () => {
     render(<AnalyzeWorkspace userId={7} institutionId="8109" selectedInstitution={bankB} />);
     expect(document.body.textContent).not.toContain("our overdraft");
     expect(document.body.textContent).toContain("this institution's overdraft");
+  });
+
+  it("starts a fresh ask after New question abandons an unresolved engine request", async () => {
+    const pending: Array<{ question: string; finish: (response: Response) => void }> = [];
+    vi.stubGlobal("scrollTo", vi.fn());
+    vi.stubGlobal("fetch", vi.fn((_url: string, init: RequestInit) => new Promise<Response>((finish) => {
+      pending.push({ question: JSON.parse(String(init.body)).question, finish });
+    })));
+    render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bankA} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Compare overdraft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "New question" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Compare NSF" } });
+    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await waitFor(() => expect(pending.map(request => request.question)).toEqual(["Compare overdraft", "Compare NSF"]));
+
+    const response = (text: string) => new Response(JSON.stringify({
+      kind: "research", shortAnswer: `${text} lead`, pageChange: { screen: "none" },
+      facts: [{ text, source: { label: "Synthetic acceptance fixture" } }],
+    }));
+    await act(async () => { pending[0].finish(response("Discarded old evidence")); });
+    expect(document.body.textContent).not.toContain("Discarded old evidence");
+    expect(chat.send).not.toHaveBeenCalled();
+    await act(async () => { pending[1].finish(response("New question evidence")); });
+    await screen.findByText("New question evidence");
+    expect(document.body.textContent).not.toContain("Discarded old evidence");
+    expect(chat.save).not.toHaveBeenCalled();
   });
 });
 

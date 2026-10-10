@@ -56,13 +56,15 @@ const TRACK = 220;
 export function FeeRangeChart({
   positions,
   bands,
+  institutionName = "Research institution",
 }: {
+  institutionName?: string;
   positions: SchedulePosition[];
   bands: Record<string, { p25: number; median: number; p75: number }>;
 }) {
   return (
     <View>
-      <Legend items={[{ label: "Your fee", mark: "dot" }, { label: "Peer median", mark: "tick" }, { label: "Middle half of peers", mark: "band" }]} />
+      <Legend items={[{ label: `${institutionName} fee`, mark: "dot" }, { label: "Peer median", mark: "tick" }, { label: "Middle half of peers", mark: "band" }]} />
       {positions.map((p) => {
         const b = bands[p.feeCategory] ?? { p25: p.peerMedian, median: p.peerMedian, p75: p.peerMedian };
         const lo = Math.min(b.p25, p.current, b.median);
@@ -102,7 +104,7 @@ const H = 100;
  * The bank's own quarterly service charges, oldest quarter on the left. Peers are compared per $1,000 of
  * deposits in the figures above the chart; a peer median in dollars would mix in size, so none is drawn here.
  */
-export function IncomeTrendChart({ financials }: { financials: InstitutionFinancials }) {
+export function IncomeTrendChart({ financials, institutionName = "Research institution" }: { financials: InstitutionFinancials; institutionName?: string }) {
   const quarters = [...financials.quarters].reverse();
   const max = Math.max(...quarters.map((q) => q.amount)) * 1.15;
   const slot = W / quarters.length;
@@ -111,7 +113,7 @@ export function IncomeTrendChart({ financials }: { financials: InstitutionFinanc
   const last = quarters[quarters.length - 1];
   return (
     <View wrap={false}>
-      <Text style={s.chartTitle}>Your service charges by quarter</Text>
+      <Text style={s.chartTitle}>{institutionName} service charges by quarter</Text>
       <Svg width={W} height={H}>
         <Line x1={0} y1={H} x2={W} y2={H} stroke={C.rule} strokeWidth={1} />
         {quarters.map((q, i) => (
@@ -136,8 +138,8 @@ export function IncomeTrendChart({ financials }: { financials: InstitutionFinanc
 const BAR = 200;
 
 /** One fee's price at the bank and at its named local competitors, the bank first and highlighted. */
-export function CompetitorBars({ item }: { item: LocalCompetitorFee }) {
-  const rows = [{ name: "You", amount: item.own, own: true }, ...item.competitors.map((c) => ({ ...c, own: false }))];
+export function CompetitorBars({ item, institutionName = "Research institution" }: { item: LocalCompetitorFee; institutionName?: string }) {
+  const rows = [{ name: institutionName, amount: item.own, own: true }, ...item.competitors.map((c) => ({ ...c, own: false }))];
   const max = Math.max(...rows.map((r) => r.amount)) || 1;
   return (
     <View wrap={false}>
@@ -248,7 +250,7 @@ export function IncomeCompareBars({ counties, state }: { counties: { name: strin
  * Fee dependence since 2010: every bank's (or credit union's) median share of revenue from fees as
  * a line over the middle half, with the institution's own share marked in its first and latest years.
  */
-export function DependenceTrendChart({ chart }: { chart: DependenceChart }) {
+export function DependenceTrendChart({ chart, institutionName = "Research institution" }: { chart: DependenceChart; institutionName?: string }) {
   const { series, own } = chart;
   const values = [...series.flatMap((p) => [p.p25, p.p75]), ...own.map((o) => o.value)];
   // Shares start at zero; ticks every 1, 2, 5 or 10 points so there are no more than six.
@@ -266,7 +268,7 @@ export function DependenceTrendChart({ chart }: { chart: DependenceChart }) {
   return (
     <View wrap={false}>
       <Text style={s.chartTitle}>{chart.groupLabel === "banks" ? "Deposit service charges" : "Fee income"} as a share of revenue, {first} to {last}</Text>
-      <Legend items={[{ label: "You", mark: "dot" }, { label: `All ${chart.groupLabel}: median`, mark: "line" }, { label: "Middle half", mark: "band" }]} />
+      <Legend items={[{ label: institutionName, mark: "dot" }, { label: `All ${chart.groupLabel}: median`, mark: "line" }, { label: "Middle half", mark: "band" }]} />
       <View style={{ flexDirection: "row", marginTop: 10 }}>
         <View style={{ width: 28, height: LH + 4, position: "relative" }}>
           {ticks.map((v) => (

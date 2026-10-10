@@ -94,6 +94,19 @@ layout was cleaned again; a subsequent build was interrupted deliberately
 The resource failure is recorded on #1004. Root removed the temporary dependency
 copies and confirmed their absence in sequential checks. Clean TypeScript and
 diff checks passed afterward. The isolated local-font control build passed, but
-the actual clean full-checkout `npm run build` is still pending. Root will run
-that build sequentially after the clean lint and full-suite checks; no combined
-build success or complete release gate is claimed here yet.
+the clean full-checkout build was held until the clean lint and full-suite
+checks finished, then run sequentially.
+
+## Clean full-checkout build passed
+
+The normal `NEXT_TELEMETRY_DISABLED=1 npm run build` completed with exit code 0
+on the combined checkout after cleanup and the final H01 edits. Next.js
+16.1.6/Turbopack compiled successfully in 25.2 seconds, completed TypeScript,
+generated all 74 static pages, and finalized optimization. The normal postbuild
+check verified all 12 canonical admin routes. The exact receipt is
+`h01-combined-build-clean-release.log` in the task scratch directory.
+
+Local `DATABASE_URL` was unset, so prerendering used the application's existing
+unavailable-data fallbacks. This build confirms compilation, type checking,
+static generation, and the admin-route packaging check. It does not establish
+authenticated preview acceptance or live database/provider behavior.

@@ -201,7 +201,7 @@ export function SchedulePositionsChart({
         {rows.length % 2 === 1 ? <li aria-hidden className="hidden bg-warm-100/50 sm:block" /> : null}
       </ul>
       <p className="border-t border-warm-200 px-5 py-3 text-xs text-warm-600">
-        Dot: your fee. Tick: peer median.{anyBand ? " Tinted band: the middle half of what peers charge." : ""} Furthest from the median first. Peers:{" "}
+        Dot: research institution fee. Tick: peer median.{anyBand ? " Tinted band: the middle half of what peers charge." : ""} Furthest from the median first. Peers:{" "}
         {labels.join("; ")}.
       </p>
     </section>

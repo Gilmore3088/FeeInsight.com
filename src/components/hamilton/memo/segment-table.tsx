@@ -200,7 +200,7 @@ export function SegmentTable({
         </div>
       ) : null}
       <p className="mt-3 border-t border-warm-200 pt-2 text-xs text-warm-600">
-        {own != null ? "Bars in terra charge less than you. " : ""}Assets from the institution registry. Source: {data.source.label}
+        {own != null ? `Bars in terra charge less than ${ownLabel}. ` : ""}Assets from the institution registry. Source: {data.source.label}
         {data.source.asOf ? `, ${data.source.asOf.slice(0, 10)}` : ""}.
       </p>
     </figure>
