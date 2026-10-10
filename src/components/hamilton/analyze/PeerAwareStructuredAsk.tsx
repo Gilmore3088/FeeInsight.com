@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useState, type ComponentProps } from "react";
 import {
   isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation,
   type PeerListContinuation, type PeerListResponse,
@@ -12,33 +12,28 @@ type Props = ComponentProps<typeof StructuredAsk>;
 
 /** The answer is list-aware within a conversation; no second input or paid fallback. */
 export function PeerAwareStructuredAsk(props: Props) {
-  const [continuation, setContinuation] = useState<PeerListContinuation | null>(null);
+  const [continuation, setContinuation] = useState<{ snapshot: PeerListContinuation; answeredNonce: number } | null>(null);
   const isNewList = Boolean(props.question && isPeerListQuestion(props.question));
   const isFollowUp = Boolean(props.question && !isNewList && isPeerListContinuationQuestion(props.question));
 
   const remember = useCallback((data: PeerListResponse, previous: PeerListContinuation | null) => {
     if (data.peerList.status !== "ready") return;
     if (previous) {
-      setContinuation({ ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) });
+      setContinuation({ snapshot: { ...previous, selectedIds: data.peerList.rows.map(row => row.institutionId) }, answeredNonce: props.nonce ?? 0 });
     } else if (props.question) {
-      setContinuation(makePeerListContinuation(data, props.question, props.institutionId));
+      const snapshot = makePeerListContinuation(data, props.question, props.institutionId);
+      if (snapshot) setContinuation({ snapshot, answeredNonce: props.nonce ?? 0 });
     }
-  }, [props.question, props.institutionId]);
-
-  useEffect(() => {
-    // Any new independent list invalidates the earlier chain, even when it
-    // fails. Otherwise a later "Only Florida" could reuse a stale answer.
-    if (!isFollowUp) setContinuation(null);
-  }, [isFollowUp, props.question, props.nonce]);
+  }, [props.question, props.institutionId, props.nonce]);
 
   if (!isNewList && !isFollowUp) return <StructuredAsk {...props} />;
-  if (isFollowUp && (!continuation || continuation.originInstitutionId !== props.institutionId)) {
-    return <p role="alert" className="text-sm text-warm-800">Ask for a peer list first. This question cannot borrow an old or different institution's peers.</p>;
+  if (isFollowUp && (!continuation || continuation.answeredNonce + 1 !== (props.nonce ?? 0) || continuation.snapshot.originInstitutionId !== props.institutionId)) {
+    return <p role="alert" className="text-sm text-warm-800">Ask for a peer list first. This question cannot borrow an old or different institution’s peers.</p>;
   }
   return <PeerListRequest
     key={JSON.stringify([props.institutionId, props.question, props.nonce])}
     {...props}
-    previousPeerList={isFollowUp ? continuation : null}
+    previousPeerList={isFollowUp ? continuation?.snapshot ?? null : null}
     onResolved={remember}
   />;
 }
