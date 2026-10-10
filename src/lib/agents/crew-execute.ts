@@ -192,7 +192,7 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
             speaker,
             runId: result.run.id,
             runReused: result.reused,
-            links: [{ label: `Track run #${result.run.id}`, href: "/admin/atlas/details" }],
+            links: [{ label: `Track run #${result.run.id}`, href: `/admin/atlas/runs/${result.run.id}` }],
             lines: [
               result.reused
                 ? `${describeScope(command.scope)} is already running (run #${result.run.id}).`
@@ -211,7 +211,7 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
           idempotencyKey: `crew:atlas:all:${minuteBucket()}`,
           steps: STATE_LANE_STEPS.filter((step) => !step.key.startsWith("public-")),
         });
-        return { speaker, runId: run.run.id, runReused: run.reused, links: [{ label: `Track run #${run.run.id}`, href: "/admin/atlas/details" }], lines: [`Queued a full run across all states (run #${run.run.id}).`, ...pausedNote] };
+        return { speaker, runId: run.run.id, runReused: run.reused, links: [{ label: `Track run #${run.run.id}`, href: `/admin/atlas/runs/${run.run.id}` }], lines: [`Queued a full run across all states (run #${run.run.id}).`, ...pausedNote] };
       }
       const stateCode = command.scope.kind === "state" ? command.scope.stateCode : undefined;
       const institutionId = command.scope.kind === "institution" ? command.scope.institutionId : undefined;
@@ -251,7 +251,7 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
         speaker,
         runId: run.run.id,
         runReused: run.reused,
-        links: [{ label: `Track run #${run.run.id}`, href: "/admin/atlas/details" }],
+        links: [{ label: `Track run #${run.run.id}`, href: `/admin/atlas/runs/${run.run.id}` }],
         lines: [run.reused
           ? `Existing ${speaker} run #${run.run.id} for ${scopeName} reused.`
           : `Queued ${speaker} for ${scopeName} (run #${run.run.id}).`, ...pausedNote],
@@ -282,7 +282,7 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
         idempotencyKey: `crew:retry:${failed.id}:${stepKey}`,
         steps: [{ key: stepKey, agent: command.agent, title: `Retry ${stepKey}` }],
       });
-      return { speaker, runId: run.run.id, runReused: run.reused, links: [{ label: `Track run #${run.run.id}`, href: "/admin/atlas/details" }], lines: [`Queued retry of "${stepKey}" from run #${failed.id} (run #${run.run.id}).`] };
+      return { speaker, runId: run.run.id, runReused: run.reused, links: [{ label: `Track run #${run.run.id}`, href: `/admin/atlas/runs/${run.run.id}` }], lines: [`Queued retry of "${stepKey}" from run #${failed.id} (run #${run.run.id}).`] };
     }
     default:
       return answerCrewCommand(command, "");
