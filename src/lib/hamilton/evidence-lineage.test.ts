@@ -79,7 +79,10 @@ describe("H06-T02/T03 canonical evidence lineage", () => {
 
   it("rejects negative and nonfinite values but keeps a true zero", () => {
     const row = { id: 1, feeName: "Synthetic", sourceDocumentId: null,
-      documentUrl: null, sourceUrl: null, publishedAt: null, verifiedByEventId: null };
+      documentUrl: null, sourceUrl: null, publishedAt: null, verifiedByEventId: null,
+      frequency: null, conditions: null, feeAudience: "unknown" as const,
+      audienceEvidence: null, sourceContentHash: null, sourceCrawledAt: null,
+      sourceLastCheckedAt: null };
     const bundle = buildFeeResearchEvidence(research([
       { ...row, amount: Number.NaN }, { ...row, id: 2, amount: Infinity },
       { ...row, id: 3, amount: -3 }, { ...row, id: 4, amount: 0 },
