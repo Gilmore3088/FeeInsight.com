@@ -100,6 +100,17 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 - No production database mutation, deployment, provider activation, or outreach send was performed in this continuation.
 
 
+
+## October 10 continuation: exact32 executable repair rehearsal
+
+- `72e2f09adb8b372a92fecdc8ae18ad7c389898ac` adds the non-schema operator script `docs/project/findings/2026-10-10-fee-audience-data-repair.sql`. It is exact-ID/source/lineage/category/amount guarded and deliberately separate from schema migration history.
+- `19508255906c421a2923f60c0a1c375158fb0378` hardens the script for nullable flags and transaction-local receipt ordering.
+- Exact current production catalog values for all 32 screening publications were re-read before writing the script. They still match the runbook IDs, source-document IDs, categories and amounts.
+- The script implements four distinct source-review outcomes: 21 source-proven business-scope backfills that preserve price/category/frequency/history; 3 audience-screen false positives recorded with no audience guess; 3 confirmed category/unit/binding errors quarantined; and 5 uncertain/inaccessible rows quarantined. Total: 32.
+- The script writes one idempotent `pipeline_feedback` receipt per record, never deletes history, never writes `fee_change_records` or movement signals, and blocks quarantined raw lineage from republishing. Replacement rows must come through the normal pipeline.
+- A rollback-only populated preview rehearsal seeded all 32 exact publication/raw/verified/source IDs into migrated preview `zqjwpjujroahhqtncycv`, executed the script's exact preconditions and postconditions, then ROLLED BACK. All assertions passed. Final counts: institutions=0, raw=0, published=0.
+- The existing Atlas priority-institution path already includes Pinnacle institution 47 and runs free `fetch -> read -> extract -> classify -> publish` steps. No synthetic repair runner or fabricated verification event is needed after migration 41 quarantines the bad Pinnacle lineage.
+
 ## Remaining acceptance gates
 
 ### 1. Final-head CI and regression integrity
