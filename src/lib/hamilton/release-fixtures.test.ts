@@ -8,6 +8,8 @@ describe("Hamilton H07 reusable acceptance fixture", () => {
     expect(fixture.users).toHaveLength(2);
     expect(fixture.institutions.find((institution) => institution.id === 8109)?.name).toBe("Synthetic Space Coast CU");
     expect(fixture.peerGroups.complete).toHaveLength(10);
+    expect(fixture.peerGroups.complete.every((id) => fixture.institutions.find((institution) => institution.id === id)?.totalAssetsUsd !== null)).toBe(true);
+    expect(fixture.peerGroups.complete).not.toContain(9105);
     expect(fixture.peerGroups.thin.length).toBeLessThan(10);
   });
 
