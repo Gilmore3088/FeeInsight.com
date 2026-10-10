@@ -74,6 +74,86 @@ export interface PeerListResponse {
   peerList: PeerListData;
 }
 
+
+/** A client-held pointer to an exact displayed list, never an access token.
+ * The server re-derives the original selection for the authenticated user
+ * and compares dated record IDs before honoring a follow-up.
+ */
+export interface PeerListContinuation {
+  originQuestion: string;
+  originInstitutionId: string | null;
+  originSubjectId: number;
+  originRows: Array<Pick<PeerListRow, "institutionId" | "recordId" | "reportDate" | "source">>;
+  selectedIds: number[];
+}
+
+export function peerListRowReferences(rows: PeerListRow[]): PeerListContinuation["originRows"] {
+  return rows.map(row => ({
+    institutionId: row.institutionId,
+    recordId: row.recordId,
+    reportDate: row.reportDate,
+    source: row.source,
+  }));
+}
+
+export function makePeerListContinuation(
+  response: PeerListResponse, question: string, institutionId: string | null,
+): PeerListContinuation | null {
+  const data = response.peerList;
+  if (data.status !== "ready" || !data.subject) return null;
+  return {
+    originQuestion: question,
+    originInstitutionId: institutionId,
+    originSubjectId: data.subject.institutionId,
+    originRows: peerListRowReferences(data.rows),
+    selectedIds: data.rows.map(row => row.institutionId),
+  };
+}
+
+/** Validate untrusted JSON; a list payload never establishes account membership. */
+export function validatePeerListContinuation(value: unknown): PeerListContinuation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const p = value as Partial<PeerListContinuation>;
+  const idOK = (id: unknown): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0;
+  if (typeof p.originQuestion !== "string" || p.originQuestion.length > 1000 || !isPeerListQuestion(p.originQuestion)) return null;
+  if (p.originInstitutionId !== null &&
+      (typeof p.originInstitutionId !== "string" || !/^[1-9][0-9]{0,14}$/.test(p.originInstitutionId))) return null;
+  if (!idOK(p.originSubjectId) || !Array.isArray(p.originRows) || p.originRows.length > MAX_PEER_LIST_ROWS ||
+      !Array.isArray(p.selectedIds) || p.selectedIds.length > MAX_PEER_LIST_ROWS) return null;
+  const seen = new Set<number>();
+  for (const row of p.originRows) {
+    if (!row || !idOK(row.institutionId) || seen.has(row.institutionId)) return null;
+    if (row.recordId !== null && !idOK(row.recordId)) return null;
+    if (row.reportDate !== null && (typeof row.reportDate !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(row.reportDate))) return null;
+    if (row.source !== null && row.source !== "fdic" && row.source !== "ncua") return null;
+    seen.add(row.institutionId);
+  }
+  if (new Set(p.selectedIds).size !== p.selectedIds.length ||
+      p.selectedIds.some(id => !idOK(id) || !seen.has(id))) return null;
+  return p as PeerListContinuation;
+}
+
+export function peerListReferencesUnchanged(rows: PeerListRow[], prior: PeerListContinuation): boolean {
+  return JSON.stringify(peerListRowReferences(rows)) === JSON.stringify(prior.originRows);
+}
+
+/** Recognized list-relative questions must not fall through to a different fee group. */
+export function isPeerListContinuationQuestion(question: string): boolean {
+  return /^(?:only\b|show\s+only\b|filter\s+to\b|(?:compare|show|list)\s+their\b)/i.test(question.trim());
+}
+
+/** Deliberately finite grammar: other follow-ups receive explicit guidance. */
+export function peerListRefinementState(question: string): string | null {
+  const cleaned = question.trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ");
+  if (!/^only\s+/i.test(cleaned)) return null;
+  const term = cleaned
+    .replace(/^only\s+(?:show\s+)?(?:me\s+)?(?:the\s+)?/i, "")
+    .replace(/\s+(?:ones|peers|institutions)$/i, "").trim();
+  const match = Object.entries(STATE_NAMES).find(([code, name]) =>
+    code.toLowerCase() === term.toLowerCase() || name.toLowerCase() === term.toLowerCase());
+  return match?.[0] ?? null;
+}
+
 // Explicit fee/report questions stay on their existing route. A list of institutions
 // must not be inferred from a request for a fee median, narrative or recommendation.
 export function isPeerListQuestion(question: string): boolean {

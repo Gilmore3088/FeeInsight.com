@@ -4,17 +4,18 @@ import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { parsePeerListQuestion, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
+import { isPeerListContinuationQuestion, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
-interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown }
+interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
 
 /** A recognized list is never sent to fee analysis or a paid narrative fallback. */
-export async function answerPeerList(user: PeerAsker, body: PeerAskBody): Promise<PeerListResponse | null> {
+export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordActivity = true): Promise<PeerListResponse | null> {
   if (body.answer !== undefined || typeof body.question !== "string") return null;
   const question = body.question;
-  const intent = parsePeerListQuestion(question);
-  if (!intent) return null;
+  const isContinuation = body.previousPeerList !== undefined;
+  const intent = isContinuation ? null : parsePeerListQuestion(question);
+  if (!isContinuation && !intent) return null;
   const now = new Date();
   const queriedAt = now.toISOString();
   const asOf = queriedAt.slice(0, 10);
@@ -26,7 +27,49 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody): Promis
   const build = async (): Promise<PeerListResponse> => {
     let result: PeerListResponse;
     try {
-      if (question.trim().length > 1000) {
+      if (isContinuation) {
+        // The original list is independently re-queried under the current user.
+        // Neither client-selected IDs nor the old subject is trusted as authority.
+        const prior = validatePeerListContinuation(body.previousPeerList);
+        const state = peerListRefinementState(question);
+        if (!prior || !isPeerListContinuationQuestion(question))
+          return message("needs_criteria", "This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
+        if (!state)
+          return message("needs_criteria", "Only state refinement of the exact displayed peer list is supported here (for example, 'Only Florida'). Fee comparisons of 'their' fees are not yet supported; no different peer group or paid report was started.");
+        const original = await answerPeerList(user, {
+          question: prior.originQuestion,
+          institutionId: prior.originInstitutionId,
+        }, false);
+        if (!original || original.peerList.status !== "ready" ||
+            original.peerList.subject?.institutionId !== prior.originSubjectId ||
+            !peerListReferencesUnchanged(original.peerList.rows, prior)) {
+          return message("unavailable", "The original peer selection or its dated records have changed. Run the original list again; no substitute peer group was used.");
+        }
+        const selected = new Set(prior.selectedIds);
+        const rows = original.peerList.rows.filter(row =>
+          selected.has(row.institutionId) && row.stateCode === state);
+        const count = prior.selectedIds.length;
+        return {
+          kind: "peer_list",
+          shortAnswer: rows.length + " of " + count + " previously displayed peers are in " + state + ".",
+          peerList: {
+            ...original.peerList,
+            rows,
+            totalMatches: rows.length,
+            criteria: original.peerList.criteria ? {
+              ...original.peerList.criteria,
+              states: [state],
+              institutionIds: [...prior.selectedIds],
+              descriptions: [...original.peerList.criteria.descriptions,
+                "This refinement used only the " + count + " institutions displayed in the previous list."],
+            } : null,
+            notes: [...original.peerList.notes,
+              "Only the previously displayed peer IDs were considered; no new peers were introduced. Reporting dates were rechecked."],
+          },
+        };
+      } else if (!intent) {
+        result = message("needs_criteria", "Select a valid peer-list question.");
+      } else if (question.trim().length > 1000) {
         result = message("needs_criteria", "Keep the peer-list question to 1,000 characters or fewer.");
       } else if (intent.problems.length) {
         result = message("needs_criteria", intent.problems.join(" "));
@@ -82,7 +125,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody): Promis
   const result = await build();
   const recordedSubject = result.peerList.subject;
   // Public-data lookup only. This activity receipt is not a saved peer-set mutation.
-  await recordProRequest({
+  if (recordActivity) await recordProRequest({
     operation: "ask", title: "Hamilton peer list", status: result.peerList.status === "unavailable" ? "failed" : "completed",
     summary: result.shortAnswer, userId: user.id,
     ...(recordedSubject ? { institutionId: recordedSubject.institutionId } : {}),
