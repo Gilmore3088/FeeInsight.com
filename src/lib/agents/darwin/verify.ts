@@ -1042,6 +1042,7 @@ export async function runDarwinVerify(
           sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
           canonicalFeeKey,
           amount: base.amount,
+          feeAudience: row.fee_audience ?? "unknown",
         },
         sourceCopies,
       );
