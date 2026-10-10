@@ -1,5 +1,5 @@
 import type { AnalyzeResponse } from "./types";
-import type { FeeResearch, OwnFeeRow, PeerValue } from "./workspace/types";
+import type { FeeResearch, OwnFeeRow } from "./workspace/types";
 
 export const HAMILTON_EVIDENCE_CONTRACT_VERSION = 1 as const;
 
