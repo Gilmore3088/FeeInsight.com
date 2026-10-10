@@ -202,6 +202,7 @@ export function claimBindingMatches(
 function comparabilityProblems(
   left: HamiltonEvidenceFact | HamiltonDerivedFact,
   right: HamiltonEvidenceFact | HamiltonDerivedFact,
+  periodRule: "same_period" | "chronological" = "same_period",
 ): string[] {
   const problems: string[] = [];
   if (typeof left.value !== "number" || typeof right.value !== "number") problems.push("non_numeric_value");
@@ -209,7 +210,16 @@ function comparabilityProblems(
   if (left.currency !== right.currency) problems.push("currency_mismatch");
   if (left.scope.feeCategory !== right.scope.feeCategory) problems.push("fee_category_mismatch");
   if (!left.scope.reportingDate || !right.scope.reportingDate) problems.push("reporting_period_unknown");
-  else if (left.scope.reportingDate !== right.scope.reportingDate) problems.push("reporting_period_mismatch");
+  else if (periodRule === "same_period" && left.scope.reportingDate !== right.scope.reportingDate) {
+    problems.push("reporting_period_mismatch");
+  } else if (periodRule === "chronological") {
+    // Changes require one institution over two ordered periods, not two banks in one period.
+    if (left.scope.institutionId === null || left.scope.institutionId !== right.scope.institutionId) {
+      problems.push("institution_mismatch");
+    }
+    if (left.scope.product !== right.scope.product) problems.push("product_mismatch");
+    if (left.scope.reportingDate <= right.scope.reportingDate) problems.push("reporting_period_order_invalid");
+  }
   return problems;
 }
 
@@ -250,7 +260,7 @@ export function derivePercentChange(
   current: HamiltonEvidenceFact | HamiltonDerivedFact,
   prior: HamiltonEvidenceFact | HamiltonDerivedFact,
 ): { fact: HamiltonDerivedFact | null; problems: string[] } {
-  const problems = comparabilityProblems(current, prior);
+  const problems = comparabilityProblems(current, prior, "chronological");
   if (typeof prior.value === "number" && prior.value === 0) problems.push("zero_denominator");
   if (
     problems.length > 0
