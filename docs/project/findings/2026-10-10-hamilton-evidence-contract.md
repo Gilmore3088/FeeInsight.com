@@ -27,7 +27,10 @@ path.
   records were attached.
 - Introduces an additive, typed evidence snapshot DTO. It reuses canonical
   `published_fee_catalog` / workspace provenance rather than creating a new source of
-  truth. Facts bind institution, fee category, value/unit, period and source identity.
+  truth. Facts bind institution, fee category, value/unit and source identity. The
+  catalog publication timestamp is stored as the source `asOf` value; it is **not**
+  mislabeled as a fee reporting/effective period. `reportingDate` remains null when
+  the underlying workspace row does not prove one.
   Derived differences and percent changes are separate records with input fact IDs and
   a denominator where applicable.
 - The Ask server now attaches a FeeResearch evidence snapshot when it files a storyline.
@@ -44,7 +47,8 @@ This is H06-T01 containment and an H06-T02/T03 foundation, not semantic verifica
 all Hamilton prose. Written free-form answers still need tool-output-to-fact binding,
 and rendering/export must consume these IDs before H06-T04/T06/T08 can be accepted.
 Account applicability is currently `unknown` where the existing workspace record does
-not expose a safe audience field; it is not guessed.
+not expose a safe audience field; it is not guessed. Likewise, a fee's publication/as-of
+timestamp is not promoted to an effective/reporting period without source evidence.
 
 Historical saved answers are not rewritten. The new medium-confidence policy applies to
 newly produced artifacts on this branch. A future compatibility renderer can identify
