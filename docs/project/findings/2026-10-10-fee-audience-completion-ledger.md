@@ -73,6 +73,27 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 - This change does not alter production data. Final-head CI is required before this gate is considered passed.
 - The previously attempted edit of `tests/e2e/production-schema.sql` remains tool-safety-blocked and was not retried through another route. Passing E2E from the prior head is preserved as a receipt, but the known caught schema-warning noise remains open.
 
+
+## October 10 continuation: downstream reader and alert hardening
+
+- Reconciled #986 with current main `102036807c82dcd9ac656ea8afe0e709c3cab651` using merge commit `71a3754e82f991f019395ff226c464d1cb9b7f82`; comparison then showed #986 44 commits ahead and 0 behind main. Backlog-control files from merged #987 were preserved.
+- Reviewed all six overlapping #939 paths and left an owner coordination comment. Correctness contract: preserve #986 consumer/both eligibility and genuine zero; layer #939's account/presentation work on top. In particular, do not reintroduce `amount > 0` or omit audience checks in profile headline selection.
+- Commented on #990, #991 and #984 with the migration-collision handoff: #986 preview already has audience migrations at 40/41, production has not been changed by #986, and current main had no 42/43 filenames. Proposed preserving applied #986 preview history and moving only confirmed-unapplied payment migrations to later unique versions after their owners verify applied history. No payment branch was modified.
+- `314a417b` / `145c4dca`: guide extremes now contribute one value per institution; overdraft uses the highest tier, other categories the institution median, with consumer/source eligibility and zero retained.
+- `f17557ca` / `46b25ed9`: state/county visual fee comparisons use sourced consumer/both evidence, real zeroes and the highest overdraft tier; branch/deposit geography remains unchanged.
+- `b90ea6f6` / `bdc56230`: saved-institution guide fees use the same consumer/source/tier contract.
+- `142cb934`, `8d7c61a0`, `a3fe9c68`: Hamilton price studies use consumer/both evidence and retain zero where mathematically meaningful; inferred-volume denominators remain positive-only but exclude business/unknown rows.
+- `e6e4b2fa` / `ff61eb22`: public fee-revenue research reduces each institution/category to one consumer-applicable value, retains zero, and requires three distinct fee categories before including an institution.
+- `e80e947e`, `a1f891b2`, `d638e534`, `a744cc3b`: publication signals carry fee audience and explicit consumer-applicable category keys; fee alerts fail closed on business/unknown/legacy signals and fill newly published amounts from consumer evidence only. No alert/email send occurred.
+- `226d29e6`: competitor alerts use consumer own-fee values and the shared live same-audience price-move predicate.
+- `a4f3100a` / `a72cbf2c`: Pro digest movements and snapshot fee rows are consumer-applicable; business/unknown movement signals are ignored.
+- `759c1899`: local-market answer own fees use the shared consumer/source contract.
+- `902a7a41` / `60bd7c14`: the shared fee-movement confirmation query itself now requires old/new rows to have the same known audience, closing cross-audience false movements before downstream consumers.
+- `3b8a2da9` / `20121186`: city fee comparisons and averages use consumer/both sourced evidence, preserve zero, and use the highest overdraft tier.
+- Actions run `38017987435` on an earlier head passed focused agentic tests and SQL assertions but failed TypeScript. Exact errors: `verifiedFee.fee_audience` widened to `string` in `hamilton/publish.test.ts`, and Pro digest passed an `unknown` value to `isConsumerFee`. Fixed on the current branch by `f14976ff` (literal audience typing) and `68b69c58` (explicit runtime narrowing). This run did NOT reach lint/full-suite/E2E; do not call it green.
+- No production database mutation, deployment, provider activation, or outreach send was performed in this continuation.
+
+
 ## Remaining acceptance gates
 
 ### 1. Final-head CI and regression integrity
