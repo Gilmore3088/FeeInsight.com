@@ -6,6 +6,9 @@ import {
   deriveDifference,
   derivePercentChange,
   structuredEvidenceConfidence,
+  normalizeLegacyAnalyzeConfidence,
+  LEGACY_HIGH_CONFIDENCE_LIMITATION,
+  type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
 import type { FeeResearch } from "./workspace/types";
@@ -193,5 +196,42 @@ describe("FeeResearch evidence snapshot", () => {
     const confidence = structuredEvidenceConfidence(null);
     expect(confidence.level).toBe("medium");
     expect(confidence.basis.join(" ")).toContain("without claim-level");
+  });
+});
+
+
+describe("legacy saved confidence compatibility", () => {
+  const base = {
+    title: "Legacy answer",
+    confidence: { level: "high" as const, basis: ["Old figure matcher"] },
+    hamiltonView: "Synthetic legacy answer.",
+    whatThisMeans: "",
+    whyItMatters: [],
+    evidence: { metrics: [] },
+    exploreFurther: [],
+  };
+
+  it("downgrades an old high rating in memory when no record-bound evidence exists", () => {
+    const normalized = normalizeLegacyAnalyzeConfidence(base);
+    expect(normalized.confidence.level).toBe("medium");
+    expect(normalized.confidence.basis).toContain(LEGACY_HIGH_CONFIDENCE_LIMITATION);
+    expect(base.confidence.level).toBe("high");
+  });
+
+  it("does not downgrade an artifact that actually carries structured evidence", () => {
+    const factEvidence: HamiltonEvidenceBundle = {
+      version: 1,
+      generatedAt: "2026-10-10T00:00:00Z",
+      facts: [],
+      derivations: [],
+      limitations: [],
+    };
+    const response = { ...base, factEvidence };
+    expect(normalizeLegacyAnalyzeConfidence(response)).toBe(response);
+  });
+
+  it("does not change an already-medium artifact", () => {
+    const response = { ...base, confidence: { level: "medium" as const, basis: ["Already bounded"] } };
+    expect(normalizeLegacyAnalyzeConfidence(response)).toBe(response);
   });
 });

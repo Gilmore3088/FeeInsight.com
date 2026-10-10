@@ -1,3 +1,4 @@
+import type { AnalyzeResponse } from "./types";
 import type { FeeResearch, OwnFeeRow, PeerValue } from "./workspace/types";
 
 export const HAMILTON_EVIDENCE_CONTRACT_VERSION = 1 as const;
@@ -358,5 +359,31 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
       "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.",
       CLAIM_BINDING_LIMITATION,
     ],
+  };
+}
+
+
+export const LEGACY_HIGH_CONFIDENCE_LIMITATION =
+  "Legacy high confidence predates record-bound Hamilton evidence and is shown as medium until the artifact is regenerated or separately verified.";
+
+export type EvidenceBoundAnalyzeResponse = AnalyzeResponse & {
+  factEvidence?: HamiltonEvidenceBundle;
+};
+
+/**
+ * Compatibility view only: never rewrite stored history. Old high ratings without
+ * structured evidence cannot retain a stronger label merely because they predate
+ * the evidence contract.
+ */
+export function normalizeLegacyAnalyzeConfidence(
+  response: EvidenceBoundAnalyzeResponse,
+): EvidenceBoundAnalyzeResponse {
+  if (response.confidence.level !== "high" || response.factEvidence) return response;
+  return {
+    ...response,
+    confidence: {
+      level: "medium",
+      basis: [...response.confidence.basis, LEGACY_HIGH_CONFIDENCE_LIMITATION],
+    },
   };
 }

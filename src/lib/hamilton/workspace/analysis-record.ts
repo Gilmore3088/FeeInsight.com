@@ -4,7 +4,7 @@
  */
 
 import { confidenceFromFigureCheck } from "../figure-check";
-import { structuredEvidenceConfidence, type HamiltonEvidenceBundle } from "../evidence-contract";
+import { structuredEvidenceConfidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "../evidence-contract";
 import type { AnalysisFocus } from "../navigation";
 import type { AnalyzeResponse } from "../types";
 import type { Storyline, StorylineKind, StorylineMemo } from "./storyline-types";
@@ -26,8 +26,6 @@ export function analysisTitle(storyline: Storyline): string {
   const t = storyline.governingThought.trim();
   return t.length > 80 ? `${t.slice(0, 79).trimEnd()}…` : t;
 }
-
-export type EvidenceBoundAnalyzeResponse = AnalyzeResponse & { factEvidence?: HamiltonEvidenceBundle };
 
 /** The storyline as a saved analysis, before any model-written text. */
 export function storylineAnalysis(
