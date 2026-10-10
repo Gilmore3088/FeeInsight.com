@@ -40,7 +40,7 @@ suite("checkout persistence in disposable PostgreSQL", () => {
       END $$;`);
     await db.unsafe(`CREATE TABLE IF NOT EXISTS users (id bigint PRIMARY KEY);
       DROP TABLE IF EXISTS pro_checkout_intents;`);
-    await db.unsafe(readFileSync(resolve("supabase/migrations/20270110000040_pro_checkout_intents.sql"), "utf8"));
+    await db.unsafe(readFileSync(resolve("supabase/migrations/20270110000042_pro_checkout_intents.sql"), "utf8"));
   });
   beforeEach(async () => {
     await db`TRUNCATE pro_checkout_intents, users CASCADE`;
