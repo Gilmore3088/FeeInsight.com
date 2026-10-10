@@ -112,7 +112,7 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
               <div role="img" aria-label={"Competitor branch footprint for " + result.market.label}
                 className="overflow-x-auto rounded-md border border-warm-200"
                 dangerouslySetInnerHTML={{ __html: result.map.html }} />
-              <p className="text-xs text-warm-600">{result.map.legend}</p>
+              <div className="text-xs text-warm-600" aria-label="Branch map legend" dangerouslySetInnerHTML={{ __html: result.map.legend }} />
             </div>
           ) : null}
           {result.network ? (
