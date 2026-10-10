@@ -33,6 +33,11 @@ export interface HamiltonFactSource {
   sourceDocumentIds: number[];
   urls: string[];
   asOf: string | null;
+  /** Content fingerprint, not an effective or filing date. */
+  documentContentHash?: string | null;
+  retrievedAt?: string | null;
+  lastCheckedAt?: string | null;
+  location?: string | null;
   verificationEventId: string | null;
 }
 
@@ -45,6 +50,7 @@ export interface HamiltonEvidenceFact {
   currency: "USD" | null;
   frequency: string | null;
   conditions: string | null;
+  audienceEvidence?: string | null;
   status: Exclude<HamiltonEvidenceStatus, "derived">;
   source: HamiltonFactSource;
 }
@@ -96,7 +102,7 @@ function urls(...values: Array<string | null | undefined>): string[] {
 }
 
 function ownFeeFact(institutionId: number, feeCategory: string, row: OwnFeeRow): HamiltonEvidenceFact | null {
-  if (row.amount === null) return null;
+  if (row.amount === null || !Number.isFinite(row.amount) || row.amount < 0) return null;
   return {
     id: `fee:published:${row.id}`,
     kind: "observed",
@@ -106,13 +112,14 @@ function ownFeeFact(institutionId: number, feeCategory: string, row: OwnFeeRow):
       product: row.feeName,
       reportingDate: null,
       effectiveDate: null,
-      accountApplicability: "unknown",
+      accountApplicability: row.feeAudience ?? "unknown",
     },
     value: row.amount,
     unit: "usd",
     currency: "USD",
-    frequency: null,
-    conditions: null,
+    frequency: row.frequency ?? null,
+    conditions: row.conditions ?? null,
+    audienceEvidence: row.audienceEvidence ?? null,
     status: "published",
     source: {
       label: "Published fee catalog",
@@ -121,6 +128,10 @@ function ownFeeFact(institutionId: number, feeCategory: string, row: OwnFeeRow):
       sourceDocumentIds: row.sourceDocumentId === null ? [] : [row.sourceDocumentId],
       urls: urls(row.documentUrl, row.sourceUrl),
       asOf: row.publishedAt,
+      documentContentHash: row.sourceContentHash ?? null,
+      retrievedAt: row.sourceCrawledAt ?? null,
+      lastCheckedAt: row.sourceLastCheckedAt ?? null,
+      location: null,
       verificationEventId: row.verifiedByEventId,
     },
   };
