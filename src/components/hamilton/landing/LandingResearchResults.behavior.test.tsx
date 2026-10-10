@@ -49,6 +49,10 @@ describe("landing research confirmation and explicit scope", () => {
         charter: "credit_union",
         categories: ["paper_statement", "money_order"],
         comparisons: [{
+          category: "paper_statement",
+          selected: { median: 2, institutions: 8, lastUpdated: "2026-10-10", status: "available" },
+          national: { median: 3, institutions: 20, lastUpdated: "2026-10-10", status: "available" },
+        }, {
           category: "money_order",
           selected: { median: 0, institutions: 8, lastUpdated: "2026-10-10", status: "available" },
           national: { median: 2, institutions: 20, lastUpdated: "2026-10-10", status: "available" },
@@ -74,7 +78,12 @@ describe("landing research confirmation and explicit scope", () => {
       json: async () => ({
         scope: { kind: "state", stateCode: "DC" },
         charter: "credit_union",
+        categories: ["paper_statement", "money_order"],
         comparisons: [{
+          category: "paper_statement",
+          selected: { median: null, institutions: 0, lastUpdated: "2026-10-10", status: "not_observed" },
+          national: null,
+        }, {
           category: "money_order",
           selected: { median: 4, institutions: 7, lastUpdated: "2026-10-10", status: "available" },
           national: null,
@@ -89,6 +98,24 @@ describe("landing research confirmation and explicit scope", () => {
     expect(host.textContent).toContain("WA fee comparison");
     expect(host.textContent).not.toContain("$4.00");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects evidence from another charter or state instead of showing wrong comparison", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scope: { kind: "state", stateCode: "WA" },
+        charter: "bank",
+        categories: ["paper_statement", "money_order"],
+        comparisons: selected.categories.map(category => ({
+          category, selected: { median: 90, institutions: 20, status: "available" }, national: null,
+        })),
+      }),
+    }));
+    await render(selected);
+    await clickRun();
+    expect(host.textContent).toContain("did not match the selected research");
+    expect(host.textContent).not.toContain("$90.00");
   });
 
   it("shows named local peers and requested fees without reporting missing values as zero", async () => {
