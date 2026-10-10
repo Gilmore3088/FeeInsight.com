@@ -24,8 +24,10 @@ describe("saved analysis identity", () => {
   it("does not change explicit scenario routing", () => {
     expect(getHamiltonArtifactContextLookup({ pathname: "/pro/simulate", searchParams: new URLSearchParams("scenario_id=saved-a&instId=8109") })).toBeNull();
   });
-  it("does not change explicit report routing", () => {
-    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/reports", searchParams: new URLSearchParams("report_id=saved-a&instId=8109") })).toBeNull();
+  it("looks up a saved report and pins its authorized subject despite a conflicting URL", () => {
+    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/reports", searchParams: new URLSearchParams("report_id=saved-a&instId=1535") }))
+      .toEqual({ kind: "report", artifactId: "saved-a" });
+    expect(resolveArtifactContextInstitutionId({ urlInstitutionId: "1535", artifactInstitutionId: "8109", preferArtifact: true })).toBe("8109");
   });
   it("does not treat a blank analysis parameter as a saved answer", () => {
     expect(getHamiltonArtifactContextLookup({ pathname: "/pro/analyze", searchParams: new URLSearchParams("analysis=%20&instId=8109") })).toBeNull();
