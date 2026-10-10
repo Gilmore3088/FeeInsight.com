@@ -1,3 +1,4 @@
+# trigger: canonical-payment-release-candidate-v3
 name: payment release-candidate verification
 on:
   push:
