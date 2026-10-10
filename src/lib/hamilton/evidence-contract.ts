@@ -381,19 +381,22 @@ export type EvidenceBoundAnalyzeResponse = AnalyzeResponse & {
 };
 
 /**
- * Compatibility view only: never rewrite stored history. Old high ratings without
- * structured evidence cannot retain a stronger label merely because they predate
- * the evidence contract.
+ * Compatibility view only: never rewrite stored history. A structured evidence
+ * snapshot is NOT evidence that all of the saved narrative was claim-verified.
+ * The current contract has no semantic-proof field that could justify "high".
  */
 export function normalizeLegacyAnalyzeConfidence(
   response: EvidenceBoundAnalyzeResponse,
 ): EvidenceBoundAnalyzeResponse {
-  if (response.confidence.level !== "high" || response.factEvidence) return response;
+  if (response.confidence.level !== "high") return response;
+  const limitation = response.factEvidence
+    ? CLAIM_BINDING_LIMITATION
+    : LEGACY_HIGH_CONFIDENCE_LIMITATION;
   return {
     ...response,
     confidence: {
       level: "medium",
-      basis: [...response.confidence.basis, LEGACY_HIGH_CONFIDENCE_LIMITATION],
+      basis: unique([...response.confidence.basis, limitation]),
     },
   };
 }
