@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  sql: vi.fn(),
+  sql: Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) }),
   getInstitutionById: vi.fn(),
   getLocalMarketCompetitors: vi.fn(),
   recordHamiltonMonitorSignal: vi.fn(),
@@ -125,6 +125,7 @@ describe("runCompetitorAlerts", () => {
 
   beforeEach(() => {
     mocks.sql.mockReset();
+    mocks.sql.unsafe.mockClear();
     mocks.recordHamiltonMonitorSignal.mockReset();
     mocks.getInstitutionById.mockResolvedValue({ institution_name: "Home Bank", cert_number: "123", city: "Austin", state_code: "TX" });
     mocks.getLocalMarketCompetitors.mockResolvedValue({ competitors: [{ institution_id: 9 }, { institution_id: 10 }] });
@@ -159,6 +160,8 @@ describe("runCompetitorAlerts", () => {
     const text = (call![0] as TemplateStringsArray).join("?");
     expect(text).toContain("takedown_pending");
     expect(text).toContain("agentic_darwin_verified");
+    expect(text).toContain("consumer_live.fee_audience IN ('consumer', 'both')");
+    expect(text).toContain("consumer_previous.fee_audience = consumer_live.fee_audience");
     expect(call).toContain("2026-10-07T00:00:00.000Z");
   });
 
