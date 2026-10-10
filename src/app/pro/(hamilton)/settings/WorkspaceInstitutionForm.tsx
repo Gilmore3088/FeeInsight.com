@@ -134,7 +134,7 @@ export function WorkspaceInstitutionForm({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-lg text-warm-900" style={SERIF}>
-            {activeName ?? "No bank picked yet"}
+            {activeName ?? "No research institution selected"}
           </p>
           {selectedInstitution ? (
             <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-600">
@@ -148,7 +148,7 @@ export function WorkspaceInstitutionForm({
             </p>
           ) : (
             <p className="mt-1 text-sm text-warm-700">
-              Search for your bank below. Hamilton uses it for your briefing, fee comparisons, reports and alerts.
+              Select an institution for briefings, fee comparisons, reports and alerts.
             </p>
           )}
         </div>
@@ -157,14 +157,14 @@ export function WorkspaceInstitutionForm({
           href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/institutions"}
           className="shrink-0 text-sm font-medium text-terra-text underline decoration-terra/40 underline-offset-2 hover:decoration-terra"
         >
-          {selectedInstitution ? "Ask Hamilton about this bank" : "Browse institutions"}
+          {selectedInstitution ? "Ask Hamilton about this institution" : "Browse institutions"}
         </Link>
       </div>
 
       <form id="workspace-institution-context-form" action={formAction}>
         <InstitutionPicker
           inputId="workspace_institution_search"
-          label="Find your bank or credit union"
+          label="Find an institution to research"
           help="Start typing a name, then choose a match from the list."
           initialId={activeId}
           initialName={activeName}
@@ -205,7 +205,7 @@ export function WorkspaceInstitutionForm({
               Send us a fee schedule
             </Link>
             <Link href={claimHref} className={`${secondaryButton} no-underline`}>
-              Claim this bank&apos;s profile
+              Claim this institution&apos;s profile
             </Link>
           </div>
         </div>
@@ -214,7 +214,7 @@ export function WorkspaceInstitutionForm({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-warm-600">
           {selectedId
-            ? "Saving makes this the bank Hamilton opens on."
+            ? "Saving sets your default research institution. It does not grant workspace access."
             : "Choose a match from the list before saving."}
         </p>
         <button
@@ -223,13 +223,13 @@ export function WorkspaceInstitutionForm({
           disabled={isPending || !selectedId}
           className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isPending ? "Saving..." : "Use this bank"}
+          {isPending ? "Saving..." : "Use for research"}
         </button>
       </div>
 
       {state.success && (
         <p role="status" className="text-sm font-medium text-warm-900">
-          Saved. Hamilton now opens on this bank.
+          Saved. Hamilton now opens on this research institution.
         </p>
       )}
       {!state.success && state.error && (
@@ -242,10 +242,10 @@ export function WorkspaceInstitutionForm({
         <div className="flex flex-col gap-4 rounded-md border border-warm-200 bg-white p-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <h3 className="text-base text-warm-900" style={SERIF}>
-              Do you work at this bank?
+              Do you work at this institution?
             </h3>
             <p className="mt-1 text-sm leading-relaxed text-warm-700">
-              Ask us to confirm it. Once confirmed, your team owns this bank&apos;s workspace and can add colleagues.
+              Request workspace access separately from research selection. Ask us to confirm your connection to this institution.
             </p>
             {claimBelongsToSelection && claimStatusLabel && (
               <p className="mt-2 text-sm font-medium text-terra-text">
