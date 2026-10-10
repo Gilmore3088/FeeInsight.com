@@ -137,36 +137,42 @@ function ownFeeFact(institutionId: number, feeCategory: string, row: OwnFeeRow):
   };
 }
 
-function peerFeeFact(feeCategory: string, peer: PeerValue): HamiltonEvidenceFact {
-  const sourceIds = unique(peer.sourceDocumentIds.filter((id) => Number.isSafeInteger(id) && id > 0));
-  const sourceKey = sourceIds.length > 0 ? sourceIds.join("-") : "unknown-source";
-  return {
-    id: `fee:peer:${peer.institutionId}:${feeCategory}:${sourceKey}`,
-    kind: "observed",
-    scope: {
-      institutionId: peer.institutionId,
-      feeCategory,
-      product: null,
-      reportingDate: null,
-      effectiveDate: null,
-      accountApplicability: "unknown",
-    },
-    value: peer.amount,
-    unit: "usd",
-    currency: "USD",
-    frequency: null,
-    conditions: null,
-    status: "published",
-    source: {
-      label: "Published fee catalog",
-      table: "published_fee_catalog",
-      recordId: null,
-      sourceDocumentIds: sourceIds,
-      urls: unique(peer.documentUrls.filter((url) => typeof url === "string" && url.length > 0)),
-      asOf: peer.publishedAt,
-      verificationEventId: null,
-    },
-  };
+/**
+ * Canonical arithmetic is not proof that a generic category median names a
+ * particular product. Only allow a claim-bound aggregate when every sourced
+ * input shares a product, frequency and one source document identity.
+ * This does not assert that the document is current or verify narrative text.
+ */
+function supportedOwnAggregate(
+  facts: HamiltonEvidenceFact[],
+  current: number | null,
+  feeCategory: string,
+): boolean {
+  if (current === null || !Number.isFinite(current) || current < 0 || facts.length === 0) return false;
+  const first = facts[0];
+  const product = first.scope.product?.trim().toLowerCase();
+  const frequency = first.frequency?.trim().toLowerCase();
+  const documentId = first.source.sourceDocumentIds[0];
+  if (!product || !frequency || first.source.sourceDocumentIds.length !== 1
+    || !Number.isSafeInteger(documentId) || documentId <= 0) return false;
+
+  const amounts: number[] = [];
+  for (const fact of facts) {
+    if (typeof fact.value !== "number" || !Number.isFinite(fact.value) || fact.value < 0) return false;
+    if (fact.scope.product?.trim().toLowerCase() !== product) return false;
+    if (fact.frequency?.trim().toLowerCase() !== frequency) return false;
+    if (fact.scope.accountApplicability !== "consumer" && fact.scope.accountApplicability !== "both") return false;
+    if (!Number.isSafeInteger(Number(fact.source.recordId)) || Number(fact.source.recordId) <= 0) return false;
+    if (fact.source.sourceDocumentIds.length !== 1 || fact.source.sourceDocumentIds[0] !== documentId) return false;
+    amounts.push(fact.value);
+  }
+  amounts.sort((left, right) => left - right);
+  const middle = (amounts.length - 1) / 2;
+  const lower = Math.floor(middle);
+  const expected = feeCategory === "overdraft"
+    ? amounts[amounts.length - 1]
+    : amounts[lower] + (amounts[Math.ceil(middle)] - amounts[lower]) * (middle - lower);
+  return Math.abs(expected - current) <= 0.0000001;
 }
 
 function derivedFact(input: {
@@ -324,19 +330,21 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
   const ownFacts = research.ownRows
     .map((row) => ownFeeFact(research.institutionId, research.feeCategory, row))
     .filter((fact): fact is HamiltonEvidenceFact => fact !== null);
-  const peerFacts = research.peers.map((peer) => peerFeeFact(research.feeCategory, peer));
+  // Source-document IDs are insufficient to identify the fee rows behind
+  // each peer's collapsed category statistic; never save them as observations.
+  const currentEvidenceSupported = supportedOwnAggregate(ownFacts, research.current, research.feeCategory);
   const derivations: HamiltonDerivedFact[] = [];
 
-  if (research.current !== null && ownFacts.length > 0) {
+  if (currentEvidenceSupported) {
     derivations.push(derivedFact({
       id: `derived:current:${research.institutionId}:${research.feeCategory}`,
       scope: {
         institutionId: research.institutionId,
         feeCategory: research.feeCategory,
-        product: research.displayName,
+        product: ownFacts[0].scope.product,
         reportingDate: null,
         effectiveDate: null,
-        accountApplicability: "unknown",
+        accountApplicability: "consumer",
       },
       value: research.current,
       unit: "usd",
@@ -350,34 +358,20 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
     }));
   }
 
-  if (research.band?.median !== null && research.band && peerFacts.length > 0) {
-    derivations.push(derivedFact({
-      id: `derived:peer-median:${research.institutionId}:${research.feeCategory}`,
-      scope: {
-        institutionId: null,
-        feeCategory: research.feeCategory,
-        product: research.displayName,
-        reportingDate: null,
-        effectiveDate: null,
-        accountApplicability: "unknown",
-      },
-      value: research.band.median,
-      unit: "usd",
-      currency: "USD",
-      kind: "peer_median",
-      inputFactIds: peerFacts.map((fact) => fact.id),
-      formula: "median of one published value per peer institution",
-      rounding: "workspace peer-statistic precision",
-    }));
-  }
 
   return {
     version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
     generatedAt: research.provenance.generatedAt,
-    facts: [...ownFacts, ...peerFacts],
+    facts: ownFacts,
     derivations,
     limitations: [
       "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.",
+      ...(research.current !== null && !currentEvidenceSupported
+        ? ["Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee."]
+        : []),
+      ...(research.peers.length > 0
+        ? ["Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence."]
+        : []),
       CLAIM_BINDING_LIMITATION,
     ],
   };

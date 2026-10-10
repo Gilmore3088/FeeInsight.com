@@ -166,6 +166,8 @@ describe("FeeResearch evidence snapshot", () => {
         documentUrl: "https://example.test/schedule.pdf",
         sourceUrl: "https://example.test/fees",
         publishedAt: "2026-06-30",
+        frequency: "per item",
+        feeAudience: "consumer",
         verifiedByEventId: "verify-11",
       },
       {
@@ -199,7 +201,7 @@ describe("FeeResearch evidence snapshot", () => {
 
   it("captures published facts with source/document identity and omits null amounts", () => {
     const bundle = buildFeeResearchEvidence(research);
-    expect(bundle.facts).toHaveLength(2);
+    expect(bundle.facts).toHaveLength(1);
     expect(bundle.facts[0]).toMatchObject({
       id: "fee:published:11",
       value: 35,
@@ -209,11 +211,71 @@ describe("FeeResearch evidence snapshot", () => {
     expect(bundle.facts.some((item) => item.source.recordId === 12)).toBe(false);
   });
 
-  it("records collapsed current and peer median as derivations instead of pretending they are source rows", () => {
+  it("keeps a compatible current derivation without inventing observed peer fees", () => {
     const bundle = buildFeeResearchEvidence(research);
-    expect(bundle.derivations.map((item) => item.derivation.kind)).toEqual(["institution_value", "peer_median"]);
+    expect(bundle.derivations.map((item) => item.derivation.kind)).toEqual(["institution_value"]);
     expect(bundle.derivations[0].derivation.inputFactIds).toEqual(["fee:published:11"]);
-    expect(bundle.derivations[1].derivation.inputFactIds[0]).toContain("fee:peer:2:overdraft");
+    expect(bundle.facts.some((item) => item.id.startsWith("fee:peer:"))).toBe(false);
+    expect(bundle.limitations.join(" ")).toContain("contributing published fee-row IDs");
+  });
+
+
+  it("rejects a three-service synthetic category median as one product fee", () => {
+    const base = research.ownRows[0];
+    const mixed = {
+      ...research,
+      feeCategory: "monthly_maintenance", current: 10,
+      ownRows: [
+        { ...base, id: 21, feeName: "Checking monthly service", amount: 5, frequency: "monthly", sourceDocumentId: 201 },
+        { ...base, id: 22, feeName: "Signature guarantee", amount: 10, frequency: null, sourceDocumentId: 202 },
+        { ...base, id: 23, feeName: "IRS processing", amount: 50, frequency: "per item", sourceDocumentId: 201 },
+      ], peers: [], band: null,
+    } as FeeResearch;
+    const bundle = buildFeeResearchEvidence(mixed);
+    expect(bundle.facts).toHaveLength(3);
+    expect(bundle.derivations.some((item) => item.derivation.kind === "institution_value")).toBe(false);
+    expect(bundle.limitations.join(" ")).toContain("incompatible");
+  });
+
+  it("keeps a genuine $0 from a sourced consumer product", () => {
+    const one = {
+      ...research, feeCategory: "monthly_maintenance", current: 0,
+      ownRows: [{ ...research.ownRows[0], id: 31, feeName: "Checking monthly fee",
+        frequency: "monthly", feeAudience: "consumer", sourceDocumentId: 301, amount: 0 }],
+      peers: [], band: null,
+    } as FeeResearch;
+    const bundle = buildFeeResearchEvidence(one);
+    expect(bundle.facts[0].value).toBe(0);
+    expect(bundle.derivations.find((item) => item.derivation.kind === "institution_value")?.value).toBe(0);
+  });
+
+  it("rejects an amount that does not equal the actual canonical median", () => {
+    const base = { ...research.ownRows[0], feeName: "Checking fee", frequency: "monthly" };
+    const wrong = { ...research, feeCategory: "monthly_maintenance", current: 10,
+      ownRows: [{ ...base, id: 41, amount: 5 }, { ...base, id: 42, amount: 10 }],
+      peers: [], band: null } as FeeResearch;
+    expect(buildFeeResearchEvidence(wrong).derivations.some((item) => item.derivation.kind === "institution_value")).toBe(false);
+    expect(buildFeeResearchEvidence({ ...wrong, current: 7.5 }).derivations[0]?.value).toBe(7.5);
+  });
+
+  it("rejects mismatched product, frequency, audience and document version", () => {
+    const first = { ...research.ownRows[0], id: 51, feeName: "Checking fee",
+      frequency: "monthly", feeAudience: "consumer" as const, sourceDocumentId: 401, amount: 5 };
+    const second = { ...first, id: 52, amount: 10 };
+    const variants = [
+      { ...second, feeName: "Cashier's check" },
+      { ...second, frequency: "per item" },
+      { ...second, frequency: null },
+      { ...second, sourceDocumentId: 402 },
+      { ...second, feeAudience: "unknown" as const },
+      { ...second, feeAudience: "business" as const },
+      { ...second, sourceDocumentId: null },
+    ];
+    for (const variant of variants) {
+      const mixed = { ...research, feeCategory: "monthly_maintenance", current: 7.5,
+        ownRows: [first, variant], peers: [], band: null } as FeeResearch;
+      expect(buildFeeResearchEvidence(mixed).derivations.some((item) => item.derivation.kind === "institution_value")).toBe(false);
+    }
   });
 
   it("never upgrades structured evidence to a semantic verification claim", () => {
