@@ -6,6 +6,15 @@ Status: IN PROGRESS. Draft, unmerged, unreleased. No production data correction 
 
 This ledger records receipts, not assertions of future success. The exact source decisions and 32-row lineage table are in `2026-10-10-pinnacle-audience-repair.md`. Read fresh branch, checks and database preconditions before writing. Preserve unrelated Hamilton reliability work.
 
+## October 10, 2026 09:05 Hong Kong continuation
+
+- Rechecked PR #986 at head `93dca493ef733e2c76f80974ff8b8e67f18de2ef`: Actions run `38005873294` completed SUCCESS. App job `114074412199` passed guards, focused tests, TypeScript, lint, the full suite and all three ordinary pipeline E2E tests. SQL job `114074412343` passed the isolated PostgreSQL audience-migration assertions. This certifies that head only.
+- `6c134e70e25dbcbab91e4f8ae2837811e4c8492b`: `derived-analytics.ts` now applies the shared sourced consumer/both statistics boundary to fee concentration. Real $0 rows remain eligible for institution prevalence while contributing $0 to dollar totals; business/unknown and unsourced rows no longer enter that population.
+- `5d2baace6902dac9c9a6e6e29336a85d354b9f41`: added regressions proving the consumer/source SQL boundary is used in both concentration reads and a genuine zero-fee category still counts in prevalence. This new head requires fresh CI; no pass is claimed yet.
+- Re-read `wire-fee-data.ts`: it delegates to the state/national fee indexes, which already use the statistics contract, so no duplicate SQL filter was added there.
+- The existing hourly Pinnacle Release task remains enabled and has been refreshed with the new head, exact green receipt, migration-version collisions (#990/#991), #939 overlap, and remaining acceptance gates. No duplicate automation was created.
+- No production database write, merge, deployment, provider activation, outreach send, permission change or branch deletion in this continuation.
+
 ## October 10, 2026 Hong Kong-time continuation: completed branch work
 
 - Re-read root/agent instructions, CLAUDE.md, current checkpoint, PR, runbook and ledger. Initial head `6e9fd954ab632c71d8cfdf31cc75d0236ab7bc9a`, base `1b5de13cd5b2e61ff6ca64047222b6c90888d39b`. James renewed authorization; no extra permission gate was invented.
