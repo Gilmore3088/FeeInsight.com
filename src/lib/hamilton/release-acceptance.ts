@@ -265,3 +265,73 @@ export function assessHamiltonReleaseCandidate(input: {
     requiredCases: HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS.length,
   };
 }
+
+
+export const HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS = [
+  "failed_request",
+  "duplicate_submit",
+  "delayed_response",
+  "provider_stop",
+  "database_failure",
+  "cache_refresh_failure",
+  "invalid_migration",
+] as const;
+
+export type HamiltonFailureRecoveryId = (typeof HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS)[number];
+
+export interface HamiltonFailureRecoveryEvidence {
+  caseId: HamiltonFailureRecoveryId;
+  candidateSha: string;
+  status: "passed" | "failed" | "skipped" | "blocked";
+  containment: string;
+  rollbackOrRetry: string;
+  evidenceRefs: string[];
+}
+
+export function assessHamiltonFailureRecovery(input: {
+  candidateSha: string;
+  cases: readonly HamiltonFailureRecoveryEvidence[];
+}): { ready: boolean; problems: string[]; passedCases: number; requiredCases: number } {
+  const problems: string[] = [];
+  const byId = new Map<HamiltonFailureRecoveryId, HamiltonFailureRecoveryEvidence[]>();
+  for (const entry of input.cases) {
+    const group = byId.get(entry.caseId);
+    if (group) group.push(entry);
+    else byId.set(entry.caseId, [entry]);
+  }
+
+  for (const caseId of HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS) {
+    const entries = byId.get(caseId) ?? [];
+    if (entries.length === 0) {
+      problems.push(`missing_failure_case:${caseId}`);
+      continue;
+    }
+    if (entries.length > 1) {
+      problems.push(`duplicate_failure_case:${caseId}`);
+      continue;
+    }
+    const evidence = entries[0];
+    if (evidence.candidateSha !== input.candidateSha) problems.push(`wrong_failure_sha:${caseId}`);
+    if (evidence.status !== "passed") problems.push(`${evidence.status}_failure_case:${caseId}`);
+    if (!evidence.containment.trim()) problems.push(`missing_containment:${caseId}`);
+    if (!evidence.rollbackOrRetry.trim()) problems.push(`missing_rollback_or_retry:${caseId}`);
+    if (evidence.evidenceRefs.length === 0) problems.push(`missing_failure_evidence_ref:${caseId}`);
+  }
+
+  const passedCases = HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS.filter((caseId) => {
+    const entries = byId.get(caseId) ?? [];
+    return entries.length === 1
+      && entries[0].candidateSha === input.candidateSha
+      && entries[0].status === "passed"
+      && entries[0].containment.trim().length > 0
+      && entries[0].rollbackOrRetry.trim().length > 0
+      && entries[0].evidenceRefs.length > 0;
+  }).length;
+
+  return {
+    ready: problems.length === 0,
+    problems,
+    passedCases,
+    requiredCases: HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS.length,
+  };
+}
