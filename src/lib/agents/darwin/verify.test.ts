@@ -713,7 +713,7 @@ describe("Darwin agentic verification", () => {
 
       it("records a sister document with the same amount as second-source evidence", async () => {
         const db = passTwoDb([vtFee], [
-          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "consumer" },
         ]);
 
         const result = await runDarwinVerify({ runId: 504, stateCode: "VT", db: asVerifyDb(db) });
@@ -726,10 +726,21 @@ describe("Darwin agentic verification", () => {
         expect(second[0]).toEqual(expect.arrayContaining(["ok"]));
       });
 
+      it("ignores a business copy when corroborating a consumer fee", async () => {
+        const db = passTwoDb([vtFee], [
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "business" },
+        ]);
+
+        const result = await runDarwinVerify({ runId: 507, stateCode: "VT", db: asVerifyDb(db) });
+
+        expect(result).toMatchObject({ verifiedFees: 1, secondSourceAgreements: 0, secondSourceDisagreements: 0 });
+        expect(result.results[0].secondSource).toBeNull();
+      });
+
       it("notes a disagreeing older copy without blocking the row", async () => {
         const db = passTwoDb([vtFee], [
-          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "30.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
-          { fee_raw_id: 801, institution_id: 42, source_document_id: 55, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null },
+          { fee_raw_id: 700, institution_id: 42, source_document_id: 44, amount: "30.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "consumer" },
+          { fee_raw_id: 801, institution_id: 42, source_document_id: 55, amount: "35.00", outlier_flags: ["canonical_hint:overdraft"], conditions: null, fee_audience: "consumer" },
         ]);
 
         const result = await runDarwinVerify({ runId: 505, stateCode: "VT", db: asVerifyDb(db) });
