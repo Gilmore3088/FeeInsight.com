@@ -61,6 +61,18 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 - Actual `fee_change_records` columns include `previous_fee_published_id` and `new_fee_published_id`, `previous_amount`, `old_amount`, `new_amount`, `like_for_like`, `fee_category` and `canonical_fee_key`. Do not invent `old_fee_published_id`.
 - No production write, merge, deployment, message send, credential reset, grant change or paid provider activation in this continuation.
 
+
+## October 10 continuation: Darwin second-source audience integrity
+
+- Re-read PR #986 and Darwin's nested AGENTS.md before editing. Starting head for this change set: `bf9bdb2391ac4d61d354105c94f9547fa9510249`.
+- Latest previously verified head `93dca493ef733e2c76f80974ff8b8e67f18de2ef` passed Actions run `38005873294`: app job `114074412199` and SQL job `114074412343`, including guards, focused tests, TypeScript, lint, full suite, ordinary E2E and PostgreSQL audience assertions.
+- `8c3540e3184fdb6017b2cfe3bb05add855f4e559`: Darwin second-source evidence now carries `fee_audience`, rejects unknown applicability, and only treats same-audience or compatible `both` evidence as corroboration. Strategy version bumped to v2 so this semantic change is auditable.
+- `9830e37fbd5c8558d94798148e7dc229b4851a4a`: verifier passes the candidate row's audience into the corroboration check.
+- `0dcffe7c10a111df68083e1ec08efe9b9f9eae06` and `ec1a0067e7cff061beef9da1e3082e5a60487b2f`: regression coverage proves business/unknown copies cannot corroborate consumer fees, `both` may corroborate consumer, and compatible disagreement remains non-blocking evidence.
+- `f650c24bb2a2072683aba6f2fbc96a3477f73029`: Darwin operating guide updated to the v2 audience contract.
+- This change does not alter production data. Final-head CI is required before this gate is considered passed.
+- The previously attempted edit of `tests/e2e/production-schema.sql` remains tool-safety-blocked and was not retried through another route. Passing E2E from the prior head is preserved as a receipt, but the known caught schema-warning noise remains open.
+
 ## Remaining acceptance gates
 
 ### 1. Final-head CI and regression integrity
