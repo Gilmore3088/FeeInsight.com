@@ -129,6 +129,17 @@ describe("exact-list follow-ups within one Ask conversation", () => {
     expect(body.previousPeerList.originRows).toHaveLength(3);
     expect(fallback).not.toHaveBeenCalled();
   });
+
+  it("does not reuse an old peer list after a new independent list fails", async () => {
+    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce({ ok: false });
+    const view = render(<PeerAwareStructuredAsk {...props} />);
+    await screen.findByRole("table");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="List five peers" nonce={2} />);
+    await screen.findByRole("alert");
+    view.rerender(<PeerAwareStructuredAsk {...props} question="Only Florida" nonce={3} />);
+    expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("refuses list-relative questions when there is no list or context changed", () => {
     const view = render(<PeerAwareStructuredAsk {...props} question="Only Florida" />);
     expect(screen.getByRole("alert").textContent).toContain("Ask for a peer list first");

@@ -26,9 +26,10 @@ export function PeerAwareStructuredAsk(props: Props) {
   }, [props.question, props.institutionId]);
 
   useEffect(() => {
-    // An unrelated question ends the exact-list refinement chain.
-    if (!isNewList && !isFollowUp) setContinuation(null);
-  }, [isNewList, isFollowUp, props.question, props.nonce]);
+    // Any new independent list invalidates the earlier chain, even when it
+    // fails. Otherwise a later "Only Florida" could reuse a stale answer.
+    if (!isFollowUp) setContinuation(null);
+  }, [isFollowUp, props.question, props.nonce]);
 
   if (!isNewList && !isFollowUp) return <StructuredAsk {...props} />;
   if (isFollowUp && (!continuation || continuation.originInstitutionId !== props.institutionId)) {
