@@ -25,7 +25,11 @@ describe("dated asset read model", () => {
   it("returns peers even when their published fee data is absent", async () => { const result = await getPeerListRows(101, criteria, "2026-10-10"); expect(result.rows).toHaveLength(1); expect(result.rows[0].feeCoverage).toBe("not_found"); expect(result.totalMatches).toBe(1); });
   it("keeps the total match count distinct from the requested page length", async () => { mocks.sql.mockResolvedValue([{ ...row, total_matches: 250 }]); const result = await getPeerListRows(101, criteria, "2026-10-10"); expect(result.rows).toHaveLength(1); expect(result.totalMatches).toBe(250); });
   it("reports a successful empty result as zero", async () => { mocks.sql.mockResolvedValue([]); expect(await getPeerListRows(101, criteria, "2026-10-10")).toEqual({ rows: [], totalMatches: 0 }); });
-  it("does not turn a database failure into zero matches", async () => { mocks.sql.mockRejectedValue(new Error("synthetic database failure")); let failed = false; try { await getPeerListRows(101, criteria, "2026-10-10"); } catch { failed = true; } expect(failed).toBe(true); });
+  it("does not turn a database failure into zero matches", async () => {
+    const databaseFailure = new Error("synthetic database failure");
+    const rejectingDb = (() => Promise.reject(databaseFailure)) as unknown as Parameters<typeof getPeerListRows>[3];
+    await expect(getPeerListRows(101, criteria, "2026-10-10", rejectingDb)).rejects.toBe(databaseFailure);
+  });
   it("selects latest dated records before asset filtering and computes fee coverage after selection", async () => {
     await getPeerListRows(101, criteria, "2026-10-10");
     const text = mocks.sql.mock.calls[0][0].join("?");
