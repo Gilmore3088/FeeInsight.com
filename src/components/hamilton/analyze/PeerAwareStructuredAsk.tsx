@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
   isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation,
   type PeerListContinuation, type PeerListResponse,

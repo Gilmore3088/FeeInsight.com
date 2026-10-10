@@ -71,7 +71,7 @@ export function PeerListView({ response }: { response: PeerListResponse }) {
           </div>
         </>
       ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
-      <p className="text-xs text-warm-600">Peer-list saving, exports, and refinements that refer to this exact list are not available yet. Restate the criteria in a new list question.</p>
+      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”). Comparing its fees, saving this list, and exporting it are not supported yet.</p>
     </section>
   );
 }

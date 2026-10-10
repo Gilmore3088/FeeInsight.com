@@ -80,7 +80,7 @@ describe("peer-first Ask rendering", () => {
   it("offers no unsupported export/report action for the new list type", async () => {
     render(<PeerAwareStructuredAsk {...props} />); await screen.findByRole("table");
     expect(screen.queryByRole("button", { name: /Download|report/i })).toBeNull();
-    expect(screen.getByText(/Peer-list saving, exports/)).toBeTruthy();
+    expect(screen.getByText(/Comparing its fees, saving this list/)).toBeTruthy();
   });
   it("provides a keyboard-focusable horizontal table region", () => {
     render(<PeerListView response={fixture} />);
