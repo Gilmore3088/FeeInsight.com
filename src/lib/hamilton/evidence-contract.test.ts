@@ -107,15 +107,45 @@ describe("explicit derivations", () => {
 
   it("records the denominator and signed percent change", () => {
     const current = fact({ id: "current", value: 90 });
-    const prior = fact({ id: "prior", value: 100 });
+    const prior = fact({ id: "prior", value: 100, scope: { ...fact().scope, reportingDate: "2025-06-30" } });
     const result = derivePercentChange("change", current, prior);
     expect(result.fact?.value).toBe(-10);
     expect(result.fact?.derivation.denominatorFactId).toBe("prior");
   });
 
+  it("rejects two banks' values even when their dates match", () => {
+    const current = fact({ id: "bank-a", value: 90 });
+    const prior = fact({ id: "bank-b", value: 100, scope: { ...fact().scope, institutionId: 2 } });
+    expect(derivePercentChange("wrong-bank-change", current, prior).problems).toContain("institution_mismatch");
+  });
+
+  it("rejects same-date records as a chronological change", () => {
+    const current = fact({ id: "now", value: 90 });
+    const prior = fact({ id: "then", value: 100 });
+    expect(derivePercentChange("same-date-change", current, prior).problems).toContain("reporting_period_order_invalid");
+  });
+
+  it("rejects a future prior observation", () => {
+    const current = fact({ id: "old", value: 90, scope: { ...fact().scope, reportingDate: "2025-06-30" } });
+    const prior = fact({ id: "future", value: 100 });
+    expect(derivePercentChange("backwards-change", current, prior).problems).toContain("reporting_period_order_invalid");
+  });
+
+  it("rejects a percent change across different fee products", () => {
+    const current = fact({ id: "current", value: 90 });
+    const prior = fact({ id: "prior", value: 100, scope: { ...fact().scope, reportingDate: "2025-06-30", product: "Different fee" } });
+    expect(derivePercentChange("wrong-product-change", current, prior).problems).toContain("product_mismatch");
+  });
+
+  it("does not infer an institution for a percent change when both subjects are unknown", () => {
+    const current = fact({ id: "current", value: 90, scope: { ...fact().scope, institutionId: null } });
+    const prior = fact({ id: "prior", value: 100, scope: { ...fact().scope, institutionId: null, reportingDate: "2025-06-30" } });
+    expect(derivePercentChange("unknown-bank-change", current, prior).problems).toContain("institution_mismatch");
+  });
+
   it("does not calculate a percent change with a zero denominator", () => {
     const current = fact({ id: "current", value: 10 });
-    const prior = fact({ id: "prior", value: 0 });
+    const prior = fact({ id: "prior", value: 0, scope: { ...fact().scope, reportingDate: "2025-06-30" } });
     expect(derivePercentChange("change", current, prior).problems).toContain("zero_denominator");
   });
 });
