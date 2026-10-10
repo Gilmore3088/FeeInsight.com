@@ -40,6 +40,20 @@ describe("public fee reader applicability", () => {
     expectMoveBoundary(state.queries[3]);
   });
 
+  it("ranks guide extremes on one institution value instead of duplicate rows or a low overdraft tier", async () => {
+    await getCheapestAndMostExpensive("overdraft");
+    const queries = state.queries.slice(0, 2);
+    expect(queries).toHaveLength(2);
+    for (const query of queries) {
+      expect(query).toContain("WITH per_institution AS");
+      expect(query).toContain("GROUP BY ef.institution_id, ct.institution_name");
+      expect(query).toContain("THEN MAX(ef.amount)");
+      expect(query).toContain("PERCENTILE_CONT(0.5)");
+      expect(query).toContain("ef.fee_audience IN ('consumer', 'both')");
+      expect(query).not.toContain("ef.amount > 0");
+    }
+  });
+
   it("requires a live same-audience publication pair for both movement APIs", async () => {
     await getRecentPriceChanges(90, "nsf");
     await getPriceMovementSummary(90);
