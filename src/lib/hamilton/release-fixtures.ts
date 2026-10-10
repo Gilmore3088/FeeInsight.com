@@ -79,10 +79,11 @@ const TEMPLATE: HamiltonReleaseFixture = {
     { id: 9109, name: "Synthetic Peer CU 8", charterType: "credit_union", stateCode: "FL", totalAssetsUsd: 9_300_000_000, assetReportDate: "2026-06-30" },
     { id: 9110, name: "Synthetic Peer CU 9", charterType: "credit_union", stateCode: "GA", totalAssetsUsd: 8_800_000_000, assetReportDate: "2026-06-30" },
     { id: 9111, name: "Synthetic Peer CU 10", charterType: "credit_union", stateCode: "FL", totalAssetsUsd: 9_400_000_000, assetReportDate: "2026-06-30" },
+    { id: 9112, name: "Synthetic Peer CU 11", charterType: "credit_union", stateCode: "FL", totalAssetsUsd: 8_600_000_000, assetReportDate: "2026-06-30" },
     { id: 9201, name: "Synthetic Other User CU", charterType: "credit_union", stateCode: "WA", totalAssetsUsd: 2_500_000_000, assetReportDate: "2026-06-30" },
   ],
   peerGroups: {
-    complete: [9102, 9103, 9104, 9106, 9107, 9108, 9109, 9110, 9111, 9105],
+    complete: [9102, 9103, 9104, 9106, 9107, 9108, 9109, 9110, 9111, 9112],
     floridaOnly: [9102, 9103, 9108, 9109, 9111, 9105, 9106],
     thin: [9102, 9105, 9106],
   },
