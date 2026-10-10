@@ -243,7 +243,7 @@ WITH bad AS (
 )
 UPDATE public.raw_fee_observations r
    SET outlier_flags =
-         (r.outlier_flags - 'needs_darwin_verification')
+         (COALESCE(r.outlier_flags,'[]'::jsonb) - 'needs_darwin_verification')
          || '["audience_correction_required","manual_data_correction_required"]'::jsonb
   FROM bad m
  WHERE r.fee_raw_id=m.fee_raw_id
@@ -255,7 +255,7 @@ WITH bad AS (
 )
 UPDATE public.verified_fee_observations v
    SET review_status='rejected',
-       outlier_flags=v.outlier_flags
+       outlier_flags=COALESCE(v.outlier_flags,'[]'::jsonb)
          || '["audience_correction_required","manual_data_correction_required"]'::jsonb
   FROM bad m
  WHERE v.fee_verified_id=m.fee_verified_id
@@ -344,12 +344,13 @@ BEGIN
   END IF;
 END $$;
 
-COMMIT;
-
--- Operator receipt:
+-- Operator receipt is selected before COMMIT because the manifest is a transaction-local
+-- TEMP table. Expected result: 21 scoped business live, 3 reviewed unknown live, 8 quarantined.
 SELECT
   count(*) FILTER (WHERE p.fee_audience='business' AND p.quarantined_at IS NULL) AS scoped_business_live,
   count(*) FILTER (WHERE p.fee_audience='unknown' AND p.quarantined_at IS NULL) AS reviewed_unknown_live,
   count(*) FILTER (WHERE p.quarantined_at IS NOT NULL) AS quarantined
 FROM fee_audience_review_20261010 m
 JOIN public.published_fee_records p ON p.fee_published_id=m.fee_published_id;
+
+COMMIT;
