@@ -187,3 +187,81 @@ export function releaseEvidenceIsComplete(input: {
     && input.releaseApproval
     && input.postReleaseRead;
 }
+
+
+export type HamiltonAcceptanceCaseStatus = "passed" | "failed" | "skipped" | "blocked";
+
+export interface HamiltonAcceptanceCaseEvidence {
+  caseId: string;
+  candidateSha: string;
+  status: HamiltonAcceptanceCaseStatus;
+  inspectedOutput: boolean;
+  evidenceRefs: string[];
+}
+
+export interface HamiltonReleaseCandidateAssessment {
+  ready: boolean;
+  problems: string[];
+  passedCases: number;
+  requiredCases: number;
+}
+
+export const HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS: readonly string[] = (
+  ["H01", "H02", "H03", "H04", "H05", "H06", "H07"] as const
+).flatMap((initiative) => [1, 2, 3, 4].map((n) => `${initiative}-AC${n}`));
+
+/**
+ * Candidate packet gate only. It cannot grant approval or prove deployment.
+ * Every initiative case must be passed on the exact candidate SHA with an inspected
+ * output/evidence reference. Skipped/blocked cases stay release blockers.
+ */
+export function assessHamiltonReleaseCandidate(input: {
+  candidateSha: string;
+  cases: readonly HamiltonAcceptanceCaseEvidence[];
+}): HamiltonReleaseCandidateAssessment {
+  const problems: string[] = [];
+  if (!/^[0-9a-f]{40}$/.test(input.candidateSha)) problems.push("invalid_candidate_sha");
+  const byId = new Map<string, HamiltonAcceptanceCaseEvidence[]>();
+  for (const entry of input.cases) {
+    const group = byId.get(entry.caseId);
+    if (group) group.push(entry);
+    else byId.set(entry.caseId, [entry]);
+  }
+
+  for (const caseId of HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS) {
+    const entries = byId.get(caseId) ?? [];
+    if (entries.length === 0) {
+      problems.push(`missing_case:${caseId}`);
+      continue;
+    }
+    if (entries.length > 1) {
+      problems.push(`duplicate_case:${caseId}`);
+      continue;
+    }
+    const evidence = entries[0];
+    if (evidence.candidateSha !== input.candidateSha) problems.push(`wrong_sha:${caseId}`);
+    if (evidence.status !== "passed") problems.push(`${evidence.status}_case:${caseId}`);
+    if (!evidence.inspectedOutput) problems.push(`uninspected_output:${caseId}`);
+    if (evidence.evidenceRefs.length === 0) problems.push(`missing_evidence_ref:${caseId}`);
+  }
+
+  for (const caseId of byId.keys()) {
+    if (!HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS.includes(caseId)) problems.push(`unknown_case:${caseId}`);
+  }
+
+  const passedCases = HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS.filter((caseId) => {
+    const entries = byId.get(caseId) ?? [];
+    return entries.length === 1
+      && entries[0].candidateSha === input.candidateSha
+      && entries[0].status === "passed"
+      && entries[0].inspectedOutput
+      && entries[0].evidenceRefs.length > 0;
+  }).length;
+
+  return {
+    ready: problems.length === 0,
+    problems,
+    passedCases,
+    requiredCases: HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS.length,
+  };
+}
