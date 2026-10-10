@@ -12,6 +12,7 @@ import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, has
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { checkNarrativeFigures, extractFigures } from "./figure-check";
+import type { HamiltonEvidenceBundle } from "./evidence-contract";
 import { HAMILTON_VOICE } from "./voice";
 import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
@@ -31,13 +32,14 @@ The storyline in DATA was built from verified fee schedules and regulatory filin
 a CFO taking a pricing decision to the board, and a product or marketing manager comparing competitors.
 
 Return only JSON, no prose around it:
-{"summary": string, "board": string, "market": string, "questions": string[]}
+{"summary": string, "board": string, "market": string, "questions": string[], "evidence_fact_ids": string[]}
 
 - summary: three or four sentences. Open with what DATA shows that bears on the question, then why it holds, then the decision it raises.
   When DATA cannot answer part of the question, say so once, after a finding and never as the first sentence.
 - board: one paragraph of at most 110 words on money at stake, risk, regulation and what the board would need to see.
 - market: one paragraph of at most 110 words on positioning, the claims competitors can make, and how the market is moving.
 - questions: two or three questions the reader should be able to answer before deciding, each ending in "?".
+- evidence_fact_ids: when DATA.fact_evidence exists, list the IDs of the observed/derived evidence records that support the memo's concrete findings. Use only IDs present in DATA.fact_evidence. When no fact_evidence exists, return [].
 
 Hard rules:
 - Use only figures that appear in DATA, written as DATA writes them. Never compute a new dollar figure or percentage.
@@ -68,11 +70,12 @@ function ownFeeMissing(payload: unknown): boolean {
 }
 
 /** Everything the model may draw on: the storyline, plus every figure its sentences state. */
-export function memoPayload(storyline: Storyline): Record<string, unknown> {
+export function memoPayload(storyline: Storyline, factEvidence?: HamiltonEvidenceBundle | null): Record<string, unknown> {
   const text = JSON.stringify(storyline);
   const figures = extractFigures(text);
   return {
     storyline,
+    ...(factEvidence ? { fact_evidence: factEvidence } : {}),
     stated_amounts: [...new Set(figures.filter((f) => f.kind === "usd").map((f) => f.value))].map((amount) => ({ amount })),
     stated_rates: [...new Set(figures.filter((f) => f.kind === "pct").map((f) => f.value))].map((rate) => ({ rate })),
     // Exhibit numbers whose keys do not name their unit, restated under keys that do.
@@ -102,6 +105,7 @@ interface MemoDraft {
   board: string;
   market: string;
   questions: string[];
+  evidenceFactIds?: string[];
 }
 
 export function parseMemo(raw: string): MemoDraft | null {
@@ -109,11 +113,15 @@ export function parseMemo(raw: string): MemoDraft | null {
   try {
     const parsed = JSON.parse(json) as Partial<MemoDraft>;
     const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const evidenceFactIds = Array.isArray((parsed as Partial<MemoDraft> & { evidence_fact_ids?: unknown }).evidence_fact_ids)
+      ? [...new Set((parsed as { evidence_fact_ids: unknown[] }).evidence_fact_ids.map(str).filter(Boolean))].slice(0, 50)
+      : undefined;
     const draft = {
       summary: str(parsed.summary),
       board: str(parsed.board),
       market: str(parsed.market),
       questions: Array.isArray(parsed.questions) ? parsed.questions.map(str).filter((q) => q.endsWith("?")).slice(0, 3) : [],
+      ...(evidenceFactIds ? { evidenceFactIds } : {}),
     };
     return draft.summary && draft.board && draft.market ? draft : null;
   } catch {
@@ -127,6 +135,18 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
   const figureCheck = checkNarrativeFigures(all, payload);
   const problems: string[] = [];
   if (figureCheck.unmatched.length > 0) problems.push(`These figures are not in DATA: ${figureCheck.unmatched.join(", ")}.`);
+  const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence;
+  if (evidence) {
+    const allowed = new Set([...evidence.facts, ...evidence.derivations].map((fact) => fact.id));
+    const referenced = draft.evidenceFactIds ?? [];
+    if (allowed.size > 0 && referenced.length === 0) {
+      problems.push("The memo did not identify any supporting evidence_fact_ids from DATA.fact_evidence.");
+    }
+    const unknown = referenced.filter((id) => !allowed.has(id));
+    if (unknown.length > 0) {
+      problems.push(`These evidence_fact_ids are not in DATA.fact_evidence: ${unknown.join(", ")}.`);
+    }
+  }
   const advice = all.match(RECOMMENDATION);
   if (advice) problems.push(`This reads as advice: "${advice[0]}". Lay out the paths without choosing.`);
   const internal = all.match(PIPELINE_TERMS);
@@ -164,13 +184,13 @@ function anthropicMemoClient(institutionId: number | null): MemoClient {
 export async function writeStorylineMemo(
   storyline: Storyline,
   question: string,
-  options: { institutionId?: number | null; client?: MemoClient; model?: string; now?: Date } = {},
+  options: { institutionId?: number | null; client?: MemoClient; model?: string; now?: Date; factEvidence?: HamiltonEvidenceBundle | null } = {},
 ): Promise<StorylineMemoResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) {
     return { status: "unavailable", reason: "Hamilton's writer is not configured." };
   }
   const model = options.model ?? getHamiltonModel();
-  const payload = memoPayload(storyline);
+  const payload = memoPayload(storyline, options.factEvidence);
   let client: MemoClient;
   try {
     client = options.client ?? anthropicMemoClient(options.institutionId ?? null);

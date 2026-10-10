@@ -389,7 +389,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   const storyline = response.answer?.storyline;
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
-  const result = await writeStorylineMemo(storyline, question, { institutionId });
+  const factEvidence = buildFeeResearchEvidence(research);
+  const result = await writeStorylineMemo(storyline, question, { institutionId, factEvidence });
   let memoSaved = false;
   const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
   if (result.status === "written" && savedId) {
@@ -406,7 +407,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     status: result.status === "written" ? "completed" : result.status === "withheld" ? "completed" : "failed",
     summary:
       result.status === "written"
-        ? `Memo written; ${result.memo.figureCheck.checked} figures traced to the storyline.`
+        ? `Memo written; ${result.memo.figureCheck.checked} figures numerically checked and ${result.memo.evidenceFactIds?.length ?? 0} structured evidence records referenced.`
         : `Memo ${result.status}: ${result.reason}`,
     userId: user.id,
     institutionId,

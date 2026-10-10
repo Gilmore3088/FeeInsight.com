@@ -13,6 +13,7 @@ vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
 
 import { memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
+import { buildFeeResearchEvidence } from "./evidence-contract";
 import { buildFeeAnswer } from "./workspace/answer";
 import { overdraftResearch } from "./workspace/test-fixtures";
 
@@ -124,8 +125,45 @@ describe("storyline memo", () => {
     expect(parseMemo("not json")).toBeNull();
   });
 
-  it("restates exhibit numbers under keys the figure check reads", () => {
-    const payload = memoPayload(storyline) as { stated_amounts: { amount: number }[] };
+  it("requires valid structured evidence IDs when record-bound evidence is supplied", async () => {
+    const research = overdraftResearch();
+    const evidence = buildFeeResearchEvidence(research);
+    const knownId = evidence.facts[0].id;
+    const bound = JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: [knownId] });
+    const c = client(bound);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result.status).toBe("written");
+    if (result.status === "written") expect(result.memo.evidenceFactIds).toEqual([knownId]);
+    expect(c.calls[0]).toContain("fact_evidence");
+    expect(c.calls[0]).toContain(knownId);
+  });
+
+  it("retries a memo that invents an evidence ID", async () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const knownId = evidence.facts[0].id;
+    const invented = JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: ["fee:published:not-real"] });
+    const corrected = JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: [knownId] });
+    const c = client(invented, corrected);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result.status).toBe("written");
+    expect(c.calls[1]).toContain("not in DATA.fact_evidence");
+  });
+
+  it("withholds a memo that never identifies supporting evidence when evidence is available", async () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const c = client(good, good);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result).toMatchObject({
+      status: "withheld",
+      problems: ["The memo did not identify any supporting evidence_fact_ids from DATA.fact_evidence."],
+    });
+  });
+
+  it("restates exhibit numbers under keys the figure check reads and attaches fact evidence only when provided", () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const payload = memoPayload(storyline, evidence) as { stated_amounts: { amount: number }[]; fact_evidence: typeof evidence };
     expect(payload.stated_amounts.map((a) => a.amount)).toEqual(expect.arrayContaining([32, 29.5]));
+    expect(payload.fact_evidence).toEqual(evidence);
+    expect(memoPayload(storyline)).not.toHaveProperty("fact_evidence");
   });
 });
