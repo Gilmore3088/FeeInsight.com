@@ -181,9 +181,11 @@ describe("getDistrictFeeMedians audience boundary", () => {
     db.mockResolvedValueOnce([]);
     await getDistrictFeeMedians(6);
     const query = text(db.mock.calls[0]);
-    expect(query).toContain("ef.source_document_id IS NOT NULL");
-    expect(query).toContain("ef.fee_audience IN ('consumer', 'both')");
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
+    expect(db.unsafe).toHaveBeenCalledTimes(1);
+    const predicate = String(db.unsafe.mock.calls[0][0]);
+    expect(predicate).toContain("ef.source_document_id IS NOT NULL");
+    expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both')");
   });
 });
