@@ -9,7 +9,8 @@ const store = vi.hoisted(() => ({
   logged: [] as { kind: string; detail: Record<string, unknown> }[],
   saved: [] as { fieldKey: string; value: unknown }[],
   status: undefined as string | undefined,
-  analyses: [] as { id: string; userId: number; prompt: string; analysisFocus: string; response: Record<string, unknown> }[],
+  failRead: false,
+  analyses: [] as { id: string; userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown> }[],
 }));
 
 const decision: DecisionRecord = {
@@ -44,29 +45,33 @@ vi.mock("@/lib/data-store/hamilton-workspace", () => ({
 vi.mock("./workspace/research", () => ({ getFeeResearch: async () => overdraftResearch() }));
 vi.mock("./workspace-context", () => ({
   resolveHamiltonInstitutionContext: async ({ instId }: { instId: unknown }) =>
-    instId === "1" ? { institution: { id: 1 }, error: null, source: "url" } : { institution: null, error: "Institution not found", source: "none" },
+    instId === "1" || instId === "2" ? { institution: { id: Number(instId) }, error: null, source: "url" } : { institution: null, error: "Institution not found", source: "none" },
 }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: vi.fn(async () => 1) }));
 vi.mock("@/lib/data-store/hamilton-analyses", () => ({
-  insertSavedAnalysis: async (input: { userId: number; prompt: string; analysisFocus: string; response: Record<string, unknown> }) => {
+  insertSavedAnalysis: async (input: { userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown> }) => {
     const id = `a${store.analyses.length + 1}`;
     store.analyses.push({ id, ...input });
     return id;
   },
-  getSavedAnalysisResponse: async (userId: number, id: string) => store.analyses.find((a) => a.id === id && a.userId === userId)?.response ?? null,
-  updateSavedAnalysisResponse: async (userId: number, id: string, response: Record<string, unknown>) => {
-    const row = store.analyses.find((a) => a.id === id && a.userId === userId);
+  getSavedAnalysisResponse: async (userId: number, id: string, institutionId: string) => {
+    if (store.failRead) throw new Error("Read unavailable");
+    return store.analyses.find((a) => a.id === id && a.userId === userId && a.institutionId === institutionId)?.response ?? null;
+  },
+  updateSavedAnalysisResponse: async (userId: number, id: string, institutionId: string, response: Record<string, unknown>) => {
+    const row = store.analyses.find((a) => a.id === id && a.userId === userId && a.institutionId === institutionId);
     if (row) row.response = response;
     return !!row;
   },
 }));
 vi.mock("./memo", () => ({
-  writeStorylineMemo: async () => ({
+  writeStorylineMemo: vi.fn(async () => ({
     status: "written",
     memo: { summary: "Memo summary.", board: "Board.", market: "Market.", questions: ["Why?"], model: "m", generatedAt: "2026-10-06T15:00:00Z", figureCheck: { checked: 2, unmatched: [] } },
-  }),
+  })),
 }));
 
+import { writeStorylineMemo } from "./memo";
 import { answerAsk, answerAskMemo } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
@@ -78,7 +83,9 @@ beforeEach(() => {
   store.logged = [];
   store.saved = [];
   store.status = undefined;
+  store.failRead = false;
   store.analyses = [];
+  vi.mocked(writeStorylineMemo).mockClear();
 });
 
 describe("answerAsk", () => {
@@ -147,6 +154,24 @@ describe("answerAsk", () => {
     expect(memo.body).toMatchObject({ status: "written" });
     expect(store.analyses).toHaveLength(1);
     expect(store.analyses[0].response).toMatchObject({ hamiltonView: "Memo summary.", whatThisMeans: "Board.\n\nMarket.", exploreFurther: ["Why?"], memo: { summary: "Memo summary." } });
+  });
+
+  it("rejects wrong-subject, wrong-user and missing saved IDs before paid memo generation", async () => {
+    await answerAsk(user, { institutionId: "1", question: "how does my overdraft fee compare?" });
+    const original = store.analyses[0].response;
+    const question = "how does my overdraft fee compare?";
+    expect(await answerAskMemo(user, { institutionId: "2", question, savedAnalysisId: "a1" })).toMatchObject({ status: 404 });
+    expect(await answerAskMemo({ id: 8 }, { institutionId: "1", question, savedAnalysisId: "a1" })).toMatchObject({ status: 404 });
+    expect(await answerAskMemo(user, { institutionId: "1", question, savedAnalysisId: "a404" })).toMatchObject({ status: 404 });
+    expect(writeStorylineMemo).not.toHaveBeenCalled();
+    expect(store.analyses[0].response).toBe(original);
+  });
+
+  it("fails closed on saved-answer read errors instead of invoking the paid memo writer", async () => {
+    await answerAsk(user, { institutionId: "1", question: "how does my overdraft fee compare?" });
+    store.failRead = true;
+    expect(await answerAskMemo(user, { institutionId: "1", question: "how does my overdraft fee compare?", savedAnalysisId: "a1" })).toMatchObject({ status: 503 });
+    expect(writeStorylineMemo).not.toHaveBeenCalled();
   });
 
   it("does not file a clarifying question", async () => {

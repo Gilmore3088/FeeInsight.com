@@ -356,10 +356,23 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
-  // The peer group the bank picked in Settings leads every comparison in the answer.
-  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
   const question = cleanText(body.question, MAX_QUESTION_CHARS);
   if (!question) return { status: 400, body: { error: "Ask a question." } };
+  const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
+  // User ownership is not enough: research another institution without retargeting saved work.
+  // Validate this identity before paid memo generation.
+  let savedResponse: Awaited<ReturnType<typeof getSavedAnalysisResponse>> = null;
+  if (savedId) {
+    try {
+      savedResponse = await getSavedAnalysisResponse(user.id, savedId, String(institution.id));
+    } catch (error) {
+      console.error("[hamilton-ask-memo] saved-answer lookup failed", { savedId, error });
+      return { status: 503, body: { error: "Saved analysis unavailable. Please retry." } };
+    }
+    if (!savedResponse) return { status: 404, body: { error: "Saved analysis not found for this research institution." } };
+  }
+  // The peer group the bank picked in Settings leads every comparison in the answer.
+  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
   const ready = await workspaceSchemaReady();
   const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
   let intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
@@ -380,11 +393,10 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
 
   const result = await writeStorylineMemo(storyline, question, { institutionId });
   let memoSaved = false;
-  const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
-  if (result.status === "written" && savedId) {
+  if (result.status === "written" && savedId && savedResponse) {
     try {
-      const saved = await getSavedAnalysisResponse(user.id, savedId);
-      if (saved) memoSaved = await updateSavedAnalysisResponse(user.id, savedId, withMemo(saved, result.memo));
+      // Repeat the subject check atomically at write time, even if the row changed in between.
+      memoSaved = await updateSavedAnalysisResponse(user.id, savedId, String(institution.id), withMemo(savedResponse, result.memo));
     } catch (error) {
       console.error("[hamilton-ask-memo] saving the memo failed", { savedId, error });
     }
