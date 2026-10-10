@@ -6,6 +6,9 @@ import {
   validateHamiltonComplaintEvidence,
   assessHamiltonReleaseCandidate,
   HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS,
+  assessHamiltonFailureRecovery,
+  HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS,
+  type HamiltonFailureRecoveryEvidence,
   type HamiltonAcceptanceCaseEvidence,
   type HamiltonComplaintEvidence,
 } from "./release-acceptance";
@@ -130,5 +133,54 @@ describe("Hamilton release-candidate packet", () => {
   it("rejects an invalid candidate SHA", () => {
     expect(assessHamiltonReleaseCandidate({ candidateSha: "main", cases: allPassed() }).problems)
       .toContain("invalid_candidate_sha");
+  });
+});
+
+
+describe("Hamilton failure-recovery release evidence", () => {
+  const sha = "c".repeat(40);
+  const allRecovered = (): HamiltonFailureRecoveryEvidence[] =>
+    HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS.map((caseId) => ({
+      caseId,
+      candidateSha: sha,
+      status: "passed",
+      containment: "Synthetic failure stayed within the affected request/transaction.",
+      rollbackOrRetry: "Synthetic retry or rollback restored the prior state without deleting audit history.",
+      evidenceRefs: [`failure-artifact:${caseId}`],
+    }));
+
+  it("requires all seven failure-recovery cases before the packet can call recovery ready", () => {
+    const result = assessHamiltonFailureRecovery({ candidateSha: sha, cases: allRecovered() });
+    expect(result).toEqual({ ready: true, problems: [], passedCases: 7, requiredCases: 7 });
+  });
+
+  it("keeps provider-stop and database failures blocked when they were not actually exercised", () => {
+    const cases = allRecovered();
+    cases.find((entry) => entry.caseId === "provider_stop")!.status = "blocked";
+    cases.find((entry) => entry.caseId === "database_failure")!.status = "skipped";
+    const problems = assessHamiltonFailureRecovery({ candidateSha: sha, cases }).problems;
+    expect(problems).toContain("blocked_failure_case:provider_stop");
+    expect(problems).toContain("skipped_failure_case:database_failure");
+  });
+
+  it("requires explicit containment and rollback/retry evidence rather than a pass flag", () => {
+    const cases = allRecovered();
+    const delayed = cases.find((entry) => entry.caseId === "delayed_response")!;
+    delayed.containment = "";
+    delayed.rollbackOrRetry = "";
+    delayed.evidenceRefs = [];
+    const problems = assessHamiltonFailureRecovery({ candidateSha: sha, cases }).problems;
+    expect(problems).toEqual(expect.arrayContaining([
+      "missing_containment:delayed_response",
+      "missing_rollback_or_retry:delayed_response",
+      "missing_failure_evidence_ref:delayed_response",
+    ]));
+  });
+
+  it("does not transfer a rollback rehearsal from another release candidate", () => {
+    const cases = allRecovered();
+    cases.find((entry) => entry.caseId === "invalid_migration")!.candidateSha = "d".repeat(40);
+    expect(assessHamiltonFailureRecovery({ candidateSha: sha, cases }).problems)
+      .toContain("wrong_failure_sha:invalid_migration");
   });
 });
