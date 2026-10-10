@@ -52,6 +52,19 @@ describe("governed geographic landing research", () => {
     expect(result.comparisons[1].difference).toBeNull();
     expect(result.comparisons[1].selected.median).toBe(0);
   });
+  it("withholds negative fee measures and never presents invalid quartiles as prices", () => {
+    const badMedian = entry("paper_statement", -2, 15);
+    const badQuartile = { ...entry("money_order", 0, 15), p25_amount: -1 };
+    expect(measureFromIndex(badMedian)).toMatchObject({ status: "insufficient", median: null });
+    expect(measureFromIndex(badQuartile)).toMatchObject({ status: "available", median: 0, p25: null });
+    const result = buildGeographicResearchResult(base, [badMedian, badQuartile], [
+      entry("paper_statement", 4, 20),
+      entry("money_order", 1, 20),
+    ]);
+    expect(result.comparisons[0].difference).toBeNull();
+    expect(result.comparisons[1].selected.median).toBe(0);
+    expect(result.comparisons[1].selected.p25).toBeNull();
+  });
   it("discloses the reporting dates and observed counts from the source index", () => {
     expect(measureFromIndex(entry("paper_statement", 4, 12))).toMatchObject({
       lastUpdated: "2026-10-08", institutions: 12, observations: 14, status: "available",
