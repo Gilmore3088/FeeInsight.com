@@ -103,7 +103,7 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 
 ## October 10 continuation: exact32 executable repair rehearsal
 
-- `72e2f09adb8b372a92fecdc8ae18ad7c389898ac` adds the non-schema operator script `docs/project/findings/2026-10-10-fee-audience-data-repair.sql`. It is exact-ID/source/lineage/category/amount guarded and deliberately separate from schema migration history.
+- `72e2f09adb8b372a92fecdc8ae18ad7c389898ac` adds the non-schema operator script `scripts/fee-audience-data-repair.sql`. It is exact-ID/source/lineage/category/amount guarded and deliberately separate from schema migration history.
 - `19508255906c421a2923f60c0a1c375158fb0378` hardens the script for nullable flags and transaction-local receipt ordering.
 - Exact current production catalog values for all 32 screening publications were re-read before writing the script. They still match the runbook IDs, source-document IDs, categories and amounts.
 - The script implements four distinct source-review outcomes: 21 source-proven business-scope backfills that preserve price/category/frequency/history; 3 audience-screen false positives recorded with no audience guess; 3 confirmed category/unit/binding errors quarantined; and 5 uncertain/inaccessible rows quarantined. Total: 32.
@@ -116,6 +116,8 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 - Payment owners renumbered their still-unshipped migrations to `20270110000042_pro_checkout_intents.sql` (#990 head `dc78356f4525519f0faa7d0088327e00bbf7bced`) and `20270110000043_payment_email_outbox.sql` (#991 head `3ebf7d4c6a38cd5d8de9ab0fd4fe54923fdb1d0f`).
 - On FeeInsight preview, with #986 migrations 40/41 already installed, the exact current 42 and 43 SQL applied inside a transaction. Assertions passed that both tables existed, both had RLS enabled, and anon/authenticated had no SELECT privileges. The transaction ROLLED BACK and both temporary tables disappeared.
 - Combined-schema receipt posted to #990, #991, #984 and #986. No migration history or persistent preview/production data changed.
+
+- Relocated the exact32 SQL from the findings directory to `scripts/fee-audience-data-repair.sql` in commits `b6d62eee989b27994379ff4b6e56af16c2af6ffa` / `f4502f3306105f1fcb0447f7fd914e17af7c2545`; the repository findings-file guard was preserved, not weakened. The SQL contents are unchanged from the rollback-rehearsed script.
 
 ## Remaining acceptance gates
 
