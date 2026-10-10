@@ -160,9 +160,10 @@ describe("runCompetitorAlerts", () => {
     const text = (call![0] as TemplateStringsArray).join("?");
     expect(text).toContain("takedown_pending");
     expect(text).toContain("agentic_darwin_verified");
-    expect(text).toContain("consumer_live.fee_audience IN ('consumer', 'both')");
-    expect(text).toContain("consumer_previous.fee_audience = consumer_live.fee_audience");
     expect(call).toContain("2026-10-07T00:00:00.000Z");
+    const predicates = mocks.sql.unsafe.mock.calls.map((entry) => String(entry[0])).join("\n");
+    expect(predicates).toContain("consumer_live.fee_audience IN ('consumer', 'both')");
+    expect(predicates).toContain("consumer_previous.fee_audience = consumer_live.fee_audience");
   });
 
   it("writes nothing on a dry run and can preview an institution without a workspace", async () => {
