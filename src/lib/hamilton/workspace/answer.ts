@@ -7,6 +7,7 @@
  * Decision support only: nothing here says to raise, lower or drop a fee.
  */
 
+import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
@@ -78,9 +79,9 @@ function ownFeeClaim(research: FeeResearch, name: string): Fact | null {
   if (research.current === null) return null;
   const row = research.ownRows[0];
   return {
-    text: `Your published ${name} fee is ${money(research.current)}.`,
+    text: `${subjectPossessive(research)} published ${name} fee is ${money(research.current)}.`,
     source: {
-      label: "Your published fee schedule",
+      label: `${subjectPossessive(research)} published fee schedule`,
       table: "published_fee_catalog",
       url: row?.documentUrl ?? row?.sourceUrl ?? undefined,
       asOf: row?.publishedAt?.slice(0, 10) ?? research.provenance.dataAsOf.fees ?? null,
@@ -130,7 +131,7 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
     // One filing line covers both fees: "NSF / returned item and overdraft income".
     const combined = line.combinedWith ? ` and ${line.combinedWith}` : "";
     out.push({
-      text: `Your filing reports ${formatDollarsInWords(line.annualIncome)} in ${name} income${combined} over the four quarters to ${longDate(line.quarterEnd)}.`,
+      text: `${subjectPossessive(research)} filing reports ${formatDollarsInWords(line.annualIncome)} in ${name} income${combined} over the four quarters to ${longDate(line.quarterEnd)}.`,
       source: { ...line.source, asOf: line.quarterEnd },
     });
   }
@@ -138,7 +139,7 @@ function revenueClaims(research: FeeResearch, name: string): Fact[] {
   if (fin?.latestTtm != null) {
     const change = fin.yoyPct != null ? `, ${fin.yoyPct >= 0 ? "up" : "down"} ${pct(Math.abs(fin.yoyPct))}` : "";
     out.push({
-      text: `Your ${incomeName(fin.source)} was ${formatDollarsInWords(fin.latestTtm)} in the year to ${longDate(fin.quarterEnd)}${change}.`,
+      text: `${subjectPossessive(research)} ${incomeName(fin.source)} was ${formatDollarsInWords(fin.latestTtm)} in the year to ${longDate(fin.quarterEnd)}${change}.`,
       source: { ...fin.sourceRef, asOf: fin.quarterEnd },
     });
   }
@@ -239,7 +240,7 @@ function positionExhibit(research: FeeResearch, name: string): Exhibit | null {
   }
   return {
     kind: "fee_position",
-    title: research.current !== null ? `Your ${money(research.current)} ${name} fee against ${count(band.n)} peers` : `The ${name} fee across ${count(band.n)} peers`,
+    title: research.current !== null ? `${subjectPossessive(research)} ${money(research.current)} ${name} fee against ${count(band.n)} peers` : `The ${name} fee across ${count(band.n)} peers`,
     unit: "dollars",
     own: research.current,
     ownLabel: research.institutionName,
@@ -259,7 +260,7 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
     .map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null }));
   return {
     kind: "competitor_range",
-    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${items.length} institutions in your market`,
+    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${items.length} institutions in ${subjectPossessive(research, false)} market`,
     unit: "dollars",
     own: research.current,
     ownLabel: research.institutionName,
@@ -280,7 +281,7 @@ function trendExhibit(research: FeeResearch): Exhibit | null {
     }
     return {
       kind: "trend",
-      title: `Your ${incomeName(fin.source)} by quarter`,
+      title: `${subjectPossessive(research)} ${incomeName(fin.source)} by quarter`,
       unit: "dollars",
       series,
       sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
@@ -323,20 +324,20 @@ function headline(research: FeeResearch, name: string): string {
   if (research.current !== null) {
     const position = pricePosition(research.current, amounts);
     if (band && position !== null) {
-      return `Your ${money(research.current)} ${name} fee is at the ${ordinal(position)} percentile of ${count(band.n)} peers (median ${money(band.median)}).`;
+      return `${subjectPossessive(research)} ${money(research.current)} ${name} fee is at the ${ordinal(position)} percentile of ${count(band.n)} peers (median ${money(band.median)}).`;
     }
-    return `Your ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
+    return `${subjectPossessive(research)} ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
   // No amount on file means the fee is not in the index, never that the bank charges none.
-  if (band) return `Your ${name} fee is not in the index yet; ${count(band.n)} peers' median is ${money(band.median)}.`;
-  return `Your ${name} fee is not in the index yet, and too few peers publish one to compare.`;
+  if (band) return `${subjectPossessive(research)} ${name} fee is not in the index yet; ${count(band.n)} peers' median is ${money(band.median)}.`;
+  return `${subjectPossessive(research)} ${name} fee is not in the index yet, and too few peers publish one to compare.`;
 }
 
 // ─── Economist: the one question ─────────────────────────────────────────────
 
-function currentFeeQuestion(feeCategory: string): ClarifyingQuestion {
+function currentFeeQuestion(feeCategory: string, research?: Pick<FeeResearch, "subjectName">): ClarifyingQuestion {
   return {
-    prompt: `What do you charge for one ${proseFeeName(feeCategory)} item today?`,
+    prompt: `${research?.subjectName ? `What does ${research.subjectName}` : "What do you"} charge for one ${proseFeeName(feeCategory)} item today?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.current_amount`,
   };
@@ -346,10 +347,10 @@ function currentFeeQuestion(feeCategory: string): ClarifyingQuestion {
 export function missingFigure(research: FeeResearch): ClarifyingQuestion | null {
   // A fee stated as a rate has no per-item amount; the volume it applies to sets the money.
   if (research.current === null && ownRate(research)) {
-    return research.provenance.clientFacts.length === 0 ? rateVolumeQuestion(research.feeCategory) : null;
+    return research.provenance.clientFacts.length === 0 ? rateVolumeQuestion(research.feeCategory, research) : null;
   }
-  if (research.current === null) return currentFeeQuestion(research.feeCategory);
-  if (!research.revenueLine && research.provenance.clientFacts.length === 0) return annualItemsQuestion(research.feeCategory);
+  if (research.current === null) return currentFeeQuestion(research.feeCategory, research);
+  if (!research.revenueLine && research.provenance.clientFacts.length === 0) return annualItemsQuestion(research.feeCategory, research.subjectName);
   return null;
 }
 
@@ -370,7 +371,7 @@ export function buildFeeAnswer(research: FeeResearch, options: { focus?: Exhibit
   const rates = rateClaims(research, name);
   const rateLed = research.current === null && ownRate(research) !== null;
   const claims = [
-    ...(seg ? segmentClaims(seg, research.feeCategory, research.current) : []),
+    ...(seg ? segmentClaims(seg, research.feeCategory, research.current, research) : []),
     ...(rateLed ? rates : []),
     ownFeeClaim(research, name),
     ...(segmentLed ? [] : [peerClaim(research)]),
@@ -380,7 +381,7 @@ export function buildFeeAnswer(research: FeeResearch, options: { focus?: Exhibit
   ].filter((f): f is Fact => f !== null);
   const answer: HamiltonAnswer = {
     feeCategory: research.feeCategory,
-    headline: segmentLed ? segmentHeadline(seg, research.feeCategory, research.current) : headline(research, name),
+    headline: segmentLed ? segmentHeadline(seg, research.feeCategory, research.current, research) : headline(research, name),
     claims,
     drivers: economicDrivers(research.economy, research.feeCategory),
     exhibit: (segmentLed ? segmentExhibit(seg, research.feeCategory, research.current, research.institutionName) : null) ?? buildExhibit(research, options.focus),

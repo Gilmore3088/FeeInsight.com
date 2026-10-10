@@ -9,7 +9,6 @@ import { redirect } from "next/navigation";
 import { PeerSetManager } from "./PeerSetManager";
 import {
   getPeerInstitutionNames,
-  getPeerSetWorkspace,
   getSavedPeerSets,
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
@@ -27,7 +26,8 @@ import {
 import { FeatureToggles } from "./FeatureToggles";
 import { ManageBillingButton } from "@/components/hamilton/settings/ManageBillingButton";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { WorkspaceInstitutionAccessRequest, WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import {
   getActiveInstitutionMembership,
   getInstitutionWorkspaceMembers,
@@ -43,7 +43,7 @@ import { isCappedConsultant } from "@/lib/hamilton/report-cap";
 import { CONSULTANT_MONTHLY_REPORTS } from "@/lib/pro-tiers";
 
 export const metadata: Metadata = {
-  title: "My bank and data",
+  title: "Research and data",
 };
 
 const PLAN_LABEL: Record<string, string> = {
@@ -54,8 +54,8 @@ const PLAN_LABEL: Record<string, string> = {
 };
 
 /**
- * My bank and data (reached from the Account menu), in the living-memo layout.
- * The bank picked here is the one Hamilton works on across every screen.
+ * Research and data (reached from the Account menu), in the living-memo layout.
+ * Research selection is separate from authenticated institution membership.
  */
 export default async function SettingsPage({
   searchParams,
@@ -81,15 +81,35 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [peerSetWorkspace, snapshot, cappedConsultant] = await Promise.all([
-    getPeerSetWorkspace(String(user.id)).catch(() => null),
+  const [snapshot, cappedConsultant, accountContext, [selectedClaim, fetchedMembership, workspaceMembers, workspaceInvitations]] = await Promise.all([
     getIntelligenceSnapshot(),
     isCappedConsultant(user).catch(() => false),
+    loadHamiltonAccountContext(user),
+    selectedInstitution
+      ? Promise.all([
+          getWorkspaceInstitutionClaimState(selectedInstitution.id),
+          getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null),
+          getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
+          getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
+        ])
+      : Promise.resolve([null, null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const),
   ]);
-  const peerSets: SavedPeerSet[] = await getSavedPeerSets(
+  const selectedMembership = fetchedMembership?.userId === user.id &&
+    fetchedMembership.institutionId === selectedInstitution?.id && fetchedMembership.status === "active"
+      ? fetchedMembership
+      : null;
+  const peerSetWorkspace = selectedMembership
+    ? { institutionId: selectedMembership.institutionId, role: selectedMembership.role }
+    : null;
+  const loadedPeerSets = await getSavedPeerSets(
     String(user.id),
     peerSetWorkspace?.institutionId ?? null,
   ).catch(() => []);
+  // Creator-owned shared groups from another institution remain available in the
+  // store, but they cannot become the displayed baseline for this research subject.
+  const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
+    set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
+  );
   // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
   const [peerSetCounts, peerInstitutionNames] = await Promise.all([
     getPeerGroupCounts(
@@ -111,17 +131,6 @@ export default async function SettingsPage({
       })[0]
     : undefined;
   const widerGroupLabel = firstDefaultGroup ? describePeerFilters(firstDefaultGroup) : "the national index";
-  const [selectedClaim, selectedMembership, workspaceMembers, workspaceInvitations] = selectedInstitution
-    ? await Promise.all([
-        getWorkspaceInstitutionClaimState(selectedInstitution.id),
-        getActiveInstitutionMembership({
-          userId: user.id,
-          institutionId: selectedInstitution.id,
-        }).catch(() => null),
-        getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
-        getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
-      ])
-    : [null, null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const;
   const canManageWorkspaceAccess =
     isAdmin ||
     selectedMembership?.role === "owner" ||
@@ -183,12 +192,12 @@ export default async function SettingsPage({
   return (
     <MemoPage>
       <MemoHeader
-        kicker="Account"
-        title="My bank and data"
+        kicker="Settings"
+        title="Research and data"
         dek={
           selectedInstitution
-            ? `Hamilton is working on ${selectedInstitution.name}.`
-            : "Pick your bank so Hamilton can compare your fees with your peers."
+            ? `Research institution: ${selectedInstitution.name}.`
+            : "Choose an institution for Hamilton's fee research and peer comparisons."
         }
         actions={
           <>
@@ -202,22 +211,58 @@ export default async function SettingsPage({
       />
 
       <MemoSection
-        title="Your bank"
-        note={
-          selectedInstitution
-            ? "Every screen starts from this bank."
-            : "Choose your bank so Hamilton can compare your fees with your peers."
-        }
+        id="account-institution"
+        title="Account institution"
+        note="Linked through active workspace membership. Research selection does not change it."
+      >
+        <div className={panel}>
+          {accountContext.status === "identified" && accountContext.institution ? (
+            <>
+              <p className="text-lg text-warm-900" style={SERIF}>{accountContext.institution.name}</p>
+              <p className="mt-1 text-sm text-warm-600">Institution ID {accountContext.institution.id}</p>
+            </>
+          ) : (
+            <p className="text-sm text-warm-700">
+              {accountContext.status === "ambiguous"
+                ? "Multiple account institutions linked. Hamilton will ask which institution you mean when needed."
+                : accountContext.status === "unavailable"
+                  ? "Account institution could not be loaded. Research selection does not establish account membership."
+                  : "No account institution linked."}
+            </p>
+          )}
+        </div>
+      </MemoSection>
+
+      <MemoSection
+        title="Research institution"
+        note="Choose the institution Hamilton researches. Account membership and workspace access are separate."
       >
         <div className={panel}>
           <WorkspaceInstitutionForm
+            key={JSON.stringify([user.id, selectedInstitution?.id ?? null, selectedSource])}
             selectedInstitution={selectedInstitution}
             selectedSource={selectedSource === "artifact" ? "manual" : selectedSource}
-            selectedClaim={selectedClaim}
-            selectedMembership={selectedMembership}
           />
         </div>
       </MemoSection>
+
+      {selectedInstitution && (
+        <MemoSection
+          id="workspace-access-request"
+          title="Workspace access request"
+          note="Optional. Request access only for an institution you are authorized to represent."
+        >
+          <div className={panel}>
+            <WorkspaceInstitutionAccessRequest
+              key={selectedInstitution.id}
+              selectedInstitution={{ id: selectedInstitution.id, name: selectedInstitution.name }}
+              selectedClaim={selectedClaim}
+              selectedMembership={selectedMembership}
+              currentUserId={user.id}
+            />
+          </div>
+        </MemoSection>
+      )}
 
       <MemoSection
         id="your-figures"
@@ -230,22 +275,18 @@ export default async function SettingsPage({
       <MemoSection
         id="peer-sets"
         title="Peer groups"
-        note="Who your fees are compared with."
+        note="Who the research institution's fees are compared with."
       >
         <div className={`${panel} scroll-mt-24`}>
           <PeerSetManager
+            key={JSON.stringify([user.id, selectedInstitution?.id ?? null, peerSetWorkspace?.institutionId ?? null])}
+            researchInstitutionId={selectedInstitution?.id ?? null}
             initialPeerSets={peerSets}
             initialCounts={Object.fromEntries(
               peerSets.flatMap((set, i) => (peerSetCounts[i] ? [[set.id, peerSetCounts[i]]] : [])),
             )}
             initialInstitutionNames={Object.fromEntries(peerInstitutionNames)}
-            workspaceName={
-              peerSetWorkspace && selectedInstitution?.id === peerSetWorkspace.institutionId
-                ? selectedInstitution.name
-                : peerSetWorkspace
-                  ? "your team"
-                  : null
-            }
+            workspaceName={peerSetWorkspace ? selectedInstitution?.name ?? null : null}
             canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
             currentUserId={String(user.id)}
             minPeers={MIN_PEERS_FOR_POSITION}
@@ -257,7 +298,7 @@ export default async function SettingsPage({
       <MemoSection
         id="workspace-access"
         title="Team access"
-        note="Colleagues see the same bank and saved work."
+        note="Manage institution workspace access separately from research selection."
       >
         <div className={`${panel} scroll-mt-24`}>
           <WorkspaceAccessManager
@@ -314,7 +355,7 @@ export default async function SettingsPage({
               href={selectedInstitution ? `/pro/analyze?instId=${selectedInstitution.id}` : "/pro/analyze"}
               className="mt-3 inline-block text-sm font-medium text-terra-text underline decoration-terra/40 underline-offset-2 hover:decoration-terra"
             >
-              Ask Hamilton about your bank
+              Ask Hamilton about this institution
             </Link>
           </div>
 
@@ -361,7 +402,7 @@ export default async function SettingsPage({
 
       <MemoSection
         title="What your plan includes"
-        note="Each link opens on the bank you picked above."
+        note="Each link opens on the research institution selected above."
       >
         <FeatureToggles selectedInstitutionId={selectedInstitution ? String(selectedInstitution.id) : null} />
       </MemoSection>

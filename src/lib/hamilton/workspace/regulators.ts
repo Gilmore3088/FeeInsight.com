@@ -9,6 +9,7 @@ import type { InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
 import { rulesForInstitution, stateAgency, type StateRule } from "../regulatory-context";
 import type { Fact } from "./types";
+import { subjectPossessive } from "./subject";
 
 /** Rules feeRules() already states for Ask, so they are not repeated. */
 const STATED_ELSEWHERE = new Set(["reg_e_opt_in"]);
@@ -26,6 +27,7 @@ export function regulatorSentence(
   regulators: InstitutionRegulators | null,
   stateCode: string | null | undefined,
   charterType: string | null | undefined,
+  institutionName?: string,
 ): string | null {
   if (!regulators?.primaryRegulator) return null;
   const { primaryRegulator, charterAgency } = regulators;
@@ -33,15 +35,15 @@ export function regulatorSentence(
   const agency = named ? `the ${named}` : "a state agency";
   if (primaryRegulator === "NCUA") {
     return charterAgency === "State"
-      ? `Your charter is from ${agency}, and NCUA insures your shares.`
-      : "NCUA charters and supervises you as a federal credit union.";
+      ? `${subjectPossessive({ subjectName: institutionName })} charter is from ${agency}, and NCUA insures ${subjectPossessive({ subjectName: institutionName }, false)} shares.`
+      : `NCUA charters and supervises ${institutionName ?? "you"} as a federal credit union.`;
   }
-  if (primaryRegulator === "OCC") return "The OCC charters and supervises you as a national bank.";
+  if (primaryRegulator === "OCC") return `The OCC charters and supervises ${institutionName ?? "you"} as a national bank.`;
   if (primaryRegulator === "FDIC" || primaryRegulator === "Federal Reserve") {
     const federal = primaryRegulator === "FDIC" ? "the FDIC" : "the Federal Reserve";
-    return `Your charter is from ${agency}, and ${federal} is your primary federal regulator.`;
+    return `${subjectPossessive({ subjectName: institutionName })} charter is from ${agency}, and ${federal} is ${subjectPossessive({ subjectName: institutionName }, false)} primary federal regulator.`;
   }
-  if (primaryRegulator === "State") return `Your charter and supervision are with ${agency}.`;
+  if (primaryRegulator === "State") return `${subjectPossessive({ subjectName: institutionName })} charter and supervision are with ${agency}.`;
   return null;
 }
 
@@ -72,7 +74,7 @@ export function regulatoryFacts(input: {
       source: { label: `${rule.name}, ${rule.citation}`, ...(rule.url ? { url: rule.url } : {}), asOf: null },
     });
   }
-  const sentence = regulatorSentence(input.regulators, input.stateCode, input.charterType);
+  const sentence = regulatorSentence(input.regulators, input.stateCode, input.charterType, input.institutionName);
   if (sentence) {
     out.push({
       text: sentence,
@@ -90,7 +92,7 @@ export function regulatoryFacts(input: {
       source: { label: "CFPB Consumer Complaint Database", table: "institution_complaint_records", asOf: latest.year },
     });
   }
-  const benchmark = complaintBenchmarkFact(input.complaintBenchmark);
+  const benchmark = complaintBenchmarkFact(input.complaintBenchmark, input.institutionName);
   if (benchmark) out.push(benchmark);
   return out;
 }
@@ -108,18 +110,18 @@ function per10B(perBillion: number): string {
  * large bank is not judged on its size. Only for a confirmed CFPB match: no match is not proof of
  * no complaints, and a match under review has no count yet.
  */
-export function complaintBenchmarkFact(b: ComplaintBenchmark | null | undefined): Fact | null {
+export function complaintBenchmarkFact(b: ComplaintBenchmark | null | undefined, institutionName?: string): Fact | null {
   if (!b || b.match_status !== "matched" || b.fee_complaints === null || b.peer_count === 0) return null;
   // Peers share the bank's charter and asset tier; the line stays within a storyline line's 20 words.
   const where = b.peer_level === "state" ? `${STATE_NAMES[b.peer_label] ?? b.peer_label} peers` : b.peer_level === "fed_district" ? `${b.peer_label.replace(/^Fed /, "")} peers` : "peers nationwide";
   const group = `${b.peer_count.toLocaleString("en-US")} ${where}`;
   let text: string;
   if (b.fee_complaints === 0) {
-    text = `You had no CFPB fee complaints in ${b.year}; ${b.peers_with_fee_complaints} of ${group} had any.`;
+    text = `${institutionName ?? "You"} had no CFPB fee complaints in ${b.year}; ${b.peers_with_fee_complaints} of ${group} had any.`;
   } else if (b.fee_complaints_per_billion !== null && b.peer_median_per_billion !== null) {
     const [noun, verb] = b.fee_complaints === 1 ? ["complaint", "equals"] : ["complaints", "equal"];
     const median = b.peer_level === "national" ? `${b.peer_count.toLocaleString("en-US")} peers' median nationwide` : `${group}' median`;
-    text = `Your ${b.fee_complaints} CFPB fee ${noun} in ${b.year} ${verb} ${per10B(b.fee_complaints_per_billion)} per $10B of deposits; ${median} is ${per10B(b.peer_median_per_billion)}.`;
+    text = `${subjectPossessive({ subjectName: institutionName })} ${b.fee_complaints} CFPB fee ${noun} in ${b.year} ${verb} ${per10B(b.fee_complaints_per_billion)} per $10B of deposits; ${median} is ${per10B(b.peer_median_per_billion)}.`;
   } else {
     return null;
   }

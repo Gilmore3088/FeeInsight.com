@@ -38,4 +38,17 @@ describe("ReportOutput", () => {
     expect(html).not.toMatch(/class="([^"]*\s)?tabular-nums[\s"]/);
     expect(html).not.toMatch(/Recommended|Proposed/);
   });
+  it("shows the stored research subject, account and original peer context on reopen", () => {
+    const saved = { ...report, identityContext: { version: 1 as const, researchInstitutionId: 2945, accountInstitutionId: 101, accountStatus: "identified" as const, researchInstitutionName: "Research Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort" } };
+    const reopened = renderToStaticMarkup(<ReportOutput report={JSON.parse(JSON.stringify(saved))} reportType="competitive_positioning" />);
+    expect(reopened).toContain("Research institution: Research Bank A");
+    expect(reopened).toContain("Account institution: Space Coast CU");
+    expect(reopened).toContain("Peer baseline: Original A cohort");
+    expect(reopened).not.toContain("Current Bank B");
+  });
+
+  it("labels missing historical identity without substituting today's workspace", () => {
+    expect(html).toContain("Historical institution, account and peer context: Not recorded");
+  });
+
 });

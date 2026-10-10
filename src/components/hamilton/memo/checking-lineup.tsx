@@ -54,7 +54,7 @@ export function CheckingLineupPanel({ name, lineup }: { name: string; lineup: Ch
           <table className="w-full min-w-[32rem] text-sm">
             <thead>
               <tr className="border-b border-warm-300 text-left text-xs uppercase tracking-[0.08em] text-warm-600">
-                <th className={TH}>Your account</th>
+                <th className={TH}>Account at {name}</th>
                 <th className={`${TH} text-right`}>Monthly fee</th>
                 <th className={`${TH} text-right`}>Balance to avoid it</th>
                 <th className={TH}>Other way to avoid it</th>
@@ -117,7 +117,7 @@ export function CheckingLineupPanel({ name, lineup }: { name: string; lineup: Ch
       <p className="text-xs leading-relaxed text-warm-600">
         {PRODUCT_NAME}: verified monthly maintenance fees on each institution&apos;s own published schedule, consumer checking
         only.
-        {lineup.peerRows.length > shownPeers.length ? ` Showing ${shownPeers.length} of ${lineup.peerRows.length} competitors, largest deposits in your market first.` : ""}
+        {lineup.peerRows.length > shownPeers.length ? ` Showing ${shownPeers.length} of ${lineup.peerRows.length} competitors, largest deposits in ${name}'s market first.` : ""}
         {` "${NOT_STATED[0].toUpperCase() + NOT_STATED.slice(1)}" means the schedule does not state it; it is not a zero.`}
         {lineup.leftOut > 0
           ? ` ${lineup.leftOut.toLocaleString("en-US")} savings, money market, certificate, IRA or business ${lineup.leftOut === 1 ? "line is" : "lines are"} left out.`

@@ -621,7 +621,26 @@ export async function createPeerSet(formData: FormData): Promise<PeerSetActionRe
   if (!user) return { success: false, error: "Not authenticated" };
   if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
 
-  const workspace = await peerSetWorkspace(user.id);
+  // The displayed research subject may differ from the stored workspace. An explicit
+  // empty subject is personal; sharing requires fresh membership of that exact subject.
+  let workspace: { institutionId: number; role: string } | null;
+  if (formData.has("research_institution_id")) {
+    if (formData.get("research_institution_id") === "") {
+      workspace = null;
+    } else {
+      const subject = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().positive().safe())
+        .safeParse(formData.get("research_institution_id"));
+      if (!subject.success) return { success: false, error: "Enter a valid research institution ID." };
+      try {
+        const membership = await getActiveInstitutionMembership({ userId: user.id, institutionId: subject.data });
+        workspace = membership ? { institutionId: membership.institutionId, role: membership.role } : null;
+      } catch {
+        return { success: false, error: "Could not verify access to this institution. Try saving again." };
+      }
+    }
+  } else {
+    workspace = await peerSetWorkspace(user.id);
+  }
   if (workspace?.role === "viewer") {
     return { success: false, error: "Viewers can use the team's peer groups but not add them." };
   }

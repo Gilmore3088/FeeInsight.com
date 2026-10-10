@@ -44,15 +44,16 @@ export function LocalCompetitors({
   if (columns.length === 0) return null;
   const showDeposits = market.rows.some((r) => !r.own && r.marketDeposits != null);
   const places = market.info.places.join("; ");
+  const institutionName = market.rows.find((row) => row.own)?.name ?? "Research institution";
   return (
     <section aria-labelledby="local-competitors" className="flex flex-col gap-3">
       <h2 id="local-competitors" className="text-lg font-semibold text-warm-900">
-        Your named competitors
+        {institutionName}&apos;s local competitors
       </h2>
       <p className="text-sm text-warm-700">
         {showDeposits
-          ? `The largest institutions in your market (${places}) by local deposits, FDIC Summary of Deposits ${market.info.sodYear}, from their own published schedules.`
-          : `Institutions in your market (${places}), from their own published schedules.`}{" "}
+          ? `The largest institutions in ${institutionName}'s market (${places}) by local deposits, FDIC Summary of Deposits ${market.info.sodYear}, from their own published schedules.`
+          : `Institutions in ${institutionName}'s market (${places}), from their own published schedules.`}{" "}
         A dash means the fee isn&apos;t on their schedule as we hold it.
       </p>
       <div className="overflow-x-auto rounded-lg border border-warm-300 bg-white">

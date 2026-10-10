@@ -9,6 +9,8 @@ import { ANALYSIS_FOCUS_TABS, type AnalysisFocus } from "@/lib/hamilton/navigati
 import { saveAnalysis } from "@/app/pro/(hamilton)/analyze/actions";
 import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { analyzeWorkspaceKey } from "@/lib/hamilton/artifact-context";
 import { answerTitle, humanizeAnswerText, parseAnalyzeResponse, shapeHamiltonView, type ParsedResponse } from "./parse-response";
 import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
@@ -95,7 +97,7 @@ export function answerAuditTrail(input: {
         asOf: input.preparedAt.slice(0, 10),
       },
       ...(input.institutionName
-        ? [{ label: "Your institution", detail: `${input.institutionName}'s published fees and filings.`, asOf: null }]
+        ? [{ label: "Research subject", detail: `${input.institutionName}'s published fees and filings.`, asOf: null }]
         : []),
     ],
     method: [
@@ -136,6 +138,8 @@ interface AnalyzeWorkspaceProps {
   initialQuestion?: string | null;
   /** True when the question came from the Ask bar, so it is sent on arrival rather than retyped */
   autoSend?: boolean;
+  /** Keep saved content readable without guessing a missing or unavailable subject. */
+  readOnlyReason?: string | null;
 }
 
 /**
@@ -237,7 +241,7 @@ export function WrittenAnswerProgress({
       <p role="status" className="flex items-center gap-2 text-sm font-medium text-warm-900">
         <Loader2 aria-hidden className="h-4 w-4 animate-spin text-terra" />
         {stage === "reading"
-          ? "Hamilton is reading your figures and the market."
+          ? "Hamilton is reading the selected institution and market data."
           : "Hamilton is writing this answer from the fee data and filings."}
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-warm-700">
@@ -260,7 +264,19 @@ export function WrittenAnswerProgress({
   );
 }
 
-export function AnalyzeWorkspace({
+/** State belongs to a user, research subject and saved answer, never just a screen position. */
+export function AnalyzeWorkspace(props: AnalyzeWorkspaceProps) {
+  return <AnalyzeConversationWorkspace key={analyzeWorkspaceKey({
+    userId: props.userId,
+    institutionId: props.selectedInstitution?.id ?? props.institutionId,
+    analysisId: props.initialAnalysisId,
+    question: props.initialQuestion,
+    intent: props.initialIntent,
+    readOnly: Boolean(props.readOnlyReason),
+  })} {...props} />;
+}
+
+function AnalyzeConversationWorkspace({
   userId,
   institutionId,
   selectedInstitution,
@@ -271,6 +287,7 @@ export function AnalyzeWorkspace({
   recent = [],
   initialQuestion = null,
   autoSend = false,
+  readOnlyReason = null,
 }: AnalyzeWorkspaceProps) {
   // The focus lens still shapes the prompt from deep links; there are no lens tabs on screen.
   const focus = useRef<AnalysisFocus>(focusForIntent(initialIntent));
@@ -291,6 +308,7 @@ export function AnalyzeWorkspace({
   const [input, setInput] = useState(() => (initialQuestion && !initialAnalysis ? initialQuestion : ""));
   const [isExporting, setIsExporting] = useState(false);
   const [savedAnalysisId, setSavedAnalysisId] = useState<string | null>(initialAnalysisId);
+  const [answerIdentity, setAnswerIdentity] = useState(() => readHamiltonIdentitySnapshot(initialAnalysis?.identityContext));
   const [figureCheck, setFigureCheck] = useState<FigureCheckResult | null>(null);
   const [lookups, setLookups] = useState<string[]>([]);
   const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
@@ -312,6 +330,8 @@ export function AnalyzeWorkspace({
   // The question before this one, so a follow-up's written answer knows what "this" refers to.
   const previousPromptRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const active = useRef(true);
+  const answerGeneration = useRef(0);
 
   const { messages, sendMessage, status, setMessages, error: chatError, clearError, stop } = useChat({
     transport: new DefaultChatTransport({
@@ -327,7 +347,8 @@ export function AnalyzeWorkspace({
     onFinish: async ({ message, isError, isAbort }) => {
       const content = extractTextFromMessage(message);
       // A failed or empty reply is never shown as an answer, and never saved.
-      if (isError || isAbort || !content.trim()) return;
+      if (!active.current || readOnlyReason || isError || isAbort || !content.trim()) return;
+      const generation = answerGeneration.current;
       const parsed = parseAnalyzeResponse(content);
       const parts = message.parts as ReadonlyArray<MessagePart>;
       const check = checkMessageFigures(parts);
@@ -335,6 +356,7 @@ export function AnalyzeWorkspace({
       setLookups(lookupsUsed(parts));
       setAnsweredAt(new Date().toISOString());
       setParsedResponse(parsed);
+      setAnswerIdentity(readHamiltonIdentitySnapshot((message.metadata as { hamiltonIdentity?: unknown } | undefined)?.hamiltonIdentity));
       setSavedAnalysisId(null);
       setSaveError(null);
 
@@ -360,11 +382,21 @@ export function AnalyzeWorkspace({
             exploreFurther: parsed.exploreFurther,
           } satisfies AnalyzeResponse,
         });
+        if (!active.current || generation !== answerGeneration.current) return;
         if ("id" in result) setSavedAnalysisId(result.id);
         else setSaveError("This answer couldn't be saved to your history.");
       }
     },
   });
+
+  // Unmounted conversations cannot send a late fallback or update a newer view.
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      stop();
+    };
+  }, [stop]);
 
   const isLoading = status === "streaming" || status === "submitted";
 
@@ -384,16 +416,17 @@ export function AnalyzeWorkspace({
 
   const answerInProse = useCallback(
     (question: string) => {
-      if (question !== lastPromptRef.current) return;
+      if (!active.current || readOnlyReason || question !== lastPromptRef.current) return;
       sendMessage({ text: withEarlierQuestion(question, previousPromptRef.current) });
     },
-    [sendMessage],
+    [sendMessage, readOnlyReason],
   );
 
   const ask = useCallback(
     (question: string) => {
       const trimmed = question.trim();
-      if (!trimmed || isLoading) return;
+      if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
+      answerGeneration.current += 1;
       if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
         previousPromptRef.current = lastPromptRef.current;
         // The answer just read moves up into the conversation, collapsed to its question and lead.
@@ -405,6 +438,7 @@ export function AnalyzeWorkspace({
       setStoryLead(null);
       clearError();
       setParsedResponse(null);
+      setAnswerIdentity(null);
       setFigureCheck(null);
       setAskedQuestion(trimmed);
       setAskSeq((n) => n + 1);
@@ -417,18 +451,21 @@ export function AnalyzeWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, setMessages],
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
   const newQuestion = useCallback(() => {
     if (isLoading) stop();
+    answerGeneration.current += 1;
     clearError();
     setThread([]);
     previousPromptRef.current = "";
     lastPromptRef.current = "";
+    setEngineBusy(false);
     setAskedQuestion(null);
     setParsedResponse(null);
+    setAnswerIdentity(null);
     setStoryLead(null);
     setMessages([]);
     setConversation((c) => c + 1);
@@ -471,7 +508,7 @@ export function AnalyzeWorkspace({
   }
 
   const handleExportPdf = useCallback(async () => {
-    if (!parsedResponse || isExporting) return;
+    if (readOnlyReason || !parsedResponse || isExporting) return;
     if (!savedAnalysisId) {
       setExportError(
         saveError
@@ -506,7 +543,7 @@ export function AnalyzeWorkspace({
     } finally {
       setIsExporting(false);
     }
-  }, [parsedResponse, isExporting, savedAnalysisId, saveError]);
+  }, [parsedResponse, isExporting, savedAnalysisId, saveError, readOnlyReason]);
 
   // Live-parse streaming content for progressive rendering. Only the reply to the question just
   // sent counts; an earlier answer must not stand in for it.
@@ -521,22 +558,22 @@ export function AnalyzeWorkspace({
   const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
   const instId = normalizeCanonicalInstitutionId(selectedInstitution?.id ?? institutionId);
   const complete = !isLoading && parsedResponse !== null && Boolean(view.lead);
-  const instName = selectedInstitution?.name ?? null;
+  const instName = answerIdentity?.researchInstitutionName ?? selectedInstitution?.name ?? null;
   currentLeadRef.current = view.lead || storyLead || null;
   // A reopened storyline answer is shown with its charts, as it was first answered.
-  const reopenedStory = !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
+  const reopenedStory = conversation === 0 && !askedQuestion && initialAnalysis?.storyline ? initialAnalysis.storyline : null;
   const proseActive = isLoading || Boolean(shown && view.lead);
   const showProgress = Boolean(askedQuestion) && (engineBusy || (isLoading && !(shown && view.lead)));
   const longQuestion = (askedQuestion ?? initialAnalysisPrompt ?? "").length > 120;
   const suggestions = [
-    "How does our overdraft fee compare with banks in our counties?",
-    "Which of our fees sit furthest from our peers, and by how much?",
-    "Who in our state changed their NSF fee this year?",
+    "How does this institution's overdraft fee compare with local competitors?",
+    "Which of this institution's fees sit furthest from its peers, and by how much?",
+    "Who in this institution's state changed their NSF fee this year?",
   ];
 
   // The ask box sits in the page, never over it: under the heading before the first question,
   // and after the answer once there is one, so it never covers a line of the answer.
-  const askBox = (
+  const askBox = readOnlyReason ? null : (
     <form
       id="hamilton-ask"
       onSubmit={handleSubmit}
@@ -555,7 +592,7 @@ export function AnalyzeWorkspace({
           onKeyDown={handleKeyDown}
           rows={1}
           maxLength={500}
-          placeholder={askedQuestion || shown ? "What about our NSF fee?" : "Ask about your fees or your market"}
+          placeholder={askedQuestion || shown ? "What about this institution’s NSF fee?" : "Ask about the selected institution or market"}
           className="min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-relaxed text-warm-900 placeholder:text-warm-500 focus:outline-none"
         />
         <button
@@ -573,6 +610,12 @@ export function AnalyzeWorkspace({
 
   return (
     <MemoPage>
+      {readOnlyReason ? (
+        <Callout>
+          <p>{readOnlyReason} Follow-ups and exports are disabled for this view.</p>
+          <a href="/pro/analyze" className="font-medium text-terra-text underline">Start a new question</a>
+        </Callout>
+      ) : null}
       {chatError && !isLoading ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
           <span>{askErrorMessage(chatError)}</span>
@@ -605,7 +648,7 @@ export function AnalyzeWorkspace({
             title={askedQuestion ?? initialAnalysisPrompt ?? "A saved answer"}
             compact={longQuestion}
             dek={thread.length > 0 && askedQuestion ? `Following up on: “${thread[thread.length - 1].question}”` : undefined}
-            actions={
+            actions={readOnlyReason ? undefined : (
               <div className="flex flex-wrap gap-2">
               <a
                 href="#hamilton-ask"
@@ -626,14 +669,14 @@ export function AnalyzeWorkspace({
                 New question
               </button>
               </div>
-            }
+            )}
           />
         </div>
       ) : (
         <>
           <MemoHeader
             kicker="Ask Hamilton"
-            title={instName ? `Ask anything about ${instName}'s fees` : "Ask anything about your fees and your market"}
+            title={instName ? `Ask anything about ${instName}'s fees` : "Ask about bank and credit union fees"}
             dek="Answers from published fee schedules and regulator filings, with every figure checked."
           />
           {/* Wide screens: ask and starters on the left, recent answers on the right. */}
@@ -690,11 +733,20 @@ export function AnalyzeWorkspace({
         {complete ? "Answer ready." : ""}
       </p>
 
+      {answerIdentity && (shown || reopenedStory) ? (
+        <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
+          {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+        </aside>
+      ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
+        <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
+      ) : null}
+
       {reopenedStory ? (
         <StorylineView
           story={reopenedStory}
+          identityContext={answerIdentity}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
-          nextSteps={initialAnalysisId ? <DownloadAnswerPdf analysisId={initialAnalysisId} /> : null}
+          nextSteps={initialAnalysisId && !readOnlyReason ? <DownloadAnswerPdf analysisId={initialAnalysisId} /> : null}
         />
       ) : null}
 
@@ -766,12 +818,12 @@ export function AnalyzeWorkspace({
 
           {complete ? (
             <>
-              <div className="flex flex-wrap items-center gap-3">
+              {!readOnlyReason ? <div className="flex flex-wrap items-center gap-3">
                 <LinkButton
                   href={hrefWithInstitutionContext(feeCategory ? `/pro/research?fee=${encodeURIComponent(feeCategory)}` : "/pro/research", instId)}
                   primary
                 >
-                  {feeName ? `Look closer at ${feeName}` : "Look closer in My fees"}
+                  {feeName ? `Look closer at ${feeName}` : "Look closer at this institution"}
                 </LinkButton>
                 <LinkButton href={hrefWithInstitutionContext(feeCategory ? `/pro/simulate?fee=${encodeURIComponent(feeCategory)}` : "/pro/simulate", instId)}>
                   Try a price
@@ -793,9 +845,11 @@ export function AnalyzeWorkspace({
                     detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
                     feeCategory,
                     institutionId: instId,
+                    savedAnalysisId,
+                    ...(answerIdentity ? { identityContext: answerIdentity } : {}),
                   }}
                 />
-              </div>
+              </div> : null}
               {exportError ? (
                 <p role="alert" className="text-sm text-terra-text">
                   {exportError}
@@ -803,7 +857,7 @@ export function AnalyzeWorkspace({
               ) : null}
               {saveError ? <p className="text-xs text-warm-600">{saveError}</p> : null}
 
-              {shown.exploreFurther.length > 0 ? (
+              {!readOnlyReason && shown.exploreFurther.length > 0 ? (
                 <MemoSection title="Ask next">
                   <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
                     {shown.exploreFurther.map((q) => (

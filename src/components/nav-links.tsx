@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { EXPLORE_NAV_HREFS, EXPLORE_NAV_LABEL, isActivePath, navItemsFor, type NavItem } from "./nav-items";
 import { useSessionChrome } from "./use-session-chrome";
+import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
 
 const ITEM_CLASS =
   "text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815] aria-[current=page]:text-[#1A1815]";
@@ -39,9 +40,10 @@ export function NavLinks() {
 }
 
 function NavItemLink({ item, pathname }: { item: NavItem; pathname: string | null }) {
+  const contextHref = useHamiltonNavigationHref();
   return (
     <Link
-      href={item.href}
+      href={contextHref(item.href)}
       aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
       className={ITEM_CLASS}
     >

@@ -12,6 +12,7 @@ import { openSearch } from "./public/search-events";
 import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome } from "./use-session-chrome";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
+import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
 
 /** 44px open/close controls: the minimum comfortable touch target. */
 const ICON_BUTTON =
@@ -25,6 +26,7 @@ const DRAWER_LINK =
  * scroll. Session state is resolved client-side so the header can be static.
  */
 export function ConsumerMobileNav() {
+  const contextHref = useHamiltonNavigationHref();
   const session = useSessionChrome();
   const isLoggedIn = session?.signedIn === true;
   const displayItems = navItemsFor(session);
@@ -83,7 +85,7 @@ export function ConsumerMobileNav() {
                   return (
                     <li key={item.href}>
                       <Link
-                        href={item.href}
+                        href={contextHref(item.href)}
                         onClick={close}
                         aria-current={isActive ? "page" : undefined}
                         className={
@@ -148,10 +150,11 @@ export function ConsumerMobileNav() {
  * and its data, all changes, the Reference pages, Admin for staff, account and sign out.
  */
 function ProAccountLinks({ isStaff, onNavigate }: { isStaff: boolean; onNavigate: () => void }) {
+  const contextHref = useHamiltonNavigationHref();
   return (
     <>
       {HAMILTON_ACCOUNT_NAV.map((item) => (
-        <Link key={item.href} href={item.href} onClick={onNavigate} className={DRAWER_LINK}>
+        <Link key={item.href} href={contextHref(item.href)} onClick={onNavigate} className={DRAWER_LINK}>
           {item.label}
         </Link>
       ))}

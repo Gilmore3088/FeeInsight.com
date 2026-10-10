@@ -3,7 +3,7 @@
 import { Loader2 } from "lucide-react";
 import type { ReportTemplateType } from "@/app/pro/(hamilton)/reports/actions";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
-import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import {
@@ -187,7 +187,7 @@ export function ConfigSidebar({
   onClientGoalChange,
   onGenerate,
 }: ConfigSidebarProps) {
-  const canGenerate = selectedTemplate !== null && !isGenerating;
+  const canGenerate = selectedTemplate !== null && Boolean(normalizeCanonicalInstitutionId(selectedInstitutionId)) && !isGenerating;
   const activeAudience =
     AUDIENCES.find((a) => a.value === narrativeTone) ?? AUDIENCES[0];
   const settingsHref = hrefWithInstitutionContext(
@@ -319,14 +319,14 @@ export function ConfigSidebar({
               </div>
               <div>
                 <dt className="text-xs text-warm-600">
-                  Your fees compared with peers
+                  Research institution fees compared with peers
                 </dt>
                 <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
                   {peerCoveragePreview.selectedFeeDeltaCount}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-warm-600">Your published fees</dt>
+                <dt className="text-xs text-warm-600">Research institution published fees</dt>
                 <dd className="mt-0.5 font-medium text-warm-900 [font-variant-numeric:tabular-nums]">
                   {peerCoveragePreview.selectedVerifiedFeeCount}
                   {peerCoveragePreview.selectedProvisionalFeeCount > 0
@@ -360,7 +360,7 @@ export function ConfigSidebar({
         <p className="text-sm text-warm-600">
           For{" "}
           <span className="font-medium text-warm-900">
-            {institutionName || "your institution"}
+            {institutionName || "the research institution"}
           </span>
           {" · "}
           {peerSetLabel || "all institutions nationally"}

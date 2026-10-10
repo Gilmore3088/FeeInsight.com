@@ -24,7 +24,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.17.5";
+export const WORKSPACE_ENGINE_VERSION = "1.17.6";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -332,6 +332,8 @@ export interface SegmentResearch {
 }
 
 export interface FeeResearch {
+  /** Canonical server-resolved subject name for prose; never identity or authority from a browser. */
+  subjectName?: string;
   institutionId: number;
   institutionName: string;
   feeCategory: string;
@@ -525,6 +527,7 @@ export interface InstitutionFeeFacts {
 }
 
 export interface ScenarioInput {
+  subjectName?: string;
   feeCategory: string;
   current: number;
   tested: number;
@@ -630,6 +633,16 @@ export type AskPageChange =
  * returns a clarifying question asking which objective to assume.
  */
 export interface AskResponse {
+  /** Frozen server reference context; it never grants access to institution or account records. */
+  identityContext?: import("../account-context").HamiltonIdentitySnapshot;
+  accountComparison?: {
+    institutionId: number;
+    institutionName: string;
+    feeCategory: string;
+    current: number | null;
+    ownRows: OwnFeeRow[];
+    provenance: Provenance;
+  };
   kind: AskResponseKind;
   shortAnswer: string;
   pageChange: AskPageChange;

@@ -1,3 +1,4 @@
+import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { HamiltonPageSkeleton } from "@/components/hamilton/layout/HamiltonPageSkeleton";
@@ -9,13 +10,14 @@ import { canAccessPremium } from "@/lib/access";
 import { HamiltonShell } from "@/components/hamilton/layout/HamiltonShell";
 import { sessionChromeFor } from "@/lib/session-chrome";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
+import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import {
   getHamiltonArtifactContextLookup,
   resolveArtifactContextInstitutionId,
-  shouldPersistUrlInstitutionSelection,
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
 import { subscribeReason } from "@/lib/subscribe-reason";
+import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 
 export const metadata: Metadata = {
   title: {
@@ -52,8 +54,15 @@ async function HamiltonLayoutInner({
   }
 
   if (!user || !canAccessPremium(user)) {
-    // The /pro layout normally handles this first; never render a dead-end gate here.
-    redirect(`/subscribe?from=%2Fpro%2Fhamilton&reason=${user ? subscribeReason(user) : "pro_required"}`);
+    // Nested layouts may resolve concurrently. Preserve the selection whichever
+    // access gate redirects first, just as the outer /pro layout does.
+    const requestHeaders = await headers();
+    const returnTo = sanitizeInternalRedirect(
+      requestHeaders.get("x-invoke-path") || requestHeaders.get("x-next-url") || requestHeaders.get("x-pathname") || "/pro/hamilton",
+      "/pro/hamilton",
+    );
+    if (!user) redirect(`/login?from=${encodeURIComponent(returnTo)}`);
+    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}&reason=${subscribeReason(user)}`);
   }
 
   const isAdmin = user.role === "admin" || user.role === "analyst";
@@ -69,27 +78,33 @@ async function HamiltonLayoutInner({
   const pathname = requestPath.split("?")[0] || requestPath;
   const queryString = requestPath.includes("?") ? requestPath.split("?")[1] : "";
   const requestSearchParams = new URLSearchParams(queryString);
-  const selectedInstId = requestSearchParams.get("instId");
+  const hasResearch = requestSearchParams.has("research");
+  let research = null;
+  try { research = decodeLandingResearch(requestSearchParams.get("research")); } catch { /* Page shows validation error. */ }
+  const selectedInstId = hasResearch
+    ? research?.scope.kind === "local" ? String(research.scope.institutionId) : null
+    : requestSearchParams.get("instId");
   const selectedIntent = requestSearchParams.get("intent");
+  const artifactLookup = hasResearch ? null : getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
+  const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report";
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
-    lookup: getHamiltonArtifactContextLookup({
-      pathname,
-      searchParams: requestSearchParams,
-    }),
+    lookup: artifactLookup,
   }).catch(() => null);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: selectedInstId,
     artifactInstitutionId,
+    preferArtifact: savedArtifactRequested,
   });
-  const isArtifactContext = !selectedInstId && Boolean(artifactInstitutionId);
+  const isArtifactContext = savedArtifactRequested || (!selectedInstId && Boolean(artifactInstitutionId));
   const { institution: selectedInstitution, source: selectedSource, isWorkspaceBank } =
-    await resolveHamiltonInstitutionContext({
+    (hasResearch && !selectedInstId) || (savedArtifactRequested && !contextInstitutionId)
+      ? { institution: null, source: "none" as const, isWorkspaceBank: false }
+      : await resolveHamiltonInstitutionContext({
       userId: user.id,
       instId: contextInstitutionId,
       intent: selectedIntent,
-      persistUrlSelection: shouldPersistUrlInstitutionSelection(selectedInstId),
-      makeDefault: requestSearchParams.get("setBank") === "1",
+      persistUrlSelection: false,
       transientSource: isArtifactContext ? "artifact" : undefined,
     });
   const selectedInstitutionId = selectedInstitution?.id.toString() ?? null;
@@ -103,12 +118,8 @@ async function HamiltonLayoutInner({
         stateCode: selectedInstitution.stateCode,
         feesCheckedAt: selectedInstitution.latestSourceCollectedAt,
         makeDefaultHref:
-          isWorkspaceBank === false
-            ? `${pathname}?${(() => {
-                const next = new URLSearchParams(requestSearchParams);
-                next.set("setBank", "1");
-                return next.toString();
-              })()}`
+          !hasResearch && isWorkspaceBank === false
+            ? `/pro/settings?instId=${selectedInstitution.id}`
             : null,
         feePublicationLabel: selectedInstitution.feePublicationLabel,
         publishedFeeCount: selectedInstitution.publishedFeeCount,
@@ -117,24 +128,26 @@ async function HamiltonLayoutInner({
         selectedFromUrl: selectedSource === "url",
       }
     : {
-        name: user.institution_name,
-        type: user.institution_type,
-        assetTier: user.asset_tier,
-        fedDistrict: user.fed_district ?? null,
-        stateCode: user.state_code ?? null,
+        name: savedArtifactRequested ? "Saved artifact · research subject unavailable" : research ? "Market research" : null,
+        type: null,
+        assetTier: null,
+        fedDistrict: null,
+        stateCode: null,
         feePublicationLabel: null,
         publishedFeeCount: null,
         provisionalFeeCount: null,
-        selectedSource: user.institution_name ? ("profile" as const) : ("none" as const),
+        selectedSource: "none" as const,
         selectedFromUrl: false,
       };
   return (
     <HamiltonShell
+      initialRequestPath={requestPath}
       isAdmin={isAdmin}
       session={sessionChromeFor(user)}
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}
+      accountContext={await loadHamiltonAccountContext(user)}
     >
       {children}
     </HamiltonShell>

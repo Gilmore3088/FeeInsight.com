@@ -2,6 +2,7 @@ import { getInstitutionById } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getSegmentLabel } from "@/app/(public)/institution/[id]/enum-labels";
 import { formatAssets } from "@/lib/format";
+import { normalizeCanonicalInstitutionId } from "./context-link";
 import {
   getFeePublicationStatusLabel,
   type FeePublicationStatus,
@@ -34,10 +35,8 @@ export interface HamiltonSelectedInstitutionContext {
 }
 
 export function parseInstitutionId(value: string | number | null | undefined): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
+  const canonical = normalizeCanonicalInstitutionId(value);
+  return canonical === null ? null : Number(canonical);
 }
 
 export async function getHamiltonInstitutionContext(

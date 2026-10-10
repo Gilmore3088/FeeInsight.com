@@ -50,6 +50,9 @@ import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/to
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
+import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { getInstitutionById } from "@/lib/data-store";
 
 export const maxDuration = 300;
 
@@ -162,6 +165,21 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
+  // Account identity is read from this authenticated user's memberships, not the
+  // browser body, selected institution, or saved research preference.
+  const requestedInstitutionId = contract.institutionId;
+  const enrichedContract = await withHamiltonAccountContext(contract, user);
+  contract = enrichedContract;
+  institutionId = enrichedContract.institutionId;
+  const subject = institutionId === null ? null : await getInstitutionById(institutionId).catch(() => null);
+  const identityContext = accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
+    researchInstitutionName: subject?.institution_name ?? null,
+    researchSelectionSource: requestedInstitutionId !== null ? "authenticated request" : institutionId !== null ? "linked account default" : "unscoped",
+    peerBaselineLabel: null,
+    peerBaselineSource: null,
+    peerBaselineFallbackReason: "The written answer did not capture a named peer cohort. Its original figures remain unchanged; no current peer selection is substituted.",
+  });
+
   const agent = await getHamilton(role);
 
   // Auto-detect and inject domain skill based on the user's latest message
@@ -182,23 +200,12 @@ async function handlePOST(request: Request) {
     }
     systemPrompt += selectedInstitutionContext;
   }
-
-  // Inject the authenticated user's institution context so Hamilton doesn't
-  // ask "what's your institution?" for every analysis (the screenshot showed
-  // the user as Space Coast FCU in the left rail but Hamilton requesting
-  // identification in the response). Only injected when we actually have it
-  // — for anonymous/public users this block is omitted, preserving the
-  // model's current generic-mode behavior.
-  // The person's own name is never an institution: with no institution on file, Hamilton asks.
-  if (institutionId === null && user && user.institution_name?.trim()) {
-    const inst = user.institution_name.trim();
-    const tier = user.asset_tier ? ` (asset tier ${user.asset_tier})` : "";
-    const charter = user.institution_type ? `, ${user.institution_type.replace(/_/g, " ")}` : "";
-    const district = user.fed_district ? `, Fed district ${user.fed_district}` : "";
-    const state = user.state_code ? `, ${user.state_code}` : "";
-    systemPrompt += `\n\nUSER INSTITUTION CONTEXT (do not ask the user to identify themselves — already known):
-- Institution: ${inst}${charter}${tier}${district}${state}
-- Use this institution as the implicit subject of any benchmarking, peer comparison, or positioning analysis unless the user names a different one.\n`;
+  const homeId = enrichedContract.serverAccountContext.institution?.id;
+  if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
+    const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
+    systemPrompt += homeBriefing
+      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
+      : "\nAccount institution evidence could not be loaded. State that limitation; do not substitute research-subject or peer data for our institution.\n";
   }
 
   // Analyze mode: override output structure with structured analysis sections (ARCH-05)
@@ -304,6 +311,7 @@ async function handlePOST(request: Request) {
         status: "ok",
         text: result.text,
         metrics: gate.metrics,
+        identityContext,
       });
     }
 
@@ -324,10 +332,14 @@ async function handlePOST(request: Request) {
         // The Analyze screen's answer is saved here, not only from the browser, so a closed
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
-          const response = writtenAnswerResponse(
-            text,
-            steps.flatMap((step) => step.toolResults.map((result) => result.output)),
-          );
+          const response = {
+            ...writtenAnswerResponse(
+              text,
+              steps.flatMap((step) => step.toolResults.map((result) => result.output)),
+            ),
+            // Historical reference metadata only; never a future access grant.
+            identityContext,
+          };
           const prompt = questionOnly(lastUserText);
           try {
             resolveSaved(await insertSavedAnalysis({
@@ -396,7 +408,7 @@ async function handlePOST(request: Request) {
             onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
           }));
           const id = await savedId;
-          if (id) writer.write({ type: "message-metadata", messageMetadata: { [SAVED_ANALYSIS_ID_KEY]: id } });
+          writer.write({ type: "message-metadata", messageMetadata: { ...(id ? { [SAVED_ANALYSIS_ID_KEY]: id } : {}), hamiltonIdentity: identityContext } });
         },
       }),
     });

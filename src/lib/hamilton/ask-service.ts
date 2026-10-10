@@ -30,7 +30,10 @@ import { withDepth, type IncomeWhy } from "./workspace/story-extras";
 import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
 import { peerPhrase } from "./answer-brief";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import type { StorylineMemoResult } from "./workspace/storyline-types";
+import { loadHamiltonAccountContext } from "./account-context-store";
+import { accountIdentitySnapshot, type HamiltonAccountContext, type HamiltonIdentitySnapshot } from "./account-context";
+import { readHamiltonIdentitySnapshot } from "./identity-display";
+import type { Storyline, StorylineMemoResult } from "./workspace/storyline-types";
 import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
 
 const OBJECTIVES: AskObjective[] = ["revenue", "customer_treatment", "competitive_position"];
@@ -58,6 +61,7 @@ interface Asker {
   id: number;
   display_name?: string | null;
   username?: string | null;
+  institution_name?: string | null;
 }
 
 function actorOf(user: Asker): string {
@@ -90,14 +94,14 @@ export function waiverShare(text: string): number | null {
 
 const NUMERIC_KEYS = /\.(annual_items|annual_volume|waiver_rate|current_amount)$/;
 
-function savedSentence(fieldKey: string, value: unknown): string {
+function savedSentence(fieldKey: string, value: unknown, subjectName?: string): string {
   const fee = fieldKey.match(/^fee\.([a-z0-9_]+)\./)?.[1];
   const name = fee ? proseFeeName(fee) : "";
   const n = typeof value === "number" ? value : NaN;
   if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${name} items a year. Scenarios now use it.`;
   if (fieldKey.endsWith(".waiver_rate")) return `Saved: ${Math.round(n * 1000) / 10}% of ${name} fees waived or refunded. Scenarios now use it.`;
-  if (fieldKey.endsWith(".current_amount")) return `Saved: you charge $${n} for one ${name} item.`;
-  if (fieldKey.endsWith(".annual_volume")) return `Saved: your ${name} rate applied to about $${n.toLocaleString("en-US")} over the last 12 months.`;
+  if (fieldKey.endsWith(".current_amount")) return `Saved: ${subjectName ? `${subjectName} charges` : "you charge"} $${n} for one ${name} item.`;
+  if (fieldKey.endsWith(".annual_volume")) return `Saved: ${subjectName ? `${subjectName}'s` : "your"} ${name} rate applied to about $${n.toLocaleString("en-US")} over the last 12 months.`;
   if (fieldKey === "decision.objective") return `Saved: weigh the options for ${String(value).replace(/_/g, " ")}.`;
   return "Saved.";
 }
@@ -132,7 +136,7 @@ async function fileAnalysis(userId: number, institutionId: string | number, ques
       title: analysisTitle(storyline),
       analysisFocus: analysisFocusFor(storyline),
       prompt: question,
-      response: storylineAnalysis(storyline, WORKSPACE_ENGINE_VERSION),
+      response: storylineAnalysis(storyline, WORKSPACE_ENGINE_VERSION, response.identityContext),
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
@@ -140,12 +144,112 @@ async function fileAnalysis(userId: number, institutionId: string | number, ques
   }
 }
 
+function identityForAsk(
+  institutionId: number,
+  institutionName: string,
+  source: string,
+  account: HamiltonAccountContext,
+  peers: EnginePeerOptions,
+  baselineLabel: string | null,
+): HamiltonIdentitySnapshot {
+  const selected = peers.peerSet;
+  const selectedUsed = selected && baselineLabel === selected.label;
+  return accountIdentitySnapshot(institutionId, account, {
+    researchInstitutionName: institutionName,
+    researchSelectionSource: source,
+    peerSetId: selectedUsed && "id" in selected ? Number(selected.id) : null,
+    peerBaselineLabel: baselineLabel,
+    peerBaselineSource: baselineLabel ? selectedUsed ? "saved-peer-set" : baselineLabel.startsWith("Verified national index") ? "national" : "selected-institution-default" : null,
+    peerBaselineFallbackReason: selected && baselineLabel && !selectedUsed ? "The selected peer set could not support this fee comparison; the named institution peer group was used." : null,
+  });
+}
+
+/** "Us" is account reference context. Only canonical public institution research is compared. */
+function asksAccountComparison(question: string): boolean {
+  // Account pronouns can lead a comparison ("our fees vs peers") or follow it
+  // ("compare them with us"). Resolve the account reference in either order.
+  // The explicit research subject still owns the main research query.
+  return /\b(?:us|our|ours|we)\b/i.test(question)
+    && /\b(?:compare|comparison|compared|versus|vs\.?|against|peers?|competitors?|fees?|prices?|pricing|charge|charges|charged|income|schedule|market)\b/i.test(question);
+}
+
+async function withResearchIdentity(
+  response: AskResponse,
+  identity: HamiltonIdentitySnapshot,
+  question: string,
+  feeCategory: string | null,
+  account: HamiltonAccountContext,
+): Promise<AskResponse> {
+  const subject = identity.researchInstitutionName || `Institution ${identity.researchInstitutionId}`;
+  const named = { ...response, identityContext: identity };
+  if (response.kind === "clarifying_question") return named;
+  let comparison = "";
+  let accountComparison: AskResponse["accountComparison"];
+  if (asksAccountComparison(question)) {
+    if (!account.institution) {
+      comparison = " A comparison with your account institution is withheld until one linked institution can be verified.";
+    } else if (account.institution.id === identity.researchInstitutionId) {
+      comparison = ` ${subject} is also the linked account institution; the figures above refer to ${subject}.`;
+    } else if (!feeCategory) {
+      comparison = ` To compare ${subject} with ${account.institution.name}, name the fee to compare.`;
+    } else {
+      const home = await getFeeResearch(account.institution.id, feeCategory, new Date()).catch(() => null);
+      if (!home || home.institutionId !== account.institution.id) {
+        comparison = ` The comparison with ${account.institution.name} is withheld because its fee evidence could not be loaded.`;
+      } else {
+        accountComparison = {
+          institutionId: home.institutionId,
+          institutionName: home.institutionName,
+          feeCategory: home.feeCategory,
+          current: home.current,
+          ownRows: home.ownRows,
+          provenance: home.provenance,
+        };
+        comparison = home.current === null
+          ? ` ${account.institution.name}'s ${proseFeeName(feeCategory)} fee is not available in the index; no price comparison is made.`
+          : ` ${account.institution.name}'s published ${proseFeeName(feeCategory)} fee is $${home.current}.`;
+        if (named.answer && home.current !== null) {
+          const row = home.ownRows.find((item) => item.amount === home.current);
+          const fact = {
+            text: comparison.trim(),
+            source: { label: `${home.institutionName}'s published fee schedule`, table: "published_fee_catalog", url: row?.documentUrl ?? row?.sourceUrl ?? undefined, asOf: row?.publishedAt?.slice(0, 10) ?? null },
+          };
+          named.answer = {
+            ...named.answer,
+            claims: [...named.answer.claims, fact],
+            ...(named.answer.storyline ? { storyline: { ...named.answer.storyline, situation: [...named.answer.storyline.situation, fact] } } : {}),
+          };
+        }
+      }
+    }
+  }
+  // The UI leads with the storyline when one exists, so comparison limits must
+  // survive there as well as in the short answer and later saved/PDF artifacts.
+  if (comparison && named.answer && !named.answer.claims.some((fact) => fact.text === comparison.trim())) {
+    const fact = { text: comparison.trim(), source: { label: "Hamilton institution-reference and public-fee comparison status" } };
+    named.answer = {
+      ...named.answer,
+      claims: [...named.answer.claims, fact],
+      ...(named.answer.storyline ? { storyline: { ...named.answer.storyline, situation: [...named.answer.storyline.situation, fact] } } : {}),
+    };
+  }
+  return {
+    ...named,
+    shortAnswer: `Researching ${subject}. ${named.shortAnswer}${comparison}`,
+    ...(accountComparison ? { accountComparison } : {}),
+  };
+}
+
 export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> {
-  const resolved = await resolveHamiltonInstitutionContext({
+  const account = await loadHamiltonAccountContext(user);
+  let resolved = await resolveHamiltonInstitutionContext({
     userId: user.id,
     instId: typeof body.institutionId === "number" || typeof body.institutionId === "string" ? body.institutionId : null,
     persistUrlSelection: false,
   });
+  if (!resolved.institution && (body.institutionId === undefined || body.institutionId === null || body.institutionId === "") && account.institution) {
+    resolved = await resolveHamiltonInstitutionContext({ userId: user.id, instId: account.institution.id, persistUrlSelection: false });
+  }
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
@@ -176,7 +280,8 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
       fallbackFee = fieldKey.split(".")[1];
     } else {
       const parsed = fieldKey === "decision.objective" ? parseObjective(text) : fieldKey.endsWith(".waiver_rate") ? waiverShare(text) : NUMERIC_KEYS.test(fieldKey) ? numericAnswer(text) : text;
-      if (parsed === null) return { status: 200, body: { ...clarifyAgain(fieldKey), decisionId: decision?.id } };
+      if (parsed === null) return { status: 200, body: { ...clarifyAgain(fieldKey, { subjectName: institution.name }), decisionId: decision?.id,
+        identityContext: accountIdentitySnapshot(institutionId, account, { researchInstitutionName: institution.name, researchSelectionSource: resolved.source }) } };
       let saved: MemoryFact | null = null;
       if (ready) {
         saved = await saveMemoryFact({ userId: user.id, institutionId, fieldKey, value: parsed, givenBy: user.display_name || user.username || actor, source: "answer" });
@@ -184,10 +289,11 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
       }
       const response: AskResponse = {
         kind: "saved_fact",
-        shortAnswer: ready ? savedSentence(fieldKey, parsed) : "Hamilton could not save that just now. Please try again in a few minutes.",
+        shortAnswer: ready ? savedSentence(fieldKey, parsed, institution.name) : "Hamilton could not save that just now. Please try again in a few minutes.",
         pageChange: fieldKey === "decision.objective" ? { screen: "none" } : { screen: "data", fieldKey },
         ...(saved ? { savedFact: saved } : {}),
         ...(decision ? { decisionId: decision.id } : {}),
+        identityContext: accountIdentitySnapshot(institutionId, account, { researchInstitutionName: institution.name, researchSelectionSource: resolved.source }),
       };
       await recordProRequest({
         operation: "ask",
@@ -206,14 +312,15 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   let intent = parseAsk(question, fallbackFee);
   // "Where do we stand on every fee?" is answered outright: an overview of every fee,
   // then the fee furthest from its peer median in detail.
-  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers) : null;
+  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers, institution.name) : null;
   if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
   // "Why is our fee income lower than peers?" leads with what price explains of the gap, then
   // answers in full for the fee furthest from its median when the question named none.
-  const why = await incomeWhyFor(institutionId, question, peers);
+  const why = await incomeWhyFor(institutionId, question, peers, institution.name);
   if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
   intent = withSegmentDefault(intent);
-  const research = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
+  const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
+  const research = loadedResearch ? { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName } : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
   const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
@@ -239,7 +346,10 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const priorTested = decision ? testedPrices(await getDecisionEvents(decision.id).catch(() => [])) : [];
 
   const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
-  const response = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null);
+  const rawResponse = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null, institution.name);
+  const subjectName = institution.name || research?.institutionName || `Institution ${institutionId}`;
+  const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null);
+  const response = await withResearchIdentity(rawResponse, identity, question, intent.feeCategory, account);
   const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
   const shown = response.scenario;
   const scenarioEvents =
@@ -305,17 +415,17 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 }
 
 /** The whole-schedule overview for a question about every fee, or null for any other question. */
-export async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<ScheduleOverview | null> {
+export async function scheduleFor(institutionId: number, question: string, peers: EnginePeerOptions, subjectName?: string): Promise<ScheduleOverview | null> {
   if (!asksWholeSchedule(question)) return null;
   const briefing = await getWorkspaceBriefing(institutionId, new Date(), peers).catch((error) => {
     console.error("[hamilton-ask] briefing failed", error);
     return null;
   });
-  return briefing ? scheduleOverview(briefing.positions) : null;
+  return briefing ? scheduleOverview(briefing.positions, subjectName) : null;
 }
 
 /** The price split of the bank's fee income gap, for a question asking why income is where it is. */
-export async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions): Promise<IncomeWhy | null> {
+export async function incomeWhyFor(institutionId: number, question: string, peers: EnginePeerOptions, subjectName?: string): Promise<IncomeWhy | null> {
   // A why question, or one asking where income stands that names no single fee.
   if (!asksIncomeWhy(question) && !(asksIncomeLevel(question) && !parseAsk(question).feeCategory)) return null;
   const [intensity, briefing, trend] = await Promise.all([
@@ -334,7 +444,7 @@ export async function incomeWhyFor(institutionId: number, question: string, peer
   ]);
   if (!intensity || !briefing) return null;
   const split = incomeSplit(intensity, briefing.positions, peerPhrase(intensity.charterType, intensity.assetTier));
-  return split ? { split, explained: explainIncome(split), top: scheduleOverview(briefing.positions).top, trend } : null;
+  return split ? { split, explained: explainIncome(split, subjectName), top: scheduleOverview(briefing.positions, subjectName).top, trend } : null;
 }
 
 export interface AskMemoResult {
@@ -343,11 +453,11 @@ export interface AskMemoResult {
 }
 
 /**
- * The written memo for an Ask: rebuilds the same deterministic storyline the Ask bar
- * returned (from the institution, the question and the reader's memory, never from the
- * browser) and has Hamilton write over it. Logged to the run ledger; nothing is saved.
+ * The written memo uses a saved answer's frozen storyline and identity. A fresh request
+ * builds server evidence; neither path accepts identity or narrative claims from the browser.
  */
 export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemoResult> {
+  const account = await loadHamiltonAccountContext(user);
   const resolved = await resolveHamiltonInstitutionContext({
     userId: user.id,
     instId: typeof body.institutionId === "number" || typeof body.institutionId === "string" ? body.institutionId : null,
@@ -356,42 +466,67 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   const institution = resolved.institution;
   if (!institution) return { status: 400, body: { error: resolved.error ?? "Choose an institution first." } };
   const institutionId = Number(institution.id);
-  // The peer group the bank picked in Settings leads every comparison in the answer.
-  const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
   const question = cleanText(body.question, MAX_QUESTION_CHARS);
   if (!question) return { status: 400, body: { error: "Ask a question." } };
-  const ready = await workspaceSchemaReady();
-  const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
-  let intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
-  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers) : null;
-  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
-  const why = await incomeWhyFor(institutionId, question, peers);
-  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
-  intent = withSegmentDefault(intent);
-  if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
-  const research = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
-  if (!research) return { status: 404, body: { error: "That institution could not be loaded." } };
-  const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
-  const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
-  // The same storyline the Ask returned, overview and income split included.
-  const response = withDepth(buildAskResponse({ question, intent, research, memory, objective }), schedule, why, research.provenance.dataAsOf.fees ?? null);
-  const storyline = response.answer?.storyline;
+  const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
+  // User ownership is not enough: research another institution without retargeting saved work.
+  // Validate this identity before paid memo generation.
+  let savedResponse: Awaited<ReturnType<typeof getSavedAnalysisResponse>> = null;
+  if (savedId) {
+    try {
+      savedResponse = await getSavedAnalysisResponse(user.id, savedId, String(institution.id));
+    } catch (error) {
+      console.error("[hamilton-ask-memo] saved-answer lookup failed", { savedId, error });
+      return { status: 503, body: { error: "Saved analysis unavailable. Please retry." } };
+    }
+    if (!savedResponse) return { status: 404, body: { error: "Saved analysis not found for this research institution." } };
+  }
+  let identity: HamiltonIdentitySnapshot;
+  let storyline: Storyline | undefined;
+  let feeCategory = parseAsk(question).feeCategory;
+  if (savedResponse) {
+    // The subject scope was checked above. Legacy snapshots remain readable without
+    // pretending today's account or peer selection was the original context.
+    identity = readHamiltonIdentitySnapshot(savedResponse.identityContext) ?? accountIdentitySnapshot(institutionId,
+      { status: "unavailable", institution: null, profileLabel: null }, { researchInstitutionName: null, researchSelectionSource: "saved_artifact" });
+    if (identity.researchInstitutionId !== institutionId) return { status: 404, body: { error: "Saved analysis identity does not match its research institution." } };
+    storyline = savedResponse.storyline;
+  } else {
+    const peers: EnginePeerOptions = { peerSet: await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) };
+    const ready = await workspaceSchemaReady();
+    const decision = ready && typeof body.decisionId === "string" ? await getDecision(user.id, body.decisionId).catch(() => null) : null;
+    let intent = parseAsk(question, decision && decision.institutionId === institutionId ? decision.feeCategory : null);
+    const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers, institution.name) : null;
+    if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+    const why = await incomeWhyFor(institutionId, question, peers, institution.name);
+    if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+    intent = withSegmentDefault(intent);
+    if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
+    feeCategory = intent.feeCategory;
+    const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
+    if (!loadedResearch) return { status: 404, body: { error: "That institution could not be loaded." } };
+    const research = { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName };
+    const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
+    const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
+    const response = withDepth(buildAskResponse({ question, intent, research, memory, objective }), schedule, why, research.provenance.dataAsOf.fees ?? null, institution.name);
+    identity = identityForAsk(institutionId, institution.name || research.institutionName, resolved.source, account, peers, research.peerLabel);
+    storyline = (await withResearchIdentity(response, identity, question, feeCategory, account)).answer?.storyline ?? undefined;
+  }
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
-  const result = await writeStorylineMemo(storyline, question, { institutionId });
+  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity });
   let memoSaved = false;
-  const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
-  if (result.status === "written" && savedId) {
+  if (result.status === "written" && savedId && savedResponse) {
     try {
-      const saved = await getSavedAnalysisResponse(user.id, savedId);
-      if (saved) memoSaved = await updateSavedAnalysisResponse(user.id, savedId, withMemo(saved, result.memo));
+      // Repeat the subject check atomically at write time, even if the row changed in between.
+      memoSaved = await updateSavedAnalysisResponse(user.id, savedId, String(institution.id), withMemo(savedResponse, result.memo));
     } catch (error) {
       console.error("[hamilton-ask-memo] saving the memo failed", { savedId, error });
     }
   }
   await recordProRequest({
     operation: "ask_memo",
-    title: `Hamilton memo: ${intent.feeCategory}`,
+    title: `Hamilton memo: ${feeCategory ?? "saved answer"}`,
     status: result.status === "written" ? "completed" : result.status === "withheld" ? "completed" : "failed",
     summary:
       result.status === "written"
@@ -400,7 +535,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     userId: user.id,
     institutionId,
     detail: {
-      fee_category: intent.feeCategory,
+      fee_category: feeCategory,
       storyline_kind: storyline.kind,
       memo_status: result.status,
       figures_checked: result.status === "written" ? result.memo.figureCheck.checked : null,
