@@ -25,6 +25,36 @@ function isLocal(result: Result): result is LocalMarketAnswer {
   return "competitors" in result && "institutionId" in result;
 }
 
+/** Check that the rendered evidence belongs to the exact user-confirmed research scope. */
+export function checkedLandingResearchResult(selection: LandingResearchHandoff, value: unknown): Result {
+  const bad = () => new Error("The market response did not match the selected research. Run the comparison again.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw bad();
+  const result = value as Record<string, unknown>;
+  const matchesCategories = (actual: unknown) =>
+    Array.isArray(actual) &&
+    actual.length === selection.categories.length &&
+    actual.every((category, index) => category === selection.categories[index]);
+  if (!matchesCategories(result.categories)) throw bad();
+  if (selection.scope.kind === "local") {
+    if (result.institutionId !== selection.scope.institutionId ||
+        !Array.isArray(result.competitors) || !Array.isArray(result.sources) ||
+        !result.market || typeof result.market !== "object" ||
+        !result.you || typeof result.you !== "object") throw bad();
+  } else {
+    const scope = result.scope;
+    if (!scope || typeof scope !== "object" || Array.isArray(scope)) throw bad();
+    const returnedScope = scope as Record<string, unknown>;
+    if (returnedScope.kind !== selection.scope.kind ||
+        (selection.scope.kind === "state" && returnedScope.stateCode !== selection.scope.stateCode) ||
+        result.charter !== selection.charter ||
+        !Array.isArray(result.comparisons) ||
+        result.comparisons.length !== selection.categories.length ||
+        result.comparisons.some((row, index) =>
+          !row || typeof row !== "object" || row.category !== selection.categories[index])) throw bad();
+  }
+  return value as Result;
+}
+
 function statusText(measure: GeographicFeeMeasure): string {
   if (measure.status === "not_observed") return "Not observed";
   if (measure.status === "insufficient") return "Insufficient evidence";
@@ -72,9 +102,9 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
           : null;
         throw new Error(typeof error === "string" ? error : "The comparison could not be loaded.");
       }
-      if (!payload || typeof payload !== "object") throw new Error("The market response was incomplete.");
+      const checked = checkedLandingResearchResult(selection, payload);
       if (requestGeneration.current !== generation) return;
-      setResult(payload as Result);
+      setResult(checked);
       setStatus("done");
     } catch (error) {
       if (requestGeneration.current !== generation) return;
