@@ -24,7 +24,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.17.5";
+export const WORKSPACE_ENGINE_VERSION = "1.17.6";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {

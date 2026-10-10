@@ -88,6 +88,13 @@ describe("Hamilton artifact context resolution", () => {
     ).toEqual({ kind: "analysis", artifactId: "abc-123" });
   });
 
+  it("always queries a saved report even with conflicting URL institution context", () => {
+    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/reports", searchParams: new URLSearchParams("report_id=saved-a&instId=1535") }))
+      .toEqual({ kind: "report", artifactId: "saved-a" });
+    expect(resolveArtifactContextInstitutionId({ urlInstitutionId: "1535", artifactInstitutionId: "8109", preferArtifact: true })).toBe("8109");
+    expect(resolveArtifactContextInstitutionId({ urlInstitutionId: "1535", artifactInstitutionId: null, preferArtifact: true })).toBeUndefined();
+  });
+
   it("allows blank URL institution context to fall back to saved artifact context", () => {
     expect(
       getHamiltonArtifactContextLookup({

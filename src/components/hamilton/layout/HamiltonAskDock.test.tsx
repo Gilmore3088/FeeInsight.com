@@ -25,4 +25,15 @@ describe("HamiltonAskDock", () => {
     fireEvent.click(screen.getByRole("button", { name: /Ask Hamilton/ }));
     expect((screen.getByLabelText("Ask Hamilton", { selector: "input" }) as HTMLInputElement).value).toBe("What about wires?");
   });
+
+  it("submits the resolved context and waits while the new canonical subject is unresolved", () => {
+    const view = render(<HamiltonAskDock selectedInstitutionId="8109" navigationContext={{ institutionId: "8109", research: null, artifact: true, invalid: false }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Ask Hamilton/ }));
+    expect(screen.getByRole("search").querySelector('input[name="instId"]')).toHaveAttribute("value", "8109");
+    view.rerender(<HamiltonAskDock selectedInstitutionId={null} navigationContext={{ institutionId: null, research: null, artifact: false, invalid: false, unresolved: true }} />);
+    expect(screen.queryByRole("search")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Ask Hamilton/ })).toBeNull();
+    view.rerender(<HamiltonAskDock selectedInstitutionId="1535" navigationContext={{ institutionId: "1535", research: null, artifact: false, invalid: false }} />);
+    expect(screen.getByRole("search").querySelector('input[name="instId"]')).toHaveAttribute("value", "1535");
+  });
 });

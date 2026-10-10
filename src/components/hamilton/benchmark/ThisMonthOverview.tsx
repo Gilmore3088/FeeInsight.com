@@ -49,31 +49,31 @@ export function ThisMonthOverview({
   tryPriceHref?: string | null;
 }) {
   const { feesCompared, higher, inLine, lower, peerCount, stateLabel, feesChangedNearby, income } = overview;
-  const place = stateLabel ?? "your state";
+  const place = stateLabel ?? "the institution's state";
   return (
     <section aria-label="This month at a glance" className="flex flex-col gap-4">
       <p className="max-w-3xl text-pretty text-base leading-relaxed text-warm-800">
-        Hamilton is {institutionName}&apos;s fee analyst. Each month it reads your published fee schedule against{" "}
-        {peerCount > 0 ? `${peerCount.toLocaleString("en-US")} peer institutions` : "your peers"} ({peerLabel}), watches
-        for fee changes in {place}, and tracks your fee income from your call report. It reports what it finds; it never
+        Hamilton researches {institutionName}. Each month it reads the institution&apos;s published fee schedule against{" "}
+        {peerCount > 0 ? `${peerCount.toLocaleString("en-US")} peer institutions` : "its peers"} ({peerLabel}), watches
+        for fee changes in {place}, and tracks its fee income from its call report. It reports what it finds; it never
         says what to charge.
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Tile
-          label="Your fees against peers"
+          label={`${institutionName}'s fees against peers`}
           value={feesCompared > 0 ? `${inLine} of ${feesCompared} in line` : "Not enough peers yet"}
           note={
             feesCompared > 0
               ? `${higher} higher and ${lower} lower than most peers.`
-              : "Too few peers publish your fees to compare them."
+              : "Too few peers publish matching fees to compare them."
           }
         />
         <Tile
           label={`Fee changes in ${place}`}
-          value={feesChangedNearby === 0 ? "None confirmed" : `${feesChangedNearby} of your fees`}
+          value={feesChangedNearby === 0 ? "None confirmed" : `${feesChangedNearby} matching fees`}
           note={
             feesChangedNearby === 0
-              ? `No institution in ${place} changed a fee you charge in the last ${windowDays} days.`
+              ? `No institution in ${place} changed a fee ${institutionName} publishes in the last ${windowDays} days.`
               : `changed at an institution in ${place} in the last ${windowDays} days.`
           }
         />

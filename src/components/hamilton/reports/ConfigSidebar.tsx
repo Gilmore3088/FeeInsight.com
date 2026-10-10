@@ -3,7 +3,7 @@
 import { Loader2 } from "lucide-react";
 import type { ReportTemplateType } from "@/app/pro/(hamilton)/reports/actions";
 import type { ReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
-import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import type { HamiltonPeerSetOption } from "@/components/hamilton/PeerBaselineSelector";
 import { SERIF } from "@/components/hamilton/memo/memo";
 import {
@@ -187,7 +187,7 @@ export function ConfigSidebar({
   onClientGoalChange,
   onGenerate,
 }: ConfigSidebarProps) {
-  const canGenerate = selectedTemplate !== null && !isGenerating;
+  const canGenerate = selectedTemplate !== null && Boolean(normalizeCanonicalInstitutionId(selectedInstitutionId)) && !isGenerating;
   const activeAudience =
     AUDIENCES.find((a) => a.value === narrativeTone) ?? AUDIENCES[0];
   const settingsHref = hrefWithInstitutionContext(

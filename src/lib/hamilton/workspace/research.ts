@@ -532,14 +532,14 @@ export async function getWorkspaceBriefing(
   });
   const trend = serviceChargeTrend(financialRows);
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
-  const shift = revenueShiftObservation(trend);
+  const shift = revenueShiftObservation(trend, base.institutionName);
   const bankCategories = new Set(base.ownValues.keys());
   const rules = ruleChangeObservations(articles, bankCategories);
-  const studies = studyObservations(studyRows);
+  const studies = studyObservations(studyRows, base.institutionName);
   const observations = withStudyPlace(
     rankObservations([
-      ...marketPositionObservations(positions),
-      ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "your state"),
+      ...marketPositionObservations(positions, base.institutionName),
+      ...competitorMoveObservations(changes, bankCategories, base.stateCode ?? "the institution's state"),
       ...(shift ? [shift] : []),
       ...rules,
       ...studies,

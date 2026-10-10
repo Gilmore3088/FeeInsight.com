@@ -9,7 +9,6 @@ import { redirect } from "next/navigation";
 import { PeerSetManager } from "./PeerSetManager";
 import {
   getPeerInstitutionNames,
-  getPeerSetWorkspace,
   getSavedPeerSets,
   type SavedPeerSet,
 } from "@/lib/data-store/saved-peers";
@@ -27,7 +26,8 @@ import {
 import { FeatureToggles } from "./FeatureToggles";
 import { ManageBillingButton } from "@/components/hamilton/settings/ManageBillingButton";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { WorkspaceInstitutionAccessRequest, WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import {
   getActiveInstitutionMembership,
   getInstitutionWorkspaceMembers,
@@ -81,15 +81,35 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [peerSetWorkspace, snapshot, cappedConsultant] = await Promise.all([
-    getPeerSetWorkspace(String(user.id)).catch(() => null),
+  const [snapshot, cappedConsultant, accountContext, [selectedClaim, fetchedMembership, workspaceMembers, workspaceInvitations]] = await Promise.all([
     getIntelligenceSnapshot(),
     isCappedConsultant(user).catch(() => false),
+    loadHamiltonAccountContext(user),
+    selectedInstitution
+      ? Promise.all([
+          getWorkspaceInstitutionClaimState(selectedInstitution.id),
+          getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null),
+          getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
+          getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
+        ])
+      : Promise.resolve([null, null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const),
   ]);
-  const peerSets: SavedPeerSet[] = await getSavedPeerSets(
+  const selectedMembership = fetchedMembership?.userId === user.id &&
+    fetchedMembership.institutionId === selectedInstitution?.id && fetchedMembership.status === "active"
+      ? fetchedMembership
+      : null;
+  const peerSetWorkspace = selectedMembership
+    ? { institutionId: selectedMembership.institutionId, role: selectedMembership.role }
+    : null;
+  const loadedPeerSets = await getSavedPeerSets(
     String(user.id),
     peerSetWorkspace?.institutionId ?? null,
   ).catch(() => []);
+  // Creator-owned shared groups from another institution remain available in the
+  // store, but they cannot become the displayed baseline for this research subject.
+  const peerSets: SavedPeerSet[] = loadedPeerSets.filter((set) =>
+    set.institution_id === null || set.institution_id === peerSetWorkspace?.institutionId,
+  );
   // Real counts of the institutions each set resolves to, and names for the chosen-peer chips.
   const [peerSetCounts, peerInstitutionNames] = await Promise.all([
     getPeerGroupCounts(
@@ -111,17 +131,6 @@ export default async function SettingsPage({
       })[0]
     : undefined;
   const widerGroupLabel = firstDefaultGroup ? describePeerFilters(firstDefaultGroup) : "the national index";
-  const [selectedClaim, selectedMembership, workspaceMembers, workspaceInvitations] = selectedInstitution
-    ? await Promise.all([
-        getWorkspaceInstitutionClaimState(selectedInstitution.id),
-        getActiveInstitutionMembership({
-          userId: user.id,
-          institutionId: selectedInstitution.id,
-        }).catch(() => null),
-        getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
-        getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
-      ])
-    : [null, null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const;
   const canManageWorkspaceAccess =
     isAdmin ||
     selectedMembership?.role === "owner" ||
@@ -202,18 +211,58 @@ export default async function SettingsPage({
       />
 
       <MemoSection
+        id="account-institution"
+        title="Account institution"
+        note="Linked through active workspace membership. Research selection does not change it."
+      >
+        <div className={panel}>
+          {accountContext.status === "identified" && accountContext.institution ? (
+            <>
+              <p className="text-lg text-warm-900" style={SERIF}>{accountContext.institution.name}</p>
+              <p className="mt-1 text-sm text-warm-600">Institution ID {accountContext.institution.id}</p>
+            </>
+          ) : (
+            <p className="text-sm text-warm-700">
+              {accountContext.status === "ambiguous"
+                ? "Multiple account institutions linked. Hamilton will ask which institution you mean when needed."
+                : accountContext.status === "unavailable"
+                  ? "Account institution could not be loaded. Research selection does not establish account membership."
+                  : "No account institution linked."}
+            </p>
+          )}
+        </div>
+      </MemoSection>
+
+      <MemoSection
         title="Research institution"
         note="Choose the institution Hamilton researches. Account membership and workspace access are separate."
       >
         <div className={panel}>
           <WorkspaceInstitutionForm
+            key={JSON.stringify([user.id, selectedInstitution?.id ?? null, selectedSource])}
             selectedInstitution={selectedInstitution}
             selectedSource={selectedSource === "artifact" ? "manual" : selectedSource}
-            selectedClaim={selectedClaim}
-            selectedMembership={selectedMembership}
           />
         </div>
       </MemoSection>
+
+      {selectedInstitution && (
+        <MemoSection
+          id="workspace-access-request"
+          title="Workspace access request"
+          note="Optional. Request access only for an institution you are authorized to represent."
+        >
+          <div className={panel}>
+            <WorkspaceInstitutionAccessRequest
+              key={selectedInstitution.id}
+              selectedInstitution={{ id: selectedInstitution.id, name: selectedInstitution.name }}
+              selectedClaim={selectedClaim}
+              selectedMembership={selectedMembership}
+              currentUserId={user.id}
+            />
+          </div>
+        </MemoSection>
+      )}
 
       <MemoSection
         id="your-figures"
@@ -230,18 +279,14 @@ export default async function SettingsPage({
       >
         <div className={`${panel} scroll-mt-24`}>
           <PeerSetManager
+            key={JSON.stringify([user.id, selectedInstitution?.id ?? null, peerSetWorkspace?.institutionId ?? null])}
+            researchInstitutionId={selectedInstitution?.id ?? null}
             initialPeerSets={peerSets}
             initialCounts={Object.fromEntries(
               peerSets.flatMap((set, i) => (peerSetCounts[i] ? [[set.id, peerSetCounts[i]]] : [])),
             )}
             initialInstitutionNames={Object.fromEntries(peerInstitutionNames)}
-            workspaceName={
-              peerSetWorkspace && selectedInstitution?.id === peerSetWorkspace.institutionId
-                ? selectedInstitution.name
-                : peerSetWorkspace
-                  ? "your team"
-                  : null
-            }
+            workspaceName={peerSetWorkspace ? selectedInstitution?.name ?? null : null}
             canEditWorkspaceSets={peerSetWorkspace?.role !== "viewer"}
             currentUserId={String(user.id)}
             minPeers={MIN_PEERS_FOR_POSITION}

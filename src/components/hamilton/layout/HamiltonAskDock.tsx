@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import type { HamiltonNavigationSelection } from "@/lib/hamilton/navigation-context";
 
 /**
  * Ask Hamilton, docked at the bottom of every workspace screen. A question opens the Ask screen
@@ -12,7 +14,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
  * Closed, it is one small button in the corner so it never sits over a chart or a figure
  * (James, 2026-10-07: the full bar covered the Try a price chart); a tap opens the bar.
  */
-export function HamiltonAskDock({ selectedInstitutionId }: { selectedInstitutionId?: string | null }) {
+export function HamiltonAskDock({ selectedInstitutionId, navigationContext }: { selectedInstitutionId?: string | null; navigationContext?: HamiltonNavigationSelection }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -30,9 +32,14 @@ export function HamiltonAskDock({ selectedInstitutionId }: { selectedInstitution
   }, [open]);
   // The Ask screen has its own bar, and the plan formats are documents to read and print.
   if (pathname.startsWith("/pro/analyze") || pathname.startsWith("/pro/simulate/plan")) return null;
+  // This composer asks about one institution. A market selection must stay in its
+  // existing research workflow instead of silently asking about a saved default.
+  if (navigationContext?.invalid || navigationContext?.unresolved || (navigationContext?.artifact && !navigationContext.institutionId)
+    || (navigationContext?.research && navigationContext.research.scope.kind !== "local")) return null;
 
   const fee = searchParams.get("fee") ?? searchParams.get("category");
-  const instId = searchParams.get("instId") ?? selectedInstitutionId ?? null;
+  const instId = navigationContext ? navigationContext.institutionId
+    : normalizeCanonicalInstitutionId(searchParams.get("instId") ?? selectedInstitutionId);
   const topic = fee ? getDisplayName(fee).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
   // Short enough to read whole on a phone.
   const placeholder = topic ? `Ask about ${topic}…` : "Ask Hamilton a question…";

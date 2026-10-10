@@ -12,6 +12,15 @@ import { priceBands } from "./bands";
 const peers = [4, 5, 5, 5, 6, 6, 7, 5, 4, 6];
 
 describe("market position observations", () => {
+  it("names the public research subject without changing fee values or peer provenance", () => {
+    const input = [{ feeCategory: "night_deposit", current: 3, peers, peerLabel: "Your Community Bank cohort" }];
+    const [legacy] = marketPositionObservations(input);
+    const [named] = marketPositionObservations(input, "Space Coast Credit Union");
+    expect(named.headline).toMatch(/^Space Coast Credit Union's .+ of \$3/);
+    expect(named.facts).toEqual(legacy.facts);
+    expect(named.facts[0].text).toContain("Your Community Bank cohort");
+    expect(named.salience).toBe(legacy.salience);
+  });
   it("flags a fee in the bottom 15% without telling the bank what to do", () => {
     const [obs] = marketPositionObservations([{ feeCategory: "night_deposit", current: 3, peers, peerLabel: "Texas banks" }]);
     expect(obs.kind).toBe("market_position");
@@ -44,6 +53,10 @@ describe("competitor moves", () => {
 });
 
 describe("revenue shift", () => {
+  it("attributes filed income to the research institution", () => {
+    expect(revenueShiftObservation({ latestTtm: 600_000, priorTtm: 400_000, quarterEnd: "2026-06-30", source: "ncua" }, "Space Coast Credit Union")?.headline)
+      .toBe("Space Coast Credit Union's deposit service charge income is up 50% from a year earlier.");
+  });
   const rows = (values: number[], source = "fdic") =>
     ["2026-06-30", "2026-03-31", "2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31", "2024-12-31", "2024-09-30"].map(
       (report_date, i) => ({ report_date, source, service_charge_income: values[i] }),

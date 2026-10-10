@@ -37,9 +37,13 @@ export function getHamiltonArtifactContextLookup(params: {
     const artifactId = cleanArtifactId(params.searchParams.get("analysis"));
     return artifactId ? { kind: "analysis", artifactId } : null;
   }
+  if (params.pathname === "/pro/reports") {
+    const reportId = cleanArtifactId(params.searchParams.get("report_id")) ?? cleanArtifactId(params.searchParams.get("report"));
+    if (reportId) return { kind: "report", artifactId: reportId };
+  }
 
-  // An explicit institution may configure a scenario/report. It cannot retarget a
-  // saved analysis; that lookup above is always authorized and resolved first.
+  // An explicit institution may configure a scenario. It cannot retarget a saved
+  // analysis/report; those lookups above are authorized and resolved first.
   if (cleanArtifactId(params.searchParams.get("instId"))) return null;
 
   if (params.pathname === "/pro/simulate") {
@@ -50,11 +54,6 @@ export function getHamiltonArtifactContextLookup(params: {
   }
 
   if (params.pathname === "/pro/reports") {
-    const reportId =
-      cleanArtifactId(params.searchParams.get("report_id")) ??
-      cleanArtifactId(params.searchParams.get("report"));
-    if (reportId) return { kind: "report", artifactId: reportId };
-
     const artifactId = cleanArtifactId(params.searchParams.get("scenario_id"));
     return artifactId ? { kind: "scenario", artifactId } : null;
   }

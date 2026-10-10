@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import type { HamiltonAccountContext } from "@/lib/hamilton/account-context";
 import { ConsumerNav } from "@/components/consumer-nav";
@@ -8,8 +10,13 @@ import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonAskDock } from "./HamiltonAskDock";
 import { SearchModal } from "@/components/public/search-modal";
 import { SessionChromeProvider, type SessionChrome } from "@/components/use-session-chrome";
+import { hamiltonNavigationSelection, isHamiltonSubjectPath } from "@/lib/hamilton/navigation-context";
+import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import { loadHamiltonNavigationInstitution } from "@/lib/hamilton/navigation-institution-action";
+import { HamiltonNavigationProvider } from "./hamilton-navigation-context";
 
 interface HamiltonShellProps {
+  initialRequestPath: string;
   isAdmin: boolean;
   /** The signed-in user as the header needs it, read by the layout so the Pro nav shows on first paint. */
   session: SessionChrome;
@@ -44,6 +51,7 @@ interface HamiltonShellProps {
  * Per D-10: admin mode bar shown only to admin/analyst users.
  */
 export function HamiltonShell({
+  initialRequestPath,
   isAdmin,
   session,
   viewAsCustomer = false,
@@ -52,8 +60,54 @@ export function HamiltonShell({
   accountContext,
   children,
 }: HamiltonShellProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const requestPath = `${pathname}${search ? `?${search}` : ""}`;
+  const [initialPath, initialQuery = ""] = initialRequestPath.split("?");
+  const isInitialRoute = requestPath === `${initialPath}${initialQuery ? `?${new URLSearchParams(initialQuery)}` : ""}`;
+  const [routeVersion, setRouteVersion] = useState({ path: requestPath, generation: 0 });
+  if (routeVersion.path !== requestPath) {
+    setRouteVersion({ path: requestPath, generation: routeVersion.generation + 1 });
+  }
+  const requestKey = JSON.stringify([requestPath, routeVersion.generation]);
+  const canUseSeed = isInitialRoute && routeVersion.generation === 0;
+  const selection = hamiltonNavigationSelection(pathname, new URLSearchParams(search));
+  const seedId = normalizeCanonicalInstitutionId(selectedInstitutionId);
+  const canResolveLive = isHamiltonSubjectPath(pathname) && !selection.artifact && !selection.invalid
+    && (!selection.research || selection.research.scope.kind === "local");
+  const seededInstitution = canUseSeed && !selection.invalid && seedId && institutionContext.name
+    && (selection.artifact || !selection.institutionId || selection.institutionId === seedId)
+    ? { id: seedId, name: institutionContext.name } : null;
+  const [resolved, setResolved] = useState<{ requestKey: string; institution: { id: string; name: string } | null } | null>(null);
+  const candidateId = selection.institutionId;
+  const seededName = seededInstitution?.name;
+  useEffect(() => {
+    if (!canResolveLive || seededName) return;
+    let active = true;
+    loadHamiltonNavigationInstitution(candidateId).then((institution) => {
+      if (active) setResolved({ requestKey, institution });
+    }).catch(() => { if (active) setResolved({ requestKey, institution: null }); });
+    return () => { active = false; };
+  }, [candidateId, requestKey, seededName, canResolveLive]);
+  const currentInstitution = seededInstitution ?? (resolved?.requestKey === requestKey
+    && (!candidateId || resolved.institution?.id === candidateId) ? resolved.institution : null);
+  const navigation = {
+    ...selection,
+    // An explicit URL is navigation intent, not a confirmed identity. Preserve it
+    // while metadata loads so the destination resolves B rather than default A.
+    institutionId: currentInstitution?.id ?? (selection.artifact ? null : selection.institutionId),
+    unresolved: canResolveLive && !currentInstitution,
+  };
+  const researchLabel = selection.invalid ? "Research selection unavailable"
+    : currentInstitution?.name
+    ?? (selection.artifact ? canUseSeed && institutionContext.name ? institutionContext.name : "Saved artifact · original research context shown below"
+    : canResolveLive
+      ? resolved?.requestKey === requestKey ? "Research subject unavailable" : "Research subject is being resolved"
+      : selection.research ? "Market research" : "Research selection unavailable");
   return (
     <SessionChromeProvider value={session}>
+      <HamiltonNavigationProvider value={navigation}>
       <div
         className="hamilton-shell min-h-screen bg-warm-100 print:bg-white"
       >
@@ -93,7 +147,7 @@ export function HamiltonShell({
 
         {accountContext ? (
           <div aria-label="Institution context" className="border-b border-warm-300 px-4 py-2 text-sm text-warm-800">
-            <span>Researching: {selectedInstitutionId ? institutionContext.name ?? `Institution ${selectedInstitutionId}` : institutionContext.name === "Market research" ? "Market research" : "No research subject selected"}.</span>{" "}
+            <span>Researching: {researchLabel}.</span>{" "}
             <span>Account institution: {accountContext.status === "identified" && accountContext.institution
               ? accountContext.institution.name
               : accountContext.status === "ambiguous" ? "multiple memberships; no home selected"
@@ -102,7 +156,7 @@ export function HamiltonShell({
           </div>
         ) : null}
 
-        {institutionContext.makeDefaultHref ? (
+        {canUseSeed && institutionContext.makeDefaultHref ? (
           <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
             You&apos;re researching {institutionContext.name ?? "another institution"}; your saved research preference is unchanged.{" "}
             <Link href={institutionContext.makeDefaultHref} className="font-medium text-terra-text underline">
@@ -114,11 +168,12 @@ export function HamiltonShell({
         <main className="mx-auto min-w-0 max-w-page px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
 
         {/* Ask Hamilton, docked on every screen */}
-        <HamiltonAskDock selectedInstitutionId={selectedInstitutionId} />
+        <HamiltonAskDock selectedInstitutionId={navigation.institutionId} navigationContext={navigation} />
 
         {/* The header's Search button and Cmd/Ctrl+K open this; the public layout mounts its own. */}
         <SearchModal />
       </div>
+      </HamiltonNavigationProvider>
     </SessionChromeProvider>
   );
 }

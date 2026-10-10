@@ -21,7 +21,8 @@ describe("LocalCompetitors", () => {
 
   it("renders the bank first with local deposits and dashes for unpublished fees", () => {
     const html = renderToStaticMarkup(<LocalCompetitors market={market} notCompared={["late_payment"]} />);
-    expect(html).toContain("Your named competitors");
+    expect(html).toContain("Subject CU&#x27;s local competitors");
+    expect(html).not.toMatch(/your market|your named competitors/i);
     expect(html).toContain("FDIC Summary of Deposits 2026");
     expect(html).toContain("$2.1B");
     expect(html).toContain("$700M");

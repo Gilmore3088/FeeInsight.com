@@ -1,7 +1,7 @@
 export function isCanonicalInstitutionId(value: string | null | undefined): value is string {
   if (!value) return false;
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 && String(parsed) === value.trim();
+  return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === value.trim();
 }
 
 export function normalizeCanonicalInstitutionId(

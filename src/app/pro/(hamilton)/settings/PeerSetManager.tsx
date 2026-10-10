@@ -75,6 +75,7 @@ export function PeerSetManager({
   workspaceName = null,
   canEditWorkspaceSets = true,
   currentUserId = "",
+  researchInstitutionId,
   minPeers,
   widerGroupLabel = "the national index",
 }: {
@@ -85,6 +86,8 @@ export function PeerSetManager({
   workspaceName?: string | null;
   canEditWorkspaceSets?: boolean;
   currentUserId?: string;
+  /** The displayed research subject; null explicitly creates personal groups. */
+  researchInstitutionId?: number | null;
   /** The engine's minimum peers for a position (MIN_PEERS_FOR_POSITION), passed from the server. */
   minPeers: number;
   /** The group charts widen to when a set is too thin for a fee. */
@@ -299,6 +302,7 @@ export function PeerSetManager({
           initial={editing === "new" ? null : editing}
           names={names}
           isPending={isPending}
+          researchInstitutionId={researchInstitutionId}
           onCancel={() => setEditing(null)}
           onSubmit={(formData) => handleSubmit(formData, editing)}
         />
@@ -311,12 +315,14 @@ function PeerSetForm({
   initial,
   names,
   isPending,
+  researchInstitutionId,
   onCancel,
   onSubmit,
 }: {
   initial: PeerSetRow | null;
   names: Record<number, string>;
   isPending: boolean;
+  researchInstitutionId?: number | null;
   onCancel: () => void;
   onSubmit: (formData: FormData) => void;
 }) {
@@ -350,6 +356,7 @@ function PeerSetForm({
       }}
       className="flex flex-col gap-4 rounded-md border border-warm-200 bg-white p-4"
     >
+      {researchInstitutionId !== undefined ? <input type="hidden" name="research_institution_id" value={researchInstitutionId ?? ""} /> : null}
       <label className="flex flex-col gap-1 text-sm text-warm-800">
         <span className="font-medium">Name</span>
         <input
