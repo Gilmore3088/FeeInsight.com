@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { statsRowFilter } from "./fee-stats";
 import {
   aggregateCityFeeAverages,
   type CityFeeAverage,
@@ -189,10 +190,22 @@ export async function getCityInstitutions(city: string, stateCode: string): Prom
   const rows = await sql`
     SELECT ct.id, ct.institution_name, ct.charter_type, ct.asset_size,
            COALESCE(fc.fee_count, 0) as fee_count,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'overdraft' AND ef.review_status = 'approved') as overdraft,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'monthly_maintenance' AND ef.review_status = 'approved') as monthly_maintenance,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'nsf' AND ef.review_status = 'approved') as nsf,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'atm_non_network' AND ef.review_status = 'approved') as atm_non_network
+           (SELECT MAX(ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'overdraft'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as overdraft,
+           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'monthly_maintenance'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as monthly_maintenance,
+           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'nsf'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as nsf,
+           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'atm_non_network'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as atm_non_network
     FROM institution_sources ct
     LEFT JOIN (
       SELECT institution_id, COUNT(*) as fee_count
@@ -215,9 +228,10 @@ export async function getCityFeeAverages(city: string, stateCode: string): Promi
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}
       AND ef.review_status = 'approved'
-      AND ef.source_document_id IS NOT NULL
       AND ef.amount IS NOT NULL
+      AND ef.amount >= 0
       AND ef.fee_category IS NOT NULL
+      AND ${sql.unsafe(statsRowFilter("ef"))}
   ` as CityInstitutionFeeRow[];
 
   return aggregateCityFeeAverages(rows);

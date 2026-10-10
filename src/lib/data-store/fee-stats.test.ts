@@ -7,6 +7,7 @@ import {
   institutionPositions,
   STATS_ROW_FILTER,
   businessSourceSql,
+  statsRowFilter,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 
@@ -81,9 +82,11 @@ describe("fee statistics contract", () => {
     expect(stats.institution_count).toBe(4);
   });
 
-  it("skips rows without an amount when computing values", () => {
+  it("excludes missing prices from the displayed sample as well as the median", () => {
     const stats = summarizeFees([...rowsFor([10, 20, 30, 40]), { institution_id: 9, amount: null, charter_type: "bank" }]);
-    expect(stats.institution_count).toBe(5);
+    expect(stats.institution_count).toBe(4);
+    expect(stats.observation_count).toBe(4);
+    expect(stats.bank_count).toBe(4);
     expect(stats.median_amount).toBeNull();
   });
 
@@ -117,7 +120,8 @@ describe("institutionPositions", () => {
 
 describe("business-only sources (rule 6)", () => {
   it("leaves business-only schedules out of statistics with the same address test Magellan uses", () => {
-    expect(STATS_ROW_FILTER).toContain("ef.source_document_id IS NOT NULL AND NOT (");
+    expect(STATS_ROW_FILTER).toContain("ef.source_document_id IS NOT NULL");
+    expect(STATS_ROW_FILTER).toContain("AND NOT (");
     expect(businessSourceSql("c")).toContain("COALESCE(c.source_url, '')");
     // The SQL applies BUSINESS_PATH_SQL / CONSUMER_PATH_SQL to the lowercased path; mirror it here.
     const sqlSays = (url: string) => {
@@ -134,4 +138,39 @@ describe("business-only sources (rule 6)", () => {
       expect(sqlSays(url)).toBe(isBusinessOnlyLink(url));
     }
   });
+});
+
+
+it("requires a verified consumer audience at the SQL boundary and keeps real zeros", () => {
+  expect(STATS_ROW_FILTER).toContain("ef.fee_audience IN ('consumer', 'both')");
+  expect(STATS_ROW_FILTER).not.toContain("ef.amount > 0");
+  expect(valuePerInstitution([{ institution_id: 47, amount: 0, fee_category: "nsf" }]).get(47)).toBe(0);
+});
+
+
+it("does not turn blank, negative or non-finite observations into evidence", () => {
+  const stats = summarizeFees([
+    ...rowsFor([0, "0.00", 10, 20, 30]),
+    { institution_id: 21, amount: "", charter_type: "bank" },
+    { institution_id: 22, amount: "  ", charter_type: "credit_union" },
+    { institution_id: 23, amount: -1, charter_type: "bank" },
+    { institution_id: 24, amount: "NaN", charter_type: "bank" },
+    { institution_id: 25, amount: Infinity, charter_type: "bank" },
+    { institution_id: 0, amount: 999, charter_type: "bank" },
+    { institution_id: -1, amount: 999, charter_type: "bank" },
+    { institution_id: "invalid", amount: 999, charter_type: "bank" },
+  ]);
+  expect(stats).toMatchObject({ institution_count: 5, observation_count: 5,
+    bank_count: 5, cu_count: 0, median_amount: 10, min_amount: 0 });
+});
+
+it("shares the same consumer boundary across SQL aliases without filtering out zero", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain("c.source_document_id IS NOT NULL");
+  expect(predicate).toContain("c.fee_audience IN ('consumer', 'both')");
+  expect(predicate).not.toContain("ef.");
+  expect(predicate).not.toContain("amount > 0");
+  expect(predicate).not.toContain("amount IS NOT NULL"); // rate rows have a separate value column
+  expect(statsRowFilter()).toBe(STATS_ROW_FILTER);
+  expect(() => statsRowFilter("c; SELECT 1")).toThrow("Invalid statistics table alias");
 });

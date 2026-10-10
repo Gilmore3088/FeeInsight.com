@@ -1,3 +1,4 @@
+import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
@@ -28,7 +29,7 @@ const MAX_NAME_CHARS = 120;
 const MIN_SEGMENT_CHARS = 8;
 export const MAX_REASONABLE_FEE_AMOUNT = 2_500;
 
-export interface ExtractedFeeCandidate {
+export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   feeName: string;
   amount: number;
   frequency: string | null;
@@ -46,7 +47,7 @@ export interface ExtractedFeeCandidate {
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
 export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced";
 
-export interface HeldFeeCandidate {
+export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */
@@ -1506,9 +1507,15 @@ export function withoutBusinessOnlyFees(text: string): string {
 
 export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
-  const text = withoutBusinessOnlyFees(stripPriceFootnoteMarks(newestColumnText(raw)));
+  const scoped = scopedFeeStatements(raw);
+  const handledLines = new Set(scoped.map((fee) => fee.excerpt));
+  const remaining = raw.split("\n").filter((line) => !handledLines.has(line.trim())).join("\n");
+  const text = withoutBusinessOnlyFees(stripPriceFootnoteMarks(newestColumnText(remaining)));
   const seen = new Set<string>();
-  const result: ExtractionRulesResult = { candidates: [], held: [] };
+  const result: ExtractionRulesResult = {
+    candidates: scoped.map((fee) => ({ ...fee, frequency: null, confidence: 0.98, waivable: false })),
+    held: [],
+  };
   const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
   const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {

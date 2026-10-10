@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { STATS_ROW_FILTER } from "./fee-stats";
 
 export interface FeeRevenueCorrelation {
   institution_id: number;
@@ -27,15 +28,30 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       CASE WHEN ifin.total_assets > 0
            THEN ROUND(ifin.service_charge_income * 1.0 / ifin.total_assets * 10000, 2)
            ELSE NULL END as fee_income_ratio,
-      ROUND(AVG(ef.amount), 2) as avg_fee,
-      COUNT(ef.id) as fee_count,
+      ROUND(ef.avg_fee, 2) as avg_fee,
+      ef.fee_count as fee_count,
       NULL as median_overdraft
     FROM institution_sources ct
-    JOIN published_fee_catalog ef ON ct.id = ef.institution_id
+    JOIN (
+      SELECT institution_id,
+             AVG(amount) AS avg_fee,
+             COUNT(*) AS fee_count
+      FROM (
+        SELECT ef.institution_id, ef.canonical_fee_key,
+               CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
+                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+        FROM published_fee_catalog ef
+        WHERE ef.review_status = 'approved'
+          AND ef.amount IS NOT NULL
+          AND ef.amount >= 0
+          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        GROUP BY ef.institution_id, ef.canonical_fee_key
+      ) category_values
+      GROUP BY institution_id
+      HAVING COUNT(*) >= 3
+    ) ef ON ct.id = ef.institution_id
     JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
-    WHERE ef.review_status = 'approved'
-      AND ef.amount IS NOT NULL
-      AND ef.amount > 0
+    WHERE 1 = 1
       AND ifin.report_date = (
         SELECT MAX(report_date)
         FROM institution_financial_records i2
@@ -43,8 +59,8 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       )
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.id, ct.institution_name, ct.charter_type, ct.state_code,
-             ct.asset_size_tier, ifin.total_assets, ifin.service_charge_income
-    HAVING COUNT(ef.id) >= 3
+             ct.asset_size_tier, ifin.total_assets, ifin.service_charge_income,
+             ef.avg_fee, ef.fee_count
     ORDER BY ifin.total_assets DESC NULLS LAST
   ` as FeeRevenueCorrelation[];
 
@@ -79,8 +95,17 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
     FROM institution_sources ct
     JOIN (
       SELECT institution_id, AVG(amount) as avg_fee
-      FROM published_fee_catalog
-      WHERE review_status = 'approved' AND amount IS NOT NULL AND amount > 0
+      FROM (
+        SELECT ef.institution_id, ef.canonical_fee_key,
+               CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
+                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+        FROM published_fee_catalog ef
+        WHERE ef.review_status = 'approved'
+          AND ef.amount IS NOT NULL
+          AND ef.amount >= 0
+          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        GROUP BY ef.institution_id, ef.canonical_fee_key
+      ) category_values
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
@@ -128,8 +153,17 @@ export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSu
     FROM institution_sources ct
     JOIN (
       SELECT institution_id, AVG(amount) as avg_fee
-      FROM published_fee_catalog
-      WHERE review_status = 'approved' AND amount IS NOT NULL AND amount > 0
+      FROM (
+        SELECT ef.institution_id, ef.canonical_fee_key,
+               CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
+                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+        FROM published_fee_catalog ef
+        WHERE ef.review_status = 'approved'
+          AND ef.amount IS NOT NULL
+          AND ef.amount >= 0
+          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        GROUP BY ef.institution_id, ef.canonical_fee_key
+      ) category_values
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id

@@ -151,6 +151,7 @@ describe("headline fees", () => {
       id: 1,
       institution_id: 4802,
       fee_name: "Fee",
+      fee_audience: "consumer",
       fee_category: null,
       amount: 10,
       frequency: null,
@@ -248,4 +249,16 @@ describe("buildLocationParts", () => {
     expect(buildLocationParts({ city: "Winston-Salem", stateCode: "NC", stateName: "North Carolina", hasApprovedFees: true })[0].href).toBeNull();
     expect(buildLocationParts({ city: null, stateCode: null, stateName: null, hasApprovedFees: true })).toEqual([]);
   });
+});
+
+
+it("headlines consumer zero rather than a business or unknown NSF price", () => {
+  const row = { id: 1, institution_id: 47, fee_name: "NSF", fee_category: "nsf", amount: 30,
+    frequency: null, conditions: null, review_status: "approved" } as ExtractedFee;
+  expect(pickHeadlineFees([
+    { ...row, fee_audience: "business" },
+    { ...row, id: 2, amount: 38, fee_audience: "unknown" },
+    { ...row, id: 3, amount: 0, fee_audience: "consumer", fee_treatment: "eliminated" },
+  ]).nsf).toBe(0);
+  expect(pickHeadlineFees([{ ...row, fee_audience: "unknown" }]).nsf).toBeNull();
 });
