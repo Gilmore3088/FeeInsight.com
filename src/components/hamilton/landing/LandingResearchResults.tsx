@@ -10,6 +10,7 @@ import { useRef, useState } from "react";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
   type LandingResearchHandoff,
+  landingResearchHref,
 } from "@/lib/hamilton/landing-research-handoff";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import type { GeographicResearchResult, GeographicFeeMeasure } from "@/lib/hamilton/landing-geographic-research";
@@ -125,6 +126,12 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
           {status === "loading" ? "Reading published data…" : result ? "Refresh comparison" : "Run comparison"}
         </button>
       </div>
+      {result ? (
+        <a href={landingResearchHref({ ...selection, task: "board_report" })}
+          className="mt-4 inline-block rounded-md border border-warm-300 px-4 py-2 text-sm font-medium underline">
+          Prepare board report from this selection
+        </a>
+      ) : null}
       {message ? <p role="alert" className="mt-4 text-sm text-red-700">{message}</p> : null}
       {result && isLocal(result) ? (
         <div className="mt-6 space-y-5">

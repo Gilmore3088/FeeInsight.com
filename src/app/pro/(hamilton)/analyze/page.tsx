@@ -30,7 +30,13 @@ export default async function AnalyzePage({
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
-  if (!user) redirect("/");
+  if (!user) {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === "string") query.set(key, value);
+    }
+    redirect(`/login?from=${encodeURIComponent(`/pro/analyze?${query}`)}`);
+  }
 
   let landingResearch: LandingResearchHandoff | null = null;
   let landingResearchError: string | null = null;
@@ -44,22 +50,30 @@ export default async function AnalyzePage({
       landingResearchError = error instanceof Error ? error.message : "Choose the research again.";
     }
   }
-  const analysisId = params.analysis;
+  // A research URL is never permission to load a different artifact, adopt a
+  // saved bank, or auto-send a provider question. Invalid research fails closed.
+  const hasResearch = params.research !== undefined;
+  if (landingResearchError) return <p role="alert">{landingResearchError}</p>;
+  const analysisId = hasResearch ? undefined : params.analysis;
   const [initialAnalysisRecord, recent] = await Promise.all([
     analysisId ? loadAnalysisRecord(analysisId) : null,
     // Only the start screen lists them; an answer page doesn't need the read.
     !analysisId && !params.q ? listSavedAnalyses(6) : [],
   ]);
   const contextInstitutionId = resolveArtifactContextInstitutionId({
-    urlInstitutionId: params.instId,
+    urlInstitutionId: hasResearch
+      ? landingResearch?.scope.kind === "local" ? String(landingResearch.scope.institutionId) : undefined
+      : params.instId,
     artifactInstitutionId: initialAnalysisRecord?.institutionId,
   });
-  const isArtifactContext = !params.instId && Boolean(contextInstitutionId);
-  const { institution: selectedInstitution } = await resolveHamiltonInstitutionContext({
+  const isArtifactContext = !hasResearch && !params.instId && Boolean(contextInstitutionId);
+  const { institution: selectedInstitution } = hasResearch && !contextInstitutionId
+    ? { institution: null }
+    : await resolveHamiltonInstitutionContext({
     userId: user.id,
     instId: contextInstitutionId,
     intent: params.intent ?? "analyze",
-    persistUrlSelection: shouldPersistUrlInstitutionSelection(params.instId),
+    persistUrlSelection: hasResearch ? false : shouldPersistUrlInstitutionSelection(params.instId),
     transientSource: isArtifactContext ? "artifact" : undefined,
   });
 
@@ -67,17 +81,13 @@ export default async function AnalyzePage({
 
   return (
     <>
-      {landingResearchError ? (
-        <p role="alert" className="mb-4 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
-          {landingResearchError}
-        </p>
-      ) : null}
       {landingResearch ? (
         <div className="mb-6">
           <LandingResearchResults selection={landingResearch} />
         </div>
       ) : null}
       <AnalyzeWorkspace
+        key={`${user.id}:${hasResearch ? JSON.stringify(landingResearch) : institutionId}:${analysisId ?? "new"}`}
         userId={user.id}
         institutionId={institutionId}
         initialAnalysis={initialAnalysisRecord?.responseJson ?? null}
@@ -86,8 +96,8 @@ export default async function AnalyzePage({
         recent={recent}
         selectedInstitution={selectedInstitution}
         initialIntent={params.intent ?? null}
-        initialQuestion={params.q ? params.q.slice(0, 500) : null}
-        autoSend={params.send === "1"}
+        initialQuestion={!hasResearch && params.q ? params.q.slice(0, 500) : null}
+        autoSend={!hasResearch && params.send === "1"}
       />
     </>
   );
