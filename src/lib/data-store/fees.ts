@@ -181,27 +181,41 @@ export async function getCheapestAndMostExpensive(
 
   const [cheapestRows, expensiveRows] = await Promise.all([
     sql`
-      SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount
-      FROM published_fee_catalog ef
-      JOIN institution_sources ct ON ef.institution_id = ct.id
-      WHERE ef.fee_category = ${category}
-        AND ef.review_status = 'approved'
-        AND ef.amount IS NOT NULL
-        AND ef.amount >= 0
-        AND ${sql.unsafe(STATS_ROW_FILTER)}
-      ORDER BY ef.amount ASC, ct.institution_name ASC
+      WITH per_institution AS (
+        SELECT MIN(ef.id) AS id, ef.institution_id, ct.institution_name,
+               CASE WHEN ${category} = 'overdraft' THEN MAX(ef.amount)
+                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+        FROM published_fee_catalog ef
+        JOIN institution_sources ct ON ef.institution_id = ct.id
+        WHERE ef.fee_category = ${category}
+          AND ef.review_status = 'approved'
+          AND ef.amount IS NOT NULL
+          AND ef.amount >= 0
+          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        GROUP BY ef.institution_id, ct.institution_name
+      )
+      SELECT id, institution_id, institution_name, amount
+      FROM per_institution
+      ORDER BY amount ASC, institution_name ASC
       LIMIT ${bounded}
     `,
     sql`
-      SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount
-      FROM published_fee_catalog ef
-      JOIN institution_sources ct ON ef.institution_id = ct.id
-      WHERE ef.fee_category = ${category}
-        AND ef.review_status = 'approved'
-        AND ef.amount IS NOT NULL
-        AND ef.amount >= 0
-        AND ${sql.unsafe(STATS_ROW_FILTER)}
-      ORDER BY ef.amount DESC, ct.institution_name ASC
+      WITH per_institution AS (
+        SELECT MIN(ef.id) AS id, ef.institution_id, ct.institution_name,
+               CASE WHEN ${category} = 'overdraft' THEN MAX(ef.amount)
+                    ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+        FROM published_fee_catalog ef
+        JOIN institution_sources ct ON ef.institution_id = ct.id
+        WHERE ef.fee_category = ${category}
+          AND ef.review_status = 'approved'
+          AND ef.amount IS NOT NULL
+          AND ef.amount >= 0
+          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        GROUP BY ef.institution_id, ct.institution_name
+      )
+      SELECT id, institution_id, institution_name, amount
+      FROM per_institution
+      ORDER BY amount DESC, institution_name ASC
       LIMIT ${bounded}
     `,
   ]);
