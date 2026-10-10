@@ -29,13 +29,11 @@ Administrators see the latest 50 jobs in Publishing, retry eligible pending work
 and can record manual resolution of review items with their authenticated user id
 and a required note. Non-admin callers cannot invoke recovery actions or read this
 new panel. Review jobs cannot be blindly retried by changing form inputs.
-Migration 20270110000041 adds a private, RLS-enabled table with API-role access
+Migration 20270110000043 adds a private, RLS-enabled table with API-role access
 revoked. Payloads include email content and private report links: treat them as
 sensitive operational records. No public queue endpoint is introduced.
 
-Deploy reviewed migrations 40 then 41 before code activation. Migration files were
-generated via CLI and numbered after the repository baseline; none were applied
-to production. Do not delete the outbox or replay Stripe history during rollback.
+Deploy Pinnacle migrations 40/41 first, then reviewed checkout migration 42 and payment outbox migration 43 before code activation. Direct migration-history reads show production still ends at 20270110000039. Pinnacle's preview has 40/41 and the R04 preview has the superseded checkout 40. The canonical payment files are now 42/43; no payment migration was applied to production. Do not delete the outbox or replay Stripe history during rollback.
 If rolling back the application, pause checkout/fulfillment and reconcile pending
 obligations manually; the former webhook lacks recovery guarantees.
 
