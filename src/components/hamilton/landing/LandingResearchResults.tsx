@@ -6,7 +6,7 @@
  * represents a prepared selection, never permission to execute a paid request.
  * The host Analyze page supplies a server-validated selection after Pro auth.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
   localRequestFromLanding,
@@ -35,6 +35,16 @@ export function LandingResearchResults({ selection }: { selection: LandingResear
   const [result, setResult] = useState<Result | null>(null);
   const [status, setStatus] = useState<"ready" | "loading" | "done" | "error">("ready");
   const [message, setMessage] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+  const selectionKey = JSON.stringify(selection);
+
+  // A changed research selection invalidates both any visible result and in-flight response.
+  useEffect(() => {
+    requestGeneration.current += 1;
+    setResult(null);
+    setStatus("ready");
+    setMessage(null);
+  }, [selectionKey]);
   const scopeLabel = selection.scope.kind === "national"
     ? "United States"
     : selection.scope.kind === "state"
@@ -46,6 +56,7 @@ export function LandingResearchResults({ selection }: { selection: LandingResear
 
   async function runSelection() {
     if (status === "loading") return;
+    const generation = ++requestGeneration.current;
     setStatus("loading");
     setResult(null);
     setMessage(null);
@@ -66,9 +77,11 @@ export function LandingResearchResults({ selection }: { selection: LandingResear
         throw new Error(typeof error === "string" ? error : "The comparison could not be loaded.");
       }
       if (!payload || typeof payload !== "object") throw new Error("The market response was incomplete.");
+      if (requestGeneration.current !== generation) return;
       setResult(payload as Result);
       setStatus("done");
     } catch (error) {
+      if (requestGeneration.current !== generation) return;
       setMessage(error instanceof Error ? error.message : "The comparison could not be loaded.");
       setStatus("error");
     }
@@ -98,6 +111,14 @@ export function LandingResearchResults({ selection }: { selection: LandingResear
             </p>
             {result.unmapped > 0 ? <p className="text-xs text-warm-600">{result.unmapped} subject branches have no map coordinates.</p> : null}
           </div>
+          {result.map ? (
+            <div className="space-y-2">
+              <div role="img" aria-label={"Competitor branch footprint for " + result.market.label}
+                className="overflow-x-auto rounded-md border border-warm-200"
+                dangerouslySetInnerHTML={{ __html: result.map.html }} />
+              <p className="text-xs text-warm-600">{result.map.legend}</p>
+            </div>
+          ) : null}
           {result.network ? (
             <div role="img" aria-label={"Branch network map for " + result.institutionName}
               className="overflow-x-auto rounded-md border border-warm-200"
