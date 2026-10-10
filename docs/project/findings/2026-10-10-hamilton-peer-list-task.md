@@ -86,10 +86,11 @@ authenticated browser layout check or PDF-content inspection has been performed.
 
 ## Not complete / next work
 
-H02-T08 is not implemented: no durable saved peer-list snapshot, exact-list pronoun
-refinements, report/export round-trip or pagination beyond the first 50. The UI says
-so rather than presenting unsupported buttons. Restating explicit criteria starts
-a new list. Combined list-plus-fee questions still follow the existing fee-analysis
+H02-T08 remains partial: exact-list state refinements and saving selected canonical
+institution IDs as an existing peer group are implemented. There is no durable dated
+peer-list snapshot, report/export round-trip or pagination beyond the first 50. The
+UI states these limits. Restating explicit criteria starts a new list. Combined
+list-plus-fee questions still follow the existing fee-analysis
 path; they are not claimed as fixed. Extended local/radius/branch-market lists need
 separate, evidence-backed integration; the existing plain local view is preserved.
 
@@ -127,3 +128,45 @@ regulatory/ncua.ts (parseFile/thousands), and both canonical registry writers.
 The stale financial.ts comment is not used as authority. No schema, live records,
 provider calls or published fees were modified. Current-head CI and the eight SQL
 tests still require their own result; local mocked assertions alone are insufficient.
+
+## Follow-up: selecting three institutions and saving a peer group
+
+The user's Florida / $1B–$10B form was blocked by the required group name, not a
+district requirement. Before the fix, two real Vitest/jsdom/action runs each
+reported **7 failed / 13 passed** across three workflow test files: native form
+validation rejected a blank name, the authenticated action rejected it, the
+district controls lacked an optional advanced disclosure, and the list lacked
+selection/save controls. A named Florida asset-band group with no district passed
+both UI validation and the real server-action parser in each run.
+
+Names can now be omitted and are generated from the selected, validated criteria
+(for example, `Florida · $1B to $10B · Institutions`). Districts are explicitly
+optional and collapsed under Advanced filters. List checkboxes preserve exact
+institution IDs through sorting; three selected rows can be saved through the
+existing authenticated `createPeerSet` action with an optional editable name.
+This saves a named institution-ID group, not an immutable financial-evidence
+snapshot. Applying it to charts remains the separate existing Settings action.
+
+Saving carries the canonical research subject, then checks its fresh active
+membership on the server. An unattached subject saves a personal group and cannot
+fall back to an unrelated saved workspace. The synthetic user 25 case with saved
+Space Coast `8109` Viewer membership and researched Addition `8629` with no
+membership failed against the original action twice; each targeted run had one
+failure (18 other cases excluded by the explicit test-name filter). It passes
+after the fix. Space Coast Viewer creation is denied explicitly, edits remain
+subject to the existing creator / active non-viewer datastore predicate, and the
+selected IDs survive a denial for an explicit retry. Authentication, premium
+access, ten-group scope caps, fifty-ID limits and creator ownership remain in force.
+
+The matching parent Settings fix derives displayed groups from the validated
+research subject's membership, passes `researchInstitutionId` through create/edit
+forms, and resets the Manager when the subject/workspace changes. The parent keeps
+its existing name requirement; optional names and list selection stay in H02.
+Current child focused verification: **50/50 passed in five actual Vitest files**,
+including permission errors, retries, duplicate clicks, selection/sort preservation,
+fifty-ID bounds, late-save isolation and create/edit/null subject propagation.
+Earlier broader focused checks passed 86 cases; TypeScript and scoped ESLint passed.
+These tests mock authenticated identity and datastore writes; they do not claim a
+production write, authenticated live save, PDF export or current-head full CI.
+The exact `talki to me about institutions in florida over 5b` phrase remains a
+separately recorded grammar gap in #977.

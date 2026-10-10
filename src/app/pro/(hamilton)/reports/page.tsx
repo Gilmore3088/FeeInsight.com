@@ -21,7 +21,6 @@ import { getSavedPeerSets } from "@/lib/data-store/saved-peers";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import {
   resolveArtifactContextInstitutionId,
-  shouldPersistUrlInstitutionSelection,
 } from "@/lib/hamilton/artifact-context";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 
@@ -100,21 +99,25 @@ export default async function ReportsPage({
       ? getHamiltonReportById(initialReportId, user.id).catch(() => null)
       : null,
   ]);
+  if (initialReportId && !initialReport) {
+    return <p role="alert">Saved report not found or unavailable.</p>;
+  }
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,
     artifactInstitutionId: initialReport?.institution_id ?? savedScenario?.institution_id,
+    preferArtifact: Boolean(initialReport),
   });
-  const isArtifactContext = !params.instId && Boolean(contextInstitutionId);
+  const isArtifactContext = Boolean(initialReport) || (!params.instId && Boolean(contextInstitutionId));
   const {
     institution: selectedInstitution,
     source: selectedSource,
-  } = initialReport?.report_type === "landing_research" && !initialReport.institution_id
-    ? { institution: null, source: "url" as const }
+  } = initialReport && !initialReport.institution_id
+    ? { institution: null, source: "artifact" as const }
     : await resolveHamiltonInstitutionContext({
     userId: user.id,
     instId: contextInstitutionId,
     intent: params.intent ?? "reports",
-    persistUrlSelection: shouldPersistUrlInstitutionSelection(params.instId),
+    persistUrlSelection: false,
     transientSource: isArtifactContext ? "artifact" : undefined,
   });
 
@@ -124,17 +127,13 @@ export default async function ReportsPage({
     getActivePeerSet({ userId: user.id, institutionId: selectedInstitution?.id ?? null }).catch(() => null),
   ]);
 
-  // Pull the user's real institution name (audit H-4 round 2) so the report
-  // setup names it instead of a hardcoded "Your institution".
-  const institutionName =
-    selectedInstitution?.name ||
-    user.institution_name?.trim() ||
-    user.display_name ||
-    "Your institution";
+  // A free-text profile name cannot supply the numeric research subject used by
+  // coverage or generation. The builder must display the same scope it submits.
+  const institutionName = selectedInstitution?.name ?? "No research institution selected";
 
   return (
     <ReportWorkspace
-      key={`${params.intent ?? ""}:${initialReport?.id ?? ""}`}
+      key={JSON.stringify([user.id, selectedInstitution?.id ?? null, params.intent ?? null, initialReport?.id ?? null])}
       userId={user.id}
       institutionName={institutionName}
       publishedReports={publishedReports}

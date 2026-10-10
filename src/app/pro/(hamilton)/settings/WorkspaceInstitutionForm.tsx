@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   requestInstitutionClaim,
   updateWorkspaceInstitution,
@@ -18,12 +19,18 @@ import {
   type InstitutionSearchResult,
 } from "@/components/hamilton/InstitutionPicker";
 import { SERIF } from "@/components/hamilton/memo/memo";
+import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 
 interface WorkspaceInstitutionFormProps {
   selectedInstitution: HamiltonSelectedInstitutionContext | null;
   selectedSource: HamiltonWorkspaceContextSource | "none";
+}
+
+interface WorkspaceInstitutionAccessRequestProps {
+  selectedInstitution: Pick<HamiltonSelectedInstitutionContext, "id" | "name">;
   selectedClaim: InstitutionClaimState | null;
   selectedMembership: InstitutionWorkspaceMembership | null;
+  currentUserId: number;
 }
 
 const inputClass =
@@ -45,17 +52,17 @@ function sourceLabelFor(source: HamiltonWorkspaceContextSource | "none"): string
 export function WorkspaceInstitutionForm({
   selectedInstitution,
   selectedSource,
-  selectedClaim,
-  selectedMembership,
 }: WorkspaceInstitutionFormProps) {
+  const { replace } = useRouter();
   const [state, formAction, isPending] = useActionState(
     updateWorkspaceInstitution,
     initialState,
   );
-  const [claimState, claimAction, isClaimPending] = useActionState(
-    requestInstitutionClaim,
-    initialClaimState,
-  );
+  useEffect(() => {
+    if (!state.success) return;
+    const institutionId = normalizeCanonicalInstitutionId(state.institutionId);
+    if (institutionId) replace(`/pro/settings?instId=${institutionId}`);
+  }, [state.success, state.institutionId, replace]);
 
   const activeName = state.institutionName ?? selectedInstitution?.name ?? null;
   const activeId = state.institutionId ?? selectedInstitution?.id ?? null;
@@ -98,24 +105,6 @@ export function WorkspaceInstitutionForm({
     }
     return null;
   }, [selectedInstitution, selectedResult, state.institutionId, state.institutionName]);
-  const visibleClaim = claimState.claim ?? selectedClaim;
-  const claimBelongsToSelection =
-    !!visibleClaim && !!selectedSummary && visibleClaim.institutionId === selectedSummary.id;
-  const claimStatusLabel =
-    visibleClaim?.reviewStatus === "accepted"
-      ? "Accepted"
-      : visibleClaim?.reviewStatus === "rejected"
-        ? "Rejected"
-        : visibleClaim?.reviewStatus === "needs_info"
-          ? "Needs info"
-          : visibleClaim?.reviewStatus === "pending"
-            ? "Pending review"
-            : null;
-  const hasActiveMembership =
-    !!selectedMembership && !!selectedSummary && selectedMembership.institutionId === selectedSummary.id;
-  const membershipRoleLabel = selectedMembership?.role
-    ? selectedMembership.role.replaceAll("_", " ")
-    : null;
 
   function handleSelect(result: InstitutionSearchResult | null) {
     setSelectedResult(result);
@@ -125,9 +114,6 @@ export function WorkspaceInstitutionForm({
   const submitSourceHref = selectedSummary
     ? `/submit-fees?institutionId=${selectedSummary.id}&institutionName=${encodeURIComponent(selectedSummary.name)}`
     : "/submit-fees";
-  const claimHref = selectedSummary
-    ? `/submit-fees?source=claim&institutionId=${selectedSummary.id}&institutionName=${encodeURIComponent(selectedSummary.name)}&submitterRole=institution_employee&notes=${encodeURIComponent("Claim or validate institution profile from Hamilton Settings.")}`
-    : "/submit-fees?source=claim&submitterRole=institution_employee";
 
   return (
     <div className="flex flex-col gap-5">
@@ -182,11 +168,6 @@ export function WorkspaceInstitutionForm({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <p className="truncate text-sm font-medium text-warm-900">{selectedSummary.name}</p>
-              {hasActiveMembership && (
-                <span className="rounded-full bg-warm-150 px-2.5 py-0.5 text-xs font-medium text-warm-800">
-                  Your team&apos;s workspace{membershipRoleLabel ? ` (${membershipRoleLabel})` : ""}
-                </span>
-              )}
             </div>
             <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-600">
               {selectedSummary.location && <span>{selectedSummary.location}</span>}
@@ -203,9 +184,6 @@ export function WorkspaceInstitutionForm({
           <div className="flex shrink-0 flex-wrap gap-2">
             <Link href={submitSourceHref} className={`${secondaryButton} no-underline`}>
               Send us a fee schedule
-            </Link>
-            <Link href={claimHref} className={`${secondaryButton} no-underline`}>
-              Claim this institution&apos;s profile
             </Link>
           </div>
         </div>
@@ -237,71 +215,81 @@ export function WorkspaceInstitutionForm({
           {state.error}
         </p>
       )}
+    </div>
+  );
+}
 
-      {selectedSummary && (
-        <div className="flex flex-col gap-4 rounded-md border border-warm-200 bg-white p-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <h3 className="text-base text-warm-900" style={SERIF}>
-              Do you work at this institution?
-            </h3>
-            <p className="mt-1 text-sm leading-relaxed text-warm-700">
-              Request workspace access separately from research selection. Ask us to confirm your connection to this institution.
-            </p>
-            {claimBelongsToSelection && claimStatusLabel && (
-              <p className="mt-2 text-sm font-medium text-terra-text">
-                Your request: {claimStatusLabel}
-                {visibleClaim?.resolution ? ` · ${visibleClaim.resolution.replaceAll("_", " ")}` : ""}
-              </p>
-            )}
-            {hasActiveMembership && (
-              <p className="mt-2 text-sm font-medium text-warm-900">
-                Confirmed since {new Date(selectedMembership.grantedAt).toLocaleDateString()}.
-              </p>
-            )}
-            {claimBelongsToSelection && visibleClaim?.reviewNotes && (
-              <p className="mt-2 rounded-md bg-warm-150 p-2 text-sm leading-relaxed text-warm-700">
-                {visibleClaim.reviewNotes}
-              </p>
-            )}
-          </div>
+/** An explicit access request is independent of the research preference form. */
+export function WorkspaceInstitutionAccessRequest({
+  selectedInstitution,
+  selectedClaim,
+  selectedMembership,
+  currentUserId,
+}: WorkspaceInstitutionAccessRequestProps) {
+  const [claimState, claimAction, isClaimPending] = useActionState(requestInstitutionClaim, initialClaimState);
+  const visibleClaim = claimState.claim ?? selectedClaim;
+  const claimBelongsToInstitution = visibleClaim?.institutionId === selectedInstitution.id;
+  const claimStatusLabel =
+    visibleClaim?.reviewStatus === "accepted" ? "Accepted"
+      : visibleClaim?.reviewStatus === "rejected" ? "Rejected"
+        : visibleClaim?.reviewStatus === "needs_info" ? "Needs info"
+          : visibleClaim?.reviewStatus === "pending" ? "Pending review" : null;
+  const hasActiveMembership = selectedMembership?.userId === currentUserId &&
+    selectedMembership.institutionId === selectedInstitution.id && selectedMembership.status === "active";
 
-          <form action={claimAction} className="flex min-w-0 flex-col gap-2 lg:w-80">
-            <input type="hidden" name="institution_id" value={selectedSummary.id} />
-            <label htmlFor="claim_notes" className="text-sm font-medium text-warm-800">
-              Your role and team
-            </label>
-            <textarea
-              id="claim_notes"
-              name="claim_notes"
-              rows={3}
-              placeholder="For example, Deposit product manager, retail banking"
-              disabled={hasActiveMembership}
-              className={`${inputClass} resize-y disabled:opacity-60`}
-            />
-            <button
-              type="submit"
-              disabled={isClaimPending || hasActiveMembership}
-              className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {hasActiveMembership
-                ? "Already confirmed"
-                : isClaimPending
-                  ? "Sending..."
-                  : "Ask us to confirm"}
-            </button>
-            {claimState.success && claimState.message && (
-              <p role="status" className="text-sm font-medium text-warm-900">
-                {claimState.message}
-              </p>
-            )}
-            {!claimState.success && claimState.error && (
-              <p role="alert" className="text-sm font-medium text-terra-text">
-                {claimState.error}
-              </p>
-            )}
-          </form>
-        </div>
+  return (
+    <div className="flex flex-col gap-3">
+      {hasActiveMembership && (
+        <p className="text-sm font-medium text-warm-900">
+          Active workspace access to {selectedInstitution.name} ({selectedMembership.role}).
+        </p>
       )}
+      {claimBelongsToInstitution && claimStatusLabel && (
+        <p className="text-sm font-medium text-terra-text">
+          Access request for {selectedInstitution.name}: {claimStatusLabel}
+          {visibleClaim?.resolution ? ` · ${visibleClaim.resolution.replaceAll("_", " ")}` : ""}
+        </p>
+      )}
+      {claimBelongsToInstitution && visibleClaim?.reviewNotes && (
+        <p className="rounded-md bg-warm-150 p-2 text-sm leading-relaxed text-warm-700">
+          {visibleClaim.reviewNotes}
+        </p>
+      )}
+      <details className="rounded-md border border-warm-200 bg-white p-4">
+        <summary className="cursor-pointer text-sm font-medium text-warm-900">
+          Request workspace access to {selectedInstitution.name}
+        </summary>
+        <p className="mt-2 text-sm leading-relaxed text-warm-700">
+          This optional request is reviewed separately. Choosing an institution for research does not assert employment or grant access.
+        </p>
+        <form action={claimAction} className="mt-3 flex max-w-md flex-col gap-2">
+          <input type="hidden" name="institution_id" value={selectedInstitution.id} />
+          <label htmlFor="claim_notes" className="text-sm font-medium text-warm-800">
+            Your connection to {selectedInstitution.name}
+          </label>
+          <textarea
+            id="claim_notes"
+            name="claim_notes"
+            rows={3}
+            placeholder="Describe your role and why you need workspace access"
+            disabled={hasActiveMembership}
+            className={`${inputClass} resize-y disabled:opacity-60`}
+          />
+          <button
+            type="submit"
+            disabled={isClaimPending || hasActiveMembership}
+            className="rounded-md bg-terra px-3.5 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {hasActiveMembership ? "Access already active" : isClaimPending ? "Sending..." : "Request workspace access"}
+          </button>
+          {claimState.success && claimState.message && (
+            <p role="status" className="text-sm font-medium text-warm-900">{claimState.message}</p>
+          )}
+          {!claimState.success && claimState.error && (
+            <p role="alert" className="text-sm font-medium text-terra-text">{claimState.error}</p>
+          )}
+        </form>
+      </details>
     </div>
   );
 }

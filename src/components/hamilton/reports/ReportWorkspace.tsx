@@ -182,7 +182,7 @@ export function ReportWorkspace({
   }, [initialScenarioId]);
 
   useEffect(() => {
-    if (!selectedTemplate) {
+    if (!selectedTemplate || !selectedInstitution?.id) {
       setPeerCoveragePreview(null);
       setPeerCoverageError(null);
       setIsPeerCoverageLoading(false);
@@ -277,6 +277,10 @@ export function ReportWorkspace({
   async function handleGenerate(override?: { template: ReportTemplateType; focus?: string | null }) {
     const template = override?.template ?? selectedTemplate;
     if (!template) return;
+    if (!selectedInstitution?.id) {
+      setError("Choose a research institution before writing this report.");
+      return;
+    }
     const focus = override?.focus ?? focusArea;
     if (override) {
       setSelectedTemplate(override.template);
@@ -419,6 +423,15 @@ export function ReportWorkspace({
             </>
           )}
         </p>
+      )}
+
+      {!selectedInstitution && !reportGenerated && (
+        <Callout>
+          Choose a research institution before checking coverage or writing a report.{" "}
+          <Link href="/pro/settings" className="font-medium text-terra-text underline">
+            Choose an institution
+          </Link>
+        </Callout>
       )}
 
       {(error || pdfError) && (

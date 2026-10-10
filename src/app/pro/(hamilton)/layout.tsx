@@ -86,7 +86,7 @@ async function HamiltonLayoutInner({
     : requestSearchParams.get("instId");
   const selectedIntent = requestSearchParams.get("intent");
   const artifactLookup = hasResearch ? null : getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
-  const savedAnalysisRequested = artifactLookup?.kind === "analysis";
+  const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report";
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
     lookup: artifactLookup,
@@ -94,11 +94,11 @@ async function HamiltonLayoutInner({
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: selectedInstId,
     artifactInstitutionId,
-    preferArtifact: savedAnalysisRequested,
+    preferArtifact: savedArtifactRequested,
   });
-  const isArtifactContext = savedAnalysisRequested || (!selectedInstId && Boolean(artifactInstitutionId));
+  const isArtifactContext = savedArtifactRequested || (!selectedInstId && Boolean(artifactInstitutionId));
   const { institution: selectedInstitution, source: selectedSource, isWorkspaceBank } =
-    (hasResearch && !selectedInstId) || (savedAnalysisRequested && !contextInstitutionId)
+    (hasResearch && !selectedInstId) || (savedArtifactRequested && !contextInstitutionId)
       ? { institution: null, source: "none" as const, isWorkspaceBank: false }
       : await resolveHamiltonInstitutionContext({
       userId: user.id,
@@ -128,19 +128,20 @@ async function HamiltonLayoutInner({
         selectedFromUrl: selectedSource === "url",
       }
     : {
-        name: savedAnalysisRequested ? "Saved answer · research subject unavailable" : hasResearch ? "Market research" : user.institution_name,
-        type: savedAnalysisRequested || hasResearch ? null : user.institution_type,
-        assetTier: savedAnalysisRequested || hasResearch ? null : user.asset_tier,
-        fedDistrict: savedAnalysisRequested || hasResearch ? null : user.fed_district ?? null,
-        stateCode: savedAnalysisRequested || hasResearch ? null : user.state_code ?? null,
+        name: savedArtifactRequested ? "Saved artifact · research subject unavailable" : research ? "Market research" : null,
+        type: null,
+        assetTier: null,
+        fedDistrict: null,
+        stateCode: null,
         feePublicationLabel: null,
         publishedFeeCount: null,
         provisionalFeeCount: null,
-        selectedSource: !savedAnalysisRequested && !hasResearch && user.institution_name ? ("profile" as const) : ("none" as const),
+        selectedSource: "none" as const,
         selectedFromUrl: false,
       };
   return (
     <HamiltonShell
+      initialRequestPath={requestPath}
       isAdmin={isAdmin}
       session={sessionChromeFor(user)}
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}

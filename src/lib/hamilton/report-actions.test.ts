@@ -1,4 +1,8 @@
-import { generateReport, saveLandingResearchReport } from "@/app/pro/(hamilton)/reports/actions";
+/** @vitest-environment node */
+import { generateReport, previewReportPeerCoverage, saveLandingResearchReport } from "@/app/pro/(hamilton)/reports/actions";
+import { POST as exportReportPdf } from "@/app/api/pro/report-pdf/route";
+import { NextRequest } from "next/server";
+import { extractText } from "unpdf";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
 
@@ -30,6 +34,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/hamilton/account-context-store", () => ({ loadHamiltonAccountContext: mocks.loadHamiltonAccountContext }));
+vi.mock("@/lib/api-hardening/audit", () => ({
+  getRequestSubjectKey: () => "test",
+  recordApiRouteAuditEvent: async () => undefined,
+}));
 vi.mock("@/app/pro/(hamilton)/analyze/actions", () => ({ loadAnalysisRecord: mocks.loadAnalysisRecord }));
 
 vi.mock("@/lib/hamilton/landing-geographic-research", () => ({ loadLandingGeographicResearch: mocks.landingResearch }));
@@ -260,6 +268,50 @@ describe("Hamilton Reports generateReport", () => {
     expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, reportJson: expect.objectContaining({ identityContext: result.report.identityContext }) }));
   });
 
+  it("saves URL-selected Space Coast without membership and exports that original identity after switching to Addition", async () => {
+    const reportId = "11111111-2222-3333-4444-555555555555";
+    mocks.saveHamiltonReport.mockResolvedValue(reportId);
+    mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "unlinked", institution: null, profileLabel: "Space Coast Credit Union" });
+    mocks.getInstitutionById.mockResolvedValue(selectedInstitution({ id: 8109, institution_name: "Space Coast Credit Union" }));
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue({ ...peerIndex(), label: "Original Space Coast cohort" });
+    const result = await generateReport({ ...reportParams(), institutionId: 8109, selectedSource: "url" });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error(result.error);
+    const saved = mocks.saveHamiltonReport.mock.calls[0][0];
+    expect(saved).toMatchObject({ userId: 7, institutionId: "8109", selectedSource: "url" });
+    expect(saved.reportJson.identityContext).toMatchObject({
+      researchInstitutionId: 8109, researchInstitutionName: "Space Coast Credit Union", accountInstitutionId: null,
+      accountStatus: "unlinked", researchSelectionSource: "URL selected", peerBaselineLabel: "Original Space Coast cohort",
+    });
+
+    // Persistence round trip, followed by another research subject/account/baseline.
+    mocks.getHamiltonReportById.mockResolvedValue({
+      id: reportId, institution_id: "8109", report_type: "competitive_positioning",
+      report_json: JSON.parse(JSON.stringify(saved.reportJson)), artifact_metadata: result.artifactMetadata,
+    });
+    mocks.getCurrentUser.mockResolvedValue({ id: 7, role: "premium", subscription_status: "active", institution_name: "Addition Financial Credit Union" });
+    mocks.getInstitutionById.mockResolvedValue(selectedInstitution({ id: 2945, institution_name: "Addition Financial Credit Union" }));
+    mocks.loadHamiltonAccountContext.mockResolvedValue({ status: "identified", institution: { id: 2945, name: "Addition Financial Credit Union" }, profileLabel: null });
+    mocks.resolveHamiltonPeerIndex.mockResolvedValue({ ...peerIndex(), label: "Today's Addition cohort" });
+    const response = await exportReportPdf(new NextRequest("http://localhost/api/pro/report-pdf", {
+      method: "POST", body: JSON.stringify({ type: "report", reportId, institutionId: 2945 }),
+    }));
+    expect(response.status).toBe(200);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect(Buffer.from(bytes.subarray(0, 5)).toString()).toBe("%PDF-");
+    const text = (await extractText(bytes, { mergePages: true })).text.replace(/\s+/g, " ");
+    expect(text).toContain("Research institution: Space Coast Credit Union");
+    expect(text).toContain("Account institution: Not linked");
+    expect(text).toContain("Peer baseline: Original Space Coast cohort");
+    expect(text).not.toContain("Addition Financial Credit Union");
+    expect(text).not.toContain("Today's Addition cohort");
+    expect(mocks.getHamiltonReportById).toHaveBeenCalledWith(reportId, 7);
+    expect(mocks.loadHamiltonAccountContext).toHaveBeenCalledTimes(1);
+    expect(mocks.getInstitutionById).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveHamiltonPeerIndex).toHaveBeenCalledTimes(1);
+    expect(mocks.generateSection).not.toHaveBeenCalled();
+  }, 20000);
+
   it("never retargets an original saved answer A into report B from browser metadata", async () => {
     mocks.loadAnalysisRecord.mockResolvedValue({ institutionId: "8109", responseJson: { title: "Original A finding", hamiltonView: "Original A evidence", whatThisMeans: "", identityContext: { version: 1, researchInstitutionId: 8109, accountInstitutionId: 101, accountStatus: "identified", researchInstitutionName: "Original Bank A", accountInstitutionName: "Space Coast CU", peerBaselineLabel: "Original A cohort" } } });
     mocks.getFeesByInstitution.mockResolvedValue([{ fee_name: "Domestic wire", fee_category: "wire_transfer", amount: 35, review_status: "pending" }]);
@@ -485,7 +537,7 @@ describe("Hamilton Reports generateReport", () => {
     expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
   });
 
-  it("does not persist profile-name slugs for reports without a selected institution", async () => {
+  it("refuses an institution report when only a profile name is available", async () => {
 
     const result = await generateReport({
       templateType: "peer_benchmarking",
@@ -494,17 +546,18 @@ describe("Hamilton Reports generateReport", () => {
       evidencePolicy: "provisional-first",
     });
 
-    expect(result.success).toBe(true);
-    if (!result.success) throw new Error(result.error);
-
-    expect(mocks.saveHamiltonReport).toHaveBeenCalledWith(
-      expect.objectContaining({
-        institutionId: "",
-        selectedSource: "profile",
-        selectedFeeDeltaCount: 0,
-      }),
-    );
+    expect(result).toEqual({ success: false, error: "Choose a research institution before writing this report." });
+    expect(mocks.saveHamiltonReport).not.toHaveBeenCalled();
+    expect(mocks.generateSection).not.toHaveBeenCalled();
     expect(mocks.completeHamiltonRefreshJobsForInstitution).not.toHaveBeenCalled();
+  });
+
+  it("refuses unscoped coverage rather than displaying a national report as an institution report", async () => {
+    expect(await previewReportPeerCoverage({ templateType: "peer_benchmarking" })).toEqual({
+      success: false, error: "Choose a research institution to check report coverage.",
+    });
+    expect(mocks.getInstitutionById).not.toHaveBeenCalled();
+    expect(mocks.resolveHamiltonPeerIndex).not.toHaveBeenCalled();
   });
 
   it("builds the answer page, named local competitors and dollar exhibits, and briefs later sections with the answer", async () => {

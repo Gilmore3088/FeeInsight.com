@@ -184,6 +184,9 @@ export async function previewReportPeerCoverage(
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
   if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
+  if (!normalizeCanonicalInstitutionId(params.institutionId)) {
+    return { success: false, error: "Choose a research institution to check report coverage." };
+  }
 
   try {
     const [selectedInstitution, selectedFees, selectedEvidence, chargeBases] = await Promise.all([
@@ -407,6 +410,9 @@ export async function generateReport(
   if (!user) return { success: false, error: "Authentication required" };
   // generateSection() below makes paid model calls: Pro only.
   if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
+  if (!normalizeCanonicalInstitutionId(params.institutionId)) {
+    return { success: false, error: "Choose a research institution before writing this report." };
+  }
 
   try {
     // 1. Fetch selected institution data as grounding for Hamilton

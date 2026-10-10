@@ -7,6 +7,7 @@ import { PeerListView } from "./PeerListView";
 import type { PeerListResponse, PeerListRow } from "@/lib/hamilton/peer-list";
 
 vi.mock("./StructuredAsk", () => ({ StructuredAsk: () => <p>Existing fee-answer path</p> }));
+vi.mock("@/app/pro/(hamilton)/settings/actions", () => ({ createPeerSet: vi.fn() }));
 const fetcher = vi.fn();
 const fallback = vi.fn();
 const lead = vi.fn();
@@ -81,7 +82,7 @@ describe("peer-first Ask rendering", () => {
   it("offers no unsupported export/report action for the new list type", async () => {
     render(<PeerAwareStructuredAsk {...props} />); await screen.findByRole("table");
     expect(screen.queryByRole("button", { name: /Download|report/i })).toBeNull();
-    expect(screen.getByText(/Comparing its fees, saving this list/)).toBeTruthy();
+    expect(screen.getByText(/Comparing this list's fees and exporting it/)).toBeTruthy();
   });
   it("provides a keyboard-focusable horizontal table region", () => {
     render(<PeerListView response={fixture} />);

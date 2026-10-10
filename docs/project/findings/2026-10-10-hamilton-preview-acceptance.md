@@ -71,3 +71,40 @@ Caption corrections require new exact-head CI and preview checks. Their final
 receipts live in #976/#985; dependent #988 retains separate CI and actual eight
 peer SQL cases. No full live acceptance, merge or release is claimed. H01 stays
 open until every gate and H07 deployed-SHA/post-release evidence pass.
+
+## Mobile follow-up and normal account fixture
+
+The user's later mobile screenshots on the normal a6d1e5e preview exposed another
+failed acceptance path: the retained header named Space Coast, navigation omitted
+its canonical ID, and Reports generated an unscoped report. Settings also placed
+an employment request directly below research selection. Repeated pre-fix tests
+cover desktop/mobile navigation, encoded market context, monthly briefing,
+Reports generation/reopen, and Settings action state. These failures supersede
+the earlier assumption that label corrections alone completed the implementation.
+
+The separately authorized normal test account is premium/active without an admin
+role or Stripe charge. Its synthetic Space Coast Viewer membership was granted
+on 2026-10-10T23:24:07.405753Z and independently read back (receipt in #976).
+Canonical account institution is 8109; saved Addition Financial research remains
+8629. The grant changed neither the research preference nor other users' seats,
+invitations, private content, credentials, or provider controls. It creates no
+verified employment claim. Audited revocation requires an actual internal revoker
+under the existing lifecycle constraint; no fictitious actor or deletion is valid.
+
+Follow-up fixes keep account membership separate in Settings, use canonical
+subjects even when briefing data is missing, preserve subject/encoded research in
+navigation, and isolate retained client state. Reports requires a canonical
+subject and prefers an authorized saved artifact over conflicting current URL
+context. The controlled A/B delayed-coverage/generation cases and an actual
+generate/save/authenticated-PDF round trip preserve original subject and cohort.
+These are regression proofs, not substitutes for live acceptance.
+
+The existing #988 additionally addresses the user's selected-peer save flow and
+optional name/district controls. Its own WIP intake remains separately gated by
+#1006. #1007 records caught maintenance errors in the isolated pipeline fixture;
+green core pipeline assertions do not certify those optional maintenance paths.
+
+The earlier account-unlinked checkpoint above is historical. The available browser
+runtime is still restricted by #1005 after documented recovery failed repeatedly.
+The updated account fixture is ready, but AC1–AC4 and inherited #993 desktop/mobile
+and downloaded-export gates remain open until observed on the updated exact head.

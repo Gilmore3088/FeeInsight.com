@@ -4,9 +4,10 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { fetchHomeBriefingSignals, type HomeBriefingSignals } from "@/lib/hamilton/home-data";
 import { getCurrentUser, type User } from "@/lib/auth";
-import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import { parseInstitutionId } from "@/lib/hamilton/institution-context";
+import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { RecentChanges } from "@/components/hamilton/benchmark/RecentChanges";
 import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAttention";
 import { ThisMonthOverview } from "@/components/hamilton/benchmark/ThisMonthOverview";
@@ -39,7 +40,7 @@ const getCachedBriefing = unstable_cache(
     ]);
     return { briefing, mixedBasis: [...mixedBasisCategories(bases)] };
   },
-  ["hamilton-this-month-briefing-v3"],
+  ["hamilton-this-month-briefing-v4"],
   { revalidate: 3600 },
 );
 
@@ -52,7 +53,11 @@ async function loadBriefing(
   try {
     const active = user ? await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null) : null;
     const peerSet = active ? { filters: active.filters, label: active.label } : null;
-    return { ...(await getCachedBriefing(institutionId, peerSet)), unavailable: false };
+    const result = await getCachedBriefing(institutionId, peerSet);
+    if (result.briefing && result.briefing.institutionId !== institutionId) {
+      return { briefing: null, mixedBasis: [], unavailable: true };
+    }
+    return { ...result, unavailable: false };
   } catch {
     return { briefing: null, mixedBasis: [], unavailable: true };
   }
@@ -60,7 +65,7 @@ async function loadBriefing(
 
 const BRIEFING_METHOD = [
   ...STANDARD_METHOD,
-  `What stands out: your fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group (overdraft first when it is one), institutions in your state that changed a fee you charge in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in your service charge income, most unusual first, at most three.`,
+  `What stands out: the research institution's fees in the top or bottom ${POSITION_EXTREME_PCT}% of their peer group (overdraft first when it is one), institutions in its state that changed a matching fee in the last ${COMPETITOR_MOVE_WINDOW_DAYS} days, and any move of ${REVENUE_SHIFT_PCT}% or more in its service charge income, most unusual first, at most three.`,
   "A fee whose peers charge it on more than one basis (per item and monthly, say) has no single median to stand out from, so it is not listed.",
 ];
 
@@ -78,10 +83,11 @@ async function ChangesForInstitution({
 }) {
   unstable_noStore();
   let signals: HomeBriefingSignals = { whatChanged: [], priorityAlerts: [], monitorFeed: [] };
-  if (user) {
+  const canonicalInstitutionId = normalizeCanonicalInstitutionId(selectedInstitutionId);
+  if (user && canonicalInstitutionId) {
     try {
       signals = await fetchHomeBriefingSignals(user.id, {
-        institutionIds: selectedInstitutionId ? [selectedInstitutionId] : [],
+        institutionIds: [canonicalInstitutionId],
       });
     } catch {
       // DB unavailable: the list shows its empty state.
@@ -96,21 +102,32 @@ async function ChangesForInstitution({
   );
 }
 
-async function resolveSelectedInstitutionId(
+async function resolveResearchInstitution(
   user: User | null,
-  params: { instId?: string; intent?: string },
-): Promise<string | null> {
-  if (params.instId) return params.instId;
-  if (!user) return null;
+  params: { instId?: string; intent?: string; research?: string },
+) {
+  if (!user) return { institution: null, error: null };
+  let instId = params.instId ?? null;
+  if (params.research !== undefined) {
+    try {
+      const research = decodeLandingResearch(params.research);
+      if (research?.scope.kind !== "local") {
+        return { institution: null, error: "Choose an institution for a monthly briefing. Open the research link in Ask Hamilton for market research." };
+      }
+      instId = String(research.scope.institutionId);
+    } catch {
+      return { institution: null, error: "This research link is invalid. Choose an institution again." };
+    }
+  }
   try {
-    const { institution } = await resolveHamiltonInstitutionContext({
+    return await resolveHamiltonInstitutionContext({
       userId: user.id,
-      instId: null,
+      instId,
       intent: params.intent,
+      persistUrlSelection: false,
     });
-    return institution?.id.toString() ?? null;
   } catch {
-    return null;
+    return { institution: null, error: "The research institution could not be loaded. Please try again." };
   }
 }
 
@@ -121,11 +138,12 @@ async function resolveSelectedInstitutionId(
 export default async function HamiltonHomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ instId?: string; intent?: string }>;
+  searchParams: Promise<{ instId?: string; intent?: string; research?: string }>;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser().catch(() => null);
-  const selectedInstitutionId = await resolveSelectedInstitutionId(user, params);
+  const { institution, error: contextError } = await resolveResearchInstitution(user, params);
+  const selectedInstitutionId = institution ? String(institution.id) : null;
   const { briefing, mixedBasis, unavailable } = await loadBriefing(user, selectedInstitutionId);
   const mixed = new Set(mixedBasis);
   const items = buildAttentionItems(briefing, { mixedBasis: mixed });
@@ -139,11 +157,13 @@ export default async function HamiltonHomePage({
     <MemoPage>
       <MemoHeader
         kicker={`This month · ${month}`}
-        title={briefing ? briefing.institutionName : "Your briefing"}
+        title={institution?.name ?? "Monthly briefing"}
         dek={
           briefing
             ? `${briefing.feesReviewed} published fees, read against ${briefing.peerLabel}.`
-            : "Choose your bank and Hamilton reads its published fees against its market every month."
+            : institution
+              ? `Research institution: ${institution.name}.`
+              : "Choose an institution and Hamilton reads its published fees against its market every month."
         }
       />
 
@@ -162,7 +182,7 @@ export default async function HamiltonHomePage({
         <WorthYourAttention observations={items} institutionId={selectedInstitutionId} trail={trail} />
       ) : unavailable ? (
         <p role="status" className="text-sm text-terra-text">
-          Your briefing couldn&apos;t load just now.{" "}
+          The monthly briefing for {institution?.name ?? "this institution"} couldn&apos;t load just now.{" "}
           <Link href={hrefWithInstitutionContext("/pro/hamilton", selectedInstitutionId)} className="underline">
             Try again
           </Link>
@@ -177,13 +197,16 @@ export default async function HamiltonHomePage({
         </div>
       ) : briefing ? (
         <Callout>
-          We don&apos;t have enough of {briefing.institutionName}&apos;s published fees to compare yet. My fees still shows
+          We don&apos;t have enough of {briefing.institutionName}&apos;s published fees to compare yet. Ask Hamilton still shows
           the market for any fee.
         </Callout>
+      ) : institution ? (
+        <Callout>No monthly briefing is available for {institution.name} yet. Ask Hamilton can still research its published fees.</Callout>
       ) : (
         <div>
+          {contextError ? <p role="status" className="mb-3 text-sm text-terra-text">{contextError}</p> : null}
           <LinkButton href={hrefWithInstitutionContext("/pro/settings", selectedInstitutionId)} primary>
-            Choose your bank
+            Choose a research institution
           </LinkButton>
         </div>
       )}
@@ -192,7 +215,7 @@ export default async function HamiltonHomePage({
 
       {/* Every fee against its own peer group, in the engine's order. */}
       {briefing && briefing.positions.length > 0 ? (
-        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} notCompared={mixedBasis} />
+        <FeeScorecard rows={briefing.positions} institutionId={selectedInstitutionId} institutionName={briefing.institutionName} notCompared={mixedBasis} />
       ) : null}
 
       <Suspense fallback={<ChangesSkeleton />}>

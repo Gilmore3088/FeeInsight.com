@@ -56,6 +56,19 @@ const inferredRow = row({
 });
 
 describe("studyObservations", () => {
+  it("names public study figures without rewriting source titles or stored study data", () => {
+    const rows = [row({ title: "Your Community Bank study" }), priceRow, inferredRow];
+    const original = JSON.stringify(rows);
+    const named = studyObservations(rows, "Space Coast Credit Union");
+    expect(named).toHaveLength(3);
+    expect(named.map((o) => [o.headline, ...o.facts.map((f) => f.text)].join(" ")).join(" ")).not.toMatch(/\bYour\b|\byour\b|\byou are\b/);
+    expect(named[0].headline).toContain("Space Coast Credit Union's revenue");
+    expect(named[0].facts[0].text).toContain("Space Coast Credit Union is at the 67th percentile");
+    expect(named[1].facts[0].text).toContain("across Space Coast Credit Union's markets");
+    expect(named[2].facts[0].text).toContain("Space Coast Credit Union's published");
+    expect(named[0].facts[0].source.label).toBe("Hamilton study: Your Community Bank study");
+    expect(JSON.stringify(rows)).toBe(original);
+  });
   it("places a bank's fee dependence against its charter and size", () => {
     const [o] = studyObservations([row({})]);
     expect(o.kind).toBe("study");
