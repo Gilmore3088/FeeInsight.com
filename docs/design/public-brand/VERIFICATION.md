@@ -18,3 +18,8 @@ This branch consolidates the original FeeInsight public-site redesign onto curre
 The repository's Vercel policy skips ordinary branch builds. This receipt commit contains `[preview]` to opt this branch into a non-production review deployment using the existing repository policy. Do not change production aliases, environment values, preview protection, cron configuration or the production branch.
 
 Keep PR #1016 draft until visual review and exact-head CI pass.
+
+
+## Homepage simplification preview — 2026-10-11
+
+Current review head includes executed structural passes for the homepage, /fees, institution profiles and /for-institutions. This receipt commit exists only to opt the branch into the repository's existing Vercel preview policy; it does not change production aliases, security settings, environment variables or product behavior.
