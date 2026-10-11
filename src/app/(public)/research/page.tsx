@@ -16,6 +16,7 @@ import { StateExplorer } from "./state-explorer";
 import { DistrictBoard } from "./district-board";
 import { ResearchLibrary } from "./research-library";
 import { MethodFlow } from "./method-flow";
+import { NationalResearch } from "./national-research";
 import { CharterExhibit, ExhibitSource, KeyFindings } from "./exhibits";
 import { computeFindings } from "./findings";
 import { AmbientGlow, INTERACTION } from "@/components/public/site-look";
@@ -71,6 +72,8 @@ export default async function ResearchHubPage() {
       <ResearchSectionNav />
 
       <div className="mx-auto max-w-page space-y-20 px-6 py-14">
+        <NationalResearch />
+
         <KeyFindings findings={findings} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} institutionsLabel={summary.institutionsLabel} asOf={asOf} />
