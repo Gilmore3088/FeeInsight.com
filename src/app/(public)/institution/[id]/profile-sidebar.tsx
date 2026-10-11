@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { BarChart2, ClipboardCheck, FileText, MessageSquareText } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
+import { CTA_PRIMARY, GLASS, GLASS_SOFT, TEXT_LINK } from "@/components/public/site-look";
 import type { PublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { METHODOLOGY_COPY } from "./profile-copy";
 
 const PRO_LINK_SECONDARY =
-  "inline-flex items-center justify-center gap-2 rounded-md border border-[#5A5347] px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-[#D4A574]";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-white/10 px-3 text-sm font-semibold text-white ring-1 ring-white/25 hover:bg-white/15 hover:ring-white/40";
 
 export function ProfileSidebar({
   links,
@@ -25,7 +26,7 @@ export function ProfileSidebar({
   return (
     <aside className="min-w-0 space-y-6 lg:sticky lg:top-6">
       {regulatorFacts.length > 0 && (
-        <section className="border border-[#E0D7C9] bg-white p-4">
+        <section className={`p-5 ${GLASS_SOFT}`}>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Regulator</p>
           <dl className="mt-2 space-y-1.5 text-sm">
             {regulatorFacts.map((fact) => (
@@ -38,7 +39,7 @@ export function ProfileSidebar({
         </section>
       )}
       {showProCard && (
-        <section className="border border-[#1A1815] bg-[#1A1815] p-5 text-white">
+        <section className={`rounded-2xl bg-[#1A1815] p-5 text-white shadow-[0_12px_40px_-12px_rgba(26,24,21,0.35)] ring-1 ring-black/10`}>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D4A574]">
             Fee Insight Pro
           </p>
@@ -46,7 +47,7 @@ export function ProfileSidebar({
           <div className="mt-4 grid gap-2">
             <Link
               href={links.briefHref}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#C44B2E] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
+              className={CTA_PRIMARY}
             >
               <BarChart2 className="h-4 w-4" />
               Generate competitive brief
@@ -82,7 +83,7 @@ export function ProfileSidebar({
           </span>
         </InfoTip>
         <span aria-hidden="true" className="text-[#D5CBBF]">·</span>
-        <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
+        <Link href="/methodology" className={TEXT_LINK}>
           Methodology
         </Link>
       </div>
