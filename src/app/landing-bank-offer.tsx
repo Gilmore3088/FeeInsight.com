@@ -22,7 +22,7 @@ export function LandingBankOffer() {
           </p>
         </div>
         <TrackLink
-          event="pricing_click"
+          event="upgrade_click"
           eventProps={{ placement: "homepage_banking_teams" }}
           href="/subscribe"
           className={`${CTA_PRIMARY} shrink-0`}
