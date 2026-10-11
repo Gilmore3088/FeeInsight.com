@@ -215,6 +215,13 @@ export const HAMILTON_REQUIRED_ACCEPTANCE_CASE_IDS: readonly string[] = (
  * Every initiative case must be passed on the exact candidate SHA with an inspected
  * output/evidence reference. Skipped/blocked cases stay release blockers.
  */
+function hasNonBlankEvidenceRefs(refs: unknown): refs is string[] {
+  return Array.isArray(refs)
+    && refs.length > 0
+    && refs.every((ref) => typeof ref === "string" && ref.trim().length > 0);
+}
+
+/** A reference must be nonblank; a reference alone does not prove inspection or validity. */
 export function assessHamiltonReleaseCandidate(input: {
   candidateSha: string;
   cases: readonly HamiltonAcceptanceCaseEvidence[];
@@ -242,7 +249,7 @@ export function assessHamiltonReleaseCandidate(input: {
     if (evidence.candidateSha !== input.candidateSha) problems.push(`wrong_sha:${caseId}`);
     if (evidence.status !== "passed") problems.push(`${evidence.status}_case:${caseId}`);
     if (!evidence.inspectedOutput) problems.push(`uninspected_output:${caseId}`);
-    if (evidence.evidenceRefs.length === 0) problems.push(`missing_evidence_ref:${caseId}`);
+    if (!hasNonBlankEvidenceRefs(evidence.evidenceRefs)) problems.push(`missing_evidence_ref:${caseId}`);
   }
 
   for (const caseId of byId.keys()) {
@@ -255,7 +262,7 @@ export function assessHamiltonReleaseCandidate(input: {
       && entries[0].candidateSha === input.candidateSha
       && entries[0].status === "passed"
       && entries[0].inspectedOutput
-      && entries[0].evidenceRefs.length > 0;
+      && hasNonBlankEvidenceRefs(entries[0].evidenceRefs);
   }).length;
 
   return {
@@ -293,6 +300,7 @@ export function assessHamiltonFailureRecovery(input: {
   cases: readonly HamiltonFailureRecoveryEvidence[];
 }): { ready: boolean; problems: string[]; passedCases: number; requiredCases: number } {
   const problems: string[] = [];
+  if (!/^[0-9a-f]{40}$/.test(input.candidateSha)) problems.push("invalid_failure_candidate_sha");
   const byId = new Map<HamiltonFailureRecoveryId, HamiltonFailureRecoveryEvidence[]>();
   for (const entry of input.cases) {
     const group = byId.get(entry.caseId);
@@ -315,7 +323,13 @@ export function assessHamiltonFailureRecovery(input: {
     if (evidence.status !== "passed") problems.push(`${evidence.status}_failure_case:${caseId}`);
     if (!evidence.containment.trim()) problems.push(`missing_containment:${caseId}`);
     if (!evidence.rollbackOrRetry.trim()) problems.push(`missing_rollback_or_retry:${caseId}`);
-    if (evidence.evidenceRefs.length === 0) problems.push(`missing_failure_evidence_ref:${caseId}`);
+    if (!hasNonBlankEvidenceRefs(evidence.evidenceRefs)) problems.push(`missing_failure_evidence_ref:${caseId}`);
+  }
+
+  for (const caseId of byId.keys()) {
+    if (!HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS.includes(caseId)) {
+      problems.push(`unknown_failure_case:${caseId}`);
+    }
   }
 
   const passedCases = HAMILTON_REQUIRED_FAILURE_RECOVERY_IDS.filter((caseId) => {
@@ -325,7 +339,7 @@ export function assessHamiltonFailureRecovery(input: {
       && entries[0].status === "passed"
       && entries[0].containment.trim().length > 0
       && entries[0].rollbackOrRetry.trim().length > 0
-      && entries[0].evidenceRefs.length > 0;
+      && hasNonBlankEvidenceRefs(entries[0].evidenceRefs);
   }).length;
 
   return {

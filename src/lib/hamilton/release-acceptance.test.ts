@@ -123,6 +123,15 @@ describe("Hamilton release-candidate packet", () => {
     expect(problems).toContain("missing_evidence_ref:H06-AC2");
   });
 
+  it("rejects whitespace-only acceptance evidence refs despite a pass flag", () => {
+    const cases = allPassed();
+    cases.find((entry) => entry.caseId === "H06-AC4")!.evidenceRefs = ["  ", "\t"];
+    const result = assessHamiltonReleaseCandidate({ candidateSha: sha, cases });
+    expect(result.ready).toBe(false);
+    expect(result.problems).toContain("missing_evidence_ref:H06-AC4");
+    expect(result.passedCases).toBe(27);
+  });
+
   it("rejects duplicate cases rather than choosing the favorable copy", () => {
     const cases = allPassed();
     cases.push({ ...cases[0], status: "failed" });
@@ -175,6 +184,28 @@ describe("Hamilton failure-recovery release evidence", () => {
       "missing_rollback_or_retry:delayed_response",
       "missing_failure_evidence_ref:delayed_response",
     ]));
+  });
+
+  it("rejects whitespace-only recovery refs despite a pass flag", () => {
+    const cases = allRecovered();
+    cases.find((entry) => entry.caseId === "provider_stop")!.evidenceRefs = [" ", "\n"];
+    const result = assessHamiltonFailureRecovery({ candidateSha: sha, cases });
+    expect(result.ready).toBe(false);
+    expect(result.problems).toContain("missing_failure_evidence_ref:provider_stop");
+    expect(result.passedCases).toBe(6);
+  });
+
+  it("rejects a failure-recovery packet without a pinned commit SHA", () => {
+    const cases = allRecovered().map((entry) => ({ ...entry, candidateSha: "main" }));
+    expect(assessHamiltonFailureRecovery({ candidateSha: "main", cases }).problems)
+      .toContain("invalid_failure_candidate_sha");
+  });
+
+  it("rejects unknown failure cases instead of silently ignoring extras", () => {
+    const cases = allRecovered();
+    cases.push({ ...cases[0], caseId: "fabricated_recovery" as HamiltonFailureRecoveryEvidence["caseId"] });
+    expect(assessHamiltonFailureRecovery({ candidateSha: sha, cases }).problems)
+      .toContain("unknown_failure_case:fabricated_recovery");
   });
 
   it("does not transfer a rollback rehearsal from another release candidate", () => {
