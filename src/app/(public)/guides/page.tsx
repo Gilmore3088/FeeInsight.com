@@ -24,7 +24,7 @@ import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { getPublicSnapshot } from "@/lib/public-stats";
-import { AmbientGlow, GLASS_SOFT, H1, H2, INTERACTION, LEAD, NUM } from "@/components/public/site-look";
+import { AmbientGlow, GLASS_SOFT, H1, INTERACTION, LEAD, NUM } from "@/components/public/site-look";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -311,6 +311,7 @@ export default async function GuidesIndexPage() {
           }).replace(/</g, "\\u003c"),
         }}
       />
+      </div>
     </div>
   );
 }
