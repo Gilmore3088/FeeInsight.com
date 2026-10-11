@@ -8,7 +8,6 @@ import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } f
 import { LandingHero } from "./landing-hero";
 import { LandingTrustStats } from "./landing-trust-stats";
 import { LandingBankOffer } from "./landing-bank-offer";
-import { LandingWorkSamples } from "./landing-work-samples";
 import { LandingValueShowcase } from "./landing-value-showcase";
 import type { BenchmarkRow } from "./subscribe/benchmark-preview";
 import type { AnalyzeScenario } from "./subscribe/analyze-demo";
@@ -148,7 +147,6 @@ export default async function LandingPage() {
           />
         )}
         <LandingBankOffer />
-        <LandingWorkSamples />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />
