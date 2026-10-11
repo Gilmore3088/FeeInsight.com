@@ -44,7 +44,7 @@ export default async function ForInstitutionsPage() {
       <main id="main-content">
         <section className="bg-warm-900 relative overflow-hidden">
           <div className="mx-auto max-w-page px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
-            <div className="max-w-2xl">
+            <div className="w-full">
               <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D16A52]">
                 For banks and credit unions
               </span>
@@ -58,7 +58,7 @@ export default async function ForInstitutionsPage() {
               >
                 Stop guessing what your competitors charge
               </h1>
-              <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
+              <p className="mt-5 max-w-[70ch] text-[16px] leading-relaxed text-[#D5CBBF]">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
                 it came from. Start with a free national or Fed district report, or run the workspace yourself.
