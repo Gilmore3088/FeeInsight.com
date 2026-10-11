@@ -152,6 +152,8 @@ interface LiveKnoxRow {
   amount: number | string | null;
   /** The raw row's name: Knox's raw-row dedupe is keyed on it. */
   raw_fee_name?: string | null;
+  /** Consumer and business publications of one line are separate fees, never copies. */
+  fee_audience?: string | null;
   /** Taken down by an earlier re-check; restored when today's rules read it again. */
   pulled?: boolean | null;
   /** `knox_lesson:<wrong>-><right>`: Knox's learning reader re-filed the rules' read (knox/lessons.ts). */
@@ -169,6 +171,45 @@ interface LiveKnoxRow {
 function lessonReadKey(row: LiveKnoxRow, amount: number): string | null {
   const match = /^knox_lesson:([a-z_]+)->([a-z_]+)$/.exec(row.lesson_flag ?? "");
   return match && match[2] === row.canonical_fee_key ? feeKey(match[1], amount) : null;
+}
+
+/**
+ * Which lines of one text the live fees claim. Two fees sharing a category and price are
+ * copies only when the text has no further line for them: the text's own reads under that
+ * category and price set how many may stay (#978: Pinnacle's $30 consumer and business
+ * fees, Paid Item beside Returned Item). Each audience claims separately.
+ */
+class LineClaims {
+  private readonly claimed = new Map<string, Set<string>>();
+
+  /** The read name this row takes, or null when every line it could be is already claimed. */
+  claimFor(slot: string, reads: ReadonlySet<string>, names: readonly string[]): string | null {
+    const taken = this.claimed.get(slot) ?? new Set<string>();
+    const own = names.find((name) => reads.has(name));
+    // A row named as one of the text's lines is that line; a copy of it when already claimed.
+    if (own) return taken.has(own) ? null : own;
+    // A row under an older or untidy name stands for any line not yet claimed.
+    return [...reads].find((name) => !taken.has(name)) ?? null;
+  }
+
+  take(slot: string, name: string): void {
+    this.claimed.set(slot, (this.claimed.get(slot) ?? new Set<string>()).add(name));
+  }
+}
+
+function claimSlot(institutionId: number, key: string, row: LiveKnoxRow): string {
+  return `${institutionId}:${key}:${row.fee_audience ?? "unknown"}`;
+}
+
+function rowNames(row: LiveKnoxRow): string[] {
+  return [...new Set([tidyFeeName(row.raw_fee_name ?? row.fee_name), row.fee_name, row.raw_fee_name ?? ""]
+    .filter(Boolean)
+    .map((name) => name.toLowerCase()))];
+}
+
+/** Every name the text reads for this fee's category and price, its lesson re-file included. */
+function linesFor(reads: Map<string, Set<string>>, key: string, lessonKey: string | null): Set<string> {
+  return new Set([...(reads.get(key) ?? []), ...(lessonKey ? reads.get(lessonKey) ?? [] : [])]);
 }
 
 interface DocumentText {
@@ -263,7 +304,7 @@ export async function rollBackUnreproducedFees(
         WITH live AS (
           SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id,
                  substring(fr.conditions from 'text_hash=([^;]+);') AS text_hash,
-                 fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name,
+                 fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name, fp.fee_audience,
                  fp.rolled_back_at IS NOT NULL AS pulled,
                  (SELECT flag FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) flag
                    WHERE flag LIKE 'knox_lesson:%' LIMIT 1) AS lesson_flag
@@ -423,10 +464,10 @@ export async function rollBackUnreproducedFees(
     const newestFirst = (rows: LiveKnoxRow[]) => [...rows].sort((a, b) => Number(b.fee_published_id) - Number(a.fee_published_id));
     let rolledBack = 0;
     let disputed = 0;
-    // One document states a fee once: when a re-extraction publishes the same category and
-    // price under a better name ("Negative $25 or less" for "Negative or less"), the newest
-    // row stays and older copies are rolled back.
-    const keptKeys = new Set<string>();
+    // One document states each line once: when a re-extraction publishes the same line under
+    // a better name ("Negative $25 or less" for "Negative or less"), the newest row stays and
+    // older copies are rolled back. Distinct lines at the same category and price all stay.
+    const claims = new LineClaims();
     for (const row of newestFirst(liveRows)) {
       const reads = readsFrom(textFor(row));
       result.liveFeesChecked += 1;
@@ -434,10 +475,14 @@ export async function rollBackUnreproducedFees(
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
       const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
       const reproduced = key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
-      if (reproduced && !keptKeys.has(key)) {
-        keptKeys.add(key);
-        passingIds.push(fee.feePublishedId);
-        continue;
+      if (reproduced) {
+        const slot = claimSlot(institutionId, key, row);
+        const line = claims.claimFor(slot, linesFor(reads, key, lessonKey), rowNames(row));
+        if (line) {
+          claims.take(slot, line);
+          passingIds.push(fee.feePublishedId);
+          continue;
+        }
       }
       // A fee comes down only when today's rules read the same text it was read from and get
       // a different answer. When that text is gone, the document's newer text is the source
@@ -471,7 +516,11 @@ export async function rollBackUnreproducedFees(
       // (67860 "Monthly Service Fee with e-Statement" came back as estatement_fee on 9 Oct, run 3446).
       if (isRetiredCategory(row.canonical_fee_key)) continue;
       const key = feeKey(row.canonical_fee_key, fee.amount);
-      if (keptKeys.has(key) || restoredKeys.has(`${institutionId}:${key}`)) continue;
+      const slot = claimSlot(institutionId, key, row);
+      // A takedown comes back only into a line no live or restored fee already holds.
+      const line = claims.claimFor(slot, linesFor(readsFrom(textFor(row)), key, null), rowNames(row))
+        ?? (readsFrom(textFor(row)).has(key) ? null : rowNames(row)[0]);
+      if (!line || restoredKeys.has(`${slot}:${line}`)) continue;
       // An earlier re-check judged this fee against a text other than its own. It comes back
       // only when the document's newest text clears the restore bar for it (category guard,
       // schedule check, Darwin's category model; coordinator, 7 Oct: 83 came back unchecked,
@@ -505,8 +554,8 @@ export async function rollBackUnreproducedFees(
           fee.restoreReason = "restore_bar";
         }
       }
-      keptKeys.add(key);
-      restoredKeys.add(`${institutionId}:${key}`);
+      claims.take(slot, line);
+      restoredKeys.add(`${slot}:${line}`);
       result.restores.push(fee);
     }
     // Fees today's rules read from the latest text that are not live (Texar's $20 and $35
@@ -514,7 +563,9 @@ export async function rollBackUnreproducedFees(
     const live = new Set(
       liveRows.filter((row) => row.amount != null).map((row) => feeKey(row.canonical_fee_key, Number(row.amount))),
     );
-    const missing = [...readsFrom(latest).keys()].filter((key) => !live.has(key) && !keptKeys.has(key)).length;
+    const restoredHere = new Set(result.restores.filter((fee) => fee.sourceDocumentId === documentId && fee.amount != null)
+      .map((fee) => feeKey(fee.canonicalFeeKey, fee.amount as number)));
+    const missing = [...readsFrom(latest).keys()].filter((key) => !live.has(key) && !restoredHere.has(key)).length;
     checked.push({ institutionId, sourceDocumentId: documentId, checked: liveRows.length, rolledBack, disputed, missing });
   }
 
