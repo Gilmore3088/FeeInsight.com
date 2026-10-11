@@ -8,6 +8,7 @@ import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import { normalizeLegacyAnalyzeConfidence } from "@/lib/hamilton/evidence-contract";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
 
@@ -143,7 +144,10 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
       LIMIT 1
     `;
     if (!rows[0]) return null;
-    const responseJson = JSON.parse(rows[0].response_json) as AnalyzeResponse & { hamiltonIdentity?: unknown };
+    // Display-only: older "high" ratings predate record-bound evidence; storage is never rewritten.
+    const responseJson = normalizeLegacyAnalyzeConfidence(
+      JSON.parse(rows[0].response_json) as AnalyzeResponse,
+    ) as AnalyzeResponse & { hamiltonIdentity?: unknown };
     // Older server-written answers stored the same version-1 snapshot under this alias.
     const snapshot = readHamiltonIdentitySnapshot(responseJson.identityContext ?? responseJson.hamiltonIdentity);
     if (snapshot) responseJson.identityContext = snapshot;
