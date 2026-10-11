@@ -43,7 +43,17 @@ export async function saveAnalysis(params: {
     params.title?.trim() ||
     params.responseJson.title ||
     params.prompt.slice(0, 60).trim() + (params.prompt.length > 60 ? "…" : "");
-  const institutionId = normalizeCanonicalInstitutionId(params.institutionId) ?? "";
+  // Server actions receive caller-controlled values even when TypeScript declares a string.
+  // A malformed explicit subject must not become an unscoped saved artifact.
+  if (typeof params.institutionId !== "string") {
+    return { error: "Select a valid research institution." };
+  }
+  const requestedId = params.institutionId.trim();
+  const canonicalId = requestedId ? normalizeCanonicalInstitutionId(requestedId) : null;
+  if (requestedId && !canonicalId) {
+    return { error: "Select a valid research institution." };
+  }
+  const institutionId = canonicalId ?? "";
 
   try {
     const institution = institutionId ? await getInstitutionById(Number(institutionId)) : null;
@@ -89,8 +99,8 @@ export async function saveAnalysis(params: {
     if (!id) return { error: "Failed to save analysis" };
     return { id };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Database error";
-    return { error: message };
+    // Do not return raw SQL/driver messages to an authenticated browser action.
+    return { error: "Could not save this analysis. Please try again." };
   }
 }
 
@@ -99,6 +109,8 @@ export async function saveAnalysis(params: {
  * Used for left rail and in-page refresh after saving.
  */
 export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
+  // Callable server actions must not permit an unbounded history query.
+  const boundedLimit = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 50) : 10;
   const user = await getCurrentUser();
   if (!user) return [];
 
@@ -109,9 +121,9 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
       FROM hamilton_saved_analyses
       WHERE user_id = ${user.id} AND status = 'active'
       ORDER BY updated_at DESC
-      LIMIT ${limit * 3}
+      LIMIT ${boundedLimit * 3}
     `;
-    return recentQuestions(rows, limit);
+    return recentQuestions(rows, boundedLimit);
   } catch {
     return [];
   }
