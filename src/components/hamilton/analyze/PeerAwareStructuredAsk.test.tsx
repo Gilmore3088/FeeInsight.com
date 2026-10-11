@@ -82,7 +82,7 @@ describe("peer-first Ask rendering", () => {
   it("offers no unsupported export/report action for the new list type", async () => {
     render(<PeerAwareStructuredAsk {...props} />); await screen.findByRole("table");
     expect(screen.queryByRole("button", { name: /Download|report/i })).toBeNull();
-    expect(screen.getByText(/Comparing this list's fees and exporting it/)).toBeTruthy();
+    expect(screen.getByText(/Saved historical comparison snapshots and export are not available yet/)).toBeTruthy();
   });
   it("provides a keyboard-focusable horizontal table region", () => {
     render(<PeerListView response={fixture} />);
@@ -186,13 +186,22 @@ describe("exact-list follow-ups within one Ask conversation", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it("shows a deterministic unsupported-fee answer, never the legacy paid fallback", async () => {
-    const blocked = { ...fixture, shortAnswer: "Fee comparisons of 'their' fees are not yet supported.", peerList: { ...fixture.peerList, status: "needs_criteria" as const, rows: [], totalMatches: null } };
-    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce(ok(blocked));
+  it("renders an exact-list NSF comparison without invoking the legacy paid fallback", async () => {
+    const compared: PeerListResponse = { ...fixture, shortAnswer: "Published NSF fees for 3 selected peers.", peerList: {
+      ...fixture.peerList, feeComparison: { category: "nsf", comparedPeerIds: [202, 203, 204], account: null, includesAccount: false,
+        note: "Every charge remains distinct.", fees: [
+          { institutionId: 202, id: 51, name: "Returned item", amount: 0, frequency: "per_item", publishedAt: "2026-10-01T00:00:00Z", sourceDocumentId: 5, documentUrl: "https://example.com/fee-schedule", sourceUrl: null },
+          { institutionId: 202, id: 52, name: "Second separate fee", amount: 30, frequency: "per_item", publishedAt: "2026-10-01T00:00:00Z", sourceDocumentId: 5, documentUrl: null, sourceUrl: null },
+        ] },
+    } };
+    fetcher.mockReset().mockResolvedValueOnce(ok(fixture)).mockResolvedValueOnce(ok(compared));
     const view = render(<PeerAwareStructuredAsk {...props} />);
     await screen.findByRole("table");
     view.rerender(<PeerAwareStructuredAsk {...props} question="Compare their NSF fees" nonce={2} />);
-    await screen.findByText("Fee comparisons of 'their' fees are not yet supported.");
+    await screen.findByText("Published NSF fees for 3 selected peers.");
+    expect(within(screen.getByRole("table", { name: "Published NSF charges" })).getByText("$0")).toBeTruthy();
+    expect(screen.getByText("Second separate fee")).toBeTruthy();
+    expect(screen.getByText("No published consumer NSF fee on file")).toBeTruthy();
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fallback).not.toHaveBeenCalled();
     expect(screen.queryByText("Existing fee-answer path")).toBeNull();
