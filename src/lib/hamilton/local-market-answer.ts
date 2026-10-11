@@ -6,6 +6,7 @@
  * Deterministic: Postgres reads only, no provider calls.
  */
 import { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
 import { getMarketStudyData } from "@/lib/data-store/market-study";
@@ -147,13 +148,16 @@ export function rankCompetitors(list: MarketCompetitor[]): MarketCompetitor[] {
 
 async function ownFees(institutionId: number): Promise<Record<string, number>> {
   const rows = await sql`
-    SELECT fee_category, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount) AS amount
-      FROM published_fee_catalog
-     WHERE institution_id = ${institutionId}
-       AND review_status = 'approved'
-       AND amount IS NOT NULL
-       AND fee_category = ANY(${[...MARKET_FEES]})
-     GROUP BY fee_category`;
+    SELECT c.fee_category,
+           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
+                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
+      FROM published_fee_catalog c
+     WHERE c.institution_id = ${institutionId}
+       AND c.review_status = 'approved'
+       AND c.amount IS NOT NULL AND c.amount >= 0
+       AND ${sql.unsafe(statsRowFilter("c"))}
+       AND c.fee_category = ANY(${[...MARKET_FEES]})
+     GROUP BY c.fee_category`;
   const out: Record<string, number> = {};
   for (const r of rows) {
     const amount = num(r.amount);

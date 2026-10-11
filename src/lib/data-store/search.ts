@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
   getFeePublicationStatus,
@@ -268,14 +269,15 @@ export async function searchInstitutions(params: {
     paramIdx++;
     focusJoin = `
      LEFT JOIN LATERAL (
-       SELECT ef.amount
+       SELECT CASE WHEN ${paramIdx} = 'overdraft' THEN MAX(ef.amount)
+                   ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
        FROM published_fee_catalog ef
        WHERE ef.institution_id = ct.id
-         AND ef.fee_category = $${paramIdx}
+         AND ef.fee_category = ${paramIdx}
          AND ef.review_status = 'approved'
          AND ef.amount IS NOT NULL
-       ORDER BY ef.amount ASC
-       LIMIT 1
+         AND ef.amount >= 0
+         AND ${statsRowFilter("ef")}
      ) focus ON TRUE`;
     focusSelect = ",\n            focus.amount as focus_fee_amount";
     queryParams.push(focusCategory);

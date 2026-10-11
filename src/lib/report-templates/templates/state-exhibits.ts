@@ -9,7 +9,7 @@ import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import type { StateEconomicContext, IndicatorPoint } from "@/lib/data-store/economic-context";
 import { STATE_CHART_FEES, type StateVisualsData } from "@/lib/data-store/state-visuals";
 import type { StateReportData } from "@/lib/research-report/state-report-data";
-import { emptyNotice, escapeHtml, reportSection } from "../index";
+import { emptyNotice, escapeHtml, reportSection } from "../primitives";
 import {
   annotatedLines,
   charterDumbbells,

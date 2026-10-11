@@ -19,7 +19,7 @@ import {
   hamiltonNarrativeBlock,
   footnote,
   statCardRow,
-} from "../index";
+} from "../primitives";
 import type { MonthlyPulsePayload, PulseChange } from "../../report-assemblers/monthly-pulse";
 import { PULSE_WINDOW_DAYS } from "../../report-assemblers/monthly-pulse";
 import type { GenerateSectionOutput } from "../../hamilton/types";

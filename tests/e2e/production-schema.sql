@@ -3161,6 +3161,15 @@ CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
   ON public.source_documents (companion_source_id, id DESC)
   WHERE companion_source_id IS NOT NULL;
 
+
+-- 2026-10-10 audience repair: roles are metadata-only in the throwaway CI database.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
+END $$;
+\ir ../../supabase/migrations/20270110000040_fee_audience_integrity.sql
+
 -- Fixture alignment with canonical migrations 20270110000004 and 20270110000030.
 -- Test-only schema: mirror current-copy identity and like-for-like fee-change pairing.
 -- No production migration or historical data backfill is executed by this fixture.

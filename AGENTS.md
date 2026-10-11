@@ -2,6 +2,24 @@
 
 This repository uses one agentic experience for data trust, validation, publishing, and analysis. Keep agent work tied to the TypeScript/Vercel runtime and the semantic Postgres tables. Do not reintroduce retired crawler workers, Modal paths, Supabase Edge Function product endpoints, or ad hoc scripts as runtime surfaces.
 
+## Repository work intake and retirement
+
+Before changing code, read `docs/project/BACKLOG.md` and GitHub control issue #984.
+Use one canonical issue, one implementing owner and one implementation PR. Search existing
+open/closed PRs, branch history and current main before creating another implementation.
+Protect current work and unknown-age branches. Outreach is parked. Reuse existing work or
+record an explicit supersession; do not leave the same task running independently in two agents.
+James has standing approval for clean, merge-ready GitHub PRs to merge without another per-PR
+approval request. "Clean, merge-ready" means the exact current head is reviewed, required CI/checks
+are green, there is no merge conflict or unresolved blocking review, overlapping active owners are
+reconciled, and the PR does not cross a separately controlled boundary. Database migrations or
+production-data mutations, permission/security-setting changes, paid-provider activation, outreach
+sending, force-pushes, remote branch deletion, and other explicitly gated production actions still
+require their own authorization/evidence. A green branch that is stacked on an unresolved migration
+or release dependency is not merge-ready. Record the merge receipt and continue; do not ask James
+again merely because a routine code PR reached a clean merge-ready state. The GitHub maintenance workflows are repository
+housekeeping only and do not touch the application run ledger or production services.
+
 ## Current Runtime
 
 - Agent runs start in `agent_runs`, advance through `agent_run_steps`, and write `agent_run_events`.
