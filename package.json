@@ -30,6 +30,7 @@
     "htmlparser2": "8.0.2",
     "lucide-react": "^0.564.0",
     "next": "16.1.6",
+    "pdfjs-dist": "^6.4.299",
     "postgres": "^3.4.8",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
