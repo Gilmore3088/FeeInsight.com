@@ -84,3 +84,8 @@ This preview aligns the Bank Fee Index, banking-team and coverage sections to on
 
 Base implementation head before this receipt: `cfa9008a4f8ba2b19987b7646ccd4eb1ef9a81e0`.
 This preview uses one shared mobile content rail for the Bank Fee Index, banking-team, and coverage sections and includes the action-oriented rotating showcase labels.
+
+
+## Preview trigger — homepage mobile alignment — 2026-10-11
+
+This preview standardizes the homepage hero, Bank Fee Index, banking-team section, and coverage section on one 24px mobile content rail.
