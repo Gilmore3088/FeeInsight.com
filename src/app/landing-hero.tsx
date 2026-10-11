@@ -30,13 +30,13 @@ export function LandingHero({ showcase }: LandingHeroProps) {
             <Link href="#sample-work" className={CTA_PRIMARY}>
               See a sample fee review
             </Link>
-            <Link href="#hamilton-walkthrough" className={CTA_SECONDARY}>
-              Explore Hamilton
+            <Link href="/subscribe" className={CTA_SECONDARY}>
+              See Fee Insight Pro
             </Link>
           </div>
         </div>
 
-        <div className="min-w-0" id="hamilton-walkthrough">
+        <div className="min-w-0" id="hamilton-examples">
           {showcase}
         </div>
         </div>

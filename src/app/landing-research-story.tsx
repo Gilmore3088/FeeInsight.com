@@ -1,4 +1,4 @@
-import { Search, Globe, FileText, Table2, Landmark, Presentation, ArrowRight, Check } from "lucide-react";
+import { Search, Globe, FileText, Table2, Landmark, Presentation, Check } from "lucide-react";
 import { GLASS, H2 } from "@/components/public/site-look";
 
 const STEPS = [
@@ -32,7 +32,6 @@ export function LandingResearchStory() {
           <ul className="my-6 space-y-4 text-sm">
             {["Named peers and fee comparisons", "Relevant financial and market context", "Source links and reporting dates", "Findings ready to reuse in a report"].map(text=><li key={text} className="flex items-start gap-3"><Check size={18} className="shrink-0 text-[#A93D25]" aria-hidden />{text}</li>)}
           </ul>
-          <a href="#hamilton-walkthrough" className="mt-auto inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#A93D25]">Explore the walkthrough <ArrowRight size={16} aria-hidden /></a>
         </div>
       </div>
     </div>
