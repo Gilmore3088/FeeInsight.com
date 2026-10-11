@@ -34,20 +34,20 @@ export interface StudyPlacementRow {
 /** Fewer institutions than this in a comparison group and the placement isn't shown. */
 export const MIN_STUDY_PEERS = 5;
 
-const PRICE_DRIVERS: Record<string, { group: string; driver: string; format: (v: number) => string }> = {
+const PRICE_DRIVERS: Record<string, { group: string; driver: (institutionName?: string) => string; format: (v: number) => string }> = {
   local_income: {
     group: "institutions whose markets have similar household income",
-    driver: "Median household income across your markets",
+    driver: (name) => `Median household income across ${name ? `${name}'s` : "your"} markets`,
     format: (v) => `$${Math.round(v).toLocaleString("en-US")}`,
   },
   market_concentration: {
     group: "institutions in similarly concentrated deposit markets",
-    driver: "Deposit concentration (HHI) across your markets",
+    driver: (name) => `Deposit concentration (HHI) across ${name ? `${name}'s` : "your"} markets`,
     format: (v) => Math.round(v).toLocaleString("en-US"),
   },
   fee_income_share: {
     group: "institutions with a similar ratio of fee income to deposits",
-    driver: "Your fee income as a share of deposits",
+    driver: (name) => `${name ? `${name}'s` : "Your"} fee income as a share of deposits`,
     format: (v) => `${(v * 100).toFixed(2)}%`,
   },
 };
@@ -110,7 +110,7 @@ function spread(percentile: number | null): number {
   return percentile === null ? 0 : Math.min(1, Math.abs(percentile - 50) / 50);
 }
 
-function dependenceObservation(row: StudyPlacementRow): Observation | null {
+function dependenceObservation(row: StudyPlacementRow, institutionName?: string): Observation | null {
   if (row.value === null || row.peerMedian === null || row.peerN < MIN_STUDY_PEERS) return null;
   const bank = row.detail.charter !== "credit_union";
   const measure = bank ? "Deposit service charges were" : "Fee income was";
@@ -118,7 +118,7 @@ function dependenceObservation(row: StudyPlacementRow): Observation | null {
   const source = studySource(row);
   const facts = [
     {
-      text: `${capitalize(row.peerGroup)}: median ${row.peerMedian.toFixed(2)}% across ${row.peerN.toLocaleString("en-US")} institutions${row.percentile !== null ? `; you are at the ${ordinal(Math.round(row.percentile))} percentile` : ""}.`,
+      text: `${capitalize(row.peerGroup)}: median ${row.peerMedian.toFixed(2)}% across ${row.peerN.toLocaleString("en-US")} institutions${row.percentile !== null ? `; ${institutionName ? `${institutionName} is` : "you are"} at the ${ordinal(Math.round(row.percentile))} percentile` : ""}.`,
       source,
     },
   ];
@@ -131,7 +131,7 @@ function dependenceObservation(row: StudyPlacementRow): Observation | null {
     id: "study:fee_dependence",
     kind: "study",
     feeCategory: null,
-    headline: `${measure} ${row.value.toFixed(2)}% of your revenue in ${year}, ${compare(row.value, row.peerMedian, 0.05)} the ${row.peerMedian.toFixed(2)}% median for ${row.peerGroup}.`,
+    headline: `${measure} ${row.value.toFixed(2)}% of ${institutionName ? `${institutionName}'s` : "your"} revenue in ${year}, ${compare(row.value, row.peerMedian, 0.05)} the ${row.peerMedian.toFixed(2)}% median for ${row.peerGroup}.`,
     facts,
     actions: ["ask"],
     salience: 0.3 + 0.5 * spread(row.percentile),
@@ -158,7 +158,7 @@ function fifthPrices(detail: Record<string, unknown>): FifthPrice[] {
   });
 }
 
-function priceStudyObservation(row: StudyPlacementRow, usedFees: Set<string>): Observation | null {
+function priceStudyObservation(row: StudyPlacementRow, usedFees: Set<string>, institutionName?: string): Observation | null {
   const driver = PRICE_DRIVERS[row.studyKey];
   if (!driver || row.value === null) return null;
   // The study fee furthest from the middle of its comparison group, overdraft first on a tie; a fee
@@ -172,7 +172,7 @@ function priceStudyObservation(row: StudyPlacementRow, usedFees: Set<string>): O
   const source = studySource(row);
   const facts = [
     {
-      text: `${driver.driver}: ${driver.format(row.value)}${row.percentile !== null ? `, ${placeAmong(row.percentile)} of the ${row.peerN.toLocaleString("en-US")} institutions in the study` : ""}.`,
+      text: `${driver.driver(institutionName)}: ${driver.format(row.value)}${row.percentile !== null ? `, ${placeAmong(row.percentile)} of the ${row.peerN.toLocaleString("en-US")} institutions in the study` : ""}.`,
       source,
     },
   ];
@@ -180,7 +180,7 @@ function priceStudyObservation(row: StudyPlacementRow, usedFees: Set<string>): O
     id: `study:${row.studyKey}`,
     kind: "study",
     feeCategory: pick.fee,
-    headline: `Your ${name} of ${money(pick.price)} is ${compare(pick.price, pick.median, 0.005)} the ${money(pick.median)} median of ${pick.n.toLocaleString("en-US")} ${driver.group}.`,
+    headline: `${institutionName ? `${institutionName}'s` : "Your"} ${name} of ${money(pick.price)} is ${compare(pick.price, pick.median, 0.005)} the ${money(pick.median)} median of ${pick.n.toLocaleString("en-US")} ${driver.group}.`,
     facts,
     actions: ["research_fee", "ask"],
     salience: 0.25 + 0.5 * spread(pick.percentile),
@@ -194,7 +194,7 @@ const INFERRED_FEES: Record<string, string> = {
   inferred_nsf_items: "NSF",
 };
 
-function inferredObservation(row: StudyPlacementRow): Observation | null {
+function inferredObservation(row: StudyPlacementRow, institutionName?: string): Observation | null {
   const fees = INFERRED_FEES[row.metric];
   const low = num(row.detail.items_low);
   const high = num(row.detail.items_high);
@@ -207,7 +207,7 @@ function inferredObservation(row: StudyPlacementRow): Observation | null {
   const range = low === high ? `about ${count(low)}` : `about ${count(low)} to ${count(high)}`;
   const fee = feeLow === feeHigh ? money(feeLow) : `${money(feeLow)} to ${money(feeHigh)}`;
   const facts = [
-    { text: `Inferred, not reported: ${dollars(income)} of reported ${fees} income (net of waivers and refunds) divided by your published ${fee} fee.`, source },
+    { text: `Inferred, not reported: ${dollars(income)} of reported ${fees} income (net of waivers and refunds) divided by ${institutionName ? `${institutionName}'s` : "your"} published ${fee} fee.`, source },
   ];
   if (row.peerMedian !== null && row.peerN >= MIN_STUDY_PEERS) {
     facts.push({ text: `${capitalize(row.peerGroup)}: median about ${count(row.peerMedian)} items across ${row.peerN.toLocaleString("en-US")} institutions.`, source });
@@ -216,7 +216,7 @@ function inferredObservation(row: StudyPlacementRow): Observation | null {
     id: "study:inferred_items_paid",
     kind: "study",
     feeCategory: null,
-    headline: `Your ${fees} income implies ${range} ${fees} items paid in the four quarters to ${period}.`,
+    headline: `${institutionName ? `${institutionName}'s` : "Your"} ${fees} income implies ${range} ${fees} items paid in the four quarters to ${period}.`,
     facts,
     actions: ["ask"],
     salience: 0.25 + 0.5 * spread(row.percentile),
@@ -224,7 +224,7 @@ function inferredObservation(row: StudyPlacementRow): Observation | null {
 }
 
 /** One observation per study the bank is placed in, best supported first within each study. */
-export function studyObservations(rows: StudyPlacementRow[]): Observation[] {
+export function studyObservations(rows: StudyPlacementRow[], institutionName?: string): Observation[] {
   const out: Observation[] = [];
   const byStudy = new Map<string, StudyPlacementRow[]>();
   for (const r of rows) byStudy.set(r.studyKey, [...(byStudy.get(r.studyKey) ?? []), r]);
@@ -234,14 +234,14 @@ export function studyObservations(rows: StudyPlacementRow[]): Observation[] {
   for (const key of keys) {
     const list = byStudy.get(key)!;
     if (key === "fee_dependence") {
-      const o = dependenceObservation(list[0]);
+      const o = dependenceObservation(list[0], institutionName);
       if (o) out.push(o);
     } else if (key === "inferred_items_paid") {
       const ordered = [...list].sort((a, b) => INFERRED_ORDER.indexOf(a.metric) - INFERRED_ORDER.indexOf(b.metric));
-      const o = ordered.map(inferredObservation).find(Boolean);
+      const o = ordered.map((row) => inferredObservation(row, institutionName)).find(Boolean);
       if (o) out.push(o);
     } else {
-      const o = priceStudyObservation(list[0], usedFees);
+      const o = priceStudyObservation(list[0], usedFees, institutionName);
       if (o) {
         out.push(o);
         if (o.feeCategory) usedFees.add(o.feeCategory);

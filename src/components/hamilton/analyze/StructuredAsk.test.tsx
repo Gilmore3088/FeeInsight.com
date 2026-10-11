@@ -198,7 +198,7 @@ describe("StructuredAsk", () => {
     const calls = mockFetch(market as never, {});
     const onNoStoryline = vi.fn();
     render(<StructuredAsk question="who are my local competitors and locations" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
-    await screen.findByText("1 institution competes with you in the Testville, FL area");
+    await screen.findByText("1 institution competes with Test Credit Union in the Testville, FL area");
     expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask/market"]);
     expect(onNoStoryline).not.toHaveBeenCalled();
   });

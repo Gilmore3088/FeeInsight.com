@@ -49,17 +49,17 @@ export function pricePosition(price: number, peers: number[]): number | null {
   return Math.round(((below + same / 2) / peers.length) * 100);
 }
 
-export function annualItemsQuestion(feeCategory: string): ClarifyingQuestion {
+export function annualItemsQuestion(feeCategory: string, institutionName?: string): ClarifyingQuestion {
   return {
-    prompt: `About how many ${proseFeeName(feeCategory)} fees did you charge in the last 12 months, before waivers?`,
+    prompt: `About how many ${proseFeeName(feeCategory)} fees did ${institutionName ?? "you"} charge in the last 12 months, before waivers?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.annual_items`,
   };
 }
 
-export function waiverRateQuestion(feeCategory: string): ClarifyingQuestion {
+export function waiverRateQuestion(feeCategory: string, institutionName?: string): ClarifyingQuestion {
   return {
-    prompt: `About what share of ${proseFeeName(feeCategory)} fees did you waive or refund in the last 12 months?`,
+    prompt: `About what share of ${proseFeeName(feeCategory)} fees did ${institutionName ?? "you"} waive or refund in the last 12 months?`,
     inputKind: "percent",
     fieldKey: `fee.${feeCategory}.waiver_rate`,
   };
@@ -153,7 +153,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
       assumptions,
       factIds: (facts.refs ?? []).map((r) => r.factId),
       provenance: scenarioProvenance(input, "institution", assumptions, facts.refs ?? []),
-      missingInput: facts.waiverRate === undefined ? waiverRateQuestion(feeCategory) : null,
+      missingInput: facts.waiverRate === undefined ? waiverRateQuestion(feeCategory, input.subjectName) : null,
     };
   }
 
@@ -176,7 +176,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
       assumptions,
       factIds: [],
       provenance: scenarioProvenance(input, "working_estimate", assumptions, []),
-      missingInput: annualItemsQuestion(feeCategory),
+      missingInput: annualItemsQuestion(feeCategory, input.subjectName),
     };
   }
 
@@ -193,6 +193,6 @@ export function buildScenario(input: ScenarioInput): Scenario {
     assumptions,
     factIds: [],
     provenance: scenarioProvenance(input, "market", assumptions, []),
-    missingInput: annualItemsQuestion(feeCategory),
+    missingInput: annualItemsQuestion(feeCategory, input.subjectName),
   };
 }

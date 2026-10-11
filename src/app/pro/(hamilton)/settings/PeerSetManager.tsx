@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { InstitutionPicker, type InstitutionSearchResult } from "@/components/hamilton/InstitutionPicker";
 import { STATE_NAMES } from "@/lib/us-states";
+import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import {
   createPeerSet,
   editPeerSet,
@@ -75,6 +76,7 @@ export function PeerSetManager({
   workspaceName = null,
   canEditWorkspaceSets = true,
   currentUserId = "",
+  researchInstitutionId,
   minPeers,
   widerGroupLabel = "the national index",
 }: {
@@ -85,6 +87,8 @@ export function PeerSetManager({
   workspaceName?: string | null;
   canEditWorkspaceSets?: boolean;
   currentUserId?: string;
+  /** The displayed research subject; null explicitly creates personal groups. */
+  researchInstitutionId?: number | null;
   /** The engine's minimum peers for a position (MIN_PEERS_FOR_POSITION), passed from the server. */
   minPeers: number;
   /** The group charts widen to when a set is too thin for a fee. */
@@ -299,6 +303,7 @@ export function PeerSetManager({
           initial={editing === "new" ? null : editing}
           names={names}
           isPending={isPending}
+          researchInstitutionId={researchInstitutionId}
           onCancel={() => setEditing(null)}
           onSubmit={(formData) => handleSubmit(formData, editing)}
         />
@@ -311,12 +316,14 @@ function PeerSetForm({
   initial,
   names,
   isPending,
+  researchInstitutionId,
   onCancel,
   onSubmit,
 }: {
   initial: PeerSetRow | null;
   names: Record<number, string>;
   isPending: boolean;
+  researchInstitutionId?: number | null;
   onCancel: () => void;
   onSubmit: (formData: FormData) => void;
 }) {
@@ -346,20 +353,30 @@ function PeerSetForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(new FormData(e.currentTarget));
+        const form = new FormData(e.currentTarget);
+        if (!String(form.get("name") ?? "").trim()) {
+          form.set("name", defaultPeerSetName(mode === "institutions" ? { institution_ids: chosen.map(peer => peer.id) } : {
+            charter_type: String(form.get("charter_type") ?? ""),
+            states,
+            asset_tiers: form.getAll("asset_tiers").map(String),
+            fed_districts: form.getAll("fed_districts").map(Number),
+          }));
+        }
+        onSubmit(form);
       }}
       className="flex flex-col gap-4 rounded-md border border-warm-200 bg-white p-4"
     >
+      {researchInstitutionId !== undefined ? <input type="hidden" name="research_institution_id" value={researchInstitutionId ?? ""} /> : null}
       <label className="flex flex-col gap-1 text-sm text-warm-800">
-        <span className="font-medium">Name</span>
+        <span className="font-medium">Name (optional)</span>
         <input
           name="name"
-          required
           maxLength={100}
           defaultValue={initial?.name ?? ""}
           className={inputClass}
-          placeholder="For example, Mid-Atlantic community banks"
+          placeholder="Leave blank to name this group from your selection"
         />
+        <span className="text-xs text-warm-600">We will use your selected institutions or filters as the name. You can rename it later.</span>
       </label>
 
       <fieldset>
@@ -510,8 +527,10 @@ function PeerSetForm({
             </div>
           </fieldset>
 
-          <fieldset>
-            <legend className={fieldLabel}>Federal Reserve districts</legend>
+          <details open={districts.size > 0}>
+            <summary className="cursor-pointer text-sm font-medium text-warm-800">Advanced filters: Federal Reserve districts (optional)</summary>
+            <fieldset className="mt-2">
+            <legend className="sr-only">Federal Reserve districts (optional)</legend>
             <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-6">
               {Array.from({ length: 12 }, (_, i) => i + 1).map((d) => (
                 <label key={d} className="flex cursor-pointer items-center gap-1 text-sm text-warm-800 [font-variant-numeric:tabular-nums]">
@@ -526,8 +545,10 @@ function PeerSetForm({
                 </label>
               ))}
             </div>
-            <p className="mt-1 text-xs text-warm-600">Leave states, asset size or districts blank to include all.</p>
-          </fieldset>
+            <p className="mt-1 text-xs text-warm-600">Leave districts blank to include every district.</p>
+            </fieldset>
+          </details>
+          <p className="text-xs text-warm-600">Leave states or asset size blank to include all.</p>
         </>
       )}
 

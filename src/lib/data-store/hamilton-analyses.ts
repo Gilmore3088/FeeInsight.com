@@ -6,6 +6,7 @@
 
 import { sql } from "./connection";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { normalizeLegacyAnalyzeConfidence } from "@/lib/hamilton/evidence-contract";
 
 export async function insertSavedAnalysis(input: {
   userId: number;
@@ -24,23 +25,24 @@ export async function insertSavedAnalysis(input: {
   return rows[0]?.id ?? null;
 }
 
-/** Replaces the saved response of one of the reader's own analyses; false when it is not theirs. */
-export async function updateSavedAnalysisResponse(userId: number, id: string, response: AnalyzeResponse): Promise<boolean> {
+/** Atomically updates only an active saved answer owned by this user for this research subject. */
+export async function updateSavedAnalysisResponse(userId: number, id: string, institutionId: string, response: AnalyzeResponse): Promise<boolean> {
   const rows = await sql<{ id: string }[]>`
     UPDATE hamilton_saved_analyses
        SET response_json = ${JSON.stringify(response)}, updated_at = NOW()
-     WHERE id::text = ${id} AND user_id = ${String(userId)} AND status = 'active'
+     WHERE id::text = ${id} AND user_id = ${String(userId)} AND institution_id::text = ${institutionId} AND status = 'active'
     RETURNING id::text
   `;
   return rows.length > 0;
 }
 
-export async function getSavedAnalysisResponse(userId: number, id: string): Promise<AnalyzeResponse | null> {
+export async function getSavedAnalysisResponse(userId: number, id: string, institutionId: string): Promise<AnalyzeResponse | null> {
   const rows = await sql<{ response_json: AnalyzeResponse | string }[]>`
     SELECT response_json FROM hamilton_saved_analyses
-     WHERE id::text = ${id} AND user_id = ${String(userId)} AND status = 'active'
+     WHERE id::text = ${id} AND user_id = ${String(userId)} AND institution_id::text = ${institutionId} AND status = 'active'
   `;
   const raw = rows[0]?.response_json;
   if (!raw) return null;
-  return typeof raw === "string" ? (JSON.parse(raw) as AnalyzeResponse) : raw;
+  const parsed = typeof raw === "string" ? (JSON.parse(raw) as AnalyzeResponse) : raw;
+  return normalizeLegacyAnalyzeConfidence(parsed);
 }

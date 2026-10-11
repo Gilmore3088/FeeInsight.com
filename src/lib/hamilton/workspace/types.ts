@@ -24,7 +24,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.17.5";
+export const WORKSPACE_ENGINE_VERSION = "1.17.6";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -223,6 +223,14 @@ export interface OwnFeeRow {
   /** The page the schedule was found on. */
   sourceUrl: string | null;
   publishedAt: string | null;
+  /** Optional for historic saved payloads; canonical reader populates these. */
+  frequency?: string | null;
+  conditions?: string | null;
+  feeAudience?: "consumer" | "business" | "both" | "unknown";
+  audienceEvidence?: string | null;
+  sourceContentHash?: string | null;
+  sourceCrawledAt?: string | null;
+  sourceLastCheckedAt?: string | null;
   /** The verification event (agent_run_events) that checked the row against its document; null when not recorded. */
   verifiedByEventId: string | null;
 }
@@ -332,6 +340,8 @@ export interface SegmentResearch {
 }
 
 export interface FeeResearch {
+  /** Canonical server-resolved subject name for prose; never identity or authority from a browser. */
+  subjectName?: string;
   institutionId: number;
   institutionName: string;
   feeCategory: string;
@@ -525,6 +535,7 @@ export interface InstitutionFeeFacts {
 }
 
 export interface ScenarioInput {
+  subjectName?: string;
   feeCategory: string;
   current: number;
   tested: number;
@@ -630,6 +641,16 @@ export type AskPageChange =
  * returns a clarifying question asking which objective to assume.
  */
 export interface AskResponse {
+  /** Frozen server reference context; it never grants access to institution or account records. */
+  identityContext?: import("../account-context").HamiltonIdentitySnapshot;
+  accountComparison?: {
+    institutionId: number;
+    institutionName: string;
+    feeCategory: string;
+    current: number | null;
+    ownRows: OwnFeeRow[];
+    provenance: Provenance;
+  };
   kind: AskResponseKind;
   shortAnswer: string;
   pageChange: AskPageChange;

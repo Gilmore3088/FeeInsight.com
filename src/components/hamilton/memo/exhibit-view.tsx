@@ -14,7 +14,7 @@ export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "clai
 
 export const EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string> = {
   market: "Market data only",
-  working_estimate: "Working estimate from your filings",
+  working_estimate: "Working estimate from institution filings",
   institution: "Your own figures",
 };
 

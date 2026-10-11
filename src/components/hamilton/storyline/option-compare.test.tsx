@@ -104,7 +104,7 @@ describe("options side by side", () => {
 
   it("letters the options, puts them on one scale and labels where each would sit", () => {
     const html = renderToStaticMarkup(<StorylineView story={pricedStory()} />);
-    expect(html).toContain("Where each option would put you");
+    expect(html).toContain("Where each option would position the research institution");
     expect(html).toContain("Peer median $29");
     expect(html).toContain("Higher than most peers");
     expect(html).toContain("In line with peers");
@@ -121,7 +121,7 @@ describe("options side by side", () => {
     const html = renderToStaticMarkup(
       <StorylineView story={sampleStoryline()} />,
     );
-    expect(html).not.toContain("Where each option would put you");
+    expect(html).not.toContain("Where each option would position");
     expect(html).toContain("Options and what each would mean");
   });
 });

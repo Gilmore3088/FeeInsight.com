@@ -22,7 +22,7 @@ import {
   hamiltonNarrativeBlock,
   footnote,
   pageBreak,
-} from "../index";
+} from "../primitives";
 import type { PeerCompetitiveData, GenerateSectionOutput } from "../../hamilton/types";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
 

@@ -13,6 +13,7 @@ vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
 
 import { memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
+import { buildFeeResearchEvidence } from "./evidence-contract";
 import { buildFeeAnswer } from "./workspace/answer";
 import { overdraftResearch } from "./workspace/test-fixtures";
 
@@ -38,6 +39,40 @@ const good = JSON.stringify({
 });
 
 describe("storyline memo", () => {
+  it("withholds ambiguous institution prose instead of rewriting it", async () => {
+    const identity = { version: 1 as const, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1,
+      accountInstitutionName: "Home CU", accountStatus: "identified" as const };
+    const c = client(good, good);
+    const result = await writeStorylineMemo(storyline, "Compare this fee", { client: c, identityContext: identity });
+    expect(result.status).toBe("withheld");
+    if (result.status === "withheld") expect(result.problems?.some((problem) => problem.includes("Ambiguous institution reference"))).toBe(true);
+    expect(c.calls).toHaveLength(2);
+  });
+
+  it("withholds account fee claims when only account identity was supplied", async () => {
+    const identity = { version: 1 as const, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1,
+      accountInstitutionName: "Home CU", accountStatus: "identified" as const };
+    const unsafe = JSON.stringify({ summary: "Home CU's fee is $32, at the 75th percentile of 16 peers.", board: "A pricing comparison is available.", market: "The group publishes overdraft fees.", questions: ["What is the objective?"] });
+    const result = await writeStorylineMemo(storyline, "Compare this fee", { client: client(unsafe, unsafe), identityContext: identity });
+    expect(result.status).toBe("withheld");
+    if (result.status === "withheld") expect(result.problems?.some((problem) => problem.includes("without account-institution evidence"))).toBe(true);
+  });
+  it("carries frozen subject, account and peers into the writer and names the researched fee in returned prose", async () => {
+    const identity = { version: 1 as const, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1,
+      accountInstitutionName: "Home CU", accountStatus: "identified" as const, peerSetId: 51, peerBaselineLabel: "Original peers", peerBaselineSource: "saved_peer_set" };
+    const named = JSON.stringify({ summary: "Research Bank’s $32 overdraft fee is at the 75th percentile of 16 peers (median $29.50). The board decision concerns that position.", board: "Service charges came to $209 thousand over the last four quarters.", market: "The comparison group publishes overdraft fees.", questions: ["How many overdraft items did Research Bank charge last year?", "Which competitors serve the same market?"] });
+    const c = client(named);
+    const result = await writeStorylineMemo(storyline, "Compare the selected fee", { client: c, identityContext: identity });
+    expect(result.status).toBe("written");
+    if (result.status === "written") {
+      expect(result.memo.identityContext).toEqual(identity);
+      expect(result.memo.summary).toContain("Research Bank’s $32 overdraft fee");
+      expect(result.memo.summary).not.toContain("Your");
+    }
+    expect(c.calls[0]).toContain('"researchInstitutionName":"Research Bank"');
+    expect(c.calls[0]).toContain('"accountInstitutionName":"Home CU"');
+    expect(c.calls[0]).toContain('"peerBaselineLabel":"Original peers"');
+  });
   it("writes a memo whose figures all trace to the storyline", async () => {
     const c = client(good);
     const result = await writeStorylineMemo(storyline, "should we change our overdraft fee?", { client: c, now: new Date("2026-10-06T12:00:00Z") });
@@ -124,8 +159,45 @@ describe("storyline memo", () => {
     expect(parseMemo("not json")).toBeNull();
   });
 
-  it("restates exhibit numbers under keys the figure check reads", () => {
-    const payload = memoPayload(storyline) as { stated_amounts: { amount: number }[] };
+  it("requires valid structured evidence IDs when record-bound evidence is supplied", async () => {
+    const research = overdraftResearch();
+    const evidence = buildFeeResearchEvidence(research);
+    const knownId = evidence.facts[0].id;
+    const bound = JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: [knownId] });
+    const c = client(bound);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result.status).toBe("written");
+    if (result.status === "written") expect(result.memo.evidenceFactIds).toEqual([knownId]);
+    expect(c.calls[0]).toContain("fact_evidence");
+    expect(c.calls[0]).toContain(knownId);
+  });
+
+  it("retries a memo that invents an evidence ID", async () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const knownId = evidence.facts[0].id;
+    const invented = JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: ["fee:published:not-real"] });
+    const corrected = JSON.stringify({ ...JSON.parse(good), evidence_fact_ids: [knownId] });
+    const c = client(invented, corrected);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result.status).toBe("written");
+    expect(c.calls[1]).toContain("not in DATA.fact_evidence");
+  });
+
+  it("withholds a memo that never identifies supporting evidence when evidence is available", async () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const c = client(good, good);
+    const result = await writeStorylineMemo(storyline, "q", { client: c, factEvidence: evidence });
+    expect(result).toMatchObject({
+      status: "withheld",
+      problems: ["The memo did not identify any supporting evidence_fact_ids from DATA.fact_evidence."],
+    });
+  });
+
+  it("restates exhibit numbers under keys the figure check reads and attaches fact evidence only when provided", () => {
+    const evidence = buildFeeResearchEvidence(overdraftResearch());
+    const payload = memoPayload(storyline, evidence) as { stated_amounts: { amount: number }[]; fact_evidence: typeof evidence };
     expect(payload.stated_amounts.map((a) => a.amount)).toEqual(expect.arrayContaining([32, 29.5]));
+    expect(payload.fact_evidence).toEqual(evidence);
+    expect(memoPayload(storyline)).not.toHaveProperty("fact_evidence");
   });
 });

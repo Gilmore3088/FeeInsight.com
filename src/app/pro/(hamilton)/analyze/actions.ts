@@ -3,7 +3,12 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { getInstitutionById } from "@/lib/data-store";
+import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
+import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import { normalizeLegacyAnalyzeConfidence } from "@/lib/hamilton/evidence-contract";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import { recentQuestions, type RecentQuestion, type SavedAnalysisRow } from "@/lib/hamilton/recent-analyses";
 
@@ -39,9 +44,37 @@ export async function saveAnalysis(params: {
     params.title?.trim() ||
     params.responseJson.title ||
     params.prompt.slice(0, 60).trim() + (params.prompt.length > 60 ? "…" : "");
-  const institutionId = normalizeCanonicalInstitutionId(params.institutionId) ?? "";
+  // Server actions receive caller-controlled values even when TypeScript declares a string.
+  // A malformed explicit subject must not become an unscoped saved artifact.
+  if (typeof params.institutionId !== "string") {
+    return { error: "Select a valid research institution." };
+  }
+  const requestedId = params.institutionId.trim();
+  const canonicalId = requestedId ? normalizeCanonicalInstitutionId(requestedId) : null;
+  if (requestedId && !canonicalId) {
+    return { error: "Select a valid research institution." };
+  }
+  const institutionId = canonicalId ?? "";
 
   try {
+    const institution = institutionId ? await getInstitutionById(Number(institutionId)) : null;
+    if (institutionId && !institution) return { error: "Selected institution not found" };
+    // The normal answer path saves on the server at generation time. This fallback
+    // captures membership at SAVE time, never treats browser metadata as authority,
+    // and does not silently substitute today's peer baseline for the original one.
+    const account = await loadHamiltonAccountContext(user);
+    const responseJson: AnalyzeResponse = {
+      ...params.responseJson,
+      identityContext: accountIdentitySnapshot(institution?.id ?? null, account, {
+        researchInstitutionName: institution?.institution_name ?? null,
+        researchSelectionSource: "Captured at save; generation-time account and peer context unavailable",
+        peerBaselineLabel: null,
+        peerBaselineSource: null,
+        peerSetId: null,
+        peerBaselineFallbackReason: "Original peer baseline was not authenticated in the fallback save.",
+      }),
+    };
+    // Browser snapshots never choose the account institution.
     const rows = await sql<{ id: string }[]>`
       INSERT INTO hamilton_saved_analyses (
         user_id,
@@ -57,7 +90,7 @@ export async function saveAnalysis(params: {
         ${title},
         ${params.analysisFocus},
         ${params.prompt},
-        ${JSON.stringify(params.responseJson)},
+        ${JSON.stringify(responseJson)},
         'active'
       )
       RETURNING id::text
@@ -67,8 +100,8 @@ export async function saveAnalysis(params: {
     if (!id) return { error: "Failed to save analysis" };
     return { id };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Database error";
-    return { error: message };
+    // Do not return raw SQL/driver messages to an authenticated browser action.
+    return { error: "Could not save this analysis. Please try again." };
   }
 }
 
@@ -77,6 +110,8 @@ export async function saveAnalysis(params: {
  * Used for left rail and in-page refresh after saving.
  */
 export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
+  // Callable server actions must not permit an unbounded history query.
+  const boundedLimit = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 50) : 10;
   const user = await getCurrentUser();
   if (!user) return [];
 
@@ -87,9 +122,9 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
       FROM hamilton_saved_analyses
       WHERE user_id = ${user.id} AND status = 'active'
       ORDER BY updated_at DESC
-      LIMIT ${limit * 3}
+      LIMIT ${boundedLimit * 3}
     `;
-    return recentQuestions(rows, limit);
+    return recentQuestions(rows, boundedLimit);
   } catch {
     return [];
   }
@@ -109,9 +144,16 @@ export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisReco
       LIMIT 1
     `;
     if (!rows[0]) return null;
+    // Display-only: older "high" ratings predate record-bound evidence; storage is never rewritten.
+    const responseJson = normalizeLegacyAnalyzeConfidence(
+      JSON.parse(rows[0].response_json) as AnalyzeResponse,
+    ) as AnalyzeResponse & { hamiltonIdentity?: unknown };
+    // Older server-written answers stored the same version-1 snapshot under this alias.
+    const snapshot = readHamiltonIdentitySnapshot(responseJson.identityContext ?? responseJson.hamiltonIdentity);
+    if (snapshot) responseJson.identityContext = snapshot;
     return {
       id: rows[0].id,
-      responseJson: JSON.parse(rows[0].response_json) as AnalyzeResponse,
+      responseJson,
       institutionId: normalizeCanonicalInstitutionId(rows[0].institution_id),
       analysisFocus: rows[0].analysis_focus,
       prompt: rows[0].prompt,

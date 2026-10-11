@@ -83,7 +83,7 @@ export function RecentChanges({ alerts, signals, selectedInstitutionId = null }:
         <p className="text-sm text-warm-700">
           {selectedInstitutionId
             ? "No changes recorded for this institution yet."
-            : "Choose your institution to see its fee changes and alerts."}
+            : "Choose a research institution to see its fee changes and alerts."}
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
