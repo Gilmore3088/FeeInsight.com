@@ -182,9 +182,19 @@ export function peerListRefinementState(question: string): string | null {
   return match?.[0] ?? null;
 }
 
+/** Normalize known list phrasing and no-space asset thresholds, without discarding filters. */
+function normalizePeerListPhrasing(question: string): string {
+  return question
+    .replace(/^\s*talki?\s+to\s+me\s+about\s+/i, "List ")
+    .replace(/\b(over|above|under|below)(?=\$?\d)/gi, "$1 ");
+}
+
 // Explicit fee/report questions stay on their existing route. A list of institutions
 // must not be inferred from a request for a fee median, narrative or recommendation.
 export function isPeerListQuestion(question: string): boolean {
+  // Natural research phrasing is a list intent only when it names institutions,
+  // never when it requests fees, recommendations or a report.
+  question = normalizePeerListPhrasing(question);
   // Preserve the already-supported plain local-competitor view. Its branch-market
   // data is not replaced with an asset-size list or disabled by this addition.
   if (/^(?:please\s+)?(?:list|show(?: me)?|who are|what are|where are)\s+(?:(?:the|my|our)\s+)?(?:local\s+|nearby\s+)?competitors(?:\s+and\s+(?:their\s+(?:branches|locations)|where\s+(?:are\s+)?they(?:\s+are)?))?\s*[?.!]*$/i.test(question.trim())) return false;
@@ -212,7 +222,7 @@ function replaceMatch(text: string, match: RegExpMatchArray): string {
 export function parsePeerListQuestion(question: string): PeerListIntent | null {
   if (!isPeerListQuestion(question)) return null;
   const problems: string[] = [];
-  let remaining = question.replace(/[’`]/g, "'").replace(/twenty[ -]five/gi, "twentyfive");
+  let remaining = normalizePeerListPhrasing(question).replace(/[’`]/g, "'").replace(/twenty[ -]five/gi, "twentyfive");
   let minAssets: AssetBound | null = null;
   let maxAssets: AssetBound | null = null;
   const range = remaining.match(new RegExp(`(?:between\\s+)?${AMOUNT}\\s*(?:-|–|to|and)\\s*${AMOUNT}`, "i"));

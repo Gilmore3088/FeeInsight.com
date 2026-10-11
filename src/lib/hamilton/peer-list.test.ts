@@ -11,6 +11,15 @@ describe("peer list question matrix", () => {
   for (const question of ["List ten peers", "Show 10 similarly sized credit unions in Florida", "List 15 banks between $1B and $5B in TX", "List institutions above $10B", "Who are our peers?", "List my saved peers", "Show peers in the same state", "List banks in Florida and Georgia", "List the 25 largest banks nationwide", "List all credit unions up to $1 billion"]) {
     it(`recognizes: ${question}`, () => { expect(isPeerListQuestion(question)).toBe(true); expect(intent(question).problems).toEqual([]); });
   }
+  it("recognizes natural list phrasing including the reported typo and compact asset limit", () => {
+    const q = "talki to me about institutions in florida over5b";
+    expect(isPeerListQuestion(q)).toBe(true);
+    const parsed = intent(q);
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.states).toEqual(["FL"]);
+    expect(parsed.minAssets).toEqual({ value: 5_000_000_000, inclusive: false });
+    expect(isPeerListQuestion("Talk to me about our NSF fees")).toBe(false);
+  });
   for (const question of ["How does our overdraft compare with peers?", "List peers and their NSF fees", "Create a report on peers", "What is our peer median?", "Explain how peers are selected", "What should we charge?", "List local competitors", "Who are my local competitors and where are they?"]) {
     it(`does not replace fee/report analysis: ${question}`, () => { expect(isPeerListQuestion(question)).toBe(false); expect(parsePeerListQuestion(question)).toBeNull(); });
   }
