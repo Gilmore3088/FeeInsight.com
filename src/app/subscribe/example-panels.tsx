@@ -28,9 +28,17 @@ export interface MonitorWireItem {
  * The Monitor example: the newest like-for-like published fee changes and the newest
  * Regulatory Wire item, both read live. With no changes on record it says so.
  */
-export function MonitorPreview({ changes, wire }: { changes: MonitorChange[]; wire: MonitorWireItem | null }) {
+export function MonitorPreview({
+  changes,
+  wire,
+  label = "Hamilton · Monitor",
+}: {
+  changes: MonitorChange[];
+  wire: MonitorWireItem | null;
+  label?: string;
+}) {
   return (
-    <PreviewFrame label="Hamilton · Monitor" aside="Live data">
+    <PreviewFrame label={label} aside="Live data">
       <div className="px-4 pb-1 pt-4 sm:px-5">
         <p className="text-lg leading-snug text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
           Published fee changes
@@ -77,9 +85,9 @@ export function MonitorPreview({ changes, wire }: { changes: MonitorChange[]; wi
 const SAMPLE_HREF = "/reports/sample-competitive-fee-position";
 
 /** The Report example: the real sample report's cover and findings pages. */
-export function ReportPreview() {
+export function ReportPreview({ label = "Hamilton · Reports" }: { label?: string } = {}) {
   return (
-    <PreviewFrame label="Hamilton · Reports" aside="Sample report">
+    <PreviewFrame label={label} aside="Sample report">
       <div className="relative min-h-[19rem] flex-1 overflow-hidden bg-[#F3EEE6] sm:min-h-[21rem]">
         <Image
           src="/reports/sample-preview/page-1.webp"
