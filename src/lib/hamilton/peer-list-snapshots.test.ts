@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PeerListResponse } from "./peer-list";
+import type { PeerListResponse, PeerListRow, PeerListSubject } from "./peer-list";
 const mocks = vi.hoisted(() => ({ insert: vi.fn(), account: vi.fn() }));
 vi.mock("@/lib/data-store/hamilton-analyses", () => ({ insertSavedAnalysis: mocks.insert }));
 vi.mock("./account-context-store", () => ({ loadHamiltonAccountContext: mocks.account }));
 import { matchesFreshPeerSnapshot, savePeerResearchSnapshot } from "./peer-list-snapshots";
 
-const row = { institutionId: 303, name: "Synthetic Peer", charterType: "credit_union", city: "Miami", stateCode: "FL", totalAssetsUsd: 1_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 55, feeCoverage: "available", inclusionReason: "Exact criteria." };
-const subject = { ...row, institutionId: 202, name: "Research CU" };
+const row: PeerListRow = { institutionId: 303, name: "Synthetic Peer", charterType: "credit_union", city: "Miami", stateCode: "FL", totalAssetsUsd: 1_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 55, feeCoverage: "available", inclusionReason: "Exact criteria." };
+const subject: PeerListSubject = { ...row, institutionId: 202, name: "Research CU" };
 const response: PeerListResponse = {
  kind: "peer_list", shortAnswer: "One selected research peer",
  peerList: {
