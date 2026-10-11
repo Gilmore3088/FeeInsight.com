@@ -223,6 +223,14 @@ export interface OwnFeeRow {
   /** The page the schedule was found on. */
   sourceUrl: string | null;
   publishedAt: string | null;
+  /** Optional for historic saved payloads; canonical reader populates these. */
+  frequency?: string | null;
+  conditions?: string | null;
+  feeAudience?: "consumer" | "business" | "both" | "unknown";
+  audienceEvidence?: string | null;
+  sourceContentHash?: string | null;
+  sourceCrawledAt?: string | null;
+  sourceLastCheckedAt?: string | null;
   /** The verification event (agent_run_events) that checked the row against its document; null when not recorded. */
   verifiedByEventId: string | null;
 }
