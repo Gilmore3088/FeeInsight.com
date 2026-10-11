@@ -23,7 +23,7 @@ const DISTRICT_REPORT_SOURCE = "report_district";
 /** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
 const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
-const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
+const INSTITUTION_REPORT_HREF = REPORT_OFFER.institutionHref;
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 
 const SUCCESS_HEADLINE = "Request received.";
@@ -121,19 +121,22 @@ interface Prefill {
   district: number | null;
 }
 
+/**
+ * The report a URL selects: `?report=` when it names one, else the institution report when the
+ * link names an institution (a profile page or a hosted report), else the free national report.
+ */
+export function reportTypeFromParams(params: Pick<URLSearchParams, "get">): ReportType {
+  const requested = params.get("report");
+  if (requested === "national" || requested === "district" || requested === "institution") return requested;
+  return (params.get("name") ?? "").trim() ? "institution" : "national";
+}
+
 function readPrefill(params: URLSearchParams, defaultSrc: string): Prefill {
   const idRaw = Number(params.get("institution"));
   const srcRaw = (params.get("src") ?? "").trim();
   const districtRaw = Number(params.get("district"));
   const institutionName = (params.get("name") ?? "").trim();
-  const requested = params.get("report");
-  // A link that names an institution (a profile page or a hosted report) asks for its report.
-  const reportType: ReportType =
-    requested === "national" || requested === "district" || requested === "institution"
-      ? requested
-      : institutionName
-        ? "institution"
-        : "national";
+  const reportType = reportTypeFromParams(params);
   return {
     institutionId: Number.isInteger(idRaw) && idRaw > 0 ? idRaw : null,
     institutionName,
@@ -141,6 +144,18 @@ function readPrefill(params: URLSearchParams, defaultSrc: string): Prefill {
     reportType,
     district: isFedDistrict(districtRaw) ? districtRaw : null,
   };
+}
+
+/**
+ * Write a choice made on the form into the URL (no navigation), so a later CTA that names the
+ * other report changes `?report=` and the form follows it, instead of keeping the hand-picked one.
+ */
+function rememberReportChoice(reportType: ReportType) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("report") === reportType) return;
+  url.searchParams.set("report", reportType);
+  window.history.replaceState(window.history.state, "", url.toString());
 }
 
 function toConfirmationStatus(body: LeadsResponse | null): ConfirmationStatus {
@@ -161,9 +176,12 @@ export function RequestReportForm(props: RequestReportFormProps) {
 function RequestReportFormWithParams(props: RequestReportFormProps) {
   const params = useSearchParams();
   const prefill = readPrefill(params, props.defaultSrc ?? DEFAULT_SRC);
-  // Keyed on the query so a same-page link that changes `?report=` or the bank reloads the
-  // form with that option selected (useState reads the prefill only on first render).
-  return <RequestReportFormInner key={params.toString()} {...props} prefill={prefill} />;
+  // A link that names a different bank reloads the form (useState reads the prefill only on
+  // first render). `report` is left out of the key: the form syncs that choice from the URL
+  // itself, so switching between the free and paid report keeps what the visitor typed.
+  const identity = new URLSearchParams(params.toString());
+  identity.delete("report");
+  return <RequestReportFormInner key={identity.toString()} {...props} prefill={prefill} />;
 }
 
 function RequestReportFormInner({
@@ -178,6 +196,12 @@ function RequestReportFormInner({
     Boolean(prefill?.institutionName),
   );
   const [reportType, setReportType] = useState<ReportType>(prefill?.reportType ?? "national");
+  // Follow `?report=` on client-side navigation too: a free CTA (report=national) clicked after
+  // a paid one (report=institution) must switch the already-mounted form back to the free report.
+  const urlReportType = prefill?.reportType ?? null;
+  useEffect(() => {
+    if (urlReportType) setReportType(urlReportType);
+  }, [urlReportType]);
   const [freeReport, setFreeReport] = useState<BenchmarkScope | null>(null);
   const [pickedInstitution, setPickedInstitution] = useState<PickedInstitution | null>(null);
   const [reportState, setReportState] = useState("");
@@ -404,6 +428,7 @@ function RequestReportFormInner({
                 checked={reportType === option.value}
                 onChange={() => {
                   setReportType(option.value);
+                  rememberReportChoice(option.value);
                   setFieldErrors({});
                   setSummaryFields(null);
                 }}

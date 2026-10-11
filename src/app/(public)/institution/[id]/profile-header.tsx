@@ -82,7 +82,8 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   return (
     <header className={`fi-reveal mb-6 p-5 sm:p-7 ${GLASS}`}>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      {/* One column: the name spans the full width, links sit below it (headers run across, never in a column). */}
+      <div className="flex min-w-0 flex-col gap-5">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusBadge status={status} />
@@ -93,7 +94,7 @@ export function ProfileHeader({
               </span>
             )}
           </div>
-          <h1 className={`max-w-4xl break-words ${H1}`}>
+          <h1 className={`break-words ${H1}`}>
             {name}
           </h1>
           {/* Every key fact as a small tag: no separate facts box, no sentences. */}
@@ -122,7 +123,7 @@ export function ProfileHeader({
         </div>
 
         {(websiteUrl || feeScheduleUrl) && (
-          <div className="flex flex-wrap gap-2 lg:justify-end">
+          <div className="flex flex-wrap gap-2">
             {websiteUrl && (
               <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
                 Website

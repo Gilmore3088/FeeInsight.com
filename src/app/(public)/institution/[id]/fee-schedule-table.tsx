@@ -207,11 +207,21 @@ function familyFor(fee: DisplayFee): string {
   return (fee.feeCategory ? getFeeFamily(fee.feeCategory) : null) ?? OTHER_FAMILY;
 }
 
-function dedupeKey(fee: DisplayFee): string {
-  return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
+function keyPart(value: string | number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value).trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order for families and rows. */
+/**
+ * What makes two rows the same fee: name and amount (or rate), plus what tells one account's
+ * charge from another's: its conditions (where the waiver is printed), audience and treatment.
+ * Two accounts with the same fee name and amount but a different waiver or audience stay two rows.
+ */
+export function dedupeKey(fee: DisplayFee): string {
+  const amount = fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null";
+  return [fee.feeName, amount, fee.conditions, fee.feeAudience, fee.feeTreatment].map(keyPart).join("|");
+}
+
+/** Groups fees by family, collapses true duplicates (dedupeKey), keeps taxonomy order for families and rows. */
 export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   const groups = new Map<string, FeeGroup>();
   const seen = new Set<string>();

@@ -41,7 +41,27 @@ export const REPORT_OFFER = {
   institutionCtaLabel: "Request your institution report",
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
+  /** Free CTAs select the national report explicitly, so a visitor who had picked the paid one gets the free one. */
+  freeHref: "/for-institutions?report=national#report",
+  /** Paid CTAs open the form on the institution report with its price shown. */
+  institutionHref: "/for-institutions?report=institution#report",
 } as const;
+
+/** The `?report=` values the request form accepts. */
+export type ReportRequestKind = "national" | "district" | "institution";
+
+/**
+ * A link to a report request form that always names the report to select. A free link carries
+ * report=national and a paid one report=institution, so neither inherits the other's choice from
+ * the current URL. `path`/`anchor` point at whichever page hosts the form.
+ */
+export function reportRequestHref(
+  kind: ReportRequestKind,
+  { path = "/for-institutions", anchor = "report", params = {} }: { path?: string; anchor?: string; params?: Record<string, string> } = {},
+): string {
+  const query = new URLSearchParams({ report: kind, ...params });
+  return `${path}?${query.toString()}#${anchor}`;
+}
 // The sample report page (/reports/sample-competitive-fee-position) is a live report rendered
 // from published data (src/lib/custom-report/sample-report.ts); links to it show whenever
 // sampleReportAvailable() is true. This flag gates only the OLD static sample

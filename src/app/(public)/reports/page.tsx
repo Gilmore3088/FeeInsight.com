@@ -13,7 +13,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME, reportRequestHref } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const REQUEST_HREF = "/reports?report=institution#request";
+const REQUEST_HREF = reportRequestHref("institution", { path: "/reports", anchor: "request" });
 
 const PRIMARY_BUTTON = `${CTA_PRIMARY} no-underline`;
 const SECONDARY_BUTTON = `${CTA_SECONDARY} no-underline`;

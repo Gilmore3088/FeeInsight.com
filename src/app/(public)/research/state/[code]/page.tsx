@@ -12,7 +12,7 @@ import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stat
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, SITE_URL, reportRequestHref } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import {
   getCitiesInStateCached,
@@ -193,7 +193,7 @@ export default async function StateReportPage({ params }: PageProps) {
           secondaryLink={
             sampleLive
               ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-              : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
+              : { href: reportRequestHref("institution", { params: { src: `state-${stateCode.toLowerCase()}` } }), label: REPORT_OFFER.institutionCtaLabel }
           }
         />
 

@@ -72,7 +72,7 @@ export function MethodFlow({ coverageLabel }: { coverageLabel: string }) {
           </p>
           <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">{HAMILTON_CANONICAL}</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link href="/for-institutions?report=institution#report" className="inline-flex min-h-11 items-center rounded-lg bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[#A93D25]">
+            <Link href={REPORT_OFFER.institutionHref} className="inline-flex min-h-11 items-center rounded-lg bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[#A93D25]">
               {REPORT_OFFER.institutionCtaLabel} · {REPORT_OFFER.priceLabel.toLowerCase()}
             </Link>
             <Link href="/subscribe" className="inline-flex min-h-11 items-center rounded-lg bg-white/70 px-4 py-2 text-[13px] font-semibold text-[#1A1815] ring-1 ring-[#E8E1D6] transition-colors duration-200 hover:bg-white">

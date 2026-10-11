@@ -40,3 +40,16 @@ describe("report offer", () => {
     expect(JSON.stringify(REPORT_OFFER)).not.toMatch(/48 hours/);
   });
 });
+
+describe("report request links", () => {
+  it("free links select the national report and paid links the institution report", async () => {
+    const { REPORT_OFFER, reportRequestHref } = await import("./constants");
+    expect(REPORT_OFFER.freeHref).toBe("/for-institutions?report=national#report");
+    expect(REPORT_OFFER.institutionHref).toBe("/for-institutions?report=institution#report");
+    expect(reportRequestHref("national", { path: "/", anchor: "for-banks" })).toBe("/?report=national#for-banks");
+    expect(reportRequestHref("institution", { path: "/reports", anchor: "request" })).toBe("/reports?report=institution#request");
+    expect(reportRequestHref("institution", { params: { src: "state-tx" } })).toBe(
+      "/for-institutions?report=institution&src=state-tx#report",
+    );
+  });
+});
