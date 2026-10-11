@@ -44,15 +44,29 @@ function pct(amount: number, max: number): string {
  * played each time the example comes up. The figures are the live national index; the
  * wording is fixed, so it is labelled as an illustration, not a recorded Hamilton answer.
  */
-export function AnalyzeDemo({ scenario }: { scenario: AnalyzeScenario }) {
+export function AnalyzeDemo({
+  scenario,
+  label = "Hamilton · Try a price",
+}: {
+  scenario: AnalyzeScenario;
+  label?: string;
+}) {
   const { active, turn } = useShowcase();
   const reduced = useReducedMotion();
   const animate = active === 1 && !reduced;
   // A fresh run each time the example comes up; still and complete otherwise.
-  return <AnalyzeRun key={animate ? `run-${turn}` : "still"} scenario={scenario} animate={animate} />;
+  return <AnalyzeRun key={animate ? `run-${turn}` : "still"} scenario={scenario} animate={animate} label={label} />;
 }
 
-function AnalyzeRun({ scenario, animate }: { scenario: AnalyzeScenario; animate: boolean }) {
+function AnalyzeRun({
+  scenario,
+  animate,
+  label,
+}: {
+  scenario: AnalyzeScenario;
+  animate: boolean;
+  label: string;
+}) {
   const question = `Where would a ${formatAmount(scenario.price)} ${scenario.feeLabel.toLowerCase()} fee sit nationally?`;
   const [typed, setTyped] = useState(animate ? 0 : question.length);
 
@@ -74,7 +88,7 @@ function AnalyzeRun({ scenario, animate }: { scenario: AnalyzeScenario; animate:
   const max = Math.max(scenario.p75 ?? scenario.median, scenario.price, scenario.median) * 1.25 || 1;
 
   return (
-    <PreviewFrame label="Hamilton · Try a price" aside="Illustration, live figures">
+    <PreviewFrame label={label} aside="Illustration, live figures">
       <div className="space-y-4 px-4 py-4 sm:px-5">
         <div className="flex justify-end">
           <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-[#1A1815] px-3.5 py-2 text-[15px] text-white">
