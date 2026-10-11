@@ -86,7 +86,7 @@ export function hasOneTimeWipException(pr, policy, now = new Date()) {
   });
 }
 
-export function guardProblems(pr, all, overlaps, policy) {
+export function guardProblems(pr, all, overlaps, policy, now = new Date()) {
   if (Date.parse(pr.created_at) < Date.parse(policy.enforce_after)) return []; // grandfather existing work
   const problems = [];
   for (const name of ['Work item', 'Owner', 'Area', 'Scope', 'Duplicate search', 'Verification', 'Rollback', 'Overlap review']) {
@@ -98,7 +98,7 @@ export function guardProblems(pr, all, overlaps, policy) {
   if (!policy.areas.includes(area)) problems.push(`Area must be one of: ${policy.areas.join(', ')}.`);
   if (policy.parked_areas.includes(area)) problems.push(`${area} is parked by James; do not open another implementation.`);
   const areaOpenCount = all.filter(p => p.state === 'open' && field(p.body, 'Area').toLowerCase() === area).length;
-  if (areaOpenCount > policy.wip_per_area && !hasOneTimeWipException(pr, policy)) problems.push(`Area '${area}' exceeds ${policy.wip_per_area} open implementation PRs. Finish/reconcile work first.`);
+  if (areaOpenCount > policy.wip_per_area && !hasOneTimeWipException(pr, policy, now)) problems.push(`Area '${area}' exceeds ${policy.wip_per_area} open implementation PRs. Finish/reconcile work first.`);
   for (const other of all) if (other.number !== pr.number && other.state === 'open' && workItem(pr.body) && workItem(other.body) === workItem(pr.body)) problems.push(`Work item already has open PR #${other.number}; reuse it instead of duplicating implementation.`);
   const acknowledged = new Set([...field(pr.body, 'Overlap review').matchAll(/#(\d+)/g)].map(m => Number(m[1])));
   for (const pair of overlaps.filter(o => o.a === pr.number || o.b === pr.number)) {
