@@ -197,7 +197,8 @@ describe("Hamilton rules re-check", () => {
 
     const result = await rollBackUnreproducedFees(asDb(db), { runId: 303, batchId: "b", takedownLive: true, dryRun: false });
 
-    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([1]);
+    // The fee named as the text's line stays; the copy under another name comes down (#978).
+    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([5]);
     // check_image $3 and safe_deposit_box $30 are read from the text but not live.
     const attempt = db.mock.calls.find((call) => String(call[0]).includes("INSERT INTO pipeline_attempts"));
     expect(JSON.parse(String(attempt?.at(-1)))).toMatchObject({ rolled_back: 1, missing_fees: 2 });

@@ -25,6 +25,14 @@ function createDbMock(liveRows: Array<Record<string, unknown>>, text: string): D
   return db;
 }
 
+function firstLook(ids: number[]) {
+  return ids.map((id) => ({
+    fee_published_id: id,
+    kind: "takedown_pending",
+    evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: RULES_RECHECK_REASON },
+  }));
+}
+
 function asDb(db: DbMock): Parameters<typeof rollBackUnreproducedFees>[0] {
   return db as unknown as Parameters<typeof rollBackUnreproducedFees>[0];
 }
@@ -107,5 +115,53 @@ describe("rules re-check keeps distinct fees that share a category and price", (
     const result = await run(db);
     expect(result.rollbacks).toEqual([]);
     expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+  });
+
+  it("should_take_down_an_older_unknown_audience_copy_of_a_newer_consumer_fee", async () => {
+    // Rows published before the audience split are 'unknown': they may be the same fee.
+    const db = createDbMock(
+      [live(1, "stop_payment", "Stop Payment", "30.00", "unknown"), live(2, "stop_payment", "Stop Payment", "30.00", "consumer")],
+      "Stop Payment | $30.00",
+    );
+    expect((await run(db)).rollbacks.map((fee) => fee.feePublishedId)).toEqual([1]);
+  });
+
+  it("should_take_down_a_both_audience_copy_of_a_business_fee", async () => {
+    const db = createDbMock(
+      [live(1, "stop_payment", "Stop Payment", "30.00", "both"), live(2, "stop_payment", "Stop Payment", "30.00", "business")],
+      "Stop Payment | $30.00",
+    );
+    expect((await run(db)).rollbacks.map((fee) => fee.feePublishedId)).toEqual([1]);
+  });
+
+  it("should_not_let_an_untidy_copy_take_a_line_another_fee_is_named_as", async () => {
+    const text = ["Stop Payment | $30.00", "Stop Payment - Online | $30.00"].join("\n");
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Pmt", "30.00"),
+        live(2, "stop_payment", "Stop Payment - Online", "30.00", "unknown", true),
+        live(3, "stop_payment", "Stop Payment", "30.00"),
+      ],
+      text,
+    );
+    db.mockImplementation(((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 9, text_hash: "abc", normalized_text: text }]);
+      if (query.includes("RETURNING fp.fee_published_id")) return Promise.resolve([{ fee_published_id: 2, lineage_ref: 1002 }]);
+      if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (query.includes("FROM pipeline_feedback")) return Promise.resolve(firstLook([1]));
+      return Promise.resolve([]);
+    }) as never);
+    const result = await run(db);
+    expect(result.rollbacks.map((fee) => fee.feePublishedId)).toEqual([1]);
+    expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+  });
+
+  it("should_keep_an_exactly_named_older_fee_over_a_newer_untidy_copy", async () => {
+    const db = createDbMock(
+      [live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "stop_payment", "Stop Pmt", "30.00")],
+      "Stop Payment | $30.00",
+    );
+    expect((await run(db)).rollbacks.map((fee) => fee.feePublishedId)).toEqual([2]);
   });
 });

@@ -112,6 +112,8 @@ export interface RulesRecheckRollback {
   secondLook?: string;
   /** For a restore: why it came back. */
   restoreReason?: RulesRecheckRestoreReason;
+  /** A restore named as a line its text reads: it may stand beside a differently named fee. */
+  exactLine?: boolean;
 }
 
 export interface RulesRecheckResult {
@@ -174,31 +176,37 @@ function lessonReadKey(row: LiveKnoxRow, amount: number): string | null {
 }
 
 /**
- * Which lines of one text the live fees claim. Two fees sharing a category and price are
- * copies only when the text has no further line for them: the text's own reads under that
- * category and price set how many may stay (#978: Pinnacle's $30 consumer and business
- * fees, Paid Item beside Returned Item). Each audience claims separately.
+ * Consumer and business publications of one line are separate fees. Any other pairing
+ * (unknown, both, or the same audience) may be the same fee published twice.
  */
-class LineClaims {
-  private readonly claimed = new Map<string, Set<string>>();
-
-  /** The read name this row takes, or null when every line it could be is already claimed. */
-  claimFor(slot: string, reads: ReadonlySet<string>, names: readonly string[]): string | null {
-    const taken = this.claimed.get(slot) ?? new Set<string>();
-    const own = names.find((name) => reads.has(name));
-    // A row named as one of the text's lines is that line; a copy of it when already claimed.
-    if (own) return taken.has(own) ? null : own;
-    // A row under an older or untidy name stands for any line not yet claimed.
-    return [...reads].find((name) => !taken.has(name)) ?? null;
-  }
-
-  take(slot: string, name: string): void {
-    this.claimed.set(slot, (this.claimed.get(slot) ?? new Set<string>()).add(name));
-  }
+function audiencesOverlap(a: string, b: string): boolean {
+  return a === b || a === "unknown" || a === "both" || b === "unknown" || b === "both";
 }
 
-function claimSlot(institutionId: number, key: string, row: LiveKnoxRow): string {
-  return `${institutionId}:${key}:${row.fee_audience ?? "unknown"}`;
+function audienceOf(row: LiveKnoxRow): string {
+  return row.fee_audience ?? "unknown";
+}
+
+/**
+ * The lines of a text that fees hold, by category and price. Two fees sharing a category and
+ * price are copies only when they hold the same line for overlapping audiences: the text's own
+ * reads set the lines (#978: Pinnacle's $30 consumer and business fees, Paid Item beside
+ * Returned Item).
+ */
+class LineClaims {
+  private readonly held = new Map<string, Array<{ line: string; audience: string }>>();
+
+  holds(key: string, line: string, audience: string): boolean {
+    return (this.held.get(key) ?? []).some((claim) => claim.line === line && audiencesOverlap(claim.audience, audience));
+  }
+
+  holdsAny(key: string, audience: string): boolean {
+    return (this.held.get(key) ?? []).some((claim) => audiencesOverlap(claim.audience, audience));
+  }
+
+  take(key: string, line: string, audience: string): void {
+    this.held.set(key, [...(this.held.get(key) ?? []), { line, audience }]);
+  }
 }
 
 function rowNames(row: LiveKnoxRow): string[] {
@@ -210,6 +218,11 @@ function rowNames(row: LiveKnoxRow): string[] {
 /** Every name the text reads for this fee's category and price, its lesson re-file included. */
 function linesFor(reads: Map<string, Set<string>>, key: string, lessonKey: string | null): Set<string> {
   return new Set([...(reads.get(key) ?? []), ...(lessonKey ? reads.get(lessonKey) ?? [] : [])]);
+}
+
+/** The line a row is named as, when its name is one the text reads. */
+function exactLine(row: LiveKnoxRow, lines: ReadonlySet<string>): string | null {
+  return rowNames(row).find((name) => lines.has(name)) ?? null;
 }
 
 interface DocumentText {
@@ -425,7 +438,8 @@ export async function rollBackUnreproducedFees(
   const result: RulesRecheckResult = { ...EMPTY_RESULT, rollbacks: [], restores: [], disputed: [] };
   const checked: Array<{ institutionId: number; sourceDocumentId: number; checked: number; rolledBack: number; disputed?: number; missing?: number }> = [];
   // One restore per institution, category and price in a batch.
-  const restoredKeys = new Set<string>();
+  // One restore per institution line across its documents (a PDF and an HTML copy of a page).
+  const restoredClaims = new LineClaims();
   // Live fees this run passed: a pending flag on one of them is cleared.
   const passingIds: number[] = [];
   for (const [documentId, documentRows] of rowsByDocument) {
@@ -467,22 +481,46 @@ export async function rollBackUnreproducedFees(
     // One document states each line once: when a re-extraction publishes the same line under
     // a better name ("Negative $25 or less" for "Negative or less"), the newest row stays and
     // older copies are rolled back. Distinct lines at the same category and price all stay.
+    // Rows named as one of the text's lines claim it first, newest first; a row under an older
+    // or untidy name then takes a line no row in this document is named as, if one is left.
     const claims = new LineClaims();
-    for (const row of newestFirst(liveRows)) {
+    const lineOf = new Map<LiveKnoxRow, { key: string; lines: Set<string>; exact: string | null }>();
+    const namedLines = new Map<string, Set<string>>();
+    for (const row of [...liveRows, ...documentRows.filter((candidate) => candidate.pulled)]) {
+      if (row.amount == null) continue;
+      const amount = Math.round(Number(row.amount) * 100) / 100;
+      const key = feeKey(row.canonical_fee_key, amount);
+      const lines = linesFor(readsFrom(textFor(row)), key, lessonReadKey(row, amount));
+      const exact = exactLine(row, lines);
+      lineOf.set(row, { key, lines, exact });
+      if (exact) namedLines.set(key, (namedLines.get(key) ?? new Set<string>()).add(exact));
+    }
+    const kept = new Set<LiveKnoxRow>();
+    const ordered = newestFirst(liveRows);
+    for (const exactPass of [true, false]) {
+      for (const row of ordered) {
+        const line = lineOf.get(row);
+        if (!line || kept.has(row) || line.lines.size === 0 || (line.exact != null) !== exactPass) continue;
+        const audience = audienceOf(row);
+        const claim = line.exact
+          ?? [...line.lines].find((name) => !namedLines.get(line.key)?.has(name) && !claims.holds(line.key, name, audience))
+          ?? null;
+        if (claim && !claims.holds(line.key, claim, audience)) {
+          claims.take(line.key, claim, audience);
+          kept.add(row);
+        }
+      }
+    }
+    for (const row of ordered) {
       const reads = readsFrom(textFor(row));
       result.liveFeesChecked += 1;
       const fee = asFee(row);
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
       const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
       const reproduced = key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
-      if (reproduced) {
-        const slot = claimSlot(institutionId, key, row);
-        const line = claims.claimFor(slot, linesFor(reads, key, lessonKey), rowNames(row));
-        if (line) {
-          claims.take(slot, line);
-          passingIds.push(fee.feePublishedId);
-          continue;
-        }
+      if (reproduced && kept.has(row)) {
+        passingIds.push(fee.feePublishedId);
+        continue;
       }
       // A fee comes down only when today's rules read the same text it was read from and get
       // a different answer. When that text is gone, the document's newer text is the source
@@ -516,11 +554,17 @@ export async function rollBackUnreproducedFees(
       // (67860 "Monthly Service Fee with e-Statement" came back as estatement_fee on 9 Oct, run 3446).
       if (isRetiredCategory(row.canonical_fee_key)) continue;
       const key = feeKey(row.canonical_fee_key, fee.amount);
-      const slot = claimSlot(institutionId, key, row);
-      // A takedown comes back only into a line no live or restored fee already holds.
-      const line = claims.claimFor(slot, linesFor(readsFrom(textFor(row)), key, null), rowNames(row))
-        ?? (readsFrom(textFor(row)).has(key) ? null : rowNames(row)[0]);
-      if (!line || restoredKeys.has(`${slot}:${line}`)) continue;
+      const audience = audienceOf(row);
+      const restoreKey = `${institutionId}:${key}`;
+      // A takedown named as one of its text's lines comes back only into that line, when no live
+      // or restored fee holds it. One the text cannot place comes back only where no fee at its
+      // category and price is live or restored for an overlapping audience, as before #978.
+      const named = lineOf.get(row)?.exact ?? null;
+      if (named
+        ? claims.holds(key, named, audience) || restoredClaims.holds(restoreKey, named, audience)
+        : claims.holdsAny(key, audience) || restoredClaims.holdsAny(restoreKey, audience)) continue;
+      const line = named ?? rowNames(row)[0];
+      fee.exactLine = named != null;
       // An earlier re-check judged this fee against a text other than its own. It comes back
       // only when the document's newest text clears the restore bar for it (category guard,
       // schedule check, Darwin's category model; coordinator, 7 Oct: 83 came back unchecked,
@@ -554,8 +598,8 @@ export async function rollBackUnreproducedFees(
           fee.restoreReason = "restore_bar";
         }
       }
-      claims.take(slot, line);
-      restoredKeys.add(`${slot}:${line}`);
+      claims.take(key, line, audience);
+      restoredClaims.take(restoreKey, line, audience);
       result.restores.push(fee);
     }
     // Fees today's rules read from the latest text that are not live (Texar's $20 and $35
@@ -629,8 +673,10 @@ export async function rollBackUnreproducedFees(
         `;
       }
       if (result.restores.length > 0) {
-        // A restore never makes a second live copy of a category and price the
-        // institution already shows.
+        // A restore never makes a second live copy of a fee the institution already shows: a
+        // live fee at its category and price for an overlapping audience blocks it, unless the
+        // restore is named as its own line of the text and the live fee is named differently.
+        const exactRestoreIds = result.restores.filter((fee) => fee.exactLine).map((fee) => fee.feePublishedId);
         const restored = await scope<{ fee_published_id: number | string; lineage_ref: number | string; institution_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NULL,
@@ -644,9 +690,13 @@ export async function rollBackUnreproducedFees(
                 WHERE live.rolled_back_at IS NULL
                   AND live.institution_id = fp.institution_id
                   AND live.canonical_fee_key = fp.canonical_fee_key
-                  AND live.fee_audience = fp.fee_audience
+                  AND (live.fee_audience = fp.fee_audience
+                       OR live.fee_audience IN ('unknown', 'both')
+                       OR fp.fee_audience IN ('unknown', 'both'))
                   AND live.quarantined_at IS NULL
                   AND live.amount IS NOT DISTINCT FROM fp.amount
+                  AND (NOT (fp.fee_published_id = ANY(${exactRestoreIds}::bigint[]))
+                       OR lower(live.fee_name) = lower(fp.fee_name))
              )
           RETURNING fp.fee_published_id, fp.lineage_ref, fp.institution_id
         `;
