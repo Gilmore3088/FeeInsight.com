@@ -42,3 +42,9 @@ This commit only opts that exact implementation into the existing Vercel preview
 
 Base implementation head before this no-op receipt: `7e6b50c6ba030598f2d95e987d810cb3d0fe281f`.
 The homepage hero again uses the shared Benchmark, Analyze, Monitor and Report rotating showcase.
+
+
+## Preview trigger — exact restored homepage hero — 2026-10-11
+
+Base implementation head before this no-op receipt: `e7a046439ff9c79218b01d01104214f6d831eb2c`.
+This is the exact branch state with the Benchmark / Analyze / Monitor / Report rotating hero restored and the temporary static sample strip removed.
