@@ -14,28 +14,31 @@ export function LandingHero({ showcase }: LandingHeroProps) {
   return (
     <section aria-labelledby="home-title">
       <div className="mx-auto max-w-page px-6 pb-10 pt-10 sm:pb-14 sm:pt-14 lg:pt-16">
-        <div className="max-w-4xl text-center sm:text-left">
+        <div className="grid items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
+        <div className="min-w-0 text-center sm:text-left">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
             Your on-demand industry consultant
           </p>
           <h1 id="home-title" className={`mt-3 ${H1}`}>
-            See where your fees stand.
+            Turn scattered market research into a clear fee review.
+            <span className="mt-2 block text-[#A93D25]">In one afternoon.</span>
           </h1>
           <p className={`mt-4 mx-auto max-w-3xl text-pretty sm:mx-0 ${LEAD}`}>
-            Compare named peers, analyze market context, monitor changes, and turn the evidence into a board-ready review.
+            For banks and credit unions. Bring local competitors, published fees, and market context into one sourced brief.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <Link href="/subscribe" className={CTA_PRIMARY}>
-              See Fee Insight Pro
+            <Link href="#sample-work" className={CTA_PRIMARY}>
+              See a sample fee review
             </Link>
-            <Link href="#bank-fee-index" className={CTA_SECONDARY}>
-              Explore the Bank Fee Index
+            <Link href="#hamilton-walkthrough" className={CTA_SECONDARY}>
+              Explore Hamilton
             </Link>
           </div>
         </div>
 
-        <div className="mt-8">
+        <div className="min-w-0" id="hamilton-walkthrough">
           {showcase}
+        </div>
         </div>
       </div>
     </section>

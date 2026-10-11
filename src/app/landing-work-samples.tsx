@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { GLASS_SOFT, H2 } from "@/components/public/site-look";
 
-const SAMPLE_HREF = "/reports/sample-competitive-fee-position";
+const SAMPLE_HREF = "/reports";
 const SAMPLE_PAGES = [
   { src: "/reports/sample-preview/page-1.webp", label: "Report cover" },
   { src: "/reports/sample-preview/page-2.webp", label: "Findings summary" },
@@ -11,7 +11,7 @@ const SAMPLE_PAGES = [
 /** Compact proof section: show the work instead of explaining it. */
 export function LandingWorkSamples() {
   return (
-    <section aria-labelledby="work-samples-title">
+    <section id="sample-work" aria-labelledby="work-samples-title">
       <div className="mx-auto max-w-page px-4 py-12 sm:px-6 sm:py-16">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -19,20 +19,21 @@ export function LandingWorkSamples() {
               Sample work
             </p>
             <h2 id="work-samples-title" className={`mt-2 ${H2}`}>
-              See the output.
+              From a research question to a finished brief.
             </h2>
           </div>
           <Link
             href={SAMPLE_HREF}
             className="text-sm font-semibold text-[#A93D25] underline underline-offset-4 hover:text-[#8E2A17]"
           >
-            Open the full sample
+            Explore current reports
           </Link>
         </div>
 
-        <ul className="mt-6 grid grid-cols-3 gap-3 sm:gap-5">
+        <p className="mt-3 text-sm text-[#6B6255]">Archived sample pages showing the report layout. Figures are illustrative here; current research is available in Reports.</p>
+        <ul className="mt-6 flex snap-x snap-mandatory gap-5 overflow-x-auto pb-3 sm:grid sm:grid-cols-3 sm:overflow-visible">
           {SAMPLE_PAGES.map((page) => (
-            <li key={page.src} className="min-w-0">
+            <li key={page.src} className="min-w-0 shrink-0 basis-[85%] snap-start sm:basis-auto">
               <Link href={SAMPLE_HREF} className={`group block overflow-hidden p-2 sm:p-3 ${GLASS_SOFT}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element -- static report preview image */}
                 <img

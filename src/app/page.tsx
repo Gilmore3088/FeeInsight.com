@@ -7,7 +7,8 @@ import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { LandingHero } from "./landing-hero";
 import { LandingTrustStats } from "./landing-trust-stats";
-import { LandingBankOffer } from "./landing-bank-offer";
+import { LandingResearchStory } from "./landing-research-story";
+import { LandingWorkSamples } from "./landing-work-samples";
 import { LandingValueShowcase } from "./landing-value-showcase";
 import { LandingPublicSearch } from "./landing-public-search";
 import type { BenchmarkRow } from "./subscribe/benchmark-preview";
@@ -142,11 +143,12 @@ export default async function LandingPage() {
           />
         ) : (
           <LandingHero
-            showcase={<div className="rounded-2xl bg-white/70 p-6 ring-1 ring-[#E8E1D6]">Live examples are loading.</div>}
+            showcase={<div className="rounded-2xl bg-white/70 p-6 ring-1 ring-[#E8E1D6]">Live examples are unavailable right now. Explore the sample report layout below.</div>}
           />
         )}
+        <LandingResearchStory />
+        <LandingWorkSamples />
         <LandingPublicSearch institutionsLabel={summary.institutionsLabel} />
-        <LandingBankOffer />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />
