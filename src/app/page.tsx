@@ -9,6 +9,7 @@ import { LandingHero } from "./landing-hero";
 import { LandingTrustStats } from "./landing-trust-stats";
 import { LandingBankOffer } from "./landing-bank-offer";
 import { LandingValueShowcase } from "./landing-value-showcase";
+import { LandingPublicSearch } from "./landing-public-search";
 import type { BenchmarkRow } from "./subscribe/benchmark-preview";
 import type { AnalyzeScenario } from "./subscribe/analyze-demo";
 import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
@@ -130,7 +131,6 @@ export default async function LandingPage() {
       <main id="main-content">
         {scenario && benchmarkRows.length > 0 ? (
           <LandingHero
-            institutionsLabel={summary.institutionsLabel}
             showcase={
               <LandingValueShowcase
                 rows={benchmarkRows}
@@ -142,10 +142,10 @@ export default async function LandingPage() {
           />
         ) : (
           <LandingHero
-            institutionsLabel={summary.institutionsLabel}
             showcase={<div className="rounded-2xl bg-white/70 p-6 ring-1 ring-[#E8E1D6]">Live examples are loading.</div>}
           />
         )}
+        <LandingPublicSearch institutionsLabel={summary.institutionsLabel} />
         <LandingBankOffer />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
