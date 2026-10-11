@@ -56,17 +56,17 @@ The visual source of truth is the current /subscribe direction plus the approved
 
 | Route/surface | Product/Research | Architecture | Copywriting | Copy-edit | CRO | SEO | Status |
 |---|---|---|---|---|---|---|---|
-| / | required | required | required | required | required | required | in progress |
+| / | required | required | required | required | required | required | implemented; CI + screenshots pending |
 | /subscribe | required | required | required | required | required | required + pricing | pending |
-| /fees | required | required | required | required | required | required | in progress |
+| /fees | required | required | required | required | required | required | implemented; CI + screenshots pending |
 | /fees/[category] | required | required | required | required | required | required + programmatic | pending |
 | /institutions | required | required | required | required | required | required + programmatic | pending |
-| /institution/[id] | required | required | required | required | required | required + programmatic | in progress |
+| /institution/[id] | required | required | required | required | required | required + programmatic | implemented; CI + screenshots pending |
 | /research | required | required | required | required | required | required | pending |
 | /research/* | required | required | required | required | required | required + schema/programmatic where applicable | pending |
 | /reports | required | required | required | required | required | required | pending |
 | /reports/[slug] | required | required | required | required | required | required + schema | pending |
-| /for-institutions | required | required | required | required | required | required | pending |
+| /for-institutions | required | required | required | required | required | required | implemented; CI + screenshots pending |
 | /guides | required | required | required | required | required | required | pending |
 | /guides/* | required | required | required | required | required | required + schema | pending |
 | /methodology | required | required | edit existing only | required | required | required | pending |
