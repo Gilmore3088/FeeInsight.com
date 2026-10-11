@@ -25,10 +25,23 @@ export function LandingValueShowcase({
             institution={null}
             rows={rows}
             totalInstitutions={totalInstitutions}
+            label="Benchmark with the Bank Fee Index"
           />,
-          <AnalyzeDemo key="analyze" scenario={scenario} />,
-          <MonitorPreview key="monitor" changes={changes} wire={null} />,
-          <ReportPreview key="report" />,
+          <AnalyzeDemo
+            key="analyze"
+            scenario={scenario}
+            label="Analyze with Hamilton Intelligence"
+          />,
+          <MonitorPreview
+            key="monitor"
+            changes={changes}
+            wire={null}
+            label="Monitor with Fee Insight Alerts"
+          />,
+          <ReportPreview
+            key="report"
+            label="Report to your board with confidence"
+          />,
         ]}
       />
     </ShowcaseProvider>
