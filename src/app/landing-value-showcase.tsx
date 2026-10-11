@@ -3,9 +3,10 @@
 import { BarChart3, Search, Activity, FileText } from "lucide-react";
 
 import { ShowcaseProvider, ShowcaseStage, useShowcase } from "@/app/subscribe/showcase";
+import { LandingReportDocument } from "./landing-report-document";
 import { BenchmarkPreview, type BenchmarkRow } from "@/app/subscribe/benchmark-preview";
 import { AnalyzeDemo, type AnalyzeScenario } from "@/app/subscribe/analyze-demo";
-import { MonitorPreview, ReportPreview, type MonitorChange } from "@/app/subscribe/example-panels";
+import { MonitorPreview, type MonitorChange } from "@/app/subscribe/example-panels";
 
 export function LandingValueShowcase({
   rows,
@@ -41,10 +42,7 @@ export function LandingValueShowcase({
             wire={null}
             label="Monitor with Fee Insight Alerts"
           />,
-          <ReportPreview
-            key="report"
-            label="Report to your board with confidence"
-          />,
+          <LandingReportDocument key="report" compact />,
         ]}
       />
     </ShowcaseProvider>

@@ -1,0 +1,3 @@
+[submodule ".agents/vendor/brag"]
+	path = .agents/vendor/brag
+	url = https://github.com/latent-spaces/brag.git
