@@ -60,3 +60,10 @@ This preview restores the established Benchmark / Analyze / Monitor / Report rot
 
 Base implementation head before this receipt: `2eafc35d267f570175f6425b4160ab735f61ad78`.
 The homepage now leads with institutional value and the four rotating Benchmark / Analyze / Monitor / Report examples. Bank Fee Index search sits below the hero.
+
+
+## Preview trigger — action-oriented rotating labels — 2026-10-11
+
+Base implementation head before this receipt: `b530e437735d8ea602ec4eb5c5c5119fe29b67b2`.
+The landing showcase now uses action-oriented labels inside each preview:
+Benchmark with the Bank Fee Index; Analyze with Hamilton Intelligence; Monitor with Fee Insight Alerts; Report to your board with confidence.
