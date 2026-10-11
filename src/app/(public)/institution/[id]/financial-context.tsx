@@ -1,7 +1,6 @@
 import { formatCompactDollars, formatStoredPercent } from "@/lib/format";
 import { Metric } from "./institution-metrics";
 import { formatReportQuarter, type NormalizedFinancial } from "./financial-units";
-import { GLASS_SOFT } from "@/components/public/site-look";
 
 const SOURCE_LABELS: Record<string, string> = {
   fdic: "FDIC call report",
@@ -28,16 +27,16 @@ export function FinancialContext({
   const asOf = latest ? formatReportQuarter(latest.reportDate) : null;
 
   return (
-    <section className={`p-6 ${GLASS_SOFT}`}>
+    <section className="border border-[#E0D7C9] bg-white p-5">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
             Financial Context
           </p>
-          <h2 className="mt-1 text-lg font-semibold tracking-tight text-[#1A1815]">Size and fee revenue</h2>
+          <h2 className="text-lg font-semibold text-[#1A1815]">Size and fee revenue</h2>
         </div>
         {latest && asOf && (
-          <p className="text-sm text-[#5A5347]">
+          <p className="text-sm text-[#6B6255]">
             Financials as of {asOf} · {sourceLabel(latest.source)}
           </p>
         )}
@@ -63,8 +62,8 @@ export function FinancialContext({
           </div>
 
           {history.length > 1 && latest.source !== "ncua" && (
-            <div className="mt-5 rounded-xl border border-[#E8E1D6] bg-[#F3EEE6]/60 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
+            <div className="mt-5 rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
                 Service charge income by quarter
               </p>
               <div className="mt-3 space-y-2">
@@ -86,7 +85,7 @@ export function FinancialContext({
           )}
         </>
       ) : (
-        <p className="mt-4 rounded-xl border border-[#E8E1D6] bg-[#F3EEE6]/60 p-4 text-sm text-[#5A5347]">
+        <p className="mt-4 rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4 text-sm text-[#6B6255]">
           Financial context is not available for this institution in the current dataset.
         </p>
       )}

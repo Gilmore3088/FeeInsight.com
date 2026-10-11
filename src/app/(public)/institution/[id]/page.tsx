@@ -47,17 +47,14 @@ import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
 import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
-import { HeadlineFees } from "./headline-fees";
 import {
   buildLocationParts,
-  buildProfileDescription,
   buildProfileTitle,
-  headlineAmounts,
   getPublicInstitutionForPage,
   getRateFeesForPage,
   getVisibleFeesForPage,
   isVerifiedFee,
-  pickHeadlineLines,
+  pickHeadlineFees,
   toDisplayFees,
   toPipelineDisplayFees,
   toRateDisplayFees,
@@ -67,7 +64,6 @@ import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileSidebar } from "./profile-sidebar";
 import { FeeProfileSummary, StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
-import { AmbientGlow, GLASS, INTERACTION } from "@/components/public/site-look";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -98,7 +94,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(instId) : [];
   const verifiedFees = fees.filter(isVerifiedFee);
-  const headlineLines = pickHeadlineLines(verifiedFees);
+  const headline = pickHeadlineFees(verifiedFees);
   const city = toTitleCase(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
@@ -107,8 +103,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Thin profiles (fewer verified fees than the page's own thin threshold) stay reachable
     // but out of the index.
     robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
-    title: buildProfileTitle(inst.institution_name, headlineAmounts(headlineLines)),
-    description: buildProfileDescription(inst.institution_name, place || null, headlineLines, SITE_NAME),
+    title: buildProfileTitle(inst.institution_name, headline),
+    description: `Published fees for ${inst.institution_name}${place ? ` (${place})` : ""}, from its own fee schedule, with national benchmarks from ${SITE_NAME}.`,
     keywords: [
       inst.institution_name,
       `${inst.institution_name} fees`,
@@ -198,10 +194,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   const nationalIndex =
     verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
-  // Highest amount first, so the rating's paid-item fee is the same row as the overdraft
-  // headline (pickHeadlineLines takes the highest paid-item overdraft).
-  const byAmountDesc = [...verifiedFees].sort((a, b) => (b.amount ?? -1) - (a.amount ?? -1));
-  const rating = verifiedFees.length > 0 ? computeInstitutionRating(byAmountDesc, nationalIndex) : null;
+  const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
   // Medians for the per-row comparison: the same verified-only index the rating uses, and
   // only where enough institutions publish the fee for a median to mean something.
   const nationalMedians = new Map<string, number | null>(
@@ -238,8 +231,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
   const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
-  const headlineLines = pickHeadlineLines(verifiedFees);
-  const headline = headlineAmounts(headlineLines);
+  const headline = pickHeadlineFees(verifiedFees);
   const interpretation =
     showNarrative && rating
       ? generateInterpretation({
@@ -292,9 +284,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         ]}
       />
 
-      <div className={`relative isolate min-h-screen overflow-x-clip bg-[#FAF7F2] text-[#1A1815] ${INTERACTION}`}>
-        <AmbientGlow height={900} />
-        <div className="mx-auto max-w-page px-6 py-6 sm:py-8">
+      <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
+        <div className="mx-auto max-w-page px-4 py-5 sm:px-6 sm:py-7">
           <ProfileHeader
             name={inst.institution_name}
             status={status}
@@ -317,13 +308,13 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             claimHref={links.claimHref}
           />
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-8">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0 space-y-6">
               {/* The answer first: what this institution charges. */}
-              <section className={`overflow-hidden ${GLASS}`} aria-labelledby="published-fees-heading">
-                <div className="border-b border-[#E8E1D6] px-4 py-4 sm:px-6">
+              <section className="border border-[#E0D7C9] bg-white">
+                <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
                   <div className="flex items-center gap-1.5">
-                    <h2 id="published-fees-heading" className="text-xl font-semibold tracking-tight text-[#1A1815]">Published fees</h2>
+                    <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
                     <InfoTip label="About published fees">
                       Published fees power benchmarks; fees under review do not.
                     </InfoTip>
@@ -333,7 +324,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 {displayFees.length > 0 ? (
                   <>
                     {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
-                    <HeadlineFees institutionId={instId} lines={headlineLines} />
                     <FeeScheduleTable
                       fees={displayFees}
                       disclosureUrl={inst.fee_schedule_url}
@@ -345,13 +335,13 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   </>
                 ) : (
                   <div className="px-4 py-8 sm:px-5">
-                    <div className="rounded-xl border border-[#E8E1D6] bg-[#F3EEE6]/60 p-4">
+                    <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
                       <p className="text-sm font-semibold text-[#1A1815]">
                         {underReviewCount > 0
                           ? "Fees for this institution are under review."
                           : "No published schedule found."}
                       </p>
-                      <p className="mt-1 text-sm leading-relaxed text-[#5A5347]">
+                      <p className="mt-1 text-sm leading-relaxed text-[#6B6255]">
                         {underReviewCount > 0
                           ? "Fees will appear here once review is complete."
                           : "Fee comparisons are withheld until a published fee schedule has been reviewed."}

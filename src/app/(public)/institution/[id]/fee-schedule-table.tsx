@@ -1,11 +1,13 @@
+import { isConsumerFee, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
-import type { FeeAccount } from "@/lib/data-store/types";
 import { getFrequencyLabel } from "./enum-labels";
 
 export interface DisplayFee {
+  feeAudience?: FeeAudience;
+  feeTreatment?: FeeTreatment;
   id: string;
   feeName: string;
   feeCategory: string | null;
@@ -16,40 +18,14 @@ export interface DisplayFee {
   sourceUrl: string | null;
   /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
   rate?: { rate: string; detail: string | null } | null;
-  /** Monthly maintenance: the account the fee belongs to and how it is avoided. */
-  account?: FeeAccount | null;
 }
 
-/**
- * The account behind a monthly fee, under its name: "Account: Everyday Checking" when the
- * fee's name does not already say it, or a plain note when no record names the account, so
- * a generic "Monthly service fee" never reads as the bank-wide fee. Then how it is avoided.
- */
-export function accountNotes(fee: Pick<DisplayFee, "feeName" | "account">): string[] {
-  const account = fee.account;
-  if (!account) return [];
-  const notes: string[] = [];
-  if (!account.name) notes.push("Account not named in this record; its source page shows which account it is");
-  else if (!fee.feeName.toLowerCase().includes(account.name.toLowerCase())) notes.push(`Account: ${account.name}`);
-  if (account.minBalanceToAvoid !== null) {
-    notes.push(`Waived with a ${formatFeeAmount(account.minBalanceToAvoid)} balance`);
-  }
-  if (account.waiverText) notes.push(`Waiver: ${account.waiverText}`);
-  return notes;
-}
-
-function AccountNotes({ fee }: { fee: DisplayFee }) {
-  const notes = accountNotes(fee);
-  if (notes.length === 0) return null;
-  return (
-    <span className="mt-0.5 block text-xs font-normal leading-relaxed text-[#6B6255]">
-      {notes.map((note) => (
-        <span key={note} className="block [overflow-wrap:anywhere]">
-          {note}
-        </span>
-      ))}
-    </span>
-  );
+/** Scope remains visible even when an amount cannot enter a consumer comparison. */
+function AudienceLabel({ fee }: { fee: DisplayFee }) {
+  const label = fee.feeAudience === "consumer" ? "Consumer accounts"
+    : fee.feeAudience === "business" ? "Business accounts"
+    : fee.feeAudience === "both" ? "Consumer and business accounts" : "Account audience not verified";
+  return <span className="block text-xs font-normal text-[#6B6255]">{label}{fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}</span>;
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -66,7 +42,7 @@ type Position = "below" | "within" | "above";
 const POSITION_DOT: Record<Position, string> = {
   below: "bg-emerald-600",
   within: "bg-[#8A8072]",
-  above: "bg-[#C44B2E]",
+  above: "bg-amber-600",
 };
 
 const POSITION_TEXT: Record<Position, string> = {
@@ -76,7 +52,7 @@ const POSITION_TEXT: Record<Position, string> = {
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
-  if (!benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  if (!isConsumerFee(fee.feeAudience) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
   return benchmarks[fee.feeCategory] ?? null;
 }
 
@@ -182,7 +158,7 @@ function MedianCell({
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
 }) {
-  if (fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!isConsumerFee(fee.feeAudience) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
   const stateDelta = stateMedians
     ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
@@ -266,7 +242,7 @@ function GroupBadge({ group }: { group: FeeGroup }) {
   const verified = group.verifiedCount > 0;
   const className = verified
     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : "border-[#C44B2E]/25 bg-[#FDF0ED] text-[#8E2A17]";
+    : "border-amber-200 bg-amber-50 text-amber-900";
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${className}`}>
@@ -280,6 +256,7 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 }
 
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]";
+const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
 const FOCUSED_ROW = "border-l-2 border-l-[#C44B2E] bg-[#C44B2E]/[0.035]";
 
@@ -369,7 +346,7 @@ export function FeeScheduleTable({
 
 function UnderReviewChip() {
   return (
-    <span className="ml-2 inline-flex items-center rounded-md border border-[#C44B2E]/25 bg-[#FDF0ED] px-1.5 py-0.5 text-[10px] font-semibold text-[#8E2A17]">
+    <span className="ml-2 inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
       Under review
     </span>
   );
@@ -424,10 +401,10 @@ function FeeRow({
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
         <span className="break-words font-medium text-[#1A1815]">{fee.feeName}</span>
+        <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
-        <AccountNotes fee={fee} />
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">
+      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
         {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
@@ -489,11 +466,11 @@ function FeeScheduleStack({
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words text-sm font-medium text-[#1A1815]">
                       {fee.feeName}
+                      <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
-                      <AccountNotes fee={fee} />
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
-                      <span className="text-base font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">
+                      <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
                         {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
                       </span>
                       {benchmark && fee.amount !== null && (
