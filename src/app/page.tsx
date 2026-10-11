@@ -15,6 +15,7 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getInstitutionStateDirectorySummariesCached } from "@/lib/data-store/public-cached-reads";
+import { AmbientGlow, INTERACTION } from "@/components/public/site-look";
 
 const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the source`;
 
@@ -69,7 +70,9 @@ export default async function LandingPage() {
   ]);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] consumer-brand">
+    <div className={`consumer-brand relative isolate min-h-screen overflow-x-clip bg-[#FAF7F2] ${INTERACTION}`}>
+      {/* The glass surfaces need colour behind them: the /subscribe light sources, no motion. */}
+      <AmbientGlow />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -80,8 +83,11 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero institutionsLabel={summary.institutionsLabel} sampleLive={sampleLive} />
-        <LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />
+        <LandingHero
+          institutionsLabel={summary.institutionsLabel}
+          sampleLive={sampleLive}
+          aside={<LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />}
+        />
         <LandingBankOffer sampleLive={sampleLive} />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
