@@ -3169,3 +3169,16 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
 END $$;
 \ir ../../supabase/migrations/20270110000040_fee_audience_integrity.sql
+
+-- Fixture alignment with canonical migrations 20270110000004 and 20270110000030.
+-- Test-only schema: mirror current-copy identity and like-for-like fee-change pairing.
+-- No production migration or historical data backfill is executed by this fixture.
+ALTER TABLE public.source_documents
+  ADD COLUMN superseded_by_id bigint REFERENCES public.source_documents(id) ON DELETE SET NULL;
+CREATE INDEX source_documents_current_page_idx
+  ON public.source_documents (institution_id, document_url)
+  WHERE status = 'success' AND duplicate_of_id IS NULL AND superseded_by_id IS NULL;
+ALTER TABLE public.fee_change_records
+  ADD COLUMN previous_fee_published_id bigint,
+  ADD COLUMN new_fee_published_id bigint,
+  ADD COLUMN like_for_like boolean;
