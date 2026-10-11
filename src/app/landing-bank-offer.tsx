@@ -1,9 +1,9 @@
 import { TrackLink } from "@/components/track-link";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
+import { BAND, BODY, CheckList, EYEBROW, GLASS_SOFT, H2 } from "@/components/public/site-look";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
 
 const WHAT_YOU_GET = REPORT_INCLUDES;
 
@@ -16,32 +16,24 @@ const NEXT_STEPS = [
 /**
  * The bank and credit union path: what the report is, the real first pages of the public
  * sample, and the same request form as /for-institutions, so the lead is captured right here.
+ * Desktop: two equal columns (the pitch and its checklist; the form), the /subscribe layout.
  */
 export function LandingBankOffer({ sampleLive = false }: { sampleLive?: boolean }) {
   return (
-    <section id="for-banks" className="scroll-mt-16 border-b border-[#E0D7C9] bg-white">
-      <div className="mx-auto grid max-w-page gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
+    <section id="for-banks" aria-labelledby="for-banks-title" className={`scroll-mt-16 ${BAND}`}>
+      <div className="mx-auto grid max-w-page gap-10 px-4 py-12 sm:px-6 sm:py-16 xl:grid-cols-2 xl:items-start xl:gap-14">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
-            For banks and credit unions
-          </p>
-          <h2 className="mt-2 text-balance text-[1.75rem] leading-tight text-[#1A1815] sm:text-[2.1rem]" style={SERIF_STYLE}>
+          <p className={EYEBROW}>For banks and credit unions</p>
+          <h2 id="for-banks-title" className={`mt-3 ${H2}`}>
             See where your fees sit against your competitors
           </h2>
-          <p className="mt-3 max-w-xl text-pretty text-[15px] leading-relaxed text-[#5A5347]">
+          <p className={`mt-3 text-pretty ${BODY}`}>
             National and Fed district reports are free. The {REPORT_OFFER.name} for your
             institution starts at $300: we read your fee schedule and your
             competitors&apos;, then show where you stand.
           </p>
 
-          <ul className="mt-5 space-y-2">
-            {WHAT_YOU_GET.map((item) => (
-              <li key={item} className="flex gap-2.5 text-[14px] leading-snug text-[#3D3830]">
-                <span aria-hidden="true" className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#C44B2E]" />
-                {item}
-              </li>
-            ))}
-          </ul>
+          <CheckList items={WHAT_YOU_GET} className="mt-6" />
 
           {SAMPLE_REPORT_LIVE && (
             <div className="mt-6">
@@ -54,29 +46,30 @@ export function LandingBankOffer({ sampleLive = false }: { sampleLive?: boolean 
                 event="see_sample_report"
                 eventProps={{ placement: "home_bank_section" }}
                 href={SAMPLE_REPORT_HREF}
-                className="mt-3 inline-block text-sm font-semibold text-[#A93D25] hover:text-[#8E2A17]"
+                className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[#A93D25] underline underline-offset-2 hover:text-[#8E2A17]"
               >
-                Read the full sample report →
+                Read the full sample report
               </TrackLink>
             </>
           )}
-        </div>
 
-        <div className="min-w-0 lg:sticky lg:top-20">
-          <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="homepage" />
-          <div className="mt-5 rounded-lg bg-[#FAF7F2] px-4 py-3.5">
-            <p className="text-[12px] font-semibold text-[#1A1815]">What happens next</p>
-            <ol className="mt-2 space-y-2">
+          <div className={`mt-8 p-5 sm:p-6 ${GLASS_SOFT}`}>
+            <h3 className="text-sm font-semibold text-[#1A1815]">What happens next</h3>
+            <ol className="mt-3 space-y-3">
               {NEXT_STEPS.map((step, index) => (
-                <li key={step} className="flex gap-2 text-[12px] leading-snug text-[#5A5347]">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F4EEE5] text-[11px] font-semibold tabular-nums text-[#A93D25]">
+                <li key={step} className="flex gap-3 text-sm leading-snug text-[#3D3830]">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#1A1815] text-xs font-semibold tabular-nums text-white">
                     {index + 1}
                   </span>
-                  {step}
+                  <span className="pt-0.5">{step}</span>
                 </li>
               ))}
             </ol>
           </div>
+        </div>
+
+        <div className="min-w-0 xl:sticky xl:top-20">
+          <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="homepage" />
         </div>
       </div>
     </section>
@@ -94,7 +87,7 @@ const SAMPLE_PAGES = [
 /** The actual first three pages of the sample report, each opening the full sample. */
 function SamplePages() {
   return (
-    <figure className="min-w-0 rounded-lg bg-[#F4EEE5] p-3 sm:p-4">
+    <figure className={`min-w-0 p-3 sm:p-4 ${GLASS_SOFT}`}>
       <ul className="grid grid-cols-3 gap-2.5 sm:gap-4">
         {SAMPLE_PAGES.map((page, index) => (
           <li key={page.src} className="min-w-0">
