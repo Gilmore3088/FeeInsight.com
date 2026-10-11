@@ -89,3 +89,8 @@ This preview uses one shared mobile content rail for the Bank Fee Index, banking
 ## Preview trigger — homepage mobile alignment — 2026-10-11
 
 This preview standardizes the homepage hero, Bank Fee Index, banking-team section, and coverage section on one 24px mobile content rail.
+
+
+## Preview trigger — national research hierarchy — 2026-10-11
+
+This preview adds a first-class National data & research section to /research and places National in the research navigation before state and Federal Reserve district analysis.
