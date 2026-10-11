@@ -130,6 +130,7 @@ export default async function FeeCatalogPage() {
           }).replace(/</g, "\\u003c"),
         }}
       />
+      </div>
     </div>
   );
 }
