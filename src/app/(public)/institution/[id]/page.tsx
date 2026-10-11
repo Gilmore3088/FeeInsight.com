@@ -193,6 +193,36 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   const nationalIndex =
     verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
+  const nationalMedians = new Map<string, number | null>(
+    nationalIndex
+      .filter((entry) => entry.maturity_tier !== "insufficient")
+      .map((entry) => [entry.fee_category, entry.median_amount]),
+  );
+  const feeBenchmarks: FeeBenchmarks = {};
+  for (const entry of nationalIndex) {
+    if (entry.maturity_tier === "insufficient") continue;
+    if (entry.p25_amount == null || entry.median_amount == null || entry.p75_amount == null) continue;
+    feeBenchmarks[entry.fee_category] = {
+      p25: entry.p25_amount,
+      median: entry.median_amount,
+      p75: entry.p75_amount,
+    };
+  }
+  const stateIndex =
+    verifiedFees.length > 0 && inst.state_code
+      ? await getPeerIndexCached({ state_code: inst.state_code }).catch(fallbackTo("state index", []))
+      : [];
+  const stateMedians: StateMedians | undefined =
+    stateIndex.length > 0 && inst.state_code && STATE_NAMES[inst.state_code]
+      ? {
+          place: STATE_NAMES[inst.state_code],
+          medians: new Map(
+            stateIndex
+              .filter((entry) => entry.maturity_tier !== "insufficient")
+              .map((entry) => [entry.fee_category, entry.median_amount]),
+          ),
+        }
+      : undefined;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
 
   // One row per quarter, one source; the KPI strip and Financial Context share the same figure.
