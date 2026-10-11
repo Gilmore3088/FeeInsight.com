@@ -48,3 +48,9 @@ The homepage hero again uses the shared Benchmark, Analyze, Monitor and Report r
 
 Base implementation head before this no-op receipt: `e7a046439ff9c79218b01d01104214f6d831eb2c`.
 This is the exact branch state with the Benchmark / Analyze / Monitor / Report rotating hero restored and the temporary static sample strip removed.
+
+
+## Preview trigger — restored four-value homepage hero — 2026-10-11
+
+Base implementation head before this no-op receipt: `92a3d4fff030c2ac76822f3e9ef787d00954630f`.
+This preview restores the established Benchmark / Analyze / Monitor / Report rotating hero showcase while retaining the compact report proof section below.
