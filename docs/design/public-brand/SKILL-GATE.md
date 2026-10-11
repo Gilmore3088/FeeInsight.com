@@ -67,7 +67,7 @@ The visual source of truth is the current /subscribe direction plus the approved
 | /reports | required | required | required | required | required | required | pending |
 | /reports/[slug] | required | required | required | required | required | required + schema | pending |
 | /for-institutions | required | required | required | required | required | required | implemented; CI + screenshots pending |
-| /guides | required | required | required | required | required | required | pending |
+| /guides | required | required | required | required | required | required | implemented; CI + screenshot pending |
 | /guides/* | required | required | required | required | required | required + schema | pending |
 | /methodology | required | required | edit existing only | required | required | required | pending |
 | /api-docs | required | required | edit existing only | required | required | required | pending |
