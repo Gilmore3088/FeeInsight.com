@@ -36,3 +36,9 @@ This commit only opts the unchanged reviewed implementation into Vercel's existi
 
 Base implementation head before this no-op receipt: `d71326a5de250e62331f5f34d8753d786c223177`.
 This commit only opts that exact implementation into the existing Vercel preview policy.
+
+
+## Preview trigger — restored four-example homepage hero — 2026-10-11
+
+Base implementation head before this no-op receipt: `7e6b50c6ba030598f2d95e987d810cb3d0fe281f`.
+The homepage hero again uses the shared Benchmark, Analyze, Monitor and Report rotating showcase.
