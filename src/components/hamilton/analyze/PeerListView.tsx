@@ -2,19 +2,24 @@
 
 import { useMemo, useRef, useState } from "react";
 import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
-import { formatPeerAssets, type PeerListResponse } from "@/lib/hamilton/peer-list";
+import { formatPeerAssets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 
 type Sort = "selection" | "name" | "assets_desc" | "assets_asc";
-export function PeerListView({ response }: { response: PeerListResponse }) {
+export interface PeerSaveContext {
+  question: string;
+  institutionId: string | null;
+  previousPeerList: PeerListContinuation | null;
+}
+export function PeerListView({ response, saveContext }: { response: PeerListResponse; saveContext?: PeerSaveContext }) {
   const data = response.peerList;
   // A newly answered list owns its selections and save receipt. An old action's
   // completion cannot update the next list or a different research institution.
   const key = JSON.stringify([data.subject?.institutionId, data.queriedAt, data.criteria, data.rows.map(row => row.institutionId)]);
-  return <SelectablePeerList key={key} response={response} />;
+  return <SelectablePeerList key={key} response={response} saveContext={saveContext} />;
 }
 
-function SelectablePeerList({ response }: { response: PeerListResponse }) {
+function SelectablePeerList({ response, saveContext }: { response: PeerListResponse; saveContext?: PeerSaveContext }) {
   const data = response.peerList;
   const [sort, setSort] = useState<Sort>("selection");
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -23,6 +28,27 @@ function SelectablePeerList({ response }: { response: PeerListResponse }) {
   const saving = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [savedName, setSavedName] = useState<string | null>(null);
+  const [savingResearch, setSavingResearch] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [savedResearchId, setSavedResearchId] = useState<string | null>(null);
+  const researchSaving = useRef(false);
+  async function saveResearch() {
+    if (!saveContext || researchSaving.current || !data.subject || data.status !== "ready") return;
+    researchSaving.current = true;
+    setSavingResearch(true);
+    setResearchError(null);
+    try {
+      const answer = await fetch("/api/hamilton/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...saveContext, expectedPeerList: data, savePeerResearchSnapshot: true }),
+      });
+      const result = await answer.json() as { savedAnalysisId?: string; error?: string };
+      if (!answer.ok || !result.savedAnalysisId) throw new Error(result.error ?? "The displayed evidence changed.");
+      setSavedResearchId(result.savedAnalysisId);
+    } catch (err) {
+      setResearchError(err instanceof Error ? err.message : "Could not save research. Retry.");
+    } finally { researchSaving.current = false; setSavingResearch(false); }
+  }
   const selectedIds = data.rows.filter(row => selected.has(row.institutionId)).map(row => row.institutionId);
   const automaticName = defaultPeerSetName({ institution_ids: selectedIds }, data.subject?.name);
   function toggleSelection(id: number) {
@@ -84,6 +110,14 @@ function SelectablePeerList({ response }: { response: PeerListResponse }) {
         </details>
       ) : null}
       {data.notes.map((note, i) => <p key={i} className="text-sm text-warm-700">{note}</p>)}
+      {saveContext ? <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={saveResearch} disabled={savingResearch || savedResearchId !== null}
+          className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
+          {savingResearch ? "Saving research..." : "Save this peer research"}
+        </button>
+        {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
+        {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
+      </div> : null}
       {data.feeComparison ? (
         <div className="rounded-lg border border-warm-300 p-4">
           <h3 className="text-lg font-semibold text-warm-900">Published NSF fees — exact selected peers</h3>

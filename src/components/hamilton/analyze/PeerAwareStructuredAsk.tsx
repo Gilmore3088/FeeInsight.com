@@ -82,6 +82,8 @@ function PeerListRequest({
     return () => { current = false; controller.abort(); onBusyChange?.(false); };
   }, [question, institutionId, onBusyChange, onLead, onResolved, retry, submittedPrior]);
   if (error) return <div role="alert" className="text-sm text-terra-text"><p>{error}</p><button type="button" onClick={() => setRetry(n => n + 1)} className="mt-2 min-h-11 rounded-md border border-warm-300 px-3">Retry peer list</button></div>;
-  if (response) return <PeerListView response={response} />;
+  if (response) return <PeerListView response={response} saveContext={{
+    question, institutionId, previousPeerList: submittedPrior,
+  }} />;
   return onBusyChange ? null : <p role="status" className="text-sm text-warm-700">Loading matching institutions and dated assets…</p>;
 }
