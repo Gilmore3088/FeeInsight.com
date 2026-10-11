@@ -287,11 +287,12 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
   // UAT's 13:41 sample (Oct 9). The taxonomy files an escheat processing fee under
   // dormant_account, but Darwin's dormant envelope stops at $30 (a monthly charge), so the $50
   // one-time fee cannot be re-filed there and comes down rather than stay a box fee.
+  // UAT labelled 59791; it was refreshed on Oct 10 as 117687, the live row, under the full name.
   {
-    feePublishedId: 59791, institution: "Marquette Savings Bank",
-    feeName: "Escheat processing fee", amount: 50, canonicalFeeKey: "safe_deposit_box",
+    feePublishedId: 117687, institution: "Marquette Savings Bank",
+    feeName: "Escheat processing fee (plus drilling fee if applicable)", amount: 50, canonicalFeeKey: "safe_deposit_box",
     verdict: "wrong_category", pattern: "category_miss",
-    why: "Doc 16334: \"Escheat processing fee (plus drilling fee if applicable) | $50.00/account\" sits among account fees after the dormant fee; it is not a safe deposit box fee",
+    why: "Doc 26244 (refresh of doc 16334): \"Escheat processing fee (plus drilling fee if applicable) | $50.00/account\" sits among account fees after \"Dormant account fee | $7.50/month\"; it is not a safe deposit box fee",
   },
 ];
 
