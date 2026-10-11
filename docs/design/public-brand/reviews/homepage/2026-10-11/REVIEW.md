@@ -2,8 +2,8 @@
 
 Route: `/`  
 PR: #1016  
-Primary job: help a visitor find an institution's published fees immediately.  
-Secondary job: give banking teams one clear path to Fee Insight Pro.
+Primary job: show the public fee lookup immediately while demonstrating the four concrete ways Fee Insight Pro delivers value.  
+Secondary job: let banking teams see the product before they are asked to buy.
 
 ## Before
 
@@ -20,10 +20,10 @@ The original homepage asked visitors to choose among three paths before doing th
 ### DRAPER — message hierarchy
 
 Decision:
-- Make institution lookup the homepage's one primary job.
-- Keep national benchmark data beside the search as proof/usefulness.
-- Keep the institutional product as one secondary section.
-- Move detailed report choices, workflow explanation and pricing decisions to dedicated pages.
+- Keep institution lookup immediately accessible.
+- Preserve the four rotating value-delivery examples in the hero: Benchmark, Analyze, Monitor, Report.
+- Use live/current data in the examples where available.
+- Keep detailed pricing and report-request flows on dedicated pages.
 
 Main message:
 **See what your bank charges.**
@@ -83,10 +83,11 @@ Old interaction:
 4. then search / explore / benchmark.
 
 New interaction:
-1. understand the page;
-2. search an institution.
+1. understand the public lookup;
+2. search an institution;
+3. watch or choose among the four live Pro examples: Benchmark, Analyze, Monitor, Report.
 
-Primary CTA/interaction: institution search.
+Primary interaction: institution search plus product demonstration in the same hero.
 
 Secondary CTA: See Fee Insight Pro.
 
@@ -165,6 +166,9 @@ The old fixed-price institution-report language was removed from the homepage be
 - `d92f6ad4` — remove the legacy report flow from the homepage call site
 - `194114e6` — restore three visual sample-report pages as compact proof
 - `e52352c9` — place the compact sample-work section back on the homepage
+- `eee3b852` — restore the shared four-example rotating showcase
+- `61121e15` — put the rotating showcase back into the homepage hero
+- `d8a4e8d1` — drive Benchmark, Analyze and Monitor examples from current data and reuse the real Report preview
 
 ## After
 
