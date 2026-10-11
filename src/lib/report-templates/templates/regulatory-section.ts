@@ -4,8 +4,8 @@
  * by ./developments. Renders only what the regulatory context holds; an empty part says so.
  */
 
-import { compactTable, escapeHtml, keyFinding, statCardRow } from "../index";
-import type { StatCard } from "../index";
+import { compactTable, escapeHtml, keyFinding, statCardRow } from "../primitives";
+import type { StatCard } from "../primitives";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 
 function subhead(text: string): string {

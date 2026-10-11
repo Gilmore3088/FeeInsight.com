@@ -5,8 +5,8 @@
  * States facts and never tells an institution what to charge.
  */
 
-import { chapterDivider, compactTable, footnote, horizontalBarChart, pageBreak, statCardRow } from "../index";
-import type { StatCard } from "../index";
+import { chapterDivider, compactTable, footnote, horizontalBarChart, pageBreak, statCardRow } from "../primitives";
+import type { StatCard } from "../primitives";
 import { TREND_FEES, type FeeMedian, type NationalTrends, type TrendFee } from "@/lib/report-assemblers/national-trends";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 
