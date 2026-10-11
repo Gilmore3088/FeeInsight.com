@@ -10,6 +10,7 @@ import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
+import { AmbientGlow, GLASS, H1, INTERACTION, LEAD, NUM, TEXT_LINK } from "@/components/public/site-look";
 
 // No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
@@ -18,8 +19,7 @@ export const metadata: Metadata = {
     "Compare bank and credit union fees by category. National medians, typical ranges, and institution counts for overdraft, NSF, ATM, wire transfer, and more.",
 };
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const EYEBROW = "text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]";
 const SPOTLIGHT_CARD_CATEGORIES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network"];
 const CANONICAL_CATEGORIES = new Set(Object.values(FEE_FAMILIES).flat());
 
@@ -58,7 +58,9 @@ export default async function FeeCatalogPage() {
     .filter((s): s is NonNullable<typeof s> => Boolean(s));
 
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <div className={`relative isolate overflow-x-clip ${INTERACTION}`}>
+      <AmbientGlow height={1000} />
+      <div className="mx-auto max-w-page px-4 py-12 sm:px-6 sm:py-16">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -75,13 +77,10 @@ export default async function FeeCatalogPage() {
           </span>
         </div>
 
-        <h1
-          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-          style={SERIF}
-        >
+        <h1 className={H1}>
           {PRODUCT_NAME} — benchmarks by category
         </h1>
-        <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+        <p className={`mt-4 ${LEAD}`}>
           Bank and credit union fee benchmarks across {summary.categoriesLabel} fee categories, from{" "}
           {summary.institutionsLabel} institutions with published fees.
         </p>
@@ -111,21 +110,21 @@ export default async function FeeCatalogPage() {
           <Link
             key={fee.fee_category}
             href={`/fees/${fee.fee_category}`}
-            className="group relative rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-5 py-4 transition-all duration-400 hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5 no-underline overflow-hidden"
+            className={`group relative overflow-hidden px-5 py-5 no-underline sm:px-6 ${GLASS}`}
           >
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/0 to-transparent group-hover:via-[#C44B2E]/30 transition-all duration-700" />
             <p className={`${EYEBROW} group-hover:text-[#A93D25] transition-colors`}>
               {getDisplayName(fee.fee_category)}
             </p>
-            <p className="mt-2 text-[28px] font-light tracking-tight text-[#1A1815] tabular-nums" style={SERIF}>
+            <p className={`mt-2 text-3xl font-semibold tracking-tight text-[#1A1815] ${NUM}`}>
               {money(fee.median_amount)}
             </p>
-            <p className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+            <p className={`mt-1 text-xs text-[#5A5347] ${NUM}`}>
               Typical {money(fee.p25_amount)} &ndash; {money(fee.p75_amount)}
               <span className="mx-1.5 text-[#D4C9BA]">&middot;</span>
               {fee.institution_count.toLocaleString()} inst.
             </p>
-            <p className="mt-0.5 text-[11px] tabular-nums text-[#6B6255]">
+            <p className={`mt-1 text-xs text-[#5A5347] ${NUM}`}>
               {fee.total_observations.toLocaleString()} published fee entries
             </p>
           </Link>
@@ -143,7 +142,7 @@ export default async function FeeCatalogPage() {
           {shownCanonical} spotlight categories below.{" "}
           <span className="font-semibold text-[#1A1815]">Pro:</span> the other {gatedCount} categories, peer
           and state breakdowns, and API access on request.{" "}
-          <Link href="/subscribe" className="font-medium text-[#A93D25] hover:underline">
+          <Link href="/subscribe" className={TEXT_LINK}>
             Compare plans
           </Link>
         </p>
@@ -155,7 +154,7 @@ export default async function FeeCatalogPage() {
           <Link
             key={item.href}
             href={item.href}
-            className="rounded-full border border-[#E8DFD1] bg-white/80 px-4 py-1.5 text-[12px] font-medium text-[#5A5347] transition-all hover:border-[#C44B2E]/30 hover:text-[#A93D25] no-underline"
+            className="inline-flex min-h-11 items-center rounded-full bg-white/70 px-4 text-sm font-medium text-[#3D3830] ring-1 ring-[#E8E1D6] no-underline hover:bg-white hover:text-[#A93D25] hover:ring-[#C44B2E]/40"
           >
             {item.label}
           </Link>
