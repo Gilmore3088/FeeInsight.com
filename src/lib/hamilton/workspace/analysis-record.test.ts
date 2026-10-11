@@ -16,7 +16,12 @@ describe("saved storyline confidence and evidence", () => {
     expect(saved.confidence.basis).toContain(CLAIM_BINDING_LIMITATION);
     expect(saved.factEvidence?.facts.length).toBeGreaterThan(0);
     expect(saved.factEvidence?.facts.every((fact) => fact.scope.feeCategory === "overdraft")).toBe(true);
-    expect(saved.factEvidence?.derivations.some((fact) => fact.derivation.kind === "peer_median")).toBe(true);
+    // Peer category medians do not expose contributing published row IDs.
+    // Saving an unattributable aggregate as claim-bound evidence would overstate trust.
+    expect(saved.factEvidence?.derivations.some((fact) => fact.derivation.kind === "peer_median")).toBe(false);
+    expect(saved.factEvidence?.limitations).toContain(
+      "Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence.",
+    );
   });
 
   it("does not invent evidence when a storyline is saved without a research bundle", () => {
