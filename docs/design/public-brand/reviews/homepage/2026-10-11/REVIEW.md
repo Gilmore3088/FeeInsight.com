@@ -63,7 +63,7 @@ Copy decisions:
 - cut four Explore explainer cards;
 - cut the three-item lookup checklist;
 - cut the benchmark/report explanation and fixed-price language from the hero;
-- cut the full report-request explanation, report checklist, sample-page explanation and "what happens next" steps from the homepage;
+- cut the full report-request explanation, report checklist and "what happens next" steps from the homepage;
 - cut the "most coverage" state list;
 - compress provenance to one line.
 
@@ -100,7 +100,7 @@ Progressive disclosure:
 
 Preserved or explicit measurable actions:
 - institution search path remains the primary interaction;
-- pricing click from the institutional section is explicitly tracked as `pricing_click` with placement `homepage_banking_teams`;
+- Pro click from the institutional section is explicitly tracked as `upgrade_click` with placement `homepage_banking_teams`;
 - existing public navigation and page analytics remain intact.
 
 No new analytics vendor or instrumentation stack added.
@@ -150,7 +150,7 @@ The old fixed-price institution-report language was removed from the homepage be
 | Explore cards | Cut | Navigation already provides discovery |
 | National fee benchmark module | Keep | Useful data beside search |
 | Full report request section | Cut from homepage | Detailed conversion belongs on dedicated page |
-| Sample report explainer | Cut from homepage | Dedicated reports surface owns it |
+| Sample report proof | Keep, compressed | Three visual report pages with one full-sample link |
 | "What happens next" steps | Cut | Removed workflow narration |
 | Banking-team pitch | Rewrite + collapse | One compact section + one CTA |
 | Coverage map | Keep | Visual proof and discovery |
@@ -163,6 +163,8 @@ The old fixed-price institution-report language was removed from the homepage be
 - `21dcbe3f` — collapse institutional pitch to one concise Pro path
 - `24620196` — cut redundant coverage/provenance copy
 - `d92f6ad4` — remove the legacy report flow from the homepage call site
+- `194114e6` — restore three visual sample-report pages as compact proof
+- `e52352c9` — place the compact sample-work section back on the homepage
 
 ## After
 
