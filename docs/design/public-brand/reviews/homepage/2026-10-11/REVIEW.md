@@ -2,8 +2,8 @@
 
 Route: `/`  
 PR: #1016  
-Primary job: show the public fee lookup immediately while demonstrating the four concrete ways Fee Insight Pro delivers value.  
-Secondary job: let banking teams see the product before they are asked to buy.
+Primary job: show banking teams what Fee Insight does and demonstrate the four concrete value deliveries: Benchmark, Analyze, Monitor, Report.  
+Secondary job: provide the Bank Fee Index lookup as the public utility beneath the commercial hero.
 
 ## Before
 
@@ -20,16 +20,20 @@ The original homepage asked visitors to choose among three paths before doing th
 ### DRAPER — message hierarchy
 
 Decision:
-- Keep institution lookup immediately accessible.
+- Lead with the institutional buyer and Fee Insight's commercial value.
 - Preserve the four rotating value-delivery examples in the hero: Benchmark, Analyze, Monitor, Report.
 - Use live/current data in the examples where available.
+- Move Bank Fee Index search below the hero as the public utility.
 - Keep detailed pricing and report-request flows on dedicated pages.
 
 Main message:
-**See what your bank charges.**
+**See where your fees stand.**
 
-Secondary institutional message:
-**Compare your fees with the market.**
+Support:
+**Compare named peers, analyze market context, monitor changes, and turn the evidence into a board-ready review.**
+
+Public utility:
+**Looking up a bank or credit union?**
 
 ### SHERLOCK — customer / buyer evidence
 
@@ -83,13 +87,14 @@ Old interaction:
 4. then search / explore / benchmark.
 
 New interaction:
-1. understand the public lookup;
-2. search an institution;
-3. watch or choose among the four live Pro examples: Benchmark, Analyze, Monitor, Report.
+1. understand Fee Insight's value for banking teams;
+2. watch or choose among Benchmark, Analyze, Monitor, Report;
+3. choose Fee Insight Pro or continue to the Bank Fee Index;
+4. use institution search below the hero when the visitor's job is lookup.
 
-Primary interaction: institution search plus product demonstration in the same hero.
+Primary CTA: See Fee Insight Pro.
 
-Secondary CTA: See Fee Insight Pro.
+Secondary path: Explore the Bank Fee Index.
 
 Progressive disclosure:
 - detailed report choices: moved off homepage;
@@ -130,10 +135,10 @@ Detailed objections, plan choice and pricing belong on the dedicated institution
 ### MURROW — message compression
 
 Homepage summary:
-**Search a bank or credit union and see its published fees, with market context and source evidence.**
+**Fee intelligence for banks and credit unions, demonstrated through Benchmark, Analyze, Monitor and Report.**
 
-Institutional summary:
-**Hamilton turns fee and peer research into a board-ready brief.**
+Public-data summary:
+**The Bank Fee Index remains available immediately below the hero for institution lookup and source-backed fee research.**
 
 ### BERNAYS — claims / reputation
 
@@ -145,9 +150,9 @@ The old fixed-price institution-report language was removed from the homepage be
 
 | Section | Decision | Result |
 |---|---|---|
-| Product intro | Rewrite | Short eyebrow + headline + one sentence |
-| Three-path tabs | Cut | Search is primary |
-| Lookup checklist | Cut | Search UI is self-explanatory |
+| Product intro | Rewrite | Institutional value proposition first |
+| Three-path tabs | Cut | Four-value product demonstration replaces path chooser |
+| Public lookup | Move below hero | Bank Fee Index search becomes secondary utility |
 | Explore cards | Cut | Navigation already provides discovery |
 | National fee benchmark module | Keep | Useful data beside search |
 | Full report request section | Cut from homepage | Detailed conversion belongs on dedicated page |
@@ -169,6 +174,9 @@ The old fixed-price institution-report language was removed from the homepage be
 - `eee3b852` — restore the shared four-example rotating showcase
 - `61121e15` — put the rotating showcase back into the homepage hero
 - `d8a4e8d1` — drive Benchmark, Analyze and Monitor examples from current data and reuse the real Report preview
+- `2e96857d` — rewrite hero around institutional value
+- `368f62ab` — create a separate Bank Fee Index search section below the hero
+- `2c4d8ed7` — move public lookup beneath the value-led hero
 
 ## After
 
