@@ -1,10 +1,11 @@
 import { recordProRequest } from "@/lib/agents/run-store";
 import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-peer-list";
+import { getPublishedPeerFees } from "@/lib/data-store/hamilton-peer-fees";
 import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { isPeerListContinuationQuestion, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
+import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
 interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
@@ -32,6 +33,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         // Neither client-selected IDs nor the old subject is trusted as authority.
         const prior = validatePeerListContinuation(body.previousPeerList);
         const state = peerListRefinementState(question);
+        const feeIntent = peerListFeeFollowUp(question);
         if (!prior || !isPeerListContinuationQuestion(question))
           return message("needs_criteria", "This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
         const suppliedId = body.institutionId === undefined || body.institutionId === null || body.institutionId === ""
@@ -39,8 +41,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             ? String(body.institutionId) : "";
         if (suppliedId !== prior.originInstitutionId)
           return message("needs_criteria", "The research institution changed. Start a new peer list; the earlier selection was not reused.");
-        if (!state)
-          return message("needs_criteria", "Only state refinement of the exact displayed peer list is supported here (for example, 'Only Florida'). Fee comparisons of 'their' fees are not yet supported; no different peer group or paid report was started.");
+        if (!state && !feeIntent)
+          return message("needs_criteria", "Refine the displayed peers by state, ask 'Compare their NSF fees', or 'How does this compare with us?'. No new peer group or paid report was started.");
         const original = await answerPeerList(user, {
           question: prior.originQuestion,
           institutionId: prior.originInstitutionId,
@@ -52,24 +54,47 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         }
         const selected = new Set(prior.selectedIds);
         const rows = original.peerList.rows.filter(row =>
-          selected.has(row.institutionId) && row.stateCode === state);
+          selected.has(row.institutionId) && (!state || row.stateCode === state));
         const count = prior.selectedIds.length;
+        let feeComparison: PeerListData["feeComparison"];
+        if (feeIntent) {
+          let account: { institutionId: number; name: string } | null = null;
+          if (feeIntent === "with_account") {
+            const resolved = await loadHamiltonAccountContext(user);
+            if (resolved.status !== "identified" || !resolved.institution)
+              return message(resolved.status === "unavailable" ? "unavailable" : "needs_criteria",
+                "Your account institution is not verified. The researched institution was not assumed to be yours.");
+            account = { institutionId: Number(resolved.institution.id), name: resolved.institution.name };
+            if (!Number.isSafeInteger(account.institutionId) || account.institutionId <= 0)
+              return message("unavailable", "The account institution ID is invalid. No comparison was generated.");
+          }
+          const ids = rows.map(row => row.institutionId);
+          const fees = ids.length || account ? await getPublishedPeerFees(
+            [...new Set([...ids, ...(account ? [account.institutionId] : [])])], "nsf") : [];
+          feeComparison = {
+            category: "nsf", comparedPeerIds: ids, fees, account, includesAccount: account !== null,
+            note: "Each published consumer NSF fee row is shown separately, including zero fees and distinct charges. Missing records mean no published matching fee on file; no amount is inferred.",
+          };
+        }
         return {
           kind: "peer_list",
-          shortAnswer: rows.length + " of " + count + " previously displayed peers are in " + state + ".",
+          shortAnswer: feeIntent
+            ? feeIntent === "with_account" ? "NSF fees for " + rows.length + " selected peers versus your verified account institution." : "Published NSF fees for " + rows.length + " selected peers."
+            : rows.length + " of " + count + " previously displayed peers are in " + state + ".",
           peerList: {
             ...original.peerList,
             rows,
             totalMatches: rows.length,
             criteria: original.peerList.criteria ? {
               ...original.peerList.criteria,
-              states: [state],
+              states: state ? [state] : original.peerList.criteria.states,
               institutionIds: [...prior.selectedIds],
               descriptions: [...original.peerList.criteria.descriptions,
                 "This refinement used only the " + count + " institutions displayed in the previous list."],
             } : null,
             notes: [...original.peerList.notes,
               "Only the previously displayed peer IDs were considered; no new peers were introduced. Reporting dates were rechecked."],
+            ...(feeComparison ? { feeComparison } : {}),
           },
         };
       } else if (!intent) {

@@ -67,6 +67,27 @@ export interface PeerListData {
   totalMatches: number | null;
   queriedAt: string;
   notes: string[];
+  feeComparison?: PeerFeeComparison;
+}
+export interface PeerFeeEntry {
+  institutionId: number;
+  id: number;
+  name: string;
+  amount: number | null;
+  frequency: string | null;
+  publishedAt: string | null;
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
+  sourceUrl: string | null;
+}
+/** Preserve individual published charges; never collapse distinct NSF fees into a median. */
+export interface PeerFeeComparison {
+  category: "nsf";
+  comparedPeerIds: number[];
+  fees: PeerFeeEntry[];
+  account: { institutionId: number; name: string } | null;
+  includesAccount: boolean;
+  note: string;
 }
 export interface PeerListResponse {
   kind: "peer_list";
@@ -139,7 +160,14 @@ export function peerListReferencesUnchanged(rows: PeerListRow[], prior: PeerList
 
 /** Recognized list-relative questions must not fall through to a different fee group. */
 export function isPeerListContinuationQuestion(question: string): boolean {
-  return /^(?:only\b|show\s+only\b|filter\s+to\b|(?:compare|show|list)\s+their\b)/i.test(question.trim());
+  return /^(?:only\b|show\s+only\b|filter\s+to\b|(?:compare|show|list)\s+their\b|how\s+does\s+this\s+compare\s+(?:with|to)\s+us\b)/i.test(question.trim());
+}
+/** A finite comparison grammar; other question types never trigger paid inference. */
+export function peerListFeeFollowUp(question: string): "peer_fees" | "with_account" | null {
+  const clean = question.trim().replace(/[?.!]+$/, "").trim();
+  if (/^(?:compare|show|list)\s+their\s+(?:nsf|nonsufficient funds|non-sufficient funds)\s+fees?$/i.test(clean)) return "peer_fees";
+  if (/^how\s+does\s+this\s+compare\s+(?:with|to)\s+us$/i.test(clean)) return "with_account";
+  return null;
 }
 
 /** Deliberately finite grammar: other follow-ups receive explicit guidance. */

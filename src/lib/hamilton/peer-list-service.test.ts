@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ subject: vi.fn(), rows: vi.fn(), resolve: vi.fn(), account: vi.fn(), active: vi.fn(), record: vi.fn() }));
+const mocks = vi.hoisted(() => ({ subject: vi.fn(), rows: vi.fn(), fees: vi.fn(), resolve: vi.fn(), account: vi.fn(), active: vi.fn(), record: vi.fn() }));
 vi.mock("@/lib/data-store/hamilton-peer-list", () => ({ getPeerListSubject: mocks.subject, getPeerListRows: mocks.rows }));
+vi.mock("@/lib/data-store/hamilton-peer-fees", () => ({ getPublishedPeerFees: mocks.fees }));
 vi.mock("./workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.resolve }));
 vi.mock("./account-context-store", () => ({ loadHamiltonAccountContext: mocks.account }));
 vi.mock("./active-peer-set", () => ({ getActivePeerSet: mocks.active }));
@@ -13,6 +14,7 @@ const user = { id: 7, institution_name: "Unverified name" };
 beforeEach(() => {
   mocks.subject.mockReset().mockResolvedValue(subject);
   mocks.rows.mockReset().mockResolvedValue({ rows: [peer], totalMatches: 1 });
+  mocks.fees.mockReset().mockResolvedValue([{ institutionId: 303, id: 55, name: "NSF", amount: 0, frequency: "per_item", publishedAt: "2026-10-01T00:00:00Z", sourceDocumentId: 5, documentUrl: null, sourceUrl: null }]);
   mocks.resolve.mockReset().mockImplementation(async ({ instId }: { instId?: string }) => ({ institution: { id: instId ? Number(instId) : 202 }, error: null }));
   mocks.account.mockReset().mockResolvedValue({ status: "identified", institution: { id: 101, name: "Synthetic Account CU" }, profileLabel: null });
   mocks.active.mockReset().mockResolvedValue(null);
@@ -84,14 +86,41 @@ describe("exact displayed peer-list continuation", () => {
     expect(result?.peerList.status).toBe("unavailable");
     expect(result?.peerList.rows).toEqual([]);
   });
-  it("does not silently route an unsupported fee follow-up to paid analysis", async () => {
+  it("compares exactly the selected peers' distinct NSF fees without paid analysis", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
     const prior = makePeerListContinuation(original, "List peers", "202")!;
-    mocks.rows.mockClear();
-    const result = await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: prior });
-    expect(result?.peerList.status).toBe("needs_criteria");
-    expect(result?.shortAnswer).toContain("not yet supported");
-    expect(mocks.rows).not.toHaveBeenCalled();
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: prior }))!;
+    expect(result.peerList.status).toBe("ready");
+    expect(result.peerList.feeComparison?.comparedPeerIds).toEqual([303]);
+    expect(result.peerList.feeComparison?.fees[0].amount).toBe(0);
+    expect(mocks.fees).toHaveBeenCalledWith([303], "nsf");
+    expect(mocks.account).not.toHaveBeenCalled();
+    expect(result.peerList.subject?.institutionId).toBe(202);
+  });
+  it("compares with a separately verified account institution, not the researched subject", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: prior }))!;
+    expect(mocks.account).toHaveBeenCalledWith(user);
+    expect(mocks.fees).toHaveBeenCalledWith([303, 101], "nsf");
+    expect(result.peerList.feeComparison?.account).toEqual({ institutionId: 101, name: "Synthetic Account CU" });
+    expect(result.peerList.subject?.institutionId).toBe(202);
+  });
+  it("never borrows a researched institution when home membership is ambiguous", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    mocks.account.mockResolvedValue({ status: "ambiguous", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: prior }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("refuses stale fee follow-ups without querying fee rows", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    mocks.rows.mockResolvedValue({ rows: [{ ...peer, recordId: 99 }], totalMatches: 1 });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: prior }))!;
+    expect(result.peerList.status).toBe("unavailable");
+    expect(mocks.fees).not.toHaveBeenCalled();
   });
   it("rejects a different research context without querying the original peers", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
