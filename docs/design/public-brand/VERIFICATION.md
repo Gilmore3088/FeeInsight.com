@@ -23,3 +23,10 @@ Keep PR #1016 draft until visual review and exact-head CI pass.
 ## Homepage simplification preview — 2026-10-11
 
 Current review head includes executed structural passes for the homepage, /fees, institution profiles and /for-institutions. This receipt commit exists only to opt the branch into the repository's existing Vercel preview policy; it does not change production aliases, security settings, environment variables or product behavior.
+
+
+## Verified preview trigger — 2026-10-11
+
+Base implementation head before this no-op receipt: `0feb72bda07a85d6e87a6b752a964c953a0cb3d6`.
+GitHub app tests and backlog intake were both green on that exact head.
+This commit only opts the unchanged reviewed implementation into Vercel's existing preview policy.
