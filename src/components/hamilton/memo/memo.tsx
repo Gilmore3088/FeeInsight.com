@@ -239,7 +239,7 @@ export function DistributionBars({
               />
               {mine || test ? (
                 <span className="absolute inset-y-0 right-1 flex items-center text-[11px] font-medium text-warm-800">
-                  {mine ? "You" : "Tested"}
+                  {mine ? "Current price" : "Tested"}
                 </span>
               ) : null}
             </span>
@@ -301,7 +301,7 @@ export function PriceStrip({
   const markIn = (i: number) => sorted.find((m) => m.today && Math.floor(Math.round(m.price) / binWidth) === i);
 
   return (
-    <figure className="flex flex-col gap-2" aria-label="How many institutions charge each price, with your prices marked">
+    <figure className="flex flex-col gap-2" aria-label="How many institutions charge each price, with current and tested prices marked">
       <div className="relative" style={{ height: `${rowCount * 1.6}rem` }}>
         {sorted.map((m, i) => (
           <span
@@ -349,7 +349,7 @@ export function PriceStrip({
       <figcaption className="mt-1 text-xs leading-relaxed text-warm-600">
         <span className="font-medium text-warm-800">How to read this.</span> Each bar is a price; its height is how many{" "}
         {scopeLabel ? `institutions in ${scopeLabel}` : "institutions"} charge it ({amounts.length} in all; the tallest bar is{" "}
-        {tallest} at {fmtMoney(tallestAt)}). The lines are your price today and the prices you&apos;re testing.
+        {tallest} at {fmtMoney(tallestAt)}). The lines mark the current published price and the prices being tested.
       </figcaption>
     </figure>
   );
@@ -375,7 +375,7 @@ export function PeerSplitBars({
   return (
     <figure className="flex flex-col gap-3">
       <p className="text-sm text-warm-800">
-        At each price, how the {n} institutions compare with you
+        At each price, how the {n} institutions compare with that price
       </p>
       {rows.map((r) => {
         const total = Math.max(1, r.less + r.same + r.more);
@@ -425,7 +425,7 @@ export function PositionShift({
           <span>Lowest price</span>
           <span>Highest price</span>
         </span>
-        <span className="text-right">Charge less than you</span>
+        <span className="text-right">Charge less than the price</span>
       </div>
       {rows.map((r) => {
         const a = pct(r.from, r.n);
@@ -472,7 +472,7 @@ export function PositionShift({
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-terra" />
           {toLabel}
         </span>{" "}
-        is where it would sit. The right column counts institutions charging less than you, before and after.
+        is where it would sit. The right column counts institutions charging less than the current and tested prices.
       </figcaption>
     </figure>
   );
@@ -690,7 +690,7 @@ export function AuditPanel({
         </div>
         {trail.ownFeeRows.length > 0 ? (
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Your published fee lines</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-warm-600">Research institution published fee lines</h3>
             <ul className="mt-2 flex flex-col gap-1">
               {trail.ownFeeRows.map((r, i) => (
                 <li key={`${r.id}-${i}`} className="flex flex-wrap justify-between gap-x-3">
@@ -704,7 +704,7 @@ export function AuditPanel({
                       <>
                         {" · "}
                         <a href={r.documentUrl || r.sourceUrl || undefined} target="_blank" rel="noreferrer" className="text-terra-text underline">
-                          Your schedule
+                          Published schedule
                         </a>
                       </>
                     ) : null}

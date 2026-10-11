@@ -1,3 +1,5 @@
+import type { HamiltonIdentitySnapshot } from "./account-context";
+import { readHamiltonIdentitySnapshot } from "./identity-display";
 /**
  * The report basket: findings and tests a user adds from Position, Ask and
  * Test, which the Report page turns into the board brief. Kept in the
@@ -15,6 +17,9 @@ export interface ReportBasketItem {
   feeCategory: string | null;
   institutionId: string | null;
   addedAt: string;
+  /** Original server-saved answer to revalidate when a report is generated. */
+  savedAnalysisId?: string | null;
+  identityContext?: HamiltonIdentitySnapshot;
 }
 
 export const REPORT_BASKET_KEY = "hamilton-report-basket-v1";
@@ -41,13 +46,17 @@ export function sanitizeBasketItems(raw: unknown): ReportBasketItem[] {
     seen.add(id);
     const feeCategory = clip(e.feeCategory, 60);
     const institutionId = clip(e.institutionId, 20);
+    const snapshot = readHamiltonIdentitySnapshot(e.identityContext);
+    const savedAnalysisId = clip(e.savedAnalysisId, 40);
     items.push({
       id,
       source,
       title,
       detail: clip(e.detail, 1200),
       feeCategory: /^[a-z0-9_]+$/.test(feeCategory) ? feeCategory : null,
-      institutionId: /^\d+$/.test(institutionId) ? institutionId : null,
+      institutionId: snapshot ? (snapshot.researchInstitutionId === null ? null : String(snapshot.researchInstitutionId)) : /^\d+$/.test(institutionId) ? institutionId : null,
+      ...(snapshot ? { identityContext: snapshot } : {}),
+      ...(savedAnalysisId ? { savedAnalysisId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(savedAnalysisId) ? savedAnalysisId : null } : {}),
       addedAt: clip(e.addedAt, 40) || new Date(0).toISOString(),
     });
   }

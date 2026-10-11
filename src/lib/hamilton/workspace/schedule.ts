@@ -4,6 +4,7 @@
  * outright; the detailed answer below the overview is the fee furthest from its median.
  */
 
+import { subjectPossessive } from "./subject";
 import { formatFeeAmount } from "@/lib/format";
 import type { AskResponse, Fact, FeePositionRow, SchedulePosition, SourceRef } from "./types";
 
@@ -42,19 +43,20 @@ function gapOf(row: Ranked): number {
 }
 
 /** "your $36 is $6 higher than the median of 14 peers ($30)" */
-function position(row: Ranked): string {
+function position(row: Ranked, subject?: { subjectName?: string }): string {
   const diff = Math.round((row.current - row.band.median) * 100) / 100;
   const peers = `the median of ${row.band.n} peers (${money(row.band.median)})`;
-  if (Math.abs(diff) < 0.005) return `your ${money(row.current)} is at ${peers}`;
-  return `your ${money(row.current)} is ${money(Math.abs(diff))} ${diff > 0 ? "higher" : "lower"} than ${peers}`;
+  if (Math.abs(diff) < 0.005) return `${subjectPossessive(subject, false)} ${money(row.current)} is at ${peers}`;
+  return `${subjectPossessive(subject, false)} ${money(row.current)} is ${money(Math.abs(diff))} ${diff > 0 ? "higher" : "lower"} than ${peers}`;
 }
 
-function lineFor(row: Ranked): string {
-  return `${row.displayName}: ${position(row)}.`;
+function lineFor(row: Ranked, subject?: { subjectName?: string }): string {
+  return `${row.displayName}: ${position(row, subject)}.`;
 }
 
 /** The overview: counts above, below and at the median, then each fee, furthest first. */
-export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverview {
+export function scheduleOverview(rows: readonly FeePositionRow[], subjectName?: string): ScheduleOverview {
+  const subject = { subjectName };
   const ranked: Ranked[] = rows
     .filter((r): r is FeePositionRow & { band: NonNullable<FeePositionRow["band"]> } => r.band !== null)
     .map((r) => ({ ...r, gap: gapOf({ ...r, gap: 0 }) }))
@@ -62,7 +64,7 @@ export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverv
   if (ranked.length === 0) {
     return {
       top: null,
-      shortAnswer: `Hamilton has ${rows.length} of your published fees on file; none yet has enough peers publishing it to compare.`,
+      shortAnswer: `Hamilton has ${rows.length} of ${subjectPossessive(subject, false)} published fees on file; none yet has enough peers publishing it to compare.`,
       facts: [],
       positions: [],
     };
@@ -74,13 +76,13 @@ export function scheduleOverview(rows: readonly FeePositionRow[]): ScheduleOverv
   const first = ranked[0];
   const thin = rows.length - ranked.length;
   const shortAnswer =
-    `Of your ${ranked.length} fees with a peer comparison, ${counts.join(", ")}. ` +
-    `Furthest from its median is ${first.displayName}: ${position(first)}.` +
+    `Of ${subjectPossessive(subject, false)} ${ranked.length} fees with a peer comparison, ${counts.join(", ")}. ` +
+    `Furthest from its median is ${first.displayName}: ${position(first, subject)}.` +
     (thin > 0 ? ` ${thin} more ${thin === 1 ? "fee has" : "fees have"} too few peers publishing to compare.` : "");
   return {
     top: first.feeCategory,
     shortAnswer,
-    facts: ranked.map((r) => ({ text: lineFor(r), source: FEES_SOURCE, sampleSize: r.band.n })),
+    facts: ranked.map((r) => ({ text: lineFor(r, subject), source: FEES_SOURCE, sampleSize: r.band.n })),
     positions: ranked.map((r) => ({
       feeCategory: r.feeCategory,
       displayName: r.displayName,

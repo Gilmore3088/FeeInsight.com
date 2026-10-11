@@ -19,10 +19,11 @@ describe("buildAuditTrail", () => {
     expect(trail.evidence).toBe("Market data only");
     expect(trail.sources.map((s) => [s.label, s.asOf])).toEqual([
       ["Overdraft fees, Texas", "2026-09-12 to 2026-10-01"],
-      ["Your overdraft fee", "2026-10-02"],
+      ["Research institution overdraft fee", "2026-10-02"],
       ["Local market", "June 30, 2025"],
     ]);
     expect(trail.sources[1].href).toBe("https://bank.example/fees.pdf");
+    expect(trail.sources[1].detail).not.toContain("your own");
     expect(trail.assumptions[0]).toMatch(/No volume assumed/);
   });
 

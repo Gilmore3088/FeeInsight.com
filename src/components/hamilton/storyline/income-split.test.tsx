@@ -11,6 +11,7 @@ describe("income split", () => {
     const html = renderToStaticMarkup(
       <StoryExhibitView
         number={1}
+        researchInstitutionName="Space Coast Credit Union"
         item={{
           id: "income-split",
           actionTitle: "Price explains about a third of the gap",
@@ -23,6 +24,10 @@ describe("income split", () => {
     expect(html).toContain("$5.00");
     expect(html).toContain("−$0.90");
     expect(html).toContain("Published prices");
+    expect(html).toContain("Space Coast Credit Union");
+    expect(html).toContain("Space Coast Credit Union&#x27;s published prices");
+    expect(html).not.toContain("Your published prices");
+    expect(html).not.toContain(">You<");
     expect(html).toContain("33%");
     expect(html).toContain("<strong class=\"font-semibold text-warm-900\">108</strong>");
     expect(html).not.toContain("<table");

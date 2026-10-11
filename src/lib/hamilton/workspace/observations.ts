@@ -80,8 +80,9 @@ export function feePositionRows(positions: FeePositionInput[]): FeePositionRow[]
   });
 }
 
-export function marketPositionObservations(positions: FeePositionInput[]): Observation[] {
+export function marketPositionObservations(positions: FeePositionInput[], institutionName?: string): Observation[] {
   const out: Observation[] = [];
+  const owner = institutionName ? `${institutionName}'s` : "Your";
   for (const p of positions) {
     if (p.peers.length < MIN_PEERS_FOR_POSITION) continue;
     const pos = pricePosition(p.current, p.peers);
@@ -94,11 +95,11 @@ export function marketPositionObservations(positions: FeePositionInput[]): Obser
     const headline =
       pos <= POSITION_EXTREME_PCT
         ? higher === n
-          ? `Your ${name} of ${fmtMoney(p.current)} is the lowest of ${n} peers.`
-          : `Your ${name} of ${fmtMoney(p.current)} is below ${higher} of ${n} peers.`
+          ? `${owner} ${name} of ${fmtMoney(p.current)} is the lowest of ${n} peers.`
+          : `${owner} ${name} of ${fmtMoney(p.current)} is below ${higher} of ${n} peers.`
         : lower === n
-          ? `Your ${name} of ${fmtMoney(p.current)} is the highest of ${n} peers.`
-          : `Your ${name} of ${fmtMoney(p.current)} is above ${lower} of ${n} peers.`;
+          ? `${owner} ${name} of ${fmtMoney(p.current)} is the highest of ${n} peers.`
+          : `${owner} ${name} of ${fmtMoney(p.current)} is above ${lower} of ${n} peers.`;
     const facts: Fact[] = [
       {
         text: `${p.peerLabel}: median ${fmtMoney(quantile(sorted, 0.5))}, middle half ${fmtMoney(quantile(sorted, 0.25))} to ${fmtMoney(quantile(sorted, 0.75))}, from ${n} institutions.`,
@@ -153,7 +154,7 @@ export function competitorMoveObservations(
   return out;
 }
 
-export function revenueShiftObservation(trend: ServiceChargeTrend | null): Observation | null {
+export function revenueShiftObservation(trend: ServiceChargeTrend | null, institutionName?: string): Observation | null {
   if (!trend || trend.priorTtm <= 0) return null;
   const pct = ((trend.latestTtm - trend.priorTtm) / trend.priorTtm) * 100;
   if (Math.abs(pct) < REVENUE_SHIFT_PCT) return null;
@@ -163,7 +164,7 @@ export function revenueShiftObservation(trend: ServiceChargeTrend | null): Obser
     id: "revenue_shift:service_charges",
     kind: "revenue_shift",
     feeCategory: null,
-    headline: `Your deposit service charge income is ${pct > 0 ? "up" : "down"} ${Math.abs(Math.round(pct))}% from a year earlier.`,
+    headline: `${institutionName ? `${institutionName}'s` : "Your"} deposit service charge income is ${pct > 0 ? "up" : "down"} ${Math.abs(Math.round(pct))}% from a year earlier.`,
     facts: [
       { text: `Four quarters to ${trend.quarterEnd}: ${fmtMillions(trend.latestTtm)}.`, source },
       { text: `The four quarters before: ${fmtMillions(trend.priorTtm)}.`, source },

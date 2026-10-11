@@ -7,6 +7,7 @@ import { confidenceFromFigureCheck } from "../figure-check";
 import type { AnalysisFocus } from "../navigation";
 import type { AnalyzeResponse } from "../types";
 import type { Storyline, StorylineKind, StorylineMemo } from "./storyline-types";
+import type { HamiltonIdentitySnapshot } from "../account-context";
 
 const FOCUS: Record<StorylineKind, AnalysisFocus> = {
   position: "Peer Position",
@@ -27,8 +28,9 @@ export function analysisTitle(storyline: Storyline): string {
 }
 
 /** The storyline as a saved analysis, before any model-written text. */
-export function storylineAnalysis(storyline: Storyline, engineVersion: string): AnalyzeResponse {
+export function storylineAnalysis(storyline: Storyline, engineVersion: string, identity?: HamiltonIdentitySnapshot): AnalyzeResponse {
   return {
+    ...(identity ? { identityContext: identity } : {}),
     title: analysisTitle(storyline),
     confidence: {
       level: "high",

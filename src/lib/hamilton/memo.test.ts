@@ -38,6 +38,40 @@ const good = JSON.stringify({
 });
 
 describe("storyline memo", () => {
+  it("withholds ambiguous institution prose instead of rewriting it", async () => {
+    const identity = { version: 1 as const, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1,
+      accountInstitutionName: "Home CU", accountStatus: "identified" as const };
+    const c = client(good, good);
+    const result = await writeStorylineMemo(storyline, "Compare this fee", { client: c, identityContext: identity });
+    expect(result.status).toBe("withheld");
+    if (result.status === "withheld") expect(result.problems?.some((problem) => problem.includes("Ambiguous institution reference"))).toBe(true);
+    expect(c.calls).toHaveLength(2);
+  });
+
+  it("withholds account fee claims when only account identity was supplied", async () => {
+    const identity = { version: 1 as const, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1,
+      accountInstitutionName: "Home CU", accountStatus: "identified" as const };
+    const unsafe = JSON.stringify({ summary: "Home CU's fee is $32, at the 75th percentile of 16 peers.", board: "A pricing comparison is available.", market: "The group publishes overdraft fees.", questions: ["What is the objective?"] });
+    const result = await writeStorylineMemo(storyline, "Compare this fee", { client: client(unsafe, unsafe), identityContext: identity });
+    expect(result.status).toBe("withheld");
+    if (result.status === "withheld") expect(result.problems?.some((problem) => problem.includes("without account-institution evidence"))).toBe(true);
+  });
+  it("carries frozen subject, account and peers into the writer and names the researched fee in returned prose", async () => {
+    const identity = { version: 1 as const, researchInstitutionId: 2, researchInstitutionName: "Research Bank", accountInstitutionId: 1,
+      accountInstitutionName: "Home CU", accountStatus: "identified" as const, peerSetId: 51, peerBaselineLabel: "Original peers", peerBaselineSource: "saved_peer_set" };
+    const named = JSON.stringify({ summary: "Research Bank’s $32 overdraft fee is at the 75th percentile of 16 peers (median $29.50). The board decision concerns that position.", board: "Service charges came to $209 thousand over the last four quarters.", market: "The comparison group publishes overdraft fees.", questions: ["How many overdraft items did Research Bank charge last year?", "Which competitors serve the same market?"] });
+    const c = client(named);
+    const result = await writeStorylineMemo(storyline, "Compare the selected fee", { client: c, identityContext: identity });
+    expect(result.status).toBe("written");
+    if (result.status === "written") {
+      expect(result.memo.identityContext).toEqual(identity);
+      expect(result.memo.summary).toContain("Research Bank’s $32 overdraft fee");
+      expect(result.memo.summary).not.toContain("Your");
+    }
+    expect(c.calls[0]).toContain('"researchInstitutionName":"Research Bank"');
+    expect(c.calls[0]).toContain('"accountInstitutionName":"Home CU"');
+    expect(c.calls[0]).toContain('"peerBaselineLabel":"Original peers"');
+  });
   it("writes a memo whose figures all trace to the storyline", async () => {
     const c = client(good);
     const result = await writeStorylineMemo(storyline, "should we change our overdraft fee?", { client: c, now: new Date("2026-10-06T12:00:00Z") });
