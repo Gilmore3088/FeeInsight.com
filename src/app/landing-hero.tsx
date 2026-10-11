@@ -13,7 +13,7 @@ interface LandingHeroProps {
 export function LandingHero({ showcase }: LandingHeroProps) {
   return (
     <section aria-labelledby="home-title">
-      <div className="mx-auto max-w-page px-4 pb-10 pt-10 sm:px-6 sm:pb-14 sm:pt-14 lg:pt-16">
+      <div className="mx-auto max-w-page px-6 pb-10 pt-10 sm:pb-14 sm:pt-14 lg:pt-16">
         <div className="max-w-4xl">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
             Fee intelligence for banks and credit unions
