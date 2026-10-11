@@ -45,7 +45,7 @@ import {
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { InstitutionMetricRow } from "./institution-metrics";
-import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
+import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
   buildLocationParts,
   buildProfileTitle,
