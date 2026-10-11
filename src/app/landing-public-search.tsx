@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
-import { GLASS, H2, TEXT_LINK } from "@/components/public/site-look";
+import { H2, TEXT_LINK } from "@/components/public/site-look";
 
 export function LandingPublicSearch({ institutionsLabel }: { institutionsLabel: string }) {
   return (
-    <section id="bank-fee-index" aria-labelledby="bank-fee-index-title" className="scroll-mt-20">
-      <div className="mx-auto max-w-page px-4 pb-12 sm:px-6 sm:pb-16">
-        <div className={`grid gap-6 p-5 sm:p-7 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:items-center ${GLASS}`}>
+    <section
+      id="bank-fee-index"
+      aria-labelledby="bank-fee-index-title"
+      className="scroll-mt-20 border-y border-[#E8E1D6]/80 bg-white/35"
+    >
+      <div className="mx-auto grid max-w-page gap-7 px-6 py-12 sm:py-14 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:items-center">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
               The Bank Fee Index
@@ -28,7 +31,6 @@ export function LandingPublicSearch({ institutionsLabel }: { institutionsLabel: 
               </Link>
             </p>
           </div>
-        </div>
       </div>
     </section>
   );
