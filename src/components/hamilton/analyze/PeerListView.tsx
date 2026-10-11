@@ -206,7 +206,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
           </div>
         </>
       ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
-      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. NSF comparisons use only this displayed selection. Saved historical comparison snapshots and export are not available yet.</p>
+      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. NSF comparisons use only this displayed selection. Save this peer research keeps the exact snapshot to reopen later. PDF and export are not available yet.</p>
     </section>
   );
 }

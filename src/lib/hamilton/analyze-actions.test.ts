@@ -66,8 +66,9 @@ describe("Analyze saveAnalysis", () => {
 
     const result = await saveAnalysis(saveParams("first-national-bank"));
 
-    expect(result).toEqual({ id: "analysis-1" });
-    expect(mocks.sql.mock.calls[0][2]).toBe("");
+    // A slug is a malformed explicit subject: refuse it instead of saving unscoped.
+    expect(result).toEqual({ error: "Select a valid research institution." });
+    expect(mocks.sql).not.toHaveBeenCalled();
   });
 
   it("rebuilds fallback account identity on the server and labels save-time context", async () => {

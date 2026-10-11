@@ -22,7 +22,7 @@ beforeEach(() => { mocks.record.mockReset().mockResolvedValue(record); mocks.not
 describe("user-scoped saved peer research reopening", () => {
   it("renders the historical selected research subject without replacing its dated evidence", async () => {
     const node = await SavedPeerResearchPage({ params: Promise.resolve({ id }) });
-    expect(node.type).toBe("main");
+    expect(node.type).toBe("div");
     expect(mocks.record).toHaveBeenCalledWith(id);
     expect(JSON.stringify(node.props.children)).toContain("historical peer and fee evidence");
   });

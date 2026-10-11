@@ -82,8 +82,10 @@ function PeerListRequest({
     return () => { current = false; controller.abort(); onBusyChange?.(false); };
   }, [question, institutionId, onBusyChange, onLead, onResolved, retry, submittedPrior]);
   if (error) return <div role="alert" className="text-sm text-terra-text"><p>{error}</p><button type="button" onClick={() => setRetry(n => n + 1)} className="mt-2 min-h-11 rounded-md border border-warm-300 px-3">Retry peer list</button></div>;
-  if (response) return <PeerListView response={response} saveContext={{
+  // A peer request only mounts for a non-empty question; without one there is
+  // nothing to save, so render the table read-only rather than save "".
+  if (response) return <PeerListView response={response} saveContext={question ? {
     question, institutionId, previousPeerList: submittedPrior,
-  }} />;
+  } : undefined} />;
   return onBusyChange ? null : <p role="status" className="text-sm text-warm-700">Loading matching institutions and dated assets…</p>;
 }
