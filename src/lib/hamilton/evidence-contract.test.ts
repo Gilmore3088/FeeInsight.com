@@ -105,6 +105,60 @@ describe("explicit derivations", () => {
     expect(deriveDifference("bad", bankA, unknown).problems).toContain("reporting_period_unknown");
   });
 
+  it("rejects cross-bank dollar differences for different products even in one category", () => {
+    const a = fact({ id: "a", value: 25 });
+    const b = fact({ id: "b", value: 35, scope: { ...a.scope, institutionId: 2, product: "Different overdraft" } });
+    expect(deriveDifference("bad", b, a).problems).toContain("product_mismatch");
+    expect(deriveDifference("bad", b, a).fact).toBeNull();
+  });
+
+  it("rejects mismatched or missing frequency and unknown/business account scope", () => {
+    const a = fact({ id: "a" });
+    const variants: Array<[HamiltonEvidenceFact, string]> = [
+      [fact({ frequency: "monthly" }), "fee_frequency_mismatch"],
+      [fact({ frequency: null }), "fee_frequency_unknown"],
+      [fact({ scope: { ...a.scope, accountApplicability: "business" } }), "consumer_audience_unverified"],
+      [fact({ scope: { ...a.scope, accountApplicability: "unknown" } }), "consumer_audience_unverified"],
+    ];
+    for (const [other, reason] of variants) expect(deriveDifference("bad", a, other).problems).toContain(reason);
+  });
+
+  it("rejects missing published row lineage and provisional observations", () => {
+    const a = fact();
+    const variants = [
+      fact({ source: { ...a.source, recordId: null } }),
+      fact({ source: { ...a.source, sourceDocumentIds: [] } }),
+      fact({ status: "provisional" }),
+    ];
+    for (const other of variants) expect(deriveDifference("bad", a, other).problems).toContain("source_record_unverified");
+  });
+
+  it("rejects NaN, infinity, and negative fees while keeping a real zero", () => {
+    const a = fact({ value: 25 });
+    for (const value of [Number.NaN, Infinity, -Infinity]) {
+      expect(deriveDifference("bad", a, fact({ value })).problems).toContain("non_numeric_value");
+    }
+    expect(deriveDifference("bad", a, fact({ value: -5 })).problems).toContain("invalid_fee_amount");
+    expect(deriveDifference("valid-zero", a, fact({ value: 0 })).fact?.value).toBe(25);
+  });
+
+  it("rejects nesting a source-less derived delta as an observed fee", () => {
+    const a = fact({ value: 25 });
+    const b = fact({ value: 35, scope: { ...a.scope, institutionId: 2 } });
+    const delta = deriveDifference("delta", b, a).fact;
+    expect(delta).not.toBeNull();
+    expect(deriveDifference("nested", a, delta!).problems).toContain("untraceable_derivation_input");
+  });
+
+  it("rejects audience and charge-basis mismatches in a dated percent change", () => {
+    const current = fact({ value: 25 });
+    const previous = fact({ value: 20, scope: { ...current.scope, reportingDate: "2025-06-30" } });
+    expect(derivePercentChange("bad", current, { ...previous, frequency: "monthly" }).problems).toContain("fee_frequency_mismatch");
+    expect(derivePercentChange("bad", current, { ...previous,
+      scope: { ...previous.scope, accountApplicability: "unknown" } }).problems).toContain("consumer_audience_unverified");
+    expect(derivePercentChange("valid", current, previous).fact?.value).toBe(25);
+  });
+
   it("records the denominator and signed percent change", () => {
     const current = fact({ id: "current", value: 90 });
     const prior = fact({ id: "prior", value: 100, scope: { ...fact().scope, reportingDate: "2025-06-30" } });

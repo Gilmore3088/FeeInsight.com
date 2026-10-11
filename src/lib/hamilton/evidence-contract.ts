@@ -216,28 +216,59 @@ export function claimBindingMatches(
   return true;
 }
 
+/**
+ * Reject arithmetic on incomparable or untraceable fee observations. This establishes
+ * comparability of structured inputs, NOT verification of surrounding prose.
+ */
 function comparabilityProblems(
   left: HamiltonEvidenceFact | HamiltonDerivedFact,
   right: HamiltonEvidenceFact | HamiltonDerivedFact,
   periodRule: "same_period" | "chronological" = "same_period",
 ): string[] {
   const problems: string[] = [];
-  if (typeof left.value !== "number" || typeof right.value !== "number") problems.push("non_numeric_value");
+  if (typeof left.value !== "number" || typeof right.value !== "number"
+    || !Number.isFinite(left.value) || !Number.isFinite(right.value)) problems.push("non_numeric_value");
   if (left.unit !== right.unit) problems.push("unit_mismatch");
   if (left.currency !== right.currency) problems.push("currency_mismatch");
   if (left.scope.feeCategory !== right.scope.feeCategory) problems.push("fee_category_mismatch");
+  const leftProduct = left.scope.product?.trim().toLowerCase();
+  const rightProduct = right.scope.product?.trim().toLowerCase();
+  if (!leftProduct || !rightProduct) problems.push("product_unknown");
+  else if (leftProduct !== rightProduct) problems.push("product_mismatch");
+
+  if (left.kind !== "observed" || right.kind !== "observed") {
+    problems.push("untraceable_derivation_input");
+  } else {
+    const trustedSource = (fact: HamiltonEvidenceFact) => {
+      const rowId = Number(fact.source.recordId);
+      const documents = fact.source.sourceDocumentIds;
+      return (fact.status === "published" || fact.status === "verified")
+        && Number.isSafeInteger(rowId) && rowId > 0
+        && documents.length === 1 && Number.isSafeInteger(documents[0]) && documents[0] > 0;
+    };
+    if (!trustedSource(left) || !trustedSource(right)) problems.push("source_record_unverified");
+    const leftFrequency = left.frequency?.trim().toLowerCase();
+    const rightFrequency = right.frequency?.trim().toLowerCase();
+    if (!leftFrequency || !rightFrequency) problems.push("fee_frequency_unknown");
+    else if (leftFrequency !== rightFrequency) problems.push("fee_frequency_mismatch");
+    const consumer = (audience: HamiltonAccountApplicability) =>
+      audience === "consumer" || audience === "both";
+    if (!consumer(left.scope.accountApplicability) || !consumer(right.scope.accountApplicability)) {
+      problems.push("consumer_audience_unverified");
+    }
+    if (left.value < 0 || right.value < 0) problems.push("invalid_fee_amount");
+  }
+
   if (!left.scope.reportingDate || !right.scope.reportingDate) problems.push("reporting_period_unknown");
   else if (periodRule === "same_period" && left.scope.reportingDate !== right.scope.reportingDate) {
     problems.push("reporting_period_mismatch");
   } else if (periodRule === "chronological") {
-    // Changes require one institution over two ordered periods, not two banks in one period.
     if (left.scope.institutionId === null || left.scope.institutionId !== right.scope.institutionId) {
       problems.push("institution_mismatch");
     }
-    if (left.scope.product !== right.scope.product) problems.push("product_mismatch");
     if (left.scope.reportingDate <= right.scope.reportingDate) problems.push("reporting_period_order_invalid");
   }
-  return problems;
+  return unique(problems);
 }
 
 export function deriveDifference(
