@@ -4,6 +4,7 @@ import { PrintButton } from "./print-button";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 
 export const RESEARCH_SECTIONS = [
+  { id: "national", label: "National" },
   { id: "findings", label: "Key findings" },
   { id: "benchmarks", label: "Benchmarks" },
   { id: "charters", label: "Banks vs CUs" },
