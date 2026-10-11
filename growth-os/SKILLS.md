@@ -51,3 +51,11 @@ content/video plan covers video). The library's `tools/` folder is also left out
 ERNEST, MURROW). The other 12 wait for later agents: `cro`, `signup`, `ab-testing` (NORMAN);
 `analytics`, `attribution` (NIELSEN); `free-tools`, `lead-magnets`, `onboarding` (EDISON);
 `prospecting`, `cold-email`, `sales-enablement`, `revops` (CARNEGIE).
+
+## Customer-facing product use
+
+The table above describes specialist ownership, not a restriction to "growth" campaigns. These same skills are required inputs to customer-facing product and site review.
+
+For a public page/component review, use the shared context first, then run the relevant skill stack defined in `growth-os/workflows/page-review-pipeline.md` and `docs/design/public-brand/SKILL-GATE.md`. At minimum, substantive public pages require product-marketing/customer context, site architecture, copywriting, copy editing, CRO and SEO review. Pricing, schema, programmatic SEO, analytics and other skills are added when the surface calls for them.
+
+Copied skills are therefore executable review stages. They should not sit unused merely because the corresponding scheduled GrowthOS agent is not yet active.
