@@ -1,0 +1,20 @@
+# Public site brand refresh preview receipt
+
+Date: October 11, 2026. Draft PR #1016, branch `fix/public-brand-refresh-consolidation`.
+
+This branch consolidates the original FeeInsight public-site redesign onto current main. It is preview-only until James reviews the visual result. Hamilton redesign PR #1011 is separate and not included.
+
+## Included
+
+- Plus Jakarta Sans restored as the public sans face.
+- Fawn/parchment/warm-neutral surfaces and terracotta accents.
+- Shared /subscribe-style glass cards, buttons, links, spacing and motion.
+- Landing page composition restored.
+- Public fee index/detail, institution/search, reports/research, methodology, guides, API docs, for-institutions and market-report presentation restored from the original redesign.
+- Current main remains the runtime/data base; no Growth, Hamilton workspace, payment, agent, migration or production-data changes are included.
+
+## Preview deployment
+
+The repository's Vercel policy skips ordinary branch builds. This receipt commit contains `[preview]` to opt this branch into a non-production review deployment using the existing repository policy. Do not change production aliases, environment values, preview protection, cron configuration or the production branch.
+
+Keep PR #1016 draft until visual review and exact-head CI pass.
