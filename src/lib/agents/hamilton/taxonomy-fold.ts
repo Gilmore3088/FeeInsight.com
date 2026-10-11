@@ -362,6 +362,10 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 5883, doc 19408: \"Returned Item | $25.00 Per Item\" below \"NSF | $25.00 Per Item\"" },
   { feePublishedId: 108132, from: "nsf", amount: 30, to: "deposited_item_return", name: "Returned Check",
     why: "inst 5902, doc 21925: \"Returned Check | $30.00 | each\"" },
+  // UAT's 13:41 sample (Oct 9): a box rental's late fee filed as a loan late fee.
+  { feePublishedId: 92156, from: "late_payment", amount: 10, to: "safe_deposit_box",
+    name: "Safe Deposit Box Late Payment Fee - if payment is not made within 60 days of due date",
+    why: "inst 1638, doc 22021: under \"Safe Deposit Boxes\", \"Late Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\"" },
 ];
 
 interface HandRow {
