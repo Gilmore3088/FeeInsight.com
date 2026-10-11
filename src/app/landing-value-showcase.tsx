@@ -23,6 +23,7 @@ export function LandingValueShowcase({
           <BenchmarkPreview
             key="benchmark"
             institution={null}
+            label="Benchmark fees with the Bank Fee Index"
             rows={rows}
             totalInstitutions={totalInstitutions}
             label="Benchmark with the Bank Fee Index"
