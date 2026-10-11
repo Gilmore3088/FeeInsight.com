@@ -9,7 +9,6 @@ import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
 import { LandingBankOffer } from "./landing-bank-offer";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -62,11 +61,10 @@ const WEBSITE_JSON_LD = {
 export default async function LandingPage() {
   // Counts and medians come from one shared snapshot, so they match the fee index,
   // research hub and directory to the number.
-  const [{ summary, categories }, stateCoverage, sampleLive] = await Promise.all([
+  const [{ summary, categories }, stateCoverage] = await Promise.all([
     getPublicSnapshot(),
     // The coverage map is optional: a failed read hides it, not the page.
     getInstitutionStateDirectorySummariesCached({}).catch((): InstitutionStateDirectorySummary[] => []),
-    sampleReportAvailable(),
   ]);
 
   return (
@@ -85,10 +83,9 @@ export default async function LandingPage() {
       <main id="main-content">
         <LandingHero
           institutionsLabel={summary.institutionsLabel}
-          sampleLive={sampleLive}
           aside={<LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />}
         />
-        <LandingBankOffer sampleLive={sampleLive} />
+        <LandingBankOffer />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />
