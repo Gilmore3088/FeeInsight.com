@@ -72,3 +72,9 @@ Benchmark with the Bank Fee Index; Analyze with Hamilton Intelligence; Monitor w
 ## Preview trigger — homepage rail alignment — 2026-10-11
 
 Homepage hero, Bank Fee Index, banking-team section, and coverage section now share the same 24px mobile content rail. The Bank Fee Index no longer uses a nested padded card that shifts its text farther right.
+
+
+## Preview trigger — homepage rail alignment — 2026-10-11
+
+Base implementation head before this receipt: `de0026ab587c5531a92a994c56553890cd1fcce0`.
+This preview aligns the Bank Fee Index, banking-team and coverage sections to one shared mobile content rail and normalizes their vertical spacing.
