@@ -54,3 +54,9 @@ This is the exact branch state with the Benchmark / Analyze / Monitor / Report r
 
 Base implementation head before this no-op receipt: `92a3d4fff030c2ac76822f3e9ef787d00954630f`.
 This preview restores the established Benchmark / Analyze / Monitor / Report rotating hero showcase while retaining the compact report proof section below.
+
+
+## Preview trigger — value-led homepage hero — 2026-10-11
+
+Base implementation head before this receipt: `2eafc35d267f570175f6425b4160ab735f61ad78`.
+The homepage now leads with institutional value and the four rotating Benchmark / Analyze / Monitor / Report examples. Bank Fee Index search sits below the hero.
