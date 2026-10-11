@@ -9,7 +9,7 @@ import { BAND, CTA_PRIMARY, H2, BODY } from "@/components/public/site-look";
 export function LandingBankOffer() {
   return (
     <section id="for-banks" aria-labelledby="for-banks-title" className={BAND}>
-      <div className="mx-auto flex max-w-page flex-col gap-5 px-4 py-10 sm:px-6 sm:py-12 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto flex max-w-page flex-col gap-5 px-6 py-10 sm:py-12 lg:flex-row lg:items-center lg:justify-between">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
             For banking teams
