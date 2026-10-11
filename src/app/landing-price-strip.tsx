@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { formatCount } from "@/lib/public-stats";
+import { GLASS } from "@/components/public/site-look";
 
 /** Everyday fees a consumer recognizes, with short labels that fit one phone line. */
 const STRIP_FEES: { category: string; label: string }[] = [
@@ -52,9 +53,11 @@ function buildRows(categories: FeeCategorySummary[]): PriceRow[] {
 }
 
 /**
- * "What banks charge": the national median price for a handful of everyday fees,
- * each with a bar showing where most institutions fall (25th–75th percentile).
- * Numbers carry the message; words stay small. Renders nothing without data.
+ * "What banks charge": the national median price for a handful of everyday fees, each with
+ * a bar showing where most institutions fall (25th–75th percentile), in a glass box the
+ * same size as the search box beside it (the /subscribe layout). Every figure is also in
+ * text, and each row's link names all of them, so the bars are never the only carrier.
+ * Renders nothing without data.
  */
 export function LandingPriceStrip({
   categories,
@@ -68,51 +71,45 @@ export function LandingPriceStrip({
   if (rows.length === 0) return null;
 
   return (
-    <section className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-          <div className="min-w-0">
-            <h2
-              className="text-2xl font-normal text-[#1A1815] sm:text-3xl"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-            >
-              What banks charge
-            </h2>
-            <p className="mt-1.5 max-w-2xl text-pretty text-[13px] leading-relaxed text-[#5A5347]">
-              The big number is the median: half of institutions charge more, half charge less. The
-              shaded bar shows where the middle half of institutions fall.
-            </p>
-          </div>
-          <Link href="/fees" className="shrink-0 text-xs font-semibold text-[#A93D25] hover:text-[#8E2A17]">
-            All fees →
-          </Link>
-        </div>
+    <section aria-labelledby="what-banks-charge" className={`flex min-w-0 flex-col p-5 sm:p-7 ${GLASS}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <h2 id="what-banks-charge" className="text-xl font-semibold tracking-tight text-[#1A1815] sm:text-2xl">
+          What banks charge
+        </h2>
+        <Link
+          href="/fees"
+          className="inline-flex min-h-11 items-center text-sm font-semibold text-[#A93D25] underline underline-offset-2 hover:text-[#8E2A17]"
+        >
+          All fees <span aria-hidden="true">&nbsp;→</span>
+        </Link>
+      </div>
+      <p className="mt-1 text-pretty text-sm leading-relaxed text-[#5A5347]">
+        The big number is the median: half of institutions charge more, half charge less.
+      </p>
 
-        <ul className="mt-5 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map((row) => (
-            <li key={row.category} className="border-t border-[#EDE6DA]">
-              <PriceRowLink row={row} />
-            </li>
-          ))}
-        </ul>
+      <ul className="mt-3 flex-1 divide-y divide-[#E8E1D6]">
+        {rows.map((row) => (
+          <li key={row.category}>
+            <PriceRowLink row={row} />
+          </li>
+        ))}
+      </ul>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[#6B6255]">
-          <span className="inline-flex items-center gap-2">
-            <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" />
-            Median price
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
-            Middle half of institutions
-          </span>
-          <span>
-            One value per institution, from its published schedule
-            {refreshedOn ? ` · updated ${refreshedOn}` : ""}
-          </span>
-          <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
-            How we calculate this →
-          </Link>
-        </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#E8E1D6] pt-4 text-xs text-[#5A5347]">
+        <span className="inline-flex items-center gap-2">
+          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" />
+          Median price
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
+          Middle half of institutions
+        </span>
+        <span>
+          One value per institution{refreshedOn ? ` · updated ${refreshedOn}` : ""}
+        </span>
+        <Link href="/methodology" className="font-semibold text-[#A93D25] underline underline-offset-2 hover:text-[#8E2A17]">
+          How we calculate this
+        </Link>
       </div>
     </section>
   );
@@ -127,11 +124,11 @@ function PriceRowLink({ row }: { row: PriceRow }) {
   return (
     <Link
       href={`/fees/${row.category}`}
-      className="group flex items-center gap-4 py-3.5"
+      className="group flex min-h-11 items-center gap-4 rounded-lg py-3"
       aria-label={`${row.label}: median ${formatUsd(row.median)} across ${formatCount(row.institutions)} institutions, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}`}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] text-[#5A5347] group-hover:text-[#1A1815]">{row.label}</p>
+        <p className="text-[15px] font-medium text-[#1A1815] group-hover:text-[#A93D25]">{row.label}</p>
         <div aria-hidden="true" className="relative mt-2 h-2.5">
           <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[#E0D7C9]" />
           <div
@@ -139,15 +136,15 @@ function PriceRowLink({ row }: { row: PriceRow }) {
             style={{ left: pct(row.p25), width: `calc(${pct(row.p75)} - ${pct(row.p25)})` }}
           />
           <div
-            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C44B2E] ring-2 ring-[#FDFBF8]"
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C44B2E] ring-2 ring-white"
             style={{ left: pct(row.median) }}
           />
         </div>
-        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+        <p aria-hidden="true" className="mt-1 text-xs [font-variant-numeric:tabular-nums] text-[#5A5347]">
           {formatUsd(row.p25)}–{formatUsd(row.p75)} · {formatCount(row.institutions)} institutions
         </p>
       </div>
-      <p aria-hidden="true" className="w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-[#1A1815]">
+      <p aria-hidden="true" className="w-24 shrink-0 text-right text-2xl font-semibold [font-variant-numeric:tabular-nums] tracking-tight text-[#1A1815] sm:text-3xl">
         {formatUsd(row.median)}
       </p>
     </Link>
