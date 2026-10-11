@@ -8,6 +8,11 @@
 
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
+// This suite exercises citation/provider gates, not membership storage.
+vi.mock("@/lib/hamilton/institution-membership", () => ({
+  getUserInstitutionMemberships: async () => [],
+}));
+
 // ─── Mocks (must be declared before importing the route) ──────────────────────
 
 const generateTextMock = vi.fn();

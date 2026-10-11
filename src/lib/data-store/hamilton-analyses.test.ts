@@ -20,12 +20,12 @@ beforeEach(() => db.query.mockReset());
 describe("saved Hamilton analysis compatibility read", () => {
   it("returns null for a missing or inaccessible saved row", async () => {
     db.query.mockResolvedValueOnce([]);
-    expect(await getSavedAnalysisResponse(7, "missing")).toBeNull();
+    expect(await getSavedAnalysisResponse(7, "missing", "42")).toBeNull();
   });
 
   it("downgrades a legacy high rating from a JSON string without rewriting storage", async () => {
     db.query.mockResolvedValueOnce([{ response_json: JSON.stringify(legacy) }]);
-    const response = await getSavedAnalysisResponse(7, "legacy");
+    const response = await getSavedAnalysisResponse(7, "legacy", "42");
     expect(response?.confidence.level).toBe("medium");
     expect(response?.confidence.basis.join(" ")).toContain("predates record-bound");
     expect(legacy.confidence.level).toBe("high");
@@ -33,7 +33,7 @@ describe("saved Hamilton analysis compatibility read", () => {
 
   it("also normalizes already-parsed JSONB objects", async () => {
     db.query.mockResolvedValueOnce([{ response_json: legacy }]);
-    expect((await getSavedAnalysisResponse(7, "legacy"))?.confidence.level).toBe("medium");
+    expect((await getSavedAnalysisResponse(7, "legacy", "42"))?.confidence.level).toBe("medium");
   });
 
   it("never treats an attached but empty evidence contract as claim verification", async () => {
@@ -42,7 +42,7 @@ describe("saved Hamilton analysis compatibility read", () => {
       factEvidence: { version: 1, generatedAt: "2026-10-10T00:00:00Z", facts: [], derivations: [], limitations: [] },
     };
     db.query.mockResolvedValueOnce([{ response_json: stored }]);
-    const displayed = await getSavedAnalysisResponse(7, "new");
+    const displayed = await getSavedAnalysisResponse(7, "new", "42");
     expect(displayed?.confidence.level).toBe("medium");
     expect(displayed?.confidence.basis.join(" ")).toContain("does not by itself verify every sentence");
     expect(stored.confidence.level).toBe("high");

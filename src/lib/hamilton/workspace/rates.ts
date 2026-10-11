@@ -4,6 +4,7 @@
  * every sentence is a figure from FeeResearch.rates with its source.
  */
 
+import { subjectPossessive } from "./subject";
 import { formatRatePercent } from "@/lib/percent-fees";
 import { proseFeeName } from "./names";
 import type { ClarifyingQuestion, Fact, FeeResearch, RateFeeLine, RateResearch, SourceRef } from "./types";
@@ -23,8 +24,8 @@ export function ownRate(research: FeeResearch): RateFeeLine | null {
   return research.rates?.own[0] ?? null;
 }
 
-export function ownRateSource(rates: RateResearch, line: RateFeeLine): SourceRef {
-  return { label: "Your published fee schedule", table: "published_fee_rate_catalog", url: line.sourceUrl ?? undefined, asOf: rates.source.asOf ?? null };
+export function ownRateSource(rates: RateResearch, line: RateFeeLine, research?: Pick<FeeResearch, "subjectName">): SourceRef {
+  return { label: `${subjectPossessive(research)} published fee schedule`, table: "published_fee_rate_catalog", url: line.sourceUrl ?? undefined, asOf: rates.source.asOf ?? null };
 }
 
 /** "above", "below" or "at" the national median rate; null without a median. */
@@ -41,7 +42,7 @@ export function rateClaims(research: FeeResearch, name: string): Fact[] {
   if (!rates) return [];
   const out: Fact[] = [];
   const own = ownRate(research);
-  if (own) out.push({ text: `Your schedule states the ${name} fee as ${own.label}.`, source: ownRateSource(rates, own) });
+  if (own) out.push({ text: `${subjectPossessive(research)} schedule states the ${name} fee as ${own.label}.`, source: ownRateSource(rates, own, research) });
   const { n, median, p25, p75 } = rates.national;
   if (median !== null) {
     const half = p25 !== null && p75 !== null ? `; the middle half runs ${formatRatePercent(p25)} to ${formatRatePercent(p75)}` : "";
@@ -73,19 +74,19 @@ export function rateHeadline(research: FeeResearch, name: string): string | null
   if (own) {
     const relation = rateRelation(own.ratePercent, rates);
     return relation && median !== null
-      ? `Your ${name} fee is ${own.label}, ${relation === "at" ? "at" : relation} the ${formatRatePercent(median)} national median.`
-      : `Your ${name} fee is ${own.label}; too few institutions state a rate to compare.`;
+      ? `${subjectPossessive(research)} ${name} fee is ${own.label}, ${relation === "at" ? "at" : relation} the ${formatRatePercent(median)} national median.`
+      : `${subjectPossessive(research)} ${name} fee is ${own.label}; too few institutions state a rate to compare.`;
   }
   if (median !== null) {
-    return `Your ${name} fee is not in the index yet; stated as a rate, the national median is ${formatRatePercent(median)}.`;
+    return `${subjectPossessive(research)} ${name} fee is not in the index yet; stated as a rate, the national median is ${formatRatePercent(median)}.`;
   }
   return null;
 }
 
 /** The figure that turns a rate into dollars: the volume it applied to over a year. */
-export function rateVolumeQuestion(feeCategory: string): ClarifyingQuestion {
+export function rateVolumeQuestion(feeCategory: string, research?: Pick<FeeResearch, "subjectName">): ClarifyingQuestion {
   return {
-    prompt: `About what dollar amount did your ${proseFeeName(feeCategory)} rate apply to in the last 12 months?`,
+    prompt: `About what dollar amount did ${subjectPossessive(research, false)} ${proseFeeName(feeCategory)} rate apply to in the last 12 months?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.annual_volume`,
   };

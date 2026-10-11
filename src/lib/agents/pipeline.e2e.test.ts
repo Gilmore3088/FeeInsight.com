@@ -197,8 +197,22 @@ function stubFetch() {
 describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
   let sql: typeof import("@/lib/data-store/connection").sql;
   const fetchMock = stubFetch();
+  const schemaErrors: Array<{ code: string; message: string }> = [];
+  let restoreErrorLog: (() => void) | undefined;
 
   beforeAll(async () => {
+    const originalError = console.error;
+    const errorLog = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      for (const value of args) {
+        if (!value || typeof value !== "object") continue;
+        const detail = value as { code?: unknown; message?: unknown };
+        if (detail.code === "42703" || detail.code === "42P01") {
+          schemaErrors.push({ code: detail.code, message: String(detail.message ?? "Missing database object") });
+        }
+      }
+      originalError(...args);
+    });
+    restoreErrorLog = () => errorLog.mockRestore();
     process.env.DATABASE_URL = E2E_DATABASE_URL;
     process.env.EXECUTION_BACKEND = "agentic_v1";
     vi.stubGlobal("fetch", fetchMock);
@@ -270,8 +284,10 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
   });
 
   afterAll(async () => {
+    restoreErrorLog?.();
     vi.unstubAllGlobals();
     await sql?.end({ timeout: 1 });
+    expect(schemaErrors, "The pipeline logged missing database objects despite passing its result assertions").toEqual([]);
   });
 
   let laneRunId = 0;

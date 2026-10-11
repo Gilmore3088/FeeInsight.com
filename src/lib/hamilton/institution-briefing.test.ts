@@ -116,6 +116,20 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain("Evidence policy: provisional-first");
   });
 
+  it("loads account evidence by its canonical ID without declaring it the active research subject", async () => {
+    const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
+    const prompt = await buildHamiltonInstitutionBriefing(contract, { contextRole: "account_evidence" });
+    expect(prompt).toContain("ACCOUNT INSTITUTION PUBLIC EVIDENCE");
+    expect(prompt).toContain("Institution ID: 2945");
+    expect(prompt).toContain("Name: Example Bank");
+    expect(prompt).toContain("Keep the original research subject");
+    expect(prompt).not.toContain("SELECTED INSTITUTION CONTEXT");
+    expect(prompt).not.toContain("active institution");
+    expect(prompt).not.toContain("Selected institution workflow");
+    expect(mocks.getInstitutionById).toHaveBeenCalledWith(2945);
+    expect(mocks.getFeesByInstitution).toHaveBeenCalledWith(2945);
+  });
+
   it("uses the fdic record, not the ffiec duplicate, as the latest financial record", async () => {
     mocks.getFinancialsByInstitution.mockResolvedValueOnce([
       { report_date: "2026-06-30", source: "ffiec", total_assets: 84762000, service_charge_income: 0, fee_income_ratio: 0 },

@@ -16,7 +16,7 @@ function shortDate(iso: string): string {
 
 const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
 
-export function StoryExhibitView({ item, number }: { item: StoryExhibit; number: number }) {
+export function StoryExhibitView({ item, number, researchInstitutionName }: { item: StoryExhibit; number: number; researchInstitutionName?: string | null }) {
   const x = item.exhibit;
   const takeaway = item.takeaway ? (
     <p className="mt-3 border-l-2 border-terra pl-3 text-base text-warm-900">
@@ -97,7 +97,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
       return (
         <div className="break-inside-avoid">
           <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
-            <IncomeSplitChart data={split} />
+            <IncomeSplitChart data={split} researchInstitutionName={researchInstitutionName} />
           </ExhibitFrame>
           {takeaway}
         </div>
@@ -139,6 +139,14 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
   }
   if (x.kind === "money_at_stake") {
     const max = Math.max(1, ...x.rows.map((r) => Math.max(Math.abs(r.low), Math.abs(r.high))));
+    // "institution" also describes private figures a user supplied. Public filings do not
+    // establish ownership, so name the frozen research subject instead of calling them "your" figures.
+    const publicFilings = x.sources.length > 0 && x.sources.every((source) => source.table === "institution_financial_records");
+    const evidenceLabel = (level: (typeof x.rows)[number]["evidenceLevel"]) => {
+      if (!publicFilings || level === "market") return EVIDENCE_LABELS[level];
+      if (level === "working_estimate") return researchInstitutionName ? `Working estimate from ${researchInstitutionName}'s filings` : "Working estimate from institution filings";
+      return researchInstitutionName ? `Published figures: ${researchInstitutionName}` : "Published institution figures";
+    };
     // A lone figure is an amount, not a change, so it carries no plus sign.
     const amount = (r: (typeof x.rows)[number]) =>
       r.low === r.high ? (x.rows.length === 1 && r.low >= 0 ? fmtMoney(r.low) : fmtSignedMoney(r.low)) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
@@ -160,7 +168,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
                     <span className="absolute inset-y-0 rounded-full bg-terra" style={{ left: `${left}%`, width: `${Math.max(1, right - left)}%` }} />
                   </span>
                 ) : null}
-                <span className="text-[11px] uppercase tracking-[0.08em] text-warm-600">{EVIDENCE_LABELS[r.evidenceLevel]}</span>
+                <span className="text-[11px] uppercase tracking-[0.08em] text-warm-600">{evidenceLabel(r.evidenceLevel)}</span>
               </li>
             );
           })}
@@ -186,7 +194,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
                 <>
                   <span className="truncate text-xs font-semibold">
                     {a.label}
-                    {a.key === x.ownKey ? " · You" : ""}
+                    {a.key === x.ownKey ? ` · ${researchInstitutionName ?? "Research institution"}` : ""}
                   </span>
                   <span className="text-lg leading-none [font-variant-numeric:tabular-nums]" style={SERIF}>
                     {Math.round((a.count / total) * 100)}%
@@ -202,7 +210,7 @@ export function StoryExhibitView({ item, number }: { item: StoryExhibit; number:
             <p className="font-medium text-warm-900">
               {a.label}
               <span className="ml-2 text-warm-600 [font-variant-numeric:tabular-nums]">{a.count.toLocaleString("en-US")}</span>
-              {a.key === x.ownKey ? <span className="ml-2 text-xs font-semibold uppercase tracking-[0.08em] text-terra-text">You</span> : null}
+              {a.key === x.ownKey ? <span className="ml-2 text-xs font-semibold uppercase tracking-[0.08em] text-terra-text">{researchInstitutionName ?? "Research institution"}</span> : null}
             </p>
             <p className="mt-0.5 text-xs text-warm-600">{a.rule}</p>
             {a.names.length > 0 ? <p className="mt-1.5 text-xs text-warm-700">{a.names.slice(0, 4).join(", ")}{a.names.length > 4 ? ` and ${a.names.length - 4} more` : ""}</p> : null}

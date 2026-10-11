@@ -18,11 +18,14 @@ const candidates = [
   { fee_published_id: 104750, fee_verified_id: 106500, institution_id: 8, canonical_fee_key: "overdraft", amount: "25.00", fee_name: "Courtesy Pay Fee", source_document_id: 5 },
 ];
 
-function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | null, olderName = "Outgoing Wire Fee", flaggedId = 104684) {
+function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | null, olderName = "Outgoing Wire Fee", flaggedId = 104684, includePinnacle = false) {
   const query = (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
     if (text.includes("k.fee_published_id")) {
+      if (includePinnacle && values[0] === 121442 && values[1] === 121441) {
+        return Promise.resolve([{ lineage_ref: 138882, institution_id: 47, canonical_fee_key: "overdraft", fee_name: "Paid Item fees for both consumer and business clients", amount: "30.00", source_document_id: 21164 }]);
+      }
       return Promise.resolve(values[0] === 23698
         ? [{ lineage_ref: 9001, institution_id: 7, canonical_fee_key: "wire_domestic_outgoing", fee_name: olderName, amount: "15.00", source_document_id: 3 }]
         : []);
@@ -30,7 +33,7 @@ function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | nul
     if (text.includes("FROM pipeline_feedback")) {
       return Promise.resolve(pendingFlag ? [{ fee_published_id: flaggedId, kind: "takedown_pending", evidence: { ...pendingFlag, reason: "dup" } }] : []);
     }
-    if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 104684 }]);
+    if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: includePinnacle ? 121442 : 104684 }]);
     return Promise.resolve([]);
   };
   const db = vi.fn(query) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -73,9 +76,23 @@ describe("retireSameLineDuplicates", () => {
     expect(result.rolledBack.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([[23698, "same_line_duplicate: live fee #104684"]]);
   });
 
+  it("source-reviewed Pinnacle duplicate is flagged first and retired only on a later 12-hour second look", async () => {
+    const first = createDb(null, "Outgoing Wire Fee", 121442, true);
+    const flagged = await retireSameLineDuplicates(first, options);
+    expect(flagged).toMatchObject({ duplicates: 2, flagged: 2, rolledBack: [] });
+    expect(writes(first).some((query) => query.includes("SET rolled_back_at = NOW()"))).toBe(false);
+
+    const second = createDb({ flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString() }, "Outgoing Wire Fee", 121442, true);
+    const retired = await retireSameLineDuplicates(second, options);
+    expect(retired.rolledBack.map((fee) => [fee.feePublishedId, fee.olderFeePublishedId, fee.sourceDocumentId]))
+      .toEqual([[121442, 121441, 21164]]);
+    expect(writes(second).some((query) => query.includes("SET review_status = 'rejected'"))).toBe(true);
+    expect(writes(second).some((query) => query.includes("DELETE"))).toBe(false);
+  });
+
   it("passes the fees a source review found printed as their own line (9 Oct)", () => {
     expect([...SOURCE_CHECKED_SEPARATE_LINES.keys()]).toEqual([104713, 104650, 104875, 104615, 104906]);
     // Reviewed repeats map to the line that stays (104758 stays; its garbled twin 14458 goes).
-    expect([...REVIEWED_REPEATS]).toEqual([[14458, 104758], [83889, 83890], [87575, 85596], [99504, 58624]]);
+    expect([...REVIEWED_REPEATS]).toEqual([[14458, 104758], [83889, 83890], [87575, 85596], [99504, 58624], [121442, 121441]]);
   });
 });

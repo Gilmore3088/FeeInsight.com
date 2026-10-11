@@ -22,10 +22,19 @@ export interface HamiltonWorkspaceContext {
 }
 
 export interface ResolvedHamiltonInstitutionContext {
+  /** The institution being researched; this is not an ownership claim. */
   institution: HamiltonSelectedInstitutionContext | null;
   error: string | null;
   source: HamiltonContextSource;
-  /** False when the URL bank is only being browsed and the user's saved bank is another one. */
+  /**
+   * Saved research preference, not account membership or authorization. Null means no
+   * selection; omitted means it could not be established (for example, a failed read).
+   */
+  workspaceInstitutionId?: number | null;
+  /**
+   * Whether the subject matches that saved preference. Never use this flag to grant
+   * access or call an institution "yours". Omitted when the preference is unknown.
+   */
   isWorkspaceBank?: boolean;
 }
 
@@ -95,11 +104,11 @@ export async function resolveHamiltonInstitutionContext(params: {
   userId: number;
   instId?: string | number | null;
   intent?: string | null;
+  /** Legacy allow-write flag: true alone never saves; false forbids even an explicit save. */
   persistUrlSelection?: boolean;
   /**
-   * The user explicitly chose this bank ("Make this my bank"). Without it, a
-   * bank in the URL only becomes the workspace bank when none is saved yet,
-   * so browsing another bank never silently replaces yours.
+   * Explicit saved research preference, supplied by an authenticated caller. Browsing
+   * never creates one, even for a new user. This does not establish account membership.
    */
   makeDefault?: boolean;
   transientSource?: HamiltonContextSource;
@@ -115,36 +124,71 @@ export async function resolveHamiltonInstitutionContext(params: {
       return { institution: null, error: resolved.error ?? "Institution not found", source: "none" };
     }
 
-    const savedId =
-      params.persistUrlSelection === false || params.makeDefault === true
-        ? null
-        : ((await getHamiltonWorkspaceContext(params.userId).catch(() => null))?.selectedInstitutionId ?? null);
-    const shouldPersist =
-      params.persistUrlSelection !== false && (params.makeDefault === true || savedId === null);
-    if (shouldPersist) {
-      await setHamiltonWorkspaceContext({
-        userId: params.userId,
-        institutionId: resolved.institution.id,
-        source: "url",
-        intent: params.intent,
-      }).catch(() => {});
-    }
-    const isWorkspaceBank = shouldPersist || savedId === resolved.institution.id;
+    const source =
+      params.persistUrlSelection === false
+        ? normalizeHamiltonContextSource(params.transientSource, "url")
+        : "url";
 
+    // Only the explicit selection action may write. A failed read must never be
+    // interpreted as a new user and trigger an automatic save.
+    if (params.makeDefault === true && params.persistUrlSelection !== false) {
+      try {
+        await setHamiltonWorkspaceContext({
+          userId: params.userId,
+          institutionId: resolved.institution.id,
+          source: "url",
+          intent: params.intent,
+        });
+      } catch {
+        return {
+          institution: resolved.institution,
+          error: "Your workspace selection could not be saved. Please try again.",
+          source,
+        };
+      }
+      return {
+        institution: resolved.institution,
+        error: null,
+        source,
+        workspaceInstitutionId: resolved.institution.id,
+        isWorkspaceBank: true,
+      };
+    }
+
+    let workspace: HamiltonWorkspaceContext | null;
+    try {
+      // Transient Ask/artifact requests still need the saved preference for comparison,
+      // but reading it does not make the requested subject the user's default.
+      workspace = await getHamiltonWorkspaceContext(params.userId);
+    } catch {
+      return {
+        institution: resolved.institution,
+        error: "Your saved workspace selection could not be loaded.",
+        source,
+      };
+    }
+    const workspaceInstitutionId = workspace?.selectedInstitutionId ?? null;
     return {
       institution: resolved.institution,
       error: null,
-      source:
-        params.persistUrlSelection === false
-          ? normalizeHamiltonContextSource(params.transientSource, "url")
-          : "url",
-      ...(params.persistUrlSelection === false ? {} : { isWorkspaceBank }),
+      source,
+      workspaceInstitutionId,
+      isWorkspaceBank: workspaceInstitutionId === resolved.institution.id,
     };
   }
 
-  const workspace = await getHamiltonWorkspaceContext(params.userId).catch(() => null);
+  let workspace: HamiltonWorkspaceContext | null;
+  try {
+    workspace = await getHamiltonWorkspaceContext(params.userId);
+  } catch {
+    return {
+      institution: null,
+      error: "Your saved workspace selection could not be loaded.",
+      source: "none",
+    };
+  }
   if (!workspace?.selectedInstitutionId) {
-    return { institution: null, error: null, source: "none" };
+    return { institution: null, error: null, source: "none", workspaceInstitutionId: null, isWorkspaceBank: false };
   }
 
   const resolved = await getHamiltonInstitutionContext(workspace.selectedInstitutionId);
@@ -152,5 +196,7 @@ export async function resolveHamiltonInstitutionContext(params: {
     institution: resolved.institution,
     error: resolved.error,
     source: resolved.institution ? workspace.selectedSource : "none",
+    workspaceInstitutionId: workspace.selectedInstitutionId,
+    isWorkspaceBank: resolved.institution?.id === workspace.selectedInstitutionId,
   };
 }

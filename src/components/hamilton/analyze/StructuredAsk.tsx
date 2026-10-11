@@ -21,6 +21,7 @@ import { LocalMarketView } from "./local-market";
 import { isLocalMarketQuestion } from "@/lib/hamilton/local-market-question";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
+import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -249,7 +250,7 @@ function QuestionForm({
           </button>
         </form>
       )}
-      <p className="text-xs text-warm-600">Hamilton keeps your answer with your institution&apos;s figures. You can change it in My bank and data, under Account.</p>
+      <p className="text-xs text-warm-600">Hamilton keeps this answer in your private workspace under the researched institution.</p>
     </div>
   );
 }
@@ -284,7 +285,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
               ? s.revenueEffect.low === s.revenueEffect.high
                 ? fmtSignedMoney(s.revenueEffect.low)
                 : `${fmtSignedMoney(s.revenueEffect.low)} to ${fmtSignedMoney(s.revenueEffect.high)}`
-              : "Needs your volume"}
+              : "Needs institution volume"}
           </span>
         </div>
       </div>
@@ -305,7 +306,12 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
   );
 }
 
-export function StructuredAsk({
+/** A subject or retry owns its own state; late work cannot enter another answer. */
+export function StructuredAsk(props: Parameters<typeof StructuredAskConversation>[0]) {
+  return <StructuredAskConversation key={JSON.stringify([props.institutionId, props.question, props.nonce ?? 0])} {...props} />;
+}
+
+function StructuredAskConversation({
   question,
   nonce = 0,
   institutionId,
@@ -346,20 +352,33 @@ export function StructuredAsk({
   const [notFound, setNotFound] = useState<string | null>(null);
   // The question the memo was asked for; a newer question drops an older memo's result.
   const memoFor = useRef<string | null>(null);
+  const active = useRef(true);
+  const requestGeneration = useRef(0);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      requestGeneration.current += 1;
+      memoFor.current = null;
+    };
+  }, []);
 
   const run = useCallback(
     async (body: Omit<AskBody, "institutionId" | "decisionId">) => {
+      const generation = ++requestGeneration.current;
       setBusy(true);
       setError(null);
       try {
         const res = await postAsk({ ...body, institutionId, decisionId: decisionId.current });
+        if (!active.current || generation !== requestGeneration.current) return null;
         if (res.decisionId) decisionId.current = res.decisionId;
         return res;
       } catch (e) {
+        if (!active.current || generation !== requestGeneration.current) return null;
         setError(e instanceof Error ? e.message : "Hamilton could not answer that just now.");
         return null;
       } finally {
-        setBusy(false);
+        if (active.current && generation === requestGeneration.current) setBusy(false);
       }
     },
     [institutionId],
@@ -369,13 +388,14 @@ export function StructuredAsk({
   // handed back to the page to answer in prose.
   const follow = useCallback(
     (asked: string, res: AskResponse | null) => {
+      if (!active.current) return;
       if (res?.answer?.storyline) {
         onStoryline?.();
         onLead?.(res.answer.storyline.governingThought);
         memoFor.current = asked;
         setMemo({ state: "writing" });
         void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
-          if (memoFor.current === asked) setMemo(m);
+          if (active.current && memoFor.current === asked) setMemo(m);
         });
         return;
       }
@@ -412,6 +432,7 @@ export function StructuredAsk({
       if (isLocalMarketQuestion(asked) && !matchFeeCategory(asked)) {
         setBusy(true);
         const found = await postMarket(institutionId);
+        if (!active.current) return;
         setBusy(false);
         if (lastQuestion.current !== asked) return;
         if (found) {
@@ -421,7 +442,7 @@ export function StructuredAsk({
         }
       }
       const res = await run({ question: asked });
-      if (lastQuestion.current !== asked) return;
+      if (!active.current || lastQuestion.current !== asked) return;
       if (res) setResponse(res);
       follow(asked, res);
     })();
@@ -430,7 +451,7 @@ export function StructuredAsk({
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
     setNotFound(null);
     const saved = await run({ answer: { fieldKey: q.fieldKey, value } });
-    if (!saved) return;
+    if (!active.current || !saved) return;
     const again = saved.question ?? saved.answer?.question ?? null;
     if (again && again.fieldKey === q.fieldKey) setNotFound(value);
     // A fee answer that found a storyline gets Hamilton's memo like any other answer.
@@ -443,6 +464,7 @@ export function StructuredAsk({
     if (q.fieldKey === "decision.objective" && lastQuestion.current) {
       const asked = lastQuestion.current;
       const again = await run({ question: asked });
+      if (!active.current) return;
       if (again) setResponse(again);
       follow(asked, again);
       return;
@@ -457,7 +479,7 @@ export function StructuredAsk({
   if (busy && !response) {
     return (
       <p role="status" className="flex items-center gap-2 text-sm text-warm-700">
-        <Loader2 className="h-4 w-4 animate-spin" /> Reading your figures and the market...
+        <Loader2 className="h-4 w-4 animate-spin" /> Reading the selected institution and market...
       </p>
     );
   }
@@ -479,6 +501,7 @@ export function StructuredAsk({
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
   return (
     <div className="flex flex-col gap-5">
+      {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line} className="text-sm text-warm-700">{line}</p>)}
       {response.positions && response.positions.length > 0 ? (
         <>
           {/* The takeaways lead; the table and the top fee's storyline follow. Without a storyline
@@ -494,6 +517,7 @@ export function StructuredAsk({
       {response.answer && storyline ? (
         <StorylineView
           story={storyline}
+          identityContext={response.identityContext}
           memo={memo}
           nextSteps={
             researchHrefFor ? (
@@ -528,7 +552,7 @@ export function StructuredAsk({
         </p>
       )}
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
-      {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "You"} /> : null}
+      {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "Research subject"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
         <Callout>
           <span className="font-medium text-warm-900">If the objective is {response.opinion.assumedObjective.replace(/_/g, " ")}: </span>

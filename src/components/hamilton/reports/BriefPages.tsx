@@ -170,6 +170,7 @@ export function hasBriefContent(brief: AnswerBrief | null | undefined): brief is
 }
 
 export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; institutionName?: string }) {
+  const subjectName = institutionName || "Research institution";
   const fin = brief.financials ?? null;
   const incomeLines = brief.income ? splitSentences(brief.income.explained.shortAnswer) : [];
   const economy = brief.context?.economy ?? null;
@@ -187,7 +188,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
         <>
           <View wrap={false}>
             <Text style={styles.sectionHeading}>Where each fee sits against peers</Text>
-            <FeeRangeChart positions={brief.positions.slice(0, RANGE_CHART_FEES)} bands={brief.bands} />
+            <FeeRangeChart positions={brief.positions.slice(0, RANGE_CHART_FEES)} bands={brief.bands} institutionName={subjectName} />
           </View>
           <Text style={styles.tableSource}>
             Published fee schedules, verified and live; each fee against the narrowest default peer group with enough institutions publishing it. Peer count in brackets.
@@ -217,7 +218,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
           {incomeTakeaway ? <Text style={styles.paragraph}>{incomeTakeaway}</Text> : null}
           {fin && fin.quarters.length > 0 ? (
             <View style={styles.table} wrap={false}>
-              <IncomeTrendChart financials={fin} />
+              <IncomeTrendChart financials={fin} institutionName={subjectName} />
               <Text style={styles.tableSource}>
                 {fin.sourceRef.label}. Call reports do not separate how often from which fees are charged for most filers.
               </Text>
@@ -271,7 +272,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
           {market ? (
             <>
               <View wrap={false}>
-                <Text style={styles.sectionHeading}>Your local market</Text>
+                <Text style={styles.sectionHeading}>{subjectName} local market</Text>
                 <MarketShareBars shares={market.shares} />
               </View>
               <Text style={[styles.paragraph, { marginTop: 8 }]}>{market.commentary.join(" ")}</Text>
@@ -280,7 +281,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
               </Text>
             </>
           ) : null}
-          {!market ? <Text style={styles.sectionHeading}>Your local market</Text> : null}
+          {!market ? <Text style={styles.sectionHeading}>{subjectName} local market</Text> : null}
           {localIncome ? (
             <>
               <IncomeCompareBars counties={localIncome.counties} state={localIncome.state} />
@@ -296,7 +297,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
           {brief.competitors.map((item, i) => (
             <View key={item.feeCategory} wrap={false}>
               {i === 0 ? <Text style={styles.sectionHeading}>Local competitors</Text> : null}
-              <CompetitorBars item={item} />
+              <CompetitorBars item={item} institutionName={subjectName} />
             </View>
           ))}
           <Text style={styles.tableSource}>
@@ -309,8 +310,8 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
         <>
           <View style={styles.sectionRule} />
           <View wrap={false}>
-            <Text style={styles.sectionHeading}>Where you sit in Hamilton&apos;s studies</Text>
-            {brief.studies.dependence ? <DependenceTrendChart chart={brief.studies.dependence} /> : null}
+            <Text style={styles.sectionHeading}>{subjectName} in Hamilton&apos;s studies</Text>
+            {brief.studies.dependence ? <DependenceTrendChart chart={brief.studies.dependence} institutionName={subjectName} /> : null}
           </View>
           {brief.studies.items.map((o) => (
             <View key={o.id} style={styles.studyItem} wrap={false}>

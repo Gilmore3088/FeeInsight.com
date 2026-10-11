@@ -5,8 +5,8 @@
  * own schedules bear out. A section with nothing to show says so and why.
  */
 
-import { dataTable, emptyNotice, escapeHtml, footnote, releaseList } from "../index";
-import type { ReleaseListGroup } from "../index";
+import { dataTable, emptyNotice, escapeHtml, footnote, releaseList } from "../primitives";
+import type { ReleaseListGroup } from "../primitives";
 import { formatAmount } from "@/lib/format";
 import { STATE_BILL_STAGE_LABELS, type StateNews } from "@/lib/data-store/state-news";
 import {

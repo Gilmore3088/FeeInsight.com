@@ -15,6 +15,15 @@ changes, paid-provider activation, outreach sending, force-pushes, branch deleti
 explicitly gated production actions. Those retain their own approval/evidence requirements.
 Merge receipts must still distinguish merged, deployed and production-verified states.
 
+## 2026-10-09
+
+**One queue, one implementation.** Recorded 2026-10-09 UTC in `docs/project/BACKLOG.md`, with
+control issue #984 and the checks in #987. Each piece of work has one canonical issue, one
+implementer and one draft PR. Every new PR carries an intake block (work item, owner, area, scope,
+duplicate search, overlap, verification, rollback). Each area has at most three open
+implementation PRs. Outreach and marketing are on hold. The priority order is correctness and data
+trust, then customer journeys and payments, then maintainability.
+
 ## 2026-10-08
 
 **No rollback; finish the work.** James, 22:44 UTC, Rollback thread: "i dont want rollback. i want

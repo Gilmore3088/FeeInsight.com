@@ -44,6 +44,7 @@ type HamiltonBriefingContract = Pick<
 
 export async function buildHamiltonInstitutionBriefing(
   contract: HamiltonBriefingContract,
+  options: { contextRole?: "research" | "account_evidence" } = {},
 ): Promise<string | null> {
   const institutionId = contract.institutionId;
   if (institutionId === null) return null;
@@ -105,8 +106,12 @@ export async function buildHamiltonInstitutionBriefing(
   // codes) stay out of customer briefings so Hamilton cannot narrate them.
   const operator = contract.audience === "admin";
   const sampleRows: Array<Record<string, unknown>> = feeRows.length > 0 ? feeRows : pipelineFeeRows;
+  const accountEvidence = options.contextRole === "account_evidence";
+  const heading = accountEvidence
+    ? "ACCOUNT INSTITUTION PUBLIC EVIDENCE (reference only; this does not change the research subject)"
+    : "SELECTED INSTITUTION CONTEXT (treat this as the active institution; do not ask the user to identify it again)";
 
-  return `\n\nSELECTED INSTITUTION CONTEXT (treat this as the active institution; do not ask the user to identify it again):
+  return `\n\n${heading}:
 - Institution ID: ${inst.id}
 - Name: ${inst.institution_name}
 - Location: ${[inst.city, inst.state_code].filter(Boolean).join(", ") || "unknown"}
@@ -138,10 +143,11 @@ ${operator ? `- Asset tier code: ${inst.asset_size_tier ?? "unknown"}
 - Revenue trend: ${JSON.stringify(revenueTrend.slice(0, 8))}
 - Peer ranking: ${peerRanking ? JSON.stringify(peerRanking) : "none"}
 
-Selected institution workflow:
+${accountEvidence ? "Account institution evidence rules" : "Selected institution workflow"}:
 - Audience: ${contract.audience}
 - Intent: ${contract.intent}
 - Evidence policy: ${contract.evidencePolicy}
+${accountEvidence ? "- These figures belong only to the named account institution. Keep the original research subject; never transfer either institution's figures to the other.\n" : ""}
 - Separate verified evidence from provisional evidence.
 - Do not use provisional fee rows in verified benchmark or score conclusions unless explicitly labeled as provisional/directional.
 - ${contract.audience === "admin"

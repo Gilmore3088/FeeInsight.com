@@ -1,3 +1,4 @@
+import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
 import type {
   ReportArtifactMetadata,
   ReportSummaryResponse,
@@ -30,6 +31,8 @@ export function ReportOutput({
   artifactMetadata,
 }: ReportOutputProps) {
   const typeLabel = reportTypeLabel(reportType);
+  const identity = readHamiltonIdentitySnapshot(report.identityContext);
+  const identityLines = identity ? hamiltonIdentityLines(identity) : ["Historical institution, account and peer context: Not recorded"];
 
   return (
     <article className="rounded-lg border border-warm-300 bg-warm-50 px-5 pb-4 sm:px-8">
@@ -45,6 +48,10 @@ export function ReportOutput({
           This report can&apos;t be edited here. Download the PDF to keep or
           share a copy.
         </p>
+
+        <div className="mt-3 text-xs text-warm-600">
+          {identityLines.map((line) => <p key={line}>{line}</p>)}
+        </div>
 
         {artifactMetadata && (
           <p className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-700">
@@ -107,6 +114,7 @@ function AddedFindings({ report }: { report: ReportSummaryResponse }) {
               </p>
             )}
             <p className="mt-1 text-xs text-warm-600">From {finding.source}</p>
+            {hamiltonIdentityLines(readHamiltonIdentitySnapshot(finding.identityContext)).map((line) => <p key={line} className="mt-1 text-xs text-warm-600">{line}</p>)}
           </li>
         ))}
       </ul>

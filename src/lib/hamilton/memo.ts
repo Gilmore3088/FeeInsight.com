@@ -16,6 +16,7 @@ import type { HamiltonEvidenceBundle } from "./evidence-contract";
 import { HAMILTON_VOICE } from "./voice";
 import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
+import type { HamiltonIdentitySnapshot } from "./account-context";
 
 /**
  * Room for the JSON memo with headroom: at 1,800 both attempts of a live overdraft memo
@@ -44,6 +45,9 @@ Return only JSON, no prose around it:
 Hard rules:
 - Use only figures that appear in DATA, written as DATA writes them. Never compute a new dollar figure or percentage.
 - Name institutions only as DATA names them.
+- DATA.identityContext is server-derived reference context. The research institution owns the storyline's figures.
+  The account institution is separate. Refer to each institution by its DATA name; never call the research institution "your institution".
+  Account identity alone provides no evidence about its fees or financials. Compare it only when the storyline states sourced account-institution figures.
 - Never recommend raising, lowering, cutting, dropping or removing a fee, and never say what the bank should do. Lay out what each path means.
 - Where DATA says a figure is missing, say it is missing; never fill it in.
 - An exhibit with "own": null means the bank's own fee is not in the index yet. It never means the bank charges no fee:
@@ -70,12 +74,17 @@ function ownFeeMissing(payload: unknown): boolean {
 }
 
 /** Everything the model may draw on: the storyline, plus every figure its sentences state. */
-export function memoPayload(storyline: Storyline, factEvidence?: HamiltonEvidenceBundle | null): Record<string, unknown> {
+export function memoPayload(
+  storyline: Storyline,
+  factEvidence?: HamiltonEvidenceBundle | null,
+  identityContext?: HamiltonIdentitySnapshot,
+): Record<string, unknown> {
   const text = JSON.stringify(storyline);
   const figures = extractFigures(text);
   return {
     storyline,
     ...(factEvidence ? { fact_evidence: factEvidence } : {}),
+    ...(identityContext ? { identityContext } : {}),
     stated_amounts: [...new Set(figures.filter((f) => f.kind === "usd").map((f) => f.value))].map((amount) => ({ amount })),
     stated_rates: [...new Set(figures.filter((f) => f.kind === "pct").map((f) => f.value))].map((rate) => ({ rate })),
     // Exhibit numbers whose keys do not name their unit, restated under keys that do.
@@ -157,6 +166,17 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
   if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
+  const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
+  if (identity?.researchInstitutionId) {
+    const ambiguous = all.match(/\b(?:your|our|my)\s+(?:institution|bank|credit union|fee\b|fees\b|schedule|filing|income|market|customers?\b|deposit|shares|assets|revenue|charter|regulator|prices?|rate\b|published)/i);
+    if (ambiguous) problems.push(`Ambiguous institution reference "${ambiguous[0]}". Name the research institution from DATA; the account institution is separate.`);
+    const home = identity.accountInstitutionName;
+    const storyline = (payload as { storyline?: Storyline }).storyline;
+    const homeFacts = storyline ? [...storyline.situation, ...storyline.complication, ...storyline.lenses.finance, ...storyline.lenses.market].some((fact) => home && fact.text.includes(home)) : false;
+    if (home && identity.accountInstitutionId !== identity.researchInstitutionId && all.includes(home) && !homeFacts) {
+      problems.push(`The memo references ${home} without account-institution evidence in the storyline. Account identity alone supplies no fee or financial facts.`);
+    }
+  }
   return { problems, figureCheck };
 }
 
@@ -184,13 +204,20 @@ function anthropicMemoClient(institutionId: number | null): MemoClient {
 export async function writeStorylineMemo(
   storyline: Storyline,
   question: string,
-  options: { institutionId?: number | null; client?: MemoClient; model?: string; now?: Date; factEvidence?: HamiltonEvidenceBundle | null } = {},
+  options: {
+    institutionId?: number | null;
+    identityContext?: HamiltonIdentitySnapshot;
+    client?: MemoClient;
+    model?: string;
+    now?: Date;
+    factEvidence?: HamiltonEvidenceBundle | null;
+  } = {},
 ): Promise<StorylineMemoResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) {
     return { status: "unavailable", reason: "Hamilton's writer is not configured." };
   }
   const model = options.model ?? getHamiltonModel();
-  const payload = memoPayload(storyline, options.factEvidence);
+  const payload = memoPayload(storyline, options.factEvidence, options.identityContext);
   let client: MemoClient;
   try {
     client = options.client ?? anthropicMemoClient(options.institutionId ?? null);
@@ -218,7 +245,7 @@ export async function writeStorylineMemo(
     }
     const { problems, figureCheck } = memoProblems(draft, payload);
     if (problems.length === 0) {
-      const memo: StorylineMemo = { ...draft, model, generatedAt: (options.now ?? new Date()).toISOString(), figureCheck };
+      const memo: StorylineMemo = { ...draft, model, generatedAt: (options.now ?? new Date()).toISOString(), figureCheck, ...(options.identityContext ? { identityContext: options.identityContext } : {}) };
       return { status: "written", memo };
     }
     lastProblems = problems;

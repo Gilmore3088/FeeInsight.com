@@ -57,7 +57,36 @@ export function overlapPairs(prs, files) {
   return result;
 }
 
-export function guardProblems(pr, all, overlaps, policy) {
+// One immutable PR may cross the area-count threshold if James explicitly records
+// an exact, expiring exception in policy. All other intake rules still apply.
+export function hasOneTimeWipException(pr, policy, now = new Date()) {
+  const currentTime = now instanceof Date ? now.getTime() : Date.parse(String(now));
+  if (!Number.isFinite(currentTime) || !Array.isArray(policy.wip_exceptions)) return false;
+  return policy.wip_exceptions.some(exception => {
+    const authorizedAt = Date.parse(exception.authorized_at);
+    const expiresAt = Date.parse(exception.expires_at);
+    const createdAt = Date.parse(pr.created_at);
+    return pr.state === 'open'
+      && Number.isInteger(exception.pr_number)
+      && pr.number === exception.pr_number
+      && Number.isInteger(exception.work_item)
+      && workItem(pr.body) === exception.work_item
+      && field(pr.body, 'Area').toLowerCase() === exception.area
+      && exception.area === 'correctness'
+      && pr.head?.ref === exception.head_ref
+      && pr.base?.ref === exception.base_ref
+      && sameRepo(pr.head?.repo?.full_name, policy.repository)
+      && sameRepo(pr.base?.repo?.full_name, policy.repository)
+      && Number.isFinite(authorizedAt)
+      && Number.isFinite(expiresAt)
+      && Number.isFinite(createdAt)
+      && authorizedAt <= createdAt
+      && createdAt < expiresAt
+      && currentTime < expiresAt;
+  });
+}
+
+export function guardProblems(pr, all, overlaps, policy, now = new Date()) {
   if (Date.parse(pr.created_at) < Date.parse(policy.enforce_after)) return []; // grandfather existing work
   const problems = [];
   for (const name of ['Work item', 'Owner', 'Area', 'Scope', 'Duplicate search', 'Verification', 'Rollback', 'Overlap review']) {
@@ -68,7 +97,8 @@ export function guardProblems(pr, all, overlaps, policy) {
   const area = field(pr.body, 'Area').toLowerCase();
   if (!policy.areas.includes(area)) problems.push(`Area must be one of: ${policy.areas.join(', ')}.`);
   if (policy.parked_areas.includes(area)) problems.push(`${area} is parked by James; do not open another implementation.`);
-  if (all.filter(p => p.state === 'open' && field(p.body, 'Area').toLowerCase() === area).length > policy.wip_per_area) problems.push(`Area '${area}' exceeds ${policy.wip_per_area} open implementation PRs. Finish/reconcile work first.`);
+  const areaOpenCount = all.filter(p => p.state === 'open' && field(p.body, 'Area').toLowerCase() === area).length;
+  if (areaOpenCount > policy.wip_per_area && !hasOneTimeWipException(pr, policy, now)) problems.push(`Area '${area}' exceeds ${policy.wip_per_area} open implementation PRs. Finish/reconcile work first.`);
   for (const other of all) if (other.number !== pr.number && other.state === 'open' && workItem(pr.body) && workItem(other.body) === workItem(pr.body)) problems.push(`Work item already has open PR #${other.number}; reuse it instead of duplicating implementation.`);
   const acknowledged = new Set([...field(pr.body, 'Overlap review').matchAll(/#(\d+)/g)].map(m => Number(m[1])));
   for (const pair of overlaps.filter(o => o.a === pr.number || o.b === pr.number)) {

@@ -145,6 +145,7 @@ export type StorylineExhibit =
  * traced back to the storyline before it is shown; a memo that fails is withheld.
  */
 export interface StorylineMemo {
+  identityContext?: import("../account-context").HamiltonIdentitySnapshot;
   /** Three or four sentences: the answer, why it holds, the decision it raises. */
   summary: string;
   /** For the CFO or board. */

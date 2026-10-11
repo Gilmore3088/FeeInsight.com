@@ -33,6 +33,7 @@ import {
 } from "@/lib/data-store/saved-peers";
 import { getPeerGroupCounts, type PeerGroupCount } from "@/lib/data-store/fee-index";
 import { parseSavedPeerSetFilters } from "@/lib/hamilton/peer-index";
+import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { STATE_NAMES } from "@/lib/us-states";
 
 export type WorkspaceInstitutionState = {
@@ -536,7 +537,7 @@ const MAX_CHOSEN_PEERS = 50;
 
 const PeerSetSchema = z
   .object({
-    name: z.string().trim().min(1, "Give the peer group a name.").max(100),
+    name: z.string().trim().max(100),
     mode: z.enum(["filters", "institutions"]),
     charter_type: z.enum(["bank", "credit_union"]).nullable(),
     asset_tiers: z.array(z.enum(PEER_SET_ASSET_TIERS)).optional(),
@@ -588,7 +589,7 @@ function parsePeerSetForm(formData: FormData) {
           fed_districts: v.fed_districts,
           states: [...new Set(v.states ?? [])],
         };
-  return { ok: true as const, name: v.name, filters };
+  return { ok: true as const, name: v.name || defaultPeerSetName(filters), filters };
 }
 
 /** The workspace the user is working in, or null (personal sets). A lookup failure means personal. */
@@ -621,7 +622,26 @@ export async function createPeerSet(formData: FormData): Promise<PeerSetActionRe
   if (!user) return { success: false, error: "Not authenticated" };
   if (!canAccessPremium(user)) return { success: false, error: "An active Hamilton subscription is required." };
 
-  const workspace = await peerSetWorkspace(user.id);
+  // The displayed research subject may differ from the stored workspace. An explicit
+  // empty subject is personal; sharing requires fresh membership of that exact subject.
+  let workspace: { institutionId: number; role: string } | null;
+  if (formData.has("research_institution_id")) {
+    if (formData.get("research_institution_id") === "") {
+      workspace = null;
+    } else {
+      const subject = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().positive().safe())
+        .safeParse(formData.get("research_institution_id"));
+      if (!subject.success) return { success: false, error: "Enter a valid research institution ID." };
+      try {
+        const membership = await getActiveInstitutionMembership({ userId: user.id, institutionId: subject.data });
+        workspace = membership ? { institutionId: membership.institutionId, role: membership.role } : null;
+      } catch {
+        return { success: false, error: "Could not verify access to this institution. Try saving again." };
+      }
+    }
+  } else {
+    workspace = await peerSetWorkspace(user.id);
+  }
   if (workspace?.role === "viewer") {
     return { success: false, error: "Viewers can use the team's peer groups but not add them." };
   }

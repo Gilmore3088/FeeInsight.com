@@ -30,6 +30,8 @@ describe("SegmentTable", () => {
     expect(html).toContain("Exhibit 2");
     expect(html).toContain("The 18 institutions with $10 billion or more in assets that publish this fee, largest first");
     expect(html).toContain("Example Bank");
+    expect(html).toContain("Bars in terra charge less than Example Bank.");
+    expect(html).not.toContain("charge less than you");
     expect(html).toContain("$3.0T");
     expect(html).toContain("3 a day");
     expect(html).toContain("https://example.com/1.pdf");

@@ -8,6 +8,7 @@ import { structuredEvidenceConfidence, type EvidenceBoundAnalyzeResponse, type H
 import type { AnalysisFocus } from "../navigation";
 import type { AnalyzeResponse } from "../types";
 import type { Storyline, StorylineKind, StorylineMemo } from "./storyline-types";
+import type { HamiltonIdentitySnapshot } from "../account-context";
 
 const FOCUS: Record<StorylineKind, AnalysisFocus> = {
   position: "Peer Position",
@@ -32,8 +33,10 @@ export function storylineAnalysis(
   storyline: Storyline,
   engineVersion: string,
   factEvidence?: HamiltonEvidenceBundle | null,
+  identity?: HamiltonIdentitySnapshot,
 ): EvidenceBoundAnalyzeResponse {
   return {
+    ...(identity ? { identityContext: identity } : {}),
     title: analysisTitle(storyline),
     confidence: structuredEvidenceConfidence(factEvidence),
     hamiltonView: storyline.governingThought,

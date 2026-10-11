@@ -30,7 +30,7 @@ import { compareSelectedInstitutionFees } from "@/lib/hamilton/report-evidence";
 import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { ShowcasePillars, ShowcaseProvider, ShowcaseStage } from "./showcase";
 import { AnalyzeDemo, type AnalyzeScenario } from "./analyze-demo";
 import { MonitorPreview, ReportPreview, type MonitorChange } from "./example-panels";
@@ -54,9 +54,8 @@ const WELCOME_PATH = "/account/welcome";
  * /subscribe follows the ui-ux-pro-max design system James asked for (9 Oct 2026): Plus Jakarta
  * Sans, in Fee Insight colours (James, 11:08: keep the layout, on-brand colour), glass over warm light.
  */
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const jakarta = localFont({
+  src: [{ path: "../../../public/fonts/plus-jakarta-sans-variable.ttf", weight: "400 700", style: "normal" }],
   variable: "--font-jakarta",
   display: "swap",
 });

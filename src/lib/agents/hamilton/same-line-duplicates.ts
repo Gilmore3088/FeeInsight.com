@@ -51,12 +51,18 @@ export const SOURCE_CHECKED_SEPARATE_LINES: ReadonlyMap<number, string> = new Ma
  *   the same schedule at institution 175 (Data inventory).
  * - 99504 "(Members over Age 60 are exempt.): Statement Copy fee" $5 is 58624 "Statement Copy fee"
  *   $5 with another line's note glued on (Data inventory, retidy v15).
+ * - Pinnacle Bank #47: 121442 "Paid Item fees for both consumer and business clients" $30
+ *   repeats 121441 "Overdraft Paid Item fees" $30. The same official source document
+ *   (#21164, https://www.pnfp.com/Overdraft) repeats one policy price in its overview
+ *   and detail paragraphs. This source-checked pair must go through the audited
+ *   12-hour second look; keep 121441 and preserve both original source observations.
  */
 export const REVIEWED_REPEATS: ReadonlyMap<number, number> = new Map([
   [14458, 104758],
   [83889, 83890],
   [87575, 85596],
   [99504, 58624],
+  [121442, 121441],
 ]);
 const KEPT_LINES = new Set(REVIEWED_REPEATS.values());
 

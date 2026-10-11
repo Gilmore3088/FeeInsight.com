@@ -6,6 +6,18 @@
   "enforce_after": "2026-10-09T21:29:21Z",
   "protect_hours": 3,
   "wip_per_area": 3,
+  "wip_exceptions": [
+    {
+      "pr_number": 1017,
+      "work_item": 1012,
+      "area": "correctness",
+      "head_ref": "fix/1012-directory-fee-bind",
+      "base_ref": "main",
+      "authorized_at": "2026-10-11T11:15:00Z",
+      "expires_at": "2026-10-14T00:00:00Z",
+      "authorization": "James, October 11 2026; see issues #1012 and #984. One-time WIP-count-only exception. Other gates unchanged."
+    }
+  ],
   "areas": ["correctness", "experience", "maintenance", "outreach"],
   "parked_areas": ["outreach"],
   "parked_prs": [227, 339, 669],

@@ -425,7 +425,7 @@ export type EvidenceBoundAnalyzeResponse = AnalyzeResponse & {
 export function normalizeLegacyAnalyzeConfidence(
   response: EvidenceBoundAnalyzeResponse,
 ): EvidenceBoundAnalyzeResponse {
-  if (response.confidence.level !== "high") return response;
+  if (response.confidence?.level !== "high") return response;
   const limitation = response.factEvidence
     ? CLAIM_BINDING_LIMITATION
     : LEGACY_HIGH_CONFIDENCE_LIMITATION;

@@ -1,0 +1,21 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { expect, it } from "vitest";
+import { LandingResearchPicker } from "./LandingResearchPicker";
+import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
+import { NextRequest } from "next/server";
+import { proxy } from "@/proxy";
+import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+it("carries selected DC/charter/categories from the actual CTA through the login redirect", () => {
+  render(<LandingResearchPicker />);
+  fireEvent.change(screen.getByLabelText("Research market"), { target: { value: "state" } });
+  fireEvent.change(screen.getByLabelText("Research state"), { target: { value: "DC" } });
+  fireEvent.change(screen.getByLabelText("Institution charter"), { target: { value: "credit_union" } });
+  const href = screen.getByRole("link", { name: "Review comparison in Hamilton" }).getAttribute("href")!;
+  const response = proxy(new NextRequest(`https://feeinsight.com${href}`));
+  const login = new URL(response.headers.get("location")!);
+  expect(login.pathname).toBe("/login");
+  const restored = sanitizeInternalRedirect(login.searchParams.get("from")!, "/pro");
+  expect(restored).toBe(href);
+  const selection = decodeLandingResearch(new URL(restored, "https://feeinsight.com").searchParams.get("research"));
+  expect(selection).toMatchObject({ scope: { kind: "state", stateCode: "DC" }, charter: "credit_union", categories: ["cashiers_check", "paper_statement", "money_order", "stop_payment"] });
+});
