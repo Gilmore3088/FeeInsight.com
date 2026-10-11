@@ -49,6 +49,26 @@ GUARD, the verification step, exists from day one as a rule rather than an agent
   SHERLOCK daily discovery (Mon to Fri) with a weekly findings issue; DRAPER daily triage of the
   queue and a Monday growth report.
 
+## Product and site review pipeline
+
+GrowthOS is also the cross-functional review layer for customer-facing product and site work. It is not limited to acquisition campaigns or outbound growth.
+
+Any substantive public page, pricing/offer surface, onboarding surface, major customer-facing component, or launch-facing product change should run through the relevant marketing-team specialists before release:
+
+- DRAPER: message hierarchy and final synthesis;
+- SHERLOCK: customer/market evidence and buyer questions;
+- ERNEST: SEO, copywriting and copy editing;
+- NORMAN: CRO, UX and cognitive load;
+- NIELSEN: analytics and funnel measurement;
+- EDISON: product-led interactions that can replace explanatory copy;
+- CARNEGIE: institutional buying objections and sales clarity;
+- MURROW: message compression and human-readable language;
+- BERNAYS: public-claim and reputational review.
+
+The canonical workflow is `growth-os/workflows/page-review-pipeline.md`. For site redesigns, each page gets a production **before**, a reviewed preview **after**, matching desktop/mobile screenshots, a compact change receipt and a one-page approval email draft. A build or visual restyle is not sufficient release evidence.
+
+This review layer remains useful after the current redesign: new public features, pricing changes, landing pages and material customer-facing copy should enter the same pipeline rather than being reviewed only after implementation.
+
 ## Autonomy
 
 | Level | What | Who decides |
