@@ -79,6 +79,23 @@ describe("institution directory SQL category placeholders (#1012)", () => {
     expect(query).toContain("ef.amount >= 0");
   });
 
+  it("binds a non-overdraft fee for page two without changing median semantics", async () => {
+    await searchInstitutions({
+      state_code: "FL",
+      fee_category: "nsf_fee",
+      fee_sort: "desc",
+      page: 2,
+      pageSize: 25,
+    });
+    expect(state.queries).toHaveLength(2);
+    expect(state.params[1]).toEqual(["FL", "nsf_fee", 25, 25]);
+    const query = state.queries[1];
+    expect(query).toContain("CASE WHEN $2 = 'overdraft'");
+    expect(query).toContain("ef.fee_category = $2");
+    expect(query).toContain("PERCENTILE_CONT(0.5)");
+    expect(query).toContain("ORDER BY focus.amount DESC NULLS LAST");
+  });
+
   it("does not create a category join when the fee filter is absent", async () => {
     await searchInstitutions({ state_code: "TN", page: 1, pageSize: 25 });
     expect(state.queries).toHaveLength(2);
