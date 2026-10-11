@@ -8,10 +8,11 @@ import { getLocalMarketMembers } from "./custom-report-market";
 import { getFeeValuesForInstitutions, getInstitutionFeeValues, getPeerIndexes, type IndexEntry } from "./fee-index";
 import { marketMediansFrom } from "./regulatory-watch";
 import { getNationalRateStats, getRateFeesByInstitution } from "./rate-fees";
+import { STATS_ROW_FILTER, MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
-export const BENCHMARK_MIN_INSTITUTIONS = 3;
+export const BENCHMARK_MIN_INSTITUTIONS = MIN_INSTITUTIONS_FOR_MEDIAN;
 const MARKET_PEER_LIMIT = 40;
 
 export interface BenchmarkGroup {
@@ -91,10 +92,12 @@ export async function getInstitutionBenchmark(institutionId: number): Promise<In
       { charter_type: charter, asset_tiers: inst.asset_size_tier ? [inst.asset_size_tier] : undefined },
     ]),
     sql<{ fee_category: string; source_url: string | null }[]>`
-      SELECT DISTINCT ON (fee_category) fee_category, source_url
-        FROM published_fee_catalog
-       WHERE institution_id = ${institutionId} AND review_status = 'approved'
-       ORDER BY fee_category, updated_at DESC NULLS LAST`,
+      SELECT DISTINCT ON (ef.fee_category) ef.fee_category, ef.source_url
+        FROM published_fee_catalog ef
+       WHERE ef.institution_id = ${institutionId} AND ef.review_status = 'approved'
+         AND ${sql.unsafe(STATS_ROW_FILTER)}
+         AND ef.amount IS NOT NULL AND ef.amount >= 0
+       ORDER BY ef.fee_category, ef.updated_at DESC NULLS LAST, ef.fee_published_id DESC`,
     getLocalMarketMembers(institutionId).catch(() => null),
   ]);
   const rateRows = await getRateBenchmarkRows(institutionId);
@@ -118,7 +121,7 @@ export async function getInstitutionBenchmark(institutionId: number): Promise<In
         national: group(national, category),
         state: group(state, category),
         asset_peers: peers,
-        local_market: { median: local?.median ?? null, institutions: local?.count ?? 0 },
+        local_market: { median: local && local.count >= BENCHMARK_MIN_INSTITUTIONS ? local.median : null, institutions: local?.count ?? 0 },
         position: positionAgainst(amount, peers),
         source_url: sourceBy.get(category) ?? null,
       };
@@ -146,7 +149,7 @@ export async function getInstitutionBenchmark(institutionId: number): Promise<In
 
 /** One row per rate-stated fee category, the lowest rate when a schedule states several. */
 async function getRateBenchmarkRows(institutionId: number): Promise<BenchmarkRateRow[]> {
-  const fees = (await getRateFeesByInstitution(institutionId)).filter((fee) => fee.fee_category);
+  const fees = (await getRateFeesByInstitution(institutionId, "consumer")).filter((fee) => fee.fee_category);
   const byCategory = new Map<string, (typeof fees)[number]>();
   for (const fee of fees) {
     const current = byCategory.get(fee.fee_category!);

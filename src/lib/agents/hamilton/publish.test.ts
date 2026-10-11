@@ -69,6 +69,7 @@ const verifiedFee = {
   document_r2_key: null,
   extraction_confidence: "0.9200",
   canonical_fee_key: "overdraft",
+  fee_audience: "consumer" as const,
   variant_type: null,
   outlier_flags: ["agentic_darwin_verified"],
   verified_by_agent_event_id: "00000000-0000-4000-8000-000000000801",
@@ -277,6 +278,7 @@ describe("Hamilton agentic publish", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("hamilton_publication_completed");
     expect(JSON.stringify(db.mock.calls)).toContain("published_public_ready");
     expect(JSON.stringify(db.mock.calls)).toContain("refresh_recommended");
+    expect(JSON.stringify(db.mock.calls)).toContain("consumer_canonical_fee_keys");
   });
 
   it("emits a fee movement signal when a published amount changes from the prior live catalog row", async () => {
@@ -309,7 +311,23 @@ describe("Hamilton agentic publish", () => {
     expect(callsJson).toContain("hamilton_fee_movement_detected");
     expect(callsJson).toContain("published_fee_movement");
     expect(callsJson).toContain("amount_delta");
+    expect(callsJson).toContain("fee_audience");
+    expect(callsJson).toContain("consumer");
     expect(callsJson).toContain(":5");
+  });
+
+  it("keeps business publication and movement applicability out of consumer signal keys", async () => {
+    const business = { ...verifiedFee, fee_audience: "business" };
+    const db = createDbMock([business], [priorPublishedFee], undefined, [
+      { fee_published_id: 601, fee_name: "Overdraft fee", source_url: "https://testbank.example/fees", document_text: "Overdraft fee $30.00" },
+      { fee_published_id: 1201, fee_name: "Overdraft fee", source_url: "https://testbank.example/fees", document_text: "Overdraft fee $35.00" },
+    ]);
+
+    await runHamiltonPublish({ runId: 206, db: asPublishDb(db) });
+
+    const callsJson = JSON.stringify(db.mock.calls);
+    expect(callsJson).toContain('consumer_canonical_fee_keys\\":[]');
+    expect(callsJson).toContain('fee_audience\\":\\"business');
   });
 
   it("keeps a movement the bank's texts do not confirm off the watcher alert", async () => {

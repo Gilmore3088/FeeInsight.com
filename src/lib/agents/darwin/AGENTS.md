@@ -95,10 +95,13 @@ Darwin owns verification and classification.
     `peer_fallback_checks`, `peer_fallback_outliers`. On the 24 hours to 2026-10-06
     13:30 UTC, 11,637 of 28,039 approvals had no state comparison; the fallback covers
     all but a handful, and about 1,500 of them sit outside the wider range.
-  - `verify.second_source` v1: the same fee in another stored document of the same
-    bank (an older copy or a sister document). Same amount: outcome `ok` and the
-    verified row gets the `second_source_agrees` flag. Different amount only:
-    `evidence_mismatch`, recorded as evidence, never blocking. Re-measured 2026-10-06
+  - `verify.second_source` v2: the same fee in another stored document of the same
+    bank (an older copy or a sister document) only when customer applicability is
+    compatible. Consumer rows accept consumer or both-audience corroboration; business
+    rows accept business or both; unknown rows do not receive second-source confidence.
+    A business-only fee can never corroborate a consumer fee. Same compatible amount:
+    outcome `ok` and the verified row gets the `second_source_agrees` flag. Different
+    compatible amount only: `evidence_mismatch`, recorded as evidence, never blocking. Re-measured 2026-10-06
     13:30 UTC: before the schedule check (`not_in_source`), published fees whose second
     copy disagreed were pulled within 8 hours at 22% (77 of 346) against 8.5% (571 of
     6,709) when it agreed; since, 1.9% (2 of 108) against 2.7% (5 of 183). The schedule

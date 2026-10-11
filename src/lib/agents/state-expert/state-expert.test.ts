@@ -175,22 +175,40 @@ describe("state memory", () => {
 });
 
 describe("second-source check", () => {
-  const row = { feeRawId: 1, institutionId: 42, sourceDocumentId: 10, canonicalFeeKey: "nsf", amount: 30 };
+  const row = { feeRawId: 1, institutionId: 42, sourceDocumentId: 10, canonicalFeeKey: "nsf", amount: 30, feeAudience: "consumer" as const };
 
   it("needs another document of the same bank with the same fee", () => {
     expect(secondSourceCheck(row, [])).toBeNull();
-    expect(secondSourceCheck(row, [{ feeRawId: 2, institutionId: 42, sourceDocumentId: 10, canonicalFeeKey: "nsf", amount: 30 }])).toBeNull();
-    expect(secondSourceCheck(row, [{ feeRawId: 3, institutionId: 43, sourceDocumentId: 11, canonicalFeeKey: "nsf", amount: 30 }])).toBeNull();
+    expect(secondSourceCheck(row, [{ feeRawId: 2, institutionId: 42, sourceDocumentId: 10, canonicalFeeKey: "nsf", amount: 30, feeAudience: "consumer" }])).toBeNull();
+    expect(secondSourceCheck(row, [{ feeRawId: 3, institutionId: 43, sourceDocumentId: 11, canonicalFeeKey: "nsf", amount: 30, feeAudience: "consumer" }])).toBeNull();
     expect(secondSourceCheck({ ...row, sourceDocumentId: null }, [])).toBeNull();
   });
 
-  it("agrees when any other document shows the same amount", () => {
+  it("does not let another audience corroborate a consumer fee", () => {
     expect(secondSourceCheck(row, [
-      { feeRawId: 4, institutionId: 42, sourceDocumentId: 8, canonicalFeeKey: "nsf", amount: 30 },
-      { feeRawId: 5, institutionId: 42, sourceDocumentId: 9, canonicalFeeKey: "nsf", amount: 25 },
+      { feeRawId: 4, institutionId: 42, sourceDocumentId: 8, canonicalFeeKey: "nsf", amount: 30, feeAudience: "business" },
+    ])).toBeNull();
+    expect(secondSourceCheck(row, [
+      { feeRawId: 4, institutionId: 42, sourceDocumentId: 8, canonicalFeeKey: "nsf", amount: 30, feeAudience: "unknown" },
+    ])).toBeNull();
+    expect(secondSourceCheck({ ...row, feeAudience: "unknown" }, [
+      { feeRawId: 4, institutionId: 42, sourceDocumentId: 8, canonicalFeeKey: "nsf", amount: 30, feeAudience: "consumer" },
+    ])).toBeNull();
+  });
+
+  it("allows both-audience evidence to corroborate a consumer fee", () => {
+    expect(secondSourceCheck(row, [
+      { feeRawId: 4, institutionId: 42, sourceDocumentId: 8, canonicalFeeKey: "nsf", amount: 30, feeAudience: "both" },
+    ])?.verdict).toBe("agrees");
+  });
+
+  it("agrees when any other compatible document shows the same amount", () => {
+    expect(secondSourceCheck(row, [
+      { feeRawId: 4, institutionId: 42, sourceDocumentId: 8, canonicalFeeKey: "nsf", amount: 30, feeAudience: "consumer" },
+      { feeRawId: 5, institutionId: 42, sourceDocumentId: 9, canonicalFeeKey: "nsf", amount: 25, feeAudience: "consumer" },
     ])).toEqual({ verdict: "agrees", agreeingDocumentIds: [8], disagreeing: [{ sourceDocumentId: 9, amount: 25 }] });
     expect(secondSourceCheck(row, [
-      { feeRawId: 5, institutionId: 42, sourceDocumentId: 9, canonicalFeeKey: "nsf", amount: 25 },
+      { feeRawId: 5, institutionId: 42, sourceDocumentId: 9, canonicalFeeKey: "nsf", amount: 25, feeAudience: "consumer" },
     ])?.verdict).toBe("disagrees");
   });
 });

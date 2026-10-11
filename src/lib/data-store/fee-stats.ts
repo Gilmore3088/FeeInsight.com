@@ -14,7 +14,8 @@
  * 4. Minimum sample: no median or percentile below MIN_INSTITUTIONS_FOR_MEDIAN
  *    institutions; "strong" needs STRONG_INSTITUTION_COUNT.
  * 5. Unknown charter types count as neither banks nor credit unions.
- * 6. Business-only schedules don't count: a fee read from a schedule whose address names
+ * 6. Only explicitly consumer/both rows count; unknown is not a consumer default.
+ *    Business-only schedules don't count: a fee read from a schedule whose address names
  *    business, commercial, corporate or treasury accounts (and no consumer word) is a
  *    business price, not the consumer's. It stays on the bank's own page and is left out
  *    of medians, ranges and comparisons until a consumer schedule replaces it. Same
@@ -27,7 +28,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 4;
+export const STATS_METHOD_VERSION = 6;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -35,8 +36,14 @@ export function businessSourceSql(alias: string): string {
   return `(${path} ~ '${BUSINESS_PATH_SQL}' AND ${path} !~ '${CONSUMER_PATH_SQL}')`;
 }
 
-/** SQL predicate on `published_fee_catalog ef` for rows that count toward statistics. */
-export const STATS_ROW_FILTER = `ef.source_document_id IS NOT NULL AND NOT ${businessSourceSql("ef")}`;
+/** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */
+export function statsRowFilter(alias = "ef"): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
+  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both') AND NOT ${businessSourceSql(alias)}`;
+}
+
+/** Compatibility predicate for readers using the conventional ef alias. */
+export const STATS_ROW_FILTER = statsRowFilter();
 
 
 export interface StatsInputRow {
@@ -72,7 +79,7 @@ export interface FeeStatistics {
 
 
 function toAmount(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return null;
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
@@ -86,7 +93,7 @@ export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> 
   for (const row of rows) {
     const amount = toAmount(row.amount);
     const id = Number(row.institution_id);
-    if (amount === null || !Number.isFinite(id)) continue;
+    if (amount === null || !Number.isSafeInteger(id) || id <= 0) continue;
     const entry = amounts.get(id);
     if (entry) {
       entry.list.push(amount);
@@ -102,11 +109,17 @@ export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> 
 
 /** Statistics for one group of rows (one category, or one category within a segment). */
 export function summarizeFees(rows: StatsInputRow[]): FeeStatistics {
-  const values = valuePerInstitution(rows);
-  const institutions = new Map<number, string | null | undefined>();
-  for (const row of rows) {
+  // A missing/invalid price is not a sample. Keep displayed counts on the exact
+  // population used for the median; a real numeric zero remains a valid observation.
+  const validRows = rows.filter((row) => {
     const id = Number(row.institution_id);
-    if (Number.isFinite(id) && !institutions.has(id)) institutions.set(id, row.charter_type);
+    return Number.isSafeInteger(id) && id > 0 && toAmount(row.amount) !== null;
+  });
+  const values = valuePerInstitution(validRows);
+  const institutions = new Map<number, string | null | undefined>();
+  for (const row of validRows) {
+    const id = Number(row.institution_id);
+    if (!institutions.has(id)) institutions.set(id, row.charter_type);
   }
   let bankCount = 0;
   let cuCount = 0;
@@ -120,7 +133,7 @@ export function summarizeFees(rows: StatsInputRow[]): FeeStatistics {
   const stats = tier === "insufficient" ? null : computeStats([...values.values()]);
   return {
     institution_count: institutionCount,
-    observation_count: rows.length,
+    observation_count: validRows.length,
     bank_count: bankCount,
     cu_count: cuCount,
     min_amount: stats?.min ?? null,

@@ -1,0 +1,235 @@
+{
+  "source_snapshot": "2026-10-09T21:29:36.416Z",
+  "source_archive_sha256": "55272b9b8e06c50aba8162a0e8c27d009371f52441cf3323e8aac28694a7f0c6",
+  "held": {
+    "chore/984-backlog-control": "protected_recent",
+    "claude/federated-identity": "parked_preserve",
+    "claude/first-united-fixture": "protected_unknown_age",
+    "claude/gap-bank-fixtures": "protected_unknown_age",
+    "claude/growth-os-marketing-team-od0p0v": "parked_preserve",
+    "claude/largest-banks-od-coverage-h1asqe-links": "protected_unknown_age",
+    "claude/market-404s": "protected_unknown_age",
+    "claude/merger-screen": "protected_unknown_age",
+    "claude/northern-trust-fixture": "protected_unknown_age",
+    "claude/openmontage-review-video-29yuun": "protected_unknown_age",
+    "claude/retidy-restore-batch2": "protected_recent",
+    "claude/sample-report-csv": "protected_unknown_age",
+    "claude/state-accuracy-95-0psznq": "protected_recent",
+    "claude/state-fee-laws-kgssh3": "parked_preserve",
+    "claude/state-law-sources": "protected_unknown_age",
+    "claude/ux-audit-9d9mdr": "protected_recent",
+    "claude/vercel-deploy-queue-s4j4vh": "protected_recent",
+    "claude/video-screens": "protected_unknown_age",
+    "feat/backlog-resolution": "protected_unknown_age",
+    "feat/stripe-payments": "protected_unknown_age",
+    "fee-quality-gates": "protected_unknown_age",
+    "fix/hamilton-institution-context": "protected_recent",
+    "fix/hamilton-reliability": "protected_recent",
+    "fix/pinnacle-fee-audience-integrity": "protected_recent",
+    "main": "protected",
+    "rebuild/phase-0-foundation": "protected",
+    "redteam/r01-security-dependencies": "protected",
+    "redteam/r02-billing-reconciliation": "protected",
+    "redteam/r03-payment-delivery-outbox": "protected",
+    "redteam/r04-checkout-idempotency": "protected",
+    "redteam/r05-agent-ledger-extraction": "protected",
+    "redteam/r06-publication-phase-extraction": "protected",
+    "redteam/r07-import-cycles": "protected",
+    "redteam/r08-legacy-cleanup": "protected",
+    "redteam/r09-ci-validation": "protected",
+    "redteam/r10-launch-acceptance": "protected",
+    "rescue/2026-08-15": "protected"
+  },
+  "candidates": [
+    [
+      "feat/coverage-pipeline-v2",
+      "29202f8b6f2bbecddf37212a26c8a23a265caa81"
+    ],
+    [
+      "feat/coverage-drilldown-index-market",
+      "1ed91d25dbb1ec9b48648cd5a461f63e81f7162c"
+    ],
+    [
+      "refactor/atomic-pipeline-jobs",
+      "bbd007de499cb172372a8d236fbd03c27d56659a"
+    ],
+    [
+      "feat/rebuild-extraction-pipeline",
+      "0986b247b54681607575fdb7a2f0a09139182f93"
+    ],
+    [
+      "feat/phase-60.1-audit-remediation",
+      "94c02f27614b0ede73136c0e7a5fb5064770f311"
+    ],
+    [
+      "fix/build-prerender-dynamic",
+      "c4178ed32d91d7ccdac539bd15f340d0a110de90"
+    ],
+    [
+      "codex/data-trust-production-readiness",
+      "e22fbdd2ac81a2a2ffa3d18f63e3dba846a6c4da"
+    ],
+    [
+      "codex/fix-pro-login-context",
+      "85a76a2c485ba39ad0be92dd63816d881af40937"
+    ],
+    [
+      "claude/hamilton-pro-quality",
+      "ba0ff9fd7e29dffa8993f63e0daec3834fb6c1ac"
+    ],
+    [
+      "claude/project-thread-x04fvk",
+      "935c7a1417077cc5f29191394eec1be036364e3e"
+    ],
+    [
+      "claude/hamilton-pro-quality-b",
+      "32c355a1a692af2a1dffc8d35c078b81c1b67f2e"
+    ],
+    [
+      "claude/hamilton-pro-quality-c",
+      "201f26e8e388a202ea02a50835c7d9b21fcf5ce0"
+    ],
+    [
+      "claude/hamilton-pro-quality-d",
+      "76e1cf7c6b9b1179d841e8ddce97067171381f7a"
+    ],
+    [
+      "claude/hamilton-pro-quality-e",
+      "c866af167b675a5d74ec73e0ffea869dd6b6f65b"
+    ],
+    [
+      "claude/hamilton-pro-quality-f",
+      "629f8da578683294ca9272eddab7ffca59dbf585"
+    ],
+    [
+      "claude/project-thread-5fktxs",
+      "39f6f5f9539b0b224712338e591a23f39bdf604f"
+    ],
+    [
+      "fix/admin-display-accuracy",
+      "576c68f3107680324ec02ec6edfd40cc8439348c"
+    ],
+    [
+      "claude/visual-agent-flow-dashboard-hdtu07",
+      "c513d9c60482bffdbf3b410df2de5b1c4bb252b1"
+    ],
+    [
+      "claude/project-thread-3mcdde",
+      "ac7c699db32014d594ab356f9bfc82268786c533"
+    ],
+    [
+      "claude/hamilton-prompt-feed-fixes",
+      "ad2c060bcd140502077e6c3ce24383e86d5e7c7b"
+    ]
+  ],
+  "investigate": [
+    [
+      "ccr-12994f28-rvwmdj",
+      "750d8a56b42805ef88f02b220da370530d040fd1"
+    ],
+    [
+      "chore/consolidation",
+      "d5776750f0ea086060d6687507ff844c53627c84"
+    ],
+    [
+      "claude/audit-atlas-v5euzr",
+      "dd1bee02d1f30d10113e765acc0fec50b0788ed3"
+    ],
+    [
+      "claude/audit-knox-nmlkup",
+      "b9f160e275bc7dfda89efe30956a22b983a3b6b8"
+    ],
+    [
+      "claude/audit-rosetta-06sovc",
+      "b2c09af2506215bc9160c6b85b13da1ff933336d"
+    ],
+    [
+      "claude/darwin-pinch-point-i9fbbn",
+      "060400f803b00955bbba2835db6e02c8d5695779"
+    ],
+    [
+      "claude/fdic-field-probe",
+      "917e1d8407aa373566dd2447c24d2fdae5da6e1c"
+    ],
+    [
+      "claude/fee-data-api-brainstorm-a4eyhn",
+      "b907e4ae01ed6ada68b304ac0ba9aee5c7dec7bd"
+    ],
+    [
+      "claude/findings-supabase-deploy-stuck",
+      "a08be3a74dd835a25f410c87d28216b6503307ae"
+    ],
+    [
+      "claude/market-study",
+      "26c14e752644bc9fc4ecf21ac9ad7854487df8d4"
+    ],
+    [
+      "claude/peaceful-ride-EK68V",
+      "16b8670fc47d8144b47ff27b71ebc1f831ee4ff7"
+    ],
+    [
+      "claude/project-thread-8m4a1o",
+      "a5668cd655f20b40581d5e83ea31c560a11b250a"
+    ],
+    [
+      "claude/project-thread-36vw0v",
+      "f3e4780f1e0b4645e5051eebea055a31d3747704"
+    ],
+    [
+      "claude/project-thread-eitb7f",
+      "731fe6978d75940cadd7d6d606419b46e8835a93"
+    ],
+    [
+      "claude/repo-operational-audit-x5uyvu",
+      "10b31bf000acff339361a900b2a2cfe00f9f7b74"
+    ],
+    [
+      "claude/state-report-visuals",
+      "00fad5924eb19b5044d295c05202ca068e67bf9d"
+    ],
+    [
+      "claude/subscribe-phone-selector",
+      "205cc461d02e47e497561f5e4c29fcf234067733"
+    ],
+    [
+      "codex/sccu-source-parsing",
+      "4ae00d3c12847f231058fa04caf8aeadb6da08ea"
+    ],
+    [
+      "feat/call-report-revenue",
+      "2d44a36f5af5396be909a9e848daed9afe74b358"
+    ],
+    [
+      "feat/content-auto-publish-pipeline",
+      "05b819bc7864356ab6f914b6eb99bcdecf27dd86"
+    ],
+    [
+      "feat/content-platform-phase1",
+      "be21c414e9230c82e5bb0470aa9978f881fc4d3c"
+    ],
+    [
+      "feat/enterprise-saas",
+      "a0940fab710fa5e68749be2b36f4979c9bc299dc"
+    ],
+    [
+      "feat/fi-fee-tracker",
+      "dea1c4954e0723f6bb3d3da88db25e8c92a9f61f"
+    ],
+    [
+      "feat/modular-scraper-v2",
+      "1702e6528a9eb247615f4ef7f2520ca17ca410c2"
+    ],
+    [
+      "feat/website-v3-phase1",
+      "2119a99c027d8e31052ceffbfd99d3be75b9f400"
+    ],
+    [
+      "vercel/install-vercel-web-analytics-6gl9i3",
+      "1cfb78cf46f9b9012d4b51be764a048029b291f2"
+    ]
+  ],
+  "recovery": {
+    "ref": "archive/backlog-984-batch-01",
+    "sha": "1b5de13cd5b2e61ff6ca64047222b6c90888d39b"
+  }
+}

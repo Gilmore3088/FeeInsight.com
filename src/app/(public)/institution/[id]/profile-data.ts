@@ -1,3 +1,4 @@
+import { isConsumerFee } from "@/lib/fee-audience";
 import { cache } from "react";
 import { getFeesByInstitution, getPublicInstitutionById } from "@/lib/data-store";
 import type { ExtractedFee } from "@/lib/data-store/types";
@@ -37,6 +38,8 @@ export function toRateDisplayFees(fees: RateFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `rate-${fee.id}`,
     feeName: fee.fee_name,
+    feeAudience: fee.fee_audience ?? "unknown",
+    feeTreatment: fee.fee_treatment ?? "unknown",
     feeCategory: fee.fee_category,
     amount: null,
     frequency: fee.frequency,
@@ -55,6 +58,8 @@ export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `catalog-${fee.id}`,
     feeName: feeDisplayName(fee.fee_name, fee.fee_category),
+    feeAudience: fee.fee_audience ?? "unknown",
+    feeTreatment: fee.fee_treatment ?? "unknown",
     feeCategory: fee.fee_category ?? null,
     amount: fee.amount,
     frequency: fee.frequency,
@@ -113,7 +118,8 @@ function pickAmount(
     (fee) =>
       fee.fee_category === category &&
       fee.amount !== null &&
-      fee.amount > 0 &&
+      fee.amount >= 0 &&
+      isConsumerFee(fee.fee_audience) &&
       !(exclude && exclude.test(fee.fee_name)) &&
       (!require || require(fee)),
   );

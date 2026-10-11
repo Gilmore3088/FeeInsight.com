@@ -41,7 +41,7 @@ import {
   layoutStatement,
   dataFramework,
   escapeHtml,
-} from "../index";
+} from "../primitives";
 
 import {
   MIN_GROUP_INSTITUTIONS,

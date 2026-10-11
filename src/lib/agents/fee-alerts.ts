@@ -1,5 +1,7 @@
 import { createHash } from "crypto";
 import { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { isConsumerFee, type FeeAudience } from "@/lib/fee-audience";
 import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -81,6 +83,7 @@ export interface FeeAlertDigest {
 interface MovementJson {
   canonical_fee_key?: unknown;
   fee_name?: unknown;
+  fee_audience?: FeeAudience;
   previous_amount?: unknown;
   new_amount?: unknown;
   amount_delta?: unknown;
@@ -174,6 +177,7 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
     if (row.signal_type === "hamilton_fee_movement_detected") {
       for (const movement of (Array.isArray(json.movements) ? json.movements : []) as MovementJson[]) {
         const category = typeof movement.canonical_fee_key === "string" ? movement.canonical_fee_key : null;
+        if (!isConsumerFee(movement.fee_audience)) continue;
         const previousAmount = Number(movement.previous_amount);
         const newAmount = Number(movement.new_amount);
         if (!category || !follows(row.fee_categories, category)) continue;
@@ -193,7 +197,7 @@ export function groupFeeAlertCandidates(rows: CandidateRow[]): FeeAlertDigest[] 
       }
     } else if (row.signal_type === "hamilton_publication_completed") {
       const moved = movedKeysByBatch.get(`${savedKey(row)}:${String(json.batch_id ?? row.signal_id)}`) ?? new Set();
-      const keys = Array.isArray(json.canonical_fee_keys) ? json.canonical_fee_keys : [];
+      const keys = Array.isArray(json.consumer_canonical_fee_keys) ? json.consumer_canonical_fee_keys : [];
       for (const key of keys) {
         if (typeof key !== "string" || moved.has(key) || !follows(row.fee_categories, key)) continue;
         const target = ensureInstitution();
@@ -418,12 +422,16 @@ async function fillPublishedAmounts(digests: FeeAlertDigest[]): Promise<void> {
   }
   if (institutionIds.size === 0) return;
   const rows = await sql<{ institution_id: number; fee_category: string; amount: number | string }[]>`
-    SELECT institution_id, fee_category, MIN(amount) AS amount
-    FROM published_fee_catalog
-    WHERE review_status = 'approved' AND amount IS NOT NULL
-      AND institution_id = ANY(${[...institutionIds]}::bigint[])
-      AND fee_category = ANY(${[...categories]}::text[])
-    GROUP BY institution_id, fee_category
+    SELECT ef.institution_id, ef.fee_category,
+           CASE WHEN ef.fee_category = 'overdraft' THEN MAX(ef.amount)
+                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+    FROM published_fee_catalog ef
+    WHERE ef.review_status = 'approved'
+      AND ef.amount IS NOT NULL AND ef.amount >= 0
+      AND ${sql.unsafe(statsRowFilter("ef"))}
+      AND ef.institution_id = ANY(${[...institutionIds]}::bigint[])
+      AND ef.fee_category = ANY(${[...categories]}::text[])
+    GROUP BY ef.institution_id, ef.fee_category
   `;
   const amounts = new Map(rows.map((row) => [`${Number(row.institution_id)}:${row.fee_category}`, Number(row.amount)]));
   for (const digest of digests) {
