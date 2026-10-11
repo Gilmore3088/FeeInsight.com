@@ -76,3 +76,12 @@ describe("server account context", () => {
     expect(memberships).toHaveBeenCalledWith(7);
   });
 });
+
+describe("geography is not a default institution", () => {
+  it("retains the authenticated home institution separately from a Florida research scope", async () => {
+    memberships.mockResolvedValue([record]);
+    const resolved = await withHamiltonAccountContext({ ...request(), institutionId: null, researchSelection: { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, charter: "credit_union", categories: ["wire_domestic_outgoing"] } }, user);
+    expect(resolved.institutionId).toBeNull();
+    expect(resolved.serverAccountContext.institution?.id).toBe(101);
+  });
+});

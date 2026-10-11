@@ -12,7 +12,7 @@ export const MAX_REPORT_DECISIONS = 3;
 export const ANSWER_SECTION_FORMAT = `
 OUTPUT FORMAT (plain text, exactly these labels, no markdown):
 HEADLINE: <one sentence: the single conclusion for this institution, with its key figure>
-DECISION: <the decision management faces on one fee, naming the fee, this institution's price and the local or peer anchor it is weighed against; never choose an option> || WHY: <one or two sentences of evidence: this institution's amount against the named local competitors or peer median, and what moving to the anchor would do from fee_impacts when present: the income per 1,000 charges and the local rank or peer band before and after> || CONFIDENCE: <High, Medium or Low> - <the reason: how many competitors or peers, verified or provisional>
+DECISION: <the decision management faces on one fee, naming the fee, this institution's price and the local or peer anchor it is weighed against; never choose an option> || WHY: <one or two sentences of evidence: this institution's amount against the named local competitors or peer median, and what moving to the anchor would do from fee_impacts when present: the income per 1,000 charges and the local rank or peer band before and after> || CONFIDENCE: <Medium or Low> - <the reason: how many competitors or peers, verified or provisional. Do not write High; model-written confidence is not semantic claim verification.>
 Write one to ${MAX_REPORT_DECISIONS} DECISION lines, the largest gap first. Never tell the institution to raise, lower, hold, cut or drop a fee.
 `.trim();
 
@@ -24,13 +24,20 @@ Then two to four lines, each beginning "WATCH:", naming a specific signal to mon
 `.trim();
 
 const CONFIDENCE_PATTERN = /^(high|medium|low)\b[\s:–—-]*(.*)$/i;
+export const REPORT_CONFIDENCE_LIMITATION =
+  "Model-written confidence is directional only; it does not verify institution, fee, period or source attribution.";
 
 function parseConfidence(raw: string | undefined): { confidence: ReportConfidence | null; reason: string | null } {
   if (!raw) return { confidence: null, reason: null };
   const match = raw.trim().match(CONFIDENCE_PATTERN);
   if (!match) return { confidence: null, reason: raw.trim() || null };
-  const level = (match[1][0].toUpperCase() + match[1].slice(1).toLowerCase()) as ReportConfidence;
-  return { confidence: level, reason: match[2].trim() || null };
+  const parsed = (match[1][0].toUpperCase() + match[1].slice(1).toLowerCase()) as ReportConfidence;
+  const level: ReportConfidence = parsed === "High" ? "Medium" : parsed;
+  const statedReason = match[2].trim();
+  const reason = parsed === "High"
+    ? [statedReason, REPORT_CONFIDENCE_LIMITATION].filter(Boolean).join(" · ")
+    : statedReason || null;
+  return { confidence: level, reason };
 }
 
 function stripLabel(line: string, label: string): string {

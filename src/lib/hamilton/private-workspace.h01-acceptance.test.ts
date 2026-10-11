@@ -72,7 +72,7 @@ beforeEach(() => {
   fixture.renderToBuffer.mockResolvedValue(Buffer.from("%PDF synthetic renderer"));
   fixture.tables = {
     hamilton_reports: [{ id: REPORT, user_id: 11, institution_id: "101", status: "generated", report_type: "peer_brief", report_json: { title: SECRET }, created_at: "2026-10-10" }],
-    hamilton_saved_analyses: [{ id: ANALYSIS, user_id: 11, institution_id: "101", status: "active", analysis_focus: "overdraft", prompt: "Synthetic question", response_json: JSON.stringify({ title: SECRET }) }],
+    hamilton_saved_analyses: [{ id: ANALYSIS, user_id: 11, institution_id: "101", status: "active", analysis_focus: "overdraft", prompt: "Synthetic question", response_json: JSON.stringify({ title: SECRET, confidence: { level: "low", basis: ["Synthetic historical answer"] } }) }],
     hamilton_conversations: [{ id: CONVERSATION, user_id: 11 }],
     hamilton_messages: [{ conversation_id: CONVERSATION, user_id: 11, role: "assistant", content: SECRET }],
     hamilton_institution_memory: [

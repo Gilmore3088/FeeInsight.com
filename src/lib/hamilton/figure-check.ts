@@ -1,6 +1,7 @@
 /**
- * Figure check: every dollar amount and percentage in an AI narrative must trace to
- * the DATA payload the model was given.
+ * Numerical consistency check for dollar amounts and percentages in an AI narrative.
+ * This is not claim verification: it does not bind a number to its institution, fee,
+ * reporting period, source, or the direction stated in the surrounding sentence.
  *
  * A figure matches when it equals a payload number, or a difference / percent
  * difference between two payload numbers (the deltas a narrative naturally states),
@@ -122,13 +123,27 @@ export function checkMessageFigures(parts: ReadonlyArray<{ type: string; text?: 
   return checkNarrativeFigures(text, toolOutputs);
 }
 
-/** The confidence an analysis earns from its figure check. */
+/** A numerical match alone cannot verify the surrounding claim. */
+export const FIGURE_CHECK_LIMITATION =
+  "Numerical consistency only; institution, fee category, reporting date, source attribution and direction of change are not verified by this check.";
+
+/**
+ * Compatibility rating for saved answers. A figure-only check never earns high confidence:
+ * even a matching number may belong to another institution or period, or be only a delta.
+ * Keep unmatched figures low; matched and number-free answers remain unverified.
+ */
 export function confidenceFromFigureCheck(check: FigureCheckResult): { level: "high" | "medium" | "low"; basis: string[] } {
   if (check.unmatched.length > 0) {
-    return { level: "low", basis: [`Not traced to Hamilton's data: ${check.unmatched.join(", ")}`] };
+    return { level: "low", basis: [`No numerical match in Hamilton's data: ${check.unmatched.join(", ")}`, FIGURE_CHECK_LIMITATION] };
   }
   if (check.checked > 0) {
-    return { level: "high", basis: [`${check.checked} figure${check.checked === 1 ? "" : "s"} traced to Hamilton's data`] };
+    return {
+      level: "medium",
+      basis: [
+        `${check.checked} figure${check.checked === 1 ? "" : "s"} numerically matched values or arithmetic differences in Hamilton's data.`,
+        FIGURE_CHECK_LIMITATION,
+      ],
+    };
   }
-  return { level: "medium", basis: ["Qualitative analysis; no figures stated"] };
+  return { level: "medium", basis: ["No dollar amounts or percentages to check; qualitative claims have not been verified.", FIGURE_CHECK_LIMITATION] };
 }

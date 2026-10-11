@@ -11,7 +11,7 @@ vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.peer 
 vi.mock("@/lib/data-store/fee-index", () => ({ getCategoryChargeBases: async () => [] }));
 vi.mock("@/lib/hamilton/home-data", () => ({ fetchHomeBriefingSignals: mocks.signals }));
 
-import HamiltonHomePage from "./page";
+import { InstitutionBriefing as HamiltonHomePage } from "@/components/hamilton/intelligence/InstitutionBriefing";
 
 const subject = { id: 2945, name: "Space Coast Credit Union", stateCode: "FL" };
 const localResearch = JSON.stringify({ version: 1, task: "compare", scope: { kind: "local", institutionId: 2945 }, categories: ["overdraft"], charter: "all" });
@@ -32,7 +32,7 @@ beforeEach(() => {
   mocks.signals.mockResolvedValue({ whatChanged: [], priorityAlerts: [], monitorFeed: [] });
 });
 
-describe("monthly briefing research identity", () => {
+describe("retained institution briefing research identity", () => {
   it("uses the same explicit local research subject as the shell even without a saved default", async () => {
     const tree = await HamiltonHomePage({ searchParams: Promise.resolve({ research: localResearch }) });
     const html = renderToStaticMarkup(tree);

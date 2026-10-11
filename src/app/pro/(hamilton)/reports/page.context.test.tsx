@@ -78,7 +78,7 @@ function deferred<T>() {
 
 describe("Reports page canonical research context", () => {
   it("passes an explicit URL subject through coverage, generation and saved display without making it the default", async () => {
-    render(await ReportsPage({ searchParams: Promise.resolve({ instId: "8109" }) }));
+    render(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "8109" }) }));
     selectPeerReport();
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({ institutionId: 8109 })));
     fireEvent.click(screen.getByRole("button", { name: "Write the report for your team" }));
@@ -93,7 +93,7 @@ describe("Reports page canonical research context", () => {
   });
 
   it("does not label a profile name as a research subject or allow an unscoped institution report", async () => {
-    render(await ReportsPage({ searchParams: Promise.resolve({}) }));
+    render(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking" }) }));
     selectPeerReport();
     expect(screen.getAllByText("No research institution selected").length).toBeGreaterThan(0);
     expect(screen.queryByText("Space Coast Credit Union")).not.toBeInTheDocument();
@@ -103,11 +103,11 @@ describe("Reports page canonical research context", () => {
   });
 
   it("starts a fresh builder when URL research changes from Space Coast to Addition", async () => {
-    const view = render(await ReportsPage({ searchParams: Promise.resolve({ instId: "8109" }) }));
+    const view = render(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "8109" }) }));
     selectPeerReport();
     fireEvent.click(screen.getByRole("button", { name: "Write the report for your team" }));
     await screen.findByRole("heading", { name: savedReport.title });
-    view.rerender(await ReportsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    view.rerender(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "2945" }) }));
     expect(screen.queryByRole("heading", { name: savedReport.title })).not.toBeInTheDocument();
     selectPeerReport();
     await waitFor(() => expect(mocks.preview).toHaveBeenLastCalledWith(expect.objectContaining({ institutionId: 2945 })));
@@ -140,10 +140,10 @@ describe("Reports page canonical research context", () => {
     mocks.preview.mockReturnValueOnce(oldCoverage.promise).mockResolvedValue({
       success: true, preview: { ...originalPreview, peerBaselineLabel: "Addition cohort" },
     });
-    const view = render(await ReportsPage({ searchParams: Promise.resolve({ instId: "8109" }) }));
+    const view = render(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "8109" }) }));
     selectPeerReport();
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledTimes(1));
-    view.rerender(await ReportsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    view.rerender(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "2945" }) }));
     selectPeerReport();
     await screen.findByText("Addition cohort");
     await act(async () => oldCoverage.resolve({
@@ -167,11 +167,11 @@ describe("Reports page canonical research context", () => {
     const newResult: Generation = { success: true, reportId: "saved-addition", report: additionReport,
       artifactMetadata: { ...metadata, peerBaselineLabel: "Addition cohort" } };
     mocks.generate.mockReturnValueOnce(oldGeneration.promise).mockReturnValueOnce(newGeneration.promise);
-    const view = render(await ReportsPage({ searchParams: Promise.resolve({ instId: "8109" }) }));
+    const view = render(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "8109" }) }));
     selectPeerReport();
     fireEvent.click(screen.getByRole("button", { name: "Write the report for your team" }));
     await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(1));
-    view.rerender(await ReportsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    view.rerender(await ReportsPage({ searchParams: Promise.resolve({ intent: "peer_benchmarking", instId: "2945" }) }));
     selectPeerReport();
     fireEvent.click(screen.getByRole("button", { name: "Write the report for your team" }));
     await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(2));

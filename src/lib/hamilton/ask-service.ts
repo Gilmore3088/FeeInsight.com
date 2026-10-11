@@ -18,6 +18,7 @@ import {
 } from "@/lib/data-store/hamilton-workspace";
 import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisResponse } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "./context-link";
+import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo } from "./memo";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, withSegmentDefault } from "./workspace/ask";
@@ -34,7 +35,7 @@ import { loadHamiltonAccountContext } from "./account-context-store";
 import { accountIdentitySnapshot, type HamiltonAccountContext, type HamiltonIdentitySnapshot } from "./account-context";
 import { readHamiltonIdentitySnapshot } from "./identity-display";
 import type { Storyline, StorylineMemoResult } from "./workspace/storyline-types";
-import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
+import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type FeeResearch, type MemoryFact } from "./workspace/types";
 
 const OBJECTIVES: AskObjective[] = ["revenue", "customer_treatment", "competitive_position"];
 const MAX_QUESTION_CHARS = 1_000;
@@ -125,7 +126,13 @@ async function logEvents(
  * and can go into a report once, whichever screen asked it. Null when there is no storyline
  * or the save fails; the answer is still returned.
  */
-async function fileAnalysis(userId: number, institutionId: string | number, question: string, response: AskResponse): Promise<string | null> {
+async function fileAnalysis(
+  userId: number,
+  institutionId: string | number,
+  question: string,
+  response: AskResponse,
+  research: FeeResearch | null,
+): Promise<string | null> {
   const storyline = response.answer?.storyline;
   const canonical = normalizeCanonicalInstitutionId(institutionId);
   if (!storyline || !canonical) return null;
@@ -136,7 +143,7 @@ async function fileAnalysis(userId: number, institutionId: string | number, ques
       title: analysisTitle(storyline),
       analysisFocus: analysisFocusFor(storyline),
       prompt: question,
-      response: storylineAnalysis(storyline, WORKSPACE_ENGINE_VERSION, response.identityContext),
+      response: storylineAnalysis(storyline, WORKSPACE_ENGINE_VERSION, research ? buildFeeResearchEvidence(research) : null, response.identityContext),
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
@@ -350,7 +357,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const subjectName = institution.name || research?.institutionName || `Institution ${institutionId}`;
   const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null);
   const response = await withResearchIdentity(rawResponse, identity, question, intent.feeCategory, account);
-  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
+  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response, research);
   const shown = response.scenario;
   const scenarioEvents =
     response.kind === "scenario"
@@ -483,6 +490,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   }
   let identity: HamiltonIdentitySnapshot;
   let storyline: Storyline | undefined;
+  let factEvidence: import("./evidence-contract").HamiltonEvidenceBundle | null = savedResponse?.factEvidence ?? null;
   let feeCategory = parseAsk(question).feeCategory;
   if (savedResponse) {
     // The subject scope was checked above. Legacy snapshots remain readable without
@@ -506,6 +514,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
     if (!loadedResearch) return { status: 404, body: { error: "That institution could not be loaded." } };
     const research = { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName };
+    factEvidence = buildFeeResearchEvidence(research);
     const memory = ready ? await getMemoryFacts(user.id, institutionId).catch(() => []) : [];
     const objective = OBJECTIVES.includes(body.objective as AskObjective) ? (body.objective as AskObjective) : null;
     const response = withDepth(buildAskResponse({ question, intent, research, memory, objective }), schedule, why, research.provenance.dataAsOf.fees ?? null, institution.name);
@@ -514,7 +523,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   }
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
-  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity });
+  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence });
   let memoSaved = false;
   if (result.status === "written" && savedId && savedResponse) {
     try {
@@ -530,7 +539,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     status: result.status === "written" ? "completed" : result.status === "withheld" ? "completed" : "failed",
     summary:
       result.status === "written"
-        ? `Memo written; ${result.memo.figureCheck.checked} figures traced to the storyline.`
+        ? `Memo written; ${result.memo.figureCheck.checked} figures numerically checked and ${result.memo.evidenceFactIds?.length ?? 0} structured evidence records referenced.`
         : `Memo ${result.status}: ${result.reason}`,
     userId: user.id,
     institutionId,

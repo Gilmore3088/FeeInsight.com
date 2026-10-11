@@ -99,3 +99,21 @@ describe("Hamilton request contract", () => {
     expect(prompt).toContain("Empty or thin evidence");
   });
 });
+
+describe("validated geographic research selection", () => {
+  const selection = { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, charter: "credit_union", categories: ["wire_domestic_outgoing"] };
+  const messages = [{ id: "q", role: "user", parts: [{ type: "text", text: "Compare the market" }] }];
+  it("keeps state, charter and categories as selection rather than institution identity", () => {
+    const parsed = parseHamiltonRequestContract({ messages, research: selection }, { audience: "pro" });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.contract.researchSelection).toEqual(selection);
+    expect(parsed.contract.institutionId).toBeNull();
+    expect(buildHamiltonRequestContractPrompt(parsed.contract)).toContain('"stateCode":"FL"');
+  });
+  it("rejects contradictory subjects and unsupported client evidence", () => {
+    for (const body of [{ research: selection, institutionId: 101 }, { research: { ...selection, trustedFacts: [35] } }, { research: { ...selection, scope: { kind: "state", stateCode: "INVALID" } } }]) {
+      expect(parseHamiltonRequestContract({ messages, ...body }, { audience: "pro" }).ok).toBe(false);
+    }
+  });
+});

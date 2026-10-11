@@ -1,5 +1,7 @@
 "use client";
 
+import { CreateBoardBriefButton } from "@/components/hamilton/reports/CreateBoardBriefButton";
+
 /**
  * The Ask bar's structured answer from the Hamilton engine (POST /api/hamilton/ask): the
  * four-role answer, a scenario, an opinion, a saved figure, or Hamilton's one clarifying
@@ -526,6 +528,7 @@ function StructuredAskConversation({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
+                {response.savedAnalysisId ? <CreateBoardBriefButton analysisId={response.savedAnalysisId} /> : null}
                 {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
               </>
             ) : null
@@ -541,6 +544,7 @@ function StructuredAskConversation({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
+                {response.savedAnalysisId ? <CreateBoardBriefButton analysisId={response.savedAnalysisId} /> : null}
                 {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
               </>
             ) : null

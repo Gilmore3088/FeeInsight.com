@@ -25,13 +25,13 @@ describe("HAMILTON_BASE", () => {
 });
 
 describe("HAMILTON_NAV", () => {
-  it("has exactly 5 entries (four tabs plus Admin, which lives in the account menu)", () => {
-    expect(HAMILTON_NAV).toHaveLength(5);
+  it("has seven workspace entries plus gated Admin", () => {
+    expect(HAMILTON_NAV).toHaveLength(8);
   });
 
-  it("has exact labels in order: This month, My fees, Try a price, Reports, Admin", () => {
+  it("has exact labels in order: Overview, Ask Hamilton, Research, Try a price, Reports, Monitor, Saved analyses, Admin", () => {
     const labels = HAMILTON_NAV.map((item) => item.label);
-    expect(labels).toEqual(["This month", "My fees", "Try a price", "Reports", "Admin"]);
+    expect(labels).toEqual(["Overview", "Ask Hamilton", "Research", "Try a price", "Reports", "Monitor", "Saved analyses", "Admin"]);
   });
 
   it("all hrefs are unique (no duplicates)", () => {
@@ -72,10 +72,10 @@ describe("LEFT_RAIL_CONFIG", () => {
   });
 
   it("routes primary actions to the matching Hamilton workflow", () => {
-    expect(getPrimaryActionHref("This month")).toBe("/pro/research");
-    expect(getPrimaryActionHref("My fees")).toBe("/pro/simulate");
-    expect(getPrimaryActionHref("Try a price")).toBe("/pro/reports");
-    expect(getPrimaryActionHref("Reports")).toBe("/pro/reports?intent=executive-briefing");
+    expect(getPrimaryActionHref("Overview")).toBe("/pro/analyze");
+    expect(getPrimaryActionHref("Research")).toBe("/pro/analyze");
+    expect(getPrimaryActionHref("Try a price")).toBe("/pro/reports?intent=board-brief");
+    expect(getPrimaryActionHref("Reports")).toBe("/pro/reports?intent=board-brief");
     expect(getPrimaryActionHref("Admin")).toBe("/admin");
     expect(Object.keys(PRIMARY_ACTION_HREF).sort()).toEqual(
       HAMILTON_NAV.map((item) => item.label).sort(),
@@ -85,23 +85,23 @@ describe("LEFT_RAIL_CONFIG", () => {
 
 describe("CTA_HIERARCHY", () => {
   it("has entries for the workspace screens and the Ask answer screen", () => {
-    const expectedKeys = ["Analyze", "This month", "My fees", "Try a price", "Reports"];
+    const expectedKeys = ["Overview", "Ask Hamilton", "Research", "Try a price", "Reports", "Monitor", "Saved analyses"];
     for (const key of expectedKeys) {
       expect(CTA_HIERARCHY).toHaveProperty(key);
     }
-    expect(CTA_HIERARCHY).not.toHaveProperty("Admin");
+
   });
 
-  it("Analyze primary CTA is 'Try a Price'", () => {
-    expect(CTA_HIERARCHY["Analyze"].primary).toBe("Try a Price");
+  it("Ask primary CTA is Create report", () => {
+    expect(CTA_HIERARCHY["Ask Hamilton"].primary).toBe("Create report");
   });
 
-  it("Try a price primary CTA is 'Plan the Change'", () => {
-    expect(CTA_HIERARCHY["Try a price"].primary).toBe("Plan the Change");
+  it("Try a price primary CTA is Build report", () => {
+    expect(CTA_HIERARCHY["Try a price"].primary).toBe("Build report");
   });
 
-  it("Reports primary CTA is 'Generate Brief'", () => {
-    expect(CTA_HIERARCHY["Reports"].primary).toBe("Generate Brief");
+  it("Reports primary CTA is Create board brief", () => {
+    expect(CTA_HIERARCHY["Reports"].primary).toBe("Create board brief");
   });
 
   it("no CTA tells the bank what to charge", () => {
@@ -156,16 +156,17 @@ describe("no Sovereign branding (D-05)", () => {
 });
 
 describe("labels open the screen of the same name", () => {
-  it("This month opens /pro/hamilton and each screen keeps its old URL", () => {
+  it("Overview, Ask Hamilton, and Research open their dedicated screens", () => {
     const byLabel = Object.fromEntries(HAMILTON_NAV.map((item) => [item.label, item.href]));
-    expect(byLabel["This month"]).toBe("/pro/hamilton");
-    expect(byLabel["My fees"]).toBe("/pro/research");
+    expect(byLabel["Overview"]).toBe("/pro/hamilton");
+    expect(byLabel["Ask Hamilton"]).toBe("/pro/analyze");
+    expect(byLabel.Research).toBe("/pro/intelligence");
     expect(byLabel["Try a price"]).toBe("/pro/simulate");
     expect(byLabel.Reports).toBe("/pro/reports");
   });
 
-  it("keeps no more than four tabs a client sees", () => {
-    expect(HAMILTON_NAV.filter((item) => item.label !== "Admin")).toHaveLength(4);
+  it("uses seven purposeful sidebar destinations for customers", () => {
+    expect(HAMILTON_NAV.filter((item) => item.label !== "Admin")).toHaveLength(7);
   });
 
   it("reference pages stay inside Pro", () => {

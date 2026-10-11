@@ -2,6 +2,7 @@ import type { ReportArtifactMetadata } from "@/lib/hamilton/types";
 
 /** Reader-facing names for every report type, including the four templates. */
 export const REPORT_TYPE_LABELS: Record<string, string> = {
+  board_brief: "Board brief",
   quarterly_strategy: "Quarterly Strategy Report",
   peer_brief: "Peer Brief",
   monthly_pulse: "Monthly Pulse",
