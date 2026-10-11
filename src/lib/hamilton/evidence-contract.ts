@@ -256,7 +256,8 @@ function comparabilityProblems(
     if (!consumer(left.scope.accountApplicability) || !consumer(right.scope.accountApplicability)) {
       problems.push("consumer_audience_unverified");
     }
-    if (left.value < 0 || right.value < 0) problems.push("invalid_fee_amount");
+    if ((typeof left.value === "number" && left.value < 0)
+      || (typeof right.value === "number" && right.value < 0)) problems.push("invalid_fee_amount");
   }
 
   if (!left.scope.reportingDate || !right.scope.reportingDate) problems.push("reporting_period_unknown");
