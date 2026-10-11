@@ -25,7 +25,7 @@ function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): {
     return { label: "Fees published", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
   }
   if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") {
-    return { label: "Under review", className: "border-amber-200 bg-amber-50 text-amber-900" };
+    return { label: "Under review", className: "border-[#C44B2E]/25 bg-[#FDF0ED] text-[#8E2A17]" };
   }
   return { label: getPublicStatusLabel("unavailable"), className: "border-[#E0D7C9] bg-white text-[#6B6255]" };
 }
@@ -105,7 +105,7 @@ function FeeCount({ row }: { row: InstitutionSearchResult }) {
     );
   }
   if (row.provisional_fee_count > 0) {
-    return <span className="tabular-nums text-[#9A5A00]">{row.provisional_fee_count} under review</span>;
+    return <span className="tabular-nums text-[#8E2A17]">{row.provisional_fee_count} under review</span>;
   }
   return <span className="text-[#6B6255]">—</span>;
 }

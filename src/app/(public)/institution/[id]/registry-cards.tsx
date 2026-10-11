@@ -16,14 +16,14 @@ import type {
 
 /*
  * Registry cards for the gated Financial profile. Colors reuse the validated
- * categorical slots from financial-profile.tsx; the map uses one blue hue,
+ * categorical slots from financial-profile.tsx; the map uses one terracotta hue,
  * light to dark (sequential), and every chart has a text/table equivalent.
  */
 const AXIS = "#A09788";
 const GRID = "#EFE8DC";
-const SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"] as const;
+const SERIES = ["#C44B2E", "#3D3830", "#4F8078", "#7B6491"] as const;
 const OTHER = "#B8AFA2";
-const RAMP = ["#E3EEFA", "#B5D0F1", "#7DAEE6", "#4189DB", "#1F5FAE"] as const;
+const RAMP = ["#F6E4E0", "#EAC0B6", "#DC9379", "#C44B2E", "#8E2A17"] as const;
 
 const axisProps = { tick: { fontSize: 10, fill: AXIS }, tickLine: false, axisLine: { stroke: GRID } } as const;
 

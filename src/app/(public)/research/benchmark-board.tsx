@@ -19,7 +19,8 @@ export function pickBenchmarks(summaries: FeeCategorySummary[]): FeeCategorySumm
   );
 }
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+/** Headings and figures in the page font (Plus Jakarta Sans), as on /subscribe. */
+const SERIF = { fontWeight: 600, letterSpacing: "-0.015em" };
 
 function pct(value: number, scaleMax: number): number {
   return Math.max(0, Math.min(100, (value / scaleMax) * 100));
@@ -38,11 +39,11 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
   return (
     <Link
       href={`/fees/${fee.fee_category}`}
-      className="group flex flex-col rounded-2xl border border-[#E8DFD1] bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-[#C44B2E]/30 hover:shadow-lg hover:shadow-[#C44B2E]/5"
+      className="group flex flex-col rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl h-full p-5 transition-[box-shadow,background-color] duration-200 hover:bg-white hover:shadow-lg hover:ring-[#C44B2E]/30"
     >
       <p className="text-[12px] font-semibold text-[#5A5347] group-hover:text-[#A93D25]">{getDisplayName(fee.fee_category)}</p>
       <p className="mt-2 flex items-baseline gap-1.5">
-        <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
+        <span className="text-[2.25rem] font-semibold leading-none [font-variant-numeric:tabular-nums] text-[#1A1815]" style={SERIF}>
           {formatAmount(median)}
         </span>
         <span className="text-[11px] font-medium uppercase tracking-wider text-[#6B6255]">median</span>
@@ -60,19 +61,19 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
             style={{ left: `${pct(median, scaleMax)}%` }}
           />
         </div>
-        <div className="mt-1.5 flex justify-between text-[10px] tabular-nums text-[#6B6255]">
+        <div className="mt-1.5 flex justify-between text-[10px] [font-variant-numeric:tabular-nums] text-[#6B6255]">
           <span>$0</span>
           <span>{formatAmount(scaleMax)}</span>
         </div>
       </div>
       <p className="mt-1 text-[12px] text-[#5A5347]">
-        Middle half pay <span className="font-semibold tabular-nums text-[#1A1815]">{formatAmount(p25)}</span> to{" "}
-        <span className="font-semibold tabular-nums text-[#1A1815]">{formatAmount(p75)}</span>
+        Middle half pay <span className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{formatAmount(p25)}</span> to{" "}
+        <span className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{formatAmount(p75)}</span>
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[#F1EBE1] pt-3 text-[11px] text-[#6B6255]">
         <div>
-          <p className="font-semibold tabular-nums text-[#1A1815]">{formatCount(fee.institution_count)}</p>
+          <p className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{formatCount(fee.institution_count)}</p>
           <p>institutions</p>
           <p className="text-[10px] text-[#6B6255]">{formatCount(fee.total_observations)} published fee entries</p>
           {/* Bank vs credit union mix behind this median. */}
@@ -87,7 +88,7 @@ function BenchmarkCard({ fee }: { fee: FeeCategorySummary }) {
           </p>
         </div>
         <div>
-          <p className="font-semibold tabular-nums text-[#1A1815]">{Math.round(zeroShare * 100)}%</p>
+          <p className="font-semibold [font-variant-numeric:tabular-nums] text-[#1A1815]">{Math.round(zeroShare * 100)}%</p>
           <p>list it at $0</p>
           <p className="mt-1 text-[10px] text-[#6B6255]">{formatCount(fee.zero_count)} institutions</p>
         </div>
@@ -103,7 +104,7 @@ export function BenchmarkBoard({ benchmarks, institutionsLabel, asOf }: { benchm
         eyebrow="Exhibit 1 · National benchmarks"
         title="The everyday fees, at a glance"
         action={
-          <Link href="/fees" className="rounded-full border border-[#1A1815] px-4 py-2 text-[12px] font-semibold text-[#1A1815] transition-colors hover:bg-[#1A1815] hover:text-white">
+          <Link href="/fees" className="inline-flex min-h-11 items-center rounded-lg bg-white/70 px-4 py-2 text-[13px] font-semibold text-[#1A1815] ring-1 ring-[#E8E1D6] transition-colors duration-200 hover:bg-white hover:text-[#A93D25] hover:ring-[#C44B2E]/40">
             All fee categories &rarr;
           </Link>
         }

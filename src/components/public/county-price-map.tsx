@@ -161,7 +161,7 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
                   </span>
                   <span
                     className={`shrink-0 tabular-nums ${
-                      i.fee == null ? "text-[#A09788]" : i.fee > price ? "text-[#A93D25]" : i.fee < price ? "text-[#2F5A85]" : "text-[#1A1815]"
+                      i.fee == null ? "text-[#A09788]" : i.fee > price ? "text-[#A93D25]" : i.fee < price ? "text-[#3D3830]" : "text-[#1A1815]"
                     }`}
                   >
                     {i.fee == null ? "not on file" : money(Math.round(i.fee * 100) / 100)}

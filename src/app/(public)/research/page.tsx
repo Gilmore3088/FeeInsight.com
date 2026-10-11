@@ -18,6 +18,7 @@ import { ResearchLibrary } from "./research-library";
 import { MethodFlow } from "./method-flow";
 import { CharterExhibit, ExhibitSource, KeyFindings } from "./exhibits";
 import { computeFindings } from "./findings";
+import { AmbientGlow, INTERACTION } from "@/components/public/site-look";
 
 export const metadata: Metadata = {
   title: "Research - Bank & Credit Union Fee Analysis",
@@ -64,10 +65,12 @@ export default async function ResearchHubPage() {
         ]}
       />
 
+      <div className={`relative isolate overflow-x-clip ${INTERACTION}`}>
+      <AmbientGlow height={900} />
       <ResearchHero summary={summary} stateCount={stateCount} hasDc={hasDc} territoryCount={territoryCount} />
       <ResearchSectionNav />
 
-      <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-page space-y-20 px-6 py-14">
         <KeyFindings findings={findings} asOf={asOf} />
 
         <BenchmarkBoard benchmarks={benchmarks} institutionsLabel={summary.institutionsLabel} asOf={asOf} />
@@ -103,9 +106,10 @@ export default async function ResearchHubPage() {
         <MethodFlow coverageLabel={coverageLabel} />
 
         <section aria-label="Where to start" className="print:hidden">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Not sure where to start?</p>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Not sure where to start?</h2>
           <AudiencePaths />
         </section>
+      </div>
       </div>
 
       {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}

@@ -29,7 +29,7 @@ const INK = "#1A1815";
 const INK_MUTED = "#6B6255";
 const AXIS = "#A09788";
 const GRID = "#EFE8DC";
-const SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"] as const;
+const SERIES = ["#C44B2E", "#3D3830", "#4F8078", "#7B6491"] as const;
 const PEER = "#8A8174";
 
 const RANGES = [

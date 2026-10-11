@@ -4,7 +4,8 @@ import { formatAbsoluteDate } from "@/lib/public-stats";
 import type { ArticleSummary } from "@/lib/data-store/articles";
 import { SectionHeading } from "./research-hero";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+/** Headings and figures in the page font (Plus Jakarta Sans), as on /subscribe. */
+const SERIF = { fontWeight: 600, letterSpacing: "-0.015em" };
 
 interface Study {
   href: string;
@@ -98,7 +99,7 @@ export function ResearchLibrary({ articles }: { articles: ArticleSummary[] }) {
           <Link
             key={s.href}
             href={s.href}
-            className="group flex flex-col overflow-hidden rounded-2xl border border-[#E8DFD1] bg-white transition-all hover:-translate-y-0.5 hover:border-[#C44B2E]/30 hover:shadow-lg hover:shadow-[#C44B2E]/5"
+            className="group flex flex-col overflow-hidden rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:border-[#C44B2E]/30 hover:shadow-lg hover:shadow-[#C44B2E]/5"
           >
             <div className="border-b border-[#F1EBE1] bg-[#FAF7F2] px-5 py-4">
               <Motif kind={s.motif} />
@@ -123,11 +124,11 @@ export function ResearchLibrary({ articles }: { articles: ArticleSummary[] }) {
       {articles.length > 0 && (
         <div className="mt-8">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Latest analysis</p>
-          <ul className="mt-3 divide-y divide-[#F1EBE1] rounded-2xl border border-[#E8DFD1] bg-white">
+          <ul className="mt-3 divide-y divide-[#F1EBE1] rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl">
             {articles.map((a) => (
               <li key={a.slug}>
                 <Link href={`/research/articles/${a.slug}`} className="group flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-[#FAF7F2]">
-                  <span className="text-[11px] tabular-nums text-[#8A8072] sm:w-24">{formatAbsoluteDate(a.published_at) ?? ""}</span>
+                  <span className="text-[11px] [font-variant-numeric:tabular-nums] text-[#8A8072] sm:w-24">{formatAbsoluteDate(a.published_at) ?? ""}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[14px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">{a.title}</span>
                     {a.subtitle && <span className="block truncate text-[12px] text-[#6B6255]">{a.subtitle}</span>}

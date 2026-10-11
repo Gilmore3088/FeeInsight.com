@@ -10,6 +10,18 @@ import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
+import { RangeLegend } from "@/components/public/fee-summary-list";
+import {
+  AmbientGlow,
+  EYEBROW as EYEBROW_BRAND,
+  GLASS,
+  GLASS_SOFT,
+  H1,
+  INTERACTION,
+  LEAD,
+  NUM,
+  TEXT_LINK,
+} from "@/components/public/site-look";
 
 // No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
@@ -18,8 +30,7 @@ export const metadata: Metadata = {
     "Compare bank and credit union fees by category. National medians, typical ranges, and institution counts for overdraft, NSF, ATM, wire transfer, and more.",
 };
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const EYEBROW = "text-xs font-semibold uppercase tracking-[0.14em] text-[#5A5347]";
 const SPOTLIGHT_CARD_CATEGORIES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network"];
 const CANONICAL_CATEGORIES = new Set(Object.values(FEE_FAMILIES).flat());
 
@@ -58,7 +69,9 @@ export default async function FeeCatalogPage() {
     .filter((s): s is NonNullable<typeof s> => Boolean(s));
 
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <div className={`relative isolate overflow-x-clip ${INTERACTION}`}>
+    <AmbientGlow height={900} />
+    <div className="mx-auto max-w-page px-6 py-12 sm:py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -66,105 +79,98 @@ export default async function FeeCatalogPage() {
         ]}
       />
 
-      {/* ── HERO ── */}
-      <div className="max-w-3xl">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-[#C44B2E]/40" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
-            Published fees · every figure sourced
-          </span>
-        </div>
-
-        <h1
-          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-          style={SERIF}
-        >
-          {PRODUCT_NAME} — benchmarks by category
-        </h1>
-        <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+      {/* ── HERO: spans the page (the /subscribe header) ── */}
+      <div className="max-w-4xl">
+        <p className={EYEBROW_BRAND}>Published fees · every figure sourced</p>
+        <h1 className={`mt-3 ${H1}`}>{PRODUCT_NAME} — benchmarks by category</h1>
+        <p className={`mt-4 ${LEAD}`}>
           Bank and credit union fee benchmarks across {summary.categoriesLabel} fee categories, from{" "}
           {summary.institutionsLabel} institutions with published fees.
         </p>
-
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
-          <span>
-            <span className="font-medium text-[#5A5347] tabular-nums">{summary.observationsLabel}</span>{" "}
+        <ul className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-[#5A5347]" aria-label="Coverage">
+          <li>
+            <span className={`font-semibold text-[#1A1815] ${NUM}`}>{summary.observationsLabel}</span>{" "}
             {COVERAGE_LABELS.observations.toLowerCase()}
-          </span>
-          <span className="h-3 w-px bg-[#D4C9BA]" />
-          <span>
-            <span className="font-medium text-[#5A5347] tabular-nums">{summary.monitoredLabel}</span>{" "}
+          </li>
+          <li>
+            <span className={`font-semibold text-[#1A1815] ${NUM}`}>{summary.monitoredLabel}</span>{" "}
             {COVERAGE_LABELS.monitored.toLowerCase()}
-          </span>
-          <span className="h-3 w-px bg-[#D4C9BA]" />
-          <span>{summary.freshnessLabel}</span>
-        </div>
-
-        <div className="mt-1.5 text-[11px] text-[#6B6255]">
+          </li>
+          <li>{summary.freshnessLabel}</li>
+        </ul>
+        <p className="mt-1.5 text-xs text-[#5A5347]">
           Sources: published fee schedules, FDIC Call Reports, NCUA 5300 Reports, institution websites
-        </div>
-      </div>
-
-      {/* ── SPOTLIGHT STAT CARDS ── */}
-      <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {spotlightFees.map((fee) => (
-          <Link
-            key={fee.fee_category}
-            href={`/fees/${fee.fee_category}`}
-            className="group relative rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-5 py-4 transition-all duration-400 hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5 no-underline overflow-hidden"
-          >
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/0 to-transparent group-hover:via-[#C44B2E]/30 transition-all duration-700" />
-            <p className={`${EYEBROW} group-hover:text-[#A93D25] transition-colors`}>
-              {getDisplayName(fee.fee_category)}
-            </p>
-            <p className="mt-2 text-[28px] font-light tracking-tight text-[#1A1815] tabular-nums" style={SERIF}>
-              {money(fee.median_amount)}
-            </p>
-            <p className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
-              Typical {money(fee.p25_amount)} &ndash; {money(fee.p75_amount)}
-              <span className="mx-1.5 text-[#D4C9BA]">&middot;</span>
-              {fee.institution_count.toLocaleString()} inst.
-            </p>
-            <p className="mt-0.5 text-[11px] tabular-nums text-[#6B6255]">
-              {fee.total_observations.toLocaleString()} published fee entries
-            </p>
-          </Link>
-        ))}
-      </div>
-      <p className="mt-2 text-[11px] text-[#6B6255]">
-        Each institution counts once, and the median and typical range (25th to 75th
-        percentile) are taken across institutions.{" "}
-        {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
-        Full min–max by category is in the tables below.
-      </p>
-      {!showAll && gatedCount > 0 && (
-        <p className="mt-3 rounded-lg border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-2.5 text-[13px] text-[#5A5347]">
-          <span className="font-semibold text-[#1A1815]">Free:</span> national benchmarks for the{" "}
-          {shownCanonical} spotlight categories below.{" "}
-          <span className="font-semibold text-[#1A1815]">Pro:</span> the other {gatedCount} categories, peer
-          and state breakdowns, and API access on request.{" "}
-          <Link href="/subscribe" className="font-medium text-[#A93D25] hover:underline">
-            Compare plans
-          </Link>
         </p>
-      )}
+      </div>
 
-      {/* ── ACTION BAR ── */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {ACTION_LINKS.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="rounded-full border border-[#E8DFD1] bg-white/80 px-4 py-1.5 text-[12px] font-medium text-[#5A5347] transition-all hover:border-[#C44B2E]/30 hover:text-[#A93D25] no-underline"
-          >
-            {item.label}
-          </Link>
+      {/* ── SPOTLIGHT: four boxes of one size ── */}
+      <ul className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-5">
+        {spotlightFees.map((fee) => (
+          <li key={fee.fee_category}>
+            <Link
+              href={`/fees/${fee.fee_category}`}
+              className={`group flex h-full flex-col p-5 no-underline transition-shadow duration-200 hover:shadow-[0_16px_44px_-14px_rgba(26,24,21,0.32)] sm:p-6 ${GLASS}`}
+            >
+              <span className={`${EYEBROW} group-hover:text-[#A93D25]`}>{getDisplayName(fee.fee_category)}</span>
+              <span className={`mt-2 text-3xl font-semibold tracking-tight text-[#1A1815] sm:text-4xl ${NUM}`}>
+                {money(fee.median_amount)}
+              </span>
+              <span className="mt-0.5 text-xs font-medium text-[#5A5347]">national median</span>
+              <span className={`mt-3 border-t border-[#E8E1D6] pt-3 text-[13px] leading-snug text-[#3D3830] ${NUM}`}>
+                Middle half {money(fee.p25_amount)}&ndash;{money(fee.p75_amount)}
+              </span>
+              <span className={`mt-0.5 text-[13px] leading-snug text-[#3D3830] ${NUM}`}>
+                {fee.institution_count.toLocaleString("en-US")} institutions
+              </span>
+              <span className={`mt-0.5 text-[13px] leading-snug text-[#5A5347] ${NUM}`}>
+                {fee.total_observations.toLocaleString("en-US")} published fee entries
+              </span>
+            </Link>
+          </li>
         ))}
+      </ul>
+      <p className="mt-3 text-[13px] text-[#5A5347]">
+        Each institution counts once. The median is the middle institution&apos;s fee; the middle
+        half is the range from the 25th to the 75th percentile.{" "}
+        {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
+        Lowest and highest fees by category are in the tables below.
+      </p>
+
+      {/* ── FREE vs PRO, and where to go next ── */}
+      <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {!showAll && gatedCount > 0 ? (
+          <p className={`px-5 py-3.5 text-sm text-[#3D3830] ${GLASS_SOFT}`}>
+            <span className="font-semibold text-[#1A1815]">Free:</span> national benchmarks for the{" "}
+            {shownCanonical} spotlight categories below.{" "}
+            <span className="font-semibold text-[#1A1815]">Pro:</span> the other {gatedCount} categories, peer
+            and state breakdowns, and API access on request.{" "}
+            <Link href="/subscribe" className={TEXT_LINK}>
+              Compare plans
+            </Link>
+          </p>
+        ) : (
+          <span />
+        )}
+        <nav aria-label="Related pages" className="flex flex-wrap items-center gap-2">
+          {ACTION_LINKS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="inline-flex min-h-11 items-center rounded-full bg-white/70 px-4 text-sm font-medium text-[#3D3830] ring-1 ring-[#E8E1D6] transition-colors duration-200 hover:text-[#A93D25] hover:ring-[#C44B2E]/40 no-underline"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
       </div>
 
       {/* ── MAIN + SIDEBAR ── */}
-      <div className="mt-10 grid grid-cols-1 gap-8 xl:grid-cols-[1fr_280px]">
-        <div className="space-y-10">
+      <div className="mt-12 grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_300px] xl:gap-10">
+        <div className="min-w-0 space-y-12">
+          {/* Wide screens: one key for every table's strip. Narrow lists carry their own. */}
+          <div className="hidden md:block">
+            <RangeLegend />
+          </div>
           {familyOrder.map((familyName) => {
             const cats = byFamily.get(familyName);
             if (!cats || cats.length === 0) return null;
@@ -197,6 +203,7 @@ export default async function FeeCatalogPage() {
           }).replace(/</g, "\\u003c"),
         }}
       />
+    </div>
     </div>
   );
 }

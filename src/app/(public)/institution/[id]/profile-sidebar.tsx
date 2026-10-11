@@ -3,9 +3,10 @@ import { BarChart2, ClipboardCheck, FileText, MessageSquareText } from "lucide-r
 import { InfoTip } from "@/components/public/info-tip";
 import type { PublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { METHODOLOGY_COPY } from "./profile-copy";
+import { GLASS, GLASS_SOFT } from "@/components/public/site-look";
 
 const PRO_LINK_SECONDARY =
-  "inline-flex items-center justify-center gap-2 rounded-md border border-[#5A5347] px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-[#D4A574]";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-sm font-semibold text-[#1A1815] ring-1 ring-[#E8E1D6] transition-colors duration-200 hover:bg-white hover:ring-[#C44B2E]/40";
 
 export function ProfileSidebar({
   links,
@@ -23,14 +24,14 @@ export function ProfileSidebar({
   showProCard: boolean;
 }) {
   return (
-    <aside className="min-w-0 space-y-6 lg:sticky lg:top-6">
+    <aside className="min-w-0 space-y-5 lg:sticky lg:top-6">
       {regulatorFacts.length > 0 && (
-        <section className="border border-[#E0D7C9] bg-white p-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Regulator</p>
+        <section className={`p-5 ${GLASS_SOFT}`}>
+          <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Regulator</h2>
           <dl className="mt-2 space-y-1.5 text-sm">
             {regulatorFacts.map((fact) => (
               <div key={fact.label} className="flex justify-between gap-3">
-                <dt className="text-[#6B6255]">{fact.label}</dt>
+                <dt className="text-[#5A5347]">{fact.label}</dt>
                 <dd className="text-right font-medium text-[#1A1815]">{fact.value}</dd>
               </div>
             ))}
@@ -38,15 +39,15 @@ export function ProfileSidebar({
         </section>
       )}
       {showProCard && (
-        <section className="border border-[#1A1815] bg-[#1A1815] p-5 text-white">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D4A574]">
+        <section className={`p-6 ${GLASS}`}>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
             Fee Insight Pro
           </p>
-          <h2 className="mt-2 text-lg font-semibold">Benchmark this institution in Hamilton</h2>
+          <h2 className="mt-2 text-lg font-semibold tracking-tight text-[#1A1815]">Benchmark this institution in Hamilton</h2>
           <div className="mt-4 grid gap-2">
             <Link
               href={links.briefHref}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#C44B2E] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#C44B2E] px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[#A93D25]"
             >
               <BarChart2 className="h-4 w-4" />
               Generate competitive brief
@@ -67,12 +68,12 @@ export function ProfileSidebar({
             )}
           </div>
           {!isAuthenticated && (
-            <p className="mt-3 text-xs text-[#E8DFD1]">Opens pricing first, then returns here.</p>
+            <p className="mt-3 text-xs text-[#5A5347]">Opens pricing first, then returns here.</p>
           )}
         </section>
       )}
 
-      <div className="flex items-center gap-1.5 text-xs text-[#6B6255]">
+      <div className="flex items-center gap-1.5 px-1 text-xs text-[#5A5347]">
         <span>How we verify fees</span>
         <InfoTip label="How we verify fees">
           <span className="block space-y-2">

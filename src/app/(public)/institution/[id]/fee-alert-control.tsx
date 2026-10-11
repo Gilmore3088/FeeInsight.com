@@ -10,6 +10,7 @@ import {
   removeInstitutionAlert,
   saveInstitutionAlert,
 } from "@/app/account/alert-actions";
+import { GLASS_SOFT } from "@/components/public/site-look";
 
 export interface FeeAlertControlProps {
   institutionId: number;
@@ -25,11 +26,11 @@ export interface FeeAlertControlProps {
 }
 
 const INPUT =
-  "min-w-0 w-full rounded-md border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#6B6255] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30";
+  "min-h-11 min-w-0 w-full rounded-lg border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#6B6255] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30";
 const PRIMARY =
-  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50";
+  "inline-flex shrink-0 items-center justify-center min-h-11 whitespace-nowrap rounded-lg bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50";
 const SECONDARY =
-  "inline-flex items-center rounded-md border border-[#D5CBBF] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25] disabled:opacity-50";
+  "inline-flex min-h-9 items-center rounded-lg border border-[#D5CBBF] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25] disabled:opacity-50";
 
 /**
  * Save this bank or credit union and get an email when a fee you follow changes.
@@ -135,9 +136,9 @@ export function FeeAlertControl({
   return (
     <section
       aria-labelledby={`${ids}-heading`}
-      className="relative border border-[#E0D7C9] bg-white px-4 py-4 sm:px-5"
+      className={`relative px-5 py-5 sm:px-6 ${GLASS_SOFT}`}
     >
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
         {saved ? "Saved" : "Fee change alerts"}
       </p>
 

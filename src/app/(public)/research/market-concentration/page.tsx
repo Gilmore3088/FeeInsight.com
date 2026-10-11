@@ -29,7 +29,7 @@ function formatDeposits(thousands: number): string {
 
 function hhiLabel(hhi: number): { text: string; color: string } {
   if (hhi >= 2500) return { text: "Highly Concentrated", color: "text-red-600 bg-red-50" };
-  if (hhi >= 1500) return { text: "Moderately Concentrated", color: "text-amber-700 bg-amber-50" };
+  if (hhi >= 1500) return { text: "Moderately Concentrated", color: "text-[#8E2A17] bg-[#FDF0ED]" };
   return { text: "Competitive", color: "text-emerald-700 bg-emerald-50" };
 }
 

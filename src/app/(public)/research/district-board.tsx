@@ -26,11 +26,12 @@ const NUMBER = new Intl.NumberFormat("en-US");
 
 export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) {
   const [active, setActive] = useState<number | null>(null);
+  const activeRow = active === null ? null : districts.find((d) => d.district === active) ?? null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <div className="rounded-2xl border border-[#E8DFD1] bg-white p-3 sm:p-5">
-        <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Map of the 12 Federal Reserve districts">
+      <div className="relative rounded-2xl bg-white/70 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl p-3 sm:p-5">
+        <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Map of the 12 Federal Reserve districts. The list beside it gives each district's coverage.">
           {US_STATES.map((st) => {
             const d = STATE_TO_DISTRICT[st.id];
             const color = d ? DISTRICT_COLORS[d] : "#ECE6DC";
@@ -50,7 +51,35 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
             );
           })}
         </svg>
-        <p className="mt-2 text-center text-[11px] text-[#8A8072]">
+        {/* Tooltip for the hovered district (or the focused list link). Hidden from screen
+            readers: the list link it mirrors already reads the same figures. */}
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-4 top-4 w-60 rounded-xl bg-white/95 p-4 shadow-lg ring-1 ring-[#E8E1D6] backdrop-blur transition-opacity duration-200 motion-reduce:transition-none sm:left-6 sm:top-6 ${
+            activeRow ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          {activeRow && (
+            <>
+              <p className="text-[15px] font-semibold text-[#1A1815]">
+                {DISTRICT_NAMES[activeRow.district] ?? `District ${activeRow.district}`} district
+              </p>
+              <dl className="mt-2 space-y-1 text-[12px] text-[#3D3830]">
+                <div className="flex justify-between gap-3">
+                  <dt>Institutions with fees</dt>
+                  <dd className="font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">
+                    {NUMBER.format(activeRow.verified_institutions)} of {NUMBER.format(activeRow.monitored)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt>Published fees</dt>
+                  <dd className="font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">{NUMBER.format(activeRow.verified_fees)}</dd>
+                </div>
+              </dl>
+            </>
+          )}
+        </div>
+        <p className="mt-2 text-center text-[11px] text-[#5A5347]">
           States are shaded by their main district. Some states are split between two districts; the counts beside the
           map use each institution&apos;s own district.
         </p>
@@ -68,8 +97,8 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
                 onMouseLeave={() => setActive(null)}
                 onFocus={() => setActive(d.district)}
                 onBlur={() => setActive(null)}
-                className={`group block rounded-xl border bg-white px-4 py-3 transition-all hover:shadow-md ${
-                  active === d.district ? "border-[#1A1815]/30 shadow-md" : "border-[#E8DFD1]"
+                className={`group block h-full rounded-xl bg-white/75 px-4 py-3 ring-1 backdrop-blur transition-[box-shadow,background-color] duration-200 hover:bg-white hover:shadow-md ${
+                  active === d.district ? "shadow-md ring-[#1A1815]/30" : "ring-[#E8E1D6]"
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -82,12 +111,12 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
                   <span className="truncate text-[13px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">
                     {DISTRICT_NAMES[d.district] ?? `District ${d.district}`}
                   </span>
-                  <span className="ml-auto text-[13px] font-semibold tabular-nums text-[#1A1815]">{Math.round(coverage * 100)}%</span>
+                  <span className="ml-auto text-[13px] font-semibold text-[#1A1815] [font-variant-numeric:tabular-nums]">{Math.round(coverage * 100)}%</span>
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#F1EBE1]">
                   <div className="h-full rounded-full" style={{ width: `${coverage * 100}%`, background: color }} />
                 </div>
-                <p className="mt-1.5 flex justify-between gap-2 whitespace-nowrap text-[11px] tabular-nums text-[#6B6255]">
+                <p className="mt-1.5 flex justify-between gap-2 whitespace-nowrap text-[11px] text-[#5A5347] [font-variant-numeric:tabular-nums]">
                   <span>{NUMBER.format(d.verified_institutions)} of {NUMBER.format(d.monitored)} institutions</span>
                   <span>{NUMBER.format(d.verified_fees)} fees</span>
                 </p>

@@ -210,8 +210,8 @@ export default async function DistrictReportPage({ params }: PageProps) {
           <h2 className="font-[family-name:var(--font-newsreader)] text-sm font-bold text-[#1A1815]">
             Economic Context — Beige Book
           </h2>
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/30 px-5 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-600">
+          <div className="mt-3 rounded-xl border border-[#C44B2E]/25 bg-[#FDF0ED]/40 px-5 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#A93D25]">
               Latest Release — {beigeHeadline.release_date}
             </p>
             {beigeSections

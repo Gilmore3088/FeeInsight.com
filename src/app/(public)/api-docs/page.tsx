@@ -24,7 +24,7 @@ function Badge({ children, variant }: { children: React.ReactNode; variant: "get
   const styles = {
     get: "bg-emerald-100 text-emerald-700",
     tier: "bg-[#E8DFD1]/60 text-[#6B6255]",
-    new: "bg-blue-100 text-blue-700",
+    new: "bg-[#F0ECE6] text-[#4A4238]",
   };
   return (
     <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${styles[variant]}`}>
@@ -339,7 +339,7 @@ export default async function ApiDocsPage() {
 
         <CodeBlock title="Query parameter authentication">{`curl "${BASE}/fees?api_key=YOUR_API_KEY"`}</CodeBlock>
 
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/50 px-4 py-2.5 text-[13px] text-amber-800">
+        <div className="mt-4 rounded-md border border-[#C44B2E]/25 bg-[#FDF0ED]/60 px-4 py-2.5 text-[13px] text-[#8E2A17]">
           Self-serve API key creation is not exposed yet. {PRO_LABEL} users should use signed-in CSV exports from Account; managed API keys are set up by hand.{" "}
           <a href={API_ACCESS_HREF} className="font-medium underline underline-offset-2">{API_ACCESS_CTA}</a>.
         </div>

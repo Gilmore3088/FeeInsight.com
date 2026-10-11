@@ -108,7 +108,7 @@ export function FinancialInsights({
                     aria-label={`${row.label}: ${ordinal(row.percentile)} percentile`}
                   >
                     <span
-                      className="absolute top-1/2 h-3 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-[#2a78d6]"
+                      className="absolute top-1/2 h-3 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-[#A93D25]"
                       style={{ left: `${Math.min(100, Math.max(0, row.percentile))}%` }}
                     />
                   </div>
