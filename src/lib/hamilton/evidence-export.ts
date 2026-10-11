@@ -94,6 +94,53 @@ function sourceProblems(fact: HamiltonEvidenceFact): string[] {
 }
 
 /**
+ * Recompute supported saved derivations from their frozen numeric inputs.
+ * This is an arithmetic integrity check, NOT evidence that the text describing
+ * the result, the source schedule, or the audience has been verified.
+ * Unknown formulas fail closed rather than assuming the displayed number is true.
+ */
+function arithmeticProblems(
+  fact: HamiltonDerivedFact,
+  inputs: SavedEvidenceFactRow[],
+): string[] {
+  const recipe = fact.derivation;
+  if (fact.value === null || !Number.isFinite(fact.value)
+    || inputs.length !== recipe.inputFactIds.length
+    || inputs.some((row) => typeof row.value !== "number" || !Number.isFinite(row.value))) return [];
+  const values = inputs.map((row) => row.value as number);
+  const formula = recipe.formula.trim().toLowerCase().replace(/\s+/g, " ");
+  let expected: number;
+
+  if (recipe.kind === "difference") {
+    if (values.length !== 2) return ["invalid_derivation_input_count"];
+    if (formula !== "left - right") return ["unrecognized_derivation_formula"];
+    expected = Math.round((values[0] - values[1]) * 100) / 100;
+  } else if (recipe.kind === "percent_change") {
+    if (values.length !== 2) return ["invalid_derivation_input_count"];
+    if (recipe.denominatorFactId !== recipe.inputFactIds[1]) return ["wrong_percent_denominator"];
+    if (formula !== "(current - prior) / prior * 100"
+      && formula !== "(current-prior)/prior*100") return ["unrecognized_derivation_formula"];
+    if (values[1] === 0) return ["zero_denominator"];
+    expected = Math.round((((values[0] - values[1]) / values[1]) * 100) * 10) / 10;
+  } else if (recipe.kind === "institution_value" || recipe.kind === "peer_median") {
+    if (values.length === 0) return ["invalid_derivation_input_count"];
+    if (recipe.kind === "institution_value"
+      && (formula === "max" || formula === "highest published tier for the institution")) {
+      expected = Math.max(...values);
+    } else if (formula === "median" || formula === "median of published institution amounts"
+      || formula === "median of published peer amounts") {
+      const sorted = [...values].sort((a, b) => a - b);
+      const middle = (sorted.length - 1) / 2;
+      const lower = Math.floor(middle);
+      expected = sorted[lower] + (sorted[Math.ceil(middle)] - sorted[lower]) * (middle - lower);
+    } else return ["unrecognized_derivation_formula"];
+  } else return ["unrecognized_derivation_kind"];
+
+  return !Number.isFinite(expected) || Math.abs(fact.value - expected) > 0.0000001
+    ? ["derived_value_mismatch"] : [];
+}
+
+/**
  * Reproduce the SOURCE SNAPSHOT, not a fresh market query. Unknown dates remain
  * null, zero stays zero, and a legacy saved high never becomes a verified PDF claim.
  */
@@ -182,6 +229,7 @@ export function savedEvidenceAppendix(
         ...(comparisonPeriodMismatched ? ["comparison_period_mismatch"] : []),
         ...(changePeriodMismatched ? ["change_period_invalid"] : []),
         ...(sourceValueProblems ? ["invalid_input_value"] : []),
+        ...arithmeticProblems(fact, inputs),
       ],
     };
   });

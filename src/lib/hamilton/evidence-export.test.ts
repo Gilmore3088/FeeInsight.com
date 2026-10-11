@@ -321,4 +321,81 @@ describe("saved evidence appendix for H06 T08 PDF parity", () => {
     expect(savedEvidenceAppendix(input).derivations[0].problems).toContain("input_frequency_mismatch");
   });
 
+  // Arithmetic integrity is distinct from matching identifiers or source inspection.
+  function arithmeticCase(
+    kind: HamiltonDerivedFact["derivation"]["kind"],
+    amounts: number[],
+    derivedValue: number,
+    formula: string,
+    denominatorIndex: number | null = null,
+  ) {
+    const observations: HamiltonEvidenceFact[] = amounts.map((amount, index) => ({
+      ...originalFact,
+      id: `fee:published:${24001 + index}`,
+      value: amount,
+      scope: {
+        ...originalFact.scope,
+        reportingDate: kind === "percent_change" && index > 0 ? "2026-06-30" : "2026-09-30",
+      },
+      source: { ...originalFact.source, recordId: 24001 + index },
+    }));
+    const derivative: HamiltonDerivedFact = {
+      id: "derived:synthetic-arithmetic",
+      kind: "derived",
+      scope: { ...observations[0].scope },
+      value: derivedValue,
+      unit: kind === "percent_change" ? "percent" : "usd",
+      currency: kind === "percent_change" ? null : "USD",
+      status: "derived",
+      derivation: {
+        kind,
+        inputFactIds: observations.map((fact) => fact.id),
+        denominatorFactId: kind === "percent_change"
+          ? observations[denominatorIndex ?? 1]?.id ?? null : null,
+        formula,
+        rounding: kind === "percent_change" ? "one decimal percentage point" : "stored",
+      },
+    };
+    const answer = saved(observations[0], [derivative]);
+    answer.factEvidence!.facts = observations;
+    return savedEvidenceAppendix(answer).derivations[0];
+  }
+
+  it("detects an inverted dollar delta although both source fact IDs resolve", () => {
+    const correct = arithmeticCase("difference", [10, 35], -25, "left - right");
+    const inverted = arithmeticCase("difference", [10, 35], 25, "left - right");
+    expect(correct.problems).not.toContain("derived_value_mismatch");
+    expect(inverted.problems).toContain("derived_value_mismatch");
+  });
+
+  it("rejects a claimed increase when chronological evidence calculates a decline", () => {
+    const correct = arithmeticCase("percent_change", [90, 100], -10, "(current - prior) / prior * 100");
+    const falseIncrease = arithmeticCase("percent_change", [90, 100], 10, "(current - prior) / prior * 100");
+    expect(correct.problems).not.toContain("derived_value_mismatch");
+    expect(falseIncrease.problems).toContain("derived_value_mismatch");
+  });
+
+  it("rejects percent-change zero denominator or wrong linked denominator", () => {
+    expect(arithmeticCase("percent_change", [90, 0], -10, "(current - prior) / prior * 100").problems)
+      .toContain("zero_denominator");
+    expect(arithmeticCase("percent_change", [90, 100], -10, "(current - prior) / prior * 100", 0).problems)
+      .toContain("wrong_percent_denominator");
+  });
+
+  it("detects wrong highest published tier and supports legitimate median arithmetic", () => {
+    expect(arithmeticCase("institution_value", [10, 35], 10, "highest published tier for the institution").problems)
+      .toContain("derived_value_mismatch");
+    expect(arithmeticCase("institution_value", [10, 35], 35, "highest published tier for the institution").problems)
+      .not.toContain("derived_value_mismatch");
+    expect(arithmeticCase("institution_value", [10, 20, 30, 40], 25, "median of published institution amounts").problems)
+      .not.toContain("derived_value_mismatch");
+    expect(arithmeticCase("institution_value", [10, 20, 30, 40], 30, "median of published institution amounts").problems)
+      .toContain("derived_value_mismatch");
+  });
+
+  it("withholds numeric integrity when a saved derivation advertises an unknown formula", () => {
+    expect(arithmeticCase("difference", [10, 35], -25, "right - left").problems)
+      .toContain("unrecognized_derivation_formula");
+  });
+
 });
