@@ -100,3 +100,9 @@ This preview adds a first-class National data & research section to /research an
 
 Base implementation head: `020fadba5ee6428da022dac4454c04dad830b97a`.
 This preview replaces the old research exhibit wall with the scoped Hamilton evidence-library design: United States / Florida / institution scope, research search, five evidence briefs, explicit fact / interpretation / unanswered-question framing, and governed Hamilton/report handoffs.
+
+
+## Preview trigger — research evidence library compile-green — 2026-10-11
+
+Base implementation head: `963150ce51e8f48ac81e6c1a5b322de77600915c`.
+TypeScript passed in a clean Vercel sandbox before this preview trigger.
