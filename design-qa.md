@@ -24,3 +24,7 @@ The supported sites-preview service launched its command in a filesystem where r
 5. Keep this PR draft until those checks pass. Do not merge or promote to production without James explicitly approving this redesign.
 
 Comparison history: no rendered comparison exists. No visual pass is claimed.
+
+## Brand correction — October 11
+
+James found the initial preview off-brand. The refinement reuses Fee Insight's global warm/terracotta tokens and the pricing page's locally supplied Plus Jakarta Sans for display type. Charcoal replaces navy, terracotta replaces teal across controls and research charts, and report headings use the same display face. No functional or data behavior changed. Hosted authenticated visual QA remains outstanding: the verified preview redirects to normal Fee Insight sign-in; no login bypass is introduced. The older references guide structure; their navy/teal palette is superseded by this user-directed brand correction.

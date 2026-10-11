@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/postcss';
 const root = resolve(import.meta.dirname, '..');
 export default defineConfig({
+  publicDir: resolve(root, 'public'),
   esbuild: { jsx: 'automatic' },
   css: { postcss: { plugins: [tailwindcss({base:root})] } },
   resolve: { alias: [
