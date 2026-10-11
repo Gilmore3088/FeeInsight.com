@@ -4,13 +4,13 @@ import Link from "next/link";
 import { getDisplayName, getFeeFamily, FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
-import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
+import { getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
-import { AmbientGlow, GLASS, H1, INTERACTION, LEAD, NUM, TEXT_LINK } from "@/components/public/site-look";
+import { AmbientGlow, GLASS, H1, INTERACTION, LEAD, NUM } from "@/components/public/site-look";
 
 // No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
@@ -23,12 +23,6 @@ const EYEBROW = "text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25
 const SPOTLIGHT_CARD_CATEGORIES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network"];
 const CANONICAL_CATEGORIES = new Set(Object.values(FEE_FAMILIES).flat());
 
-const ACTION_LINKS = [
-  { label: "National benchmarks", href: "/research/national-fee-index" },
-  { label: "State & district reports", href: "/research" },
-  { label: "Consumer guides", href: "/guides" },
-  { label: "API", href: "/api-docs" },
-];
 
 export default async function FeeCatalogPage() {
   const user = await getCurrentUser();
@@ -70,38 +64,11 @@ export default async function FeeCatalogPage() {
 
       {/* ── HERO ── */}
       <div className="max-w-3xl">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-[#C44B2E]/40" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
-            Published fees · every figure sourced
-          </span>
-        </div>
-
-        <h1 className={H1}>
-          {PRODUCT_NAME} — benchmarks by category
-        </h1>
+        <p className={EYEBROW}>National fee benchmarks</p>
+        <h1 className={`mt-3 ${H1}`}>{PRODUCT_NAME}</h1>
         <p className={`mt-4 ${LEAD}`}>
-          Bank and credit union fee benchmarks across {summary.categoriesLabel} fee categories, from{" "}
-          {summary.institutionsLabel} institutions with published fees.
+          Compare published bank and credit union fees by category. Every figure comes from an institution&apos;s own fee schedule.
         </p>
-
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
-          <span>
-            <span className="font-medium text-[#5A5347] tabular-nums">{summary.observationsLabel}</span>{" "}
-            {COVERAGE_LABELS.observations.toLowerCase()}
-          </span>
-          <span className="h-3 w-px bg-[#D4C9BA]" />
-          <span>
-            <span className="font-medium text-[#5A5347] tabular-nums">{summary.monitoredLabel}</span>{" "}
-            {COVERAGE_LABELS.monitored.toLowerCase()}
-          </span>
-          <span className="h-3 w-px bg-[#D4C9BA]" />
-          <span>{summary.freshnessLabel}</span>
-        </div>
-
-        <div className="mt-1.5 text-[11px] text-[#6B6255]">
-          Sources: published fee schedules, FDIC Call Reports, NCUA 5300 Reports, institution websites
-        </div>
       </div>
 
       {/* ── SPOTLIGHT STAT CARDS ── */}
@@ -124,45 +91,12 @@ export default async function FeeCatalogPage() {
               <span className="mx-1.5 text-[#D4C9BA]">&middot;</span>
               {fee.institution_count.toLocaleString()} inst.
             </p>
-            <p className={`mt-1 text-xs text-[#5A5347] ${NUM}`}>
-              {fee.total_observations.toLocaleString()} published fee entries
-            </p>
-          </Link>
-        ))}
-      </div>
-      <p className="mt-2 text-[11px] text-[#6B6255]">
-        Each institution counts once, and the median and typical range (25th to 75th
-        percentile) are taken across institutions.{" "}
-        {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
-        Full min–max by category is in the tables below.
-      </p>
-      {!showAll && gatedCount > 0 && (
-        <p className="mt-3 rounded-lg border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-2.5 text-[13px] text-[#5A5347]">
-          <span className="font-semibold text-[#1A1815]">Free:</span> national benchmarks for the{" "}
-          {shownCanonical} spotlight categories below.{" "}
-          <span className="font-semibold text-[#1A1815]">Pro:</span> the other {gatedCount} categories, peer
-          and state breakdowns, and API access on request.{" "}
-          <Link href="/subscribe" className={TEXT_LINK}>
-            Compare plans
-          </Link>
-        </p>
-      )}
-
-      {/* ── ACTION BAR ── */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {ACTION_LINKS.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="inline-flex min-h-11 items-center rounded-full bg-white/70 px-4 text-sm font-medium text-[#3D3830] ring-1 ring-[#E8E1D6] no-underline hover:bg-white hover:text-[#A93D25] hover:ring-[#C44B2E]/40"
-          >
-            {item.label}
           </Link>
         ))}
       </div>
 
       {/* ── MAIN + SIDEBAR ── */}
-      <div className="mt-10 grid grid-cols-1 gap-8 xl:grid-cols-[1fr_280px]">
+      <div className="mt-8 grid grid-cols-1 gap-8 xl:grid-cols-[1fr_280px]">
         <div className="space-y-10">
           {familyOrder.map((familyName) => {
             const cats = byFamily.get(familyName);
