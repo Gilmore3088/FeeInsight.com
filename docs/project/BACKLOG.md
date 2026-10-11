@@ -29,6 +29,25 @@ The control issue is the entry point, not a second Notion board or another sprea
    draft PR early and complete the intake fields. Existing branches need not be renamed.
    Push subsequent work to that PR. Do not create a new PR for every iteration.
 
+## James-authorized single-use correctness exception: PR #1017
+
+On October 11, 2026 James authorized an emergency **WIP-count-only** exception for
+[issue #1012](https://github.com/Gilmore3088/FeeInsight.com/issues/1012),
+the production institution-directory `overdraft` SQL cast error. Only the single
+[draft PR #1017](https://github.com/Gilmore3088/FeeInsight.com/pull/1017)
+on branch `fix/1012-directory-fee-bind` against `main` may exceed the
+three-PR correctness cap. `.github/backlog-policy.json` specifies that immutable
+PR number, issue, branch, base, repository and expiry `2026-10-14T00:00:00Z`;
+`.github/scripts/backlog.mjs` enforces each condition and still evaluates
+**every other** intake check, including duplicate work items, overlap ownership,
+parked work, required fields and an open canonical issue. The default cap remains 3.
+
+The exception cannot be inherited by another PR, work item, branch or area.
+It expires automatically and gives **no** CI pass, review approval, permission
+change, payment migration authority, production deploy, or data edit. After
+exact-head application/DB/guard tests and review, require READY same-SHA preview,
+real public URL tests and post-merge production readiness and logs. This is a
+scoped authorization in existing #984, not a general policy change.
 Priority: correctness and data trust, then usable customer journeys and payments, then
 maintainability. Outreach AND marketing are on hold. Do not expand this cleanup into
 new features, broad refactoring, prospecting or campaigns. Existing fixes retain their
