@@ -61,7 +61,7 @@ export default async function ForInstitutionsPage() {
               </p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <TrackLink
-                  event="pricing_click"
+                  event="upgrade_click"
                   eventProps={{ placement: "for_institutions_hero" }}
                   href="/subscribe"
                   className={PRIMARY_BUTTON}
