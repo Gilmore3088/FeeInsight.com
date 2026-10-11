@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAnswerSection, parseTradeoffSection } from "./report-answer";
+import { parseAnswerSection, parseTradeoffSection, REPORT_CONFIDENCE_LIMITATION } from "./report-answer";
 
 describe("parseAnswerSection", () => {
   it("reads the headline and up to three decisions with confidence", () => {
@@ -14,10 +14,25 @@ describe("parseAnswerSection", () => {
     );
     expect(parsed?.headline).toBe("Raise the NSF fee; hold the rest.");
     expect(parsed?.decisions).toEqual([
-      { action: "Raise NSF to $30", why: "Five local banks charge $30.", confidence: "High", confidenceReason: "5 competitors, verified" },
+      { action: "Raise NSF to $30", why: "Five local banks charge $30.", confidence: "Medium", confidenceReason: `5 competitors, verified · ${REPORT_CONFIDENCE_LIMITATION}` },
       { action: "Hold overdraft at $25", why: "At the median.", confidence: "Low", confidenceReason: null },
       { action: "Publish the maintenance fee", why: "Peers publish it.", confidence: null, confidenceReason: null },
     ]);
+  });
+
+  it("caps a model-written High label even when its reason says verified", () => {
+    const parsed = parseAnswerSection(
+      "HEADLINE: Synthetic conclusion.\nDECISION: Review overdraft || WHY: 5 peers || CONFIDENCE: HIGH: 5 peers, verified",
+    );
+    expect(parsed?.decisions[0].confidence).toBe("Medium");
+    expect(parsed?.decisions[0].confidenceReason).toContain(REPORT_CONFIDENCE_LIMITATION);
+  });
+
+  it("leaves Medium and Low directional labels intact", () => {
+    const parsed = parseAnswerSection(
+      "HEADLINE: Synthetic conclusion.\nDECISION: Review overdraft || WHY: 5 peers || CONFIDENCE: Medium - 5 peers, provisional",
+    );
+    expect(parsed?.decisions[0]).toMatchObject({ confidence: "Medium", confidenceReason: "5 peers, provisional" });
   });
 
   it("returns null when the model ignored the format, so the caller keeps the prose", () => {

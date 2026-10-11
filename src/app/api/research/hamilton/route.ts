@@ -339,6 +339,7 @@ async function handlePOST(request: Request) {
             ),
             // Historical reference metadata only; never a future access grant.
             identityContext,
+            ...(contract.researchSelection ? { researchSelection: contract.researchSelection } : {}),
           };
           const prompt = questionOnly(lastUserText);
           try {

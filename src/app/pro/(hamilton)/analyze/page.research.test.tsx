@@ -11,7 +11,8 @@ import Page from "./page";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
 const selection = { version: 1, task: "compare", scope: { kind: "local", institutionId: 101 }, charter: "bank", categories: ["money_order"] };
 function workspace(tree: ReactElement): ReactElement<Record<string, unknown>> {
-  return (tree.props as { children: ReactElement<Record<string, unknown>>[] }).children.find(child => child?.type === AnalyzeWorkspace)!;
+  expect(tree.type).toBe(AnalyzeWorkspace);
+  return tree as ReactElement<Record<string, unknown>>;
 }
 beforeEach(() => {
   vi.resetAllMocks(); mocks.user.mockResolvedValue({ id: 7 }); mocks.list.mockResolvedValue([]);
@@ -28,7 +29,7 @@ describe("landing scope inside the regular Analyze workspace", () => {
   it("uses the research subject without persisting it or auto-sending a URL question", async () => {
     const tree = await Page({ searchParams: Promise.resolve({ research: JSON.stringify(selection), instId: "202", q: "Run paid work", send: "1" }) });
     expect(mocks.resolve).toHaveBeenCalledWith(expect.objectContaining({ instId: "101", persistUrlSelection: false }));
-    expect(workspace(tree).props).toMatchObject({ institutionId: "101", initialQuestion: null, autoSend: false });
+    expect(workspace(tree).props).toMatchObject({ institutionId: "101", initialQuestion: "Run paid work", autoSend: false });
   });
   it.each([{ kind: "national" }, { kind: "state", stateCode: "DC" }])("does not substitute a saved institution for geographic scope %j", async scope => {
     const tree = await Page({ searchParams: Promise.resolve({ research: JSON.stringify({ ...selection, scope }), instId: "202", q: "Send", send: "1" }) });

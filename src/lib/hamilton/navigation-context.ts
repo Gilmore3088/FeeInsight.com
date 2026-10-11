@@ -11,8 +11,8 @@ export interface HamiltonNavigationSelection {
   unresolved?: boolean;
 }
 
-const SUBJECT_PATHS = new Set(["/pro", "/pro/analyze", "/pro/research", "/pro/hamilton", "/pro/reports", "/pro/simulate", "/pro/monitor", "/pro/settings"]);
-const ARTIFACT_PARAMS = ["analysis", "report_id", "report", "scenario_id", "scenario"];
+const SUBJECT_PATHS = new Set(["/pro", "/pro/analyze", "/pro/research", "/pro/hamilton", "/pro/reports", "/pro/simulate", "/pro/monitor", "/pro/settings", "/pro/intelligence", "/pro/saved"]);
+const ARTIFACT_PARAMS = ["analysis", "from_analysis", "report_id", "report", "scenario_id", "scenario"];
 
 export function isHamiltonSubjectPath(pathname: string): boolean {
   return SUBJECT_PATHS.has(pathname);
@@ -42,7 +42,7 @@ export function hrefWithHamiltonNavigation(href: string, selection: HamiltonNavi
   const params = new URLSearchParams(query);
   // A destination's explicit subject/contract or saved record remains authoritative.
   if (params.has("instId") || params.has("research") || ARTIFACT_PARAMS.some((key) => params.get(key)?.trim())) return href;
-  if (selection.research && (path === "/pro/analyze" || path === "/pro/reports")) {
+  if (selection.research && (path === "/pro/analyze" || path === "/pro/reports" || path === "/pro/intelligence" || path === "/pro/hamilton")) {
     params.set("research", encodeLandingResearch({ ...selection.research, task: path === "/pro/reports" ? "board_report" : "compare" }));
     return `${path}?${params}${fragment}`;
   }

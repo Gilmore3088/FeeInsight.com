@@ -174,7 +174,7 @@ describe("H01 Structured Ask identity acceptance", () => {
     identityStore.research.mockClear();
     const result = await answerAskMemo(user, { institutionId: "2", question: "overdraft?", savedAnalysisId: "a1" });
     expect(result.status).toBe(200);
-    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext });
+    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: saved.factEvidence });
     expect(identityStore.peers).not.toHaveBeenCalled();
     expect(identityStore.research).not.toHaveBeenCalled();
     expect(store.analyses[0].response.identityContext).toEqual(saved.identityContext);

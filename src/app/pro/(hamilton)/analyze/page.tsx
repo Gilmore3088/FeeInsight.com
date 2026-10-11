@@ -1,8 +1,7 @@
 // Auth-gated, renders live DB-backed data at request time; not statically prerendered.
 export const dynamic = "force-dynamic";
 
-import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
-import { decodeLandingResearch, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
+import { decodeLandingResearch, parseLandingResearch, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -82,7 +81,10 @@ export default async function AnalyzePage({
       });
   const selectedInstitution = resolved?.institution ?? null;
   const institutionId = selectedInstitution?.id.toString() ?? null;
-  const readOnlyReason = isArtifactContext && !selectedInstitution
+  let savedResearch: LandingResearchHandoff | null = null;
+  try { if (initialAnalysisRecord?.responseJson.researchSelection) savedResearch = parseLandingResearch(initialAnalysisRecord.responseJson.researchSelection); } catch { /* Missing or invalid frozen selection remains read-only below. */ }
+  const hasSavedGeography = savedResearch && savedResearch.scope.kind !== "local";
+  const readOnlyReason = isArtifactContext && !selectedInstitution && !hasSavedGeography
     ? contextInstitutionId
       ? "The institution recorded with this saved answer could not be loaded. Its original content is shown without substituting another institution."
       : "No institution was recorded with this saved answer. Its original content is shown without assigning today's workspace institution."
@@ -98,14 +100,12 @@ export default async function AnalyzePage({
         initialAnalysisPrompt={initialAnalysisRecord?.prompt ?? null}
         recent={recent}
         selectedInstitution={selectedInstitution}
+        researchSelection={landingResearch ?? savedResearch ?? undefined}
         initialIntent={isArtifactContext ? null : params.intent ?? null}
-        initialQuestion={!isArtifactContext && !hasResearch && params.q ? params.q.slice(0, 500) : null}
+        initialQuestion={!isArtifactContext && params.q ? params.q.slice(0, 500) : null}
         autoSend={!isArtifactContext && !hasResearch && params.send === "1"}
         readOnlyReason={readOnlyReason}
       />
   );
-  return landingResearch ? <>
-    <div className="mb-6"><LandingResearchResults selection={landingResearch} /></div>
-    {workspace}
-  </> : workspace;
+  return workspace;
 }

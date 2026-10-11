@@ -1,3 +1,4 @@
+import { parseLandingResearch, type LandingResearchHandoff } from "./landing-research-handoff";
 import type { UIMessage } from "ai";
 import type { HamiltonAccountContext } from "./account-context";
 
@@ -13,6 +14,8 @@ export type HamiltonEvidencePolicy = (typeof HAMILTON_EVIDENCE_POLICIES)[number]
 
 export interface HamiltonRequestContract {
   messages: UIMessage[];
+  /** Validated research selection, not evidence or an account claim. */
+  researchSelection?: LandingResearchHandoff;
   audience: HamiltonAudience;
   institutionId: number | null;
   intent: string;
@@ -117,6 +120,18 @@ export function parseHamiltonRequestContract(
     : { ok: true as const, value: undefined };
   if (!conversationId.ok) return conversationId;
 
+  let researchSelection: LandingResearchHandoff | undefined;
+  if (record.research !== undefined) {
+    try {
+      researchSelection = parseLandingResearch(record.research);
+      if (researchSelection.task !== "compare") throw new Error("Use a compare selection for Ask Hamilton.");
+      const expected = researchSelection.scope.kind === "local" ? researchSelection.scope.institutionId : null;
+      if (institutionId.value !== null && institutionId.value !== expected) throw new Error("Research selection conflicts with institutionId.");
+    } catch (error) {
+      return { ok: false, status: 400, error: error instanceof Error ? error.message : "Invalid research selection" };
+    }
+  }
+
   const workspaceContext =
     record.workspaceContext && typeof record.workspaceContext === "object" && !Array.isArray(record.workspaceContext)
       ? (record.workspaceContext as Record<string, unknown>)
@@ -126,6 +141,8 @@ export function parseHamiltonRequestContract(
     ok: true,
     contract: {
       messages: messages as UIMessage[],
+      ...(researchSelection ? { researchSelection } : {}),
+
       audience: options.audience,
       institutionId: institutionId.value,
       intent: readOptionalString(record.intent) ?? options.defaultIntent ?? "analyze",
@@ -140,7 +157,7 @@ export function parseHamiltonRequestContract(
 }
 
 export function buildHamiltonRequestContractPrompt(
-  contract: Pick<HamiltonRequestContract, "audience" | "intent" | "evidencePolicy" | "institutionId" | "serverAccountContext">,
+  contract: Pick<HamiltonRequestContract, "audience" | "intent" | "evidencePolicy" | "institutionId" | "serverAccountContext" | "researchSelection">,
 ): string {
   const audienceRules: Record<HamiltonAudience, string> = {
     public:
@@ -157,6 +174,8 @@ export function buildHamiltonRequestContractPrompt(
 - Evidence policy: ${contract.evidencePolicy}
 - Selected institution ID: ${contract.institutionId ?? "none"}
 - Audience rule: ${audienceRules[contract.audience]}
+${contract.researchSelection ? `- Research selection: ${JSON.stringify(contract.researchSelection)}
+- This selection defines geography, charter and fee categories. Retrieve evidence matching this selection; never relabel national or district observations as selected-state facts. Report per-exhibit dates and coverage. It is not evidence, ownership or permission.` : ""}
 
 Evidence policy rules:
 - verified-only: use approved/published fee rows for benchmark or score conclusions.

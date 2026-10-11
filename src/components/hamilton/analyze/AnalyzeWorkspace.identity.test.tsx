@@ -135,7 +135,8 @@ describe("AnalyzeWorkspace identity boundaries", () => {
   it("uses subject-neutral starter prompts instead of claiming every institution is ours", () => {
     render(<AnalyzeWorkspace userId={7} institutionId="8109" selectedInstitution={bankB} />);
     expect(document.body.textContent).not.toContain("our overdraft");
-    expect(document.body.textContent).toContain("this institution's overdraft");
+    fireEvent.click(screen.getByRole("button", { name: "Review fees" }));
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toContain("this institution's overdraft");
   });
 
   it("starts a fresh ask after New question abandons an unresolved engine request", async () => {

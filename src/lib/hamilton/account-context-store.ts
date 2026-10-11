@@ -26,7 +26,9 @@ export async function withHamiltonAccountContext(
     ...contract,
     // With no explicit research subject, one unambiguous account institution may
     // provide the default. This does not write the saved research preference.
-    institutionId: contract.institutionId ?? serverAccountContext.institution?.id ?? null,
+    institutionId: contract.researchSelection
+      ? contract.researchSelection.scope.kind === "local" ? contract.researchSelection.scope.institutionId : null
+      : contract.institutionId ?? serverAccountContext.institution?.id ?? null,
     serverAccountContext,
   };
 }

@@ -1,14 +1,14 @@
 "use client";
 
+import "./workspace.css";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import type { HamiltonAccountContext } from "@/lib/hamilton/account-context";
-import { ConsumerNav } from "@/components/consumer-nav";
+import { WorkspaceNavigation } from "./WorkspaceNavigation";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
-import { HamiltonAskDock } from "./HamiltonAskDock";
-import { SearchModal } from "@/components/public/search-modal";
 import { SessionChromeProvider, type SessionChrome } from "@/components/use-session-chrome";
 import { hamiltonNavigationSelection, isHamiltonSubjectPath } from "@/lib/hamilton/navigation-context";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
@@ -42,14 +42,7 @@ interface HamiltonShellProps {
   children: React.ReactNode;
 }
 
-/**
- * HamiltonShell - Client component.
- * Outer shell wrapper applying .hamilton-shell CSS isolation boundary.
- * Composes: admin bar (admins only), the Fee Insight site header, the page, and the docked Ask bar.
- * No sidebar and no second bar: James wants the simplicity of the living-memo samples.
- * Per D-13, ARCH-01: .hamilton-shell class scopes all editorial design tokens.
- * Per D-10: admin mode bar shown only to admin/analyst users.
- */
+/** Shared customer shell; route-aware identity remains server-derived. */
 export function HamiltonShell({
   initialRequestPath,
   isAdmin,
@@ -109,7 +102,7 @@ export function HamiltonShell({
     <SessionChromeProvider value={session}>
       <HamiltonNavigationProvider value={navigation}>
       <div
-        className="hamilton-shell min-h-screen bg-warm-100 print:bg-white"
+        className="hamilton-shell hamilton-workspace min-h-screen print:bg-white"
       >
         {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
         {isAdmin && (
@@ -136,28 +129,18 @@ export function HamiltonShell({
           </div>
         )}
 
-        {/* The Fee Insight site header, the same one as the public site; for Pro users its links are
-            Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro).
-            The page-reveal animation gives each shell child its own stacking context, so the
-            wrapper carries the header's sticky z-index; without it the page painted over the
-            account menu. */}
-        <div className="sticky top-0 z-40 print:hidden">
-          <ConsumerNav />
-        </div>
-
-        {accountContext ? (
-          <div aria-label="Institution context" className="border-b border-warm-300 px-4 py-2 text-sm text-warm-800">
-            <span>Researching: {researchLabel}.</span>{" "}
-            <span>Account institution: {accountContext.status === "identified" && accountContext.institution
-              ? accountContext.institution.name
-              : accountContext.status === "ambiguous" ? "multiple memberships; no home selected"
-              : accountContext.status === "unavailable" ? "unavailable"
-              : "not linked"}.</span>
-          </div>
-        ) : null}
+        <WorkspaceNavigation
+          pathname={pathname}
+          isAdmin={isAdmin}
+          accountLabel={accountContext?.status === "identified" && accountContext.institution
+            ? accountContext.institution.name
+            : accountContext?.status === "ambiguous" ? "Multiple memberships"
+            : accountContext?.status === "unavailable" ? "Unavailable" : "Not linked"}
+          researchLabel={(["/pro/hamilton", "/pro/intelligence"].includes(pathname) && !selection.research) ? "United States · market intelligence" : selection.research?.scope.kind === "national" ? "United States · market intelligence" : selection.research?.scope.kind === "state" ? `${selection.research.scope.stateCode} · market intelligence` : researchLabel}
+        />
 
         {canUseSeed && institutionContext.makeDefaultHref ? (
-          <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
+          <div className="workspace-preference-note print:hidden">
             You&apos;re researching {institutionContext.name ?? "another institution"}; your saved research preference is unchanged.{" "}
             <Link href={institutionContext.makeDefaultHref} className="font-medium text-terra-text underline">
               Change research preference in Settings
@@ -165,13 +148,7 @@ export function HamiltonShell({
           </div>
         ) : null}
 
-        <main className="mx-auto min-w-0 max-w-page px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
-
-        {/* Ask Hamilton, docked on every screen */}
-        <HamiltonAskDock selectedInstitutionId={navigation.institutionId} navigationContext={navigation} />
-
-        {/* The header's Search button and Cmd/Ctrl+K open this; the public layout mounts its own. */}
-        <SearchModal />
+        <main id="hamilton-content" className="workspace-content" tabIndex={-1}>{children}</main>
       </div>
       </HamiltonNavigationProvider>
     </SessionChromeProvider>

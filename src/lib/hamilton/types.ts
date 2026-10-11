@@ -196,6 +196,8 @@ export interface ThesisInput {
 
 /** Analyze screen response — explores and explains, does NOT recommend (ARCH-05) */
 export interface AnalyzeResponse {
+  researchSelection?: import("./landing-research-handoff").LandingResearchHandoff;
+  factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle;
   identityContext?: HamiltonIdentitySnapshot;
   title: string;
   confidence: {
@@ -274,6 +276,7 @@ export interface ReportSource {
 }
 
 export interface ReportSummaryResponse {
+  boardBrief?: { researchSelection?: import("./landing-research-handoff").LandingResearchHandoff; sourceAnalysisId: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle };
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;

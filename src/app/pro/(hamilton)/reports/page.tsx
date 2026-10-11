@@ -5,6 +5,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { LandingResearchEntry } from "@/components/hamilton/landing/LandingResearchEntry";
+import Link from "next/link";
+import { BoardBriefEditor } from "@/components/hamilton/reports/BoardBriefEditor";
+import { listSavedAnalyses, loadAnalysisRecord } from "../analyze/actions";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -72,6 +75,7 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{
     research?: string;
+    from_analysis?: string;
     scenario_id?: string;
     report_id?: string;
     report?: string;
@@ -88,6 +92,12 @@ export default async function ReportsPage({
   if (params.research !== undefined) return <LandingResearchEntry raw={params.research} task="board_report" conflictingArtifact={Boolean(params.report_id || params.report || params.scenario_id)} />;
   const user = await getCurrentUser();
   if (!user) redirect("/");
+  if (params.from_analysis) {
+    if (params.report_id || params.report || params.scenario_id) return <p role="alert">Open the saved analysis separately from another artifact.</p>;
+    const analysis = await loadAnalysisRecord(params.from_analysis);
+    if (!analysis) return <p role="alert">Saved analysis not found or unavailable.</p>;
+    return <BoardBriefEditor key={analysis.id} analysis={analysis.responseJson} analysisId={analysis.id} />;
+  }
   const initialReportId = params.report_id ?? params.report ?? null;
   const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
     getPublishedReports().catch(() => []),
@@ -101,6 +111,16 @@ export default async function ReportsPage({
   ]);
   if (initialReportId && !initialReport) {
     return <p role="alert">Saved report not found or unavailable.</p>;
+  }
+  if (initialReport?.report_type === "board_brief" && initialReport.report_json.boardBrief) {
+    return <BoardBriefEditor key={initialReport.id} initialReport={initialReport.report_json} reportId={initialReport.id} metadata={initialReport.artifact_metadata} />;
+  }
+  if (!initialReportId && !params.scenario_id && !params.intent && !params.peerSetId) {
+    const analyses = await listSavedAnalyses(10);
+    return <div className="mx-auto flex max-w-5xl flex-col gap-8"><header><h1 className="text-3xl font-semibold">Reports</h1><p className="mt-2 text-warm-600">Turn saved research into a board brief. Edit, save and export your PDF.</p></header>
+      <section className="intelligence-panel"><h2>Create a board brief</h2><p className="mt-2 text-sm text-warm-600">Choose an answer to reuse its findings and evidence. This makes no new AI request.</p><div className="ask-recent mt-3">{analyses.map(a => <Link key={a.id} href={`/pro/reports?from_analysis=${encodeURIComponent(a.id)}`}><span>{a.title}</span><span className="shrink-0 text-sm text-terra-text">Use this answer →</span></Link>)}</div>{analyses.length === 0 ? <Link href="/pro/analyze" className="mt-5 inline-block rounded bg-terra px-4 py-3 text-sm text-white no-underline">Start with Ask Hamilton</Link> : null}</section>
+      <section><h2 className="text-lg font-semibold">Saved reports</h2><div className="ask-recent mt-3">{savedReports.map(r => <Link href={`/pro/reports?report_id=${encodeURIComponent(r.id)}`} key={r.id}><span>{r.report_json.title}</span><span className="text-xs text-warm-600">{r.created_at.slice(0,10)}</span></Link>)}</div>{savedReports.length === 0 ? <p className="mt-4 text-sm text-warm-600">Your saved reports will appear here.</p> : null}</section>
+    </div>;
   }
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,

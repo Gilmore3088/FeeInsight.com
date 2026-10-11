@@ -18,6 +18,7 @@ import {
 } from "./ReportAnswer";
 
 interface ReportOutputProps {
+  editable?: boolean;
   report: ReportSummaryResponse;
   reportType: string;
   artifactMetadata?: ReportArtifactMetadata | null;
@@ -27,6 +28,7 @@ const body = "text-base leading-relaxed text-pretty text-warm-800";
 
 export function ReportOutput({
   report,
+  editable = false,
   reportType,
   artifactMetadata,
 }: ReportOutputProps) {
@@ -45,8 +47,7 @@ export function ReportOutput({
           {report.title}
         </h2>
         <p className="mt-2 text-xs text-warm-600">
-          This report can&apos;t be edited here. Download the PDF to keep or
-          share a copy.
+          {editable ? "Original research is preserved. Team notes are labeled separately." : "This report uses its original workflow. Download the PDF to keep or share a copy."}
         </p>
 
         <div className="mt-3 text-xs text-warm-600">

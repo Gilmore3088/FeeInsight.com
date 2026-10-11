@@ -68,3 +68,6 @@ Reports/*
 Reports/studio/packs/
 Reports/studio/out/*.pdf
 Reports/studio/out/_superseded*/
+
+# Isolated Hamilton design fixture build
+/design-preview/dist/

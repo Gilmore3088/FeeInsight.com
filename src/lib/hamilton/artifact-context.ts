@@ -40,6 +40,8 @@ export function getHamiltonArtifactContextLookup(params: {
   if (params.pathname === "/pro/reports") {
     const reportId = cleanArtifactId(params.searchParams.get("report_id")) ?? cleanArtifactId(params.searchParams.get("report"));
     if (reportId) return { kind: "report", artifactId: reportId };
+    const analysisId = cleanArtifactId(params.searchParams.get("from_analysis"));
+    if (analysisId) return { kind: "analysis", artifactId: analysisId };
   }
 
   // An explicit institution may configure a scenario. It cannot retarget a saved

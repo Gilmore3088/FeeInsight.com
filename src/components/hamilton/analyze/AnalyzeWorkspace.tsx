@@ -4,7 +4,7 @@ import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useState, useCallback, useRef, useEffect, type FormEvent, type KeyboardEvent } from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2, FileText, Search, Presentation, ArrowRight } from "lucide-react";
 import { ANALYSIS_FOCUS_TABS, type AnalysisFocus } from "@/lib/hamilton/navigation";
 import { saveAnalysis } from "@/app/pro/(hamilton)/analyze/actions";
 import { hrefWithInstitutionContext, normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
@@ -21,6 +21,7 @@ import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { CreateBoardBriefButton } from "@/components/hamilton/reports/CreateBoardBriefButton";
 import { DownloadAnswerPdf } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
@@ -124,6 +125,7 @@ export function answerAuditTrail(input: {
 }
 
 interface AnalyzeWorkspaceProps {
+  researchSelection?: import("@/lib/hamilton/landing-research-handoff").LandingResearchHandoff;
   userId: number;
   institutionId: string | null;
   selectedInstitution?: HamiltonSelectedInstitutionContext | null;
@@ -267,7 +269,7 @@ export function WrittenAnswerProgress({
 
 /** State belongs to a user, research subject and saved answer, never just a screen position. */
 export function AnalyzeWorkspace(props: AnalyzeWorkspaceProps) {
-  return <AnalyzeConversationWorkspace key={analyzeWorkspaceKey({
+  return <AnalyzeConversationWorkspace key={JSON.stringify(props.researchSelection) + analyzeWorkspaceKey({
     userId: props.userId,
     institutionId: props.selectedInstitution?.id ?? props.institutionId,
     analysisId: props.initialAnalysisId,
@@ -281,6 +283,7 @@ function AnalyzeConversationWorkspace({
   userId,
   institutionId,
   selectedInstitution,
+  researchSelection,
   initialIntent,
   initialAnalysis,
   initialAnalysisId = null,
@@ -341,6 +344,7 @@ function AnalyzeConversationWorkspace({
         mode: "analyze",
         analysisFocus: focus.current,
         institutionId: selectedInstitution?.id ?? null,
+        ...(researchSelection ? { research: researchSelection } : {}),
         intent: initialIntent ?? "analyze",
         evidencePolicy: "provisional-first",
       }),
@@ -381,6 +385,7 @@ function AnalyzeConversationWorkspace({
             whyItMatters: parsed.whyItMatters,
             evidence: { metrics: parsed.evidence },
             exploreFurther: parsed.exploreFurther,
+            ...(researchSelection ? { researchSelection } : {}),
           } satisfies AnalyzeResponse,
         });
         if (!active.current || generation !== answerGeneration.current) return;
@@ -442,6 +447,7 @@ function AnalyzeConversationWorkspace({
       setAnswerIdentity(null);
       setFigureCheck(null);
       setAskedQuestion(trimmed);
+      if (researchSelection && researchSelection.scope.kind !== "local") answerInProse(trimmed);
       setAskSeq((n) => n + 1);
       setMessages([]);
       // The engine answers first. A storyline answer gets Hamilton's memo in place; only a
@@ -452,7 +458,7 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages],
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, researchSelection, answerInProse],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
@@ -579,7 +585,7 @@ function AnalyzeConversationWorkspace({
       id="hamilton-ask"
       onSubmit={handleSubmit}
       aria-label="Ask Hamilton"
-      className="flex scroll-mb-8 flex-col gap-2 rounded-xl border-2 border-terra bg-terra-soft p-3 shadow-sm print:hidden sm:p-4"
+      className="ask-composer flex scroll-mb-8 flex-col gap-2 rounded-xl border-2 border-terra bg-terra-soft p-3 shadow-sm print:hidden sm:p-4"
     >
       <label htmlFor="hamilton-ask-page" className="text-sm font-semibold text-terra-text">
         {askedQuestion || shown ? "Ask a follow-up" : "Your question"}
@@ -593,7 +599,7 @@ function AnalyzeConversationWorkspace({
           onKeyDown={handleKeyDown}
           rows={1}
           maxLength={500}
-          placeholder={askedQuestion || shown ? "What about this institution’s NSF fee?" : "Ask about the selected institution or market"}
+          placeholder={askedQuestion || shown ? "Explore this further…" : "For example: How competitive are our fees in Florida, and what should we review?"}
           className="min-w-0 flex-1 resize-none bg-transparent px-1 py-2 text-base leading-relaxed text-warm-900 placeholder:text-warm-500 focus:outline-none"
         />
         <button
@@ -603,7 +609,7 @@ function AnalyzeConversationWorkspace({
           className="flex min-h-11 items-center gap-1.5 rounded-md bg-terra px-4 py-2 text-sm font-medium text-white hover:bg-terra-dark disabled:opacity-50 sm:min-h-9"
         >
           {isLoading || engineBusy ? <Loader2 aria-hidden className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden className="h-4 w-4" />}
-          Ask
+          {askedQuestion || shown ? "Ask" : "Ask Hamilton"}
         </button>
       </div>
     </form>
@@ -675,52 +681,32 @@ function AnalyzeConversationWorkspace({
         </div>
       ) : (
         <>
-          <MemoHeader
-            kicker="Ask Hamilton"
-            title={instName ? `Ask anything about ${instName}'s fees` : "Ask about bank and credit union fees"}
-            dek="Answers from published fee schedules and regulator filings, with every figure checked."
-          />
-          {/* Wide screens: ask and starters on the left, recent answers on the right. */}
-          <div className={`grid gap-8 ${recent.length > 0 ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" : ""}`}>
-            <div className="flex min-w-0 flex-col gap-8">
-              {askBox}
-              <MemoSection title="Questions bankers start with">
-                <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-                  {suggestions.map((s) => (
-                    <li key={s}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setInput(s);
-                          textareaRef.current?.focus();
-                        }}
-                        className="w-full px-4 py-3 text-left text-warm-900 hover:bg-warm-100"
-                        style={SERIF}
-                      >
-                        {s}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </MemoSection>
+          <div className="ask-entry flex flex-col gap-8">
+          <MemoHeader kicker="Ask Hamilton" title="What are you working on?"
+            dek="Ask a question. Get a research brief built around the evidence that matters." />
+          {askBox}
+          <p className="text-sm text-warm-600">{researchSelection?.scope.kind === "state" ? `${researchSelection.scope.stateCode} · ${researchSelection.charter === "all" ? "banks and credit unions" : researchSelection.charter.replace("_", " ")} · ${researchSelection.categories.map(getDisplayName).join(", ")}` : researchSelection?.scope.kind === "national" ? "United States · market research" : instName ? `Researching ${instName}` : "National and regional research"} · <a className="text-terra-text underline" href={hrefWithInstitutionContext("/pro/settings", instId)}>Edit context</a></p>
+          <section className="flex flex-col gap-4" aria-label="Start with a task">
+            <h2 className="text-base font-semibold">Or start with a task</h2>
+            <div className="ask-task-grid">
+            {[
+              { label: "Review fees", icon: FileText, question: researchSelection?.scope.kind === "state" ? `How does ${researchSelection.scope.stateCode} compare with the national fee landscape for the selected fee categories?` : researchSelection?.scope.kind === "national" ? "What patterns deserve attention across the national fee landscape?" : suggestions[0] },
+              { label: "Research competitors", icon: Search, question: `Find three comparable institutions ${researchSelection?.scope.kind === "state" ? `in ${researchSelection.scope.stateCode}` : "in the selected market"}, with their assets, reporting dates and selection criteria.` },
+              { label: "Prepare a board briefing", icon: Presentation, question: "Prepare a research brief on our competitive fee position, financial trends and market conditions. Explain the evidence and what deserves further review." },
+            ].map(task => <button key={task.label} type="button" onClick={() => { setInput(task.question); textareaRef.current?.focus(); }}>
+              <task.icon size={22} aria-hidden />{task.label}
+            </button>)}
             </div>
-            {recent.length > 0 ? (
-              <MemoSection title="Your recent questions">
-                <ul className="flex flex-col divide-y divide-warm-200 rounded-lg border border-warm-300 bg-warm-50">
-                  {recent.map((r) => (
-                    <li key={r.id}>
-                      <a
-                        href={hrefWithInstitutionContext(`/pro/analyze?analysis=${encodeURIComponent(r.id)}`, instId)}
-                        className="flex min-h-11 items-baseline justify-between gap-4 px-4 py-3 text-warm-900 no-underline hover:bg-warm-100"
-                      >
-                        <span className="min-w-0" style={SERIF}>{r.title}</span>
-                        <span className="shrink-0 text-xs text-warm-600">{shortDate(r.updated_at)}</span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </MemoSection>
-            ) : null}
+            <p className="text-sm text-warm-600">Explore the findings, then turn your brief into a report.</p>
+          </section>
+          {recent.length > 0 ? <section className="ask-recent mt-4" aria-label="Continue your work">
+            <h2 className="text-base font-semibold">Continue your work</h2>
+            {recent.map(r => <a key={r.id} href={`/pro/analyze?analysis=${encodeURIComponent(r.id)}`}>
+              <span className="flex min-w-0 items-center gap-4"><FileText size={20} aria-hidden className="shrink-0" />{r.title}</span>
+              <span className="flex shrink-0 items-center gap-5 text-xs text-warm-600">{shortDate(r.updated_at)}<ArrowRight size={18} aria-hidden /></span>
+            </a>)}
+            <a href="/pro/saved" className="!justify-start !border-0 !text-terra-text">View saved analyses <ArrowRight size={16} aria-hidden /></a>
+          </section> : null}
           </div>
         </>
       )}
@@ -747,14 +733,14 @@ function AnalyzeConversationWorkspace({
           story={reopenedStory}
           identityContext={answerIdentity}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
-          nextSteps={initialAnalysisId && !readOnlyReason ? <DownloadAnswerPdf analysisId={initialAnalysisId} /> : null}
+          nextSteps={initialAnalysisId && !readOnlyReason ? <div className="flex flex-wrap gap-3"><CreateBoardBriefButton analysisId={initialAnalysisId} /><DownloadAnswerPdf analysisId={initialAnalysisId} /></div> : null}
         />
       ) : null}
 
       <div className="flex flex-col gap-8">
       {askedQuestion ? (
         <div className={proseActive ? "order-last" : undefined}>
-        <StructuredAsk
+        {researchSelection && researchSelection.scope.kind !== "local" ? null : <StructuredAsk
           key={conversation}
           question={askedQuestion}
           nonce={askSeq}
@@ -765,14 +751,12 @@ function AnalyzeConversationWorkspace({
           modelHrefFor={(fee, tested) => hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(fee)}&prices=${tested}`, instId)}
           researchHrefFor={(fee) => hrefWithInstitutionContext(`/pro/research?fee=${encodeURIComponent(fee)}`, instId)}
           onNoStoryline={answerInProse}
-        />
+        />}
         </div>
       ) : null}
 
       {shown && view.lead && !reopenedStory ? (
         <div className="flex flex-col gap-8">
-          {/* The figures lead and the prose follows, so a written answer opens on an exhibit. */}
-          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
           <article className="flex max-w-[68ch] flex-col gap-4">
             {askedQuestion ? (
               <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-600">Hamilton&apos;s commentary</h2>
@@ -809,6 +793,8 @@ function AnalyzeConversationWorkspace({
             ) : null}
           </article>
 
+          {shown.evidence.length > 0 ? <EvidenceExhibit rows={shown.evidence} /> : null}
+
           {complete && figureCheck && figureCheck.unmatched.length > 0 ? (
             <Callout>
               <strong>Check these figures:</strong> {figureCheck.unmatched.join(", ")} could not be traced to the data
@@ -837,6 +823,7 @@ function AnalyzeConversationWorkspace({
                 >
                   {isExporting ? "Preparing the PDF…" : "Download PDF"}
                 </button>
+                {savedAnalysisId ? <CreateBoardBriefButton analysisId={savedAnalysisId} /> : null}
                 <AddToReportButton
                   variant="link"
                   item={{
