@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { FeeCategorySummary } from "@/lib/data-store";
 import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
+import { GLASS, NUM } from "@/components/public/site-look";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
 const TH = `px-4 py-2.5 ${EYEBROW}`;
@@ -30,7 +31,7 @@ function familyBarScale(cats: { p75_amount: number | null; max_amount: number | 
 
 export function FamilySection({ familyName, cats }: { familyName: string; cats: FeeCategorySummary[] }) {
   const colors = FAMILY_COLORS[familyName];
-  const colorBg = colors?.dot ?? "bg-[#A09788]";
+  const colorBg = "bg-[#C44B2E]";
   const sectionMedians = cats.map((c) => c.median_amount).filter((a): a is number => a !== null);
   const sectionAvgMedian =
     sectionMedians.length > 0 ? sectionMedians.reduce((a, b) => a + b, 0) / sectionMedians.length : null;
@@ -40,7 +41,7 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
   return (
     <section id={familySectionId(familyName)}>
       <div className="flex items-start justify-between gap-4">
-        <h2 className={`flex items-center gap-2 text-sm font-bold ${colors?.text ?? "text-[#5A5347]"}`}>
+        <h2 className="flex items-center gap-2 text-base font-semibold tracking-tight text-[#1A1815]">
           <span className={`inline-block h-3.5 w-1.5 rounded-full ${colorBg}`} />
           {familyName}
           <span className="ml-1 text-[11px] font-medium text-[#6B6255]">({cats.length})</span>
@@ -59,7 +60,7 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
         )}
       </div>
 
-      <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm">
+      <div className={`mt-4 overflow-hidden ${GLASS}`}>
         <div className="table-scroll">
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
@@ -98,7 +99,7 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
     : 0;
 
   return (
-    <tr className="group hover:bg-[#FAF7F2]/60 transition-colors">
+    <tr className="group hover:bg-[#F7F1E9]/70">
       <td className="px-4 py-2.5">
         <Link
           href={`/fees/${cat.fee_category}`}
@@ -107,16 +108,16 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
           {getDisplayName(cat.fee_category)}
         </Link>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-[#1A1815]">
+      <td className={`px-4 py-3 text-right font-semibold text-[#1A1815] ${NUM}`}>
         {money(cat.median_amount)}
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+      <td className={`hidden px-4 py-3 text-right text-[#5A5347] sm:table-cell ${NUM}`}>
         {money(cat.p25_amount)}
       </td>
       <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
         {money(cat.p75_amount)}
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] text-[12px] md:table-cell">
+      <td className={`hidden px-4 py-3 text-right text-xs text-[#5A5347] md:table-cell ${NUM}`}>
         {money(cat.min_amount ?? 0)} &ndash; {money(cat.max_amount ?? 0)}
       </td>
       <td className="px-4 py-2.5">
@@ -133,7 +134,7 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
           )}
         </div>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+      <td className={`px-4 py-3 text-right text-[#5A5347] ${NUM}`}>
         {cat.institution_count.toLocaleString()}
       </td>
     </tr>
