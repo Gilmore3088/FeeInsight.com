@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Building2, CalendarCheck, ExternalLink, FileText, Landmark, MapPin, type LucideIcon } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
+import { GLASS, H1, TEXT_LINK } from "@/components/public/site-look";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { getPublicStatusLabel } from "./enum-labels";
 import { STATUS_COPY } from "./profile-copy";
@@ -50,7 +51,7 @@ export interface LocationPart {
   href: string | null;
 }
 
-const TAG_LINK_CLASS = "underline decoration-[#D5CBBF] underline-offset-2 hover:text-[#A93D25] hover:decoration-[#C44B2E]";
+const TAG_LINK_CLASS = TEXT_LINK;
 
 function TagText({ label, href }: LocationPart) {
   return href ? (
@@ -63,7 +64,7 @@ function TagText({ label, href }: LocationPart) {
 }
 
 const LINK_CLASS =
-  "inline-flex items-center justify-center gap-1.5 rounded-md border border-[#D5CBBF] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
+  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-white/70 px-3 text-sm font-semibold text-[#1A1815] ring-1 ring-[#E8E1D6] hover:bg-white hover:text-[#A93D25] hover:ring-[#C44B2E]/40";
 
 export function ProfileHeader({
   name,
@@ -80,8 +81,8 @@ export function ProfileHeader({
   financialsAsOf,
 }: ProfileHeaderProps) {
   return (
-    <header className="fi-reveal mb-5">
-      <div className="grid gap-5 border-b border-[#D8CBB8] pb-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+    <header className={`fi-reveal mb-6 p-5 sm:p-7 ${GLASS}`}>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <StatusBadge status={status} />
@@ -92,10 +93,7 @@ export function ProfileHeader({
               </span>
             )}
           </div>
-          <h1
-            className="max-w-4xl break-words text-4xl font-normal leading-[1.02] tracking-tight text-[#1A1815] sm:text-5xl"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-          >
+          <h1 className={`max-w-4xl break-words ${H1}`}>
             {name}
           </h1>
           {/* Every key fact as a small tag: no separate facts box, no sentences. */}
