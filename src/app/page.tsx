@@ -9,6 +9,7 @@ import { LandingHero } from "./landing-hero";
 import { LandingPriceStrip } from "./landing-price-strip";
 import { LandingTrustStats } from "./landing-trust-stats";
 import { LandingBankOffer } from "./landing-bank-offer";
+import { LandingWorkSamples } from "./landing-work-samples";
 
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -86,6 +87,7 @@ export default async function LandingPage() {
           aside={<LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />}
         />
         <LandingBankOffer />
+        <LandingWorkSamples />
         <LandingTrustStats summary={summary} states={stateCoverage} />
       </main>
       <CustomerFooter />
