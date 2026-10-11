@@ -75,6 +75,13 @@ function sourceProblems(fact: HamiltonEvidenceFact): string[] {
   if (fact.scope.accountApplicability === "unknown") problems.push("unknown_account_applicability");
   if (!fact.frequency) problems.push("unknown_frequency");
   if (typeof fact.value === "number" && !Number.isFinite(fact.value)) problems.push("invalid_numeric_value");
+  if (fact.value === null) problems.push("unknown_observed_value");
+  if (typeof fact.value === "string" && fact.unit !== "text") problems.push("non_numeric_observed_value");
+  if (fact.status !== "published" && fact.status !== "verified") problems.push("unverified_observation_status");
+  if (fact.unit === "usd" && typeof fact.value === "number" && fact.value < 0) problems.push("negative_fee_amount");
+  if (fact.unit === "count" && typeof fact.value === "number" && !Number.isSafeInteger(fact.value)) {
+    problems.push("invalid_count");
+  }
   if (fact.unit === "usd" && fact.currency !== "USD") problems.push("currency_mismatch");
   const recordId = fact.source.recordId;
   if (recordId === null || String(recordId).trim() === "") problems.push("missing_record_id");
@@ -121,6 +128,35 @@ export function savedEvidenceAppendix(
     const incompleteInputs = fact.derivation.inputFactIds.filter((id) =>
       byId.has(id) && (byId.get(id)?.problems.length ?? 0) > 0
     );
+    // A saved derivation may contain valid-looking input IDs that belong to a
+    // different bank, fee category, currency or reporting period. Record these
+    // contradictions without claiming that any surrounding prose was checked.
+    const inputs = fact.derivation.inputFactIds
+      .map((id) => byId.get(id))
+      .filter((row): row is SavedEvidenceFactRow => row !== undefined);
+    const first = inputs[0];
+    const scopeMismatched = inputs.some((row) => row.scope.feeCategory !== fact.scope.feeCategory);
+    const institutionMismatched = (fact.derivation.kind === "institution_value"
+      || fact.derivation.kind === "percent_change")
+      && (fact.scope.institutionId === null
+        || inputs.some((row) => row.scope.institutionId !== fact.scope.institutionId));
+    const unitMismatched = inputs.some((row) => row.unit !== first?.unit)
+      || (fact.derivation.kind === "percent_change"
+        ? fact.unit !== "percent" || fact.currency !== null
+        : inputs.some((row) => row.unit !== fact.unit || row.currency !== fact.currency));
+    const currencyMismatched = inputs.some((row) => row.currency !== first?.currency);
+    const frequencies = inputs.map((row) => row.frequency?.trim().toLowerCase() ?? null);
+    const frequencyMismatched = frequencies.length > 1 && frequencies.some((frequency) => frequency !== frequencies[0]);
+    const comparisonPeriodMismatched = fact.derivation.kind === "difference"
+      && (inputs.length !== 2 || !inputs[0].scope.reportingDate || !inputs[1].scope.reportingDate
+        || inputs[0].scope.reportingDate !== inputs[1].scope.reportingDate);
+    const changePeriodMismatched = fact.derivation.kind === "percent_change"
+      && (inputs.length !== 2 || !inputs[0].scope.reportingDate || !inputs[1].scope.reportingDate
+        || inputs[0].scope.reportingDate <= inputs[1].scope.reportingDate);
+    const denominatorNotInput = fact.derivation.denominatorFactId !== null
+      && !fact.derivation.inputFactIds.includes(fact.derivation.denominatorFactId);
+    const sourceValueProblems = inputs.some((row) => row.value === null
+      || (typeof row.value === "number" && !Number.isFinite(row.value)));
     return {
       id: fact.id,
       scope: { ...fact.scope },
@@ -137,6 +173,15 @@ export function savedEvidenceAppendix(
         ...incompleteInputs.map((id) => `incomplete_input:${id}`),
         ...(fact.derivation.denominatorFactId && !byId.has(fact.derivation.denominatorFactId)
           ? ["missing_denominator"] : []),
+        ...(denominatorNotInput ? ["denominator_not_input"] : []),
+        ...(scopeMismatched ? ["input_fee_category_mismatch"] : []),
+        ...(institutionMismatched ? ["input_institution_mismatch"] : []),
+        ...(unitMismatched ? ["input_unit_mismatch"] : []),
+        ...(currencyMismatched ? ["input_currency_mismatch"] : []),
+        ...(frequencyMismatched ? ["input_frequency_mismatch"] : []),
+        ...(comparisonPeriodMismatched ? ["comparison_period_mismatch"] : []),
+        ...(changePeriodMismatched ? ["change_period_invalid"] : []),
+        ...(sourceValueProblems ? ["invalid_input_value"] : []),
       ],
     };
   });

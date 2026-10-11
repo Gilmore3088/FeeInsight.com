@@ -181,4 +181,144 @@ describe("saved evidence appendix for H06 T08 PDF parity", () => {
     expect(originalFact.source.sourceDocumentIds).toEqual([5001]);
     expect(originalFact.source.urls).toEqual(["https://fixture.invalid/8109/fee-schedule"]);
   });
+  it("marks unverified observations, unknown values and numeric text as incomplete, preserving true zero", () => {
+    const nonPublished = { ...originalFact, status: "provisional" as const };
+    const unknown = { ...originalFact, value: null };
+    const textual = { ...originalFact, value: "0" };
+    expect(savedEvidenceAppendix(saved(nonPublished)).facts[0].problems).toContain("unverified_observation_status");
+    expect(savedEvidenceAppendix(saved(unknown)).facts[0].problems).toContain("unknown_observed_value");
+    expect(savedEvidenceAppendix(saved(textual)).facts[0].problems).toContain("non_numeric_observed_value");
+    expect(savedEvidenceAppendix(saved(originalFact)).facts[0].problems).toEqual([]);
+    expect(savedEvidenceAppendix(saved(originalFact)).facts[0].value).toBe(0);
+  });
+
+  it("does not certify an own aggregate using another institution or category record ID", () => {
+    const alien = {
+      ...originalFact,
+      id: "fee:published:20002",
+      scope: { ...originalFact.scope, institutionId: 9201, feeCategory: "nsf" },
+      source: { ...originalFact.source, recordId: 20002 },
+    };
+    const derived: HamiltonDerivedFact = {
+      id: "derived:current:8109:overdraft",
+      kind: "derived",
+      scope: { ...originalFact.scope },
+      value: 0,
+      unit: "usd",
+      currency: "USD",
+      status: "derived",
+      derivation: {
+        kind: "institution_value",
+        inputFactIds: [alien.id],
+        denominatorFactId: null,
+        formula: "highest published tier",
+        rounding: "stored",
+      },
+    };
+    const appendix = savedEvidenceAppendix(saved(alien, [derived]));
+    expect(appendix.derivations[0].problems).toEqual(expect.arrayContaining([
+      "input_fee_category_mismatch", "input_institution_mismatch",
+    ]));
+    expect(appendix.narrativeClaimsVerified).toBe(false);
+  });
+
+  it("rejects a dollar difference backed by a percentage observation and an undated comparison", () => {
+    const percent: HamiltonEvidenceFact = {
+      ...originalFact,
+      id: "fee:published:20003",
+      unit: "percent",
+      currency: null,
+      value: 2,
+      source: { ...originalFact.source, recordId: 20003 },
+    };
+    const derived: HamiltonDerivedFact = {
+      id: "derived:diff:8109:overdraft",
+      kind: "derived",
+      scope: { ...originalFact.scope },
+      value: 2,
+      unit: "usd",
+      currency: "USD",
+      status: "derived",
+      derivation: {
+        kind: "difference",
+        inputFactIds: [originalFact.id, percent.id],
+        denominatorFactId: null,
+        formula: "left - right",
+        rounding: "cent",
+      },
+    };
+    const input = saved();
+    input.factEvidence!.facts.push(percent);
+    input.factEvidence!.derivations.push(derived);
+    const row = savedEvidenceAppendix(input).derivations[0];
+    expect(row.problems).toEqual(expect.arrayContaining([
+      "input_unit_mismatch", "input_currency_mismatch", "comparison_period_mismatch",
+    ]));
+  });
+
+  it("requires chronological same-institution percent-change records and a linked denominator", () => {
+    const older: HamiltonEvidenceFact = {
+      ...originalFact,
+      id: "fee:published:20004",
+      value: 20,
+      scope: { ...originalFact.scope, reportingDate: "2026-09-30", institutionId: 9201 },
+      source: { ...originalFact.source, recordId: 20004 },
+    };
+    const newer: HamiltonEvidenceFact = {
+      ...originalFact,
+      value: 30,
+      scope: { ...originalFact.scope, reportingDate: "2026-06-30" },
+    };
+    const derived: HamiltonDerivedFact = {
+      id: "derived:percent-change",
+      kind: "derived",
+      scope: { ...originalFact.scope, reportingDate: "2026-06-30" },
+      value: 50,
+      unit: "percent",
+      currency: null,
+      status: "derived",
+      derivation: {
+        kind: "percent_change",
+        inputFactIds: [newer.id, older.id],
+        denominatorFactId: "fee:published:unknown",
+        formula: "(current-prior)/prior*100",
+        rounding: "one decimal",
+      },
+    };
+    const input = saved(newer, [derived]);
+    input.factEvidence!.facts.push(older);
+    const row = savedEvidenceAppendix(input).derivations[0];
+    expect(row.problems).toEqual(expect.arrayContaining([
+      "input_institution_mismatch", "change_period_invalid", "missing_denominator", "denominator_not_input",
+    ]));
+  });
+
+  it("flags source frequency conflicts even when both fee amounts and IDs are present", () => {
+    const other: HamiltonEvidenceFact = {
+      ...originalFact,
+      id: "fee:published:20005",
+      frequency: "monthly",
+      source: { ...originalFact.source, recordId: 20005 },
+    };
+    const derived: HamiltonDerivedFact = {
+      id: "derived:current:8109:overdraft",
+      kind: "derived",
+      scope: { ...originalFact.scope },
+      value: 0,
+      unit: "usd",
+      currency: "USD",
+      status: "derived",
+      derivation: {
+        kind: "institution_value",
+        inputFactIds: [originalFact.id, other.id],
+        denominatorFactId: null,
+        formula: "max",
+        rounding: "stored",
+      },
+    };
+    const input = saved(originalFact, [derived]);
+    input.factEvidence!.facts.push(other);
+    expect(savedEvidenceAppendix(input).derivations[0].problems).toContain("input_frequency_mismatch");
+  });
+
 });
