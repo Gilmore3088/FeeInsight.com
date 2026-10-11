@@ -30,3 +30,9 @@ Current review head includes executed structural passes for the homepage, /fees,
 Base implementation head before this no-op receipt: `0feb72bda07a85d6e87a6b752a964c953a0cb3d6`.
 GitHub app tests and backlog intake were both green on that exact head.
 This commit only opts the unchanged reviewed implementation into Vercel's existing preview policy.
+
+
+## Preview trigger — guides + homepage samples — 2026-10-11
+
+Base implementation head before this no-op receipt: `d71326a5de250e62331f5f34d8753d786c223177`.
+This commit only opts that exact implementation into the existing Vercel preview policy.
