@@ -14,7 +14,6 @@ import { getNationalEconomicSummary } from "@/lib/data-store/fed";
 import { getNationalComplaintSummary } from "@/lib/data-store/complaints";
 import { getArticles, SOURCE_LABELS } from "@/lib/data-store/news";
 import { getHamiltonInstitutionContext } from "@/lib/hamilton/institution-context";
-import { landingResearchHref, type ResearchScope } from "@/lib/hamilton/landing-research-handoff";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import {
   AmbientGlow,
@@ -60,20 +59,25 @@ function dateLabel(value: string | null | undefined): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-function researchScope(scope: ScopeKey, instId: number | null): ResearchScope {
-  if (scope === "FL") return { kind: "state", stateCode: "FL" };
-  if (scope === "institution" && instId) return { kind: "local", institutionId: instId };
-  return { kind: "national" };
-}
+function researchHref(
+  task: "compare" | "board_report",
+  scope: ScopeKey,
+  scopeLabel: string,
+  instId: number | null,
+): string {
+  const params = new URLSearchParams();
+  params.set("source", "research");
+  params.set("scope", scope === "US" ? "national" : scope === "FL" ? "FL" : "institution");
+  if (instId) params.set("instId", String(instId));
 
-function researchHref(task: "compare" | "board_report", scope: ResearchScope): string {
-  return landingResearchHref({
-    version: 1,
-    task,
-    scope,
-    categories: undefined,
-    charter: "all",
-  });
+  if (task === "compare") {
+    params.set("q", `Help me investigate this ${scopeLabel} research finding and keep the source evidence visible.`);
+    params.set("send", "1");
+    return `/pro/analyze?${params.toString()}`;
+  }
+
+  params.set("intent", "board-report");
+  return `/pro/reports?${params.toString()}`;
 }
 
 function EvidenceActions({
@@ -161,15 +165,14 @@ export default async function ResearchHubPage({ searchParams }: PageProps) {
   const maxFee = Math.max(...feeRows.map((row) => Number(row.median_amount ?? 0)), 1);
 
   const effectiveInstId = selectedInstitution?.id ?? null;
-  const evidenceScope = researchScope(scope, effectiveInstId);
-  const askHref = researchHref("compare", evidenceScope);
-  const reportHref = researchHref("board_report", evidenceScope);
   const scopeLabel =
     scope === "FL"
       ? "Florida"
       : selectedInstitution
         ? selectedInstitution.name
         : "United States";
+  const askHref = researchHref("compare", scope, scopeLabel, effectiveInstId);
+  const reportHref = researchHref("board_report", scope, scopeLabel, effectiveInstId);
 
   const latestRevenue = revenue.latest;
   const latestReg = regulatory[0] ?? null;
@@ -394,7 +397,7 @@ export default async function ResearchHubPage({ searchParams }: PageProps) {
               {user?.institution_name ? (
                 <span><strong className="font-semibold text-[#1A1815]">Signed-in institution:</strong> {user.institution_name}</span>
               ) : null}
-              <span>Scope and evidence are carried into Hamilton and report workflows.</span>
+<span>The selected scope stays in the Hamilton and report links.</span>
             </div>
           </section>
 
