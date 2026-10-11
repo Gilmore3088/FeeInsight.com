@@ -10,10 +10,6 @@ interface LandingTrustStatsProps {
   states: InstitutionStateDirectorySummary[];
 }
 
-const STATE_NAME = new Map(US_STATES.map((state) => [state.id, state.name]));
-
-const SOURCES = ["FDIC", "NCUA", "Federal Reserve", "Published fee schedules"];
-
 
 /** Same ramp as the institutions directory map, so coverage reads the same everywhere. */
 function coverageFill(verified: number, max: number): string {
@@ -33,11 +29,6 @@ function coverageFill(verified: number, max: number): string {
 export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
   const byState = new Map(states.map((s) => [s.state_code, s]));
   const maxVerified = Math.max(...states.map((s) => s.verified_institution_count), 1);
-  const topStates = [...states]
-    .filter((s) => s.verified_institution_count > 0)
-    .sort((a, b) => b.verified_institution_count - a.verified_institution_count)
-    .slice(0, 5);
-
   return (
     <section aria-labelledby="where-we-track">
       <div className="mx-auto max-w-page px-4 py-12 sm:px-6 sm:py-16">
@@ -117,29 +108,6 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
               </dd>
               <dt className="mt-1 text-[12px] text-warm-600">{COVERAGE_LABELS.categories}</dt>
             </div>
-            {topStates.length > 0 && (
-              <div className="col-span-2">
-                <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-warm-600">Most coverage</dt>
-                <dd className="mt-1.5">
-                  <ul className="space-y-1">
-                    {topStates.map((s) => (
-                      <li key={s.state_code}>
-                        <Link
-                          href={`/institutions?state=${s.state_code}`}
-                          prefetch={false}
-                          className="flex min-h-9 items-center justify-between gap-3 text-sm text-warm-900 hover:text-terra-dark"
-                        >
-                          <span>{STATE_NAME.get(s.state_code) ?? s.state_code}</span>
-                          <span className="[font-variant-numeric:tabular-nums] text-warm-600">
-                            {s.verified_institution_count.toLocaleString("en-US")}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </dd>
-              </div>
-            )}
           </dl>
           {/* Every state the map links to, as a list control: the same route for keyboard
               and screen-reader users, and for anyone who can't pick a small state by tap. */}
@@ -175,28 +143,12 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
           </div>
         </div>
 
-        {/* Provenance: sources as tags, freshness with a live dot, one methodology link. */}
-        <div className="mt-6 flex flex-col gap-3 border-t border-warm-300 pt-5 text-[12px] text-warm-600 sm:flex-row sm:items-center sm:justify-between">
-          <ul className="flex flex-wrap gap-1.5" aria-label="Data sources">
-            {SOURCES.map((source) => (
-              <li
-                key={source}
-                className="rounded-full border border-warm-300 bg-white/60 px-2.5 py-0.5 text-[11px] text-warm-700"
-              >
-                {source}
-              </li>
-            ))}
-          </ul>
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-warm-700">
-            {/* Pulse dot acknowledges live data without shouting; hidden under
-                prefers-reduced-motion via the live-pulse utility. */}
-            <span aria-hidden="true" className="relative inline-flex h-1.5 w-1.5 shrink-0">
-              <span className="absolute inset-0 rounded-full bg-terra/40 live-pulse" />
-              <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-terra" />
-            </span>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-warm-300 pt-5 text-xs text-warm-700">
+          <span>Published fee schedules · FDIC · NCUA · Federal Reserve</span>
+          <span className="inline-flex items-center gap-2">
             <span className="font-medium text-warm-900">{summary.freshnessLabel}</span>
-            {" · "}
-            <Link href="/methodology" className="text-terra-dark underline-offset-2 hover:underline">
+            <span aria-hidden="true">·</span>
+            <Link href="/methodology" className="font-semibold text-terra-dark underline underline-offset-2">
               Methodology
             </Link>
           </span>
