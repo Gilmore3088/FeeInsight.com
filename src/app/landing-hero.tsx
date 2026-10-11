@@ -14,14 +14,14 @@ export function LandingHero({ showcase }: LandingHeroProps) {
   return (
     <section aria-labelledby="home-title">
       <div className="mx-auto max-w-page px-6 pb-10 pt-10 sm:pb-14 sm:pt-14 lg:pt-16">
-        <div className="max-w-4xl">
+        <div className="max-w-4xl text-center sm:text-left">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
-            Fee intelligence for banks and credit unions
+            Your on-demand industry consultant
           </p>
           <h1 id="home-title" className={`mt-3 ${H1}`}>
             See where your fees stand.
           </h1>
-          <p className={`mt-4 max-w-3xl text-pretty ${LEAD}`}>
+          <p className={`mt-4 mx-auto max-w-3xl text-pretty sm:mx-0 ${LEAD}`}>
             Compare named peers, analyze market context, monitor changes, and turn the evidence into a board-ready review.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
