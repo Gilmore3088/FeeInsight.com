@@ -67,3 +67,8 @@ The homepage now leads with institutional value and the four rotating Benchmark 
 Base implementation head before this receipt: `b530e437735d8ea602ec4eb5c5c5119fe29b67b2`.
 The landing showcase now uses action-oriented labels inside each preview:
 Benchmark with the Bank Fee Index; Analyze with Hamilton Intelligence; Monitor with Fee Insight Alerts; Report to your board with confidence.
+
+
+## Preview trigger — homepage rail alignment — 2026-10-11
+
+Homepage hero, Bank Fee Index, banking-team section, and coverage section now share the same 24px mobile content rail. The Bank Fee Index no longer uses a nested padded card that shifts its text farther right.
