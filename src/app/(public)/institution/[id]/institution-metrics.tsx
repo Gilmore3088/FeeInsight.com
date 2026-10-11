@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import { formatCompactDollars } from "@/lib/format";
 import { COMPETITIVE_FEE_POSITION_REPORT } from "./profile-copy";
+import { CTA_PRIMARY, GLASS, GLASS_SOFT, NUM, TEXT_LINK } from "@/components/public/site-look";
 
 export function Metric({
   label,
@@ -23,9 +24,9 @@ export function Metric({
         : "text-[#1A1815]";
 
   return (
-    <div className={`min-w-0 px-3 py-3 sm:px-4 ${framed ? "border border-[#E0D7C9] bg-[#FDFBF8]" : ""}`}>
+    <div className={`min-w-0 px-4 py-4 sm:px-5 ${framed ? GLASS_SOFT : ""}`}>
       <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6B6255] sm:text-[11px] sm:tracking-[0.12em]">{label}</p>
-      <p className={`mt-1 break-words text-lg font-semibold tabular-nums ${valueClass}`}>
+      <p className={`mt-1 break-words text-xl font-semibold tracking-tight ${NUM} ${valueClass}`}>
         {value}
       </p>
     </div>
@@ -50,8 +51,8 @@ export function InstitutionMetricRow({
   assetsDollars,
 }: InstitutionMetricRowProps) {
   return (
-    <section aria-label="Profile facts" className="overflow-hidden border border-[#E0D7C9] bg-[#FDFBF8]">
-      <div className="grid grid-cols-2 gap-px bg-[#E0D7C9] *:bg-[#FDFBF8] sm:grid-cols-4">
+    <section aria-label="Profile facts" className={`overflow-hidden ${GLASS}`}>
+      <div className="grid grid-cols-2 divide-x divide-y divide-[#E8E1D6] sm:grid-cols-4 sm:divide-y-0">
         <Metric
           label="Headline fees published"
           value={headlineCategories === null ? "N/A" : `${headlineCategories} of ${headlineTotal}`}
@@ -78,7 +79,7 @@ export function InstitutionOfferBand({
   correctSourceHref: string;
 }) {
   return (
-    <section className="@container border border-[#E0D7C9] bg-white px-4 py-4 sm:px-5">
+    <section className={`@container px-5 py-5 sm:px-6 ${GLASS_SOFT}`}>
       {/* Side by side only when the card itself is wide enough: in the narrow profile column
           the heading stacks above the actions instead of squeezing to a word per line. */}
       <div className="flex flex-col gap-3 @2xl:flex-row @2xl:items-center @2xl:justify-between">
@@ -95,7 +96,7 @@ export function InstitutionOfferBand({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Link
             href={reportOfferHref}
-            className="inline-flex items-center gap-2 rounded-md bg-[#C44B2E] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
+            className={CTA_PRIMARY}
           >
             Request the report
             <ArrowRight className="h-4 w-4" />
@@ -103,7 +104,7 @@ export function InstitutionOfferBand({
           <p className="text-xs text-[#6B6255]">Paid report from $300 · quote within 1 business day</p>
           <Link
             href={correctSourceHref}
-            className="text-xs font-semibold text-[#6B6255] underline-offset-2 hover:text-[#A93D25] hover:underline"
+            className={TEXT_LINK}
           >
             Correct or add a fee source
           </Link>
