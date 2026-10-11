@@ -34,6 +34,8 @@ interface InstitutionSearchBarProps {
   placeholder?: string;
   /** The search already run (?q= on /institutions), so the box shows what was searched. */
   initialQuery?: string;
+  /** Optional destination used when a caller wants institution selection to stay in its workflow. */
+  selectionHrefPrefix?: string;
 }
 
 function InstitutionSearchBarInner({
@@ -42,6 +44,7 @@ function InstitutionSearchBarInner({
   variant = "light",
   placeholder = "Search your bank or credit union...",
   initialQuery = "",
+  selectionHrefPrefix,
 }: InstitutionSearchBarProps) {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<Result[]>([]);
@@ -99,6 +102,10 @@ function InstitutionSearchBarInner({
 
   function handleSelect(id: number) {
     setShowResults(false);
+    if (selectionHrefPrefix) {
+      router.push(`${selectionHrefPrefix}${id}`);
+      return;
+    }
     router.push(fee ? `/institution/${id}?fee=${encodeURIComponent(fee)}#fee-${fee}` : `/institution/${id}`);
   }
 
