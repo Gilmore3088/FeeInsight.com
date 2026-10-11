@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { classifyBranch, overlapPairs, guardProblems, field, workItem, csv, gitFacts, replaceReport, GitHub } from './backlog.mjs';
+import { classifyBranch, overlapPairs, guardProblems, hasOneTimeWipException, field, workItem, csv, gitFacts, replaceReport, GitHub } from './backlog.mjs';
 
 const policy = { repository: 'owner/repo', default_branch: 'main', parked_prs: [9], protected_prefixes: ['rescue/'], areas: ['maintenance', 'outreach'], parked_areas: ['outreach'], enforce_after: '2026-10-09T18:00:00Z', wip_per_area: 3 };
 const cutoff = '2026-10-09T18:04:00Z';
@@ -65,6 +65,52 @@ test('outreach is blocked and per-area WIP is bounded', () => {
   assert.ok(guardProblems({ ...p, body: p.body.replace('maintenance', 'outreach') }, [], [], policy).some(x => x.includes('parked')));
   assert.ok(guardProblems(p, [p, intake(11, 23), intake(12, 24), intake(13, 25)], [], policy).some(x => x.includes('exceeds')));
 });
+test('James-approved emergency WIP exception applies to exactly PR #1017 on owned #1012 branch', () => {
+  const dirPr = {
+    ...intake(1017, 1012),
+    created_at: '2026-10-11T11:18:35Z',
+    body: intake(1017, 1012).body.replace('Area: maintenance', 'Area: correctness'),
+    head: { ref: 'fix/1012-directory-fee-bind', repo: { full_name: 'owner/repo' } },
+    base: { ref: 'main', repo: { full_name: 'owner/repo' } },
+  };
+  const exception = {
+    pr_number: 1017,
+    work_item: 1012,
+    area: 'correctness',
+    head_ref: 'fix/1012-directory-fee-bind',
+    base_ref: 'main',
+    authorized_at: '2026-10-11T11:15:00Z',
+    expires_at: '2026-10-14T00:00:00Z',
+  };
+  const scopedPolicy = {
+    ...policy,
+    areas: [...policy.areas, 'correctness'],
+    wip_exceptions: [exception],
+  };
+  const regular = [1020, 1021, 1022, 1023].map(n => ({
+    ...intake(n, n),
+    body: intake(n, n).body.replace('Area: maintenance', 'Area: correctness'),
+  }));
+  const open = [dirPr, ...regular];
+  const when = new Date('2026-10-11T12:00:00Z');
+  assert.equal(hasOneTimeWipException(dirPr, scopedPolicy, when), true);
+  assert.deepEqual(guardProblems(dirPr, open, [], scopedPolicy, when), []);
+  assert.ok(guardProblems(regular[0], open, [], scopedPolicy, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems({ ...dirPr, number: 1018 }, open, [], scopedPolicy, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems({ ...dirPr, head: { ...dirPr.head, ref: 'fix/1012-clone' } }, open, [], scopedPolicy, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems({ ...dirPr, head: { ...dirPr.head, repo: { full_name: 'other/repo' } } }, open, [], scopedPolicy, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems({ ...dirPr, base: { ...dirPr.base, ref: 'develop' } }, open, [], scopedPolicy, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems({ ...dirPr, body: dirPr.body.replace('#1012', '#1014') }, open, [], scopedPolicy, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems(dirPr, open, [], scopedPolicy, new Date('2026-10-14T00:00:01Z')).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems({ ...dirPr, body: dirPr.body.replace('Rollback: revert this commit', '') }, open, [], scopedPolicy, when).some(x => x.includes('Rollback')));
+  const overlapping = [{ a: 1017, b: 1020, shared_files: ['src/lib/data-store/search.ts'] }];
+  assert.ok(guardProblems(dirPr, open, overlapping, scopedPolicy, when).some(x => x.includes('Shares files')));
+  const duplicate = { ...regular[0], body: regular[0].body.replace('Work item: #1020', 'Work item: #1012') };
+  assert.ok(guardProblems(dirPr, [dirPr, duplicate, ...regular.slice(1)], [], scopedPolicy, when).some(x => x.includes('already has')));
+  assert.ok(guardProblems(dirPr, open, [], { ...scopedPolicy, wip_exceptions: [] }, when).some(x => x.includes('exceeds')));
+  assert.ok(guardProblems(dirPr, open, [], { ...scopedPolicy, wip_per_area: 2 }, when).length === 0, 'this single exception applies even with a lower cap');
+});
+
 test('report update preserves owner notes and fails on missing/duplicate markers', () => {
   assert.equal(replaceReport('before\n<!-- backlog-report:start -->old<!-- backlog-report:end -->\nafter', 'NEW'), 'before\n<!-- backlog-report:start -->\nNEW\n<!-- backlog-report:end -->\nafter');
   assert.throws(() => replaceReport('no markers', 'x'));
