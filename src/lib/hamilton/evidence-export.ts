@@ -56,8 +56,8 @@ export interface SavedEvidenceAppendix {
 function copySource(source: HamiltonFactSource): HamiltonFactSource {
   return {
     ...source,
-    sourceDocumentIds: [...source.sourceDocumentIds],
-    urls: [...source.urls],
+    sourceDocumentIds: Array.isArray(source.sourceDocumentIds) ? [...source.sourceDocumentIds] : [],
+    urls: Array.isArray(source.urls) ? [...source.urls] : [],
     documentContentHash: source.documentContentHash ?? null,
     retrievedAt: source.retrievedAt ?? null,
     lastCheckedAt: source.lastCheckedAt ?? null,
@@ -65,31 +65,45 @@ function copySource(source: HamiltonFactSource): HamiltonFactSource {
   };
 }
 
+function inspectableSourceUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function sourceProblems(fact: HamiltonEvidenceFact): string[] {
   const problems: string[] = [];
   if (!Number.isSafeInteger(fact.scope.institutionId) || (fact.scope.institutionId ?? 0) <= 0) {
     problems.push("unknown_institution");
   }
-  if (!fact.scope.feeCategory) problems.push("unknown_fee_category");
-  if (!fact.scope.product) problems.push("unknown_product");
+  if (!fact.scope.feeCategory?.trim()) problems.push("unknown_fee_category");
+  if (!fact.scope.product?.trim()) problems.push("unknown_product");
   if (fact.scope.accountApplicability === "unknown") problems.push("unknown_account_applicability");
-  if (!fact.frequency) problems.push("unknown_frequency");
+  if (!fact.frequency?.trim()) problems.push("unknown_frequency");
   if (typeof fact.value === "number" && !Number.isFinite(fact.value)) problems.push("invalid_numeric_value");
   if (fact.value === null) problems.push("unknown_observed_value");
   if (typeof fact.value === "string" && fact.unit !== "text") problems.push("non_numeric_observed_value");
   if (fact.status !== "published" && fact.status !== "verified") problems.push("unverified_observation_status");
   if (fact.unit === "usd" && typeof fact.value === "number" && fact.value < 0) problems.push("negative_fee_amount");
-  if (fact.unit === "count" && typeof fact.value === "number" && !Number.isSafeInteger(fact.value)) {
+  if (fact.unit === "count" && typeof fact.value === "number"
+    && (!Number.isSafeInteger(fact.value) || fact.value < 0)) {
     problems.push("invalid_count");
   }
-  if (fact.unit === "usd" && fact.currency !== "USD") problems.push("currency_mismatch");
+  if ((fact.unit === "usd" && fact.currency !== "USD")
+    || (fact.unit !== "usd" && fact.currency !== null)) problems.push("currency_mismatch");
   const recordId = fact.source.recordId;
   if (recordId === null || String(recordId).trim() === "") problems.push("missing_record_id");
   if (!fact.source.table) problems.push("missing_source_table");
-  if (fact.source.sourceDocumentIds.length === 0 || fact.source.sourceDocumentIds.some(
+  const documentIds = Array.isArray(fact.source.sourceDocumentIds) ? fact.source.sourceDocumentIds : [];
+  if (documentIds.length === 0 || documentIds.some(
     (id) => !Number.isSafeInteger(id) || id <= 0
   )) problems.push("missing_source_document_id");
-  if (!fact.source.urls.some((url) => /^https?:\/\//i.test(url))) problems.push("uninspectable_source_url");
+  const sourceUrls = Array.isArray(fact.source.urls) ? fact.source.urls : [];
+  if (!sourceUrls.some(inspectableSourceUrl)) problems.push("uninspectable_source_url");
   return problems;
 }
 

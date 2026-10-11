@@ -398,4 +398,60 @@ describe("saved evidence appendix for H06 T08 PDF parity", () => {
       .toContain("unrecognized_derivation_formula");
   });
 
+
+  it("does not mislabel rates as dollar-denominated evidence or accept missing USD currency", () => {
+    const rate: HamiltonEvidenceFact = { ...originalFact, value: 2.5, unit: "percent", currency: null };
+    expect(savedEvidenceAppendix(saved(rate)).facts[0].problems).toEqual([]);
+    expect(savedEvidenceAppendix(saved({ ...rate, currency: "USD" })).facts[0].problems)
+      .toContain("currency_mismatch");
+    expect(savedEvidenceAppendix(saved({ ...originalFact, currency: null })).facts[0].problems)
+      .toContain("currency_mismatch");
+  });
+
+  it("keeps negative observed counts distinct from legitimate fee deltas", () => {
+    const observedCount: HamiltonEvidenceFact = { ...originalFact, value: -1, unit: "count", currency: null };
+    expect(savedEvidenceAppendix(saved(observedCount)).facts[0].problems).toContain("invalid_count");
+    expect(savedEvidenceAppendix(saved({ ...observedCount, value: 0 })).facts[0].problems)
+      .not.toContain("invalid_count");
+  });
+
+  it("rejects whitespace-only fee scope and frequency fields", () => {
+    const incomplete: HamiltonEvidenceFact = {
+      ...originalFact,
+      scope: { ...originalFact.scope, feeCategory: "  ", product: "  " },
+      frequency: " \t ",
+    };
+    expect(savedEvidenceAppendix(saved(incomplete)).facts[0].problems).toEqual(expect.arrayContaining([
+      "unknown_fee_category", "unknown_product", "unknown_frequency",
+    ]));
+  });
+
+  it("does not treat URL-looking invalid hosts or unsupported protocols as inspectable sources", () => {
+    const invalid: HamiltonEvidenceFact = {
+      ...originalFact,
+      source: { ...originalFact.source, urls: ["https://", "ftp://fixture.invalid/fee"] },
+    };
+    expect(savedEvidenceAppendix(saved(invalid)).facts[0].problems).toContain("uninspectable_source_url");
+    const valid = { ...invalid, source: { ...invalid.source, urls: ["https://fixture.invalid/fee"] } };
+    expect(savedEvidenceAppendix(saved(valid)).facts[0].problems).not.toContain("uninspectable_source_url");
+  });
+
+  it("reopens a legacy saved source missing array fields without inventing provenance", () => {
+    const malformed: HamiltonEvidenceFact = {
+      ...originalFact,
+      source: {
+        ...originalFact.source,
+        sourceDocumentIds: undefined as unknown as number[],
+        urls: undefined as unknown as string[],
+      },
+    };
+    const appendix = savedEvidenceAppendix(JSON.parse(JSON.stringify(saved(malformed))) as EvidenceBoundAnalyzeResponse);
+    expect(appendix.facts[0].source.sourceDocumentIds).toEqual([]);
+    expect(appendix.facts[0].source.urls).toEqual([]);
+    expect(appendix.facts[0].problems).toEqual(expect.arrayContaining([
+      "missing_source_document_id", "uninspectable_source_url",
+    ]));
+    expect(appendix.narrativeClaimsVerified).toBe(false);
+  });
+
 });
