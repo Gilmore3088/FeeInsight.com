@@ -24,8 +24,8 @@ export function LandingReportDocument({ compact = false }: { compact?: boolean }
   useEffect(()=>{
     if(!enabled)return;
     let cancelled=false;
-    let task:ReturnType<typeof import("pdfjs-dist")["getDocument"]>|undefined;
-    void import("pdfjs-dist").then(pdfjs=>{
+    let task:ReturnType<typeof import("pdfjs-dist/legacy/build/pdf.mjs")["getDocument"]>|undefined;
+    void import("pdfjs-dist/legacy/build/pdf.mjs").then(pdfjs=>{
       if(cancelled)return;
       pdfjs.GlobalWorkerOptions.workerSrc="/reports/pdf.worker.min.mjs";
       task=pdfjs.getDocument({url:SAMPLE_REPORT_PDF});
