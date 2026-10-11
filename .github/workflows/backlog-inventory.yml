@@ -1,0 +1,103 @@
+name: backlog inventory
+
+on:
+  schedule:
+    - cron: '17 16 * * 1'
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      cutoff:
+        description: 'Optional UTC cutoff; existing active-work exclusions always remain protected.'
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - '.github/backlog*.json'
+      - '.github/scripts/backlog*'
+      - '.github/workflows/backlog*'
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: backlog-inventory-${{ github.event.pull_request.number || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    if: github.event.schedule != '23 * * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test inventory, persistent protection and 12-hour review rules with the Node runner
+        run: node --test .github/scripts/backlog.node-check.mjs .github/scripts/backlog-review.node-check.mjs
+      - name: Read branches and all PR history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKLOG_CUTOFF: ${{ github.event_name == 'pull_request' && '2026-10-09T18:04:00Z' || inputs.cutoff || '' }}
+        run: node .github/scripts/backlog.mjs inventory
+      - name: Add persistent exclusions, finite batch gates and branch evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/backlog-review.mjs enrich
+      - name: Retain full evidence, not just the summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: backlog-inventory
+          path: backlog-output/
+          if-no-files-found: error
+          retention-days: 90
+  dashboard:
+    needs: inventory
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: backlog-inventory
+          path: backlog-output
+      - name: Refresh only the existing control issue's report section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/backlog-review.mjs publish
+  age-review:
+    if: github.event_name == 'schedule' && github.event.schedule == '23 * * * *' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test review and preservation rules with the Node runner
+        run: node --test .github/scripts/backlog-review.node-check.mjs
+      - name: Refresh 12-hour review section; no per-PR comments or destructive actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/backlog-review.mjs age

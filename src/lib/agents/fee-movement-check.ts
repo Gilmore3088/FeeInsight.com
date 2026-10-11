@@ -8,10 +8,11 @@ import { confirmFeeChange, type RecordedChangeRow } from "@/lib/report-assembler
  * the 546 movements signalled from Sep 30 to Oct 7, 2026 passed the test below.
  *
  * A movement counts as a price change only when the old and new rows trace to two
- * different documents, the new one newer, and `confirmFeeChange` (the rule Hamilton and the
- * Monthly Pulse use) bears it out: the same schedule (same page, or a newer dated edition
- * for the same audience), same fee name, the old copy states the old price, the new copy
- * states the new price and no longer the old one.
+ * different documents, the new one newer, and both rows have the same known customer
+ * audience. `confirmFeeChange` (the rule Hamilton and the Monthly Pulse use) must then bear
+ * it out: the same schedule (same page, or a newer dated edition for the same audience),
+ * same fee name, the old copy states the old price, the new copy states the new price and
+ * no longer the old one.
  * Alerts and the digest report only those; the rest are marked `confirmed: false`.
  */
 
@@ -123,6 +124,8 @@ export async function loadConfirmedMovementPairs(
     JOIN source_documents dnew ON dnew.id = rn.source_document_id
     WHERE dold.id <> dnew.id
       AND dnew.crawled_at > dold.crawled_at
+      AND vo.fee_audience = vn.fee_audience
+      AND vo.fee_audience IS DISTINCT FROM 'unknown'
   `;
   return new Set(
     candidates

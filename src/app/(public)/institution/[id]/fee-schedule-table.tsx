@@ -1,3 +1,4 @@
+import { isConsumerFee, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
@@ -5,6 +6,8 @@ import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
 
 export interface DisplayFee {
+  feeAudience?: FeeAudience;
+  feeTreatment?: FeeTreatment;
   id: string;
   feeName: string;
   feeCategory: string | null;
@@ -15,6 +18,14 @@ export interface DisplayFee {
   sourceUrl: string | null;
   /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
   rate?: { rate: string; detail: string | null } | null;
+}
+
+/** Scope remains visible even when an amount cannot enter a consumer comparison. */
+function AudienceLabel({ fee }: { fee: DisplayFee }) {
+  const label = fee.feeAudience === "consumer" ? "Consumer accounts"
+    : fee.feeAudience === "business" ? "Business accounts"
+    : fee.feeAudience === "both" ? "Consumer and business accounts" : "Account audience not verified";
+  return <span className="block text-xs font-normal text-[#6B6255]">{label}{fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}</span>;
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -41,7 +52,7 @@ const POSITION_TEXT: Record<Position, string> = {
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
-  if (!benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  if (!isConsumerFee(fee.feeAudience) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
   return benchmarks[fee.feeCategory] ?? null;
 }
 
@@ -147,7 +158,7 @@ function MedianCell({
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
 }) {
-  if (fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!isConsumerFee(fee.feeAudience) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
   const stateDelta = stateMedians
     ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
@@ -390,6 +401,7 @@ function FeeRow({
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
         <span className="break-words font-medium text-[#1A1815]">{fee.feeName}</span>
+        <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
@@ -454,6 +466,7 @@ function FeeScheduleStack({
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words text-sm font-medium text-[#1A1815]">
                       {fee.feeName}
+                      <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
