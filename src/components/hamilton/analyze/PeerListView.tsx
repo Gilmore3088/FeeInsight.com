@@ -84,6 +84,35 @@ function SelectablePeerList({ response }: { response: PeerListResponse }) {
         </details>
       ) : null}
       {data.notes.map((note, i) => <p key={i} className="text-sm text-warm-700">{note}</p>)}
+      {data.feeComparison ? (
+        <div className="rounded-lg border border-warm-300 p-4">
+          <h3 className="text-lg font-semibold text-warm-900">Published NSF fees — exact selected peers</h3>
+          <p className="mt-1 text-sm text-warm-700">{data.feeComparison.note}</p>
+          <div role="region" aria-label="NSF fee comparison; scroll horizontally" tabIndex={0} className="mt-3 overflow-x-auto">
+            <table aria-label="Published NSF charges" className="w-full min-w-[700px] text-left text-sm">
+              <thead><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">Amount</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
+              <tbody>
+                {[...data.rows.map(row => ({ id: row.institutionId, name: row.name, isAccount: false })),
+                  ...(data.feeComparison.account ? [{ id: data.feeComparison.account.institutionId, name: data.feeComparison.account.name, isAccount: true }] : [])
+                ].map(item => {
+                  const charges = data.feeComparison!.fees.filter(fee => fee.institutionId === item.id);
+                  return charges.length ? charges.map(charge => (
+                    <tr key={`${item.id}:${charge.id}`} className="border-t border-warm-200">
+                      <th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (verified account)" : ""}</th>
+                      <td className="p-2">{charge.name}</td>
+                      <td className="p-2 tabular-nums">{charge.amount === null ? "Not stated" : formatPeerAssets(charge.amount)}</td>
+                      <td className="p-2">{charge.frequency ?? "Not stated"}</td>
+                      <td className="p-2">{charge.publishedAt ? charge.publishedAt.slice(0, 10) : "Date unavailable"}
+                        {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
+                      </td>
+                    </tr>
+                  )) : <tr key={item.id} className="border-t border-warm-200"><th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (verified account)" : ""}</th><td colSpan={4} className="p-2">No published consumer NSF fee on file</td></tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
       {rows.length ? (
         <>
           <label className="flex flex-wrap items-center gap-2 text-sm text-warm-700">
@@ -143,7 +172,7 @@ function SelectablePeerList({ response }: { response: PeerListResponse }) {
           </div>
         </>
       ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
-      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. Comparing this list&apos;s fees and exporting it are not supported yet.</p>
+      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. NSF comparisons use only this displayed selection. Saved historical comparison snapshots and export are not available yet.</p>
     </section>
   );
 }
