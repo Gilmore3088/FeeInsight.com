@@ -27,7 +27,7 @@ describe("homepage resource requests",()=>{
   it("reveals the actual sample download only after the server accepts the request",async()=>{
     vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response(JSON.stringify({success:true}),{status:200})));
     openAndSubmit("sample");
-    expect(await screen.findByRole("link",{name:"Download sample PDF"})).toHaveAttribute("href","/reports/sample-competitive-fee-position.pdf");
+    expect(await screen.findByRole("link",{name:"Download sample PDF"})).toHaveAttribute("href","/reports/illustrative-competitive-fee-position-2026-10-03.pdf");
     expect(screen.getByRole("status")).not.toHaveTextContent("emailed");
   });
   it("retains the form and withholds the download when lead storage fails",async()=>{

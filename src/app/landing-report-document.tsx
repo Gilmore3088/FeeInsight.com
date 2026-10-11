@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, FileText, ExternalLink } from "lucide-react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
-export const SAMPLE_REPORT_PDF = "/reports/sample-competitive-fee-position.pdf";
+export const SAMPLE_REPORT_PDF = "/reports/illustrative-competitive-fee-position-2026-10-03.pdf";
 
 /** Render the actual PDF in the app, including browsers without a native PDF plugin. */
 export function LandingReportDocument({ compact = false }: { compact?: boolean }) {
