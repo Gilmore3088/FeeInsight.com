@@ -35,9 +35,6 @@ export function LandingHero({ showcase }: LandingHeroProps) {
         </div>
 
         <div className="mt-8">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[#6B6255]">
-            Benchmark · Analyze · Monitor · Report
-          </p>
           {showcase}
         </div>
       </div>
