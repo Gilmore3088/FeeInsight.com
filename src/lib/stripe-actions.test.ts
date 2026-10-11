@@ -9,6 +9,13 @@ const mocks = vi.hoisted(() => ({
   portalCreateMock: vi.fn(),
 }));
 
+vi.mock("@/lib/billing/checkout", () => ({
+  createGuardedCheckout: vi.fn(async (_userId: number, _customerId: string, params: unknown) => {
+    const session = await mocks.stripeCheckoutCreateMock(params);
+    return { url: session.url };
+  }),
+}));
+
 vi.mock("@/lib/stripe-prices", () => ({
   resolveProPriceId: mocks.resolveProPriceIdMock,
 }));
@@ -247,5 +254,21 @@ describe("createPortalSession", () => {
     expect(mocks.portalCreateMock).toHaveBeenLastCalledWith(expect.objectContaining({ return_url: "https://feeinsight.com/pro/settings" }));
     await expect(createPortalSession("https://evil.example")).rejects.toThrow("redirect:");
     expect(mocks.portalCreateMock).toHaveBeenLastCalledWith(expect.objectContaining({ return_url: "https://feeinsight.com/account" }));
+  });
+});
+
+
+describe("checkout failure handoff", () => {
+  it("returns a safe error without retrying an ambiguous payment operation", async () => {
+    const guard = await import("@/lib/billing/checkout");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.getCurrentUserMock.mockResolvedValue(user());
+    mocks.institutionMock.mockResolvedValue({ id: 2945, name: "Bank", assetsThousands: 420000 });
+    mocks.headersMock.mockResolvedValue(new Map([["origin", "https://feeinsight.com"]]));
+    vi.mocked(guard.createGuardedCheckout).mockRejectedValueOnce(new Error("private upstream details"));
+    const { createCheckoutSession } = await import("./stripe-actions");
+    const result = await createCheckoutSession({ plan: "annual", institutionId: 2945 });
+    expect(result.url).toBeNull(); expect(result.error).toContain("do not submit a second payment");
+    expect(result.error).not.toContain("private upstream"); log.mockRestore();
   });
 });
