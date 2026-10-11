@@ -78,3 +78,9 @@ Homepage hero, Bank Fee Index, banking-team section, and coverage section now sh
 
 Base implementation head before this receipt: `de0026ab587c5531a92a994c56553890cd1fcce0`.
 This preview aligns the Bank Fee Index, banking-team and coverage sections to one shared mobile content rail and normalizes their vertical spacing.
+
+
+## Preview trigger — aligned mobile homepage — 2026-10-11
+
+Base implementation head before this receipt: `cfa9008a4f8ba2b19987b7646ccd4eb1ef9a81e0`.
+This preview uses one shared mobile content rail for the Bank Fee Index, banking-team, and coverage sections and includes the action-oriented rotating showcase labels.
