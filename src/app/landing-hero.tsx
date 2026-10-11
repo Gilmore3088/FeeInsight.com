@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { LandingLeadAction } from "./landing-lead-action";
 import type { ReactNode } from "react";
 import { CTA_PRIMARY, CTA_SECONDARY, H1, LEAD } from "@/components/public/site-look";
 
@@ -27,12 +27,8 @@ export function LandingHero({ showcase }: LandingHeroProps) {
             For banks and credit unions. Bring local competitors, published fees, and market context into one sourced brief.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <Link href="#sample-work" className={CTA_PRIMARY}>
-              See a sample fee review
-            </Link>
-            <Link href="/subscribe" className={CTA_SECONDARY}>
-              See Fee Insight Pro
-            </Link>
+            <LandingLeadAction offer="walkthrough" className={CTA_PRIMARY} />
+            <LandingLeadAction offer="sample" className={CTA_SECONDARY} />
           </div>
         </div>
 

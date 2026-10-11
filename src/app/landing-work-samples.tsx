@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LandingLeadAction } from "./landing-lead-action";
 import { GLASS_SOFT, H2 } from "@/components/public/site-look";
 
 const SAMPLE_HREF = "/reports";
@@ -51,6 +52,7 @@ export function LandingWorkSamples() {
             </li>
           ))}
         </ul>
+        <div className="mt-6 flex justify-center"><LandingLeadAction offer="sample" /></div>
       </div>
     </section>
   );

@@ -6,7 +6,8 @@ import { getPublicSnapshot } from "@/lib/public-stats";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { LandingHero } from "./landing-hero";
-import { LandingTrustStats } from "./landing-trust-stats";
+import { LandingFeatureCards } from "./landing-feature-cards";
+import { LandingConsultantDemo } from "./landing-consultant-demo";
 import { LandingResearchStory } from "./landing-research-story";
 import { LandingWorkSamples } from "./landing-work-samples";
 import { LandingValueShowcase } from "./landing-value-showcase";
@@ -147,9 +148,10 @@ export default async function LandingPage() {
           />
         )}
         <LandingResearchStory />
+        <LandingConsultantDemo rows={benchmarkRows} totalInstitutions={summary.institutions} />
         <LandingWorkSamples />
         <LandingPublicSearch institutionsLabel={summary.institutionsLabel} />
-        <LandingTrustStats summary={summary} states={stateCoverage} />
+        <LandingFeatureCards states={stateCoverage} rows={benchmarkRows} />
       </main>
       <CustomerFooter />
       <SearchModal />
